@@ -14494,6 +14494,50 @@ static char *c_escape_path(const char *p) {
     return b;
 }
 
+/* One usage text, two destinations: stdout+0 for `--help` (someone asking) and
+ * stderr+1 for a bare `tychoc` (someone who got it wrong). Until 2026-08-17 only
+ * the second existed and `--help` died with "unknown flag" -- the first thing a
+ * stranger types. Every flag here is parsed in main below; `--symbols` was
+ * parsed and undocumented. */
+static void tychoc_usage(FILE *f)
+{
+    fprintf(f,
+"tychoc %s -- the Tycho compiler: transpiles .ty to C and compiles it.\n"
+"\n"
+"usage: tychoc <file.ty> [options]\n"
+"\n"
+"  With no options, writes a native binary beside the source and removes the\n"
+"  intermediate .c once cc succeeds. The .c is KEPT when cc fails, as evidence.\n"
+"\n"
+"Output\n"
+"  -o <name>          name the output (with --emit-c, writes <name>.c)\n"
+"  --emit-c           stop at the C; to stdout unless -o names a file\n"
+"  -g                 build with debug information\n"
+"  --native           tune the build for this machine\n"
+"\n"
+"Linking and the FFI\n"
+"  --cc <compiler>    use <compiler> instead of the default cc\n"
+"  -L<dir> -I<dir>    library and include paths (attached or separated)\n"
+"  --link <lib>       link <lib> -- a bare -l for a library not named in source\n"
+"  --shim <file.c>    compile and link a companion C file\n"
+"  --pkg <name>       add pkg-config --cflags --libs for <name>\n"
+"\n"
+"Reporting -- these print and exit, they do not build\n"
+"  --print-shims      the <pkg>_shim.c files this program needs, transitively,\n"
+"                     one per line: what a hand-written link line passes to cc\n"
+"  --print-deps       the pkg-config names it needs, transitively, one per line:\n"
+"                     what a build probes to decide whether to skip\n"
+"  --symbols          a symbol index for the language server; no code generated\n"
+"  --bundle           the whole import graph as one post-order source stream\n"
+"  --version          print the version and exit\n"
+"  --help, -h         this message\n"
+"\n"
+"Environment\n"
+"  TYCHO_CORELIB              where corelib lives (default: beside this binary)\n"
+"  TYCHOC_NO_BOUNDS_ELISION   keep every bounds check, even provably redundant\n",
+        TYCHO_VERSION);
+}
+
 int main(int argc, char **argv) {
 #ifdef _WIN32
     _setmode(_fileno(stdout), _O_BINARY);
@@ -14521,6 +14565,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--print-deps")) { print_deps = 1; g_pkgdeps_names_only = 1; }
         else if (!strcmp(argv[i], "--bundle")) bundle = 1;
         else if (!strcmp(argv[i], "--native")) native = 1;
+        else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) { tychoc_usage(stdout); return 0; }
         else if (!strcmp(argv[i], "--version")) { printf("tychoc %s\n", TYCHO_VERSION); return 0; }
         else if (!strcmp(argv[i], "-g")) debug = 1;
         else if (!strcmp(argv[i], "--cc") && i + 1 < argc) cc = argv[++i];
@@ -14540,17 +14585,7 @@ int main(int argc, char **argv) {
         else if (argv[i][0] == '-') { fprintf(stderr, "tychoc: unknown flag %s\n", argv[i]); return 1; }
         else input = argv[i];
     }
-    if (!input) {
-        fprintf(stderr, "usage: tychoc file.ty [-o name] [--emit-c] [-g] [--bundle] [--native] [--cc <compiler>]\n"
-                        "                     [-L<dir>] [-I<dir>] [--link <lib>] [--shim <file.c>] [--pkg <name>]\n"
-                        "                     [--print-shims] [--print-deps] [--version]\n"
-                        "  --emit-c with -o writes <name>.c; with no -o it writes the C to stdout.\n"
-                        "  --print-shims lists the <pkg>_shim.c files this program needs, one per line,\n"
-                        "  transitively -- what a lane linking the emitted C by hand must pass to cc.\n"
-                        "  --print-deps lists the pkg-config package names this program needs, one per\n"
-                        "  line, transitively -- what a lane must probe to decide whether to SKIP.\n");
-        return 1;
-    }
+    if (!input) { tychoc_usage(stderr); return 1; }
     g_srcname = input;
 
     if (bundle) {   /* emit the package's source as one post-order stream (for tychoc0) */
