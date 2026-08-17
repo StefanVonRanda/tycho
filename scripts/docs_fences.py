@@ -37,6 +37,7 @@ FENCE = re.compile(r'^```(\w*)[ \t]*\n(.*?)^```[ \t]*$', re.S | re.M)
 SKIP = re.compile(r'^[ \t]*<!--[ \t]*fence-skip:[ \t]*(.*?)[ \t]*-->[ \t]*$', re.M)
 DECL = re.compile(r'^[ \t]*(package|import)[ \t]')
 TOPDECL = re.compile(r'^(struct|enum|type|const|handle|fn|extern|subscript)[ \t]')
+DECLNAME = re.compile(r'^(?:struct|enum|type|const|handle|subscript|fn)[ \t]+([A-Za-z_]\w*)')
 HASFN = re.compile(r'^[ \t]*(extern[ \t]+("[^"]*"[ \t]+)?)?fn[ \t]', re.M)
 # a line that is only an expression: no :=, no =, not a statement keyword
 STMT_KW = re.compile(r'^[ \t]*(if|for|while|match|return|push|delete|println|print|'
@@ -93,6 +94,25 @@ def split_top(text):
     return '\n'.join(decls), '\n'.join(stmts)
 
 
+def declared(text):
+    """Top-level names a fence declares, so the carry-over does not redeclare them."""
+    return {m.group(1) for m in (DECLNAME.match(l) for l in text.split('\n')) if m}
+
+
+def drop_decls(text, names):
+    """Remove top-level declarations of `names` (and their indented bodies)."""
+    out, lines, i = [], text.split('\n'), 0
+    while i < len(lines):
+        m = DECLNAME.match(lines[i])
+        if m and m.group(1) in names:
+            i += 1
+            while i < len(lines) and (not lines[i].strip() or lines[i][:1] in ' \t'):
+                i += 1
+            continue
+        out.append(lines[i]); i += 1
+    return '\n'.join(out)
+
+
 def wrap(body, preamble=""):
     head, rest = [], []
     for l in (preamble + body).split('\n'):
@@ -135,10 +155,29 @@ def main():
                 nskip += 1
                 print("    skip  %s:%d  %s" % (f, line, skip))
                 continue
-            # the output block that follows, if any
-            want = None
-            if i + 1 < len(fs) and fs[i + 1][0] == 'output':
-                want = fs[i + 1][1]
+            # the block that follows decides what this fence claims
+            want = None       # ```output -> run it, stdout must match
+            expect_fail = False   # a block naming an error -> it must NOT compile
+            if i + 1 < len(fs):
+                nlang, nbody = fs[i + 1][0], fs[i + 1][1]
+                if nlang == 'output':
+                    want = nbody
+                elif nlang in ('', 'text') and re.search(
+                        r'^\s*(error|warning):|detected in tcache|Segmentation|assertion',
+                        nbody, re.M | re.I):
+                    expect_fail = True
+
+            if expect_fail:
+                with tempfile.TemporaryDirectory() as tmp:
+                    got, _e = compiles(body, tmp)
+                    if got is None:
+                        nok += 1
+                        print("    ok    %s:%d  [refused, as the block below it records]" % (f, line))
+                    else:
+                        nfail += 1
+                        fails.append("%s:%d -- COMPILES, but the block below it records an error"
+                                     % (f, line))
+                continue
 
             ok_body = None
             with tempfile.TemporaryDirectory() as tmp:
@@ -150,11 +189,18 @@ def main():
                             ("wrapped in a main", wrap(body)),
                             ("wrapped, bare expressions bound", wrap(bind_bare(body)))]
                 if carry:
-                    attempts += [("wrapped, with this page's earlier fences", wrap(body, carry)),
+                    # the carry must not redeclare what this fence declares --
+                    # a page that shows `struct Point` twice is not an error
+                    pre = drop_decls(carry, declared(body) | {"main"})
+                    attempts += [("wrapped, with this page's earlier fences", wrap(body, pre)),
                                  ("wrapped, earlier fences, bare expressions bound",
-                                  wrap(bind_bare(body), carry))]
+                                  wrap(bind_bare(body), pre)),
+                                 ("this page's earlier fences, as written", pre + "\n" + body)]
 
                 err = ""
+                if os.environ.get("DUMP") == "%s:%d" % (f, line):
+                    for how, src in attempts:
+                        print("----- attempt: %s\n%s" % (how, src), file=sys.stderr)
                 for how, src in attempts:
                     got, err = compiles(src, tmp, run=bool(want))
                     if got is None:
@@ -179,7 +225,9 @@ def main():
             # only a fence that COMPILED joins the carry-over: a broken one would
             # fail every later fence on this page and hide their real state.
             if ok_body is not None:
-                carry += ok_body + "\n"
+                # a page may show `struct Point` in several fences; keep the
+                # newest declaration of each name so the carry stays compilable
+                carry = drop_decls(carry, declared(ok_body)) + "\n" + ok_body + "\n"
 
     for x in fails:
         print("docs-fences: FAIL " + x, file=sys.stderr)
