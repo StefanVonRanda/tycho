@@ -1,11 +1,3 @@
-# A live heap local passed by value inside a call-argument aggregate: the
-# compiler must deep-copy it (the local is still live after the call), and the
-# copy is the by-value argument copy the Val-style diagnostic names. Locked as
-# a warning golden -- a VALID program whose stderr is asserted (tests/warn/).
-#
-# The message used to also suggest `y := s`. Measured on the emitted C 2026-08-10:
-# that spelling silences the warning and emits the SAME two tycho_str_copy calls,
-# while making this s's last use emits one. Only the remedy that works is offered.
 fn label(p: (string, string)) -> string:
     return p.0
 

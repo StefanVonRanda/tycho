@@ -1,15 +1,3 @@
-# Scalar broadcast returns a FRESH array. Tycho is value-semantics, so
-# `c := a * 2` must neither alias nor mutate `a`, and later writes to either side
-# must not be visible through the other.
-#
-# tests/array_arith_fresh.ty proves the same property for the
-# array-OP-array form. This file is its broadcast twin, because the two go
-# through different codegen shapes: the broadcast emitter declares one local at
-# the ARRAY type and one at the ELEMENT type, and takes the result's length and
-# capacity from whichever side is the array. A bug there (sharing the source
-# spine instead of allocating a new one, or sizing the result from the wrong
-# side) is exactly what this file catches, and it catches it from the OUTSIDE --
-# by observing values -- rather than by inspecting the emitted C.
 fn main():
     a := [1, 2, 3]
     c := a * 2

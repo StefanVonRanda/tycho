@@ -1,27 +1,3 @@
-# NESTED PATTERN fixture. Was the CANARY of the post-freeze fixture lane.
-#
-# HISTORY: written into tests/postfreeze/ on 2026-07-29, a directory for fixtures
-# using syntax the LIVE compiler accepts and the FROZEN `compiler/tychoc0.ty` does
-# not, which `compiler/fixpoint.sh` and `scripts/frontparity.sh` deliberately
-# never globbed. Both lanes were retired the same day, the directory was folded
-# back, and this file is now scored by `tests/run.sh`'s main golden loop against
-# tests/nested_pattern.out. Its canary duty is over; the nested pattern it
-# exercises is the reason to keep it.
-#
-# The pattern itself is a NESTED PATTERN (docs/spec/10-statements.md:47-55): an
-# `Ok`/`Err`/`Some` arm refining its single payload with one nested pattern.
-# docs/spec/appendix-e-conformance.md:150 records §14.3.1 as having no `tests/`
-# fixture for exactly this reason, and `scripts/frontparity.sh` records
-# `examples/corelib/result/main.ty` being held out of the parity lane over it.
-#
-# What the canary measured, kept because it is still true of the frozen artifact:
-# a tychoc0 built on 2026-07-29 (`./tychoc compiler/tychoc0.ty
-# -o /tmp/h0`) refuses this file with `parse: line 34: unexpected token` — line
-# 34 was then the `Err(TooBig(n))` arm, the nested pattern that also binds. (The
-# preceding `Err(NotFound)` alone does NOT redden tychoc0: its grammar reads it as a
-# payload BINDING named `NotFound`, which is precisely the "never silently read
-# as a binding" rule at docs/spec/10-statements.md:61-64. The payload-carrying
-# nested pattern is the one its grammar cannot spell, so this file carries it.)
 
 enum Why:
     NotFound

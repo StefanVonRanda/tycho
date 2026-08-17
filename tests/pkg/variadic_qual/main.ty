@@ -1,13 +1,3 @@
-# Regression: a variadic called through a PACKAGE QUALIFIER did not pack.
-#
-#   vp.sum(1, 2, 3)   -> error: 'vp__sum' takes 1 argument(s), got 3
-#
-# Cause: the packing block that folds trailing arguments into one array ran
-# under `if (!e->qual && !e->lhs)`, so a qualified call reached the arity check
-# unpacked and was measured against the one declared parameter. Found by a
-# dogfood audit (FRICTION #38): variadics were declared in three files, all
-# under tests/, so no consumer had ever called one across a package boundary.
-# The same-package calls below are the control -- they always worked.
 package main
 import "vp"
 

@@ -1,16 +1,3 @@
-# tycho-stat -- summary statistics over a list of integers.
-#
-# WHY THIS PROGRAM EXISTS. A dogfood audit (docs/internals/FRICTION.md).
-# Measured 2026-08-14 with `grep -F`: a variadic parameter (`...T`) was DECLARED
-# in exactly three files, all under `tests/`, and `zero$(` appeared in three
-# fixtures plus the frozen `compiler/tychoc0.ty`. Both were features whose only
-# caller was their own fixture. This program is the first consumer, and building
-# it broke three things at once -- FRICTION #38, #39 and #40.
-#
-#   tycho-stat --nums 3,1,4,1,5 [--label NAME]
-#   tycho-stat --file FILE          # one integer per line
-#
-# THE GATE IS `make stat-check` (tools/tycho-stat/run.sh).
 package main
 
 import "core:cli"
@@ -18,9 +5,6 @@ import "core:io"
 import "core:strings"
 import "num"
 
-# Parse one field, refusing anything that is not a whole number. `parse_int`
-# fails open on trailing garbage (FRICTION #34), so the digits are checked here
-# rather than trusted -- "3x" must not read as 3.
 fn field(tok_in: string) -> Result(int, string):
     tok := strings.trim(tok_in)
     if len(tok) == 0:
@@ -45,8 +29,6 @@ fn parse_all(fields: [string]) -> [int]:
 
 fn show(label: string, xs: [int]):
     println(label + ":")
-    # The spread form hands a whole array to a variadic. Through a package
-    # qualifier this did not pack at all until 2026-08-14 (FRICTION #38).
     println("  count = " + str(num.count(xs...)))
     println("  sum   = " + str(num.total(xs)))
     match num.min_of(xs...):
@@ -86,11 +68,5 @@ fn main():
 
     show(label, xs)
 
-    # The empty case is not a special path in this program -- it is the identity
-    # the features supply. `zero$(T)` seeds the fold, so a sum of nothing is 0
-    # without a branch; the explicit type argument is what lets an EMPTY generic
-    # variadic name its element type, which was an error until 2026-08-14
-    # (FRICTION #40), and writing it through a qualifier was a parse error
-    # (FRICTION #39).
     println("empty count = " + str(num.count$(int)()))
     println("empty sum   = " + str(num.total([]int)))

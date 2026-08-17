@@ -1,5 +1,3 @@
-# Example: core:math -- integer utility functions.
-# Run via examples/corelib/run.sh (which sets TYCHO_CORELIB).
 package main
 import "core:math"
 

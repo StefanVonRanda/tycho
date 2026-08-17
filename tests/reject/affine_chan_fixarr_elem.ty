@@ -1,4 +1,3 @@
-# Phase 20: ... nor a FIXED-array element. Same tychoc choke point (arrc_sized_b).
 fn f(v: [2]Channel(int)) -> int:
     return len(v)
 

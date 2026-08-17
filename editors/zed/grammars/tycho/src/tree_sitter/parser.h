@@ -31,7 +31,6 @@ typedef struct {
   bool inherited;
 } TSFieldMapEntry;
 
-// Used to index the field and supertype maps.
 typedef struct {
   uint16_t index;
   uint16_t length;

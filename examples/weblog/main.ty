@@ -1,27 +1,5 @@
 package main
 
-# weblog -- a Combined Log Format access-log analyzer, built entirely on corelib
-# to dogfood it end to end. Streams lines, parses each CLF record fail-closed,
-# aggregates into string-keyed maps (this is the compact-dict map layout under a
-# real workload), and reports status classes, top-K URLs / client IPs, and a
-# per-hour histogram.
-#
-#   tychoc examples/weblog/main.ty -o weblog && ./weblog access.log --top 5
-#
-# With no file argument it analyzes an embedded demo log, so the output is
-# deterministic and golden-locked (the test harness cannot pass argv).
-#
-# Dogfood findings (see README.md): (1) core:io HAD no streaming line reader --
-# read_lines() slurps the whole file; FIXED by adding open_lines/read_line +
-# fold_lines, and this program now streams (peak memory O(longest line));
-# (2) core:datetime could not parse the CLF timestamp ([10/Oct/2000:13:55:36
-# -0700]) -- only ISO -- so the hour bucket was a raw string slice; FIXED by
-# adding parse_clf/parse_clf_tz, and the bucket is now a validated, sortable
-# DateTime-derived "YYYY-MM-DD HH"; (3) core:regex has no capture groups, so
-# parsing is split_once-based, not pattern-based; (4) building this surfaced a
-# real tychoc0 bug -- a name bound by `a, b := tuple` was dropped from scope for
-# a later decl that read it -- since fixed in the lift/mono/gfix passes.
-# Compiles + runs identically on both compilers now.
 
 import "core:cli"
 import "core:io"
@@ -126,13 +104,8 @@ fn demo_lines() -> [string]:
     return lines
 
 fn main():
-    # cli.argv() is args() with argv[0] (the program path) dropped, which is what
-    # cli.parse wants. This was the four-line copy loop above -- the friction plan.
     c := cli.parse(cli.argv())
     files := cli.positionals(c)
-    # parse_int_checked, not parse_int: the short name stops at the first
-    # non-digit, so `--top=9x` meant 9 and `--top=abc` meant 0. The `< 1` guard
-    # below caught the 0 but not the 9 (FRICTION #34).
     topk := 5
     match strings.parse_int_checked(cli.get(c, "top", "5")):
         Ok(v): topk = v

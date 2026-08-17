@@ -1,11 +1,3 @@
-# tycho-diff -- a unified diff between two text files.
-#
-#   tycho-diff OLD NEW [--context=N]
-#
-# Exit status follows diff(1): 0 when the files match, 1 when they differ, 2 on
-# an error. `main` cannot RETURN a status (it is void or Result(void, string)),
-# so the status is set with the `exit` builtin, which is what every other CLI in
-# tools/ does. See FRICTION-OUTSIDE.md item 4.
 package main
 
 import "core:io"

@@ -1,6 +1,3 @@
-# `or_return` on an Option: `v := opt_expr or_return` unwraps Some(v), else
-# short-circuits the enclosing Option-returning function with None. (Mirrors
-# or_return on Result.) Self-hosting (tychoc0 supports it).
 fn first_even(xs: [int]) -> Option(int):
     i := 0
     for i < len(xs):

@@ -1,12 +1,6 @@
 package main
 import "core:raster"
 
-# A small deterministic ray tracer -- diffuse + specular + one reflection bounce,
-# rendered to a QOI image. Chosen to stress a corner the benchmarks/tests don't:
-# FLOAT-heavy struct value semantics. Every Vec3 op returns a fresh struct BY
-# VALUE, copied through deep call chains and recursion (reflect), so the arena +
-# value-semantic model carries the whole render. Deterministic -> tychoc and
-# tychoc0 must emit a byte-identical QOI (a real-program float differential).
 
 struct Vec3:
     x: float

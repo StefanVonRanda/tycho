@@ -1,14 +1,3 @@
-# The three-clause loops that must NOT get bounds-check elision, and still
-# compute the right answer through the checked accessor.
-#
-# Companion to tests/bounds_elision.ty, which locks the shape that DOES elide.
-# This one locks the boundary: for3_elidable_arr (src/tychoc.c:8771-8825) has to
-# fail closed on every spelling below, because eliding any of them would emit a
-# raw `.data[i]` for an index it has not proved in range. The golden only proves
-# the answers are right (they are right either way); the emitted C is the real
-# subject and phase 27's evidence in plan.md records `--emit-c` counts for each
-# of these six loops. tests/abort/for3_le_bound.ty makes the `<=` case fail at
-# RUNTIME rather than only in the emitted text.
 fn take(xs: [int]) -> int:
     return len(xs)
 

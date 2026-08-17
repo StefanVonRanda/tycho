@@ -1,7 +1,3 @@
-# F5: str() / println of aggregates. Every aggregate kind renders recursively
-# to a Tycho string. Format: Point(1, 2) / [1, 2, 3] / [a: 1] / Some(3) / Ok(4).
-# Nested strings print raw (str(s) is identity). Verified byte-identical across
-# both compilers.
 
 struct Point:
     x: int

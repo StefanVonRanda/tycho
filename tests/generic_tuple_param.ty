@@ -1,24 +1,3 @@
-# A TUPLE composes with generics, the sibling lock to generic_tuple.ty's
-# "a whole tuple bound to $T" (which already worked, through match_type's
-# `pat == concrete` tail).
-#
-# Five type walkers descend into arrays, Option, Result, maps, channels and fn
-# types; none of them had an IS_TUP arm, so a tuple that MENTIONS `$T` fell
-# through every one:
-#   - match_type   -> "argument 1 of 'second' is (int, int), which does not fit
-#                      the parameter pattern" (FRICTION #18)
-#   - subst_type   -> a `-> (int, T)` return came back unsubstituted, so the
-#                      caller got "str(x) can't stringify a $T"
-#   - has_typaram  -> a template-only `(int, $T)` was not transient
-#   - type_mangle_ident / type_mentions_tp -> `gid__t16384` (an intern id, which
-#                      moves with unrelated edits) and a redundant name suffix
-# The whole-tuple case never hit any of this: `(int,int)` matched itself by
-# identity and needed no descent.
-#
-# What each case pins beyond "it compiles": every generic here is instantiated
-# at BOTH a scalar and a STRING element, so the element type is monomorphized
-# per instance rather than erased, and the string runs prove the tuple's heap
-# member survives the callee's frame -- a shallow copy would alias freed bytes.
 
 struct Holder($T):
     p: (int, T)

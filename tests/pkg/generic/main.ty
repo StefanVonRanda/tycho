@@ -1,10 +1,6 @@
 package main
 import "lib"
 
-# Regression: package-qualified calls to GENERIC functions (lib.id etc.).
-# Concrete qualified calls always worked; the generic ones did not until the
-# qualified-resolution path was taught to consult the generics registry, and
-# tychoc0's type mangler was taught to leave `$T` parameters alone.
 fn main():
     println(str(lib.plain(5)))            # 6  -- concrete control
     println(str(lib.id(7)))               # 7  -- int instance

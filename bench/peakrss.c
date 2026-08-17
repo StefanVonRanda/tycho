@@ -1,13 +1,3 @@
-/* Run a command, report its peak resident set size and wall-clock time.
- *
- *   peakrss <program> [args...]
- *
- * Prints "<rss> <ms>" to STDERR (so the child's own stdout passes through
- * untouched) and exits with the child's exit status. `rss` is ru_maxrss,
- * which is KILOBYTES on Linux and BYTES on macOS/BSD — bench/run.sh normalizes
- * by `uname`. This is what lets `make bench` assert the thesis's memory claims:
- * the in-place optimizations keep peak RSS flat (MBs) where the naive
- * copy-each-step baseline is quadratic (hundreds of MB to GBs). */
 #include <stdio.h>
 #include <time.h>
 #include <sys/resource.h>

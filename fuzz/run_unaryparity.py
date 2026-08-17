@@ -1,35 +1,3 @@
-#!/usr/bin/env python3
-# Unary-operator typing: `-x`, `~x`, `not x` must type-check (accept) or be
-# rejected exactly as the `expect` oracle says, for x drawn from every
-# scalar/composite/newtype operand. tychoc's unary rules are STRICTER than the
-# binary-arithmetic rules:
-#   -x   : base must be int/float        (numeric newtype ok: -Meters is a Meters)
-#   ~x   : type must be EXACTLY int      (so ~Slot, a newtype-int, is rejected)
-#   not x: type must be bool
-#
-# A case is (op, operand): a program `c := OP x` over a fixed prelude of typed
-# decls. `expect` (those rules, encoded below) is the oracle. An accepted program
-# must also emit C that compiles.
-#
-# HISTORY -- THE PARITY ASSERTION WAS RETIRED 2026-07-29. Until then this lane was
-# also a DIFFERENTIAL against the frozen self-hosted tychoc0, and that side was
-# the sharper one: tychoc0 DESUGARS `-x`->(0-x) and `~x`->((0-x)-1) at parse, so
-# unary fell under its permissive arithmetic rules (char +/- int, int-literal ->
-# float) and over-accepted `~float`, `~char`, `-char`. Comparing two
-# implementations that reach the answer by different routes is what made those
-# fail-opens visible.
-#
-# WHY IT WENT: compiler/tychoc0.ty is FROZEN, and the breaking loop-syntax change
-# of 2026-07-29 (three-clause `for` and bare `for:` replace `for i in range(...)`,
-# `range` deleted) means it can no longer parse the corpus, so no lane builds it.
-# See compiler/fixpoint.sh's header, ROADMAP.md and docs/architecture.md.
-#
-# WHAT IS LOST: the second route to the answer. The `expect` oracle is written
-# down in this file and still gates tychoc, so a regression AWAY from the stated
-# rules still reddens; what no longer reddens is a wrong rule that the oracle and
-# the compiler agree on.
-#
-# Usage: run_unaryparity.py        (no seeds -- the matrix is fixed)
 import os, subprocess, sys, tempfile, shutil
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -83,9 +51,6 @@ def expect(op, operand):
     return "accept" if operand[1] == "bool" else "reject"          # not
 
 def skip_case(op, operand):
-    # No skips: tychoc0 now tracks newtype identity, so `~<newtype-over-int>` is
-    # rejected (a newtype is not EXACTLY int) exactly as tychoc rejects it. (Was an
-    # unavoidable erasure divergence, now closed.)
     return False
 
 def program(op, var):

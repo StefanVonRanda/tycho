@@ -1,29 +1,3 @@
-# tycho-snap -- snapshot a directory tree into a zip, driven by a TOML manifest.
-#
-# WHY THIS PROGRAM EXISTS. It is a dogfood audit (docs/internals/FRICTION.md,
-# "What the audit says about the method"): four corelib packages had ZERO
-# consumers outside corelib/ before it -- core:toml, core:zip, core:log and
-# core:intern -- and a package nobody calls is a package whose ergonomics nobody
-# has tested. Everything it does is real work: read a manifest, walk a tree,
-# archive it, and PROVE the archive by reading it back and comparing CRCs
-# against the bytes that went in.
-#
-#   tycho-snap --manifest snap.toml [--out x.zip] [--quiet]
-#
-# THE GATE IS `make snap-check` (tools/tycho-snap/run.sh). It reads the archive
-# with python3's `zipfile` -- an implementation this repo did not write -- because
-# every number printed below is our own CRC over our own bytes and proves nothing
-# about interoperability. It also pins the entry set AND its sorted order against
-# literals, which is what catches a walk that stopped sorting; the two-run
-# byte-identity check cannot, since a broken build agrees with itself.
-#
-# The manifest:
-#
-#   [snapshot]
-#   name = "demo"
-#   root = "some/dir"
-#   ext  = [".ty", ".md"]     # empty = every file
-#   skip = ["build"]          # directory basenames never descended into
 package main
 
 import "core:cli"
@@ -127,10 +101,6 @@ fn ext_of(name: string) -> string:
     return "(none)"
 
 fn main():
-    # The schema names carry NO leading dashes, and neither does `get`'s key --
-    # the parser strips "--" before matching. Writing them dashed parses, runs,
-    # and silently uses every default: measured, the tokens land in `unknown()`
-    # and nothing makes you read it. So this program reads it, below.
     c := cli.parse_spec(cli.argv(), ["manifest", "out"], ["quiet"])
     mf := cli.get(c, "manifest", "snap.toml")
     outp := cli.get(c, "out", "")
@@ -177,10 +147,6 @@ fn main():
                 continue
         push(entries, zip.Entry(f, body))
         e := ext_of(f)
-        # "is this key NEW?" is a count that GREW, not a handle that equals
-        # count-1: the latter is also true every time the most recently minted
-        # key is seen again, which double-counted the last extension until the
-        # lane's [2] leg caught it (tools/tycho-snap/run.sh).
         n0 := intern.count(ei)
         intern.intern(&ei, e, 1)      # a bare call drops the value; `_` is not a discard here
         if intern.count(ei) > n0:

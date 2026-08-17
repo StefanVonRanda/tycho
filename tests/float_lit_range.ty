@@ -1,36 +1,3 @@
-# The positive side of the float-literal range check: everything NEXT to `1e400`
-# that must keep working exactly as it did.
-#
-# tests/diag/float_lit_overflow.ty locks the message for the literal that is now
-# refused. This file exists so that "refused" cannot quietly widen. Each block
-# below was a separate question the fix had to answer, and each is asserted here
-# rather than assumed:
-#
-#   UNDERFLOW IS NOT AN ERROR. 1e-400 is below the smallest binary64 denormal, so
-#   its correctly-rounded value IS 0.0 -- ordinary IEEE-754 gradual underflow,
-#   still a finite float. It compiled before the fix and must still. This is the
-#   case errno cannot separate from overflow (strtod sets ERANGE for both), which
-#   is why the compiler tests the VALUE against DBL_MAX instead.
-#
-#   THE BOUNDARY IS INCLUSIVE. DBL_MAX itself is representable and stays legal; a
-#   check written `>=` would have rejected it.
-#
-#   A FINITE LITERAL WITH NO EXACT BINARY64 FORM IS UNTOUCHED. 0.1 rounds, as it
-#   always has, and the 17-digit round trip through the emitted C still lands on
-#   the same double.
-#
-#   INFINITY IS STILL A REACHABLE VALUE. docs/spec/03-types.md 5.2.2 makes it one:
-#   `/` does not trap, 1.0/0.0 is +inf and 0.0/0.0 is NaN. The diagnostic rejects
-#   a SPELLING, never the value -- and this block is what says so in a runnable
-#   form. Float division is not const-folded, so these stay runtime operations and
-#   no infinity reaches codegen as a literal.
-#
-# WHY NOTHING HERE PRINTS AN inf OR A NaN. docs/spec/appendix-f-impl-defined.md
-# records that the TEXT str() produces for those (`inf`, `nan`, `-nan`) comes from
-# the C library and is implementation-defined. Baking it into a golden would make
-# this fixture a portability trap rather than a range test, so every non-finite is
-# checked structurally -- by comparison and by NaN's unorderedness -- and only
-# words are printed.
 
 fn main():
     # underflow: a legal denormal-or-zero, not an error

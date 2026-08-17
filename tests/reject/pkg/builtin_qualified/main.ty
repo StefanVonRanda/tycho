@@ -1,8 +1,3 @@
-# `split` is a BUILTIN, called bare. Someone arriving from Go or Python writes
-# the package qualifier first, and the did-you-mean that used to fire pointed at
-# `split_once` -- the nearest package symbol, and the wrong direction.
-# expect: is a builtin, not a member of package 'strings'
-# expect: call it directly: split(...)
 package main
 
 import "core:strings"

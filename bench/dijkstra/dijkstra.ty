@@ -1,10 +1,3 @@
-# Dijkstra head-to-head: build a sparse random graph as an adjacency LIST OF INDICES
-# (the flat-pool idiom from docs/internals/value-semantics-limits.md), run Dijkstra from
-# node 0 with a hand-built binary min-heap, and fold the reachable distances into a
-# checksum. The graph is the memory under test: tycho's value-semantic `[[Edge]]` vs
-# C's `Edge**` vs Go's `[][]Edge`. A graph by INDICES is value-shaped (no shared
-# pointers), so this is where value semantics should be competitive -- the opposite of
-# the pointer-linked trie. Edges come from a shared LCG so all ports build one graph.
 package main
 
 struct Edge:

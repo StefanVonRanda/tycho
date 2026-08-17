@@ -1,22 +1,3 @@
-# NUMERIC-BOUNDARY fixture 1/5: arithmetic at 2^31, 2^32, 2^63-1 and -2^63.
-#
-# Why this exists: the int64 migration found a live LP64 miscompile
-# (`100000 * 100000` truncating to 1410065408) in a tree with 408 fixtures, a
-# differential fuzzer and byte-identical self-hosting. It survived because no
-# fixture multiplied two literals past 2^31. The suite tested BEHAVIOUR well and
-# BOUNDARIES not at all. This file tests the boundaries.
-#
-# Every expectation below is spec-REQUIRED, not merely observed:
-#   docs/spec/03-types.md 5.2.1 -- `int` is 64-bit two's-complement, values
-#     -2^63 .. 2^63-1; overflow WRAPS and is "fully defined and never traps";
-#     `(-2^63) % -1` is 0.  (`(-2^63) / -1` ABORTS, so it is deliberately NOT
-#     exercised here -- that would be a non-zero-exit test, not a golden test.)
-#   docs/spec/09-expressions.md 54-62 -- `>>` on `int` is arithmetic.
-# Nothing unspecified is encoded.
-#
-# All operands are RUNTIME values (read out of an array the compiler cannot
-# see through), so these are genuine runtime ops, not constant folds. The
-# constant-fold side of the same boundaries is tests/boundary_fold.ty.
 
 fn main():
     # A runtime source of boundary constants. Taking them out of an array

@@ -1,14 +1,3 @@
-# trie head-to-head, the flat-pool + integer-index idiom: the SAME 150k-word
-# trie as trie.ty (identical LCG, identical checksum), but children are stored
-# as INTEGER INDICES into one flat `[Trie]` pool instead of whole `Trie`
-# values inline in each node's child map. `kids: [int: int]` maps a child char
-# to its node index, so the per-child value slot is an 8-byte int -- C's
-# pointer size -- instead of a 72-byte struct. This is the idiom
-# docs/internals/value-semantics-limits.md names for pointer-shaped data and
-# dijkstra measures at ~1.3x C. The one manual step is `reserve(pool, N)`: a
-# dynamic [Trie] grown by push would otherwise retain every doubling buffer in
-# the arena (measured 60 MiB -- worse than the idiomatic form); reserving the
-# spine once makes it a single allocation.
 package main
 
 struct Trie:

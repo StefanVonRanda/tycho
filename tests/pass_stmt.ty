@@ -1,14 +1,3 @@
-# `pass` — the no-op statement, for a block that must exist but has nothing to do.
-#
-# It is CONTEXTUAL, not a reserved word: significant only when it is the whole
-# statement. `pass` was already a variable name in two files in this tree
-# (corelib/test/testing and tools/prunner, both counting passes), so reserving it
-# would have broken the parallel test runner that scores `make test-fast`. The
-# `pass := 0` counter below is the regression guard for that.
-#
-# Before this the workaround was to bind something nobody reads -- `ok := sz`,
-# `_ := 0` -- because a declaration is a legal statement where a bare expression
-# is not (docs/internals/FRICTION.md, "smaller than they looked once written down").
 
 fn classify(n: int) -> string:
     match n:

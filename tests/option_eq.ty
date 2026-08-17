@@ -1,9 +1,3 @@
-# Structural ==/!= on Option and Result -- deep value equality, the same
-# machinery as struct/enum equality (it recurses through the payload). tychoc
-# previously rejected Option/Result `==` ("match on them instead") while the
-# self-hosted tychoc0 already accepted it; A3 closes that parity gap by enabling
-# the already-present structural-eq codegen in tychoc. (or_return-on-Option, the
-# other half of A3, was already shipped -- see tests/or_return_option.ty.)
 
 struct P:
     x: int

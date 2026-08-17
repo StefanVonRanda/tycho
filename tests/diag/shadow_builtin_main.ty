@@ -1,11 +1,3 @@
-# `die` declared in `package main`. Both the warning and the error are pinned,
-# because it is the PAIR that was wrong: the warning used to offer "call it
-# qualified as `pkg.die(...)`" and the very next line makes the declaration a
-# hard error, so that remedy cannot be taken. There is no package prefix in main
-# -- pkg_mangle is the identity there -- so the name is simply taken. The same
-# declaration in a LIBRARY package is accepted and the qualified call really
-# works, which is why the other wording is still right there
-# (tests/warn/shadow_builtin.ty). Found writing tools/tycho-diff.
 fn die(m: string) -> int:
     return 1
 

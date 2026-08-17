@@ -2,77 +2,6 @@ package cell
 
 import "core:strings"
 
-# Float text for tycho-sheet. THIS FILE EXISTS BECAUSE `str(float)` WAS LOSSY.
-#
-# STATUS, 2026-08-12: THE BUILTIN IS FIXED. This file's measurements were the
-# report that fixed it -- `runtime/tycho_rt.c@tycho_float_to_str` now escalates
-# through %.15g/%.16g/%.17g and returns the first that strtod reads back
-# unchanged, which is the same algorithm render() implements below (FRICTION #22
-# in docs/internals/FRICTION.md). So `str` round-trips now, and everything from
-# here to the end of this block is HISTORY, not current behaviour.
-#
-# WHY THIS FILE STAYS ANYWAY. render() answers a question `str` still does not:
-# it returns a SHEET CELL, so it caps width, refuses to widen a column for
-# digits a user did not ask for, and has a defined answer for the values a cell
-# cannot show. Deleting it would trade a cell renderer for a debug renderer.
-#
-# WHAT WAS WRONG. `str(v)` was `snprintf("%.15g")`. Fifteen significant
-# digits is DBL_DIG: it guarantees text -> double -> text survives, which is the
-# OTHER direction. A binary64 needs SEVENTEEN significant digits for
-# double -> text -> double to return the same double. Measured on this box:
-#
-#   str(0.1 + 0.2)    == "0.3"                    parse("0.3") != 0.1 + 0.2
-#   str(1.0 / 3.0)    == "0.333333333333333"      parsing that back moves the value
-#   str(9007199254740992.0) == "9.00719925474099e+15"   loses the integer outright
-#   str(1.797...e308) == "1.79769313486232e+308" which is ABOVE DBL_MAX, so
-#                        strings.parse_float refuses it as Overflow
-#
-# The last is the sharp edge: `str` emits text this program's own parser cannot
-# read back at all. A sheet that saved and reloaded through `str` would drift on
-# the first reload and hard-fail at the top of the range.
-#
-# WHAT render() DOES INSTEAD: the shortest decimal that parses back to bit-equal
-# input, and among those of that length, the one NEAREST the value. Every
-# candidate is CHECKED with strings.parse_float (strtod, correctly rounded)
-# before it is returned, so a wrong digit costs a retry, never a wrong number.
-#
-# SHORTEST ALONE IS NOT ENOUGH, and this file shipped believing it was: several
-# 17-digit decimals read back as 0.1+0.2, and returning the first that did gave
-# 0.30000000000000006 for a value that is 0.30000000000000004440. Round-tripping
-# is a property of the interval; nearest is a property of the value, and only
-# the second one makes str(parse(s)) == s across implementations. The digits now
-# come from _ref, which keeps the scaling's own rounding instead of discarding
-# it. Measured against CPython repr over the 98409-value corpus below: before,
-# 20513 values rendered non-nearest digits and 6767 rendered MORE digits than
-# needed; after, 0 and 0, with 90 exact ties where render rounds half-up and
-# CPython half-even -- both answers equally near, which is what a tie means.
-#
-# MEASURED over 98418 values (every i/j for i,j in 1..120, 40000 pseudo-random
-# mantissas swept across 10^-30..10^30 with both signs, and 4000 pushed out to
-# 10^+-300): 98417 round-trip, one does not. The three stages of getting there
-# are recorded at _big and _scale, because each was a real defect with a count.
-#
-# THE ONE THAT COULD NOT, AND NOW DOES: 5e-324. strings.parse_float used to
-# REJECT EVERY SUBNORMAL -- it accepted 2.2250738585072014e-308 (DBL_MIN, the
-# smallest normal) and refused everything below it as Underflow, because the
-# shim reported strtod's ERANGE and corelib turned that into an Err rather than
-# a value. So no decimal string whatsoever round-tripped a subnormal, and
-# render() returned "#NUM!" for those -- the honest answer, since the text did
-# not exist. That was a corelib limit, not a bug in this file, and it was fixed
-# on 2026-08-12 (FRICTION #23): ERANGE with a NONZERO result is now a value, and
-# only a total underflow to 0 is still refused. The corpus above is 98411 of
-# 98411 with the subnormal included.
-#
-# render() STILL RETURNS "#NUM!" when nothing round-trips, and that arm stays
-# even though no input reaches it now. It is the fail-closed answer to "these
-# digits do not name this value"; printing a near-miss instead is the exact
-# failure this file exists to prevent. run.sh declares it unreachable and
-# reddens if anything lands on it again.
-#
-# NO LOCALE RISK. Nothing here routes a value through str(float) or c_dtoa, and
-# the only decimal point is the "." literal in _format. That is deliberate:
-# `make locale-check` exists because those two sites pick up the ambient decimal
-# separator, and this renderer touches neither.
 
 fn is_nan(v: float) -> bool:
     return v != v
@@ -100,12 +29,6 @@ fn _pow10(k: int) -> float:
           1e12, 1e13, 1e14, 1e15, 1e16, 1e17, 1e18, 1e19, 1e20, 1e21, 1e22]
     return t[k]
 
-# Multiply by 10^k in as few roundings as possible: one, for any |k| <= 22,
-# which covers every value a sheet holds in practice. Each rounding is about
-# half an ULP, and at 10^17 an ULP is ~64 units in the last digit -- so the
-# earlier chunked-by-1e8 version spent five roundings and put the answer up to
-# a few hundred units out, past the correction window. Measured: 5652 of 98418
-# failed with chunked scaling, 0 with this.
 fn _scale(m: float, k: int) -> float:
     x := m
     kk := k
@@ -119,16 +42,6 @@ fn _scale(m: float, k: int) -> float:
         return x * _pow10(kk)
     return x / _pow10(-kk)
 
-# |v| as an 18-digit integer and an exponent, with v ~= big * 10^(e - 17).
-#
-# THE DIGITS COME OUT OF AN INTEGER, NOT OUT OF THE FLOAT. The obvious loop --
-# take the leading digit, subtract it, multiply by ten -- multiplies its own
-# rounding error by ten at every step, so a double's ~15.95 decimal digits are
-# exhausted around digit 16 and the 17th is noise. Measured before this was
-# fixed: 18931 of 98418 values failed to round-trip, every one of them a value
-# needing 16 or 17 digits. Scaling ONCE into [10^17, 10^18) and reading the
-# digits with integer division leaves one rounding total, which render() then
-# corrects by search.
 fn _big(v: float) -> (int, int):
     m := v
     e := 0
@@ -364,14 +277,6 @@ fn render(v: float) -> string:
             q /= 10
             sc *= 10
             ee += 1
-        # SHORTEST, THEN NEAREST. q is v correctly rounded to p digits, so it is
-        # the nearest p-digit decimal there is; if it reads back, it is the
-        # answer. If it does not, it fell outside v's rounding interval, and the
-        # only other p-digit decimal that can still be inside is its neighbour on
-        # v's own side -- which is also the next nearest. So the first of the two
-        # that reads back is the nearest one that does. Accepting q alone is what
-        # returned 0.30000000000000006 for 0.1+0.2: it round-trips, and it is not
-        # the nearest.
         step := 1
         if to_float(n - q * sc) + frac < 0.0:
             step = -1
@@ -381,17 +286,6 @@ fn render(v: float) -> string:
                 cand := _format(neg, _int_digits(c, p), p, ee)
                 if _same(cand, v):
                     return cand
-    # Shortest-first missed. It works off `big`, whose low end one _scale
-    # rounding can move -- a path _ref's digits no longer take, kept fail-closed.
-    # A |k| over 22 needs more than one multiplication and the drift can reach
-    # a few thousand units, which is too far to scan blindly.
-    #
-    # So MEASURE it instead of guessing: render the 17-digit candidate, parse it
-    # back, and the difference from v -- divided by the value of the last digit
-    # -- is exactly how many units to move. Two or three jumps converge, and the
-    # small scan around each one absorbs the rounding in that division. Only 16
-    # and 17 digits are retried: a shorter answer cannot depend on digits this
-    # far down, so the loop above would already have found it.
     b17 := big / 10
     if big % 10 >= 5:
         b17 += 1

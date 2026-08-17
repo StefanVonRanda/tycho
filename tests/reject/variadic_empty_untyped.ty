@@ -1,9 +1,3 @@
-# An empty call to a GENERIC variadic has nothing to infer the element type from.
-# `f$(T)()` is the cure and compiles (tests/pkg/variadic_qual/); this is the case
-# where the caller named nothing, and the diagnostic must say so AND point at the
-# spelling that works.
-# expect: cannot infer the element type of an empty variadic call
-# expect: name the type
 
 fn count(xs: ...$T) -> int:
     return len(xs)

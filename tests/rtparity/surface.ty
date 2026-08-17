@@ -1,21 +1,3 @@
-# Runtime-surface probe for the `rtparity` lane (tests/rtparity/run.py).
-#
-# NOT a behaviour test — it is never run, only transpiled. Its whole job is to
-# make tychoc emit as much of its runtime as it possibly can, so the lane checks
-# a wide surface instead of the sliver a hello-world reaches.
-#
-# Why a probe is needed at all: tychoc embeds runtime/tycho_rt.c verbatim in
-# every output (Makefile:23-26), but the per-type helpers and the inline traps
-# (`range step is zero`, bounds checks, bounded-push, non-exhaustive match) are
-# emitted ON DEMAND. A feature that no fixture instantiates is invisible to the
-# lane, so every construct below is here to pull one more emitted region into
-# the check. Adding a construct here can only widen the gate — and a trap it
-# newly pulls in must be written into run.py's oracle, which fails on an
-# unrecorded one.
-#
-# Until 2026-07-29 this file also had to compile under the frozen subset
-# compiler compiler/tychoc0.ty, which the lane fed the same probe. No lane
-# builds tychoc0 now, so that constraint is gone; the probe is tychoc-only.
 
 struct Point:
     x: int

@@ -1,18 +1,5 @@
 package cell
 
-# Evaluating one parsed formula against the cells it reads.
-#
-# EVERY FAILURE IN HERE IS A VALUE. The parser already rejected anything that is
-# not a formula, so what is left -- dividing by zero, summing a column with a
-# #REF! in it, calling a function that does not exist -- produces Bad(CellErr)
-# and keeps going. That is what lets an error travel downstream instead of
-# stopping the recalculation (value.ty says why at length).
-#
-# THE ENVIRONMENT IS PASSED `inout` AND NEVER MUTATED. Tycho is value semantics,
-# so a by-value map would be deep-copied on entry to every call -- O(cells) per
-# formula, O(cells^2) for a sheet, which is exactly the cost that makes a 10k
-# chain unusable. `inout` is the established spelling for a reader that must not
-# copy; tools/tycho-ed/main.ty@dump takes its buffer the same way.
 
 struct Env:
     vals: [int: Value]

@@ -1,10 +1,3 @@
-# A place is ROOTED at a variable (spec 13.1 / docs/spec/09-expressions.md:87-95);
-# a CALL is never a place receiver. Here the assignment target is rooted at a
-# method call -- `b.get()` -- with a trailing field+index step, so it is not a
-# legal place. tychoc rejects with "can only index-assign an array or map variable
-# or field"; tychoc0 must reject too (it used to fail-open on this method-call
-# spelling and emit invalid C that only `cc` then caught -- Phase 13). `get` is an
-# ordinary method (NOT a user `subscript`), so the call cannot project to a place.
 struct Inner:
     v: [int]
 

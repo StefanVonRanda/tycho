@@ -1,20 +1,3 @@
-# `Result(void, E)` — a fallible operation with nothing to hand back.
-#
-# `void` is spellable in exactly one position, Result's ok payload, and it is a
-# type with NO VALUES: it is constructed by a zero-argument `Ok()` and matched by
-# a bare `Ok:` arm, the same shape a fieldless enum variant already had. There is
-# no `void` expression, so `Ok(void)` is not a spelling and nothing can bind one.
-#
-# Before this, the workaround was a one-field `Unit` struct threaded through
-# every caller. Two things had to change to retire it: `void` entered the type
-# grammar (permission is one level deep, so `Result(Option(void), E)` still
-# dies), and the bind-vector sentinel moved off T_VOID to T_UNBOUND, or binding a
-# generic parameter to void would have read as "not yet bound".
-#
-# The `or_return` STATEMENT form is part of the feature, not a bonus: with no
-# value to bind there is no `x := f() or_return` to write, so a bare
-# `f() or_return` is accepted exactly when the ok payload is void
-# (tests/reject/orreturn_stmt_value.ty holds the other side of that line).
 
 enum Fault:
     Io

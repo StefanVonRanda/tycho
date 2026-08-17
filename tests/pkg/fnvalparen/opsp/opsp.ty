@@ -12,8 +12,6 @@ fn brack(s: string) -> string:
 fn shout(s: string):
     println(s + "!")
 
-# generic: has NO single function value -- taking `opsx.pick` as one is refused
-# (tests/reject/pkg/fnval_pkg_generic). Called normally here, it instantiates.
 fn pick(a: $T, b: $T) -> $T where comparable(T):
     if a < b:
         return a

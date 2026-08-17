@@ -1,28 +1,3 @@
-# tycho-sat -- a DPLL/CDCL SAT solver in Tycho.
-#
-#     ./tychoc tools/tycho-sat/main.ty -o build/tycho-sat
-#     ./build/tycho-sat solve instance.cnf
-#     ./build/tycho-sat --php 5
-#     ./build/tycho-sat solve instance.cnf --no-learn
-#
-# WHAT IT IS FOR. The plan's program (docs/internals/plan-tycho-kvsrv-
-# DONE.md's successor): the language stress is ALGORITHMIC DEPTH. The
-# machinery a modern solver needs -- watched-literal unit propagation,
-# VSIDS decisions with an activity heap, first-UIP conflict analysis and
-# clause learning, restarts -- is intricate stateful code (per-literal
-# watch lists, an implication-graph walk, a mutable clause database), and
-# the value-semantics model has not been asked to carry any of it before.
-#
-# The differential is a corpus, hermetic: the pigeonhole instances PHP(n)
-# are self-generated and unsatisfiability is a published theorem; the SAT
-# side is planted random instances whose models the runner verifies with an
-# independent checker. Determinism is by construction (no randomness; a
-# fixed geometric restart schedule), so two runs are byte-identical.
-#
-# Scope, honestly stated: no clause deletion and no phase saving (the
-# classic next refinements); a fixed polarity (true) with a flipping phase
-# in --no-learn (chronological DPLL) mode. The search is iterative -- CDCL
-# does not recurse -- so the recursion guard stays idle.
 package main
 
 import "core:cli"

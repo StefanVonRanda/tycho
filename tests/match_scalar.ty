@@ -1,6 +1,3 @@
-# Scalar `match` on an int subject: a literal, a set, an inclusive range, a
-# negative literal, and a constant-name range -- the tycho-vm dispatch shapes
-# (design: docs/internals/design-scalar-match.md D5/D6).
 
 const OP_ADD = 4
 const OP_GE = 10

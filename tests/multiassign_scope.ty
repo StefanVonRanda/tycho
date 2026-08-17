@@ -1,5 +1,3 @@
-# Two multi-assigns sharing a first target in ONE block: the codegen temp
-# (_ma_<first> in tychoc0) must be scoped per statement, not redefined.
 fn two() -> (int, int):
     return 3, 4
 

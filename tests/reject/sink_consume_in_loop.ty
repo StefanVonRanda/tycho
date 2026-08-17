@@ -1,8 +1,3 @@
-# Cause 2 of the sink consume diagnostic: `w` is mentioned exactly once, so cause 1
-# does not apply -- the call sits in a loop, where the next iteration would consume
-# it again. A separate fixture from sink_consume_mentions.ty because the two used to
-# print the same sentence.
-# expect: inside a loop, where the next iteration would consume it again
 fn dbl(xs: sink [int]) -> int:
     xs[0] = xs[0] + 1
     return xs[0]

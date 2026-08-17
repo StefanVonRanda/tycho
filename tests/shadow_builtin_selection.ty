@@ -1,18 +1,3 @@
-# WHICH procedure a builtin's name actually selects -- run, not just compiled.
-# tests/warn/shadow_builtin.ty locks the WARNING, but that lane captures stderr
-# and never executes the program, so nothing in the tree checked which body ran.
-#
-# docs/spec/01-lexical.md is normative and, since 2026-08-12, matches what this
-# golden records: the BUILTIN is selected at every unqualified call, so the
-# same-named local is unreachable by that name (a package-QUALIFIED
-# `pkg.len(...)` is a different construct and does reach it -- `json.keys` is
-# the live case). So this golden pins the RULE. A change that makes the local
-# win here is a spec violation, not a fix.
-#
-# These are MAIN-PROGRAM declarations, which §3.7 says ought to be rejected
-# outright; `len` and `hash` are two of the 28 names that only warn today, so
-# the fixture rides §3.7's documented gap. If that gap is ever closed this file
-# stops compiling, and the selection it pins moves to a package fixture.
 
 fn len(s: string) -> int:
     return 7

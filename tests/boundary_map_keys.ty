@@ -1,22 +1,3 @@
-# NUMERIC-BOUNDARY fixture 5/5: map keys and hashing at boundary values.
-#
-# This is the Phase 6a / 6c bug class. The hash path carried int keys through
-# host-width words: 6a retyped the runtime's hash words and seeds, 6c found the
-# per-type hash EMITTERS were still narrowing. A hash that truncates its key to
-# 32 bits is not a crash and not a wrong hash -- it is a COLLISION between two
-# distinct keys that differ only above bit 31. The map still "works": it just
-# returns the wrong value. No fixture used a key above 2^32, so nothing collided
-# and nothing failed.
-#
-# The pairs below are chosen so that a 32-bit-truncating hash or comparison maps
-# them onto the SAME slot while the values are genuinely distinct:
-#   2^32 vs 0            -- differ only in bit 32
-#   2^32 + 7 vs 7        -- differ only in bit 32
-#   2^63-1 vs -1         -- all low 32 bits identical (0xFFFFFFFF)
-#   -2^63 vs 0           -- all low 32 bits identical (0x00000000)
-# If any of these aliased, the lookups below would return each other's values.
-#
-# Spec basis: docs/spec/03-types.md 5.2.1 (64-bit two's-complement int).
 
 fn main():
     imax := 9223372036854775807

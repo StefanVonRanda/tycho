@@ -1,16 +1,3 @@
-# tycho — the daily-driver CLI for .ty programs. A thin, dogfooded wrapper over
-# the compiler (tychoc) so the common loop isn't the manual emit-then-cc dance:
-#
-#   tycho run   <file.ty> [args...]   build + execute (args forwarded)
-#   tycho build <file.ty> [-o out]    build a binary (default name = file sans .ty)
-#   tycho check <file.ty>             front-end only: parse/type, no cc (fast)
-#   tycho watch <file.ty>             re-check whenever the file changes
-#   tycho fmt   <file.ty> [-w]        format to stdout, or safely in-place with -w
-#   tycho debug <file.ty> [args...]   compile with -g and debug under gdb
-#
-# Set TYCHOC/TYCHOFMT/TYCHODEBUG to pick the compiler/formatter/debugger. Shell-out, sleep and the
-# file operations come from tools/tycho_shim.c (libc calls the FFI can't name
-# directly); build this with:  tychoc tools/tycho.ty --shim tools/tycho_shim.c -o tycho
 
 extern fn tycho_run(cmd: string) -> int        # system(cmd); raw wait status, 0 == ok
 extern fn tycho_sleep_ms(ms: int) -> int       # usleep(ms*1000)
@@ -20,13 +7,6 @@ extern fn tycho_copy(src: string, dst: string) -> int      # byte copy (cmd.exe 
 extern fn tycho_rename(src: string, dst: string) -> int    # atomic replace (cmd.exe has no `mv`)
 extern fn tycho_files_equal(a: string, b: string) -> int   # 1 same / 0 differ / -1 unreadable (no `diff`)
 
-# tycho_run is system(), so on Windows every command goes to cmd.exe. Three of
-# this tool's assumptions are POSIX-only there, and all three fail SILENTLY:
-# "/dev/null" is an ordinary filename and not a sink, "/tmp/..." resolves to
-# C:\tmp which a fresh box does not have, and a linked program without a ".exe"
-# suffix is not something cmd will start. The shell commands the tool used to
-# spell (`rm -f`, `cp`, `mv`, `diff -q`) are gone too -- they moved into
-# tools/tycho_shim.c, which does the work natively on both platforms.
 fn null_dev() -> string:
     if tycho_is_windows() == 1:
         return "nul"

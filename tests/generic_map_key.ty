@@ -1,13 +1,3 @@
-# A generic may build a map keyed by its own type parameter, which is exactly
-# what `where hashable(K)` promises. Until 2026-08-13 the empty map literal
-# `[]$K: int` died "map keys must be string, int ..." inside the generic --
-# the parse-time key check ran map_of on an unsubstituted parameter, while the
-# DECLARED `[$K: $V]` type one screen up already routed a type parameter to
-# mapc_of (FRICTION.md #35). The constraint is still enforced, at instantiation:
-# tests/reject/generic_map_key_unhashable.ty is the float case.
-#
-# `[]$T` is the other half (#36): the empty ARRAY literal now takes the `$`
-# spelling a writer reaches for by analogy with `[]string`.
 struct P:
     x: int
     y: int

@@ -1,21 +1,3 @@
-# §6.2(7): an `Ok(...)`/`Err(...)` written directly as a TUPLE-LITERAL element.
-#
-# `Ok`/`Err` synthesize to a partial type that context has to ground, and until
-# `FRICTION.md:159` was fixed, `return (Err(Worse), "partial")` was refused with
-# "tuple element 1 needs a concrete value" -- E_TUPLE only ever synthesized. The
-# fix grounds the element from the declared return type.
-#
-# This fixture exists in tests/ because it finally CAN. Its only witness was
-# `corelib/test/result`, and Appendix E §E.2.1 recorded the reason as mechanical
-# rather than taste: `tests/*.ty` and `tests/pkg/*/main.ty` were fed to the frozen
-# `compiler/tychoc0.ty`, whose grammar has no such form, so a fixture here would
-# have reddened `compiler/fixpoint.sh` and `scripts/frontparity.sh` by
-# construction. `corelib/test/` is golden-validated by `corelib/run.sh` and
-# reached no frozen compiler, so that is where it had to live. Both lanes were
-# retired on 2026-07-29 and nothing builds `tychoc0` any more, so the clause gets
-# a fixture under the main golden loop -- native + ASan + byte-identical +
-# golden. `corelib/test/result` keeps its copy: it is the core:result lane and
-# exercises the combinators over it.
 
 enum Local:
     Nope

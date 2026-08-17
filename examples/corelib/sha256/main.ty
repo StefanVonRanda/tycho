@@ -1,5 +1,3 @@
-# Example: core:sha256 -- hash a string to a 64-char hex digest.
-# Run via examples/corelib/run.sh.
 package main
 import "core:sha256"
 

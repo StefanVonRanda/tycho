@@ -1,10 +1,3 @@
-# Identifier-namespacing regression. User names that collide with tychoc0's emitted
-# runtime helpers (sc/hs/amem/i2s/scopy/hbox) or C keywords (default/case/static/
-# union/register/goto/volatile) must self-host. The C compiler prefixes user
-# variables/params/functions (h_), struct fields (f_), and struct/enum type names
-# (S_/E_); tychoc0 now does too. tychoc0 and the C compiler must agree (make bootstrap
-# diffs them). NOTE: enum VARIANT names are left raw in BOTH compilers (the variant is
-# a union member), so the variant names here are deliberately non-keywords.
 struct register:                      # struct type named a C keyword (-> S_register)
     static: int                       # field named a C keyword (-> f_static)
     volatile: int                     # field named a C keyword (-> f_volatile)

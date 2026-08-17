@@ -1,12 +1,3 @@
-# Spec §13.4 single-evaluation, through a USER-DEFINED SUBSCRIPT.
-#
-# A compound assignment reads the place and then writes it, and a subscript call
-# is inlined to its yielded place -- so a side-effecting subscript ARGUMENT must
-# be evaluated exactly once, else the read and the store land on DIFFERENT slots.
-# Before the fix both compilers printed `c=2` and `n=100,101,300`: the argument
-# ran twice, the read took nodes[0] (100) and the store went to nodes[1] (101),
-# leaving nodes[0] untouched. `tests/compound_index_eval.ty` pins the same rule
-# for the builtin index place `a[f()] += e`.
 struct Node:
     weight: int
 

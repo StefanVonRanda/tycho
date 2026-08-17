@@ -1,7 +1,3 @@
-# String interpolation (f-strings). f"...{expr}..." desugars to ("..." + str(expr) +
-# "..."); {{ and }} are literal braces; plain "..." is unaffected (literal braces stay
-# literal). str() coerces the hole: identity on a string, i2s/f2s on int/float. tychoc
-# and tychoc0 must agree (make bootstrap diffs them).
 struct P:
     x: int
     y: int
@@ -27,7 +23,6 @@ fn main():
     g := f"built={n}"                                   # f-string into a variable
     println(g + "!")                                    # built=5!
 
-    # nested string literal inside a hole (the inner " no longer ends the f-string)
     println(f"wrapped={wrap("hi")}")                    # wrapped=[hi]
     println(f"sep={wrap(", ")}")                        # sep=[, ]
     println(f"both {wrap("a")} and {wrap("b")}")        # both [a] and [b]

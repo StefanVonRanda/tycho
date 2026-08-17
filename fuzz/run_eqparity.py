@@ -1,36 +1,3 @@
-#!/usr/bin/env python3
-# Equality-operand typing for COMPOSITE and NEWTYPE types: `L == R` / `L != R`
-# must type-check (accept) or be rejected exactly as the `expect` oracle says, for
-# L/R drawn from arrays, options, structs, tuples, maps, scalars, and newtypes.
-#
-# HISTORY -- THE PARITY ASSERTION WAS RETIRED 2026-07-29. Until then this lane was
-# also a DIFFERENTIAL: tychoc (the C reference compiler) and tychoc0 (self-hosted)
-# had to agree on every verdict. WHY IT WENT: compiler/tychoc0.ty is FROZEN, and
-# the breaking loop-syntax change of 2026-07-29 (three-clause `for` and bare
-# `for:` replace `for i in range(...)`, `range` deleted) means it can no longer
-# parse the corpus, so no lane builds it. See compiler/fixpoint.sh's header,
-# ROADMAP.md and docs/architecture.md.
-#
-# WHAT SURVIVES, AND WHAT DOES NOT: the `expect` oracle below is written down in
-# this file, so the lane still gates tychoc against a stated rule (accept iff the
-# two operands have the same nominal type) and still requires every accepted
-# program to emit compilable C. What is gone is the SECOND implementation --
-# tychoc0's independent opinion. The concrete defect class that found: tychoc0's
-# structural-equality codegen once checked only the LEFT operand's type, so
-# `[int] == 7` over-accepted there while tychoc rejected it. A fail-open of that
-# shape in tychoc itself is still caught (`expect` says reject), but a fail-open
-# both the oracle and the compiler share is not.
-#
-# Why it exists: run_typeparity.py is exhaustive over the SCALAR binary-op matrix,
-# and this lane is the `==`/`!=` analogue over composite/newtype operands rather
-# than scalars. Deterministic and exhaustive over the operand matrix -- no seeds.
-#
-# A case is (l, r, op): a program `c := <l.var> op <r.var>` over a fixed prelude
-# of typed declarations. `expect` -- accept iff the two operands have the same
-# nominal type -- is the oracle. An accepted program must also emit C that
-# compiles.
-#
-# Usage: run_eqparity.py        (no seeds -- the matrix is fixed)
 import os, subprocess, sys, tempfile, shutil
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -88,9 +55,6 @@ OPERANDS = [
 OPS = ["==", "!="]
 
 def skip_pair(l, r):
-    # No skips: tychoc0 now tracks newtype identity, so newtype-vs-base and
-    # newtype-vs-newtype `==` reject exactly as tychoc does. (Was: same erased base,
-    # different nominal, >=1 newtype -- the erasure divergence, now closed.)
     return False
 
 def program(lvar, op, rvar):

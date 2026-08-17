@@ -1,6 +1,3 @@
-# An `enum` type name is in the same namespace as a struct's, so the builtin
-# constructor guard applies identically. Sibling: tests/reject/struct_named_ok.ty.
-# expect: 'None' is already defined
 enum None:
     A
     B

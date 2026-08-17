@@ -1,28 +1,3 @@
-#!/usr/bin/env python3
-# RETIRED 2026-07-29. This tool no longer runs and no longer builds tychoc0.
-#
-# WHAT IT DID, WHILE IT RAN
-# -------------------------
-# Shrank a failing program (fuzz/findings/seed_N.ty) while preserving a
-# tychoc0-under-ASan use-after-free, by greedily deleting statement blocks (a
-# line plus its more-indented continuation). A deletion that broke compilation or
-# killed the fault was rejected, so the result stayed a valid, minimal repro.
-# It was a debugging aid for the tychoc0 differential lanes, never a gate.
-#
-#   python3 fuzz/minimize.py fuzz/findings/seed_690.ty
-#
-# WHY IT WAS RETIRED
-# ------------------
-# It drove a tychoc0-derived binary, and compiler/tychoc0.ty is FROZEN: the
-# breaking loop-syntax change of 2026-07-29 (three-clause `for` and bare `for:`
-# replace `for i in range(...)`) means the frozen compiler can no longer parse
-# the corpus, so no lane builds it. See compiler/fixpoint.sh's header,
-# ROADMAP.md and docs/architecture.md.
-#
-# The reduction algorithm below is left INTACT and unreferenced on purpose: it is
-# compiler-agnostic and is the starting point for anyone who needs to minimize a
-# tychoc repro. Point `faults()` at whatever binary and whatever fault string the
-# new investigation needs.
 import subprocess, sys, os, tempfile
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

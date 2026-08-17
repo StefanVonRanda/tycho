@@ -281,13 +281,6 @@ fn decode(path: string, b: bytes) -> Result(Db, StoreErr):
         push(tables, Table(tname, cols, rows, _build_index(cols, rows)))
     return Ok(Db(path, tables, applied))
 
-# ---- the equality index ---------------------------------------------------
-#
-# A sorted array with a binary search, not a tree. The rows are append-only and
-# they all live in memory anyway -- the tree that would be earned is the one in
-# tools/tycho-kv, and it is earned there by a store that pages to disk. What is
-# wanted here is only a SECOND ACCESS PATH whose cost differs from the scan's,
-# and log2(n) probes against n row reads is that difference.
 
 fn _build_index(cols: [Col], rows: [[Val]]) -> [Index]:
     out: [Index] = []

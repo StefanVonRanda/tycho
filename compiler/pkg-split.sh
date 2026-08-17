@@ -1,30 +1,3 @@
-#!/bin/sh
-# Stage E dogfood: split the single-file self-hosted compiler tychoc0.ty into a
-# two-package program and write it to <outdir>:
-#
-#   <outdir>/main.ty      package main  — the lexer/parser/typecheck/codegen,
-#                                          importing "rt"; the 5 emitter calls
-#                                          are qualified rt.<name>(...)
-#   <outdir>/rt/rt.ty     package rt    — the pure C-runtime / string emitters
-#                                          (preamble, gen_strlib, gen_mhash,
-#                                          gen_map_type, gen_map_fns): leaf
-#                                          functions with primitive signatures,
-#                                          no compiler types, no calls back into
-#                                          main, so the cut is narrow (a one-way
-#                                          main -> rt dependency).
-#
-# Generated from tychoc0.ty by function NAME (robust to line shifts), so it never
-# drifts: the split is always exactly the current compiler, just repackaged.
-#
-# ORPHANED 2026-07-29. Its only caller was compiler/fixpoint.sh, which
-# regenerated the split and asserted it (a) self-hosted byte-identically and (b)
-# emitted identical C to the single-file compiler on every fixture. That lane is
-# RETIRED — see the header of compiler/fixpoint.sh for why, and ROADMAP.md /
-# docs/architecture.md for what the project gave up. This script builds no
-# compiler itself; it only rewrites compiler/tychoc0.ty, which stays on disk. It
-# is kept, not deleted, because it is the only record of where the compiler's
-# one clean package seam actually falls (a one-way main -> rt dependency), and
-# that is worth having if the multi-package path is ever revisited.
 set -eu
 HERE="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 H="$HERE/tychoc0.ty"

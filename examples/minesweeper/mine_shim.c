@@ -1,7 +1,3 @@
-/* Companion C for examples/minesweeper/mine.ty, linked via `tychoc --shim`. Raw,
- * BLOCKING single-byte terminal input (minesweeper is turn-based, so it waits for
- * a key rather than polling). Signatures match tycho's extern emission: tycho `int`
- * == C `long`. Only `./mine play` calls these; the demo stays tty-independent. */
 #define _DEFAULT_SOURCE 1   /* expose tcgetattr even under a strict -std=c11 */
 #include <termios.h>
 #include <unistd.h>

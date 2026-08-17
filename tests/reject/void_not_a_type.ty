@@ -1,12 +1,3 @@
-# `void` is a type in exactly ONE position: a Result's ok payload. Everywhere
-# else it is not a type at all, and the diagnostic says where it IS one rather
-# than only refusing. A parameter is the plainest of those positions.
-#
-# The permission is one level deep (parse_type_inner snapshots and clears it on
-# entry), so this holds even INSIDE a Result: tests/reject/option_void.ty and
-# tests/reject/result_void_err.ty are the same refusal one nesting level in.
-#
-#   error: 'void' is a type only as a Result's ok payload, as in Result(void, string)
 fn f(a: void) -> int:
     return 1
 

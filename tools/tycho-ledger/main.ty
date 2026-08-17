@@ -1,18 +1,3 @@
-# tycho-ledger -- per-account totals, with the money kept in the type system.
-#
-# WHY THIS PROGRAM EXISTS. A dogfood audit (docs/internals/FRICTION.md).
-# Measured 2026-08-14: newtypes are declared in 46 files, 43 of them under
-# `tests/`, and the three real consumers each keep their newtype inside one
-# package. Only `examples/corelib/pool/main.ty:12` ever names a foreign
-# package's newtype. This program does it throughout: every amount is a
-# `money.Cents`, every account name a `money.Account`, and the per-account map
-# is KEYED by that foreign newtype.
-#
-#   tycho-ledger --file LEDGER [--rate R] [--only ACCOUNT]
-#
-# A ledger line is `account amount-in-cents`, e.g. `alice 250`.
-#
-# THE GATE IS `make ledger-check` (tools/tycho-ledger/run.sh).
 package main
 
 import "core:cli"
@@ -21,9 +6,6 @@ import "core:sort"
 import "core:strings"
 import "money"
 
-# Parse one integer field, refusing trailing garbage. `parse_int` fails open
-# (FRICTION #34), so "25x" would otherwise read as 25 -- and in a ledger that is
-# a wrong balance rather than a parse error.
 fn whole(tok: string) -> Result(int, string):
     if len(tok) == 0:
         return Err("empty amount")

@@ -1,8 +1,3 @@
-# A package-qualified call may carry explicit type arguments (`vp.pair$(T, U)`),
-# and the count must still match the declaration. Parsing that spelling at all is
-# new -- until 2026-08-14 the `$` fell through to a field access and every form
-# was `expected ')'` -- so this pins that the arity check was not lost with it.
-# expect: has 2 type parameter(s), but 1 explicit type argument(s) were given
 package main
 import "vp"
 

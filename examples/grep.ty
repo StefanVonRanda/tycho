@@ -1,15 +1,3 @@
-# grep: a real CLI utility in Tycho. Prints every line of each input file that
-# contains a (plain, non-regex) substring pattern, in grep -n style. Reads the
-# filesystem through the args()/read_file()/read_all() builtins, and leans on
-# split/find for the line work -- no compiler machinery, just a normal program.
-#
-#   tychoc examples/grep.ty -o grep
-#   ./grep PATTERN file1 [file2 ...]      # search the named files
-#   ./grep PATTERN                        # search stdin
-#
-# Output: "path:lineno:line" when more than one file is searched, otherwise
-# "lineno:line". Exercises [string] arrays, value-semantic string slices from
-# split(), the in-place string accumulator, and integer formatting via str().
 
 # scan one already-loaded text buffer; tag lines with `name` when show_name is set
 fn grep_text(name: string, pat: string, text: string, show_name: bool):

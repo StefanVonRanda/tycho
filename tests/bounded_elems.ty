@@ -1,16 +1,3 @@
-# bounded[N]T with an AGGREGATE element type, in every stored position.
-#
-# `bounded[N]T` emits `struct { T v[N]; tycho_int len; }` — the element is stored
-# INLINE, so its C body has to be complete before the array's. Both emitters used
-# to write the array body with the pointer-shaped arrays, i.e. before the struct /
-# tuple / Option / Result / map / soa bodies, so every one of these programs
-# transpiled and then failed to compile with "array type has incomplete element
-# type". tests/bounded.ty only ever used `bounded[N]int`, which is why the whole
-# aggregate-element surface was unfixtured.
-#
-# Covered here: struct, tuple, map, nested bounded, bytes, fixed-array and
-# Option/Result elements, each in a local, a parameter, a struct field and a
-# return type.
 
 struct Pt:
     x: int

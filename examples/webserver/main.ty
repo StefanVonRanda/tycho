@@ -1,18 +1,5 @@
 package main
 
-# A web server, written in Tycho, that serves a small site -- a landing page, a
-# Markdown blog (index + posts), and a Markdown wiki -- over core:httpd + core:net,
-# rendering content through core:markdown inside a shared HTML layout. This is the
-# website dogfood: it exercises the HTTP server plumbing, the new markdown renderer
-# (its second consumer, after examples/site), and io/path/sort together.
-#
-#   ./server --serve            # listen on 127.0.0.1:8080
-#   ./server                    # self-test: dispatch fixed routes and print them
-#                               #  (deterministic -> golden-locked; see run.sh)
-#
-# Routing is a pure `route(req) -> Response`; --serve wraps it in a net accept
-# loop, the self-test wraps it in a fixed-path loop -- so the interesting logic is
-# transport-independent and testable without a live socket.
 
 import "core:httpd"
 import "core:net"
@@ -31,8 +18,6 @@ struct Page:
     date: string
     body_html: string
 
-# A URL path segment used to build a filename must be alnum+dash only -- reject
-# anything else (Rule 5: blocks `..`, `/`, and other path-traversal payloads).
 fn safe_slug(s: string) -> bool:
     if s == "" or len(s) > 64:
         return false
@@ -75,15 +60,11 @@ fn static_asset(p: string) -> Asset:
         return Asset(false, "", to_bytes(""))
     if not safe_asset(name):
         return Asset(false, "", to_bytes(""))
-    # io.read_bytes returns Result(bytes, io.IoErr): a missing asset is
-    # Err(io.NotFound), which no longer looks like a zero-byte file.
     rb := io.read_bytes(ROOT + "/static/" + name)
     if result.is_err(rb):
         return Asset(false, "", to_bytes(""))
     return Asset(true, httpd.content_type(name), result.unwrap_or(rb, to_bytes("")))
 
-# Assets go through the ordinary Response path now that bodies are `bytes` --
-# the hand-rolled header writer this example used to carry is gone.
 fn asset_response(a: Asset) -> httpd.Response:
     return httpd.with_header(httpd.response(200, a.body), "Content-Type", a.ctype)
 

@@ -1,5 +1,3 @@
-# Compute-bound parallel reduction: sum (i*31+7) % 1000003 over 4e8 ints.
-# tycho: `parallel for` -- K = ncpu chunk tasks, identity partials, fold at join.
 fn main():
     total := 0
     parallel for i in 0..<400000000:

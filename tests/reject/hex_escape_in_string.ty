@@ -1,10 +1,2 @@
-# `\xNN` is a CHAR-literal escape only (tests/char_hex_escape.ty). A string
-# literal still refuses it, and the reason is the adjacent-literal join, not the
-# hex: joining is defined on the literals' ESCAPED source text and is sound only
-# while every escape is exactly two characters (docs/spec/01-lexical.md §3.9.4),
-# so a greedy C-style `\x` could absorb a hex digit across a join.
-#
-# This fixture is the guard on that: it must stay red for as long as string
-# literals reach codegen as escaped text (src/tychoc.c:467-473).
 fn main():
     println("\x41")

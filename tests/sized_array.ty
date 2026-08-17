@@ -1,8 +1,3 @@
-# Empty typed-array literals []T for the full fixed-width family. tychoc's []T
-# lookahead used to recognize only u32/u64/f32 and REJECTED []u8/[]u16/[]i8/
-# []i16/[]i32/[]i64 ("expected newline") while tychoc0 accepted them -- a parser
-# divergence found by the sized-int differential drift hunt. Exercises build +
-# index + wrapping arithmetic + len across every width, on both compilers.
 fn main():
     a := []u8
     push(a, to_u8(200))
@@ -37,9 +32,6 @@ fn main():
     push(h, to_u64(10000000000))
     println(str(h[0]))                 # 1e10
 
-    # to_int of a sized BINARY OP: tychoc0 typed every sized binop as plain int
-    # (its type_of recognized only u32/u64/f32), so to_int(sized_binop) was wrongly
-    # rejected. The type_of fix keeps the operand width through +,-,*,/,shift,bitwise.
     ub := to_u8(200)
     println(str(to_int(ub + to_u8(100))))    # u8 binop wraps -> 44
     println(str(to_int(e[0] * e[0])))        # to_int of an i32 binop (var operands) wraps -> -727379968

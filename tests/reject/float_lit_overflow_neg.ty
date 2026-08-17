@@ -1,12 +1,3 @@
-# `-1e400` must be refused too. The lexer never sees the sign: unary minus is its
-# own token, so the magnitude `1e400` hits the range check on its own and the
-# message quotes it without the sign. That is why this is a separate fixture --
-# the negated form travels a different route (const_fold's unary-minus arm would
-# have negated the infinity) and asserting it costs three lines.
-#
-# Flat file, no `package` header -- see the note above this lane in tests/run.sh.
-# The exact wording lives in tests/diag/float_lit_overflow.ty; this lane asserts
-# only that the compiler refuses and says something.
 fn main():
     x := -1e400
     println(str(x))

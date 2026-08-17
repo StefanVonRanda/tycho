@@ -1,11 +1,3 @@
-# Variadic and zero-seeded numeric helpers -- the two features nothing outside
-# `tests/` used.
-#
-# WHY THIS PACKAGE EXISTS. Measured 2026-08-14 with `grep -F`: a variadic
-# parameter (`...T`) is DECLARED in exactly three files, all under `tests/`
-# (one positive fixture and two rejects), and `zero$(T)` appears only in three
-# fixtures and in `compiler/tychoc0.ty`, the frozen compiler no gate builds. Both
-# are language features whose only exercise is their own fixtures.
 package num
 
 # A variadic over `int`. `f()` supplies an empty `[int]`, so the identity is the
@@ -16,10 +8,6 @@ fn sum(xs: ...int) -> int:
         t = t + x
     return t
 
-# Generic in the element type, so an EMPTY call has nothing to infer from and
-# must name it: `num.count$(int)()`. Both halves of that spelling were errors
-# until 2026-08-14 -- the qualified `$(...)` did not parse (FRICTION #39) and the
-# explicit type argument was ignored when the call was empty (FRICTION #40).
 fn count(xs: ...$T) -> int:
     return len(xs)
 

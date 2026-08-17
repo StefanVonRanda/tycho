@@ -1,7 +1,3 @@
-# A by-value map param is the caller's value. A borrowed param can't be
-# place-mutated directly; copy it first (`d := c`), and mutating the copy must
-# NOT touch the caller's table. Regression for the tychoc0 map accumulator, which
-# used to grow a map param in place (shared-table bug).
 fn bump(c: [string: int]) -> int:
     d := c                    # value-semantics copy
     d["k"] = 999

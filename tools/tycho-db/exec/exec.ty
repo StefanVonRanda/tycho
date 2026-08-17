@@ -5,21 +5,6 @@ import "../store"
 import "../wal"
 import "../plan"
 
-# The executor: a sql.Stmt run against a store.Db. Storage errors travel up
-# wrapped, so a caller sees one cause enum.
-#
-# A SELECT is no longer read straight off the AST: plan.build turns it into an
-# access path (a scan or an index probe), a residual predicate and a
-# projection, and _select does what the plan says. The counters it reports --
-# rows EXAMINED by the access path against rows RETURNED after the residual --
-# are the observable difference between the two paths, and the reason the plan
-# layer is a decision rather than a rename.
-#
-# Every mutation is written to the log here rather than in main, because this
-# is the layer that knows which statements mutate and what they resolved to.
-# run() takes the log by inout for the same reason there is no unlogged
-# variant of it: a mutation that skipped the log would be invisible to replay,
-# and an API that makes that possible eventually has a caller who does it.
 
 enum ExecErr:
     Storage(store.StoreErr)

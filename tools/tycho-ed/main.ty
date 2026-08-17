@@ -130,68 +130,6 @@ fn script(path: string, gap: bool) -> Result(void, string):
             Err(e): println("  ERR " + buf.err_str(e))
     return Ok()
 
-# ---- --stress N -----------------------------------------------------------
-#
-# The long-running claim, tested rather than asserted. N edits are run in ten
-# equal buckets and each bucket's ns/edit is printed, so a cost that grows with
-# the session shows up as a rising column instead of hiding inside one average.
-#
-# The typing is deliberately realistic: a character, and Enter every 60, so
-# LINE length stays bounded while the DOCUMENT grows without limit. An editor
-# that appends forever to one line is O(n^2) by representation -- every insert
-# recopies the line -- and measuring that would say something about string
-# concatenation, not about whether the arena degrades with age.
-#
-# --snapshot runs the same edits and additionally deep-copies the whole line
-# array after each one, which is what a snapshot undo stack costs under value
-# semantics. It is the control the journal is measured against.
-#
-# WHAT THIS MEASURED, 2026-08-12, 16-core box, re-verified the same day.
-# Journal: flat through 10k edits (133 -> 119 ns/edit, last/first 89%, inside
-# run-to-run noise), already drifting at 100k (133 -> 298, last/first 224% and
-# 220% on a second run), and 214 -> 1413 ns/edit by 1M -- a ~7x drift the arena
-# claim did not predict. Snapshot: 820 -> 7079 ns/edit within a single 10k
-# session, and 297 MB of retained copies for a 30 KB document at 20k.
-#
-# The drift is NOT the arena. Four controls -- 1M pushes of a struct, 1M
-# bounded string concatenations, 1M pushes into a field of an `inout` struct,
-# and 1M pushes of an enum carrying a string -- all land at 5-35 ns/step over
-# the same range, the worst of them (the enum) 40x under what an edit costs at
-# 1M, so no single ingredient degrades. What the editor adds is VOLUME: every
-# keystroke abandons the previous version of its line and an arena reclaims
-# nothing.
-#
-# --backend=gap IS THAT DIAGNOSIS UNDER TEST, 2026-08-12, same box, three runs
-# of each cell. It holds the line being edited as a mutable byte array with a
-# hole in it, so a keystroke writes bytes and allocates nothing; the line is
-# rebuilt as a string once per focus change instead of once per keystroke. Same
-# journal, same API, and run.sh leg [6] asserts the demo and the undo/redo
-# roundtrip come out byte-identical, so this is a representation change and
-# nothing else. Last bucket, ns/edit, and peak RSS:
-#
-#            10k          100k              1M              RSS at 1M
-#   string   145/121/124  281/267/279       1490/1443/1947  95.5/95.4/95.4 MB
-#   gap      114/177/129  119/120/119        141/155/147    95.9/95.7/95.3 MB
-#   last/first at 1M: string 764/747/959%, gap 97/113/103%.
-#
-# TIME: FLAT. The gap buffer removes the drift outright -- last/first goes from
-# ~8x to ~1x and the millionth edit costs what the first one did. That confirms
-# the abandoned line copies were the whole of the SLOWDOWN.
-#
-# IT REALLY IS IN PLACE. The worry with an `inout` gap buffer is that the array
-# is deep-copied at each call boundary and the churn has merely moved. It has
-# not: a per-call copy of gbuf would abandon ~120 ints per edit, i.e. about a
-# gigabyte over 1M edits, and RSS is unchanged at 95.7 MB. The flat time curve
-# says the same thing from the other side.
-#
-# MEMORY: UNMOVED, and that is the finding worth keeping. 95.7 MB before, 95.7
-# MB after, with a million fewer abandoned line copies -- so the copies were
-# never the resident set. A fifth control settles it: 1M pushes of this file's
-# exact Edit shape (Op enum + Cursor) into an array, with no buffer and no line
-# behind them, reaches 94.0 MB on its own at 42-56 ns/step. The RSS is the undo
-# JOURNAL -- one retained entry per keystroke, which is the feature working --
-# and it is flat in time, which is why removing the churn moved one number and
-# not the other. Written up in docs/thesis.md 4b.
 fn stress(n: int, snapshot: bool, gap: bool):
     glyphs := ["a", "b", "c", " ", "é", "ö", "字", "e"]
     buckets := 10

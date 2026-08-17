@@ -1,14 +1,3 @@
-# Myers O(ND) line diff and unified-diff formatting.
-#
-# Written 2026-08-14 as a ROADMAP section-1 program: by someone who did not write
-# the compiler, from the public docs only, with the friction recorded rather than
-# worked around silently. See tools/tycho-diff/FRICTION-OUTSIDE.md.
-#
-# The algorithm is Myers' greedy edit-graph walk (An O(ND) Difference Algorithm
-# and Its Variations, 1986): advance a furthest-reaching path per diagonal k for
-# increasing edit distance d, snapshot the frontier at every d, then walk the
-# snapshots backwards to recover which edit was taken. O((N+M)D) time, and the
-# snapshots are what make the backtrack possible at all.
 package diff
 import "core:arrays"
 

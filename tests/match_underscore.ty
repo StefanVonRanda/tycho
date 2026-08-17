@@ -1,10 +1,3 @@
-# Multi-payload patterns may discard with `_` -- and TWO discards in one pattern
-# must not collide in the emitted C. Regression: each `_` emitted a C local
-# named h__ (the h_ prefix + the literal _), so `Sized(_, _)` declared h__ twice
-# with conflicting types and the generated C failed to compile. A discard now
-# occupies its payload slot (the arity check counts it) but binds nothing: no
-# local is emitted, and referencing `_` in the arm body is an error (see
-# tests/reject/match_underscore_use.ty).
 enum M:
     Nope
     Sized(int, string)

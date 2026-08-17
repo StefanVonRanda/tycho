@@ -1,25 +1,3 @@
-# Indexed-loop correctness — reads, in-place writes, nested loops over two
-# arrays, and access under an `if`.
-#
-# HISTORY: this fixture is named for what it proves, bounds-check ELISION —
-# `for i := 0; i < len(A); i += 1:` lets the compiler prove A[i] in-range and
-# skip the per-element check, emitting `(h_a).data[h_i]` instead of
-# `tycho_arr_int_get(h_a, h_i)`.
-#
-# It stopped proving that for one day. Until 2026-07-29 the elision keyed off
-# S_FORRANGE's r_start/r_stop/r_step and the loops here were spelled `for i in
-# range(len(A)):`; the loops-cleanup plan rewrote them to
-# the three-clause form, which is S_FOR3 and had no elision arm, so all four loops
-# silently fell back to the checked accessor. The golden did not move — the fallback is
-# the CHECKED path, so the tree got slower and safer, never wrong — which is exactly
-# why `make test` could not see it. 223 sequential sites across 97 files lost it.
-#
-# Phase 27 restored it for S_FOR3 (for3_elidable_arr, src/tychoc.c:8771-8825):
-# all four elidable loops below emit `.data[` again. `TYCHOC_NO_BOUNDS_ELISION=1`
-# still turns it off. tests/bounds_noelide.ty locks the other side — the
-# spellings that must KEEP the check — and bench/guard.sh now asserts the
-# emitted C directly, because at -O3 gcc folds the check away by itself and no
-# wall-time gate can separate the two forms (numbers in bench/guard.sh:41-62).
 fn main():
     a := []int
     for i := 0; i < 20; i += 1:

@@ -1,65 +1,3 @@
-#!/usr/bin/env python3
-# Type-BOUNDARY sweep over the scalar binary-operator matrix.
-#
-# HISTORY -- THE PARITY ASSERTION WAS RETIRED 2026-07-29. Until then this lane was
-# a DIFFERENTIAL: tychoc (the C reference compiler) and tychoc0 (self-hosted) had
-# to AGREE on whether a WELL-FORMED program type-checks. That mattered because the
-# fixpoint differential only compares the OUTPUT of programs BOTH compilers accept,
-# so a disagreement on WHETHER to accept was invisible to it -- two real
-# type-checker divergences (int/float and char/int mixing) sat latent under green
-# CI for exactly that reason. Unlike the grammar-boundary reject fuzzer
-# (run_reject.py), which TOLERATES accept/reject divergence near malformed input, a
-# TYPE-level disagreement on a well-formed program was always a bug.
-#
-# WHY IT WENT: compiler/tychoc0.ty is FROZEN, and the breaking loop-syntax change
-# of 2026-07-29 (three-clause `for` and bare `for:` replace `for i in range(...)`,
-# `range` deleted) means it can no longer parse the corpus. No lane builds it now.
-# See compiler/fixpoint.sh's header, ROADMAP.md and docs/architecture.md.
-#
-# WHAT IS LOST: a second independent implementation of the type rules to check
-# tychoc against. Between 2026-07-29 and 2026-07-30 there was no `expect` table
-# here either -- the tychoc0 verdict WAS the oracle -- so what remained was
-# strictly weaker: a fail-closed sweep asserting tychoc never CRASHES and that
-# every accept emits compilable C. A silent change to a type RULE passed it.
-#
-# WHAT REPLACED IT (the loops-cleanup plan): the `expect` oracle below, in
-# the style run_eqparity.py / run_unaryparity.py / run_parforparity.py carry. Like
-# run_eqparity.py's (`accept iff the two operands have the same nominal type`) it
-# is a written-down RULE rather than 4608 enumerated rows -- a table that large
-# could only have been machine-recorded from the compiler, which is not an oracle
-# at all, just a photograph. The rule is derived from the SPEC:
-#   - arithmetic / string concat / char byte-domain  docs/spec/09-expressions.md:24-40
-#   - element-wise arithmetic is not in this matrix  docs/spec/09-expressions.md:51-63
-#   - comparison and ordering                        docs/spec/03-types.md:436-457
-#   - bitwise (operands must match)                  docs/spec/09-expressions.md:83
-#   - shift (widths need NOT match)                  docs/spec/09-expressions.md:85-104
-#   - literal adaptation                             docs/spec/06-conversions.md:11-27
-# and it was then RECONCILED against the resolver arm by arm; each clause below
-# cites the line it encodes. Reconciliation found the spec and `src/tychoc.c`
-# disagreeing in one place -- mixed-width shifts -- which was resolved in the
-# COMPILER's favour: the spec sentence had lumped shift in with bitwise and
-# demanded matching operands, which no version of tychoc ever implemented. The
-# spec now states the shift rule separately and this oracle agrees with it.
-#
-# What this does and does not buy: a changed type rule now reddens this lane, and
-# a fail-OPEN in tychoc alone is caught. A fail-open that the rule below shares --
-# because the rule was reconciled against the same compiler -- is not. That is the
-# residue of losing tychoc0 and no single-implementation oracle can remove it.
-#
-# This is DETERMINISTIC and EXHAUSTIVE over the scalar binary-operator matrix --
-# every (type, form) x operator x (type, form) -- not random sampling. `c := L op R`
-# binds the result so the operator is type-checked; the result type is irrelevant
-# to accept/reject. A program both accept must also emit C that COMPILES in both
-# (an accept that emits broken C is a codegen/fail-open bug, reported too).
-#
-# COVERAGE: scalar types int/float/char/string/bool AND the sized numerics
-# u32/u64/f32, each as a literal (the sized ones via their to_*() constructor,
-# since there is no sized literal syntax) AND a variable, against every binary
-# operator. NOT yet covered (a follow-up could add them with the same mechanism):
-# newtypes, composite comparisons ([T]/Option/Result/struct ==), unary operators,
-# and indexing/call result operands.
-#
-# Usage: run_typeparity.py        (no seeds -- the matrix is fixed)
 import os, subprocess, sys, tempfile, shutil
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -85,11 +23,6 @@ PRELUDE = ('fn main():\n'
            '    vi := 7\n    vf := 2.5\n    vc := \'A\'\n    vs := "x"\n    vb := true\n'
            '    vu := to_u32(7)\n    vw := to_u64(7)\n    vg := to_f32(2.5)\n')
 
-# ---- the `expect` oracle ------------------------------------------------------
-# Only `7` and `2.5` are ADAPTABLE literal forms. `to_u32(7)` and friends are
-# CALLS -- a typed value, not a literal token -- so they never adapt
-# (docs/spec/06-conversions.md:13-16), and `'A'`/`"x"`/`true` do not adapt either
-# (docs/spec/06-conversions.md:24).
 SIZED   = {"u32", "u64"}                  # is_sized_int() over this matrix's types
 INTEGER = {"int"} | SIZED
 ORDERED = {"int", "char", "float", "string", "f32"} | SIZED   # bool is deliberately absent
@@ -128,12 +61,6 @@ def expect(lt, lform, op, rt, rform):
     if op == "+" and lt == "string":              # `src/tychoc.c:6717` -- string + string|char, ONE-directional
         return "accept" if rt in ("string", "char") else "reject"
     if op in ("<<", ">>"):                        # `src/tychoc.c:6739-6745`
-        # MIXED WIDTHS ARE ACCEPTED HERE and the result takes the LEFT operand's
-        # width, because a shift COUNT has no reason to share the shifted value's
-        # type. docs/spec/09-expressions.md:85-89 now states exactly this, split
-        # out from the bitwise rule at docs/spec/09-expressions.md:83, which does
-        # require matching operands and is enforced at `src/tychoc.c:6852`.
-        # Spec and compiler agree here; nothing is filed against this clause.
         return "accept" if lt in INTEGER and rt in INTEGER else "reject"
     if op in ("%", "&", "|", "^"):                # `src/tychoc.c:6849` -- two MATCHING integers
         return "accept" if lt in INTEGER and lt == rt else "reject"

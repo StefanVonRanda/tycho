@@ -1,9 +1,3 @@
-# A bare `[]` as a Some/Ok/Err payload takes its element type from the enclosing
-# Option/Result annotation, exactly as `x: [int] = []` does (ground_pre threads the
-# inner type through the sum constructor). And a match arm that binds such a payload
-# and uses it must type-check even when the function's lift is active (the bare `[]`
-# gates the lift; the lift's SMatch now registers arm binds before walking the body).
-# tychoc0 used to reject both -- "cannot type a bare [] here" and "unknown variable".
 
 fn main():
     # bare [] grounded from the Option annotation, then matched + mutated + read

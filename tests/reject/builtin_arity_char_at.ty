@@ -1,5 +1,3 @@
-# char_at(s) -- the wrong-arity call Phase 26 could not fixture, because tychoc0
-# crashed with its own bounds abort instead of diagnosing it.
 
 fn main():
     s := "hi"

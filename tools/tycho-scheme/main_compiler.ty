@@ -1,36 +1,3 @@
-# tycho-scheme compile: Scheme -> tycho-vm bytecode (.tyc).
-#
-# The target is the tycho-vm ISA (tools/tycho-vm/main.ty); the .tyc container
-# is the format its header documents. The design record is
-# `docs/internals/plan-tycho-scheme-compiler-DONE.md`; the
-# decisions that shape this file:
-#
-#  - DEFUNCTIONALIZATION (Reynolds): every lambda is one VM function whose
-#    signature is (params..., env, globals) -- params in slots 0..k-1, the
-#    captured-env chain in slot k, the global chain in slot k+1. A closure
-#    VALUE is the pair (tag . env), tag a compile-time int. A call through a
-#    function value dispatches on the tag; a call to a statically-known
-#    global function is a direct CALL.
-#  - BOXING: a local that an inner lambda captures is boxed at its binding
-#    (one CONS cell) -- reads are CAR, set! is SET-CAR -- so a closure can
-#    mutate a captured binding (the interpreter's set! walks to the defining
-#    frame; compiled code cannot, so the box IS the shared state).
-#  - GLOBALS are a pair-chain in frame-0 slot 0, built by the entry code in
-#    define order; a reference walks the chain at a compile-known depth.
-#    Primitives compile to direct ops and never touch the chain.
-#  - Everything the compiler cannot lower dies at COMPILE time, never
-#    silently wrong: unbound variables, arity errors, malformed forms,
-#    primitive shadowing, and primitives without a lowering.
-#
-# Compile-time positions are not tracked (the reader discards them); a
-# compile error names the construct, not the line -- recorded in
-# `docs/internals/plan-tycho-scheme-compiler-DONE.md`.
-#
-# Three passes: A collects the global defines; B (analysis) walks the whole
-# program assigning every lambda a tag (discovery order) and computing its
-# captures, marking captured locals boxed; C (emission) compiles each lambda
-# into its own buffer and the entry into another; D lays the buffers out and
-# patches the local jumps and the cross-function CALLs.
 
 package main
 import "core:strings"
@@ -43,9 +10,6 @@ struct Ins:
     op: int
     a: int
     b: int
-# ---------------------------------------------------------------------------
-# the .tyc container (the format tools/tycho-vm/main.ty documents)
-# ---------------------------------------------------------------------------
 
 struct Program:
     consts: [string]
@@ -76,7 +40,6 @@ struct Ctx:
     gdepth: [string: int]    # global name -> chain depth (0 = newest define)
     gtag: [string: int]      # global name -> fn tag, or -1 for a plain value
 
-# opcodes, mirroring tools/tycho-vm/main.ty (the numbers are the .tyc format)
 const OP_PUSH = 0
 const OP_LOADK = 1
 const OP_LOAD = 2
@@ -538,15 +501,6 @@ fn compile_scheme(src: string) -> Program:
     for pos < len(toks):
         push(forms, parse_toks(toks, &pos))
 
-    # The interpreter resolves globals BY NAME, so a top-level display may
-    # sit between defines and still work. The compiled globals are a chain
-    # walked at compile-known DEPTH, which requires the chain to be complete
-    # when a reference runs -- so the defines are emitted first, in their
-    # relative order, then the expressions. Both passes use the reordered
-    # list, so the lambda tags stay aligned. Divergence from the interpreter:
-    # a top-level expression that OBSERVES the define interleaving (a define
-    # with an observable side effect between two expressions) runs later
-    # here -- recorded in `docs/internals/plan-tycho-scheme-compiler-DONE.md`; the programs do not do this.
     forms = order_top_forms(forms)
     gnames := []string
     collect_globals(forms, &gnames)
@@ -855,13 +809,6 @@ fn emit_apply_expr(op: Val, rest: Val, ctx: inout Ctx, em: inout Emit, infos: [F
     b := operator_binding(op, em, ctx)
     emit_dispatch(b, rest, &ctx, &em, infos, &fns, &calls, &tagseq)
 
-# a call through a function value. The ARGS are emitted first, then the
-# operator -- so the operator sits on top where the tag check can reach it,
-# and the CDR+LOAD leave [args..., env, globals], which the CALL's copy turns
-# into (a1..an, env, globals) in slots 0..n+1. The interpreter evaluates the
-# operator first; the compiled code evaluates the args first -- observable
-# only through evaluation-order side effects, which the compiled programs do
-# not have (recorded in `docs/internals/plan-tycho-scheme-compiler-DONE.md`).
 fn emit_dispatch(b: Bind, rest: Val, ctx: inout Ctx, em: inout Emit, infos: [FnInfo], fns: inout [FnCode], calls: inout [CallPatch], tagseq: inout int):
     nargs := count_args(rest)
     emit_args(rest, &ctx, &em, infos, &fns, &calls, &tagseq)   # [a1..an]

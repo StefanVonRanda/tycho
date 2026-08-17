@@ -1,10 +1,3 @@
-# `inout` parameters: explicit borrow-for-mutation. The callee writes back
-# into the caller's variable — copy-in copy-out, equivalent to `x = f(x)`.
-# The `&` at the call site marks where mutation happens. Value semantics is
-# preserved: the same variable can't be passed to two inout params at once.
-# NOT restricted to scalars: `inout` extends to heap-bearing values too --
-# `inout string`, `inout [int]`, `inout [string: T]` all work (spec 07-memory-
-# model.md 11.3 "Heap inout"; see examples/invindex.ty for both in one program).
 
 struct Stats:
     sum: int

@@ -1,9 +1,3 @@
-# `Err()` has no meaning at any Result type: the error half can never be void
-# (tests/reject/result_void_err.ty), so there is no Result whose Err carries
-# nothing. Caught in the parser, where the empty argument list is read, so the
-# message can say why rather than reporting a missing expression.
-#
-#   error: Err() carries no value -- a Result's error type cannot be void
 fn f() -> Result(void, string):
     return Err()
 

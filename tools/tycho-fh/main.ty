@@ -1,20 +1,3 @@
-# tycho-fh -- line/word/byte counts over a typed C handle.
-#
-# WHY THIS PROGRAM EXISTS. A dogfood audit (docs/internals/FRICTION.md).
-# Measured 2026-08-14: `handle Name:` is declared in exactly 10 files and ALL 10
-# are under `tests/` -- nine rejects and `tests/ffi/main.ty`. No program under
-# tools/, examples/, server/ or bench/ declares one, and neither does corelib.
-# It is the last language feature whose only caller was its own fixture, the
-# same shape that produced FRICTION #37 (sink) and #38-#40 (variadics).
-#
-#   tycho-fh --file FILE [--file FILE ...]
-#
-# A handle is affine: it cannot be copied, stored in an array/struct/Option, be
-# returned from a Tycho function, or be captured by a closure. Its destructor
-# runs at every scope exit. That last property is the one this program is built
-# to make observable -- see tools/tycho-fh/fh.c.
-#
-# THE GATE IS `make fh-check` (tools/tycho-fh/run.sh).
 package main
 
 import "core:cli"

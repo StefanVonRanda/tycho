@@ -1,8 +1,3 @@
-# CC-4 / 13-concurrency.md §23.1: a function cannot return a channel. Phase 39:
-# with a `$T` anywhere in the signature tychoc skipped this check and ACCEPTED,
-# compiled and RAN the program, while tychoc0 rejected it at the instance -- a
-# live accept/reject divergence the same `continue` created. Both compilers now
-# reject (differential).
 fn f(c: Channel(int), p: $T) -> Channel(int):
     return c
 

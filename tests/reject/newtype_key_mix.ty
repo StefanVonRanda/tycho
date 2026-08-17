@@ -1,6 +1,3 @@
-# A newtype-keyed map rejects a raw base-typed key: "ana" is not a UserId.
-# BOTH compilers reject this: tychoc0 now tracks newtype identity through its
-# checker, so a newtype-keyed map rejects a raw base-typed key just as tychoc does.
 type UserId = string
 
 fn main():

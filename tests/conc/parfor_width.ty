@@ -1,15 +1,3 @@
-# `parallel(W) for` -- the fan-out width the program chooses, instead of ncpu().
-# docs/rfc/parallel-for-width.md; FRICTION.md open-list item 8a.
-#
-# THE ANSWER MUST NOT DEPEND ON THE WIDTH. Every drain below consumes the same
-# 100 items exactly once (Vyukov MPMC), so all three reductions are 328350 --
-# at one worker, at three, and at ncpu(). A width that changed the ANSWER would
-# be a bug in the chunking, and this fixture is what would show it.
-#
-# What this file CANNOT show is that the width is honoured at all: with no way
-# to observe a worker's identity from inside the loop (that is item 8b, still
-# open), a `parallel(3)` that quietly ran at ncpu() prints exactly this output.
-# tests/conc/run.sh asserts the emitted `_pk` for that reason.
 fn produce(ch: Channel(int), n: int) -> int:
     for i := 0; i < n; i += 1:
         send(ch, i)

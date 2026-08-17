@@ -1,11 +1,3 @@
-# A newtype-of-array supports the array OPERATIONS (tests/newtype_agg_ops.ty)
-# without becoming the array. This pins the case that the implementation could
-# most easily have broken: the operations work by normalising the collection
-# type ON THE EXPRESSION NODE, so a use that follows an operation must still see
-# the newtype. If normalising ever leaked into the variable's own type, this
-# program would start compiling.
-#
-#   error: argument 1 of 'takes_raw' is Ids, expected [int]
 type Ids = [int]
 
 fn takes_raw(x: [int]) -> int:

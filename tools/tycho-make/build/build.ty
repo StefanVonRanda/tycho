@@ -7,62 +7,6 @@ import "core:strings"
 import "core:arrays"
 import "../graph"
 
-# tycho-make, slice 2: decide what is stale, run it with bounded parallelism,
-# and print a log whose bytes do not depend on how the work was scheduled.
-#
-# THE SCHEDULER IS A WORK QUEUE: one coordinator and N stateless workers, which
-# is the textbook design and is expressible here. It replaced a wavefront
-# (`parallel for` over one depth of the graph, depths in order) on 2026-08-13.
-# The wavefront was an unnecessary restriction, and the two rules that were
-# thought to forbid a work queue do not reach this shape:
-#
-#   - `Task(T)` is affine and non-storable, so a pool of handles cannot be an
-#     array -- but the pool is not handles. It is ONE spawned task whose body is
-#     a `parallel for` over a slot list, every chunk pulling from the one jobs
-#     channel. One handle, named individually, is all that is ever held.
-#   - A `parallel for` body may not write a captured variable -- but no worker
-#     needs to. The indegree table lives in the coordinator, which is a single
-#     thread mutating its OWN locals; workers are stateless pullers that receive
-#     a job and send an outcome. Neither rule applies.
-#
-# A node therefore starts when its own dependencies finish, not when its whole
-# level does. `tools/tycho-make/run.sh` [8b] asserts exactly that difference: a
-# chain node must start before a wide level of sleepers beside it has finished,
-# which a wavefront cannot do.
-#
-# WHAT A WORKER IS TOLD. `Job` carries the node index and the CURRENT hash of
-# each of its dependencies, because the coordinator is the only thread that owns
-# the completed-state array and a worker must not read it. So the data a worker
-# needs arrives with the work, and nothing is shared.
-#
-# WHERE DETERMINISM COMES FROM. Outcomes arrive on a channel in COMPLETION
-# order, which is a race -- and a wider race than the wavefront's, since the
-# ready set is no longer bounded by a level. Nothing is printed from a worker.
-# Each outcome carries the node index it belongs to, the coordinator files it by
-# that index, and the log is emitted afterwards by walking the TOPOLOGICAL
-# ORDER. So the log is a function of the graph and the disk, never of the pool
-# -- the same bytes at any TYCHO_THREADS. Recipe output is captured and printed
-# in the same place, so even two recipes racing to write to their stdout cannot
-# interleave in the log. The error is chosen the same way: by DAG position, not
-# by who failed first.
-#
-# WHY IT CANNOT DEADLOCK. Both channels are sized to the node count, so the
-# coordinator can never block sending a job and a worker can never block sending
-# an outcome. The loop is driven by an in-flight count, so it ends when the last
-# dispatched job has reported; `close(jobs)` then releases every worker.
-#
-# WHAT MAKES IT A CONTENT HASH AND NOT A STAT. mtime decides whether to READ a
-# file; the SHA-256 of the bytes decides whether to REBUILD. A file whose mtime
-# moved and whose content did not is reported `touched` and rebuilds nothing.
-# That also gives early cutoff for free: a rule that reruns and produces the
-# same bytes does not make its dependents stale.
-#
-# THE RACY WINDOW IS HANDLED. `io.mtime` has one-second granularity, so an
-# mtime-keyed hash cache is unsound for an edit landing in the same second as
-# the stamp write -- the mtime would match and the stale hash would be trusted.
-# Any file whose mtime is >= the stamp file's own mtime is therefore re-read
-# regardless. This is git's racy-timestamp rule and without it this program is
-# wrong on a fast machine, not merely flaky.
 
 # gap: a file is hashed via io.read_text, so a target holding bytes that are not
 #   valid text is out of scope. gap: no parallelism inside one node's recipe

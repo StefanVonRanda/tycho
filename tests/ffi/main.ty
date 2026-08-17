@@ -1,6 +1,3 @@
-# FFI regression: calls the C fixture lib tests/ffi/demo.c.
-# Both compilers must agree and match tests/ffi/expected.out (see tests/ffi/run.sh).
-# Stage 1: scalars + string.  Stage 2: opaque ptr handles + null + is_null.
 extern "ffidemo" fn ffi_echo(s: string) -> string
 extern "ffidemo" fn ffi_sum3(a: int, b: int, c: int) -> int
 extern "ffidemo" fn ffi_scale(x: float, k: int) -> float
@@ -56,10 +53,6 @@ fn b2i(b: bool) -> int:
 
 fn brev_fn(b: bytes) -> bytes:        # FFI: a bytes RETURNED from a function. A returned bytes must
     return ffi_brev(b)                # land in the caller's arena, not the freed callee _scope -- that
-                                      # was a use-after-free (core:net, the first `-> bytes` corelib user,
-                                      # hit it: the tychoc S_RETURN switch had no T_BYTES branch, and
-                                      # tychoc0's gen_rhs never copied a bytes place). Both compilers now
-                                      # promote it; this locks the fix, ASan-clean, in a green gate.
 
 fn main():
     # Stage 1 — scalars + string
@@ -98,8 +91,6 @@ fn main():
     println(f"wrapfn={to_str(wf)} wraplen={len(wf)}")
     wn := brev_fn(to_bytes("a" + chr(0) + "c"))             # "a\0c" reversed -> "c\0a", len 3
     println(f"wrapnullen={len(wn)}")
-    # The contrast, and why `bytes` above is the supported route: a `string` crosses as a bare
-    # char* and truncates at its first NUL both ways and per [string] element (§24.1 of 14-ffi).
     nz := "h" + chr(0) + "i"
     println(f"nulparam={len(nz)}/{ffi_clen(nz)} nulret={len(ffi_nulstr())} nularr={ffi_sfold([nz])} ctl={ffi_clen("hi")}")
     # Stage R1c -- [int]/[float] cross as (const T*, long), empty array -> len 0

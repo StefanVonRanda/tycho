@@ -1,41 +1,3 @@
-# tycho-debug -- a gdb adapter for Tycho programs. A standalone tool (its own
-# directory, like tycho-ar / tycho-build) because importing core:* needs a
-# `package` header, which would pull every tools/*.ty into the compile.
-#
-#   tycho-debug [-b <line>]... <program.ty> [args...]
-#
-# The compiler's `-g` output maps the generated C back to the .ty source
-# (`#line` directives + -O0 -g; see docs/guides/debugging.md), so a scripted
-# gdb session can break by SOURCE line, step, and read locals under their
-# emitted C names. This tool compiles the program with -g, starts gdb in MI
-# mode over two pipes (the debug_shim.c companion), and runs an interactive
-# REPL in front of it:
-#
-#   b <line>   set a breakpoint on that source line      r   run
-#   n          next (step over)                          s   step into
-#   c          continue                                   bt  backtrace
-#   p <expr>   print a C expression (locals are h_x)      loc user locals
-#   l          show source around the current line        $ <gdb cmd> passthrough
-#   q          quit
-#
-# Ctrl-C interrupts the running program: the tool's SIGINT handler sets a flag
-# (the shim), a blocked read surfaces EINTR, and the tool sends SIGINT to the
-# INFERIOR -- gdb is the tracer, so it intercepts the signal, stops the
-# inferior at its current source line, and reports *stopped. gdb itself lives
-# in its own process group (setpgid in the shim) so the terminal Ctrl-C never
-# reaches it, and MI is deliberately left in its DEFAULT synchronous mode:
-# probed on gdb 17.2, `-gdb-set mi-async on` makes the first -exec-run miss
-# every breakpoint and swallow the inferior's output, while the sync mode hits
-# breakpoints and delivers @ output. -exec-interrupt is therefore never used
-# (gdb does not read commands while the inferior runs in sync mode anyway).
-#
-# The `-g` line info is SINGLE-FILE ONLY (a package build drops per-file
-# identity), so a file with a `package` header is refused up front with the
-# compiler's own explanation instead of silently debugging with no line map.
-#
-# Documented gaps: the debuggee's stdin is not forwarded (a program that reads
-# stdin cannot be debugged interactively), and a Ctrl-C that lands before gdb
-# has reported the inferior's pid is dropped (press Ctrl-C again).
 package main
 
 import "core:strings"
@@ -87,12 +49,6 @@ fn with_exe(name: string) -> string:
             return name
     return name + ".exe"
 
-# Is gdb usable? `command -v` is a POSIX shell builtin cmd.exe does not have,
-# and its cmd equivalent `where` is an EXTERNAL program in System32 -- so a PATH
-# that does not carry System32 makes the probe answer "no gdb" when gdb is right
-# there (measured). Running gdb itself needs no builtin and no second directory,
-# answers non-zero on both shells when it is absent (sh 127, cmd 9009), and
-# tests that it actually starts rather than that a file exists.
 fn gdb_probe() -> string:
     return "gdb --version >" + null_dev() + " 2>&1"
 
@@ -240,7 +196,6 @@ fn base_name(p: string) -> string:
     parts := split(norm_sep(p), "/")
     return parts[len(parts) - 1]
 
-# Tycho `x` lowers to C `h_x` (docs/guides/debugging.md); show the .ty name
 fn strip_h(name: string) -> string:
     if strings.starts_with(name, "h_") and len(name) > 2:
         return substr(name, 2, len(name))

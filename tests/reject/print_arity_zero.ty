@@ -1,7 +1,3 @@
-# `print` / `println` are parsed specially, so the general builtin-arity gate never
-# sees them: on tychoc0 a wrong arity used to fall out of the grammar as
-# "expected an atom", which names the token stream instead of the rule.
-# tychoc: "'print' takes 1 argument(s), got 0".
 
 fn main():
     print()

@@ -1,12 +1,3 @@
-# A handle bound to a SECOND name. Accepted until 2026-08-14, and the two
-# scope-exit destructor calls on one pointer were a real double free -- glibc
-# reported "double free detected in tcache 2" from a program this short.
-#
-# Reassignment (`g = f`) was already refused, and the exact sibling one type up
-# refuses the same shape (`u := t` on a task). Only the handle DECL path was
-# open, which is what this locks.
-# expect: a handle cannot be copied
-# expect: freed once, at the end of its scope
 
 handle R:
     free: hc

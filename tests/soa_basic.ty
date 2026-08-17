@@ -1,8 +1,3 @@
-# SOA core ops — a focused minimal SOA test (the fuller tests/soa.ty adds
-# pass/return-by-value, ==, slices, and nesting). Both compilers now support all
-# of SOA, so both files run in the fixpoint differential (B vs the C compiler).
-# Core here: empty literal, push, len, field read a[i].f, field write a[i].f = v,
-# whole-element gather p := a[i].
 
 struct P:
     x: int

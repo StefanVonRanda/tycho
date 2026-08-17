@@ -1,12 +1,3 @@
-# Adversarial value-semantics sweep — extends the borrow audit (tests/
-# borrow_alias.ty) to the rest of the copy-elision / reuse chain. Every
-# optimization that elides a deep copy (move-on-last-use, construction-arg
-# move, in-place string/map accumulators) is sound ONLY when its source is
-# provably dead or read-only. Each probe below forces a situation the
-# optimization must NOT mistake for safe: a value is aliased/snapshotted, then
-# one side is mutated, and BOTH sides are observed. The golden is the value-
-# semantics-correct answer; a guard that elides a copy it shouldn't prints the
-# corrupted value instead. Runs under ASan+UBSan via the differential harness.
 
 struct Box:
     items: [int]

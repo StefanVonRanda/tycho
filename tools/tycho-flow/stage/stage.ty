@@ -121,9 +121,6 @@ fn transform(inp: Channel(Item($T)), out: Channel(Item($T)), f: fn($T) -> $T) ->
     close(out)
     return n
 
-# Drop what `keep` rejects, forwarding survivors WITH THEIR ORIGINAL INDEX. The
-# index space therefore acquires holes, which is why `reorder` sorts by the tag
-# instead of using it as a slot: after a filter the tags are no longer 0..n-1.
 fn filter(inp: Channel(Item($T)), out: Channel(Item($T)), keep: fn($T) -> bool) -> int:
     n := 0
     for true:
@@ -162,50 +159,6 @@ fn reduce_sum(inp: Channel(Item($T)), w: fn($T) -> int) -> int:
         acc = acc + ws[0](it.val)
     return acc
 
-# --- fallible stages, and cancellation ---------------------------------------
-#
-# THE CHANNEL OF RESULTS COMPILES, which was not a given: `Channel(Result($T,
-# $E))` puts TWO type parameters through the machinery that f0fd19e5 fixed for
-# one, and `try_transform` below carries a third instantiation, `Channel(Result(
-# Item($T), FlowErr))` -- a generic aggregate applied to its own parameter,
-# inside a builtin generic enum, inside a channel. All three build and run.
-# `Item(Result($T, $E))` is the one shape that does NOT exist: that is the
-# 05-generics.md §7.3 partial-mention guard, which refuses a type argument that
-# only partly mentions a parameter. The result therefore wraps the item, never
-# the other way round -- an ordering forced by the type system, not chosen.
-#
-# CANCELLATION IS A CLOSE, NOT A FLAG AND NOT A VALUE.
-#
-#   - A shared flag is unavailable by construction: `send` deep-copies and a
-#     `parallel for` capture is a copy, so there is no cell two tasks can both
-#     see. Value semantics removes the usual mechanism outright.
-#   - A VALUE on a done-channel would be wrong even where it fits: it is
-#     delivered to exactly ONE receiver (§23.1), so with several stages
-#     watching, the first to look consumes the only notice and the rest never
-#     stop.
-#   - `close(done)` is the broadcast. Every `select` that lists a closed and
-#     drained channel takes its `closed:` arm, every time it looks, forever
-#     after -- which is what a cancellation has to be: level-triggered, not a
-#     message that can be missed or stolen.
-#
-# The cost of that choice is that closing twice ABORTS the process (§23.1), so
-# exactly one party may close: `guard`, the consumer. Nothing ever sends on
-# `done`, and the `recv` arm below exists only because a `select` needs a
-# channel to watch.
-#
-# NOTHING LEAKS AND NOTHING DEADLOCKS, and neither is an accident:
-#
-#   - No task is abandoned, because no combinator can abandon one. A `Task` is
-#     affine and non-storable, so the handle lives in the scope that spawned it
-#     and that scope must `wait` it; the counts those `wait`s return are the
-#     evidence, and main prints them.
-#   - The deadlock this design HAS to avoid is a producer parked in `send` on a
-#     full ring while the consumer has stopped receiving. So `guard` never stops
-#     receiving: it records the first error, closes `done`, and keeps draining
-#     to `None`. Cancellation stops PRODUCTION at the head of the pipeline and
-#     lets the few elements already in flight fall out of the tail. A consumer
-#     that returned early instead would hang the source on a ring of 4 with 256
-#     elements behind it.
 
 # Non-blocking, and level-triggered: true once `done` is closed and true on
 # every later call. The `recv` arm is unreachable by design -- see the header.

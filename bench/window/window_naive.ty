@@ -1,7 +1,3 @@
-# Sliding-window steelman: a stream of N heap-bearing (string) records, keeping
-# only the last W live in a ring buffer. malloc/GC free evicted records (peak ~ W);
-# a NAIVE arena copies each stored record into the ring's arena and can't free the
-# overwritten ones (peak ~ N). This is the arena's worst case — measured honestly.
 fn main():
     n := 2000000
     w := 50000

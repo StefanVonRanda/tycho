@@ -1,7 +1,3 @@
-# Newtype-keyed maps: a newtype over string or int is a valid map key.
-# The map type carries the DECLARED key (so a raw base value is rejected,
-# see tests/reject/newtype_key_mix.ty); storage and hashing are the base's.
-# keys() returns [K] with K still wrapped. Always a composite map.
 
 type UserId = string
 type Slot = int

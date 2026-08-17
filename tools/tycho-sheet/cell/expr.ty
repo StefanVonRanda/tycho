@@ -2,23 +2,6 @@ package cell
 
 import "core:strings"
 
-# The formula parser: `=A1+B2*2`, `=SUM(A1:A9)/COUNT(A1:A9)`, `=-(A1^2)`.
-#
-# A FAILURE HERE IS AN Err, NOT A CELL ERROR. See value.ty for why the two are
-# different. Everything in this file is about text that does not describe a
-# formula at all, so there is no value to store and nothing to propagate.
-#
-# THE TREE IS AN ARENA, NOT A LINKED STRUCTURE. Tycho lets a struct recurse
-# "only MAY be recursive through a container" (docs/spec/12-aggregates.md:394),
-# so children are int indices into `nodes` rather than nested values. That is
-# not a workaround: it also means the tree is one flat array to copy, and an
-# evaluator can walk it without the arena churn a nested value tree would cause
-# on every recalculation.
-#
-# DEPTH IS BOUNDED. Descent is recursive, so `((((((...))))))` is a native stack
-# frame per paren. MAX_DEPTH turns that into a named TooDeep error well before
-# the C stack runs out -- fail closed, never a segfault. tests/recursion/ is the
-# precedent for treating that as a requirement rather than a nicety.
 
 # Node kinds. Ints, not an enum, because a Node is one flat struct in an arena
 # and the payload shape differs per kind.

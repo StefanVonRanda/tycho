@@ -1,8 +1,3 @@
-/* Windowed group-by aggregation — C, manual malloc/free. Per window: build an
- * int->posting-list hash map (the value is the growing list, realloc in place), reduce
- * it, then FREE the whole window (every list + the table) before the next. The explicit
- * per-window teardown is the churn cost the arena pays as one bulk reset. Same LCG and
- * checksum as winagg.ty (oracle: windows=40 checksum=505098931). */
 #include <stdio.h>
 #include <stdlib.h>
 

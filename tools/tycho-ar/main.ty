@@ -1,318 +1,3 @@
-# tycho-ar -- a deterministic archiver, in Tycho.
-#
-# Walks a directory, and for every regular file records its relative path, its
-# size, its mtime and the sha256 of its contents; gzips the contents; and writes
-# one archive file. `c` creates, `t` lists, `x` extracts.
-#
-# Build and run, from the repo root:
-#     ./tychoc tools/tycho-ar/main.ty -o build/tycho-ar
-#     ./build/tycho-ar c out.tyar some/dir
-#     ./build/tycho-ar t out.tyar
-#     ./build/tycho-ar x out.tyar some/dest
-#
-# WHY THIS IS A DIRECTORY AND NOT A FLAT `tools/tycho-ar.ty`. A program that
-# imports `core:*` needs a `package` header, and a `package` header makes tychoc
-# compile the whole containing directory as one unit -- so a flat file in
-# `tools/` would pull `tools/lsp.ty`, `tools/tychofmt.ty` and `tools/tycho.ty`
-# into this program. `tools/prunner/` is a directory for exactly that reason and
-# this follows it. (Confirmed: `Makefile:128` builds prunner from
-# `tools/prunner/main.ty`, a lone file in its own directory.)
-#
-# ===========================================================================
-# THE FORMAT
-# ===========================================================================
-#
-# Everything is written little-endian-free: all numbers are ASCII decimal, all
-# structural markers are ASCII literals, and the only binary spans are the file
-# payloads, each preceded by its own byte count. That is deliberate -- a format
-# whose framing is text can be eyeballed with `head -c`, and its corruption
-# cases can be produced by hand for the gate of the tycho-ar plan
-# phase 2.
-#
-#     archive := magic member* trailer
-#
-#     magic   := "TYAR1\n"
-#
-#     member  := "F " size " " mtime " " clen " " plen " " sha " " csha "\n"
-#                path                          -- exactly plen bytes, raw
-#                "\n"
-#                payload                       -- exactly clen bytes, gzip
-#                "\nTYAR-M\n"                  -- the member footer, 8 bytes
-#
-#     trailer := "TYAR-DIR " count "\nTYAR-END\n"
-#
-#       size   the ORIGINAL byte length of the file, ASCII decimal
-#       mtime  st_mtime as a Unix epoch second, ASCII decimal (see MTIME below)
-#       clen   the byte length of the gzip payload, ASCII decimal
-#       plen   the byte length of `path`, ASCII decimal
-#       sha    sha256 of the ORIGINAL contents, 64 lowercase hex chars
-#       csha   sha256 of the GZIP PAYLOAD, 64 lowercase hex chars
-#       path   the file's path relative to the walked root, raw bytes
-#       count  the number of members, ASCII decimal
-#
-# FINDING THE MEMBER BOUNDARY WITHOUT TRUSTING `clen`. This is the property the
-# format is built around, because a reader that can only believe the length
-# field is a reader that cannot tell a truncated archive from a short one. There
-# are three independent checks and a truncation has to defeat all three:
-#
-#   1. THE MEMBER FOOTER. After skipping `clen` payload bytes the next 8 bytes
-#      must be exactly "\nTYAR-M\n". A `clen` that is wrong -- because the field
-#      was damaged, or because the archive was cut short -- lands the cursor
-#      somewhere else, and the odds that arbitrary bytes spell the footer are
-#      nil. This is what makes `clen` a HINT that gets confirmed rather than a
-#      promise that gets believed.
-#   2. `csha` OVER THE PAYLOAD. A payload whose length is right but whose bytes
-#      were flipped passes check 1 and fails here. Checked before decompression,
-#      so a reader never hands damaged input to zlib in the first place.
-#   3. `size` AND `sha` OVER THE INFLATED BYTES. This is the check that keeps a
-#      corrupt member distinguishable from an empty one, and it is the one the
-#      whole format was designed around. See EMPTY VERSUS CORRUPT below.
-#
-# And the trailer's `count` catches the one thing per-member checks cannot: a
-# whole member sheared off the end. Nine members plus a trailer saying ten is a
-# truncation that every individual member survived.
-#
-# EVERY ONE OF THOSE CHECKS IS AN EXPLICIT LENGTH TEST, NOT AN EXPECTED ABORT.
-# A `bytes` slice CLAMPS its bounds rather than aborting
-# (`docs/spec/03-types.md:139`), exactly as a string slice does -- so
-# `data[p:p + 8]` on a truncated archive quietly yields three bytes instead of
-# trapping. A reader that treated the slice as a bounds check would read a short
-# footer, compare it against the real one, and get the right answer by accident;
-# a reader that sliced a payload and hashed it would hash a prefix. Every read
-# below therefore checks `len(...)` of what it got against what it asked for
-# BEFORE using it. The clamp is the right default for a text tool and a trap for
-# a format parser, and the difference is worth naming.
-#
-# ===========================================================================
-# EMPTY VERSUS CORRUPT -- what the tycho-ar plan settled
-# ===========================================================================
-#
-# `compress.decompress` FAILS CLOSED TO EMPTY BYTES on damaged input: every error
-# path in `corelib/compress/compress_shim.c@zx_decompress` sets `*outlen = 0` and
-# returns, and a legitimately empty member inflates to zero bytes too. So the
-# worry was that a corrupt member and an empty file are indistinguishable, which
-# would make an archiver silently replace damaged data with an empty file -- the
-# worst thing a tool trusted to store bytes can do.
-#
-# MEASURED, not reasoned about. Compressing "" and inflating it, inflating a
-# 65-byte payload with byte 12 XORed by 0xFF, and inflating that payload cut in
-# half all produce the SAME answer:
-#
-#     legit-empty:  inflated len=0  sha=e3b0c442…7852b855
-#     corrupt    :  inflated len=0  sha=e3b0c442…7852b855
-#     truncated  :  inflated len=0  sha=e3b0c442…7852b855
-#
-# The return value carries NO discriminator at all -- not a length, not a sha,
-# not an error. Everything that tells the two apart has to come from outside the
-# payload, and that is what the header fields are for. Three of them, in the
-# order the reader applies them:
-#
-#   `csha` FIRST, over the raw gzip payload, BEFORE decompression. A flipped byte
-#   dies here, and the reader never hands damaged input to zlib at all. This is
-#   also what stops check 2 from ever being the only line of defence: a corrupt
-#   member whose `size` happens to be 0 would pass the size check (an empty file
-#   is what it inflates to, and that is even the right content) -- csha catches
-#   it first, on the bytes themselves.
-#
-#   `size` SECOND, against `len(inflated)`. This is the actual discriminator the
-#   Pre-flight asked for. A zero-byte file is `size 0`; a member that inflated to
-#   nothing because it was damaged has a nonzero `size` that does not match, and
-#   is rejected instead of extracted. Cheap, and it is a length comparison rather
-#   than a hash, so it fires before any work.
-#
-#   `sha` THIRD, over the inflated bytes. Catches the residue: an inflate that
-#   produced the right NUMBER of bytes but the wrong ones.
-#
-# A zero-byte file survives all three -- `size 0` and the sha256 of the empty
-# string, e3b0c442… -- so the round trip keeps its empty files, which is the
-# other half of getting this right. An archiver that rejected empty files to be
-# safe would have failed the same test from the other side.
-#
-# ===========================================================================
-# CHUNKED HASHING, AND WHY THE HASHER LIVES HERE
-# ===========================================================================
-#
-# A file's contents are hashed CHUNK bytes at a time through `io.read_at`, never
-# read whole to be hashed. What that costs and what it buys is worth stating
-# exactly, because the obvious summary -- "the archiver no longer holds a whole
-# file" -- is FALSE and this phase does not make it true.
-#
-# WHY THE STREAMING SHA-256 WAS IN THIS FILE AND NOT CALLED FROM `core:sha256`.
-# (2026-08-03: core:sha256 grew init/update/final_hex, so this file now calls
-# it; the history of why it was hand-written is below, verbatim.)
-# `core:sha256` exposes exactly two entry points over a message, `digest(msg)`
-# and `hex(msg)`, and both take the WHOLE message as one `string`. There is no
-# init/update/final anywhere in the corelib -- verified by grepping
-# `corelib/sha256`, `corelib/md5`, `corelib/crypto` and `corelib/hash` for
-# sha256_init/update/final, EVP_DigestUpdate and `fn init`/`fn update`/`fn final`:
-# zero hits. `core:crypto`'s `cx_sha256_hex` is one-shot too, and wants its
-# message HEX-ENCODED, which would double the buffer this is trying to bound.
-#
-# AND THE ONE-SHOT SHAPE IS NOT AN OVERSIGHT -- the language makes it the natural
-# one. A streaming digest is a mutable state threaded through many calls, and a
-# Tycho parameter is BORROWED READ-ONLY: `fn bump(a: [int]): a[0] = 1` is
-# `error: cannot mutate parameter 'a' (it is borrowed read-only; copy it with
-# `y := a` first)`, and that suggested copy is a real copy -- `c := a` then
-# `c[0] = 999` leaves `a[0]` alone. So an `update(state, chunk)` either returns a
-# fresh state per 64-byte block or takes `inout`. `inout` is the answer, it works
-# on `[u32]` and on `bytes`, and it forwards (`sha_feed` hands its own `&H`
-# straight to `sha_block`) -- but it has to be reached for deliberately, and a
-# one-shot function needs none of it. `core:sha256` never having grown a
-# streaming form is the language's default showing through the library.
-#
-# THE PIECES WERE ALL REACHABLE, which is why this is ~60 lines and not a second
-# SHA-256. `sha256.k_table`, `h_init`, `ch`, `maj`, `bigsig0/1`, `smallsig0/1`,
-# `pow2` and `hex2` are all callable from here: a Tycho package has NO private
-# top-level functions, so every helper `core:sha256` wrote for itself is public
-# API whether it meant it or not. Not one constant is duplicated below -- the
-# round table and the initial state come from `core:sha256` itself, so a fix
-# there is a fix here. The only thing written here is the block loop and the
-# padding, i.e. the part `digest` inlined into a single function because it had
-# to.
-#
-# WHAT CHUNKING ACTUALLY CHANGED. `sha256.digest` expands its whole message into
-# `buf := []int`, ONE MACHINE INT PER BYTE, before it processes a single block --
-# so hashing an n-byte file allocated 8n bytes of int array on top of the n bytes
-# of file. That expansion was the dominant term in this program's peak memory and
-# it is GONE: `sha_block` indexes the `bytes` value directly, the only `[int]` is
-# the 8-word state, and the largest live buffer in the hash path is one CHUNK.
-#
-# WHAT IT DID NOT CHANGE, said plainly so the win is not read as bigger than it
-# is. `c` STILL HOLDS EACH FILE WHOLE, because `compress.compress` is
-# `bytes -> bytes`: a one-shot with no streaming counterpart, exactly like
-# `sha256.hex` was. The payload has to be materialised for the compressor no
-# matter how the digest is computed, so PEAK MEMORY FOR `c` IS STILL O(file
-# size) and chunked hashing did not fix it. It removed the 8x multiplier on top,
-# not the file itself. Bounding that last term needs a streaming deflate, which
-# is a `core:compress` change and not this program's to make.
-#
-# SO THE FILE IS READ TWICE -- once whole for the compressor, once in chunks for
-# the digest -- and that is a deliberate trade rather than an oversight. Folding
-# the two into one pass means growing a `bytes` by `+` per chunk, and `bytes +
-# bytes` allocates and copies both sides, so accumulating a file in n/CHUNK
-# pieces is quadratic. Two linear passes over a page-cache-warm file beat one
-# quadratic one, and neither would be needed if the compressor could be fed
-# incrementally.
-#
-# THE LOOP'S TERMINATION CONDITION IS DEFENDED, NOT ASSUMED, because both of the
-# primitives involved answer out-of-range requests by shrugging rather than by
-# failing. `io.read_at` CLAMPS ITS ALLOCATION TO THE FILE and returns `Ok` with
-# ZERO BYTES for an offset at or past EOF (`corelib/io/io.ty@read_at`) -- an
-# error condition that is not an `Err` -- and a `bytes` slice CLAMPS too, so
-# neither a short read nor an over-long slice announces itself. A loop that
-# simply asked for CHUNK bytes until it got fewer would therefore spin forever on
-# a file that stopped yielding, or silently hash a prefix. Instead: the bound is
-# `size`, taken from the same read the compressor is fed; each request is for
-# `min(CHUNK, size - off)`, so a conforming read can never overshoot; a read
-# returning 0 before `off == size` is FATAL rather than a loop exit, because at
-# that point the file has changed under us and a digest over a prefix is exactly
-# the silent corruption this program exists not to commit; and every iteration
-# advances `off` by at least one byte or dies. The loop runs at most `size`
-# times by construction.
-#
-# ONE THING IT STILL CANNOT DO: read the file atomically. `core:io` is
-# path-based with no file handles, so the compressor's read and the digest's
-# reads are separate `open(2)`s and a writer racing between them is detectable
-# (the checks above) but not preventable.
-#
-# ===========================================================================
-# WHY `t` PRINTS NOTHING BUT MEMBER LINES
-# ===========================================================================
-#
-# `t` IS ALL OR NOTHING, by decision. It verifies the framing, the paths, the
-# footers, the payload digests and the trailer count for EVERY member before
-# printing a single line; then it prints one line per member and nothing else.
-# No summary line, no "listed 8 of 9", no "member 3 looks damaged". `tar t`
-# streams its listing and discovers damage partway through, so a consumer has
-# already acted on names from an archive that turns out to be bad; one
-# verification pass before any output closes that window. Diagnostics do have
-# their own stream -- `eprint` writes to stderr without terminating -- but `t`'s
-# stdout IS its data, and a consumer parsing it should never have to decide
-# whether a line is a filename. A bad archive exits nonzero with the reason on
-# stderr and an empty stdout, which is a signal a caller can actually act on.
-#
-# `t` does NOT inflate. Its checks stop at `csha`, which is where the evidence
-# stops being free; `x` does the remaining two because it is producing the bytes
-# anyway. So `t` proves an archive is INTACT and `x` proves it is CORRECT, and
-# the split is honest about which is which.
-#
-# One thing `t` cannot fix, and it is POSIX's fault rather than the corelib's: a
-# filename may contain a newline, so a line-oriented listing of such an archive
-# is ambiguous by construction. The path is printed last on the line and printed
-# raw. `x` is the interface that handles those names correctly; `t` is for eyes.
-#
-# `plen` is why the path is length-prefixed rather than newline-terminated. A
-# POSIX filename may contain any byte but '/' and NUL -- including '\n'. A
-# newline-terminated path would silently split such a name into a short path
-# plus garbage, and the two paths that differ only by where the reader guessed
-# the break would collide. Length-prefixed, a path containing a newline is
-# stored and read back exactly.
-#
-# ===========================================================================
-# DETERMINISM, AND THE THREE THINGS THAT COULD HAVE BROKEN IT
-# ===========================================================================
-#
-# The property: archiving the same tree twice produces two byte-identical files.
-# Three sources of nondeterminism had to be settled for that to hold.
-#
-#   ENTRY ORDER. `io.list` is `readdir(3)` (`runtime/tycho_rt.c@tycho_list_dir`),
-#   which returns entries in whatever order the filesystem hands back -- hash
-#   order on ext4, so it varies with inode numbers and is NOT stable across two
-#   trees with the same contents. Every path is collected first and the whole
-#   list is sorted with `sort.asc` before a single byte is written. String
-#   comparison is `memcmp` over the length header
-#   (`runtime/tycho_rt.c@tycho_str_cmp`), so the order is unsigned-byte
-#   lexicographic and does not depend on locale.
-#
-#   THE GZIP HEADER'S MTIME FIELD. RFC 1952 puts a 4-byte modification time in
-#   every gzip header, and a compressor that fills it in makes every archive
-#   differ from the last. zlib's `deflateInit2` writes zero there unless the
-#   caller supplies a `gz_header`, and `corelib/compress/compress_shim.c@zx_compress`
-#   supplies none -- so the payloads are byte-stable. This was checked rather
-#   than assumed; it is the one place where determinism depended on a default in
-#   a library three layers down.
-#
-#   MTIME IN THE MEMBER HEADER, which is stored, and here is the decision.
-#   `io.mtime` returns the real st_mtime. Storing it means an archive of the SAME
-#   tree is byte-identical across runs -- mtimes do not move when nothing writes
-#   -- but an archive of a COPIED tree is not, because `cp` gives the copy new
-#   mtimes. The alternative, storing a constant zero, would make copies match at
-#   the cost of an archiver that cannot restore what it was handed.
-#
-#   The mtime is stored. An archiver's job is to give back the tree it was given,
-#   and mtime is part of that tree; dropping it to make an unrelated pair of
-#   directories compare equal is trading a property the tool is for against a
-#   property nothing asked for. And the weaker guarantee is the honest one: two
-#   runs over one tree are identical, which is exactly what the gate asserts,
-#   and content equality between two different trees is a question about the
-#   `sha` fields, which a reader can ask directly.
-#
-# ===========================================================================
-# WHAT THIS FORMAT DOES NOT STORE, said plainly so no one infers it
-# ===========================================================================
-#
-#   * PERMISSION BITS. An extracted file gets the umask default. A restored
-#     executable is not executable.
-#   * EMPTY DIRECTORIES. Only regular files are members, so a directory with no
-#     files under it does not survive a round trip.
-#   * SYMLINKS, as links. `io.is_dir` is `stat(2)`, which follows them, so a
-#     symlink to a file is archived as an ordinary file holding a copy of the
-#     target's bytes, and a symlink to a directory is walked into. A symlink
-#     cycle would therefore not terminate. Nothing here calls `lstat(2)`,
-#     because the corelib does not expose one.
-#   * HARD LINKS, as links. Two names for one inode become two members.
-#
-# Each of those is a real archiver feature and each needs a corelib call that
-# does not exist today. They are named here rather than discovered later.
-#
-# MTIME IS STORED AND, SINCE 2026-08-11, RESTORED. It used to be the odd one out
-# on this list -- data the format captured faithfully and the extractor dropped,
-# because no corelib call could put a time back. `io.set_mtime`
-# (`corelib/io/io.ty@set_mtime`) closed that, and `x` now stamps every file it
-# writes with the header's time. The gate proves it: `diff -r` does NOT compare
-# mtimes, so the round-trip leg was green over the gap and would have stayed
-# green over a broken restore -- `tools/tycho-ar/run.sh` leg 3b compares the
-# times themselves, and was confirmed to fail with the restore stubbed out.
 
 package main
 
@@ -345,13 +30,6 @@ struct Member:
     csha:  string    # sha256 of the gzip payload, hex
     data:  bytes     # the gzip payload
 
-# ---------------------------------------------------------------------------
-# CHUNKED SHA-256 -- the streaming form of core:sha256 (init/update/final_hex),
-# which this file used to hand-roll: sha_block/sha_feed/sha_finish lived here for
-# want of a streaming corelib API (see CHUNKED HASHING above). They moved into
-# core:sha256 on 2026-08-03; what remains is the chunk loop and the final call,
-# which is the whole point of the API.
-# ---------------------------------------------------------------------------
 
 # sha256 of a value already in memory.
 fn sha_bytes(b: bytes) -> string:
@@ -379,11 +57,6 @@ fn sha_file(abs: string, size: int) -> string:
             Err(e):
                 die("tycho-ar: cannot read " + abs + " at offset " + str(off))
         n := len(chunk)
-        # ZERO PROGRESS IS FATAL, not a break. We are inside `off < size`, so
-        # there are bytes left to hash and the file no longer has them: it was
-        # truncated between the compressor's read and this one. Hashing the
-        # prefix and calling it the file is the corruption this program exists
-        # not to commit.
         if n == 0:
             die("tycho-ar: " + abs + ": read 0 bytes at offset " + str(off) + " of " + str(size) + " (file changed under us)")
         # Cannot happen -- the request was clamped to `size - off` -- but a read
@@ -444,20 +117,6 @@ fn member_of(root: string, rel: string) -> Member:
             mt = t
         Err(e):
             die("tycho-ar: cannot stat " + abs)
-    # THE bytes/string SEAM IS GONE FROM THE HASH PATH. It existed because
-    # `sha256.hex` takes a `string` while `io.read_bytes` yields `bytes`, so
-    # every file was hashed as `sha256.hex(to_str(raw))`. `sha_file`/`sha_bytes`
-    # take `bytes`, so no crossing happens at all -- the seam was an artefact of
-    # the corelib's one-shot entry point, not of the data. (The crossing was
-    # never lossy: `to_str` is a zero-cost reinterpret of the same
-    # length-headered buffer, docs/spec/06-conversions.md, and all eight fixture
-    # digests -- interior NULs and 100 KB of /dev/urandom included -- matched
-    # `sha256sum` exactly. It is simply no longer needed.)
-    #
-    # `len(raw)` is passed as the length to hash so the digest covers exactly the
-    # byte count that was compressed. The contents are re-read in chunks rather
-    # than hashed out of `raw`; see CHUNKED HASHING above for why both reads
-    # exist and what bounds the loop.
     packed := compress.compress(raw)
     return Member(rel, len(raw), mt, sha_file(abs, len(raw)), sha_bytes(packed), packed)
 
@@ -490,9 +149,6 @@ fn create(archive: string, root: string):
         out = out + encode_member(member_of(root, files[i]))
     out = out + to_bytes("TYAR-DIR " + str(len(files)) + "\n" + TRAILER)
 
-    # `io.write` takes a `string`, and `tycho_write_file`
-    # (`runtime/tycho_rt.c@tycho_write_file`) fwrites the header length to a "wb"
-    # handle -- so this writes the payload bytes verbatim, NULs and all.
     if not io.write(archive, to_str(out)):
         die("tycho-ar: cannot write " + archive)
     println("tycho-ar: " + archive + ": " + str(len(files)) + " files, " + str(len(out)) + " bytes")
@@ -513,21 +169,6 @@ struct Entry:
     csha:  string
     off:   int
 
-# A STRICT decimal parser, and the reason it is not `strings.parse_int`.
-# `strings.parse_int` FAILS OPEN: it returns 0 for the empty string and for a
-# leading non-digit, and it stops at the first non-digit rather than objecting
-# (`corelib/strings/strings.ty@parse_int`). Those are sane choices for parsing
-# user input, where 0 is a fine default. They are the wrong choices for a length
-# field in a format, where a damaged `clen` of "1x4" must be an error and not a
-# silent 1 -- a wrong length that parses is exactly how a reader ends up hashing
-# the wrong span. Returns -1 for anything that is not a non-empty run of ASCII
-# digits, and for anything absurdly large.
-# The LEXICAL half is core:strings' now (`parse_int_checked`, which post-dates
-# the hand-rolled loop this replaced): empty, a non-digit anywhere, and an
-# out-of-int64 value are its Err cases. What stays here is the DOMAIN half, which
-# is this format's and not the parser's: a header field is non-negative, and is
-# capped well below int64 so a forged length cannot be used to drive a huge
-# allocation. Still -1 for every rejection, so the five call sites are unchanged.
 fn parse_uint(s: string) -> int:
     n := 0
     match strings.parse_int_checked(s):
@@ -537,15 +178,6 @@ fn parse_uint(s: string) -> int:
         return -1
     if n > 1000000000000000000:              # absurd length: refuse before it reaches a slice
         return -1
-    # GATED since 2026-08-13: run.sh legs [4d]/[4e] forge a negative `size` and an
-    # over-cap `clen` into a rebuilt header, and both must be refused by name.
-    # The two lines are not equally load-bearing, which the controls showed:
-    # deleting the over-cap test reddens [4e], while deleting the `n < 0` test
-    # above leaves the lane GREEN, because the caller checks `size < 0` itself
-    # (`if size < 0 or mtime < 0 ...`, the read loop below). So the negative case
-    # is defence in depth here and the refusal is asserted end-to-end, not at
-    # this line. Keep both: this one keeps `parse_uint` honest for a future
-    # caller that forgets its own check.
     return n
 
 # 64 lowercase hex digits, the shape `sha256.hex` produces. Checked so a damaged
@@ -657,12 +289,6 @@ fn parse(archive: string, data: bytes) -> [Entry]:
         die("tycho-ar: " + archive + ": archive does not end exactly at TYAR-END")
     return out
 
-# `io.make_dir` is ONE level -- `mkdir(2)` and nothing else
-# (`corelib/io/io_shim.c@iox_make_dir`), which is the right primitive and not
-# the one an extractor wants. There is no `mkdir -p` in the corelib, so the
-# chain is built here a component at a time. `Ok(false)` means "already a
-# directory", which is a success: extracting ten files into one subdirectory
-# calls this ten times and creates it once.
 fn mkdir_p(p: string):
     if len(p) == 0 or p == "." or p == "/":
         return
@@ -702,8 +328,6 @@ fn mkdir_p(p: string):
             Err(e):
                 die("tycho-ar: cannot create directory " + cur)
 
-# LIST. Every member is verified before the first line is printed, and nothing
-# but member lines is printed -- see WHY `t` PRINTS NOTHING BUT MEMBER LINES.
 fn cmd_t(archive: string):
     entries := parse(archive, read_archive(archive))
     for i := 0; i < len(entries); i += 1:
@@ -718,12 +342,6 @@ fn cmd_x(archive: string, dest: string) -> [string]:
     data := read_archive(archive)
     entries := parse(archive, data)
 
-    # EVERY PATH IS CHECKED BEFORE ANY FILE IS WRITTEN. `path.safe_join` returns
-    # "" for a member path that is absolute or climbs out of `dest` with ".."
-    # (`corelib/path/path.ty@safe_join`), and that refusal is fatal. Doing the
-    # whole sweep first is the difference between "refused" and "refused after
-    # writing eight files": a hostile archive that puts its escape in the last
-    # member must not get the first eight extracted before anyone objects.
     targets := []string
     for i := 0; i < len(entries); i += 1:
         t := path.safe_join(dest, entries[i].rel)
@@ -731,28 +349,10 @@ fn cmd_x(archive: string, dest: string) -> [string]:
             die("tycho-ar: " + archive + ": refusing member " + str(i) + ": path escapes the destination: " + entries[i].rel)
         push(targets, t)
 
-    # WHAT IS AND IS NOT ATOMIC, said plainly. Paths are ALL validated above
-    # before one byte is written, so a hostile archive cannot get its first
-    # members extracted before the reader reaches the escape in its last one.
-    # Content is verified per member as it is written, so a member that fails
-    # the inflate checks below leaves the members before it on disk and exits
-    # nonzero. That is deliberate: verifying every payload into memory first
-    # would hold the whole inflated archive at once. It is also nearly
-    # unreachable by accident -- `parse` already matched `csha` against every
-    # payload, so getting here means the gzip bytes are exactly what the writer
-    # digested and still do not inflate to what the header claims, which is
-    # forgery rather than damage. A damaged archive is caught before any write.
     mkdir_p(dest)
     mtime_failed := []string
     for i := 0; i < len(entries); i += 1:
         e := entries[i]
-        # `decompress` now REPORTS why (corelib/compress, 2026-08-10). It used to
-        # fail closed to empty bytes and say nothing, which is why the length
-        # check below existed at all -- `size` was the only thing that could tell
-        # a damaged member from a zero-byte file. The cause comes first now,
-        # because it names the fault; the length check stays as the guard for a
-        # payload that inflates FINE but to the wrong thing, which is forgery
-        # rather than damage and which no inflate status can catch.
         raw := to_bytes([]int)
         match compress.decompress(data[e.off:e.off + e.clen]):
             Ok(d):
@@ -766,8 +366,6 @@ fn cmd_x(archive: string, dest: string) -> [string]:
         if sha_bytes(raw) != e.sha:
             die("tycho-ar: " + archive + ": " + e.rel + ": content digest mismatch (sha)")
         mkdir_p(path.dir(targets[i]))
-        # `io.write` takes a `string`; `tycho_write_file` is length-header-driven
-        # (`runtime/tycho_rt.c@tycho_write_file`), so NULs survive.
         if not io.write(targets[i], to_str(raw)):
             die("tycho-ar: cannot write " + targets[i])
         # THE MTIME, put back last -- the write above stamped the file with now.

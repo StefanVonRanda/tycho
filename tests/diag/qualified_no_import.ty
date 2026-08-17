@@ -1,5 +1,2 @@
-# `arrays.fill` EXISTS. The mistake is the missing import, and reporting it as a
-# package "missing a symbol" sends the reader to the package source -- the one
-# place that cannot help. Found writing tools/tycho-diff.
 fn main():
     println(str(arrays.fill(3, 0)[0]))

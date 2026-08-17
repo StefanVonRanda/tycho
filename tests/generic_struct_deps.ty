@@ -1,6 +1,3 @@
-# Stage 3: a generic struct parameterized by a CONCRETE struct (Box(Point)).
-# The instance Box__Point embeds Point by value, so tychoc0's struct emitter must
-# topologically order it after Point (the Stage 2b edge, now closed).
 
 struct Point:
     x: int

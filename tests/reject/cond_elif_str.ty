@@ -1,6 +1,3 @@
-# §14.2 (docs/spec/10-statements.md:26): "Each condition" -- the elif's too.
-# `elif` is sugar for a nested `if`, so it must be guarded identically; a check
-# that covered only the leading `if` would leave this spelling fail-open.
 fn main():
     x := 1
     if x > 0:

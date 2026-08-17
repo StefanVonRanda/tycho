@@ -1,7 +1,3 @@
-# A captured / array-element map must be DEEP-COPIED (it owns heap buckets), like
-# arrays already are. Regression for the tychoc0 elem_deepcopy/elem_copy_expr gap
-# that left captured & array-of-map elements shallow (closure UAF + aliasing, and
-# array-of-map aliasing). Both compilers must agree with value semantics.
 
 fn make() -> fn(int) -> int:
     m := []int: int

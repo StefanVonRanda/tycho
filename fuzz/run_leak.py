@@ -1,30 +1,3 @@
-#!/usr/bin/env python3
-# Leak-detecting fuzz lane.
-#
-# Feeds the SOUNDNESS generator's (gen.py) valid, terminating programs to tychoc,
-# builds the emitted C under ASan+LeakSanitizer, runs it, and asserts NO memory
-# is leaked at exit. (Until 2026-07-26 the same programs also went through
-# tychoc0; that compiler is frozen -- see compiler/tychoc0.ty -- and no gate
-# builds it, so its leg was removed. The leak class this lane owns is a property
-# of the emitted runtime, so nothing it asserted about tychoc changed.) The differential lane (run.py) runs with detect_leaks=0 -- it
-# hunts UAF / UB / miscompiles / value-semantics violations; but a program can be
-# value-semantically CORRECT and still LEAK (memory copied right, an arena or an
-# owner-0 block never reclaimed), which nothing else in the broad generated space
-# catches. This lane closes that hole -- it directly tests the arena model's
-# "everything is reclaimed at scope/program exit" claim, the project's thesis.
-#
-# Why it's clean by construction: a well-formed terminating tycho program frees its
-# root arena at exit, so correct codegen leaves ZERO unreachable memory. The
-# intentional never-frees stay REACHABLE via statics, so LSan does NOT report them:
-#   - interned string literals: each site holds the malloc via `static char *_l`
-#   - the thread-local arena block pool: held by `static __thread ABlk *g_pool`
-# A "definitely/indirectly lost" block is therefore a real bug (a dropped owner-0
-# malloc, or an arena that was never freed) -- exactly the class run.py can't see.
-#
-# Runs SEQUENTIALLY: a prior parallel attempt OOM'd the machine (many concurrent
-# sanitizer compiles). NOTE: do NOT cap with RLIMIT_AS/ulimit -v -- ASan reserves
-# a huge virtual shadow and would fail to start; sequential is the actual fix.
-# Slow, so a small N by default; `make fuzz-leak`.
 import subprocess, sys, os, tempfile, shutil
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -92,10 +65,6 @@ def run_seed(seed, tmp):
     return "ok", None
 
 def main():
-    # LeakSanitizer is absent from Apple's ASan -- detect_leaks=1 aborts every
-    # binary at exit there, which this lane would misread as a fault. Skip
-    # cleanly on macOS; the Linux CI leg covers the leak class. (Same platform
-    # gap the test harnesses gate via ASAN_OPTIONS; see tests/run.sh.)
     if sys.platform == "darwin":
         print("fuzz-leak: SKIPPED on macOS -- Apple's ASan ships no LeakSanitizer "
               "(the Linux CI leg covers this lane)")

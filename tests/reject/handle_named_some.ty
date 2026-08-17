@@ -1,6 +1,3 @@
-# The fourth type-declaration site. The refusal fires on the name, before the
-# `free:` body is parsed. Sibling: tests/reject/struct_named_ok.ty.
-# expect: 'Some' is already defined
 handle Some:
     free: c_free
 

@@ -1,15 +1,3 @@
-# Phase 37 regression. A bind vector inside tychoc is indexed by the GLOBAL
-# type-parameter id (`t - T_TYPARAM_BASE`), i.e. by a position in the program-wide
-# `$Name` intern table, which has no cap -- NOT by the per-generic count that
-# TYCHO_MAX_TYPARAMS bounds. This program declares 272 distinct `$T` names and 272
-# distinct `$N` names while every individual generic stays well under the
-# 16-parameter cap, so it is VALID. Before the fix tychoc held those vectors in
-# fixed `Type binds[256]` / `int64_t sizebinds[256]` stack locals and overran them
-# (ASan: stack-buffer-overflow WRITE at the `binds[i] = T_UNBOUND` init loop, and a
-# READ in match_type for the `$N` side). The tail exercises every site that builds
-# such a vector: a generic fn call, a UFCS generic, a generic struct literal and a
-# generic struct in type position, a generic enum constructor and a generic enum in
-# type position, and a `[$N]T` size inference. Both compilers.
 
 fn tfill0(p0: $T0, p1: $T1, p2: $T2, p3: $T3, p4: $T4, p5: $T5, p6: $T6, p7: $T7) -> int:
     return 0

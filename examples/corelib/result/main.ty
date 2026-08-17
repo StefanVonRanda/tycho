@@ -8,9 +8,6 @@ package main
 import "core:result"
 import "core:io"
 
-# WHICH failure, one arm per cause -- a NESTED PATTERN (the friction plan). Before
-# that this was `is_ok` + `err_or` plus an `e == io.X` chain, because
-# `Err(io.IsDir)` was rejected with `error: expected ')'`.
 fn describe(r: Result(bytes, io.IoErr)) -> string:
     match r:
         Ok(bs): return "read " + str(len(bs)) + " bytes"
@@ -22,11 +19,6 @@ fn main():
     p := "/tmp/tycho_example_result.txt"
     w := io.write(p, "one\ntwo\n")
 
-    # --- unwrap_or: one line instead of a four-line match ---
-    # `rb` / `rmiss` are bound because each Result is used twice below, not
-    # because the argument position demands it -- that bug is fixed
-    # (the friction plan), so both fallbacks are
-    # written inline.
     rb := io.read_bytes(p)
     body := result.unwrap_or(rb, to_bytes(""))
     println("bytes    = " + str(len(body)))                  # 8

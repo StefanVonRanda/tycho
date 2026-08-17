@@ -3,34 +3,6 @@ package graph
 import "core:strings"
 import "core:arrays"
 
-# tycho-make's rulefile parser and dependency graph. This is SLICE 1: parse,
-# order, cycles. Nothing here runs a recipe, reads an mtime or hashes a file --
-# a recipe line is stored verbatim and never looked at again.
-#
-# THE BOUNDARY IS `parse`. Everything past it is trusted: every element of
-# `Node.deps` is an index that exists, every name is non-empty and contains no
-# ':', and no target is declared twice. Nothing downstream re-validates, and
-# nothing downstream may assume anything `parse` does not enforce.
-#
-# THE ORDER BREAKS TIES BY DECLARATION ORDER, NOT BY NAME. Kahn's algorithm has
-# a free choice whenever two nodes are ready at once. This one always takes the
-# ready node with the SMALLEST NODE INDEX, and a node's index is the position at
-# which the parser FIRST SAW that name anywhere -- as a target or as somebody's
-# dependency. So `app: zeta alpha` orders zeta before alpha because zeta is
-# written first, and renaming zeta to `omega` would not move it. `sources` and
-# `sinks` are in the same order for the same reason. An order that merely
-# reproduces on one machine is the failure mode here, so the rule is stated as
-# a rule and tools/tycho-make/run.sh asserts it against a fixture whose
-# declaration order and alphabetical order disagree.
-#
-# NOTHING ITERATES A MAP. `g.index` is read by key and never walked; map
-# iteration order is not a language guarantee, and one walk of it would make
-# every claim above a coincidence. Every loop below is over an array.
-#
-# `->` MEANS "DEPENDS ON". A cycle prints as `a -> b -> a`: a depends on b and
-# b depends on a. The walk enters a cycle wherever Kahn happened to stall, so
-# the result is rotated to start at its smallest-index member -- the text is a
-# property of the graph, not of the entry point.
 
 struct Node:
     name: string

@@ -1,18 +1,3 @@
-# A package of USER-DEFINED GENERICS, written to find out what that is like.
-#
-# WHY IT EXISTS. To exercise the ergonomics of writing your own generics --
-# constraints, inference at the call site, a generic struct, a generic taking a
-# function value, instantiation across a package boundary -- and to record what
-# fights back (FRICTION #35, #36).
-#
-# Measured 2026-08-13 and WRONG, corrected the same day: the first version of
-# this header said `$T` appears in ZERO files outside corelib/. It does not --
-# `grep "$T"` treats `$` as an end-of-line anchor, so the search could never
-# match. A fixed-string count finds ~50 uses across six files:
-# tools/tycho-flow/stage/stage.ty (21, `struct Item($T)`), graph/graph.ty (16,
-# `struct Plan($T)`), tools/tycho-q, tools/prunner, and examples/generics_tour.ty
-# (`struct Pair($A, $B)`), which exists for exactly this. Writing generics outside
-# corelib was NOT new here.
 package pipe
 
 # --- generic combinators over an array ---------------------------------------
@@ -50,12 +35,6 @@ struct Tally($K):
     keys: [$K]                  # insertion order, so a report is reproducible
     n: [$K: int]
 
-# NO `fn tally() -> Tally($K)` CONSTRUCTOR, and this one is NOT fixed: a type
-# parameter appearing ONLY in the return type has nothing to infer from, and
-# there is no explicit-instantiation syntax to supply it. `t := tally()` reports
-# `argument 1 of bump is pipe__Tally__t28` -- an unbound type variable escaping
-# into the next call. FRICTION #36 records it; the struct is built where its K is
-# already bound instead.
 
 fn bump(t: inout Tally($K), k: $K) where hashable(K):
     if k in t.n:
@@ -72,12 +51,6 @@ fn count_of(t: Tally($K), k: $K) -> int where hashable(K):
 fn distinct(t: Tally($K)) -> int:
     return len(t.keys)
 
-# Group an array by a key function -- a generic taking a generic function value
-# and returning a generic struct, which is the composition most likely to bite.
-# Groups INTO a tally the caller built. Until FRICTION #35 was fixed this was
-# forced -- a `[]$K: int` literal could not be written inside a generic even
-# under `where hashable(K)` -- and it stays because the caller still has to name
-# K somewhere: see the constructor note above, which is #36 and is NOT fixed.
 fn group_into(t: inout Tally($K), xs: [$T], key: fn($T) -> $K) where hashable(K):
     for x in xs:
         bump(&t, key(x))

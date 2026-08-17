@@ -1,16 +1,3 @@
-# Phase 3 (lex ';' and '..<'): ';' is now a TOKEN (TK_SEMI, lexed at
-# src/tychoc.c:598) but has no grammar of its own -- it exists only for the
-# three-clause `for init; cond; post:` form that phase 4 adds. A C-style
-# statement terminator is therefore still invalid, and must be refused by the
-# PARSER, not by the lexer: the decl statement parses `x := 1` and then demands
-# a newline at src/tychoc.c:3775, so the diagnostic is
-#
-#     error: expected newline
-#
-# with the caret on the ';'. Before phase 3 the same program died in the lexer
-# with `unexpected character ';'`. Unlike the three-clause loop, this fixture
-# stays valid after phase 4: `;` separates the clauses of a `for` header and
-# never terminates a statement.
 fn main():
     x := 1;
     print(str(x))

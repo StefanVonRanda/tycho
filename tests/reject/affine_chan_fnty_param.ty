@@ -1,4 +1,3 @@
-# Phase 20: ... nor a function-VALUE parameter (tychoc: func_of, src/tychoc.c:1121).
 fn f(g: fn(Channel(int)) -> int) -> int:
     return 1
 

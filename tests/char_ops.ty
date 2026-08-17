@@ -1,6 +1,3 @@
-# A char combines with another char (any comparison) or with an int via +/- (-> a
-# char, byte offset). Mixing a char with an int any other way (<, ==, *, %) is a
-# type error in both compilers -- see tests/reject/char_int_*.
 fn main():
     a := 'A'
     b := 'B'

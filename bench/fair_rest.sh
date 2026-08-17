@@ -1,7 +1,3 @@
-#!/bin/sh
-# Fair standard-opt (-O3) re-run of the benches not covered by fair_full.sh:
-# winagg, invindex (side-array + map, growth + count-fill), window, dbquery.
-# peak RSS + best-of-3 wall via bench/peakrss. Self-contained workloads (no stdin).
 cd "$(dirname "$0")/.." || exit 1            # repo root (portable; was a hardcoded Linux path)
 TYCHOC=./tychoc
 T=$(mktemp -d); cc -O2 -o "$T/pk" bench/peakrss.c || exit 1

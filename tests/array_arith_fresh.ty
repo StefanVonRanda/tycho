@@ -1,11 +1,3 @@
-# Element-wise arithmetic yields a FRESH array. Tycho is value-semantics, so
-# `c := a * b` must neither alias nor mutate `a` or `b`; an implementation that
-# wrote the result back into the left operand's buffer, or returned a shallow
-# view of it, would pass a golden that only checked `c` right after the
-# operation. This fixture is the one that would catch it: it mutates the source
-# AFTERWARDS and asserts the result did not move.
-#
-# Post-freeze -- the frozen tychoc0 refuses this whole file as a type error.
 
 fn main():
     # growable [int]: mutate each source in turn, then re-read the result

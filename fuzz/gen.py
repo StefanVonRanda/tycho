@@ -1,24 +1,3 @@
-#!/usr/bin/env python3
-# Type-directed random Tycho program generator for soundness fuzzing.
-# Emits a well-typed, deterministic, terminating program that stresses the
-# arena/value-semantics paths: copy-binds (`b := a`), heap built in loops/blocks,
-# pushes, struct/array nesting, returns, inout, match. It accumulates an int
-# checksum across all the state it builds and prints it once at the end, so two
-# correct compilers must produce byte-identical output (the differential oracle).
-# It ALSO emits value-semantics self-checks (the `vscheck` kind): copy a heap
-# value, mutate the COPY, and assert the ORIGINAL is unchanged, calling die() if
-# not. These catch deep-copy/aliasing miscompiles present in BOTH compilers --
-# which the tychoc-vs-tychoc0 differential structurally cannot, since the two would
-# agree on the same wrong answer; the self-check turns such a bug into a fault.
-# Types covered: int, float, string, char, arrays ([int]/[string]/[float]),
-# structs, recursive enums, Option(int), Result([int], string), (int, string)
-# tuples, {string:int}/{string:float} maps, `type Nt = int` newtypes, slices,
-# SOA core ops (soa []Struct), or_return (Ok-unwrap / Err-propagate).
-# Oracle rule: every value reduces into the int checksum (floats/newtypes via
-# to_int), and nothing is emitted that can fault at runtime in a valid program
-# (e.g. array slices use only whole-array forms, since OOB array slices exit(1)).
-#
-# Usage: gen.py <seed>   -> a .ty program on stdout
 import sys, random
 
 SCALARS = ["int", "string"]
@@ -40,17 +19,6 @@ class Gen:
         # when run.py stopped counting timeouts as skips).
         self.loop_vars = set()
 
-    # The FFI-width type names are reserved words (`src/tychoc.c:287-295`), and
-    # `fresh("i")` walks straight into i8 / i16 / i32 / i64 as the uid counter
-    # passes them. Every binding position refuses them with "expected an
-    # expression" -- measured on 2026-07-30 for a plain `i8 := 5`, a foreach
-    # `for i8 in xs:`, a `parallel for i8 in 0..<3:` and a three-clause init.
-    # Not verifiable directly (the form is deleted) but strongly implied: the old
-    # `for i8 in range(n):` bound its counter through the same loop-variable slot
-    # the foreach form still uses, and that slot refuses `i8` today -- so these
-    # seeds were already being counted as silent skips before this plan.
-    # 4 of 40 seeds died on it while this file was being fixed. Skip the
-    # colliding uids instead of renaming every prefix.
     RESERVED = {"i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64"}
 
     def fresh(self, p="v"):
@@ -62,18 +30,6 @@ class Gen:
     def emit(self, ind, s):
         self.out.append("    " * ind + s)
 
-    # `range()` was DELETED from the language on 2026-07-29 (the loops-cleanup plan):
-    # the counting loop is now three-clause `for i := 0; i < N; i += 1:` and the
-    # parallel counting loop is `parallel for i in 0..<N:`. This generator kept
-    # emitting `for i in range(...)` and every generated program was therefore
-    # rejected (25/25 seeds, `range() was removed` diagnostic), which trips
-    # run.py's 30% skip ceiling. Emit the surviving forms through these two
-    # helpers so a future syntax change has one place to touch.
-    #
-    # NOTE the one semantic difference: `range(len(a))` evaluated `len(a)` ONCE,
-    # the three-clause condition re-evaluates it every iteration. Every call
-    # site below has a body that does not change the length it counts over, so
-    # the two are equivalent here. A length-mutating body must NOT use count().
     def count(self, ind, i, stop):
         self.emit(ind, "for " + i + " := 0; " + i + " < " + stop + "; " + i + " += 1:")
 
@@ -120,24 +76,12 @@ class Gen:
     # ---- expressions (type-directed) -----------------------------------
     # env: dict name->type. Returns a string expression of type `t`.
     def gen_expr(self, t, env, depth=0):
-        # generics fuzz: wrap a scalar LITERAL in a generic id / first-of-two call,
-        # so the differential + ASan oracle covers monomorphization + per-instance
-        # body cloning. Arguments are literals ONLY: a generic call's argument must
-        # be concrete and must not (even transitively) be another generic call or a
-        # variable holding a generic-call result -- feeding a generic result into
-        # another generic is not yet supported in tychoc0, so generating it would be
-        # a false positive, not a real miscompile. A literal is always safe; the
-        # result then flows into the surrounding (non-generic) expression.
         if depth < 3 and t in ("int", "string", "float") and self.r.random() < 0.30:
             a = self._genlit(t)
             if self.r.random() < 0.5:
                 g = "fz_gid(" + a + ")"
             else:
                 g = "fz_gfst(" + a + ", " + self._genlit(t) + ")"
-            # Wrap in a NEUTRAL op so the expression's type is concrete even when
-            # the result is bound to a variable. Binding a bare-`$T` generic result
-            # makes tychoc0 type the variable as `$T` (the generic-result-typing
-            # gap), so the bare call must never escape as the whole expression.
             neutral = {"int": "0", "float": "0.0", "string": '""'}[t]
             return "(" + g + " + " + neutral + ")"
         choices = []
@@ -365,7 +309,6 @@ class Gen:
         if budget > 2: kinds += ["loop", "if"]
         if self.enums: kinds += ["enum_use", "enum_use"]
         kinds += ["inout_fill", "call_ret", "result_use", "soa_use", "orret_use", "opt_res_eq", "map_in"]
-        # constructs tychoc0 historically miscompiled -- keep the class covered:
         kinds += ["multiassign", "negrange", "matchpop", "orret_loop"]
         # self-referential shadow decls (`x := f(x)` in a nested scope) -- the RHS
         # reads the ENCLOSING binding, so codegen must evaluate it into a temp
@@ -381,11 +324,6 @@ class Gen:
         if ind <= 1:
             kinds += ["spawn_use", "parfor_use", "chan_use"]
         kinds += ["infer_ground", "infer_lambda", "float_adapt"]
-        # drift-hunt surface (2026-07): the fixed-width int family ([]u8.. arrays,
-        # wrap arith / shifts / bitwise / cross-width convert) and dynamic bool
-        # arrays. The generator emitted NEITHER before, which is exactly why three
-        # tychoc/tychoc0 divergences hid there (sized []T parse gap, conversion-arg
-        # fail-open, bool-array). Self-contained + deterministic + bounded.
         kinds += ["sized_use", "bool_arr_use"]
         # deepen two under-covered surfaces (ROADMAP what's-next): f-string holes of
         # every value type (str() through the interpolation desugar) and richer closures
@@ -394,10 +332,6 @@ class Gen:
         # sum-payload inference/lift surface (2026-07): bare [] (and array) payloads of
         # Some/Ok/Err grounded from the annotation, then bound in a match arm + mutated.
         kinds += ["sum_empty_payload"]
-        # element-wise array arithmetic (docs/spec/12-aggregates.md:209-270) and the
-        # bare `for:` loop. Both SHIPPED WITH NO GENERATOR: measured 2026-07-30 over
-        # 200 seeds, 0 programs contained an element-wise use site and 0 contained a
-        # bare `for:` (the loops-cleanup plan).
         kinds += ["arr_arith", "arr_arith", "bare_loop", "bare_loop"]
         if any(b == "string" for b in self.newtypes.values()):
             kinds += ["ntkey_use"]                  # newtype-keyed map ([Nt: int])
@@ -571,10 +505,6 @@ class Gen:
                 self.emit(ind, "acc = acc + " + g + "(" + str(self.r.randint(0, 9)) + ")")
             return
         if k == "generic_rich":        # generic monomorphization over composite type args:
-            # gid over [int]/tuple (the tuple instance-mangle path that emitted invalid C
-            # in tychoc0 until fixed), gsum(numeric) over [int]/[float], gtotal(defaultable)
-            # seeded from zero$(T), and the FzBox($T) generic struct over int/[int]/string.
-            # All fold into acc; monomorphization + per-instance body cloning must agree.
             r = self.r.random()
             n = lambda: str(self.r.randint(0, 9))
             if r < 0.25:                                        # gid over array / tuple
@@ -626,10 +556,6 @@ class Gen:
                 self.emit(ind+2, "acc = acc + 1")
             return
         if k == "sum_empty_payload":   # a bare [] (and non-bare array) payload of Some/Ok/Err takes
-            # its element type from the Option/Result annotation (ground_pre threads it inward), and
-            # the match arm binding is then mutated + measured (the lift must register the arm bind).
-            # Both were tychoc0 fail-closed divergences until 2026-07 (Some([]) -> "cannot type a bare
-            # [] here"; push over the bind -> "unknown variable"). Deterministic: len folds into acc.
             el = self.r.choice(["int", "string", "float"])
             def _elit():
                 if el == "int": return str(self.r.randint(1, 9))
@@ -734,22 +660,6 @@ class Gen:
                 self.emit(ind, "acc = acc + " + d + "[2]")
             return
         if k == "bare_loop":           # the bare `for:` form -- an unconditional loop left
-            # by `break` (or `return`, which only tests/for_bare.ty reaches).
-            #
-            # TERMINATION IS BY CONSTRUCTION, not by luck. A generated infinite loop
-            # would hang the lane (run.py's RUN_TIMEOUT would report it as a timeout on
-            # BOTH builds, i.e. a silent-ish loss of a seed), so each variant below:
-            #   - counts with a FRESH name, initialised to 0 on the line before the loop;
-            #   - increments it UNCONDITIONALLY as the FIRST statement of the body, so
-            #     no `continue` can skip the increment;
-            #   - tests the break immediately after the increment;
-            #   - has a FIXED body -- gen_block is never called inside one -- so no
-            #     generated statement can be interleaved that writes the counter; and
-            #   - registers the counter in self.loop_vars, so the `compound` and
-            #     `inout_str` kinds (which pick a target from the env) cannot write it
-            #     either. That is the same guarantee loop_vars already gives the
-            #     three-clause counter.
-            # The bound is a small literal, so the loop runs a fixed few iterations.
             r = self.r.random()
             i = self.fresh("bn"); self.loop_vars.add(i)
             lim = self.r.randint(2, 5)
@@ -907,10 +817,6 @@ class Gen:
                 self.emit(ind+1, "acc = acc + " + f + "(" + str(self.r.randint(0, 5)) + ")")
             return
         if k == "closure":             # a lambda value (closure): capture BY VALUE, call, fold into the checksum.
-            # The mutate-then-call variants are value-semantics probes: a closure
-            # captures a COPY, so the result must not see the later mutation. tychoc
-            # and tychoc0 must agree (differential) and ASan/LSan must stay clean
-            # (the env lives in the function arena, freed on return; never escapes).
             r = self.r.random()
             f = self.fresh("cl")
             if int_vars and r < 0.5:                            # scalar capture
@@ -989,12 +895,6 @@ class Gen:
             return                             # recycling n0's old buffer must not touch b's (shared via move)
 
         if k == "vscheck":
-            # Copy a heap value, mutate the COPY, assert the ORIGINAL is unchanged.
-            # If a deep-copy/aliasing bug makes the copy share the original's
-            # storage, mutating the copy changes the original -> _s1 != _s0 -> die().
-            # This catches value-semantics miscompiles present in BOTH compilers,
-            # which the tychoc-vs-tychoc0 differential structurally cannot (they would
-            # agree on the same wrong answer). die() exits 1 -> the runner flags it.
             if vs_map and (not (vs_arr or vs_struct) or self.r.random() < 0.34):
                 # #2: mutate a COPIED map in place via m[k]; the original must not move.
                 # A slotptr that reached through a shared table would change the original.
@@ -1226,12 +1126,6 @@ class Gen:
                       + " + 1, " + str(self.r.randint(0, 9)) + ")")
             return
         if k == "fstring":                          # f-string interpolation -> the str()-concat desugaring
-            # `f"...{e}..."` lowers to str()-of-each-hole concatenated with the literal
-            # segments. Fold the result LENGTH into the checksum: a miscompiled desugar
-            # (wrong str(), a dropped/reordered segment or hole) shifts the length, which
-            # the tychoc-vs-tychoc0 differential catches; ASan catches a bad concat. Holes
-            # are int vars / an int expr / a string var ONLY -- a string LITERAL inside a
-            # hole would terminate the f-string at the lexer.
             iv = self.r.choice(int_vars)
             body = "p={" + iv + "} q={(" + iv + " + " + str(self.r.randint(0, 9)) + ")}"
             if str_vars and self.r.random() < 0.7:
@@ -1346,15 +1240,6 @@ class Gen:
         self.out += ["fn fz_gtotal(xs: [$T]) -> $T where defaultable(T):", "    acc := zero$(T)",
                      "    for i := 0; i < len(xs); i += 1:", "        acc = acc + xs[i]", "    return acc", ""]
         self.out += ["struct FzBox($T):", "    v: T", ""]
-        # generic-struct + concrete-newtype PARAM coverage (the core:pool `Handle`
-        # family): a concrete newtype param BESIDE a generic-struct param, and a
-        # generic fn RETURNING that newtype. tychoc once accepted these while
-        # tychoc0 rejected them (a real parity gap the fuzzer didn't emit); both
-        # now monomorphize + newtype-identity-check them identically. Returns stay
-        # concrete `int` (never a bare `$T`), so no generic-result-typing gap; gen_expr
-        # instantiates FzBox at int/string/[int] via literal args (fz_slot ignores b.v,
-        # so every instantiation type-checks). fz_mkhandle feeds a newtype-returning
-        # generic result straight into fz_slot's newtype param (the `slot(b, mk(b))` shape).
         self.out += ["type FzHandle = int", ""]
         self.out += ["fn fz_slot(b: FzBox($T), h: FzHandle) -> int:", "    return to_int(h)", ""]
         self.out += ["fn fz_mkhandle(b: FzBox($T)) -> FzHandle:", "    return FzHandle(0)", ""]
@@ -1394,10 +1279,6 @@ class Gen:
                      "        match recv(ch):", "            Some(v):", "                s = s + v",
                      "            None:", "                return s", "    return s", ""]
         self.out += ["fn fz_apply(f: fn(int) -> int, x: int) -> int:", "    return f(x)", ""]
-        # FFI: a fixed extern vocabulary (backed by fuzz/ffi_shim.c, linked by
-        # run.py). gen_expr weaves calls to these into typed expressions so the
-        # differential + ASan oracle exercises the extern / ptr / string-return
-        # arena-copy codegen of both compilers.
         self.out += [
             "extern fn fz_addi(a: int, b: int) -> int",
             "extern fn fz_addf(a: float, b: float) -> float",

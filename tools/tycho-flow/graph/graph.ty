@@ -2,43 +2,6 @@ package graph
 
 import "../stage"
 
-# A pipeline as a VALUE: built here, run later, instead of hand-wired at every
-# call site.
-#
-# WHY THIS IS A SECOND PACKAGE. Everything below instantiates `stage`'s generics
-# at graph's OWN type parameter -- `Channel(stage.Item($T))`, `[stage.Item($T)]`,
-# `Result([$T], stage.FlowErr)`, and `Channel(Result(stage.Item($T),
-# stage.FlowErr))`, which is an imported generic aggregate applied to a
-# parameter of the importing package, wrapped in a builtin generic enum, inside
-# a channel. That is monomorphization across a package boundary, and it is where
-# three of the compiler bugs found on 2026-08-12 lived. Folding graph back into
-# stage would delete the only thing this package is for.
-#
-# WHAT A PLAN CAN AND CANNOT HOLD. Not the channels: a `Channel(T)` cannot be
-# returned, stored in a container or captured (13-concurrency.md §23.1), so the
-# wiring stays in the caller's scope where the `Task` handles live. Not the
-# tasks either, for the same reason. What is left, and what a Plan therefore is,
-# is the WORK plus the shape of the run: a name, a ring capacity, a predicate,
-# a total step, and a fallible one.
-#
-# THE FIELDS ARE FOUR SEPARATE FUNCTIONS AND NOT AN ARRAY OF STEPS. That was a
-# compiler bug, FIXED -- a generic struct with an array-of-function field:
-#
-#     struct Plan($T):
-#         steps: [fn($T) -> $T]        # once: m.c: unknown type name 'FnC0'
-#
-# The emitted C declared the array's element type as `FnC0` and never defined
-# it, so cc rejected the program. Fixed in `src/tychoc.c` by skipping the dead
-# template array composite's body, the same guard the four array-op loops
-# already had; `tests/generic_fn_array_field.ty` pins it.
-#
-# The SIGSEGV this header used to claim -- the same declaration reached from
-# ANOTHER package killing tychoc before it emitted anything -- WAS NEVER REAL.
-# Re-probed across packages, uninstantiated, and with four fn fields alongside
-# the array: every arrangement gave the same `FnC0` cc error, never a crash.
-#
-# The four fields stay only because rewriting this pipeline is its own change,
-# not because the language still forbids the array.
 
 # The pipeline, described. Copying one is copying the description; `with_cap`
 # and `named` return modified copies rather than mutating, because value

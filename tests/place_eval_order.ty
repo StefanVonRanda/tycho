@@ -1,15 +1,3 @@
-# Spec §13.4 (general place-evaluation order). `tests/eval_order.ty` pins the
-# one-index case `a[f()] = g()`; this fixture pins the GENERAL rule for a place
-# with several side-effecting legs, on both compilers.
-#
-# The receiver leg is unobservable by construction: a place is rooted at a
-# VARIABLE, never at a call. `p().x = e` and `p()[i] = e` are rejected ("cannot
-# assign to a field of a temporary" / "can only index-assign an array or map
-# variable or field"), so a place spine is always side-effect-free and the only
-# side-effecting legs are its index / subscript-argument sub-expressions.
-#
-# Those legs are evaluated in source order (left to right, outermost index
-# first), and the whole place is evaluated BEFORE the right-hand side.
 
 struct Box:
     v: [int]

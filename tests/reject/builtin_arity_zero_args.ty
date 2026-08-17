@@ -1,6 +1,3 @@
-# A 1-argument builtin called with NONE. This shape crashed tychoc0 inside type_of,
-# strictly EARLIER than its per-call argument checks, so the arity gate has to sit at
-# type_of's ECall arm as well -- pop()/keys()/Some()/recv() all landed here.
 
 fn main():
     xs := [1, 2]

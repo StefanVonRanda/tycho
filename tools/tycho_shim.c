@@ -1,16 +1,3 @@
-/* Companion C for tools/tycho.ty (the `tycho` daily-driver CLI), linked via
- * `tychoc --shim`. These wrap libc calls the FFI can't reach directly: a bare
- * `extern fn system(...)` emits `extern long system(char*)`, which clashes with
- * stdlib.h's `int system(const char*)` in the compiler preamble. Routing through
- * our own symbols (in no standard header) sidesteps the clash. Signatures match
- * tycho's extern emission: tycho `int` == C `long`, tycho `string` == `char*`.
- *
- * The file-level helpers below (remove/copy/rename/files_equal) exist because
- * the dispatcher used to spell them as shell commands -- `rm -f`, `cp`, `mv`,
- * `diff -q`. system() is cmd.exe on Windows, which has none of those, so every
- * one of them failed there. Doing the work in C removes the shell from these
- * paths on BOTH platforms rather than maintaining two spellings of the same
- * command (the same call tools/lsp_shim.c made for its package mirror). */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -20,21 +7,6 @@
 #include <windows.h>
 #endif
 
-/* Run a command line through the shell; returns the raw wait status (0 == ok).
- *
- * system() is cmd.exe on Windows, and cmd cannot execute a command NAME written
- * with forward slashes: "./tychoc x.ty" dies with "'.' is not recognized as an
- * internal or external command" before the compiler is reached. Every command
- * this tool builds starts with a path it was handed ($TYCHOC, $TYCHOFMT,
- * $TYCHODEBUG, or the temp binary it just linked), so on Windows that was the
- * whole tool: run, build, check, watch and fmt each died at their first
- * shell-out.
- *
- * Only the first token is rewritten. Arguments keep their forward slashes,
- * which the CRT accepts. gap: a command NAME containing a space would need
- * quoting, and this does not add it -- the same gap tools/lsp_shim.c:58
- * documents for the LSP and tools/tycho-debug/debug_shim.c:199 for the
- * debugger's gdb line. */
 long tycho_run(char *cmd) {
 #ifdef _WIN32
     char *copy = strdup(cmd);
@@ -55,8 +27,6 @@ long tycho_sleep_ms(long ms) {
     return 0;
 }
 
-/* 1 under _WIN32, else 0 -- picks the null device, the temp root and the
- * executable suffix in tools/tycho.ty. */
 long tycho_is_windows(void) {
 #ifdef _WIN32
     return 1;

@@ -1,7 +1,3 @@
-# An int LITERAL adapts to a float operand in arithmetic AND ordering (B-1 --
-# literals only, a variable never widens), uniformly across both compilers,
-# including inside a generic numeric body (`if x < 0`). Non-literal int vs float
-# is a type error (see tests/reject/float_int_*).
 fn gsign(x: $T) -> int where numeric(T):
     if x < 0:
         return 0 - 1

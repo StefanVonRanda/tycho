@@ -1,5 +1,3 @@
-# §14.2 (docs/spec/10-statements.md:26): a void call produces no value, so it
-# cannot be a condition. Found by the front-door plan's void sweep, fixed in 15.
 fn nop():
     return
 

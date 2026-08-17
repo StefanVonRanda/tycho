@@ -1,5 +1,3 @@
-# Phase 20, INFERRED half: Some(ch) (type_of's Some arm).
-# BEFORE this phase tychoc0 accepted this AND the emitted C compiled and RAN.
 fn main():
     ch := channel(int, 4)
     o := Some(ch)

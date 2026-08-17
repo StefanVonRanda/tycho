@@ -1,12 +1,3 @@
-# `x := f() or_return` where f's ok payload is void. or_return unwraps to the ok
-# value, and here that value does not exist, so there is nothing to bind. The
-# statement form `f() or_return` is the spelling that works (exercised in
-# tests/result_void.ty) and is accepted precisely because there is no value.
-#
-# This lands on the same general guard that catches `x := nothing()` for a
-# procedure with no return type -- one rule, not a Result-specific one.
-#
-#   error: cannot bind a void value
 fn f() -> Result(void, string):
     return Ok()
 

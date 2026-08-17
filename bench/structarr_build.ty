@@ -1,9 +1,3 @@
-# Struct array element residual: each iteration builds a loop-local [Item] whose
-# elements (and their string fields) live in the array's block arena and free
-# per iteration -> O(1) memory. Before the struct-element fix, struct
-# construction built its string fields with owner 0 (malloc/immortal), so every
-# constructed element leaked its string every iteration -> O(n) growth (hundreds
-# of MB at this N under tychoc0). Asserts constant RSS.
 struct Item:
     name: string
     n: int

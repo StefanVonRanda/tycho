@@ -1,11 +1,3 @@
-# Soundness guard for liveness-driven buffer recycling: a recycled buffer must be
-# the SOURCE var's OWN, not one it shared via a move. `b := a` can move a's buffer
-# to b (move-on-last-use, since a is read exactly once here), so reassigning a
-# afterwards must NOT recycle that buffer -- it is still live through b. The gate
-# excludes vars read < 2 times for exactly this reason (a >=2-read var is never
-# moved). The loop write uses DISTINCT values (base 1000000) and a matching size,
-# so if b's buffer were wrongly recycled+reused the corruption is unmissable.
-# Regression: both compilers once printed ~100004950 here (b's buffer reused).
 fn mkv(n: int, base: int) -> [int]:
     r := []int
     for i := 0; i < n; i += 1:

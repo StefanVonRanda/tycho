@@ -1,8 +1,3 @@
-#!/bin/sh
-# Fair "each language at its standard optimized build" sweep — peak RSS + wall.
-#   tycho : -O3 (its default; rides the C optimizer)   C/Rust : -O3
-#   Go   : go build (Go's only optimized level)        Koka  : koka -O2 (its max)
-# best-of-3 wall ms; peak RSS kb via bench/peakrss (prints "... rss_kb wall_ms").
 cd "$(dirname "$0")/.." || exit 1            # repo root (portable; was a hardcoded Linux path)
 T=$(mktemp -d); cc -O2 -o "$T/pk" bench/peakrss.c || exit 1
 P=bench/prongB

@@ -1,13 +1,3 @@
-# gencorpus: write a deterministic synthetic corpus for the parallel indexer
-# head-to-head. Same bytes on every machine, so tycho / Go / C all index the
-# identical input and must agree on the checksum.
-#
-#   gencorpus <out-dir>
-#
-# Writes N_FILES files of WORDS_PER_FILE space/newline-separated lowercase
-# words, each drawn from a VOCAB-sized pool by a fixed LCG. Words are pure
-# [a-z] (base-26 of the pool index), so the indexer's char-scan tokenizer is
-# the identity on them -- the corpus stays language-agnostic.
 
 fn word(n: int) -> string:
     s := ""

@@ -1,10 +1,3 @@
-# Construction-arg move guard (peak RSS). Building an aggregate from a dead
-# local hands off its buffer instead of deep-copying it. Here `big` is dead
-# after it is placed into the tuple, so only ONE ~64 MB buffer is ever live;
-# reverting to a copy allocates a second full buffer (~2x). The bound sits
-# between the moved (one buffer) and copied (two) sizes. This guards the
-# constructor path (tuple/struct/enum/array-literal args), which the `move`
-# bench (the `dup := big` decl path) does not exercise.
 
 fn build(n: int) -> [int]:
     r := []int

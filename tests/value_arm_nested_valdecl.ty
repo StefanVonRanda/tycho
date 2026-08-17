@@ -1,10 +1,3 @@
-# A value-ctrl LEADING decl inside a value arm (ROADMAP 2.1). A multi-statement
-# value arm may open with `inner := if ...` / `inner := match ...` -- itself a
-# value if/match -- and the arm's FINAL tail expression must see `inner`.
-# Regression: tychoc0's extend_tail_scope bound only SDecl/STypedDecl leading
-# statements, so a leading SValDecl was never pushed and the tail died with
-# "unknown variable"; tychoc accepted the same program. Both compilers must now
-# accept and agree byte-for-byte.
 
 # value `if` leading a value `if` arm
 fn f(n: int) -> string:

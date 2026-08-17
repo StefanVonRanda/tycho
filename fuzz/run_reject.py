@@ -1,26 +1,3 @@
-#!/usr/bin/env python3
-# Robustness / fail-closed fuzz harness.
-#
-# Feeds MALFORMED input (fuzz/gen_malformed.py) to tychoc -- built under
-# ASan+UBSan -- and asserts it FAILS CLOSED. The hard invariants (a violation is
-# a FINDING, saved to fuzz/findings/, exit 1):
-#
-#   (1) NO CRASH: the compiler must not segfault / abort / trip ASan or UBSan /
-#       hang on any input. A controlled error exit (die() -> nonzero, clean
-#       stderr) is the correct, expected behaviour -- only an UNCONTROLLED fault
-#       is a finding.
-#   (2) NO FAIL-OPEN: if the compiler ACCEPTS the input (exit 0) and emits C, that
-#       C must be valid (cc -fsyntax-only). Accepting bad input and emitting
-#       broken C is a missed-rejection / codegen-on-garbage bug.
-#
-# HISTORY: until 2026-07-26 this lane ran the same inputs through tychoc0 too and
-# recorded (never failed on) accept/reject divergence between the two front-ends.
-# tychoc0 is frozen (see compiler/tychoc0.ty) and no gate builds it, so those legs
-# were removed. Nothing was lost from (1) or (2) -- both are properties of a single
-# compiler, and both are still asserted for tychoc exactly as before. What was lost
-# is only the divergence REPORT, which was advisory and never failed the run.
-#
-# Usage: run_reject.py [N] [start]    N = seeds (default 200)
 import subprocess, sys, os, tempfile, shutil
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

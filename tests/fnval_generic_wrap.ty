@@ -1,8 +1,3 @@
-# The workaround tests/reject/fnval_local_generic.ty's message NAMES, executed.
-# A refusal that points at a lambda is only honest if that lambda compiles, so
-# this pins it: the wrapper fixes $T=int and reaches the same generic body a
-# direct call does. The non-generic local fn as a value (addi) runs alongside it,
-# which is what makes the refusal specific to genericity rather than to fn values.
 
 fn mymin(a: $T, b: $T) -> $T where comparable(T):
     if a < b:

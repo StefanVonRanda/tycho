@@ -1,17 +1,3 @@
-# Phase 4 decided that ALL THREE clauses of `for init; cond; post:` are
-# required, and that bare `for:` is the only degenerate form. That is not a rule
-# bolted onto the grammar -- it is what the grammar already said: this parser has
-# no empty-statement production, so an empty init or post clause has nothing to
-# parse, and an empty condition has no `bool` to type-check. Each is refused by
-# name rather than by whatever the statement parser happened to say next:
-#
-#     for ; i < 3; i += 1:      the init clause is required -- write `for:` for an infinite loop
-#     for i := 0; ; i += 1:     the condition clause is required -- write `for:` for an infinite loop
-#     for i := 0; i < 3; :      the post clause is required -- write `for cond:` for a loop that advances in its body
-#
-# This fixture carries the first. (The reject lane asserts a loud refusal,
-# not the message text -- the message is asserted by this comment and by
-# the evidence under the loops-cleanup plan.)
 fn main():
     i := 0
     for ; i < 3; i += 1:

@@ -71,8 +71,6 @@ fn main():
     if not (e1 == e3):
         println("neq-ok")
 
-    # map_has returns a real bool: str() prints true/false (not 1/0), and both
-    # compilers must agree (map_has was typed int in tychoc0 before — a str divergence).
     println("has " + str("unit" in pts) + " " + str("nope" in pts))  # has true false
     println("ihas " + str(0 in im) + " " + str(99 in im))             # ihas true false
 

@@ -2,12 +2,6 @@ package main
 
 import "core:strings"
 
-# The real repro tests/pkg/variant_shadow could not write (its note explains why:
-# this lane could not link a corelib shim until run.sh learned --print-shims).
-# main declares Syntax and Empty WITH payloads; core:strings' FloatErr declares
-# both without. Variant names are package-scoped, so parse_float's own
-# `return Err(Syntax)` inside corelib/strings/strings.ty must keep seeing
-# corelib's payload-free one, not main's payload-carrying one.
 enum Mine:
     Syntax(string)
     Empty(int)

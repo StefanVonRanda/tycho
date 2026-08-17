@@ -1,5 +1,3 @@
-# A builtin called with too MANY arguments -- the other half of the same gap, and
-# a fail-OPEN before Phase 35: tychoc0 accepted the extra argument and dropped it.
 
 fn main():
     xs := [1, 2]

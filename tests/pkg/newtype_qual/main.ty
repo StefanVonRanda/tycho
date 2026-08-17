@@ -1,11 +1,3 @@
-# A newtype declared in one package and USED in another: arithmetic, ordering,
-# a map keyed by it, `keys()` handing it back wrapped, and a generic corelib
-# function instantiated at it.
-#
-# Measured 2026-08-14: `type X = U` is declared in 46 files, 43 under tests/, and
-# the three real consumers all keep their newtype inside one package. Exactly one
-# file in the tree named a foreign package's newtype, so this surface was
-# effectively untested.
 package main
 import "coin"
 import "core:sort"

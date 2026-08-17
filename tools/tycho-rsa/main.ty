@@ -1,30 +1,3 @@
-# tycho-rsa -- RSA in pure Tycho on core:bignum.
-#
-#     ./tychoc tools/tycho-rsa/main.ty -o build/tycho-rsa
-#     ./build/tycho-rsa selfcheck
-#     ./build/tycho-rsa keygen 512
-#     ./build/tycho-rsa modexp 65 17 3233
-#
-# WHAT IT IS FOR. The plan's program (docs/internals/plan-tycho-chess-DONE.md's
-# successor): the language stress is ARITHMETIC DEPTH. Four programs in, none
-# has done real numeric computation, and core:bignum (add/sub/mul/divmod,
-# decimal I/O) has no modular exponentiation, no GCD, no primality -- those
-# are the work here, built on top. The differential is ground truth in the
-# perft sense: RSA has exact published vectors, and the gate cross-checks
-# modexp against python's pow() at 256/512/2048-bit sizes plus a
-# deterministic-seeded keygen whose output and invariants are golden-locked.
-#
-# Scope, honestly stated: raw RSA (textbook) -- no PKCS#1 padding. Padding is
-# a protocol layer, not arithmetic; the point of this program is the math.
-#
-# Design notes:
-#  - square-and-multiply modexp over the bignum.Big exponent's bits; the low bit of
-#    a bignum.Big is the low bit of its lowest limb (BASE = 10^9 is even).
-#  - Miller-Rabin is PROBABILISTIC with fixed witnesses (the first twelve
-#    primes); our 128-bit primes exceed the deterministic bound, so the
-#    gate's encrypt->decrypt round-trip is the final arbiter, not is_prime.
-#  - keygen is deterministic: rand.seed with a fixed constant, so the whole
-#    selfcheck output is a reproducible golden.
 package main
 
 import "core:bignum"
@@ -186,7 +159,6 @@ fn selfcheck():
     else:
         println("textbook: FAIL (c=" + bignum.to_str(c) + " m=" + bignum.to_str(m) + ")")
 
-    # [2] python-oracle modexp vectors (python 3 pow(), generated 2026-08-04)
     check_modexp("16157387885063800092468972531095442600227637936690303362357377535130907802013",
                   "252036172554514852379917073716435574953",
                   "10849168088304224352535091720622540520734470047124775256561256203268533903697",

@@ -1,7 +1,3 @@
-# The §3.7 binding rule, in the spelling that used to lose to a use-site parse
-# error: the illegal parameter is also USED, so parse_primary reached the bare
-# `Ok` before vars_push ever saw the declaration.
-# expect: 'Ok' cannot name a binding
 fn f(Ok: int) -> int:
     return Ok + 1
 

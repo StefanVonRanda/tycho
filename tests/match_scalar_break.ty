@@ -1,6 +1,3 @@
-# A user `break` inside a match arm must target the enclosing LOOP, not the
-# generated switch -- the switch dispatches via gotos precisely so this holds
-# (design: docs/internals/design-scalar-match.md D6).
 
 fn brk(n: int) -> int:
     total := 0

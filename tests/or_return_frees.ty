@@ -1,7 +1,3 @@
-# or_return's early-return path must free the live block arenas + _scope
-# exactly like a normal return (and promote the Err payload to the caller's
-# arena first). Regression: tychoc0 leaked every scope arena on the error
-# path -> GBs of RSS over a 1M-iteration loop (tychoc stays flat).
 fn boom(i: int) -> Result(int, string):
     if i >= 0:
         return Err("nope" + str(i))

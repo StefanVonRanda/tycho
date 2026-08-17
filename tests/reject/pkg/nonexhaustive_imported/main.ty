@@ -1,18 +1,3 @@
-# A non-exhaustive match on an IMPORTED enum must name `pkg.Variant of pkg.Enum`,
-# never the mangled `pkg__Variant of pkg__Enum`.
-#
-# The imported-type unmangling of 2026-08-14 covered the type-mismatch
-# diagnostics and MISSED BOTH non-exhaustive-match sites. It surfaced only when a
-# variant was added to core:image and the compiler correctly refused every stale
-# match -- the message that reported the refusal was itself mangled. The two
-# sites index the variant differently (`[mi]` and `[v]`), which is how the first
-# fix caught one and left the other printing a mangled variant beside an
-# unmangled enum.
-#
-# The LOCAL case must keep its bare names (`missing variant B of E`); that is
-# what the is_imported_pkg guard inside nominal_name preserves, and it is
-# asserted by hand rather than here because a local enum needs no package.
-# expect: non-exhaustive match: missing variant image.NotPng of image.ImgErr
 package main
 import "core:image"
 

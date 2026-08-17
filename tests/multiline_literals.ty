@@ -1,5 +1,3 @@
-# F1: collection literals span multiple physical lines (implicit line-join
-# inside (...) / [...]), optional trailing comma. Verified on both transpilers.
 struct Pt:
     x: int
     y: int

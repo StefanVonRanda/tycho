@@ -1,6 +1,3 @@
-# A `bounded` capacity must be POSITIVE, whether spelled as a literal or via an
-# int `const` (docs/spec/03-types.md 5.3.10). Locks the positivity check on the
-# const path, which is resolved after parsing. Phase 18.
 const CAP = 0
 
 fn main():

@@ -1,6 +1,3 @@
-# Function values inside a package: a same-package function used as a VALUE must
-# resolve to its mangled name (was "unknown variable"), and a fn-typed LOCAL
-# called indirectly must NOT be package-prefixed. tychoc + tychoc0 (--bundle) agree.
 package fnval
 
 fn base(x: int) -> int:

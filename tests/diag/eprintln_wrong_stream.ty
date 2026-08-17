@@ -1,6 +1,2 @@
-# `eprintln` does not exist. Edit distance answers `println`, which is the WRONG
-# STREAM: it puts the error on stdout, where it corrupts whatever the tool is
-# piped into. The message must name the stderr primitive. Found writing
-# tools/tycho-diff, whose own gate asserts stdout stays empty on every error path.
 fn main():
     eprintln("boom")

@@ -1,22 +1,3 @@
-# `to_char(n)`: the int -> char direction, and `'\xNN'`: the byte written in hex.
-#
-# WHY to_char EXISTS. `chr(n)` (src/tychoc.c:5032) already turns an int into a
-# byte, but it returns that byte as a one-character STRING, so the only way to
-# reach a `char` from an int was `char_at(chr(n), 0)` -- two builtins and a heap
-# string for a value that is one byte. `char` has no type keyword
-# (docs/spec/03-types.md:75), so nothing about this could be written as an
-# annotation either; the type is inferred here exactly as it is from `char_at`.
-#
-# OUT OF RANGE ABORTS, it does not wrap. to_char routes through the same
-# `tycho_chr` (runtime/tycho_rt.c:1265-1270) as `chr`, whose comment states the
-# rule: "A value outside 0..255 is a program error and aborts cleanly (like a
-# bad index), rather than silently masking to a byte." tests/abort/chr_oob.ty
-# pins the abort itself. The sized `to_u8` family wraps instead, but those are
-# documented as TOTAL reinterpretations (docs/spec/06-conversions.md:40), a
-# different category from a conversion with a domain.
-#
-# `'\xNN'` takes exactly two hex digits -- deliberately fixed-width, not C's
-# greedy form, and it exists in char literals only. See tests/char_hex_escape.ty.
 fn main():
     a := to_char(65)
     println(str(a) + "," + str(a == 'A') + "," + str(to_int(a)))

@@ -1,7 +1,3 @@
-# A function returning a map PARAMETER used to emit the wrong C copy
-# (tycho_map_si_copy over a composite map) and fail to compile. Both the
-# struct-valued and the string-valued maps go through the param-copy path;
-# the return-slot no-op move only ever dodged LOCAL returns.
 struct Row:
     id: int
     name: string

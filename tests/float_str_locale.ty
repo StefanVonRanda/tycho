@@ -1,57 +1,6 @@
-# str(float) renders in the "C" locale whatever the ambient LC_NUMERIC is.
-#
-# printf's "%g" takes its decimal separator from LC_NUMERIC, so under a
-# comma-decimal locale str(1.5) used to produce the bytes `1,5` -- and then the
-# runtime's ".0" guard, which asks "is this text integral?" by scanning for '.',
-# found none and appended ".0", giving `1,5.0`. Not a float in any grammar, not
-# readable by core:strings' parse_float, not valid Tycho source. See
-# runtime/tycho_rt.c@tycho_float_to_str.
-#
-# THE LOCALE IS FORCED HERE, NOT BY THE HARNESS. tests/run.sh runs every fixture
-# under whatever environment the grader has, which on almost every machine is
-# "C" -- exactly the case that never broke. So this fixture switches LC_NUMERIC
-# to a comma-decimal locale itself, through a runtime test hook, and prints the
-# same values twice: once under the default environment, once under the hostile
-# locale. Both blocks are in the golden and both must match, so the fix is
-# checked on every host rather than on a host that happens to have LANG set.
-#
-# `hostile=1` is the proof the switch took effect. A host with no comma-decimal
-# locale installed prints `hostile=0`, which is NOT the golden, so it fails
-# loudly rather than quietly re-testing "C" a second time.
-#
-# The two externs are declared here and nowhere else: they are test hooks in the
-# runtime, not builtins and not part of any package's API. Same shape
-# corelib/test/strings/main.ty uses for corelib/strings/strings_shim.c's hook.
 extern fn tycho_test_make_locale_hostile() -> int
 extern fn tycho_test_float_roundtrip(x: float) -> int
 
-# rt=1 means str(x) parsed back to bit-identical x (sign included, so -0.0 is not
-# 0.0); rt=0 means it did not; rt=-1 means the "C" locale handle could not be
-# built and neither leg is trustworthy.
-#
-# WINDOWS, measured 2026-08-13 and re-measured 2026-08-14 under Wine with the
-# mingw toolchain: the `=` column is byte-identical to this golden on every line.
-# Three lines differ in `rt` only -- inf, -inf and nan read back as 0.
-#
-# The 2026-08-13 note blamed "MSVCRT's strtod", and that is WRONG. Probed on
-# 2026-08-14 from one Windows program, same build, same run:
-#
-#     strtod("inf")                    = inf, consumed 3
-#     _strtod_l("inf", NULL, "C" hnd)  = 0,   consumed 0
-#
-# Plain `strtod` parses all three exactly as glibc does. It is `_strtod_l`, the
-# LOCALE-AWARE variant, that refuses them -- and that is the one the Windows
-# branch of `runtime/tycho_rt.c@tycho_test_float_roundtrip_prec` must call,
-# because Windows has no `uselocale` to swap the numeric locale around a plain
-# strtod. Numbers (1.5, 1e300) parse identically through both. So the prediction
-# that a C99-conformant UCRT strtod "would likely agree" does not follow either:
-# the call that fails is not the one being conformed.
-#
-# No Tycho program can observe any of it: this project's own
-# `strings.parse_float` returns Err for inf, -inf, nan, infinity, Inf and NaN on
-# Linux too (re-measured 2026-08-14), so the API refuses these on every platform
-# and the difference lives entirely in the C-library probe behind the test hook.
-# scripts/wine_test.sh accepts exactly this rt difference and nothing else.
 fn show(label: string, x: float):
     println(label + " = " + str(x) + "  rt=" + str(tycho_test_float_roundtrip(x)))
 
@@ -74,13 +23,6 @@ fn block():
     show("-0.0       ", -0.0)
     show("1e300      ", 1e300)
     show("1e-300     ", 1e-300)
-    # 0.1 + 0.2 is 0.30000000000000004: 17 significant digits. Under the old
-    # fixed %.15g this printed `0.3` with rt=0 -- readable but a DIFFERENT
-    # double. The renderer now escalates to as many digits as the value needs,
-    # so it is the full 17 here and rt=1, identically under both locales.
-    # tests/float_roundtrip.ty is where that behaviour is the subject; this line
-    # stays because it is the one value in this file whose text the escalation
-    # moves, and it must move the same way under a comma-decimal LC_NUMERIC.
     tenth := 0.1
     fifth := 0.2
     show("0.1+0.2    ", tenth + fifth)

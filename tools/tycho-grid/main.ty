@@ -1,16 +1,3 @@
-# tycho-grid -- a small integer grid, built on the three least-used features.
-#
-# WHY THIS PROGRAM EXISTS. A dogfood audit (docs/internals/FRICTION.md).
-# Measured 2026-08-14, each of these had exactly ONE real consumer in the tree:
-#   subscript     -- tools/tycho-sim/world/world.ty
-#   bounded[N]T   -- tools/tycho-vm/main.ty
-#   # deprecated: -- corelib/sort/sort.ty
-# This program is the second consumer of all three at once, which is what a
-# feature needs before its edges are known.
-#
-#   tycho-grid --rows R --cols C [--set r,c=v ...] [--mark r,c ...]
-#
-# THE GATE IS `make grid-check` (tools/tycho-grid/run.sh).
 package main
 
 import "core:cli"
@@ -21,14 +8,6 @@ const MAXMARKS = 4      # a bounded capacity may be a literal or an int const
 struct Grid:
     rows: [[int]]
 
-# A subscript: a compile-time place-macro, so `g.at(r, c) = v` writes THROUGH
-# the projection with no copy and no runtime object.
-#
-# THE SHAPE THIS CANNOT HAVE. The obvious flat-array spelling
-# `yield &g.cells[r * g.w + c]` is REFUSED: reading two fields of the receiver
-# counts as using the parameter `g` twice, and the rule is that each parameter
-# appears at most once in the yielded place (FRICTION #48). So the grid is a
-# nested array, where the receiver is mentioned exactly once.
 subscript at(g: Grid, r: int, c: int) -> inout int:
     yield &g.rows[r][c]
 
@@ -48,9 +27,6 @@ fn make_grid(nrows: int, ncols: int) -> Grid:
         push(rows, row)
     return Grid(rows)
 
-# The deprecation marker. It must OPEN the comment: a line that merely MENTIONS
-# `deprecated:` in prose marked the fn below it until 2026-08-14 (FRICTION #46).
-# deprecated: use total(g, nrows, ncols) -- sum_all walks the rows and predates the subscript
 fn sum_all(g: Grid) -> int:
     t := 0
     for row in g.rows:

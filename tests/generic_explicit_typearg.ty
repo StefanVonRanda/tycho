@@ -1,10 +1,3 @@
-# A generic whose type parameter appears ONLY in its return type is called with
-# the explicit type-argument form, `name$(T)(...)`, specified at §7.1/§7.5. It
-# always worked; FRICTION.md #36 claimed there was "no explicit-instantiation
-# syntax to rescue it", which was wrong and is retracted there.
-#
-# What was real is the DIAGNOSTIC for forgetting it, pinned by the sibling
-# tests/reject/generic_return_only_unbound.ty.
 struct Box($T):
     items: [$T]
 

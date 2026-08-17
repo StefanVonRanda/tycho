@@ -1,11 +1,5 @@
 package gc
 
-# A single GENERIC collection module over `$T` -- the corelib goal: one
-# definition serves int, string, and float (and any element type). Functions
-# needing ordering carry `where comparable(T)`; arithmetic ones `where
-# numeric(T)`; formatting `where has_str(T)`. This is the Stage-2 acceptance
-# dogfood: it compiles + runs identically under tychoc, tychoc0 (--bundle), and
-# standalone tychoc0.
 
 fn contains(xs: [$T], x: $T) -> bool:
     for v in xs:

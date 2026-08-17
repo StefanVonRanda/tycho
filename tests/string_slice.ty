@@ -1,5 +1,3 @@
-# String slices: s[a:b] is a fresh substring (sugar for substr), with the
-# array-slice forms s[a:], s[:b], s[:]. Self-hosting (tychoc0 supports it).
 fn main():
     s := "hello, world"
     println(s[0:5] + "|" + s[7:] + "|" + s[:5] + "|" + s[:])   # hello|world|hello|hello, world

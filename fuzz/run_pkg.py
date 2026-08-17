@@ -1,37 +1,3 @@
-#!/usr/bin/env python3
-# Package fuzzer. The single-file generator (gen.py/run.py) compiles one file from
-# stdin and so can NEVER reach the package-mangling code paths -- exactly where the
-# mangle_type and generic-instance-over-tuple bugs hid. This generates a random
-# two-package program (a `geom` helper package + a `main` that imports it)
-# exercising cross-package types and calls, compiles it with tychoc, runs it, and
-# FAILS if it does not build and run cleanly (seed reported).
-# Deterministic per seed. Usage: run_pkg.py [N]   (N defaults to 200).
-#
-# HISTORY -- THE DIFFERENTIAL WAS RETIRED 2026-07-29. Until then each program was
-# compiled THREE ways and their output required to be byte-identical:
-#   tychoc <dir>/main.ty                     (the C reference)
-#   tychoc --bundle | tychoc0                (the post-order package stream)
-#   tychoc0 <dir>/main.ty                    (standalone: reads the dir itself)
-#
-# WHY IT WENT: compiler/tychoc0.ty is FROZEN, and the breaking loop-syntax change
-# of 2026-07-29 (the three-clause `for`, bare `for:` and `parallel for i in 0..<N:`
-# replace the old `range()` counting header, which was deleted) means it can no
-# longer parse the corpus, so no lane builds it.
-# See compiler/fixpoint.sh's header, ROADMAP.md and docs/architecture.md.
-#
-# `k_array_ret` below was left emitting the deleted `range()` by that change and
-# only rewritten 2026-07-30 (the loops-cleanup plan). It failed SILENTLY: `classify`
-# returns "skip" whenever tychoc exits non-zero, so a program that no longer parses
-# is counted as skipped, not FAILED, and the runner still printed a green
-# `FAIL=0`. Half of every run was being thrown away. This lane is not in `make ci`,
-# so nothing said so; run it by hand and watch `skip`, not only `FAIL`.
-#
-# WHAT IS LOST, AND IT IS THE INTERESTING HALF: legs (2) and (3) were the only
-# coverage anywhere of the `--bundle` post-order package STREAM and of a compiler
-# resolving a package directory from disk on its own. Nothing else in the tree
-# consumes `--bundle` output. What remains is a smoke test -- random cross-package
-# programs must still compile and run under tychoc -- with no second opinion and
-# no check that the bundle stream is even well formed.
 import sys, os, random, subprocess, tempfile, shutil
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -93,8 +59,6 @@ def classify(seed):
         open(d + "/geom/g.ty", "w").write(geom)
         open(d + "/main.ty", "w").write(main)
         ent = d + "/main.ty"
-        # tychoc reference. Legs (2) and (3) -- the two tychoc0 legs that made this
-        # a differential -- were retired 2026-07-29; see the file header.
         ta = subprocess.run([TYCHOC, ent, "-o", d + "/tb"], capture_output=True, text=True, env=ENV, timeout=30)
         if ta.returncode != 0:
             return "skip", None

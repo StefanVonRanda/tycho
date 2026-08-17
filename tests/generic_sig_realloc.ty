@@ -1,12 +1,3 @@
-# Regression: `sig_find` returns a pointer INTO the growable `g_sigs` table.
-# Resolving a call's arguments can instantiate a generic, which appends to
-# `g_sigs` and reallocs it -- leaving the callee's `Sig *` dangling for the
-# inout/arity/type checks that follow. This forces 200 distinct
-# instantiations inside the arguments of `print`/`str`, crossing several
-# realloc boundaries whatever capacity the table starts at. Before the fix
-# the freed slot read back garbage: "argument 1 of 'print' is inout".
-# The fat generic bodies are load-bearing: instantiating them allocates enough
-# to overwrite the freed slot before it is read. Trim them and this goes silent.
 
 fn tag(x: $T) -> int:
     a0 := x

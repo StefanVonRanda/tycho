@@ -1,31 +1,3 @@
-# tycho-kvsrv -- a concurrent HTTP key-value server in Tycho.
-#
-#     ./tychoc tools/tycho-kvsrv/main.ty -o build/tycho-kvsrv
-#     ./build/tycho-kvsrv --port 8080
-#     curl -X PUT -d hello http://127.0.0.1:8080/kv/alpha
-#     curl http://127.0.0.1:8080/kv/alpha
-#
-# WHAT IT IS FOR. The plan's program (docs/internals/plan-tycho-rsa-DONE.md's
-# successor): the stress is networking plus the shared-state concurrency
-# question the kv store's pscan probed only read-only.
-#
-# THE SHARED-STATE ANSWER. The language has no shared mutable storage and no
-# lock machinery -- race freedom is by construction. So the store is an
-# ACTOR: one task owns the map, and the connection handlers reach it through
-# channels. The channel topology is forced by the affine rules (a Channel
-# cannot be a struct field, a container element, or a return value): ONE
-# shared command channel whose payload carries the worker id, plus one NAMED
-# reply channel per worker, passed as spawn arguments -- every channel has
-# exactly one receiver, so nothing can race. The worker count is a named
-# constant (4), the same constraint pscan hit (no arrays of Task/Channel
-# handles); the worker pool is tycho-httpd's recursive fan-out over the one
-# shared listening fd, and each worker serves its accepted connection inline.
-#
-# Scope, honestly stated: the store is IN-MEMORY (no persistence -- the B+
-# tree lives in the tycho-kv tool, not a corelib). No URL decoding (keys must
-# be URL-safe); the gate uses plain keys. The worker count is fixed at
-# compile time by the named reply channels -- a --workers flag would need
-# channel arrays, which the language forbids.
 package main
 
 import "core:net"
@@ -199,10 +171,6 @@ fn main():
     av := cli.argv()
     valued := ["host", "port", "idle-ms"]
     boolean := ["help", "h"]
-    # parse_checked, not parse_spec: the schema-carrying parse RECORDS an unknown
-    # token and hands back a usable Cli, so `--pot 9000` used to start the server
-    # on the default port with nothing said (FRICTION #29's residue). A Result
-    # cannot be ignored.
     c := cli.Cli([], [], [], [], [], [])
     match cli.parse_checked(av, valued, boolean):
         Ok(v): c = v
@@ -212,9 +180,6 @@ fn main():
         print(usage())
         return
     host := cli.get(c, "host", DEF_HOST)
-    # parse_int_checked, not parse_int: the short name stops at the first
-    # non-digit and answers with what it got, so `--port abc` was port 0 -- a
-    # kernel-chosen port -- and `--port 80x` was 80 (FRICTION #34).
     port := 0
     match strings.parse_int_checked(cli.get(c, "port", str(DEF_PORT))):
         Ok(v): port = v

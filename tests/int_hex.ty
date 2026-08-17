@@ -1,9 +1,3 @@
-# Hex (`0x`/`0X`) and binary (`0b`/`0B`) integer literals — §3.9.1
-# (docs/spec/01-lexical.md). Locks the values, the mixed-case prefixes and
-# digits, the 2^63-1 ceiling (a 16-F literal must be rejected), and the
-# composition with the rest of the language: adaptation to a float context,
-# a fixed-array length, a bounded capacity, and a `parallel for` `0x0..<N`
-# bound (the zero check is on the VALUE, not the spelling).
 
 fn main():
     println(str(0xFF))                      # 255

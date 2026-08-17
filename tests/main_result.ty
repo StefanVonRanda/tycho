@@ -1,15 +1,3 @@
-# `fn main() -> Result(void, string)` — the second legal shape for main, so
-# `or_return` works at the entry point instead of stopping one frame short of it.
-#
-# Before this, main returned nothing, and `or_return` requires the enclosing
-# function to return a Result — so every program hit the one place it could not
-# propagate and had to `match` at the top level instead. ROADMAP.md listed it
-# under the daily papercuts.
-#
-# The error type is `string`, not an enum: main's failure is PRINTED, and
-# `has_str` covers no enum, so the error IS the message. The Err path exits 1
-# and is locked separately in tests/abort/main_result_err.ty — a fixture here
-# must exit 0.
 
 fn parse_len(s: string) -> Result(int, string):
     if s == "":

@@ -1,10 +1,3 @@
-# Inverted-index build, ARENA-OPTIMAL architecture: count-then-fill. A first pass
-# counts each term's occurrences; each posting list is then preallocated ONCE at
-# its exact size with reserve(), so the fill pass never grows a buffer -- no
-# abandoned buffers, no 2x geometric slack. Same LCG / add logic / checksum as
-# invindex.ty (so it prints the identical oracle line). The point: restructuring
-# the program to suit a bump arena (allocate-once, no incremental growth) closes
-# the memory gap the growth-based build leaves.
 struct Posting:
     term: string
     docs: [int]

@@ -34,7 +34,6 @@ fn main():
         Err(e):
             println("decode failed: " + why(e))
 
-    # the failures the sentinel used to hide, each with its own cause
     match image.decode(to_bytes("not a png")):
         Ok(back): println("garbage decoded?!")
         Err(e): println("garbage      = " + why(e))

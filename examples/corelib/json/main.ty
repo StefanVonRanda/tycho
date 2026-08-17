@@ -1,5 +1,3 @@
-# Example: core:json -- parse a document, query it, and serialize it back.
-# Run via examples/corelib/run.sh.
 package main
 import "core:json"
 

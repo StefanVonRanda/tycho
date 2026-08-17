@@ -1,7 +1,3 @@
-# `delete m[k]` (B5.2): removes a key from a map in place; replaces map_del.
-# Checked via len() + `in` membership + specific-key reads -- NOT keys() order,
-# which can legitimately differ after a delete (tychoc tombstones in place,
-# tychoc0 rebuilds), an accepted representation-level asymmetry.
 fn yn(b: bool) -> string:
     if b:
         return "T"

@@ -1,7 +1,3 @@
-/* Inverted-index build, map-native COUNT-FILL — C. Same as invindex_map.c but each
- * posting list is malloc'd ONCE at its exact length (a first counting pass), no realloc
- * growth. The analogue of invindex_map_exact.ty's reserve(idx[term], count). Same LCG
- * corpus and checksum (540001838890). */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

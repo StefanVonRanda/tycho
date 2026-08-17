@@ -1,99 +1,3 @@
-# tycho-vm -- an assembler and disassembler for a small stack-machine bytecode.
-#
-#     ./tychoc tools/tycho-vm/main.ty -o build/tycho-vm
-#     ./build/tycho-vm asm tools/tycho-vm/progs/fib.tasm -o build/fib.tyc
-#     ./build/tycho-vm dis build/fib.tyc
-#     ./build/tycho-vm run build/fib.tyc
-#     ./build/tycho-vm trace build/fib.tyc
-#
-# ---------------------------------------------------------------------------
-# THE MACHINE part 2 HAS TO IMPLEMENT
-# ---------------------------------------------------------------------------
-# A value stack of tagged values (int or string), and a call stack of frames.
-# Each frame owns numbered slots. Execution starts at pc 0 in frame 0 and ends
-# at HALT.
-#
-#   PUSH  imm      push the immediate int
-#   LOADK k        push const-pool entry k (a string)
-#   LOAD  s        push the current frame's slot s
-#   STORE s        pop into the current frame's slot s
-#   ADD SUB MUL    pop b, pop a, push a op b
-#   DIV MOD        same; division by zero is a run-time trap
-#   EQ NE LT LE GT GE   pop b, pop a, push 1 or 0
-#   JMP  t         pc = t
-#   JZ   t         pop v; if v == 0 then pc = t
-#   JNZ  t         pop v; if v != 0 then pc = t
-#   CALL t n       pop n values; the first pushed becomes slot 0, the last
-#                  slot n-1; push a frame and jump to t
-#   RET            pop the return value, drop the frame, push it on the caller
-#   PRINT          pop and print, with a newline
-#   HALT DUP POP   stop; duplicate top; discard top
-#
-# The pair ops (added for the tycho-scheme compiler -- `docs/internals/plan-tycho-scheme-compiler-DONE.md`): a
-# bounded heap of CONS cells; a pair's components are Vals, fetched by CAR/
-# CDR. Lists end in the distinguished NIL value. Scheme truth: everything but
-# NIL is true, so `if` in compiled code is ISNIL + JZ.
-#
-#   CONS           pop b, pop a, allocate the cell (a . b), push it
-#   CAR CDR        pop a pair, push its component (trap on a non-pair)
-#   SET-CAR        pop v, pop a pair, set its car to v   (the compiled set!)
-#   NIL            push the distinguished empty-list/false value
-#   ISNIL          pop v, push 1 if v is NIL else 0
-#   EQV            pop b, pop a, push 1 if equal (int/nil/string; pairs never)
-#   PRINTS         pop and print its Scheme FORM, no newline (compiled display)
-#   DIE  k         die with const-pool message k (compiled runtime errors)
-#   TRUTHY         pop v, push 1 if v is FALSE (nil, or a non-string non-pair
-#                  with value 0) else 0 -- the compiled Scheme `if`/`not` test.
-#
-# Every new opcode is APPENDED -- the byte encoding of the pre-existing ops is
-# part of the locked .tyc format and never renumbers.
-#
-# ---------------------------------------------------------------------------
-# THE .tyc CONTAINER
-# ---------------------------------------------------------------------------
-# Little-endian, no padding, no timestamps, no map iteration anywhere in the
-# writer -- so assembling the same source twice is byte-identical.
-#
-#   "TYC1"                       4 bytes
-#   u32 nconsts
-#   u32 ncode
-#   nconsts x { u32 len; len bytes }        in source order
-#   ncode   x { u8 op; i32 a; i32 b }       9 bytes each
-#
-# Jump targets are stored as absolute pc, so `dis` prints them as integers
-# rather than inventing label names. Assembling `dis` output therefore
-# reproduces the input file byte for byte.
-#
-# ---------------------------------------------------------------------------
-# LANGUAGE CONSTRUCTS, AND WHAT THE PROBE FOUND
-# ---------------------------------------------------------------------------
-# `defer` is NOT in this language. It is not a keyword (it appears nowhere in
-# docs/spec/appendix-b-keywords.md) and `defer f()` parses as a bare expression
-# statement: "a statement must be a declaration, assignment, or call". There is
-# no cleanup path here to write around it -- io.read/io.write own their handles.
-#
-# A fixed-size array cannot be a top-level `const`: a `const` right-hand side
-# MUST fold to a single literal (docs/spec/08-declarations.md 12.2), so
-# `const T: [N]Meta = [...]` fails at "expected '=' after the constant name".
-# The opcode table is therefore a function returning `[NOPCODES]Meta`, built
-# once in main and threaded through as a `[$N]Meta` parameter.
-#
-# Part 2 (the interpreter) added three more:
-#   * `bounded[N]T` has no `pop`, so it cannot carry a stack's own depth. It is
-#     filled to capacity once and driven by an explicit `sp`.
-#   * the opcode dispatch is a scalar `match` (int subject, const-name arms).
-#   * A `Pc` costs a `to_int` at every index and a `Pc(1)` at every increment.
-#     That is the whole friction, it stayed local to `execute`, and it is worth
-#     it: `pc = Pc(ia)` vs `pc = Pc(ib)` is the kind of typo it makes impossible.
-#
-# Measured across the dispatch eras (interleaved best-of-N on one machine; the
-# ratios are the claim, the absolute times are not): if/elif chain 2.354 s,
-# scalar-match dispatch 2.311 s, match + stack helpers 2.358 s -- per 300 fib
-# runs, so the scalar match is marginally FASTER than the chain and the helper
-# extraction is inside this machine's noise. A `JMP`, which touches no `Val`,
-# costs ~110 ns; every instruction that copies a `Val` (a struct with a
-# `string` field) costs ~815 ns. Struct-with-string copy is 7x the rest of the
-# dispatch and is where a faster VM would have to start.
 
 package main
 
@@ -278,8 +182,6 @@ fn tokenize(s: string) -> [string]:
             push(out, substr(s, start, i))
     return out
 
-# strings.parse_int stops at the first non-digit and reports nothing, which
-# would quietly turn `PUSH 1x` into `PUSH 1`. This rejects instead.
 fn parse_int_strict(s: string, line: int, what: string) -> int:
     if len(s) == 0:
         fail(line, "empty " + what)
@@ -647,23 +549,6 @@ fn list_form(v: Val, cells: [Cell]) -> string:
         out = out + " . " + vstr(a, cells)
     return out + ")"
 
-# Stack helpers: the push/pop pattern every arm repeats, factored out once
-# in-place `inout` made them free. The plan that built scalar `match` premised
-# that a vpush(&st, &sp, v) helper would copy the entire 1024-slot stack twice
-# per instruction; the design-aggregate-ref finding measured that premise stale
-# (the codegen passes a pointer plus the owner arena -- no copy), and these
-# helpers ARE the proof: every push/pop arm calls them and the gate's golden is
-# byte-identical. `here` is threaded for the traps.
-#
-# The boundary was then MEASURED, and the one honest signal is the call/ret
-# extraction: it consistently regressed the call-heavy fib program (~4.5%
-# interleaved best-of-N, in two independent sessions) because cc -O3 does not
-# inline the twenty-line frame helpers. vpush/vpop/arith are within this
-# machine's noise floor (one session: sort 0.598 vs 0.601, another: 0.552 vs
-# 0.523 -- the direction does not even agree). So the one-function shape the
-# plan premised had a real reason after all -- not the stale copy claim, but cc
-# inlining -- and CALL/RET stay inline for it while the small helpers stay
-# factored.
 fn vpush(st: inout bounded[STACKMAX]Val, sp: inout int, v: Val, here: Pc):
     if sp >= STACKMAX:
         trap(here, "operand stack overflow")
@@ -676,9 +561,6 @@ fn vpop(st: inout bounded[STACKMAX]Val, sp: inout int, fbase: int, here: Pc) -> 
     sp = sp - 1
     return st[sp]
 
-# The arithmetic/comparison group, pure over two operands (`here` is only for
-# the division-by-zero and string-operand traps). The dispatch arm is now the
-# two pops, this call, and one push -- the ladder this used to inline.
 fn arith(op: int, a: Val, b: Val, here: Pc) -> Val:
     if a.isstr or b.isstr or a.isnil or b.isnil or a.ispair or b.ispair:
         trap(here, "arithmetic on a non-int value")
@@ -717,20 +599,7 @@ fn arith(op: int, a: Val, b: Val, here: Pc) -> Val:
             r = 1
     return Val(false, false, false, r, "")
 
-# The machine lives in one function, but not because it must. The reason this
-# file used to give -- that `inout` is copy-in/copy-out, so a vpush(&st, &sp,
-# v) helper would copy the entire 1024-slot stack twice per instruction -- is
-# stale: the contract is copy-in/copy-out but the codegen is an in-place
-# pointer pass plus the owner arena (no aggregate is copied in or out; the
-# design-aggregate-ref finding measured it). The one-function shape is a style
-# choice: the dispatch shares `here`/`ip`/`sp`/`st` across all arms and the
-# trace block reads them after, which a helper refactor would have to thread
-# explicitly. Nothing stops it; nobody has wanted it.
 fn execute(p: Program, table: [$NT]Meta, tracing: bool, argv: [string]):
-    # `bounded` has no `pop` (docs/spec/03-types.md 5.3.10), so it cannot be
-    # driven as a stack by its own count. It is filled to capacity once and
-    # indexed under an explicit `sp`; what the type still buys is that the
-    # capacity is a compile-time constant nothing can grow past.
     st: bounded[STACKMAX]Val = []
     for i := 0; i < STACKMAX; i += 1:
         push(st, Val(false, false, false, 0, ""))
@@ -934,9 +803,6 @@ fn execute(p: Program, table: [$NT]Meta, tracing: bool, argv: [string]):
             println(out + " ]")
 
 fn main():
-    # cli.parse_spec never reads a value for a SHORT option (corelib/cli/cli.ty
-    # says so outright), and `-o FILE` is the spelling this tool wants, so the
-    # front door is a hand-rolled scan.
     av := cli.argv()
     pos: [string] = []
     out := ""

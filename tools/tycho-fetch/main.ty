@@ -1,22 +1,3 @@
-# tycho-fetch -- vendor a package tarball into ./vendor/<name>. A standalone
-# tool (its own directory, like tycho-ar / tycho-build) because importing
-# core:* needs a `package` header, which would pull every tools/*.ty into
-# the compile -- the repo documents that exact trap in tools/tycho-ar.
-#
-#   ./build/tycho-fetch <url> <name>
-#
-# Downloads the URL (core:http handles http/https/file), prints the sha256 of
-# the downloaded bytes (compare against the publisher's), and unpacks the
-# tarball into vendor/<name>/. The tarball must have a SINGLE top-level
-# directory (the standard archive shape -- GitHub codeload, crates.io);
-# --strip-components=1 removes it. `tar` does the extraction (a shell step,
-# like the build tool's recipes); everything else is Tycho. Fail-closed: a
-# non-200 response, an unwritable vendor/, a tarball without the single-top-
-# dir shape, or an unsafe <name> (not a plain directory name) all die with a
-# message and leave no half-vendored state.
-#
-# Run from the project root: vendor/ lands next to the entry program, so
-# `import "vendor/name"` resolves (importer-relative, cwd-independent).
 package main
 
 import "core:http"

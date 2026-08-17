@@ -1,7 +1,3 @@
-# Lambdas / first-class function values (no-capture, stage 4b). A lambda
-# `fn(p: T) -> R: expr` is lifted to a top-level `__lam<id>` and reified as a
-# fat value {env, thunk}; with no captures env is 0. tychoc and tychoc0 must agree
-# (make bootstrap diffs them; make fixpoint runs tychoc0 over this fixture).
 
 fn apply(f: fn(int) -> int, x: int) -> int:
     return f(x)

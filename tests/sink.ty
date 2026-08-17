@@ -1,8 +1,3 @@
-# `sink` parameter convention: an OWNED, mutable parameter (a borrow is read-only). The
-# call-site argument is CONSUMED -- ADOPTED with no copy for a fresh value or a dead local
-# (read once, outside any loop, from any enclosing arena). The move is a compiler-checked
-# guarantee: passing a variable you then reuse is an error (tests/reject/sink_use_after.ty),
-# so you copy explicitly to keep it. Both compilers, byte-identical.
 fn dbl(xs: sink [int]) -> int:
     xs[0] = xs[0] + 100        # mutate in place -- legal only because xs is `sink`
     return xs[0]

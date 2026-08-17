@@ -1,5 +1,2 @@
-# §3.9.1 (docs/spec/01-lexical.md): a binary literal contains only 0/1.
-# `0b2` is a lexical error rather than a literal 0 followed by the
-# identifier b2 -- same reasoning as int_hex_no_digits.
 fn main():
     a := 0b2

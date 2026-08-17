@@ -1,7 +1,3 @@
-# Array whose ELEMENT is a map (`[][int:int]`): index into an array element that is
-# a map, then put / delete / read it, and iterate keys() per element. tychoc0 used to
-# emit the `Arr_map_int_int` type without ever defining it (broken C); it now generates
-# the array-of-map family (struct + helpers) after the map family, like the C compiler.
 fn main():
     arr := [][int:int]
     push(arr, []int: int)

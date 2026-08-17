@@ -1,9 +1,3 @@
-# Fieldless-enum map keys: [Color: int]. The key is stored and hashed as
-# its TAG (riding the int-key occupancy scheme), so iteration order and
-# hashing are deterministic (never pointer/ASLR-dependent); keys() rebuilds
-# the wrapped values from the per-variant singletons, which round-trip
-# through match. Payload enums are rejected as keys
-# (tests/reject/enum_key_payload.ty): equal tags would not mean equal values.
 
 enum Color:
     Red

@@ -1,10 +1,3 @@
-# The deprecation policy's third step, exercised: a `# deprecated: <text>` comment
-# line DIRECTLY above a `fn` marks it, and every call site warns. The notice must
-# be the line immediately above `fn` -- that rule is what makes "which fn does this
-# notice belong to" answerable without tracking comment blocks.
-#
-# The marked function keeps working: this program compiles, runs, and prints.
-# Removal is a major-version change (docs/guides/corelib.md, deprecation path).
 
 # deprecated: use twice(n) instead -- double(n) is twice(n). Removed in 1.0.
 fn double(n: int) -> int:

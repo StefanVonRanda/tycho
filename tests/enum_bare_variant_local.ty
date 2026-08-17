@@ -1,6 +1,3 @@
-# A variant of a LOCAL enum stays spellable BARE, in a match arm and after `is`.
-# This is the regression the FRICTION #26 fix could have caused: both lookups now
-# fall through to src/tychoc.c@die_not_variant, which must never be reached here.
 enum Fetch:
     Miss
     Hit(int)

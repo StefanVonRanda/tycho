@@ -1,11 +1,3 @@
-# There is no `void` type keyword -- `void` is the implicit no-return
-# (01-lexical.md:116-117, :307; appendix-b-keywords.md:18-20 lists the type
-# keywords and `void` is not among them). `void` is ALSO tychoc0's internal
-# spelling of the no-return type, so tychoc0 used to hand a written `void`
-# annotation straight back as the real type and ACCEPT this program while tychoc
-# rejected it -- the same fail-open accept/reject divergence as reject/str_as_type.ty,
-# funnelling through the same internal-spelling guard in parse_type_d.
-# Both compilers must reject.
 fn f(x: void) -> void:
     return x
 

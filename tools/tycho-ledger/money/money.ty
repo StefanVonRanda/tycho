@@ -1,18 +1,3 @@
-# Three newtypes over three different bases, used as DOMAIN types.
-#
-# WHY THIS PACKAGE EXISTS. Measured 2026-08-14: `type X = U` is declared in 46
-# files and 43 of them are under `tests/`. The three real consumers --
-# `tools/tycho-vm/main.ty`, `corelib/intern/intern.ty`, `corelib/pool/pool.ty` --
-# all declare a newtype over `int` and use it INSIDE their own package. Exactly
-# one file in the tree names a foreign package's newtype
-# (`examples/corelib/pool/main.ty:12`, `pool.Handle`), so the cross-package
-# surface was almost entirely unexercised. This package is the first to export
-# newtypes over int, float AND string and have another package do arithmetic,
-# comparison and map-keying with them.
-#
-# The point of the type is that the compiler refuses the mistakes: Cents is not
-# an int, a Rate is not a Cents, and an Account is not a string. Each refusal is
-# asserted by the gate (tools/tycho-ledger/run.sh leg [4]).
 package money
 
 type Cents = int        # a whole number of cents; never a bare int

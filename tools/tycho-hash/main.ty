@@ -1,18 +1,3 @@
-# tycho-hash -- sha256 every regular file under a directory, in parallel, with
-# output that does not depend on how many workers ran.
-#
-#   tycho-hash DIR [--workers=N]
-#
-# Second ROADMAP section-1 program: written from docs/ by someone who did not
-# write the compiler. tycho-diff was a sequential algorithm; this one is here for
-# the OTHER half of the surface -- spawn, channels, backpressure, and the
-# determinism question a parallel tool has to answer. Friction in
-# tools/tycho-hash/FRICTION-OUTSIDE.md.
-#
-# DETERMINISM. Workers finish out of order, so the ORDER cannot come from them.
-# Each job carries its index, each result carries it back, and the report is
-# assembled by index -- so the bytes are identical at any worker count. That is
-# asserted by the lane at 1, 2 and 7 workers rather than assumed.
 package main
 
 import "core:io"
@@ -76,15 +61,7 @@ fn worker(id: int, live: int, jobs: Channel(Job), out: Channel(Res)) -> int:
     # determinism check silently compared eight workers against eight.
     if id >= live:
         return 0
-    # Returns how many files IT hashed. A spawned function must return a value
-    # (`wait(t)` yields it), so a fire-and-forget worker has to invent one --
-    # FRICTION-OUTSIDE item 3. Here the invented value earns its keep: summing the
-    # per-worker counts proves every file was hashed exactly once, which the lane
-    # asserts and no transcript could show.
     did := 0
-    # `for true:` has no reachable end, but the checker cannot know that, so the
-    # trailing `return did` exists to silence a warning about a path that cannot
-    # be taken. FRICTION-OUTSIDE item 4.
     for true:
         match recv(jobs):
             Some(j):
@@ -92,8 +69,6 @@ fn worker(id: int, live: int, jobs: Channel(Job), out: Channel(Res)) -> int:
                 n := 0
                 match io.read_bytes(j.abs):
                     Ok(b):
-                        # init/update/final_hex, not a one-shot: sha256.hex takes a
-                        # STRING, and a file is bytes. FRICTION-OUTSIDE item 2.
                         st := sha256.init()
                         sha256.update(&st, b)
                         h = sha256.final_hex(&st)

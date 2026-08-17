@@ -1,32 +1,3 @@
-# tycho-chess -- a bitboard chess engine in Tycho.
-#
-#     ./tychoc tools/tycho-chess/main.ty -o build/tycho-chess
-#     ./build/tycho-chess perft 4
-#     ./build/tycho-chess perft 4 "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1"
-#
-# WHAT IT IS FOR. The third plan's program (docs/internals/plan-tycho-kv-
-# DONE.md's successor): bitboards (an int is a natural 64-square map),
-# move generation, make, and perft -- legal-move counting with EXACT
-# published values for standard positions, so the differential is ground
-# truth, not a naive reference. The search is negamax alpha-beta with a
-# PST-based eval, a quiescence search (captures + checks, depth-capped, with
-# delta pruning), and an EXACT-ONLY transposition table: the TT stores only
-# same-depth exact values, so it can cut transpositions and reorder moves but
-# never change a result -- which is what `make chess-check` asserts (search
-# is deterministic and `search-nott` reports the same best line). The PARALLEL
-# root search (`parsearch`) fans the root moves out over `parallel for`, one
-# full-window search per task, results merged by (score, index); it matches
-# the serial best line and is the plan's `parallel for` probe.
-#
-# Design choices, honestly stated:
-#  - boards are VALUES: make returns a new board, no unmake (value
-#    semantics; the recursion passes the child board down).
-#  - the attack tables (knight, king, file/rank masks) are computed once in
-#    main and threaded through -- a function recomputing them per call would
-#    burn ~500 ops per move-generation under millions of nodes.
-#  - sliders walk their rays (no magic bitboards): correct, and perft(4) is
-#    the gate depth for speed.
-#  - moves are pseudo-legal; each is made and the king-safety test decides.
 
 package main
 import "core:cli"
@@ -996,11 +967,6 @@ fn victim_value(b: Board, m: Move) -> int:
         return 900
     return 0
 
-# PST-aware ordering score: captures by victim value, then quiets by the
-# moving piece's positional gain. Without an ordering for QUIET moves the
-# alpha-beta degenerates to ~full search -- measured 16x per ply from the
-# start (d3 116ms -> d4 1.9s -> d5 26s -> d6 3min); with it the branching
-# collapses to the sqrt-shape alpha-beta is supposed to have.
 fn move_score(b: Board, m: Move, pst: PST) -> int:
     s := victim_value(b, m)
     p := piece_at(b, m.from)

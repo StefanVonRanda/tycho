@@ -1,8 +1,3 @@
-# Composite-keyed map LITERALS: `[K: V, ...]` with a fieldless-enum, struct, or
-# tuple key. The composite-key feature already worked via a declared map +
-# assignment; tychoc's map-literal validator was the only path still restricted
-# to string/int keys (tychoc0 already accepted them -- a parity divergence). Now
-# map_of is the single key validator on both the declared and literal paths.
 
 enum Col:
     Red

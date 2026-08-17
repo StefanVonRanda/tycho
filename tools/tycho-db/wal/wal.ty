@@ -4,65 +4,6 @@ import "core:io"
 import "core:path"
 import "../store"
 
-# The write-ahead log. Every mutation is framed, checksummed and written to
-# <store>.wal BEFORE store.flush touches the store file, so a process that dies
-# mid-script replays to a state in which each row is either wholly there or
-# wholly absent.
-#
-# WHY A LOG IS NEEDED AT ALL HERE. store.flush is io.write_bytes, which is
-# fopen("wb") -- it TRUNCATES the store and then rewrites it whole. A process
-# killed during that rewrite leaves a short file, i.e. the store's own format
-# is the thing most exposed to a crash. The log is what that file is rebuilt
-# from.
-#
-# WHAT DURABILITY IS ACTUALLY CLAIMED. Machine death, on a platform that can
-# flush -- widened from process death on 2026-08-12, when core:io gained `sync`
-# (fsync(2)). Before that this file said "core:io has no fsync -- grep it" and
-# could promise only that a record written before the WRITING PROCESS died was
-# read by the next one, because close(2) reaches the page cache and the page
-# cache is RAM.
-#
-# Now append() returns only after io.sync has flushed the log file to the
-# device, and after the PARENT DIRECTORY is flushed on the append that created
-# the file -- the two halves of a durable create, since a file's bytes and a
-# file's name live in different places and a power cut can otherwise return a
-# file that does not exist. checkpoint() flushes the store BEFORE it rewinds the
-# log, which is the ordering the rewind's safety already depended on.
-#
-# WHAT IS STILL NOT CLAIMED, because these are still true:
-#   * A platform with no flush degrades to the OLD guarantee, silently to the
-#     data but not to the reader -- see _sync: Err(Unsupported) is allowed to
-#     proceed precisely because it means the bytes are where every core:io
-#     writer has always left them. On such a host this file claims process
-#     death and no more.
-#   * A DRIVE THAT LIES. fsync returning 0 is the kernel's assertion that it
-#     pushed the data at the device; a disk with a volatile write cache that
-#     acknowledges early makes that assertion false, and nothing in this
-#     process can detect it.
-#   * The gate does not TEST power loss and cannot -- it kills a process, which
-#     is a strictly weaker event. What is verified is that the flush is
-#     requested, in the right order, and that its failure is not swallowed.
-#
-# FRAMING: length prefix AND checksum, because they catch different tears.
-#   [u32 len][u32 fnv1a(payload)][payload]
-# The length alone cannot tell a complete record from one whose payload was
-# lost and left zero-filled -- write_at pwrites at an offset, so a gap in a
-# file is a run of zero bytes, not a short file. The checksum alone cannot be
-# read without first knowing where the payload ends. A trailing record is
-# discarded when it is short, when its length runs past end-of-file, or when
-# its checksum disagrees; the records before it are kept.
-#
-# This is the opposite POLICY to store.decode over the same MECHANISM. decode
-# treats "file ends mid-record" as Corrupt and refuses the whole file, which is
-# right for a file that is only ever written whole. A log's last record is
-# expected to be torn -- that is the crash signature, not damage -- so the tail
-# is dropped and the prefix stands.
-#
-# IDEMPOTENCE: records are numbered, and the number of the last one folded into
-# the store travels IN the store file (store.Db.applied_lsn). Replay applies
-# only records above it. Replaying twice is therefore a no-op the second time,
-# which is what makes an interrupted checkpoint safe rather than merely
-# unlikely.
 
 const MAGIC = "TYWAL"
 const VERSION = 1
@@ -72,11 +13,6 @@ const FRAME = 8            # 4 length + 4 checksum
 const R_CREATE = 1
 const R_INSERT = 2
 
-# FNV-1a, 32-bit. A few lines and no dependency, against core:sha256 which is
-# 256 bits of cryptographic strength for a job that only has to notice a torn
-# or zero-filled payload -- and which would hash every record on every open.
-# The multiply stays under 2^56 and `int` is 64-bit two's complement by spec
-# (docs/spec/03-types.md:41), so this does not depend on the host's word size.
 const FNV_OFF = 2166136261
 const FNV_PRIME = 16777619
 const M32 = 4294967296
@@ -256,11 +192,6 @@ fn scan(path: string) -> Result(Scan, WalErr):
 
 # ---- appending ------------------------------------------------------------
 
-# Append one record and return its lsn. On return the record is ON THE DEVICE,
-# not merely in the page cache -- that is what "logged before the store changes"
-# means here, and since 2026-08-12 it is a claim about power loss rather than
-# only about process death. See the durability note at the top for the two cases
-# that still weaken it.
 fn append(lg: inout Log, r: Rec) -> Result(int, WalErr):
     created := false
     if lg.end == 0:
@@ -294,31 +225,6 @@ fn append(lg: inout Log, r: Rec) -> Result(int, WalErr):
 
 # ---- checkpoint -----------------------------------------------------------
 
-# Fold the log into the store and rewind it. The ORDER is the whole contract:
-#
-#   1. write the store, stamped with the lsn it now includes
-#   2. only if that returned Ok, rewind the log
-#
-# Rewinding a log over a store that never landed would destroy the only copy
-# of the missing rows, so step 2 is guarded by step 1's result and nothing
-# else. That guard is sound because io.write_bytes fails CLOSED: it checks
-# both the short fwrite and the fclose (corelib/io/io_shim.c@iox_write_bytes),
-# so an Ok means the whole file was written and closed.
-#
-# An earlier draft re-read the store here and compared the stamp before
-# rewinding. It was removed: given the above it can only fire if the OS
-# reports a success it did not perform, no fixture can reach it, and this
-# runner's own break-test confirmed that deleting the check reddened nothing.
-# A guard no test can fail is not protection, it is decoration.
-#
-# INTERRUPTED AT ANY POINT, THIS IS SAFE:
-#   during 1 -- flush never returns, so the log is never rewound; the store is
-#               torn but the log is intact from base 0 and the next open
-#               rebuilds from it.
-#   during 2 -- the store is good and stamped; the log is either the old one
-#               (whose records are all <= applied_lsn, so replay skips every
-#               one) or empty (nothing to replay). Idempotence is what makes
-#               both outcomes harmless rather than merely improbable.
 fn checkpoint(db: inout store.Db, lg: inout Log) -> Result(bool, WalErr):
     db.applied_lsn = lg.next_lsn
     match store.flush(db):

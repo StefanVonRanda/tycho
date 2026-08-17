@@ -1,5 +1,3 @@
-# Phase 20: ... nor a generic type ARGUMENT -- it lands in the instance's field.
-# BEFORE this phase tychoc0 accepted this AND the emitted C compiled and RAN.
 struct Box($T):
     v: $T
 

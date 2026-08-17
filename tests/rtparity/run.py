@@ -75,9 +75,6 @@ RUNTIME = os.path.join(ROOT, "runtime", "tycho_rt.c")
 # capability disappearing, an entry appearing unlisted is a capability nobody
 # wrote down.
 
-# runtime/tycho_rt.c:342, :567, :848 -- the only literal getenv() names in the
-# runtime. The wrapper Tycho code calls takes a runtime string (getenv(name)), so
-# a user program's own env reads cannot land here.
 EXPECT_ENV = {
     "TYCHO_ARENA_STATS",
     "TYCHO_BLOCK",      # block-size override for arena sweeps (2026-08-04, arena-observability phase)
@@ -85,7 +82,6 @@ EXPECT_ENV = {
     "TYCHO_THREADS",
 }
 
-# The TYCHO_ARENA_STATS report's row labels (runtime/tycho_rt.c:302-310).
 EXPECT_ROWS = {
     "arenas",
     "block reuse",
@@ -94,8 +90,6 @@ EXPECT_ROWS = {
     "recycle",      # free-list hit count + bytes (2026-08-04, arena-observability phase)
     "OS reserved",
     "time",         # wall, OS-malloc and teardown nanoseconds (2026-08-17). The bump
-                    # path is deliberately NOT timed -- see the note at st_ns_os in
-                    # runtime/tycho_rt.c -- so this row reports three figures, not four.
 }
 
 # Traps that live in the runtime itself. Truncated entries (`tycho: chr(%`) are
@@ -138,13 +132,6 @@ EXPECT_MSG_CODEGEN = {
     r"tycho: push to a full bounded[4]\n",  # src/tychoc.c:12693 (the [4] is surface.ty's Inline.slots)
     r"tycho: slice [%",                   # src/tychoc.c:10543, :9711
 }
-# REMOVED 2026-07-30 (the loops-cleanup plan): r"tycho: range step is zero\n".
-# The oracle was out of date, not the codegen. `range(a, b, step)` went on
-# 2026-07-29 and left the step machinery unreachable; phase 53 deleted the `Stmt`
-# field, the step codegen, this abort and the direction ternary. No construct can
-# reach the trap, so nothing emits it. This lane FOUND that -- it was the only
-# gate in the tree that noticed the trap text disappear, which is the argument for
-# wiring it into `make ci` (step [2d/13], same phase).
 EXPECT_MSG = EXPECT_MSG_RUNTIME | EXPECT_MSG_CODEGEN
 
 # --- Extraction --------------------------------------------------------------

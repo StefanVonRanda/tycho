@@ -1,22 +1,3 @@
-# `Channel($T)` composes with generics (05-generics.md:83), the sibling lock to
-# chan_param_recv.ty's concrete `Channel(int)` param. Before this, match_type,
-# subst_type, has_typaram, type_mentions_tp and type_mangle_ident all lacked an
-# IS_CHAN arm, so `Channel($T)` fell through match_type's `pat == concrete` tail
-# ("argument 1 of 'produce' is Channel(int), which does not fit the parameter
-# pattern") and subst_type returned it unsubstituted, leaving the instance body
-# sending an `int` into a still-`Channel($T)` handle.
-#
-# What each case pins, beyond "it compiles":
-#  - drain/produce are instantiated at BOTH int and string, so the string runs
-#    prove the element type is monomorphized per instance, not erased.
-#  - Every string case sends a value built in a scope that is gone before the
-#    recv -- the task's arena (freed at wait) in case 4, the callee's frame in
-#    case 2. A shallow copy would alias freed memory here, which is exactly the
-#    fail-open the generic_enum_channel.ty header guards against; the values
-#    must come back whole.
-#  - Case 3 creates the channel INSIDE the generic (`channel($T, n)`), which is
-#    a separate path: the element type rides on the call expr's `ival` and is
-#    substituted at clone time, not by subst_type.
 
 fn produce(ch: Channel($T), xs: [$T]) -> int:   # returns the count: `spawn` needs a value to wait on
     n := 0

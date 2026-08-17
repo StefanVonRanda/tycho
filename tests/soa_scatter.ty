@@ -1,7 +1,3 @@
-# SOA whole-element scatter, int-only struct: `ps[i] = v`, the mirror of the
-# `g := ps[i]` gather tests/soa_basic.ty pins. Also the swap-remove this exists
-# for (`ps[i] = ps[len-1]`) and self-scatter `ps[i] = ps[j]`, which must read
-# the source element by value before writing any field buffer.
 
 struct P:
     x: int

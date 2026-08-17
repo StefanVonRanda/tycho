@@ -7,9 +7,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* string -> posting list, open addressing, FNV-1a, power-of-two cap. The value
- * (docs/n/cap) lives inline in the table, grown in place by realloc -- the direct
- * analogue of push(idx[term], d). */
 typedef struct { char *key; long *docs; long n, cap; } Slot;
 static Slot *tab; static long tcap, tlen;
 static unsigned long fnv(const char *s){ unsigned long h=1469598103934665603UL; for(;*s;s++){ h^=(unsigned char)*s; h*=1099511628211UL; } return h; }

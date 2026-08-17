@@ -1,15 +1,3 @@
-# A `bounded[N]T` field inside a GENERIC struct. subst_type rebuilt every
-# instantiated array through fixarr_of, which hardcodes bnd=0, so the field came
-# out `[N]T` -- the capacity RULE was dropped while the size survived. Nothing
-# caught it: no fixture combined the two, and the only symptom was that passing a
-# real bounded value type-errored while a plain `[N]T` was silently ACCEPTED, so
-# the declaration said bounded and the program got a fixed array.
-#
-# Both element kinds are pinned: `bounded[4]$T` (the element is the parameter)
-# and `bounded[3]int` (concrete element, generic struct) -- the bug hit both,
-# which is what proves it was the array rebuild and not the substitution of $T.
-# tests/abort/generic_bounded_overflow.ty pins that the capacity is ENFORCED;
-# a golden cannot show a trap.
 
 struct Box($T):
     xs: bounded[4]$T

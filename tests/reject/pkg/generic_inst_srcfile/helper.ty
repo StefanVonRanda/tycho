@@ -1,9 +1,4 @@
 package main
 
-# A generic body is resolved per instantiation against the SUBSTITUTED types, and
-# that resolve is what fails for bool -- so the diagnostic must name THIS file.
-# main.ty must stay shorter than the error line below: the wrong-file message
-# quotes the caller at the same NUMBER, so an `# expect:` line sitting there would
-# match itself and score a false green (measured against the unpatched compiler).
 fn twice(x: $T) -> $T:
     return x + x

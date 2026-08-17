@@ -1,7 +1,3 @@
-# Regression: an enum with an array-of-ITSELF payload (an n-ary AST node) must
-# have its descriptor typedef emitted BEFORE the [Enum] array typedef that holds
-# `E_Foo *data`. Surfaced by the self-hosting bootstrap (tychoc0's
-# `enum Stmt: ... SIf(Expr, [Stmt], [Stmt])`).
 enum Tree:
     Leaf(int)
     Branch([Tree])

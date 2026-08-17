@@ -1,10 +1,3 @@
-# A package-qualified function used as a first-class VALUE (`pkg.fn`, no parens).
-# The same-package case is tests/pkg/fnval/; this is the CROSS-package one, which
-# resolved through a different arm and died "package 'opsx' has no variant or
-# const 'bump'" -- a false message, since the name exists and calling it works.
-# Covers: passed as an argument, bound to a local and called indirectly, void
-# return, string param/return, and a generic instantiated by a normal call
-# (taking THAT as a value stays refused -- tests/reject/pkg/fnval_pkg_generic).
 package main
 import "opsx"
 

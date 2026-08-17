@@ -1,7 +1,3 @@
-# A `bytes` or `string` slice CLAMPS -- it is not a bounds check. Go panics and
-# Odin traps on every shape below, so this divergence is deliberate, not a gap;
-# `at()` keeps each bound off the constant path, so what is pinned is the RUNTIME
-# behaviour. An ARRAY slice aborts on these same four shapes (docs/spec/03-types.md).
 fn at(n: int) -> int:
     return n
 

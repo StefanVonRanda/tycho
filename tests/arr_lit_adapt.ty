@@ -1,12 +1,3 @@
-# Literal adaptation (docs/spec/06-conversions.md 8.1) reaches ARRAY-LITERAL
-# elements whenever the destination is an array type. the loops-cleanup plan.
-#
-# The fixed-size half already did this -- `d: [3]u32 = [1, 2, 3]` has compiled
-# since 1.6, because src/tychoc.c:6921 pushed the destination's element type
-# into each element. The DYNAMIC half did not: `a: [u32] = [1, 2]` synthesized
-# `[int]` and died "declared type [u32] but value is [int]", so the only way to
-# build a `[u32]` from literals was `a := []u32` followed by `push(a, 1)`. That
-# asymmetry was the defect; the two forms now take the same path.
 fn main():
     a: [u32] = [1, 2]
     b: [float] = [1, 2]        # int literals adapt to float, element-wise

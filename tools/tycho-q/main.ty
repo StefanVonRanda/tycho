@@ -1,599 +1,3 @@
-# tycho-q -- a SQL-ish query tool over CSV/JSON, in Tycho.
-#
-# What works today: a lexer, a recursive descent parser with precedence,
-# `--explain` (which prints the parsed query as an s-expression), and
-# evaluation of the whole query -- `select` / `from` / `where` / `order by` /
-# `limit` -- over a CSV **or JSON** file, printing the result as CSV on stdout.
-#
-# Not here, and each is a plan of its own: `group by`, aggregates, joins, any
-# kind of index.
-#
-# Build and run, from the repo root:
-#     ./tychoc tools/tycho-q/main.ty -o build/tycho-q
-#     ./build/tycho-q --explain 'select a, b * 2 as d from x.csv where a > 1'
-#     ./build/tycho-q 'select name, qty * price as total from sales.csv
-#                      where region == "eu" and qty > 10'
-#
-# WHY THIS IS A DIRECTORY AND NOT A FLAT `tools/tycho-q.ty`: same reason as
-# `tools/tycho-ar/main.ty` -- a `package` header makes tychoc compile the whole
-# containing directory as one unit, so a flat file in `tools/` would drag
-# `tools/lsp.ty` and `tools/tychofmt.ty` into this program.
-#
-# ===========================================================================
-# THE GRAMMAR THIS ACCEPTS
-# ===========================================================================
-#
-#     query   := "select" item ("," item)*
-#                "from" source
-#                ["where" expr]
-#                ["order" "by" key ("," key)*]
-#                ["limit" INT]
-#
-#     item    := "*" | expr ["as" IDENT]
-#     source  := PATH | STRING
-#     key     := expr ["asc" | "desc"]          -- "asc" is the default
-#
-#     expr    := or_expr
-#     or_expr := and_expr ("or"  and_expr)*
-#     and_expr:= cmp_expr ("and" cmp_expr)*
-#     cmp_expr:= add_expr (("=="|"!="|"<"|"<="|">"|">=") add_expr)*
-#     add_expr:= mul_expr (("+"|"-") mul_expr)*
-#     mul_expr:= unary   (("*"|"/"|"%") unary)*
-#     unary   := ("-" | "not") unary | primary
-#     primary := INT | DEC | STRING | "true" | "false" | "null"
-#              | IDENT                          -- a column reference
-#              | "(" expr ")"
-#
-# EVERY BINARY LEVEL IS LEFT-ASSOCIATIVE, and each is one `for` loop over a
-# single operand parser, so associativity is a property of the loop rather than
-# of a recursion the reader has to trace: `1 - 2 - 3` is `(- (- 1 2) 3)`.
-#
-# WHERE `not` SITS, AND WHY IT IS NOT WHERE SQL PUTS IT. In this grammar `not`
-# is a UNARY at the tightest level, binding exactly as tightly as unary `-`.
-# Real SQL puts NOT between AND and the comparisons, so SQL reads
-# `not a == b` as `not (a == b)` and this reads it as `(not a) == b`. That is a
-# deliberate deviation, taken because the precedence ladder in THE GRAMMAR THIS
-# ACCEPTS above puts `not` there, and it is a WART: write `not (qty > 10)`, with the
-# parentheses, whenever the operand of `not` is a comparison. `not a and b` is
-# `(and (not a) b)` in both languages, which is why the difference is easy to
-# miss.
-#
-# CASE. Keywords are case-insensitive (`SELECT`, `Select` and `select` are one
-# token); identifiers are NOT (`Qty` and `qty` are different columns). Every
-# token therefore carries two spellings: `text`, the raw source bytes, and
-# `low`, an ASCII-lowercased copy used only for keyword and operator matching.
-#
-# STRINGS ARE QUOTED WITH EITHER `'` OR `"`. SQL reserves double quotes for
-# delimited identifiers, and this does not: both quote characters open a string
-# literal, because the query arrives as one shell argument -- already inside a
-# pair of single quotes -- and forcing `\''` on the user to write a string
-# constant is a worse tax than losing delimited identifiers, which this
-# language has no other use for yet. There is one escape, `\` before the
-# closing quote character or before another `\`; nothing else is special.
-#
-# A SOURCE PATH IS A BARE TOKEN. `from sales.csv` has to lex `sales.csv` as one
-# thing, so an identifier that is immediately followed by `.` or `/` keeps
-# consuming letters, digits, `_`, `.` and `/`. That rule is not scoped to the
-# `from` clause -- it is in the lexer -- so a column literally named `a.b` is a
-# single identifier everywhere. There are no qualified column names in this
-# language, so nothing is lost. `from 'has space.csv'` (a string literal) is
-# the escape hatch for a path the bare rule cannot spell.
-#
-# THE BARE RULE STARTS AT A LETTER, so an ABSOLUTE path cannot be written bare:
-# `from /tmp/x.csv` lexes the leading `/` as the division operator and fails
-# with "unexpected token / (expected a source path after `from`)". That is a
-# consequence of the rule above rather than a separate decision, and the escape
-# hatch already covers it -- `from '/tmp/x.csv'`. It is spelled out here because
-# the diagnostic talks about division while the cause is quoting.
-#
-# ===========================================================================
-# THE VALUE MODEL
-# ===========================================================================
-#
-# `Value` is the sum type every cell and every literal collapses to. Phase 1
-# only constructs it from LITERALS; phase 2 will also build it from CSV cells.
-#
-#     VNull | VBool(bool) | VInt(int) | VDec(decimal.Decimal) | VStr(string)
-#
-# A NUMERIC LITERAL WITH A `.` BECOMES A `VDec`, NEVER A FLOAT. `core:decimal`
-# keeps the scale it parsed -- `decimal.from_str("1.50")` prints back as
-# "1.50", verified by probe -- so a literal survives `--explain` byte-exactly,
-# and `0.1 + 0.2` has an exact answer available for phase 2. There is no float
-# anywhere in this program on purpose.
-#
-# `1e3` IS NOT A NUMBER HERE. The number lexer takes digits and at most one
-# `.`; it stops at `e`, which then lexes as the identifier `e3` and the parser
-# rejects it by naming that token. Exponent notation is out of scope, and
-# failing loudly at parse time is the fail-closed reading of that: a silent
-# `1` followed by a dropped `e3` would be the corruption this program exists
-# not to commit.
-#
-# ===========================================================================
-# DECISION 1 -- HOW A CSV CELL BECOMES A `Value`
-# ===========================================================================
-#
-# `csv.parse` hands back `[[string]]` and nothing else: every cell is a
-# `string` until this program decides otherwise (`corelib/csv/csv.ty@parse`).
-# The decision below is made PER CELL, and it is made by ROUND TRIP.
-#
-# THE RULE, in one sentence: a cell becomes a number only if rendering that
-# number back reproduces the cell's bytes EXACTLY; otherwise it stays a
-# `VStr`. An empty cell is `VNull`.
-#
-# Concretely, in order:
-#
-#   1. `""`            -> `VNull`.  See WHY NULL below.
-#   2. shape check     -> the cell must match `-? digit+ ( "." digit+ )?` and
-#                         nothing else. No `+`, no exponent, no leading or
-#                         trailing space, no bare leading `.`, no trailing
-#                         `.`. A cell failing this is a `VStr` immediately;
-#                         `num_shape` is the whole rule and it is 20 lines.
-#   3. integer shape   -> `VInt(n)` IF `str(n) == cell`.
-#   4. any number shape-> `VDec(d)` IF `decimal.to_str(d) == cell`.
-#   5. otherwise       -> `VStr(cell)`.
-#
-# WHAT THAT DECIDES, case by case, all of them named by the plan:
-#
-#   ""      -> VNull      (rule 1)
-#   007     -> VStr       int round trip gives "7"; decimal gives "7"; neither
-#                         is "007", so the leading zero is EVIDENCE that this
-#                         column is a code, not a quantity. This is the single
-#                         most important case: a part number, a zip code and a
-#                         phone number all die if `007` becomes `7`.
-#   0       -> VInt(0)    round trips.
-#   -0      -> VStr       int gives "0", decimal gives "0"; neither is "-0".
-#                         Typing it as `VInt(0)` would REWRITE the cell on the
-#                         way out, and a query that neither filters nor
-#                         computes on a column must never alter it.
-#   1.5     -> VDec       scale 1, prints "1.5".
-#   1.50    -> VDec       scale 2, prints "1.50" -- `core:decimal` preserves the
-#                         scale it parsed, so trailing zeros survive.
-#   -3      -> VInt(-3)   round trips.
-#   1e3     -> VStr       fails the shape check at `e`. This matches what the
-#                         QUERY lexer does with the literal `1e3` (it refuses
-#                         it), so the same text means the same thing in both
-#                         positions.
-#   +1      -> VStr       fails the shape check at `+`.
-#   " 1"    -> VStr       fails the shape check at the space. Whitespace is
-#                         never stripped: `csv.parse` gives the field's bytes
-#                         and a leading space is one of them.
-#   1.      -> VStr       fails the shape check (no digit after the point).
-#   .5      -> VStr       fails the shape check (no digit before the point).
-#   a 25-digit integer -> VDec, because `str(parse_int(...))` does NOT round
-#                         trip -- integer overflow WRAPS in this language
-#                         (`docs/spec/09-expressions.md:31`), so the wrapped
-#                         value renders as some other number and rule 3
-#                         rejects it. `core:decimal` is arbitrary precision
-#                         underneath (`core:bignum`), so rule 4 takes it and
-#                         the digits survive. The round trip is therefore also
-#                         this program's overflow check, and it is one it gets
-#                         for free rather than having to remember.
-#
-# WHY THE ROUND TRIP AND NOT A HAND-WRITTEN PARSER. `strings.parse_int` FAILS
-# OPEN: `""` and a leading non-digit both return 0 and it stops silently at the
-# first non-digit (`corelib/strings/strings.ty@parse_int`). That is the
-# the tycho-ar plan, carried forward and met here
-# exactly where that item predicted it would be met, and it is NOT re-filed. What this program does about it
-# is to BRACKET it rather than replace it: the shape check runs before it, so
-# it never sees a byte it could mis-read, and the round trip runs after it, so
-# a value it read differently from how this program would render it is thrown
-# away. Bracketing beats reimplementing because the round trip also catches
-# overflow, which a hand-written digit loop would have to be told about
-# separately.
-#
-# WHY `""` IS NULL AND NOT THE EMPTY STRING. CSV has exactly one in-band way to
-# say "nothing here", and it is the empty field. If `""` were `VStr("")` then
-# absence would be inexpressible from data and the `VNull` variant would be
-# reachable only from the `null` literal in a query. On the way OUT the choice
-# is free -- `VNull` and `VStr("")` both render as an empty field -- so it
-# costs nothing there. It costs one thing on the way IN, and here it is:
-# `where region == ""` does NOT match an empty field. Write `where region ==
-# null`. That is why `==` and `!=` are defined against `VNull` instead of
-# being an error like the other cross-kind comparisons.
-#
-# TYPING IS PER CELL, NOT PER COLUMN, and this is deliberate. There is no
-# schema and no first-pass column inference. A column reading `007, 42, 0080,
-# 9` yields `VStr, VInt, VStr, VInt` -- FOUR values, two kinds, in one column.
-# The alternative (infer a column type from the first row, or from all rows,
-# and coerce the rest) has to either reject the file or corrupt a cell, and
-# both are worse than what happens here, which is: `where code == 42` raises a
-# runtime error on the first row whose `code` is a string. That error is
-# LOUD, it names both kinds, and it is telling the truth -- the column really
-# is not a number. The cost is real and is stated plainly: an error that
-# depends on the data can appear at row N of a file that worked yesterday.
-# The mitigation is the same as the diagnosis: the message names the column
-# and the two kinds, so the fix (`where code == '42'`) is readable off it.
-#
-# ===========================================================================
-# DECISION 2 -- WHAT `/` DOES
-# ===========================================================================
-#
-# THIS BLOCK RECORDS TWO DECISIONS, THE OLD ONE FIRST, BECAUSE THE OLD ONE IS
-# WHAT MAKES THE NEW DEFAULT REVIEWABLE. What changed underneath is one thing:
-# `corelib/decimal/decimal.ty@div` now exists.
-#
-# WHAT THIS SAID BEFORE, AND WHY. `core:decimal` had `add`, `sub`, `mul`,
-# `cmp`, `rescale`, `neg`, `abs`, `is_zero`, `from_int`, `from_str`, `to_str`
-# -- and no `div`, because division needs a target scale and a rounding
-# policy and the package had neither. Three options were weighed here:
-#
-#   REJECT `/` AT PARSE TIME. Cheapest, and wrong twice. `/` is already in the
-#   accepted grammar and in the `--explain` golden (`10 % 3 / 2` prints as
-#   `(/ (% 10 3) 2)`), so removing it would invalidate work that is already
-#   verified; and it would refuse `6 / 2`, which has a perfectly good exact
-#   answer, on the grounds that `7 / 2` does not.
-#
-#   CONVERT TO FLOAT. There is no float anywhere in this program on purpose
-#   (see THE VALUE MODEL). Introducing one for `/` alone would mean
-#   `qty * price / 2` lies in exactly the way `core:decimal` exists to
-#   prevent, and it would lie QUIETLY, which is this program's worst case.
-#
-#   INTEGER-DIVIDE (truncate). Honest for `VInt / VInt` if documented, but it
-#   has no answer at all for `price / qty` where either side is a `VDec`, so
-#   it does not actually decide the question -- it decides half of it and
-#   leaves the other half to be decided again.
-#
-# So `/` WAS EXACT-ONLY: `6 / 2` was `3`, `7 / 2` was an error, anything
-# touching a `VDec` was an error. The cost was stated plainly at the time and
-# it was the whole reason to change: `select total / count` -- the ordinary
-# averaging query, the single most common reason anyone writes `/` in SQL --
-# failed on almost all real data. The stated fix was `decimal.div(a, b, scale,
-# mode)` with the scale and the mode named by the CALLER, as a corelib change.
-# That is exactly what was built, so this is now the caller, and a caller has
-# to name them.
-#
-# THE DECISION: `/` ALWAYS PRODUCES A DECIMAL, AT SCALE 6, ROUNDED HALF-UP.
-# `DIV_SCALE` and `decimal.half_up()` are the defaults for a query that names
-# neither, which is every query today -- there is no syntax for naming them yet.
-#
-#   VInt / VInt  ->  VDec      7 / 2 is 3.500000, 6 / 2 is 3.000000
-#   any VDec     ->  VDec      price / qty is 0.125000
-#   divisor 0    ->  ERROR     `decimal.div` returns Err(DivByZero); nothing
-#                              here ever reaches tycho's integer `/`, whose
-#                              zero divisor ABORTS the process
-#                              (`docs/spec/09-expressions.md:27-28`) and so
-#                              could not be reported at all.
-#
-# WHY THE RESULT KIND DOES NOT DEPEND ON THE ROW. `6 / 2` could have stayed a
-# `VInt` and only the inexact cases become decimals. That was rejected: it
-# makes the type of a column depend on the DATA in it, so `qty / 5` over this
-# repo's own fixture would print `0` on one row and `2.400000` on the next.
-# The same objection is made against data-dependent errors above (DECISION 1);
-# it applies to data-dependent kinds too. `/` is a decimal, always.
-#
-# WHY 6 AND WHY HALF-UP. Six digits is past money (2) and past the percentage
-# and per-unit-cost cases that `total / count` is usually reaching for, and it
-# is a fixed number rather than a per-row guess. Half-up is the rounding a
-# person doing this on paper does, and it is what the reader of a rounded
-# average expects; toward-zero is available in the corelib
-# (`decimal.toward_zero()`) and is what `rescale` does, but silently biasing
-# every average toward zero is a worse default than the familiar one.
-#
-# WHAT IS STILL REFUSED, AND WHAT THAT COSTS. A zero divisor is an error on
-# the row that has it -- `price / qty` over a fixture with one `qty` of 0
-# fails, and the message names both operands. That is data-dependent, with the
-# same trade as DECISION 1: loud and true, rather than a fabricated row.
-# And scale 6 is a REAL LOSS OF INFORMATION where the exact answer needed
-# more: `1 / 3` is `0.333333` and the remaining thirds are gone. `/` is the
-# only operator here that rounds; `+`, `-` and `*` are still exact.
-#
-# `%` is unchanged: two `VInt`s only, non-zero divisor, else an error.
-#
-# ===========================================================================
-# EVALUATION: WHAT COMPARES TO WHAT, AND WHAT IS AN ERROR
-# ===========================================================================
-#
-# NO TRUTHINESS. `where` must produce a `VBool`, and `and` / `or` / `not`
-# take `VBool` operands. `where qty` is an error, not "non-zero is true".
-# A query language that guesses at truthiness silently drops rows, which is
-# the failure mode this whole program is organised against.
-#
-# `and` and `or` SHORT-CIRCUIT: `where region == 'eu' and qty > 10` never
-# evaluates the right side on a row where the left is false. That is
-# observable, because the right side can ERROR -- so short-circuiting decides
-# which rows can raise. It is the SQL-ish behaviour and it is the useful one:
-# `where code_is_numeric and code > 5` is expressible because of it.
-#
-# ORDERING (`<`, `<=`, `>`, `>=`) REQUIRES COMPATIBLE KINDS: both numeric
-# (`VInt` and `VDec` mix freely and compare by value, so `1` == `1.00`), or
-# both string (byte-lexicographic, see `str_cmp` -- this is a BYTE order, so
-# a UTF-8 field orders by its bytes, which for ASCII is alphabetical and for
-# anything else is codepoint order, not locale order), or both bool
-# (false < true). Anything else is a runtime error naming both kinds.
-# `VNull` never orders: there is no answer to "is nothing less than 3" that
-# is not a lie or a three-valued logic this program does not have.
-#
-# EQUALITY (`==`, `!=`) is ordering plus ONE exception: if EITHER side is
-# `VNull`, the answer is total -- null == null is true, null == anything else
-# is false, and nothing errors. That exception exists so that `where region ==
-# null` is the null test (see WHY `""` IS NULL). Cross-kind equality between
-# two non-null values is an ERROR, exactly as ordering is; `where code == 42`
-# against a string cell does not quietly answer "false".
-#
-# ARITHMETIC needs two numbers. `VInt op VInt` stays `VInt`; anything with a
-# `VDec` promotes the other side with `decimal.from_int` and yields `VDec`.
-# `+` is NOT string concatenation -- SQL spells that `||`, this program does
-# not have it, and overloading `+` would make `'1' + 1` a coin flip.
-# Arithmetic on `VNull` is an ERROR and not zero: an empty cell silently
-# becoming 0 is precisely the corruption class this program exists to refuse.
-#
-# KNOWN HOLE, written down rather than fixed: `VInt` arithmetic can overflow,
-# and integer overflow WRAPS (`docs/spec/09-expressions.md:31`). `9223372036854775807
-# + 1` yields a negative number here with no diagnostic. Cell TYPING is
-# protected against this by its round trip (DECISION 1), but a sum computed
-# across rows is not. Fixing it means routing all arithmetic through
-# `core:decimal`, which is a real cost per cell and a bigger change than this
-# is a bug.
-#
-# ===========================================================================
-# ORDER 1 -- THE TOTAL ORDER `order by` USES, AND WHY IT IS NOT `where`'s
-# ===========================================================================
-#
-# `where` REFUSES a cross-kind question: `where code > 42` against a string
-# cell is a runtime error naming both kinds (see EVALUATION above). That is
-# right for a filter, because "is "007" greater than 42" has no answer the user
-# meant, and inventing one silently keeps or drops rows.
-#
-# A SORT CANNOT REFUSE. It does not answer a truth question, it assigns a SEAT
-# to every row, and there is a seat for every row whatever is in it. A
-# comparator that errors part-way leaves no defined result -- not "some rows
-# unsorted" but NO OUTPUT AT ALL -- on a file whose only crime is a column with
-# two kinds in it, which DECISION 1 says is normal and expected. So `order by`
-# uses a SEPARATE, TOTAL order. This is the one place in the program where two
-# values of different kinds are compared instead of refused, and the asymmetry
-# is the point: refusing is right when the answer would be a claim, and wrong
-# when it would only be a seat.
-#
-# THE ORDER, ascending, in full:
-#
-#   1. KIND RANK FIRST:    null  <  bool  <  number  <  string
-#      A `VNull` sorts before everything, so ascending puts nulls FIRST. There
-#      is no NULLS FIRST / NULLS LAST modifier: `desc` negates the whole
-#      comparison including the rank, so descending puts nulls LAST.
-#   2. WITHIN one rank, the SAME rule `where` uses, so the two cannot disagree:
-#        null vs null   -- equal, always.
-#        bool vs bool   -- false < true.
-#        number vs number - BY VALUE across `VInt` and `VDec` alike (widen with
-#                         `decimal.from_int`, then `decimal.cmp`), so `7` and
-#                         `7.0` are EQUAL here exactly as they are to `==`.
-#                         They share one rank for precisely this reason.
-#        string vs string - byte-lexicographic (`str_cmp`): a UTF-8 field
-#                         orders by its bytes, which is codepoint order and
-#                         NOT locale order.
-#      That reuse is structural, not a promise: `ord_cmp` calls `cmp_vals`, the
-#      same function `where` calls, and equal rank guarantees it cannot fail.
-#
-# THE SURPRISING HALF, stated because it will surprise someone: a column
-# holding `42`, `007` and an empty cell sorts as (empty), 42, "007". The number
-# comes before the string because the RANK decides before any value is looked
-# at, and `007` is a string (DECISION 1). It is not "007 < 42" and it is not
-# "42 < 007" -- the two are never compared by value at all.
-#
-# ===========================================================================
-# ORDER 2 -- THE SORT IS WRITTEN HERE, AND WHY IT IS NOT `sort.by_key`
-# ===========================================================================
-#
-# `core:sort` cannot express this sort. Read against its actual signatures:
-#
-#   `corelib/sort/sort.ty@by_key` is `fn(xs: [$T], key: fn($T) -> int) -> [$T]`.
-#   The key is an `int`. This order ranks by KIND and then by value across
-#   `VStr` and `decimal.Decimal`, and there is no order-preserving injection of
-#   that into a single `int` -- a string does not fit in one.
-#
-#   `corelib/sort/sort.ty@asc` and `@desc` are `where comparable(T)` over the
-#   VALUES themselves, and even granting a `comparable` `Value` they take ONE
-#   array and ONE direction. `order by a asc, b desc` is two keys and two
-#   directions over the same rows, which no signature in the package accepts.
-#   `@argsort` / `@argsort_desc` have the same shape and the same ceiling.
-#
-# So the sort is `merge_sort` below: bottom-up, iterative, STABLE, and taking
-# its comparator as a FIRST-CLASS FUNCTION VALUE.
-#
-# STABILITY IS A PROPERTY OF THE MERGE, NOT OF A TIEBREAK. The merge takes from
-# the left run whenever the comparator says `<= 0`, and the left run holds the
-# earlier input rows, so rows the comparator calls equal come out in the order
-# they went in. Making the comparator total-by-index instead (compare input
-# positions once every key ties) would look identical on every test here and is
-# deliberately NOT done: it would reverse the tie order under `desc` too, and
-# then `order by k desc limit 3` on a column with ties would return a different
-# three rows by a rule nobody wrote down. Equal rows keep INPUT order in BOTH
-# directions, so `order by k desc` is NOT the reverse of `order by k asc`
-# whenever `k` has a duplicate. That is deliberate, and it is tested in both
-# directions rather than asserted.
-#
-# THE COMPARATOR IS A CLOSURE, AND THE PROBE BEHIND IT CORRECTS A PHASE 2
-# FINDING. Probed before this was written: a sort declared as
-# `fn(xs: [int], f: fn(int, int) -> Result(int, E)) -> Result([int], E)`
-# COMPILES, accepts both a named function and a lambda in that position, and
-# `or_return` propagates a comparator failure straight out through it. So the
-# wall phase 2 hit is narrower than it looked: it was
-# `corelib/iter/iter.ty@filter`'s SIGNATURE pinning the lambda's return type to
-# `int`, NOT a language rule against fallible higher-order functions. A caller
-# who declares the parameter type gets the fallible version.
-#
-# This sort does not need it. The order above is TOTAL by construction, so the
-# comparator cannot fail and is plainly `fn(int, int) -> int`; declaring it as
-# a `Result` would be machinery around an `Err` that cannot be built. What CAN
-# fail is evaluating the KEYS, and that happens once per row before the sort
-# starts -- see the comment in `execute`, which is also where the O(n log n)
-# argument for precomputing them lives.
-#
-# ===========================================================================
-# DECISION 3 -- JSON INPUT, AND THE THREE THINGS `core:json` DOES WITH `1.5`
-# ===========================================================================
-#
-# `from x.json` reads an ARRAY OF OBJECTS: one object per row, keys as columns.
-#
-# THE PROBE FIRST, because it decided the whole design. THE CORELIB IS FIXED AS
-# OF 2026-08-01 and the paragraph below is history -- it stays because it is
-# the only record of why this reader is shaped the way it is, and because the
-# loss it names has NOT gone away. `corelib/json/json.ty` had no float path --
-# `@parse_number` read an optional `-`, then digits, and STOPPED -- and that
-# much was known. What it did INSTEAD was established by RUNNING it, and it was
-# three different failures depending on where the number sat:
-#
-#   json.parse("1.5")         -> JNum(1), exit 0, no diagnostic.
-#                                SILENT TRUNCATION: 1.5 became 1.
-#   json.parse("[1.5]")       -> "tycho: out of memory", exit 1.
-#                                NON-TERMINATION: `@parse_array` advanced only
-#                                on `,` or `]`, so parked on `.` it re-entered
-#                                `@parse_value`, which consumed nothing and
-#                                handed back JNum(0) forever. Unbounded memory
-#                                from five bytes of input.
-#   json.parse('[{"a":1.5}]') -> [{"a":1,"5}]":null}]  and exit 0.
-#                                SILENT CORRUPTION: the leftover `.5}]` was read
-#                                as the next KEY, so a document that "parsed"
-#                                carried a column nobody wrote.
-#
-# The third is the one that mattered, because it is the shape this program
-# actually reads and it was the one with no symptom. And `json.parse` returned
-# `Json`, not `Result(Json, E)` -- there was NO ERROR CHANNEL anywhere in the
-# package -- so no caller could ask whether any of this had happened.
-#
-# SO tycho-q USED TO VALIDATE BEFORE IT PARSED. `json_guard` walked the raw
-# bytes and refused anything `core:json` could not faithfully represent. It was
-# most of a second JSON parser, written only because the first one could not
-# speak, and it could only ever approximate what that one actually did.
-#
-# IT IS GONE. `corelib/json/json.ty@parse_checked` returns
-# `Result(Json, JsonErr)`; every variant carries the byte offset of the byte
-# that failed, and all three failures above are now reported AT that byte. The
-# spin is not merely caught, it is unreachable: `@parse_value` no longer falls
-# through to `@parse_number` for a byte that begins no value, and both container
-# loops carry a structural cursor-must-advance guard. `load_json` now calls
-# `parse_checked` and reports what the parser tells it -- see `json_err`, which
-# is the one place tycho-q still adds words of its own.
-#
-# THE LOSS THAT USED TO BE HERE IS GONE, and this paragraph records what it
-# was so the fixtures that were shaped around it are readable. Until 2026-08-01
-# a JSON file could not carry a non-integer number into this program AT ALL: a
-# price column that is a `VDec` in CSV had to be written as a STRING in JSON,
-# where it stayed a `VStr` and ordered as text. `corelib/json/json.ty@JFloat`
-# closed that, and `1.50` in JSON is now the same `VDec` as `1.50` in CSV --
-# equal to it, ordering with it, byte-identical out of `select *`. The one
-# residue is the two spellings named under `json_float_cell` below (`1e3` and
-# `-0.0`), each refused because accepting it would contradict what the same text
-# means in a query literal or a CSV cell.
-#
-# WHAT A JSON VALUE BECOMES -- and note this is NOT DECISION 1's round trip:
-#
-#   null         -> VNull    the same "nothing here" an empty CSV cell means
-#   true / false -> VBool    a kind CSV cannot produce at all: a CSV cell
-#                            reading `true` is a `VStr`, because DECISION 1
-#                            types by round trip and `VBool` is not in it
-#   integer      -> VInt     a `JNum`: an integer that fit 64 bits exactly
-#   any other    -> VDec     a `JFloat`, read through its LEXEME and never
-#     number                 through its binary64 value, so `0.1` is exact and a
-#                            30-digit integer keeps all thirty digits. Two
-#                            spellings are refused instead: see `json_float_cell`
-#   string       -> VStr     VERBATIM. `"42"` stays the STRING "42".
-#   array/object -> ERROR    refused, naming the row and the key
-#
-# WHY A JSON STRING IS NOT RE-CLASSIFIED. DECISION 1 exists because CSV LOST
-# the type: every cell arrives as a `string` whether it was written as one or
-# not, so the round trip is a RECONSTRUCTION of information that was destroyed.
-# JSON destroyed nothing. A document that says `"42"` said string, on purpose,
-# and re-running the round trip over it would overrule the author in order to
-# guess back the very thing they already stated. Failing closed here means
-# believing the input.
-#
-# THE COST OF THAT, in one line: `{"qty":"12"}` and a CSV cell `12` do NOT
-# produce the same `Value`. Two files are equivalent only if they are spelled
-# equivalently -- a JSON NUMBER for a column that is numeric in CSV.
-#
-# A MISSING KEY IS `VNull`, and the header is the UNION of every object's keys
-# in first-appearance order. CSV REFUSES a short row ("row 3 has 1 fields but
-# the header has 2") while JSON ACCEPTS a sparse object, which looks
-# inconsistent and is not: a short CSV row means the DELIMITERS are wrong, so
-# field k is not missing but MISALIGNED -- every value after the gap sits under
-# the wrong column and nothing says which one was dropped. A JSON key is NAMED,
-# so an absent key is unambiguous and nothing shifts. Absence is expressible in
-# JSON and is not expressible in CSV.
-#
-# A DUPLICATE KEY IN ONE OBJECT IS AN ERROR, matching the duplicate-CSV-header
-# rule for the same reason: `json.get` would answer with the first of them, and
-# a reference that could mean either of two columns is not a column.
-#
-# A NESTED ARRAY OR OBJECT AS A CELL IS AN ERROR -- not flattened and not
-# re-serialised. Rendering `{"a":1}` into a CSV field means inventing a
-# spelling, and `where tags == '["a"]'` would then depend on this program's
-# choice of spaces. Refusing says the true thing: this is a table tool, and
-# that is not a table.
-#
-# ===========================================================================
-# REFUSED, NOT IGNORED
-# ===========================================================================
-#
-# Nothing in the accepted grammar is silently dropped any more: every clause
-# the parser accepts is now executed. The rule that got the program here still
-# stands for anything added later -- a query tool that accepts `limit 5` and
-# returns 400 rows is worse than one that rejects `limit` outright, because the
-# first one is believed.
-#
-# ===========================================================================
-# ERRORS: A `Result` THROUGH THE WHOLE PARSER, `die` ONLY AT THE TOP
-# ===========================================================================
-#
-# Every lexer and parser function returns `Result(T, PErr)` and propagates with
-# `or_return`; `main` is the single place that turns an `Err` into a message
-# and a non-zero exit. That shape is deliberate -- it is the half of the type
-# system this program exists to exercise -- and it costs one real thing:
-#
-#   FRICTION 1. `or_return` only works inside a function that itself returns a
-#   compatible `Result` (`docs/spec/10-statements.md:157-163`), so the
-#   discipline is all-or-nothing per call chain. A helper as small as `eat_kw`
-#   cannot be written as a plain `fn ... -> bool` and still participate; it has
-#   to return `Result(int, PErr)` with a payload nobody reads. `Result(void, E)`
-#   is not expressible, so the placeholder `Ok(0)` ends every such helper.
-#
-#   FRICTION 2, and it is the one that bites. A helper that ONLY fails still
-#   cannot be called as a statement: `eat_kw(...) or_return` on its own line is
-#   rejected -- "a statement must be a declaration, assignment, or call -- a
-#   bare expression has no effect" -- because `docs/spec/10-statements.md:16-18`
-#   permits only a call as a bare-expression statement and names `or_return`
-#   among the forms it refuses. So the discarded `Ok(0)` has to be BOUND, and
-#   `parse_query` opens with `_ := eat_kw(...) or_return` and then `_ = ...`
-#   twice more. The rule is right in general (a dropped `or_return` value is
-#   usually a bug) and it has no exemption for the case where the value is by
-#   construction meaningless, which is exactly the case a `void` Result would
-#   have removed. The two frictions are one defect seen twice.
-#
-# The message names the offending token and its byte offset, because a parse
-# error against a one-line query argument is only actionable with an offset:
-#
-#     tycho-q: parse error at byte 21: unexpected token "form" (expected `from`)
-#
-# A parse error is fatal by decision, not by limitation: `eprint` writes to
-# stderr without terminating (`src/tychoc.c:5476@eprint`, shipped 2026-06-14),
-# so a non-fatal diagnostic was available and is deliberately unused. A query
-# that does not parse has no partial result worth printing, and stdout IS the
-# result -- a caller parsing rows should never have to decide whether a line is one.
-#
-# ===========================================================================
-# THE `--explain` OUTPUT
-# ===========================================================================
-#
-# One s-expression per query, over several lines, two spaces per level. It is a
-# TOTAL rendering of the AST -- every clause present in the parse appears, and
-# an absent optional clause prints nothing at all -- so a golden over it is a
-# golden over the parse.
-#
-#     (query
-#       (select (col name) (as total (* (col qty) (col price))))
-#       (from "sales.csv")
-#       (where (and (== (col region) "eu") (> (col qty) 10)))
-#       (order (key (col total) desc))
-#       (limit 5)
-#     )
-#
-# Literals print bare and are told apart by shape: `10` is an int, `1.50` is a
-# decimal (it has a `.`), `"eu"` is a string, `true`/`false` are bools, `null`
-# is null. A column reference is `(col name)` rather than a bare name, so a
-# column named `null` or `true` cannot be confused with the literal.
-#
-# Unary minus prints `(neg x)`, not `(- x)`. An s-expression could tell the two
-# minuses apart by arity, but only by counting, and a reader diffing a golden
-# should not have to count.
 package main
 
 import "core:cli"
@@ -1075,17 +479,6 @@ fn show_item(it: Item) -> string:
                 return show_expr(e)
             return "(as " + alias + " " + show_expr(e) + ")"
 
-# FRICTION, and the reason these two exist as functions rather than as a
-# `match` inside `explain`. An absent clause prints nothing, so the `None` arm
-# of the match has no work to do -- and Tycho has NO no-op statement. There is
-# no `pass`: `docs/spec/10-statements.md:16-18` permits only a call as a bare
-# expression statement, so an empty arm cannot be spelled at all, and the
-# compiler rejects the arm rather than the missing keyword ("a statement must
-# be a declaration, assignment, or call"). A match whose arms differ in whether
-# they act therefore has to be lifted into a function whose arms all RETURN,
-# with the emptiness carried in the value. Grepping the tree for a bare `pass`
-# finds none outside this file's own rejected draft, so nothing else has hit it
-# -- the corelib's matches are all total in the same way `show_value` is.
 fn where_line(o: Option(Expr)) -> string:
     match o:
         Some(e):
@@ -1130,17 +523,6 @@ fn explain(q: Query):
 # values: kinds, rendering, and the comparisons
 # ---------------------------------------------------------------------------
 
-# The KIND of a value, as an int, so that every rule below can be written as a
-# comparison of two ints instead of as a nine-armed nested `match`.
-#
-# FRICTION. An enum has no way to ask for a value's variant WITHOUT binding its
-# payload: there is no `is`, no tag accessor, and a match arm must name a
-# binder even when the arm does not use it. So `kind` is the tag accessor this
-# language does not have, hand-written once, and `VBool(b)` binds a `b` that is
-# never read -- three times over. It compiles, so the cost is only that the
-# reader of `kind` has to notice the binders are decoration. Written once here
-# and used everywhere is much the lesser evil: the alternative is that decoration
-# at every site that needs a tag.
 const K_NULL = 0
 const K_BOOL = 1
 const K_INT  = 2
@@ -1474,9 +856,6 @@ fn join_names(hdr: [string]) -> string:
 
 # The bytes of the source, or a diagnosis of why there are none.
 fn read_source(path: string) -> Result(string, RErr):
-    # `io.read` returns "" for a missing file, which is indistinguishable from
-    # an empty one (`corelib/io/io.ty@read`), so the existence question is
-    # asked separately and with the variant kept.
     match io.size(path):
         Err(io.NotFound):
             return Err(RErr("no such file: " + path))
@@ -1485,11 +864,6 @@ fn read_source(path: string) -> Result(string, RErr):
         Err(other):
             return Err(RErr("cannot read: " + path))
         Ok(sz):
-            # The success arm has no work to do -- the size is not wanted, only
-            # the fact that stat succeeded -- and an empty match arm cannot be
-            # spelled (see the FRICTION note above `where_line`). A DECLARATION
-            # is a legal statement where a bare expression is not, so binding
-            # the unwanted value is the cheapest legal way to say "nothing".
             ok := sz
     return Ok(io.read(path))
 
@@ -1536,37 +910,6 @@ fn load_csv(path: string, text: string) -> Result(Table, RErr):
 # forced this shape)
 # ---------------------------------------------------------------------------
 
-# WHAT USED TO BE HERE, AND WHY IT IS NOT.
-#
-# `json_guard` stood here: about a hundred lines that walked the raw text before
-# `json.parse` saw it and accepted only what `core:json` could represent, in two
-# layers -- a TOKEN ALPHABET (whitespace, `{}[],:`, a string literal, `true` /
-# `false` / `null`, and an INTEGER, with a `.` or an exponent refused BY NAME)
-# and a BRACKET NESTING check, which was the layer that ruled out the
-# non-termination rather than being decoration.
-#
-# It existed for exactly one reason: `json.parse` returned `Json`, not a
-# `Result`, so the package had NO ERROR CHANNEL and a caller could not ask
-# whether the document it got back was the document it handed in. Checking in
-# front of a parser you cannot question means writing a second parser, and a
-# second parser is only ever an approximation of the first -- the guard's own
-# comment admitted that `[1 2]` passed it.
-#
-# `corelib/json/json.ty@parse_checked` reports a cause and a byte offset, so the
-# check now happens ONCE, inside the parser that actually reads the bytes, and
-# there is no approximation to drift. Everything the guard refused is still
-# refused; the messages come from the parser now, and the two failure legs in
-# tools/tycho-q/run.sh assert against those instead of against these.
-#
-# The one thing tycho-q still says for itself is `BadFloat`, below, and its
-# meaning CHANGED on 2026-08-01. It used to mean "floats are out of scope", so
-# the advice told the user to write the number as a string. `core:json` has a
-# float path now (`corelib/json/json.ty@JFloat`) and reads `1.5` exactly, so
-# `BadFloat` no longer means "we cannot", it means the number is MALFORMED --
-# `corelib/json/json.ty@err_reason` renders it as "'.' or exponent with no
-# digits after it", which fires on `1.`, `1e`, `1e+` and `1.x`. The corelib
-# names the cause and the byte; what it cannot say is which spellings are legal,
-# so that is what this arm adds and all it adds.
 fn json_err(path: string, e: json.JsonErr) -> RErr:
     m := path + ": byte " + str(json.err_offset(e)) + ": " + json.err_reason(e)
     match e:
@@ -1584,17 +927,6 @@ fn json_root(path: string, text: string) -> Result(json.Json, RErr):
         Err(e):
             return Err(json_err(path, e))
 
-# An article for a diagnostic, so the message reads as a sentence.
-#
-# `"num"` and `"float"` BOTH read as "a number", and that is not a shortcut.
-# JSON has one number type; `core:json` splits it in two only to record whether
-# the value fit an `int` exactly, which is an implementation fact about the
-# reader and not something the document said. A message telling the user their
-# value is "a float" would be describing our storage, not their file. The arm is
-# spelled out rather than folded into the fallthrough because `"float"` reaching
-# the final `return "null"` is exactly the bug this fixes: a refused float cell
-# used to be reported as "the value is null", a wrong noun in the one message
-# whose whole job is naming what the user wrote.
 fn a_kind(k: string) -> string:
     if k == "arr":
         return "an array"
@@ -1610,40 +942,6 @@ fn a_kind(k: string) -> string:
         return "a boolean"
     return "null"
 
-# A JSON float as a cell, THROUGH ITS LEXEME AND NEVER THROUGH ITS BINARY64
-# VALUE. `corelib/json/json.ty@JFloat` carries both; `@as_float` would hand back
-# a double, and routing `0.1` through a double and out again is precisely the
-# rounding `core:decimal` exists to refuse -- there is no float anywhere in this
-# program on purpose (THE VALUE MODEL). `@as_lexeme` is the number as the
-# document spelled it, and `decimal.from_str` over that is exact.
-#
-# The lexeme is BRACKETED exactly as DECISION 1 brackets a CSV cell, and for the
-# same reason: `decimal.from_str` reads `[-|+]digits[.digits]` and NOTHING else
-# (`corelib/decimal/decimal.ty@from_str`), so a lexeme outside that shape would
-# be mis-read rather than refused. `num_shape` runs in front of it and the
-# round trip `decimal.to_str(d) == lx` runs behind it, so a spelling this program
-# cannot reproduce is refused instead of quietly altered.
-#
-# WHAT THAT REFUSES, and why each refusal is the consistent answer rather than a
-# gap:
-#
-#   1e3     -- an exponent. `core:json` accepts it and keeps the lexeme, so
-#              nothing is lost on the way in; it is refused HERE because the same
-#              text is already refused in the other two positions this program
-#              reads a number from: the query lexer rejects the literal `1e3`
-#              (THE VALUE MODEL) and a CSV cell reading `1e3` is a `VStr`
-#              (DECISION 1). Accepting it only from JSON would make `1e3` mean
-#              three different things in one program.
-#   -0.0    -- the round trip fails: `decimal.to_str` renders it `0.0` and the
-#              sign is gone. Storing it would REWRITE the cell, which is the one
-#              thing a query that neither filters nor computes must never do --
-#              the same call DECISION 1 makes for a CSV `-0`.
-#
-# WHAT IT ACCEPTS THAT AN `int` CANNOT HOLD: an integer too large for 64 bits
-# arrives here as a JFloat (that is how `corelib/json/json.ty` stopped wrapping
-# silently), its lexeme is plain digits, and `core:decimal` is arbitrary
-# precision underneath, so all thirty digits of it survive into a `VDec`. The
-# binary64 route would have lost them at the seventeenth.
 fn json_float_cell(path: string, r: int, key: string, lx: string) -> Result(Value, RErr):
     if num_shape(lx) != 0:
         d := decimal.from_str(lx)
@@ -1734,9 +1032,6 @@ fn arith(op: string, a: Value, b: Value) -> Result(Value, RErr):
         if op == "*":
             return Ok(VInt(x * y))
         if op == "%":
-            # The zero check is BEFORE the operator, because modulo by a zero
-            # value ABORTS the process (`docs/spec/09-expressions.md:27-28`)
-            # -- there would be no error to return.
             if y == 0:
                 return Err(RErr("`%` by zero"))
             return Ok(VInt(x % y))
@@ -1814,16 +1109,6 @@ fn eval(e: Expr, hdr: [string], row: [Value]) -> Result(Value, RErr):
                 return Ok(VBool(c >= 0))
             return arith(op, a, b)
 
-# Every column named anywhere in the query, checked against the header ONCE,
-# before a single row is evaluated. Without this, `select nope from empty.csv`
-# would print a header naming a column that does not exist and exit 0.
-#
-# FRICTION, the third sighting of one defect. This function cannot fail-or-
-# succeed: `Result(void, E)` is not expressible, so it returns `Result(int,
-# PErr-shaped RErr)` with an `Ok(0)` nobody reads, and the recursive call has
-# to BIND that meaningless value (`_ := ... or_return`) because a bare
-# `or_return` is not a statement. Both are already described in the ERRORS
-# block at the top of this file; this is where they cost a third time.
 fn check_cols(e: Expr, hdr: [string]) -> Result(int, RErr):
     match e:
         ELit(v):
@@ -1941,10 +1226,6 @@ fn execute(q: Query) -> Result([[string]], RErr):
     for i := 0; i < len(q.sel); i += 1:
         match q.sel[i]:
             IStar:
-                # `*` names no column, so there is nothing to check here. The
-                # empty-arm friction again: `_ := 0` is a declaration, which is
-                # a legal statement, where the no-op this arm actually wants is
-                # not spellable at all.
                 _ := 0
             IExpr(e, alias):
                 _ := check_cols(e, t.hdr) or_return
@@ -1956,32 +1237,6 @@ fn execute(q: Query) -> Result([[string]], RErr):
     for i := 0; i < len(ord); i += 1:
         _ := check_cols(ord[i].expr, t.hdr) or_return
 
-    # FRICTION, MEASURED. The row filter below is the shape `core:iter` exists
-    # for, and it cannot be written with it. Two independent walls, both probed
-    # rather than assumed:
-    #
-    #   1. `corelib/iter/iter.ty@filter` is `fn(xs: [$T], keep: fn($T) -> int)`.
-    #      A predicate returning the language's own `bool` does not fit:
-    #        "argument 2 of 'iter__filter' is fn(int) -> bool, which does not
-    #         fit the parameter pattern"
-    #      So every caller of the one filter in the corelib has to spell its
-    #      predicate in a 0/1 int, in a language that has `bool`.
-    #   2. Worse, and fatal here: this predicate can FAIL -- an unknown kind
-    #      comparison, a `/` with no exact answer -- so it is a `Result`, and a
-    #      lambda cannot propagate one:
-    #        "or_return requires the enclosing function to return a Result,
-    #         but it returns int"
-    #      A lambda's body is a single expression (`docs/spec/11-functions.md:70`)
-    #      and its return type is fixed by the parameter pattern it is being
-    #      passed to, so there is no way to widen it to `Result` and no way to
-    #      write the match that would handle it inline. `core:iter` has no
-    #      fallible counterpart -- no `try_filter`, no `filter` over
-    #      `fn($T) -> Result(int, $E)`.
-    #
-    # The consequence is not a workaround, it is a different program: a plain
-    # `for` loop with `or_return` in the body. Every higher-order combinator in
-    # `core:iter` is unavailable to any pipeline stage that can fail, which is
-    # most of the stages in a query engine.
     kept := [][Value]
     for r := 0; r < len(t.rows); r += 1:
         row := t.rows[r]
@@ -2016,13 +1271,6 @@ fn execute(q: Query) -> Result([[string]], RErr):
         idx := []int
         for r := 0; r < len(kept); r += 1:
             push(idx, r)
-        # THE COMPARATOR AS A FIRST-CLASS VALUE. The lambda's body is a single
-        # expression, which is all a lambda may be (`docs/spec/11-functions.md:70`),
-        # so the multi-key loop lives in the named `cmp_key_rows` and the
-        # closure exists to CAPTURE `keys` and `dirs` -- the two things a
-        # top-level function could not reach. Capture is by deep copy at
-        # creation, so the key matrix is copied once here; that is a real cost
-        # and it is paid once, not per comparison.
         less := fn(i: int, j: int) -> int: cmp_key_rows(keys, dirs, i, j)
         pos := merge_sort(idx, less)
         sorted := [][Value]

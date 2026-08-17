@@ -1,15 +1,3 @@
-# tycho-lsp — a Language Server for tycho, written in tycho (dogfood). One server,
-# driven by any LSP client (VS Code, Zed, ...). JSON-RPC transport + lifecycle,
-# and these features: diagnostics (compile the buffer -> publishDiagnostics),
-# hover, go-to-definition, documentSymbol (outline), completion, references,
-# documentHighlight, rename, and inlay type hints. Navigation/types come from
-# `tychoc --symbols` (post-resolve index); references/rename scan the buffer with
-# string/comment awareness so they never edit text inside a literal or comment.
-# Build:  tychoc tools/lsp.ty --shim tools/lsp_shim.c -o tycho-lsp
-#
-# The JSON value model + parser + serializer are reused verbatim from
-# examples/json.ty (a proven recursive value-semantic parser); only the transport,
-# a couple of accessors (as_str), and the dispatch loop are new.
 
 extern fn tycho_read_line() -> string          # one stdin line (through \n); "" on EOF
 extern fn tycho_read_n(n: int) -> string       # exactly n stdin bytes (the JSON body)
@@ -36,7 +24,6 @@ fn ensure_tmp_root():
     if tycho_is_windows() == 1:
         tycho_run("if not exist C:\\tmp mkdir C:\\tmp")
 
-# ---- JSON (from examples/json.ty) -------------------------------------------
 enum Json:
     JNull
     JBool(bool)
@@ -274,12 +261,6 @@ fn digits_to_int(s: string) -> int:
 
 # ---- JSON-RPC transport -----------------------------------------------------
 fn crlf() -> string:
-    # `"\r\n"` IS a string literal since the friction plan, so this is no longer forced.
-    # The reason this comment used to give for keeping it -- `scripts/frontparity.sh`
-    # feeds `tools/*.ty` to the FROZEN `tychoc0`, whose lexer rejects `\r` -- EXPIRED
-    # on 2026-07-29 when that lane was retired; nothing builds `tychoc0` now, so
-    # `"\r\n"` is writable here. This spelling stays because it works and churning it
-    # buys nothing, not because a lexer forbids the literal.
     return "" + '\r' + '\n'
 
 fn send_msg(body: string):

@@ -1,13 +1,3 @@
-# `pass` is a statement, so it cannot be a value if/match branch's tail -- every
-# branch of one must produce a value. The message names the fix rather than
-# reporting "unknown variable 'pass'", which is what the bare identifier would
-# otherwise resolve to.
-#
-# Checked in the RESOLVER, not the parser: only the resolver knows whether `pass`
-# is a declared variable here. A parser-side guard was written first and refused
-# a legitimate `pass` variable read as a branch tail (tests/pass_stmt.ty has one).
-#
-#   error: `pass` is a statement and produces no value
 fn main():
     x := if true:
         pass

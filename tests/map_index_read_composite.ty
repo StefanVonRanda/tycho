@@ -1,8 +1,3 @@
-# m[k] as a READ for COMPOSITE value types (array / struct): a PURE read that
-# yields the value's zero -- empty array / zeroed struct -- on a missing key and
-# NEVER inserts. Writes through the slot (m[k]=v, push(m[k]), m[k].f=x,
-# m[k][j]=x) keep working. Both compilers must agree (this reconciled a latent
-# parity bug: tychoc rejected composite reads, tychoc0 insert-on-read them).
 struct P:
     x: int
     y: int

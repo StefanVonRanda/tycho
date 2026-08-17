@@ -1,5 +1,2 @@
-# §3.9.1 (docs/spec/01-lexical.md): a `0x`/`0b` prefix must be followed by
-# at least one digit. `0x` alone is a lexical error, not a literal 0 plus
-# an identifier -- the prefix was written, so the writer meant a hex literal.
 fn main():
     a := 0x

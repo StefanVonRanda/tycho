@@ -4,26 +4,6 @@ import "core:sort"
 import "core:strings"
 import "../cell"
 
-# The grid, the dependency graph, and the recalculation order.
-#
-# RECALCULATION IS ITERATIVE, AND THAT IS THE WHOLE DESIGN. The obvious
-# implementation -- evaluate a cell, recursing into each cell it reads -- costs
-# one C stack frame per link, so `A1 = A2 + 1` repeated ten thousand times
-# segfaults. Kahn's algorithm walks the same graph with an explicit queue and a
-# loop, so the depth of the chain costs nothing but heap. A 10000-deep chain
-# evaluates here; so does a 100000-deep one. tests/recursion/ is the precedent
-# for treating a deep input as something to survive rather than to document.
-#
-# A CYCLE IS DETECTED BY WHAT KAHN LEAVES BEHIND, not by a depth counter. When
-# the queue drains, every cell still holding a non-zero indegree is either in a
-# cycle or downstream of one -- there is no recursion to overflow and no limit
-# to tune. Those cells then get walked ONCE to recover the actual loop, so the
-# error reads `#CYCLE! A1 -> B1 -> A1` and names the cells to go and look at.
-# "#CYCLE!" on its own tells you a cycle exists, which you already knew.
-#
-# ORDER IS DETERMINISTIC EVERYWHERE. Keys are sorted before the queue is seeded
-# and before anything is printed, so the same script produces byte-identical
-# output on every run. A map's iteration order is not something to rely on.
 
 struct Rec:
     src: string                    # exactly what was typed

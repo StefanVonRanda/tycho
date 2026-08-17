@@ -1,7 +1,3 @@
-# 14-ffi.md §25, the enum arm of the symmetric collision rule (see
-# tests/reject/handle_then_struct.ty). Phase 39: before the fix BOTH compilers
-# accepted, compiled and ran this. tychoc: parse_enum's handle_find.
-# Both compilers reject (differential).
 handle H:
     free: hclose
 

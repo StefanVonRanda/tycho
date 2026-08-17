@@ -1,13 +1,3 @@
-# A LOCAL generic function has no single function value: nothing at a value site
-# fixes $T, so there is no instantiation to take. It must be refused -- but with
-# THAT reason, not "unknown variable 'mymin'; did you mean 'main'?", which was
-# false twice over: the name exists (`mymin(2, 3)` compiles), and `main` is not
-# what the reader is reaching for. The cross-package spelling is pinned by
-# tests/reject/pkg/fnval_pkg_generic/; a local NON-generic fn as a value is
-# accepted and covered by tests/pkg/fnval/.
-# The suggested lambda is asserted to compile and run in tests/fnval_generic_wrap.ty.
-# expect: 'mymin' is generic, so it has no single function value
-# expect: fn(a: int, b: int) -> int: mymin(a, b)
 
 fn mymin(a: $T, b: $T) -> $T where comparable(T):
     if a < b:

@@ -1,6 +1,3 @@
-# push-loop fusion regression: the cached cursor must produce identical results
-# to per-element push across every control-flow shape, and must BAIL (fall back)
-# when the array is observed mid-loop.
 fn sum_arr(xs: [int]) -> int:
     s := 0
     for i := 0; i < len(xs); i += 1:

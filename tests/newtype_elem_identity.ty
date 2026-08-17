@@ -1,8 +1,3 @@
-# A value read out of a newtype-typed array or map element keeps its newtype identity
-# when bound to a variable -- `for x in [Id]`, `x := a[i]`, `for k in keys(m)` over a
-# newtype-keyed map, `x := m[key]` for a newtype value. tychoc0 used to erase the identity
-# at the binding (EIndex read resolve_nt'd to base), so a later `m[k]` / newtype-arg use
-# rejected the value as "a plain int"; tychoc keeps the identity. Now they agree.
 
 type Id = int
 type Name = string

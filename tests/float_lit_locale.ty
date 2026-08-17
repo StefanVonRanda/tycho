@@ -1,45 +1,3 @@
-# Float LITERALS survive the compiler's own LC_NUMERIC, in both directions.
-#
-# This is the compile-time twin of tests/float_str_locale.ty. That one locks what
-# a RUNNING program prints; this one locks what the COMPILER read out of the
-# source and wrote into the generated C. Both sites live in src/tychoc.c and are
-# one defect -- see the comment above src/tychoc.c@c_numeric_handle:
-#
-#   READ   the lexer used a bare strtod, which under a comma-decimal LC_NUMERIC
-#          stops at the '.' and turns the literal 1.5 into 1.
-#   WRITE  codegen used a bare snprintf("%.17g"), which emits the bytes `1,5`;
-#          the ".0" guard scans for '.', finds none, and appends -- `1,5.0`. In
-#          expression position that is a COMMA EXPRESSION cc accepts silently;
-#          in a declarator initializer it is a syntax error. Both were measured.
-#
-# Each broken combination lands somewhere different, and this fixture separates
-# them (verified by reverting each half in turn against this golden):
-#
-#   both broken       1.5 -> 1.0        read drops the fraction, write re-adds .0
-#   write broken only cc REJECTS        `double h_a = 1,5.0;` -- the loud shape
-#   read broken only  1.5 -> 1.0, and 2.5e-3 -> 2.0, and -0.5 -> -0.0
-#
-# WHAT THIS FIXTURE CAN AND CANNOT HOLD ITSELF. The hostile locale in the second
-# block is held here, by the runtime test hook, and it covers the RUNTIME half:
-# it proves the numbers printed below are the values the compiler baked in and
-# not an artifact of the printing locale, on any grader's machine. The COMPILER's
-# locale cannot be set from inside this file -- tychoc is a separate process that
-# has already exited by the time main() runs.
-#
-# AND SETTING LC_ALL IN THE ENVIRONMENT DOES NOT REACH IT EITHER. A C program
-# starts in the "C" locale whatever LC_ALL says, until something calls
-# setlocale(LC_ALL, ""), and tychoc never does -- which is exactly why this defect
-# is latent rather than live. `LC_ALL=da_DK.utf8 ./tychoc` is therefore an INERT
-# check: it passes on a compiler with the bug fully present. The trigger this
-# fixture is really about is the one the comment in src/tychoc.c names -- some
-# linked C library calling setlocale at load time -- and the phase evidence
-# reproduces it with an LD_PRELOAD whose constructor does exactly that, then
-# compiles this file and compares against this same golden.
-#
-# The extern is a runtime test hook with no Tycho-visible declaration anywhere
-# else; tests/float_str_locale.ty declares it the same way, and the reason it
-# lives in the runtime is that tests/run.sh builds a fixture with plain
-# `cc ... -lm` and no --shim, so a fixture has no other C to link against.
 extern fn tycho_test_make_locale_hostile() -> int
 
 # A float literal passed as a CALL ARGUMENT is the shape the write-side bug is
@@ -57,9 +15,6 @@ fn block():
     three := 3.0
     println("3.0            = " + str(three))
     println("3.0 / 2.0      = " + str(three / 2.0))
-    # A literal carrying BOTH a fraction and an exponent. %.17g renders it with a
-    # separator and no 'e', so under a comma locale it took the guard too:
-    # `0,0025000000000000001` + ".0" is a comma expression worth 2.5e15.
     small := 2.5e-3
     println("2.5e-3         = " + str(small))
     # Exponent-only forms have no separator at all, so neither half of the defect

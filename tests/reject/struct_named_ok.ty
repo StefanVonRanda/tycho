@@ -1,10 +1,3 @@
-# A `struct` may not take a builtin constructor's name, for the reason
-# tests/reject/fn_named_ok.ty gives for a `fn`: Ok/Err/Some/None are matched on
-# raw token text in parse_primary, so the constructor wins at every use site and
-# the struct is unconstructable. Before this, THIS file compiled clean and the
-# first use produced "'.v' on a non-struct value" -- a diagnostic about the
-# builtin Result, never a word about the shadowed struct.
-# expect: 'Ok' is already defined
 struct Ok:
     v: int
 

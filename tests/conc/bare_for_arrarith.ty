@@ -1,20 +1,3 @@
-# Two forms the concurrency suite never reached (the loops-cleanup plan):
-# the bare `for:` loop and element-wise array arithmetic. Measured 2026-07-30,
-# before this file: 0 of the 11 tests/conc fixtures contained either.
-#
-# They belong here and not only in tests/ because the concurrency lane is the
-# only one that builds every fixture under TSan and runs the same program on a
-# task's stack rather than main's:
-#   - a bare `for:` inside a SPAWNED call exercises the loop arena on a task
-#     arena, and `break`/`return` out of it must free that arena, not main's;
-#   - element-wise arithmetic allocates a FRESH array per operation, so doing it
-#     inside a task (and inside a `parallel for` chunk, which deep-copies its
-#     captures) is where a shared-buffer mistake would show as a data race
-#     rather than as a wrong number.
-#
-# Every value below is interleaving-independent: the tasks compute pure
-# functions of their arguments, and the `parallel for` body is a `+=` reduction
-# into a variable read nowhere else in the chunk.
 
 # A bare `for:` left by `break`, run on a task's stack.
 fn accum(n: int) -> int:

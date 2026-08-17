@@ -2,28 +2,6 @@ package buf
 
 import "core:utf8"
 
-# The text buffer behind tycho-ed: lines, a cursor, and an undo journal.
-#
-# TEXT IS BYTES, THE CURSOR IS TEXT. A line is a Tycho string, i.e. a byte
-# buffer, and `cur.col` is a BYTE offset into it -- because that is what
-# slicing and concatenation actually take. Every operation a user can name is
-# nonetheless in CODEPOINTS: left() steps over one whole character however many
-# bytes it occupies, and del_back() removes one character, never one byte. The
-# two views meet in the four `_` helpers below, which are the only places that
-# convert, so a byte offset can never leak into a user-facing count by accident.
-#
-# UNDO IS A JOURNAL, NOT A SNAPSHOT. Each entry holds the inverse-able fact
-# about one edit -- (line, byte column, the text) -- plus the cursor as it stood
-# before. That is O(bytes edited) per entry: 1-4 bytes for a typed character.
-# The alternative under value semantics is a snapshot, `push(snaps, b.lines)`,
-# which deep-copies every line in the buffer on every keystroke -- O(bytes in
-# the document) per entry, so a session's undo history costs O(edits x size).
-# tools/tycho-ed/main.ty's --stress mode implements the snapshot arm too and
-# prints both, so this paragraph is a measurement rather than an assertion.
-#
-# A line NEVER contains "\n". A newline is the boundary between two elements of
-# `lines`, so there is exactly one representation of a line break and no way to
-# desynchronise the line count from the text.
 
 struct Cursor:
     line: int
@@ -42,27 +20,6 @@ struct Edit:
     op: Op
     cur: Cursor                    # the cursor BEFORE this edit ran
 
-# TWO BACKENDS, ONE API. `gap` selects which representation holds the line
-# being edited. Everything above and below this struct is shared: the journal,
-# the byte/codepoint boundary, the errors and every public operation are the
-# same code in both modes, because the point of the second backend is to move
-# ONE number and nothing else.
-#
-#   gap = false   every line is a string. An edit rebuilds the whole line
-#                 (`s[0:c] + t + s[c:]`) and abandons the previous copy.
-#   gap = true    the FOCUSED line lives in `gbuf` as bytes with a hole in the
-#                 middle. Inserting writes bytes into the hole; deleting widens
-#                 it. Neither allocates. `lines[gline]` is STALE while focused
-#                 and is rewritten once, by _unfocus, when the focus moves or a
-#                 reader asks. Content is gbuf[0:gs] ++ gbuf[ge:len(gbuf)], so
-#                 len(gbuf) is the capacity and the gap is ge - gs.
-#
-# `gbuf` is [int], not bytes: `bytes` is immutable (docs/spec/03-types.md:138,
-# `b[i] = v` is a compile error) and an in-place backend needs a place. The
-# array is REUSED across focus changes -- _g_focus only ever grows it -- so a
-# session that types a million characters into ten thousand lines allocates it
-# once. to_str(to_bytes(...)) at _unfocus is the only conversion, and to_str is
-# a zero-cost reinterpret (docs/spec/06-conversions.md:41).
 struct Buf:
     lines: [string]
     cur: Cursor
@@ -195,8 +152,6 @@ fn cp_count(b: Buf) -> int:
         n += c
     return n + len(b.lines) - 1
 
-# The cursor's column measured in characters, which is what a status line and a
-# screen column both want. `cur.col` is bytes and is never shown to a user.
 fn cur_cp_col(b: Buf) -> int:
     return _cp_before(b.lines[b.cur.line], b.cur.col)
 
@@ -376,10 +331,6 @@ fn _raw_join(b: inout Buf, ln: int) -> Result(void, BufErr):
 
 fn _record(b: inout Buf, op: Op, before: Cursor):
     push(b.undos, Edit(op, before))
-    # A fresh edit invalidates the redo branch. Guarded so the common keystroke
-    # does not allocate a fresh empty array for a branch that is already empty.
-    # Measured: this did NOT move the per-edit cost at 100k edits, so it is
-    # tidiness, not the fix for the drift --stress reports.
     if len(b.redos) > 0:
         b.redos = []Edit
 

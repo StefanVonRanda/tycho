@@ -1,71 +1,4 @@
 package main
-# tycho-httpd -- a static web server written in Tycho.
-#
-#   ./tycho-httpd --root server/www --port 8080 --workers 8
-#
-# It serves a directory of real files -- HTML, CSS, JS, images, fonts -- over
-# HTTP/1.1 with persistent connections, correct content types, index resolution,
-# and a hard refusal of anything that tries to climb out of the document root.
-#
-# CONCURRENCY. A fixed pool of worker tasks, each running its own accept(2) loop
-# on the one shared listening fd. The pool is built by RECURSIVE FAN-OUT: worker
-# k spawns worker k+1 into a frame-local before entering its own loop. That is
-# not a stylistic choice. A task handle in Tycho is affine -- it cannot be stored
-# in an array, a struct, or any aggregate -- so the only place to keep N live
-# handles is N stack frames. See the webserver plan, for the measurements that
-# settled this (8 workers, 8 concurrent 500ms clients, 509ms wall).
-#
-# REQUEST READING. One call: `got, raw := httpd.read_request_capped(conn, MAX_HEAD)`.
-# This file used to reimplement the read loop -- 19 lines and a local `Head`
-# struct -- for one reason: read_request reported EOF, an idle timeout and a
-# malformed request line the same way, as `method == ""`, so a server that must
-# answer 400 to garbage while hanging up silently on a disconnect could not use
-# it. The corelib says which failure it was now (httpd.ReqErr), and takes the
-# byte cap as a parameter and hands the raw buffer back, so the reimplementation
-# is gone (the option-result plan; FRICTION.md phase 7).
-#
-# ERROR MODEL, 2026-07-26. core:net's fallible TCP calls, httpd.parse_request /
-# read_request and io.read_bytes all return Result(T, E) instead of a negative
-# int, an empty `bytes` or an empty method string. What that bought here, in the
-# four places it is visible:
-#
-#   * serve_conn ACTS on the reason. Err(httpd.Closed) closes with no response
-#     and no log line; Err(httpd.Timeout) on a started request answers 408;
-#     Err(httpd.TooLarge) answers 431; Err(httpd.Malformed) answers 400. Those
-#     were one indistinguishable "nothing arrived" before phase 1.
-#   * a file that vanished or turned out to be a directory between resolve() and
-#     the read is Err(io.IsDir) / Err(io.NotFound) -> 404, where the empty
-#     `bytes` used to be served as a 0-byte 200.
-#   * resolve() asks io.is_dir, a real stat(2), instead of `len(io.list(p)) > 0`,
-#     so a directory redirects to its slash form whether or not it holds an
-#     index -- and only a directory does. That one was never an error-model
-#     problem: it was a missing syscall (the option-result plan).
-#   * httpd.write_response's `-1` is gone; emit is a tail call onto it and so
-#     spends zero lines on plumbing.
-#   * `or_return` only short-circuits out of a function that returns a matching
-#     Result, so the functions here that return a Response or a count collapse
-#     theirs with core:result's `unwrap_or` -- which replaced the hand-written
-#     `nwrote` helper this file used to carry (the option-result plan).
-#
-# CONDITIONAL REQUESTS, 2026-07-31. A GET carrying If-Modified-Since is answered
-# 304 when the file's mtime is not newer than the client's timestamp, and every
-# 200 for a file carries Last-Modified. The comparison fails closed in the one
-# direction that matters -- an absent, unparseable or unanswerable condition is a
-# 200, never a 304 -- because a wrong 304 is a client holding a changed file for
-# as long as it caches. See serve_conn's 200 arm and parse_http_date.
-#
-# BYTE RANGES, 2026-07-31. A GET or HEAD carrying `Range: bytes=A-B`, `bytes=A-`
-# or `bytes=-N` is answered 206 with that slice, a Content-Range naming it, and a
-# Content-Length of the SLICE. The file is never read whole to serve part of it:
-# io.size gives the length and io.read_at pread(2)s the slice. A range that
-# cannot be satisfied is 416 with `Content-Range: bytes */LEN`; a range this
-# server does not understand -- bad syntax, or the multipart form -- is ignored
-# and answered 200 with the whole file, which is what RFC 7233 2.1 requires.
-# A conditional that resolves to 304 OUTRANKS a range: see serve_conn's 200 arm,
-# where the range work is inside the else of the 304 test.
-#
-# NOT IMPLEMENTED, deliberately: TLS, HTTP/2, multipart ranges, compression,
-# ETag, pipelining, virtual hosts. See README.md.
 
 import "core:cli"
 import "core:httpd"
@@ -84,26 +17,10 @@ const DEF_HOST    = "127.0.0.1"
 const DEF_PORT    = 8080
 const DEF_WORKERS = 8
 const DEF_IDLE_MS = 5000
-# A TOTAL deadline for the request head, distinct from the per-read idle timeout
-# above. The idle timer resets on every byte, so a slowloris that dribbles one
-# byte before each expiry holds a worker forever: measured 2026-08-15, twelve
-# such connections against workers=4 blocked all service until they closed. This
-# bounds the whole head instead. nginx spells the same idea
-# client_header_timeout, and defaults it to 60s; 15s is chosen here because this
-# server has no keep-alive to amortise it over.
 const DEF_HEAD_MS = 15000
 const MAX_HEAD    = 16384      # per-request byte budget; past this -> 431, connection closed
 const MAX_REQS    = 1024       # requests served on one connection before we close it
 const LOG_FIELD   = 160        # longest request target we will echo into a log line
-# How long one accept loop keeps trying after a FAILED accept before it gives up
-# and retires. See accept_loop's Err arm: 100 * 20ms = two seconds of unbroken
-# failure. Sized against the two things it has to separate. A transient burst --
-# EMFILE, ENFILE, ECONNABORTED, EPROTO, all of which POSIX says to retry -- is
-# survived whole as long as it clears inside that window; measured, a 400ms
-# externally-induced EMFILE window used to retire every worker and now retires
-# none. A listener that is permanently broken WITHOUT a shutdown signal (nothing
-# in this program does that today) still terminates the loop, so the pool can
-# never spin forever and wait() can never block forever.
 const MAX_ACCEPT_FAILS = 100
 const ACCEPT_BACKOFF_MS = 20   # between retries, so a hard failure is not a hot loop
 
@@ -159,16 +76,6 @@ fn is_digits(s: string) -> bool:
             return false
     return true
 
-# RFC 7231 IMF-fixdate, the format Date, Last-Modified and If-Modified-Since
-# all want. Exactly 29 characters, fixed field positions, English names:
-#   Sun, 26 Jul 2026 08:49:37 GMT
-#   0123456789...                29
-#
-# core:datetime has no IMF-fixdate of its own -- it formats ISO-8601 and parses
-# ISO-8601 and CLF -- but it has every PIECE: weekday_name/month_name give the
-# English abbreviations, pad2/pad4 the zero padding, from_unix the fields, and
-# month_num the inverse. So the format lives here, in the one package that wants
-# it, rather than a date library being written from scratch.
 fn http_date_at(secs: int) -> string:
     dt := datetime.from_unix(secs)
     out := datetime.weekday_name(dt.weekday) + ", " + datetime.pad2(dt.day)
@@ -230,19 +137,6 @@ fn ci_prefix(s: string, p: string) -> bool:
             return false
     return true
 
-# A byte-position out of a Range header: a run of DIGITS ONLY, or -1 for "that
-# is not a position". No sign, no whitespace, no 0x -- RFC 7233's grammar is
-# 1*DIGIT and nothing else, and every non-digit here means the whole header is
-# ignored, which is a 200. Leading zeros are legal and parse normally.
-#
-# The length guard is the reason this is not a bare strings.parse_int. A range
-# header is attacker-controlled and `bytes=0-99999999999999999999999999` costs
-# nothing to send; past ~19 digits the value does not fit an int and what
-# parse_int does with it is not something this file should depend on. 16+ digits
-# is instead reported as HUGE_POS, which is larger than any file this program
-# can open and therefore lands in exactly the arm the true value would have:
-# clamped to the end of the file as a last-byte-pos, past EOF (416) as a
-# first-byte-pos, and "the whole file" as a suffix length.
 const HUGE_POS = 1000000000000000        # 1e15, > any real file, < 2^63
 
 fn parse_pos(s: string) -> int:
@@ -252,28 +146,6 @@ fn parse_pos(s: string) -> int:
         return HUGE_POS
     return strings.parse_int(s)
 
-# Resolve a Range header value against a known file length. `flen` must be the
-# real length (io.size); pass -1 when it is unknown and every range becomes
-# RANGE_NONE, because a range cannot be checked -- let alone clamped -- without
-# it. Returning NONE there is the fail-safe direction: the client gets the whole
-# file, which is always a correct answer to a range request.
-#
-# The three forms, and the fourth this server refuses:
-#
-#   bytes=A-B   both ends, both INCLUSIVE. B is clamped to the last byte, so
-#               `bytes=0-999999` on a 500-byte file is 206 of all 500 bytes and
-#               NOT a 416 -- the range overlaps the file, so it is satisfiable.
-#               B < A is not a range at all: RFC 7233 2.1 calls that byte-range-
-#               spec invalid, and an invalid one makes the whole header ignored.
-#   bytes=A-    open-ended: A to the last byte.
-#   bytes=-N    SUFFIX: the last N bytes, so it is the only form whose START
-#               depends on the length. N larger than the file is the whole file
-#               (RFC 7233 2.1 says so outright). N == 0 asks for nothing and is
-#               unsatisfiable, which is a 416 rather than an empty 206.
-#   A,B         multipart. Out of scope by decision -- a multipart/byteranges
-#               body is a second serialization format, not a bigger parser --
-#               and answered 200 with the whole file, which is what the RFC
-#               permits and what the README records.
 fn parse_range(v: string, flen: int) -> Rng:
     if flen < 0:
         return Rng(RANGE_NONE, 0, 0)           # no length: cannot resolve one
@@ -316,23 +188,12 @@ fn parse_range(v: string, flen: int) -> Rng:
         e = flen - 1                           # clamp, do NOT reject
     return Rng(RANGE_OK, a, e)
 
-# Microseconds as "1.234ms", for the log line.
 fn fmt_ms(us: int) -> string:
     frac := str(us % 1000)
     for len(frac) < 3:
         frac = "0" + frac
     return str(us / 1000) + "." + frac + "ms"
 
-# Make an arbitrary byte string safe to put in a log line: control bytes become
-# '.', and it is truncated. A request target is attacker-controlled; it must not
-# be able to inject newlines into the log or paint the terminal.
-#
-# Written in `bytes`, which is what a hostile request target is. `b[i]` reads the
-# byte value, `b[i:i+1]` copies one byte through unchanged, `+` appends; the
-# to_bytes/to_str at the two ends are zero-cost reinterprets of the same buffer
-# (src/tychoc.c:9597), so nothing is converted and nothing is copied twice. This
-# used to detour string -> []int -> to_bytes -> to_str, where the to_bytes([int])
-# leg (src/tychoc.c:9595) was the one REAL conversion and allocation in the path.
 fn log_safe(s: string) -> string:
     n := len(s)
     cut := false
@@ -423,35 +284,12 @@ fn error_response(status: int) -> httpd.Response:
         r = httpd.with_header(r, "Allow", "GET, HEAD")
     return r
 
-# ONE ERROR CONSTRUCTOR, and this is why there used to be two: 408 and 431 were
-# outside httpd.reason_phrase's table, so httpd.response() rendered them as the
-# placeholder "Status" and the only way to set the phrase was to build the struct
-# positionally -- a private phrased_response() reimplementing the corelib's own
-# constructor, plus a named wrapper per status. Both codes are in the table since
-# 2026-07-26 (the friction plan) and httpd.response_reason() exists for the ones that
-# are not, so error_response(431) and error_response(408) are the whole of it.
 fn redirect_response(location: string) -> httpd.Response:
     body := to_bytes("<!doctype html><meta charset=\"utf-8\"><title>301</title>\n")
     r := httpd.response(301, body)
     r = httpd.with_header(r, "Content-Type", "text/html; charset=utf-8")
     return httpd.with_header(r, "Location", location)
 
-# ---- path resolution -------------------------------------------------------
-#
-# THE SECURITY BOUNDARY. Everything a request can influence about which file we
-# open passes through here, and the order matters:
-#
-#   1. cut the query and fragment                (?a=1, #frag are not path)
-#   2. require origin-form                       (must start with "/")
-#   3. percent-decode ONCE                       (so %2e%2e cannot hide a "..")
-#   4. reject control bytes, NUL included        (path smuggling, log injection)
-#   5. reject any segment starting with "."      (.git, .env, .htpasswd)
-#   6. path.safe_join, which returns "" for an absolute rel or one that
-#      climbs above the root                     (corelib/path/path.ty:140)
-#
-# Decoding before the traversal test is the part that is easy to get backwards.
-# A single decode is also deliberate: decoding twice would let %252e%252e
-# through, which is exactly the historical IIS bug.
 
 fn hidden_segment(rel: string) -> bool:
     opening := true
@@ -485,30 +323,6 @@ fn resolve(root: string, target: string) -> Route:
     fsp := path.safe_join(root, rel)
     if fsp == "":
         return Route(403, "", "")                  # absolute, or escapes root
-    # A target with NO trailing slash that names a directory redirects to the slash
-    # form, and "is this a directory" is finally asked of the KERNEL: io.is_dir is a
-    # real stat(2) (the option-result plan). Only this branch can be one -- the dir_form
-    # path has index.html appended, so fsp is a file path there. The old test was
-    # `len(io.list(fsp)) > 0`, which calls an EMPTY directory a file, so /emptydir
-    # answered 404 where 301 -> /emptydir/ is correct: a directory's CONTENTS
-    # decided its STATUS. Ok(false) (it is a file) and Err(NotFound) both fall
-    # through to the exists check below, which is where a missing path becomes 404.
-    # ONE stat(2) now answers all three tails. This used to be io.is_dir followed by
-    # io.exists on the SAME path -- two calls, one question, and the second was the
-    # expensive one (it listed the whole parent). io.exists is stat-backed as of
-    # the friction plan, which is what made the pair visibly redundant rather than
-    # merely ugly, so the pair collapses into the one Result that already carried
-    # every answer:
-    #   Ok(true)   a directory. With no trailing slash that is a 301 to the slash
-    #              form; WITH one, fsp already ends in index.html, so a directory
-    #              there is a directory NAMED index.html -- unservable, 404. (That
-    #              was a 200 -> read_bytes -> Err(IsDir) -> 404 before: same status,
-    #              one syscall fewer and no wrong intermediate.)
-    #   Ok(false)  it is there and is not a directory: serve it.
-    #   Err(_)     nothing there, or there and unstattable -- 404 both ways, fail
-    #              closed. Includes /dir/ with no index.html.
-    # (A literal nested pattern -- `Ok(true)` -- is not legal; the friction plan refused
-    # non-enum nested patterns with the cost written down. So the bool is bound.)
     match io.is_dir(fsp):
         Ok(isdir):
             if not isdir:
@@ -554,19 +368,6 @@ fn emit(conn: int, r: httpd.Response, head_only: bool, keep: bool) -> Result(int
         out = httpd.with_body(out, to_bytes(""))
     return httpd.write_response(conn, out)
 
-# One line per request on stderr: worker, CLIENT, method, target, status, body
-# bytes, duration. Built whole and written with a single eprint, because N workers
-# share one stderr and there is no lock to take.
-#
-# `peer` is the client address, from net.peer_addr (getpeername) -- the field every
-# real access log leads with, and one that no Tycho program could obtain before
-# 2026-07-26: core:net wrapped getsockname and nothing else (FRICTION.md phase 7,
-# the friction plan). It is `-` when the fd could not be asked, which is honest
-# rather than blank: an unaskable fd is a connection that has already gone.
-#
-# `wrote` is what write_response returned. It is < 0 when the peer vanished
-# mid-response; the line then reports 0 bytes and says so, rather than claiming
-# a body that never reached anyone.
 fn log_req(cfg: Config, wid: int, peer: string, method: string, target: string, status: int, nbytes: int, wrote: int, us: int):
     if cfg.quiet:
         return
@@ -594,36 +395,6 @@ fn serve_conn(cfg: Config, conn: int, wid: int) -> int:
     # Asked ONCE per connection, not once per request: the peer of an accepted fd
     # cannot change, and keep-alive would otherwise repeat the syscall per request.
     peer := result.unwrap_or(net.peer_addr(conn), "-")
-    # THE SHUTDOWN CHECK GOES IN THE LOOP CONDITION, and nowhere else in here.
-    # This is the one point in serve_conn where nothing is in flight: the previous
-    # response has been written and logged, and the next blocking read has not
-    # started. Testing the flag here means a worker never COMMITS to another
-    # read_request_capped once shutdown is under way -- which is the whole cost,
-    # because that read blocks for up to cfg.idle_ms and the loop cannot be
-    # re-entered until it returns. Testing it any deeper would abandon a request
-    # mid-answer; testing it any shallower (in accept_loop only, which also tests
-    # it) never sees a kept-alive connection at all.
-    #
-    # The busy case, where the loop is actually reached between requests, went
-    # from 102215 ms to 6-8 ms -- and that 102 s, not the 5 s that was reported,
-    # was the real worst case here: it is MAX_REQS requests served at the
-    # client's own pace, because nothing was telling the loop to stop.
-    #
-    # What this check ALONE does not fix, and what does. A worker ALREADY blocked
-    # in that read when the signal lands cannot reach this condition at all; it
-    # stays in recv until SO_RCVTIMEO expires, because shutting down the LISTENER
-    # wakes accept(2) and nothing else. That cost one full idle timeout -- 4878 ms
-    # measured at --idle-ms 5000 with four parked clients. It is fixed on the
-    # other side, by registering each accepted fd so the handler shuts those down
-    # too (accept_loop below, and corelib/signal/signal.ty's register_conn):
-    # 4878 ms -> 1 ms, 5 runs out of 5. The two halves are complementary, not
-    # alternatives -- the registry releases a parked read, this condition stops
-    # the loop from starting another one.
-    #
-    # A connection accepted but not yet spoken on is dropped here without an
-    # answer. That is the same bargain core:signal already documents for the
-    # backlog, and the same thing the idle-expiry arm at server/main.ty:431-435
-    # does for a keep-alive connection whose peer went quiet.
     for alive and served < MAX_REQS and not signal.shutdown_requested():
         # ONE corelib call does the read, the cap and the parse. `raw` is the second
         # tuple element, for the two jobs the Result cannot do: name a request that
@@ -633,19 +404,6 @@ fn serve_conn(cfg: Config, conn: int, wid: int) -> int:
         got, raw := httpd.read_request_deadline(conn, MAX_HEAD, DEF_HEAD_MS)
         sw := time.start()
         match got:
-            # The five causes, ACTED ON rather than collapsed, and since
-            # the friction plan each one is its OWN
-            # ARM. This used to be `Err(e)` followed by
-            # five `e == httpd.X` comparisons and an `answer` bool, because there
-            # were no nested patterns; the causes are the same, the two-step is not.
-            # (What phases 1-3 were for: the old local read loop could only say
-            # "nothing arrived", so each of these was a 400 or a silent close chosen
-            # by guessing from len(raw).)
-            #
-            #   Closed    the peer hung up. No response, no log line: there is
-            #             nobody to answer and nothing was asked.
-            #   Failed    the socket is broken (reset, bad fd); a write would fail
-            #             too, so treat it like Closed.
             Err(httpd.Closed):
                 alive = false
             Err(httpd.Failed):
@@ -660,8 +418,6 @@ fn serve_conn(cfg: Config, conn: int, wid: int) -> int:
                 if len(raw) > 0:
                     served += 1
                     refuse(cfg, wid, peer, conn, raw, 408, error_response(408), sw)
-            #   TooLarge  MAX_HEAD bytes with no terminator -> 431. This is the cap
-            #             decision that used to be `len(raw) >= MAX_HEAD`.
             Err(httpd.TooLarge):
                 alive = false
                 served += 1
@@ -674,20 +430,9 @@ fn serve_conn(cfg: Config, conn: int, wid: int) -> int:
             Ok(req):
                 served += 1
                 keep := not httpd.connection_close(req)
-                # read_request_capped consumes Content-Length body bytes, so a
-                # well-formed bodied request no longer desyncs the socket by
-                # itself -- but one whose body it had to truncate at MAX_HEAD
-                # would, and this server serves no method that takes a body.
-                # Answer, then close.
                 clh := httpd.header(req, "content-length")
                 if clh != "" or httpd.header(req, "transfer-encoding") != "":
                     keep = false
-                # A Content-Length that is not a plain decimal count ("-5", "1x",
-                # "0x10") is a request smuggling primitive, not a typo. Refuse it
-                # rather than letting to_uint's lenient parse pick a number.
-                # Two different Content-Lengths are the same primitive by another
-                # route: the sender and a proxy may pick different ones. Refusing
-                # is the only answer that cannot be disagreed with.
                 teh := httpd.header(req, "transfer-encoding")
                 bad_len := (clh != "" and not is_digits(clh)) or
                         httpd.content_length_conflict(req) or
@@ -710,27 +455,6 @@ fn serve_conn(cfg: Config, conn: int, wid: int) -> int:
                     st := rt.status
                     r := error_response(st)
                     if st == 200:
-                        # THE CONDITIONAL GET, and the direction of every doubt.
-                        # A 304 is this server telling a client "what you already
-                        # have is current", so a wrong 304 is a browser holding a
-                        # changed file for as long as it caches. Three separate
-                        # ways to not know the answer all fall through to 200:
-                        #
-                        #   lm < 0    io.mtime failed. No Last-Modified is sent
-                        #             (a header we cannot fill is worse than none)
-                        #             and no 304 is possible, since the comparison
-                        #             has nothing to compare.
-                        #   ims < 0   no If-Modified-Since, or one that is not an
-                        #             IMF-fixdate. parse_http_date fails closed;
-                        #             an unparseable header is not a weaker
-                        #             condition, it is no condition.
-                        #   lm > ims  the file is NEWER than what the client holds.
-                        #
-                        # `lm <= ims` and not `lm < ims` is the load-bearing
-                        # comparison: equal means the client holds exactly this
-                        # version. mtime is whole seconds (corelib/io/io.ty@mtime)
-                        # and so is an IMF-fixdate, so the two are directly
-                        # comparable with no rounding on either side.
                         lm := -1
                         match io.mtime(rt.file):
                             Ok(secs):
@@ -749,22 +473,6 @@ fn serve_conn(cfg: Config, conn: int, wid: int) -> int:
                             r = httpd.with_header(r, "Last-Modified", http_date_at(lm))
                             r = httpd.with_header(r, "Cache-Control", "no-cache")
                         else:
-                            # THE RANGE, and it is DELIBERATELY INSIDE THIS ELSE.
-                            # RFC 7232 6 orders the two: a conditional that
-                            # resolves to 304 is evaluated BEFORE Range, and a
-                            # 304 wins -- the client is being told "what you
-                            # hold is current", which answers a request for part
-                            # of it as completely as a request for all of it.
-                            # Sending 206 there would hand back bytes the client
-                            # already has AND drop the 304's promise. Nesting is
-                            # what enforces the order; a flat `elif` chain on
-                            # (ims, range) would let the two race on edit.
-                            #
-                            # The length comes from io.size -- ONE stat(2), no
-                            # read. This is the whole reason phase 6 exists: all
-                            # three forms and the 416 need LEN before they know
-                            # what to read, and `len(io.read_bytes(p))` would
-                            # allocate the file to serve a kilobyte of it.
                             flen := -1
                             match io.size(rt.file):
                                 Ok(sz):
@@ -822,12 +530,6 @@ fn serve_conn(cfg: Config, conn: int, wid: int) -> int:
                                         st = 404
                                         r = error_response(404)
                             else:
-                                # io.read_bytes is a Result now, so the read has an answer
-                                # for a file that vanished (or turned out to be a
-                                # directory) between resolve() and here. The empty `bytes`
-                                # it used to return was served as a 0-byte 200 --
-                                # indistinguishable from a real empty file, and wrong for
-                                # both.
                                 match io.read_bytes(rt.file):
                                     Ok(body):
                                         r = httpd.response(200, body)
@@ -866,31 +568,6 @@ fn serve_conn(cfg: Config, conn: int, wid: int) -> int:
 
 # ---- the worker pool -------------------------------------------------------
 
-# WHY THIS LOOP USES accept_wait, NOT blocking accept.
-#
-# signal.on_shutdown calls shutdown() on the listener. Linux wakes every thread
-# blocked in accept(), but POSIX does not promise that and macOS leaves workers
-# parked. A clean shutdown cannot depend on a Linux-only wakeup.
-#
-# net.accept_wait bounds that wait at 100ms. Its shim makes the listener
-# nonblocking before select(), so two workers woken for one arrival cannot leave
-# the loser stuck in accept(). Accepted sockets are put back in blocking mode.
-#
-# Timeout is not a listener failure. It is the ordinary idle result and gives
-# each worker a chance to read signal.shutdown_requested(); no traffic is needed
-# to release the pool after SIGTERM or SIGINT.
-# shutdown() remains the fast wakeup on kernels that support it; the timeout is
-# the portable ceiling when they do not. The handler still releases accepted
-# connections immediately, so parked readers do not wait for their idle timer.
-# This bounds shutdown without changing the blocking net.accept contract.
-#
-# Failed remains distinct. A transient EMFILE, ENFILE, ECONNABORTED or EPROTO is
-# retried with ACCEPT_BACKOFF_MS, while MAX_ACCEPT_FAILS retires a permanently
-# broken loop instead of spinning forever and making wait() hang forever.
-#
-# Existing net.accept callers keep their blocking contract. Only this server,
-# which needs bounded cross-platform shutdown, opts into the timed form. The
-# server harness exercises both the connection path and every shutdown path.
 fn accept_loop(cfg: Config, srv: int, wid: int) -> int:
     served := 0
     running := true
@@ -904,25 +581,6 @@ fn accept_loop(cfg: Config, srv: int, wid: int) -> int:
         match net.accept_wait(srv, 100):
             Ok(conn):
                 fails = 0
-                # REGISTER FIRST, RETIRE BEFORE CLOSE. The signal handler shuts
-                # down the listener, which releases accept(2) but does nothing
-                # for a worker already parked in recv(2) on an accepted
-                # connection -- that one waits out its whole SO_RCVTIMEO
-                # (measured: 4733 ms at --idle-ms 5000). Publishing the fd lets
-                # the handler shutdown() it too, which is what turns the
-                # parked-idle case from one idle timeout into milliseconds.
-                #
-                # The slot is wid-1 because worker ids run 1..cfg.workers and the
-                # registry is indexed from 0; cfg.workers is pinned to 1..256 at
-                # server/main.ty@workers, which is exactly the table's width. One
-                # slot per worker needs NO LOCK: this body is sequential, so
-                # worker wid holds at most one connection at a time and is the
-                # only writer of its own slot. A mutex here would be a handler
-                # deadlock waiting to happen -- it is not async-signal-safe.
-                #
-                # A refusal is ignored on purpose: register_conn fails closed, and
-                # an unregistered connection behaves exactly as it did before this
-                # existed. Nothing to report and nothing to abort.
                 slot := wid - 1
                 reg := signal.register_conn(slot, conn)
                 if not reg and not cfg.quiet:
@@ -951,17 +609,6 @@ fn accept_loop(cfg: Config, srv: int, wid: int) -> int:
                         time.sleep_ms(ACCEPT_BACKOFF_MS)
     return served
 
-# N accept loops, each with its own id. This was a RECURSIVE fan-out until
-# 2026-08-13 -- worker k spawned worker k+1 into a frame-local and waited it --
-# because a task handle cannot live in a container and `parallel for` had no way
-# to say how many workers OR to tell one from another. Both halves exist now: the
-# width is `parallel(N)` (b188feb2) and the identity is the loop variable the
-# counting form already binds. FRICTION open-list item 8 asked for task handles
-# in a container to get here; it turned out not to be needed.
-#
-# The reduction is `+` on `served`, which `parallel for` folds at an in-order
-# join, so the total is identical for any width -- the property §22 states for an
-# integer reduction.
 fn workers(cfg: Config, srv: int, n: int) -> int:
     served := 0
     parallel(n) for wid in 0..<n:
@@ -987,12 +634,6 @@ fn as_uint(s: string, what: string) -> int:
         die("tycho-httpd: " + what + " wants a non-negative integer, got: " + s + "\n")
     return strings.parse_int(s)
 
-# Until the friction plan the 45 lines below were a hand-rolled parser -- opt_name,
-# opt_inline, wants_value and a stepping loop -- because core:cli could only read
-# an `=`-attached value and this server's interface is documented as accepting
-# both spellings (usage(), last line). cli.parse_spec now carries the schema, so
-# the only thing left here is the part that is genuinely this program's: which
-# names exist, what their defaults are, and what counts as out of range.
 fn parse_args(av: [string]) -> Config:
     # the whole schema: names that take a value, and names that are booleans.
     # Both without dashes, which is the spelling cli.get/cli.flag already take.
@@ -1000,12 +641,6 @@ fn parse_args(av: [string]) -> Config:
     boolean := ["quiet", "q", "help", "h"]
     c := cli.parse_spec(av, valued, boolean)
 
-    # --help wins over a bad flag beside it. The old loop was argv-ordered, so
-    # `--bogus --help` exited 1 and `--help --bogus` exited 0; there is no order
-    # information in a parsed Cli, and of the two invariants "--help always
-    # answers" is the one worth keeping. `exit(0)` is the friction plan: before it,
-    # die() was the only exit and always exited 1, so an answered --help had to
-    # be threaded back to main as a `help: bool` field on Config.
     if cli.flag(c, "help") or cli.flag(c, "h"):
         print(usage())
         exit(0)
@@ -1034,22 +669,8 @@ fn parse_args(av: [string]) -> Config:
                   port, workers, idle, cli.flag(c, "quiet") or cli.flag(c, "q"))
 
 fn main():
-    # cli.argv() is args() with the program path dropped (the friction plan).
-    # This was a four-line copy loop, and the identical loop was in
-    # examples/weblog/main.ty, because args() includes argv[0] and cli.parse
-    # does not want it.
     cfg := parse_args(cli.argv())
 
-    # --root sanity, asked as four separate questions. Until phase 5 this was one:
-    #     if len(io.list(cfg.root)) == 0:  "... is empty or not a directory"
-    # -- and the "or" in that message is the corelib admitting it could not tell.
-    # An empty-but-perfectly-good document root, a plain file, a missing path and
-    # an unreadable one all produced the same sentence, and three of them are
-    # operator errors while the first is not. io.is_dir (phase 4) separates them:
-    # Ok(true)/Ok(false) are both answers, Err says why there is none. Still a
-    # WARNING and not a die()/exit(): serving an empty tree is legal -- every
-    # request 404s honestly -- so a judgement call about someone else's directory
-    # is not this program's to terminate on, whatever status it could now pick.
     match io.is_dir(cfg.root):
         Ok(isdir):
             if not isdir:
@@ -1061,41 +682,12 @@ fn main():
         Err(e):
             eprint("tycho-httpd: warning: " + cfg.root + " cannot be read\n")
 
-    # The value-match form, which is what a Result is for. Until the friction plan
-    # this needed a dummy `srv := 0` and a statement match, because die() is typed
-    # void and was not modelled as DIVERGING -- so the failure arm was rejected with
-    # "a value if/match branch must produce a value, not void", and the Result
-    # version came out one line LONGER than the `if srv < 0: die(...)` it replaced.
     srv := match net.listen(cfg.host, cfg.port):
         Ok(fd): fd
         Err(e): die("tycho-httpd: cannot bind " + cfg.host + ":" + str(cfg.port) + "\n")
     # -1 in the banner if unknowable.
     bound := result.unwrap_or(net.port_of(srv), -1)
 
-    # SIGTERM/SIGINT -> shutdown(srv, SHUT_RDWR) -> every accept loop's next
-    # net.accept returns Err -> accept_loop's Err arm (:493-494) sets
-    # running = false -> worker() unwinds through wait(peer) -> the stopped line
-    # at the bottom of this function. No new control flow: the wind-down arm was
-    # already there and was simply unreachable, because nothing ever made accept
-    # fail.
-    #
-    # HERE, and not elsewhere, for three reasons:
-    #   * AFTER net.listen, because on_shutdown takes the listening fd. Before it
-    #     there is no fd to register.
-    #   * BEFORE the fan-out at the bottom of main. `worker(cfg, srv, 1, ...)` is
-    #     a direct call, not a spawn -- worker k spawns k+1 and then runs accept
-    #     loop k itself -- so main IS accept loop 1 and never returns here until
-    #     the whole pool has wound down. Anything after that call is shutdown
-    #     code, not startup code.
-    #   * BEFORE the banner, which is the readiness signal server/run.sh polls
-    #     for. Arming afterwards leaves a window in which a reader has been told
-    #     "serving" while SIGTERM still has its default disposition, i.e. kills
-    #     the process where it stands -- a race the gate would hit rarely and
-    #     confusingly.
-    # One arm for the whole pool: the handler is per-process, not per-thread, and
-    # it acts on the shared listener, so which thread the kernel picks does not
-    # matter. That property is why core:signal chose shutdown() over close() --
-    # the signals plan.
     if not signal.on_shutdown(srv):
         eprint("tycho-httpd: warning: SIGTERM handler not installed;"
                + " shutdown will not be clean\n")

@@ -1,10 +1,3 @@
-# Regression: a recursive struct whose field is a composite-VALUED map (`[int: Trie]`),
-# mutated by descending into a child via `&t.kids[c]`. Exercises two fixes:
-#   1. tychoc: a struct copy/eq body that calls the composite-map helper
-#      (tycho_mapcN_copy/_eq) needs that helper FORWARD-DECLARED (the map family is
-#      emitted after the struct bodies).
-#   2. tychoc0: `&m[k]` on a composite-valued map must take the slot POINTER, not the
-#      address of a by-value map_get (which is not a C lvalue).
 struct Trie:
     kids: [int: Trie]          # child keyed by the next byte; recursive via a (heap) map
     word: bool

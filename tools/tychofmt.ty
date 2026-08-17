@@ -1,21 +1,3 @@
-# tychofmt — the tycho source formatter. STAGE 1: a LOSSLESS lexer.
-#
-# A formatter must preserve comments (and, for a faithful round-trip, every other
-# byte too), so it can't reuse the compiler's lexer, which DISCARDS comments and
-# whitespace. This is a separate, *lossless* tokenizer: every byte of the source
-# lands in exactly one token's `text` -- code tokens (ident/number/string/op...)
-# PLUS trivia tokens (whitespace, newline, comment). Concatenating all token text
-# reproduces the input byte-for-byte; that round-trip is STAGE 1's correctness bar.
-# STAGE 2 (done) reasons over this stream to canonicalize formatting, comments
-# intact: 4-space indentation re-derived from block structure, inter-token spacing
-# re-spaced by token adjacency (`x:int` -> `x: int`, `a+b` -> `a + b`, `f(a)`/`a[i]`
-# tight, prefix `&x` vs binary `a & b`), blank runs collapsed to one, and one blank
-# line between top-level defs. Whitespace-only within a line, so it can't change the
-# program; the gate (scripts/tools_check.sh) proves it: `tychoc --emit-c` is byte-
-# identical before/after across the whole corpus, and fmt(fmt(x)) == fmt(x).
-#
-#   tychoc tools/tychofmt.ty -o tychofmt
-#   ./tychofmt <file.ty>            # prints the canonically-formatted source
 
 enum TKind:
     KWS         # a run of spaces/tabs
@@ -62,10 +44,6 @@ fn is_two_op(s: string) -> bool:
 fn is_three_op(s: string) -> bool:
     return s == "..<"
 
-# Consume an optional float exponent `[eE][+-]?digits` starting at `i`; returns the
-# new index, or `i` unchanged if there is no valid exponent. Used so `1e10`, `1.5e-3`,
-# and `.25e3` lex as ONE float token (the lexer used to stop before the `e`, splitting
-# `.25e3` into `.25` + the identifier `e3` -- a formatter semantic-drift bug).
 fn scan_exp(src: string, n: int, i: int) -> int:
     if i < n and (src[i] == 101 or src[i] == 69):     # e / E
         j := i + 1
@@ -198,8 +176,6 @@ fn lex(src: string) -> [Tok]:
         elif is_dig(c):                               # number (int or float)
             for i < n and is_dig(src[i]):
                 i = i + 1
-            # hex 0x.. / binary 0b.. literals (the lexer's rule): a leading `0`
-            # followed by x/X (hex digits) or b/B (0/1) is ONE token, not `0 x..`.
             if src[start] == 48 and i < n and (src[i] == 120 or src[i] == 88):
                 i = i + 1
                 for i < n and is_hexdig(src[i]):
@@ -252,15 +228,6 @@ fn lex(src: string) -> [Tok]:
             col = col + (i - start)
     return toks
 
-# ---- Stage 2: pretty-printer ------------------------------------------------
-# Within a line tycho is whitespace-insensitive (only LEADING indentation carries
-# meaning), so re-spacing a line can never change the program -- the one hazard is
-# merging two tokens by dropping a separator, which we avoid by only COLLAPSING
-# existing whitespace to one space, never removing a separator that was there.
-# Indentation IS semantic, so we re-derive block depth from the source's own
-# indent structure (an indent stack of leading widths) and re-emit it as 4 spaces
-# per level. Proof it preserves the program: `tychoc --emit-c` yields identical C
-# before and after (verified across the whole corpus).
 
 fn indent_str(depth: int) -> string:
     s := ""
@@ -270,12 +237,6 @@ fn indent_str(depth: int) -> string:
         k = k + 1
     return s
 
-# Does `s` already end in a newline? Only ONE token can ever contain one: an
-# UNTERMINATED raw literal (tests/reject/rawstring_unterminated.ty), which runs to
-# EOF and so swallows the file's last newline. fmt() appends "\n" after each line,
-# so without this check that file grows by one newline on every pass -- exactly the
-# idempotence bar scripts/tools_check.sh:29 enforces. Every other line's text ends
-# on a token, never a newline, so this is a no-op for them.
 fn ends_nl(s: string) -> bool:
     return len(s) > 0 and s[len(s) - 1] == 10
 
@@ -379,8 +340,6 @@ fn fmt_line(line: [Tok], levels: inout [int]) -> string:
     endp := len(line)
     for endp > start and line[endp - 1].kind == KWS:
         endp = endp - 1
-    # gather the significant tokens, remembering the raw whitespace before each
-    # (only used to keep an inline comment's column alignment).
     reals := []Tok
     leadws := []string
     pend := ""

@@ -1,8 +1,3 @@
-# `%` is not defined element-wise on [char]. `%` leaves the element-wise table by
-# its own earlier gate (src/tychoc.c:1114 admits int and the sized ints only),
-# not by the char arm at src/tychoc.c:1118 -- so this fixture pins a DIFFERENT
-# line from tests/reject/char_elem_mul.ty even though the diagnostic reads the
-# same. Deleting the char arm would leave this one green and that one red.
 fn main():
     s := "ABC"
     a := [char_at(s, 0), char_at(s, 1)]

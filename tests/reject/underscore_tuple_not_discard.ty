@@ -1,7 +1,3 @@
-# The tuple half of FRICTION.md #33. `a, _ = two()` cannot be fixed by calling
-# something as a statement -- every name in a tuple assignment has to exist --
-# so the diagnostic says to name every element or to declare `_` once with `:=`.
-# The scalar case is tests/reject/underscore_not_discard.ty.
 fn two() -> (int, int):
     return (1, 2)
 

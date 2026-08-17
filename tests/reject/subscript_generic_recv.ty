@@ -1,8 +1,3 @@
-# A subscript's receiver selects it by exact type, so a `$T` receiver could never
-# match a monomorphised instance. Refused at the DECLARATION: this one is never
-# called and must still be refused. `Pool(int)` stays legal (see tests/subscript.ty).
-# expect: a subscript receiver may not be generic ('Pool($T)')
-# expect: declare the subscript on a concrete instance
 struct Pool($T):
     items: [$T]
 

@@ -1,12 +1,3 @@
-/* Companion C for tools/lsp.ty (the tycho language server), linked via
- * `tychoc --shim`. LSP speaks JSON-RPC over stdin/stdout with Content-Length
- * framing, which needs INCREMENTAL stdin reads (a header line, then exactly N
- * body bytes) and a FLUSHED stdout after every message -- neither of which
- * tycho's read_all()/print() can do. These wrap stdio through our own symbols
- * (no clash with the preamble's <stdio.h> decls). Signatures match tycho's extern
- * emission: tycho `int` == C `long`, tycho `string` == `char*`; a returned char*
- * is arena-copied into a tycho string by the FFI, so static/realloc buffers are
- * safe (copied before the next call). */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

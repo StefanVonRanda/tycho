@@ -1,30 +1,3 @@
-#!/usr/bin/env python3
-# Soundness fuzz harness. For each seed: generate a random Tycho program, compile
-# it with tychoc, and assert the optimized and sanitized builds agree and neither
-# faults.
-#
-#   tychoc -> native -O2          : the reference output
-#   tychoc -> ASan/UBSan -O1      : must not fault (UAF/UB) and must produce the
-#                                   SAME bytes as the -O2 build
-#
-# The native-vs-sanitizer differential is the oracle (docs/thesis.md §3): the
-# optimizer and the sanitizer disagree exactly where the emitted C has undefined
-# behaviour, so a mismatch or a sanitizer report is a real codegen bug. A
-# divergence, a sanitizer fault, or a crash is a FINDING (program saved to
-# findings/). Programs tychoc rejects are skipped. Leak detection is OFF here
-# (leaks aren't soundness bugs, and run_leak.py owns that class); we hunt
-# use-after-free / heap-corruption / UB / miscompiles.
-#
-# HISTORY: until 2026-07-26 this lane was a tychoc-vs-tychoc0 DIFFERENTIAL. tychoc0
-# is frozen (see compiler/tychoc0.ty) and no gate builds it, so the tychoc0 legs
-# were removed; what remains is the tychoc half, unchanged in what it asserts about
-# tychoc. What was LOST with the tychoc0 legs: a second independent implementation
-# as an output oracle for programs whose UB the sanitizer cannot see.
-#
-# Seeds are independent, so they run in PARALLEL across a process pool (each worker
-# in its own temp dir). Worker count defaults to cpu_count()-2; override with the
-# FUZZ_JOBS env var (FUZZ_JOBS=1 restores fully-sequential behaviour). Verdicts and
-# final counts are identical to a sequential run; only line ordering differs.
 import subprocess, sys, os, tempfile, shutil
 from concurrent.futures import ProcessPoolExecutor, as_completed
 

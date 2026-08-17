@@ -1,25 +1,3 @@
-# Scalar broadcast on arrays: `a OP s` and `s OP a` build a fresh array whose
-# i-th element is `a[i] OP s` (resp. `s OP a[i]`). Post-freeze -- the frozen
-# tychoc0 refuses every line of this file as a type error, which is why it lives
-# here rather than in tests/.
-#
-# The operator set is the SAME one array-OP-array derives, because the rule is
-# the same: `a OP s` is legal iff `a[i] OP s` is legal for the element type.
-#   int, u8..u64/i8..i64   + - * / %
-#   float, f32             + - * /
-#   newtype over int/float + - * /
-#   char                   + -
-#
-# Two things this file exists to catch, neither of which "it compiled" would:
-#
-#  1. A QUIET SWAP. `-`, `/` and `%` are not commutative, so an implementation
-#     that normalises `s OP a` into `a OP s` would still typecheck and still
-#     produce an array of the right length. Every non-commutative operator below
-#     is therefore printed in BOTH orders with operands chosen so the two
-#     answers differ, and differ visibly: `2 - [5,1]` is [-3, 1] and
-#     `[5,1] - 2` is [3, -1] -- a swap turns one into the other.
-#  2. AN OFF-BY-ONE or a mis-sized allocation, which yields plausible garbage
-#     rather than a crash. Hence real values on every line.
 type Meters = float
 type Count = int
 

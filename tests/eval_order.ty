@@ -1,10 +1,3 @@
-# Regression (spec A5, evaluation order): a side-effecting index in an assignment
-# place MUST run before the RHS -- left-to-right, and identically on both
-# compilers. This locks the fix for a real divergence: `arr[f()] = g()` evaluated
-# g() before f() under tychoc (the C compiler's choice) but f() before g() under
-# tychoc0, so the two implementations disagreed on observable order. tychoc now
-# hoists the side-effecting index into a temp that sequences before the RHS,
-# matching tychoc0. Pure indices are untouched (byte-identical for the common case).
 
 fn a() -> int:
     println("a")

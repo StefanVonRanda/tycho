@@ -1,18 +1,3 @@
-# tycho-tmpl -- a line-oriented template renderer, built on consuming steps.
-#
-# WHY THIS PROGRAM EXISTS. A dogfood audit (docs/internals/FRICTION.md).
-# Measured 2026-08-14 with `grep -F`: `sink` appears 18 times in the tree and all
-# 18 are in `tests/` -- no program under tools/, examples/, server/ or bench/
-# uses it, and neither does corelib/. This one does, through tools/tycho-tmpl/doc/,
-# where every builder step takes ownership.
-#
-#   tycho-tmpl --tmpl FILE --set k=v [--set k=v ...] [--sep S]
-#
-# The template is text with `{{name}}` placeholders, one line at a time. An
-# unset placeholder is an error naming it, not an empty string -- a renderer that
-# silently drops a name is how a config ships with a blank in it.
-#
-# THE GATE IS `make tmpl-check` (tools/tycho-tmpl/run.sh).
 package main
 
 import "core:cli"
@@ -96,31 +81,6 @@ fn main():
         Ok(t): text = t
         Err(e): die("tycho-tmpl: cannot read " + path)
 
-    # THE SHAPE A `sink` BUILDER CANNOT HAVE. `d = doc.add(d, s)` inside this loop
-    # is REFUSED -- "no named variable can be adopted in a loop, a copy made in
-    # the loop included" (src/tychoc.c@sink_arg_into, deliberate: a copy hidden in
-    # a loop is the one place the move-vs-copy cost is invisible and unbounded).
-    # The spec claimed such a call was silently copied until 2026-08-14; it never
-    # was (FRICTION #37). So the loop collects, and the consuming chain runs once
-    # over the result -- which is what "lift the call out of the loop" means.
-    # And a SECOND rule shapes this: a sink argument must be the variable's ONLY
-    # textual mention in the function, so the array cannot be filled by a loop
-    # here and consumed on the next line -- `push(lines, s)` already disqualifies
-    # `lines`. What a sink adopts is a fresh value or A CALL'S RESULT, so the
-    # collecting moves into its own function and its return value is adopted
-    # directly. That is the shape `sink` actually wants, and nothing in the tree
-    # demonstrated it before (FRICTION #37).
-    # THE ONLY SHAPE A CONSUMING API ALLOWS. Every step below is a call's RESULT
-    # handed straight to the next consumer -- nothing is named. Naming any
-    # intermediate disqualifies it: creating it is one mention and consuming it is
-    # a second, and the rule is that a sink argument must be the variable's ONLY
-    # mention. `f := doc.empty(); f = doc.add(f, ...); doc.join(d, f)` is three
-    # mentions and is refused (FRICTION #37). So a `sink` chain is written
-    # point-free or not at all.
-    # Not even a COUNT may be taken first: `lines := expand_all(...)` then
-    # `len(lines)` is a second mention and disqualifies it. The chain therefore
-    # calls expand_all twice -- once to count, once to adopt -- which is the
-    # honest cost of the rule and is why the trailer says what it says.
     n := len(expand_all(text, keys, vals))
     println(doc.render(doc.join(doc.of(expand_all(text, keys, vals)),
                                 doc.add(doc.empty(), "-- rendered " + str(n) + " line(s)")),

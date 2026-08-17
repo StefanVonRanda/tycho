@@ -5,36 +5,7 @@ import "core:strings"
 import "stage"
 import "graph"
 
-# tycho-flow -- a concurrent pipeline engine, wired end to end.
-#
-# The pipeline is built here rather than inside the combinators because this is
-# where the `Task` handles can live: a handle is affine and non-storable, so the
-# scope that spawns a stage is the scope that joins it. Every stage below is one
-# of the generics in `stage/`, instantiated at `string` in the first pipeline and
-# at `int` in the second -- the same template, monomorphized twice, which is the
-# thing `Channel($T)` in a generic signature buys and which did not compile at
-# all before f0fd19e5.
-#
-# THE OUTPUT IS DETERMINISTIC AND THAT IS THE CLAIM UNDER TEST. The middle of the
-# first pipeline is a fan-out pool whose results arrive in completion order, so
-# the byte-identical output across runs and across TYCHO_THREADS is not an
-# accident of a small input -- it is `stage.reorder` rebuilding source order from
-# the index tag, and `stage.reduce_sum` folding with an operator that does not
-# care what order it sees. Timings, which are not deterministic, live behind
-# `--bench` and are never printed by the default run.
 
-# The pool's per-item work, and it is deliberately UNEVEN -- the iteration count
-# is quadratic in the word length, so a short word started later finishes before a
-# long word started earlier. That is not padding. With an equal-cost transform the
-# pool on this machine delivered out of source order in only 7 of 2000 runs, which
-# would have made the determinism claim below vacuous: the output would have been
-# ordered because nothing raced, not because the index put it back. `--race`
-# measures this; it is 2000 of 2000 with the work below.
-#
-# The mixed counter is stamped on the output so the work is observable and cannot
-# be folded away by the C compiler. It is a receipt for the work, not a digest of
-# the word: it depends only on the LENGTH, which is why equal-length words carry
-# equal receipts in the output below -- the same fact that makes the cost uneven.
 fn stamp(s: string) -> string:
     h := len(s)
     for i := 0; i < len(s) * len(s) * 65536; i += 1:
@@ -272,14 +243,6 @@ fn run_graph_cancel():
     else:
         println("  FAIL  the plan saw " + str(n_run) + " of the source's " + str(n_src) + " element(s)")
 
-# --- a fallible stage, and cancellation ---------------------------------------
-#
-# 256 elements into a 4-slot ring; the step refuses element 8 by name. The
-# consumer closes `done` on that first error and keeps draining; the source sees
-# the close before its next send and stops. What is DETERMINISTIC here is the
-# error (one worker, so the first error out is the lowest failing index) and the
-# fact that the source stopped short. How far it got is a race -- it is bounded
-# by the rings, never printed, and measured under `--cancel` instead.
 fn upto(n: int) -> [int]:
     xs : [int] = []
     for i := 0; i < n; i += 1:
@@ -395,28 +358,6 @@ fn race(r: int):
         out_of_order = out_of_order + scrambled_once()
     println("race: " + str(out_of_order) + " of " + str(r) + " runs drained out of source order")
 
-# --- what the deep copy costs (nondeterministic; --bench only) ---------------
-#
-# Same element count, same stages, same channel capacity; only the element type
-# differs. The int run is the floor -- a scalar rides in the ring cell. The string
-# run pays a copy into the cell at every send and a copy out at every recv, twice
-# per stage boundary, at whatever the payload's length is.
-#
-# MEASURED 2026-08-12, 16-core box, three runs each, 20000 elements:
-#
-#   int             3807 / 4028 / 3849 us     190 ns per element  (the floor)
-#   string    16 B  4021 / 3943 / 4367 us     205 ns per element
-#   string   256 B  9954 / 9993 / 9899 us     497 ns per element
-#   string  4096 B  121464 / 123965 / 128809 us   6.2 us per element
-#
-# What that says: the deep copy is NOT a fixed per-element tax. At 16 bytes it is
-# inside the noise of the int floor -- the pipeline is paying for scheduling and
-# ring tickets, not for bytes. It starts to show at 256 B (2.5x the floor) and
-# dominates completely at 4 KB (32x). Between 256 B and 4 KB the width grows 16x
-# and the time grows 12.4x, i.e. once the payload dominates the cost is linear in
-# payload bytes, as a copy should be. The practical reading for a pipeline: value
-# semantics at the thread boundary is free for small elements and is a real budget
-# line for large ones, and the lever is element SIZE, not element count.
 fn fill(n: int) -> string:
     s := ""
     for i := 0; i < n; i += 1:

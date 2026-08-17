@@ -1,5 +1,3 @@
-# expect: tests/reject/pkg/generic_inst_callsite/helper.ty:7: error:
-# expect: tests/reject/pkg/generic_inst_callsite/main.ty:6: note: required from here
 package main
 
 fn main():

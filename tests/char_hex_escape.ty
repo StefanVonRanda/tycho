@@ -1,14 +1,3 @@
-# `'\xNN'` -- exactly two hex digits, either case, in a CHAR literal only.
-#
-# Fixed width on purpose. C's `\x` is greedy over hex digits, and that greed is
-# the reason `\xNN` stays out of STRING literals: a string literal's text is
-# carried as ESCAPED source all the way to codegen, and the adjacent-literal
-# join (docs/spec/01-lexical.md §3.9.4) concatenates that escaped text, so
-# `"\x4" "1"` would join into `\x41` and mean one byte where the author wrote
-# two. tests/reject/hex_escape_in_string.ty pins that refusal. A char literal
-# has no such exposure -- it is decoded to a byte at lex time (src/tychoc.c:544)
-# and never reaches a C string literal -- which is also why `\0` was already
-# legal here and not there.
 fn main():
     println(str('\x41' == 'A') + "," + str('\x61' == 'a') + "," + str('\x30' == '0'))
 

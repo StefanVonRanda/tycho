@@ -1,21 +1,3 @@
-# §3.9.4: the `\r` escape and the adjacent-literal join, plus §12.2's const
-# string fold. This fixture exists in tests/ because it finally CAN.
-#
-# Until 2026-07-29 these three had no `tests/` witness and Appendix E said so
-# outright: `compiler/fixpoint.sh` and `scripts/frontparity.sh` fed every
-# `tests/*.ty` to the frozen `compiler/tychoc0.ty`, whose lexer rejects `\r`
-# (`compiler/tychoc0.ty:195`) and has no adjacent-literal join, so a fixture here
-# would have been a program `tychoc` compiles and `tychoc0` refuses -- reddening
-# two runners at a file nobody was allowed to edit. The coverage was pushed out
-# to `corelib/test/csv`, `corelib/test/httpd` and `server/main.ty`'s `error_body`,
-# which reach no frozen compiler. Both lanes were retired on 2026-07-29 (see
-# CLAUDE.md, ROADMAP.md, docs/architecture.md) and nothing builds `tychoc0` any
-# more, so the constraint is void and the constructs come home to the main golden
-# loop -- native + ASan + byte-identical + golden, which none of the three
-# out-of-tree witnesses applied to them.
-#
-# The corelib witnesses stay where they are: they are the core:csv and core:httpd
-# lanes and cover these bytes incidentally. This fixture covers them on purpose.
 
 # §12.2: a const string is folded at compile time; the join happens at parse
 # time, so this is one literal by the time the fold sees it.
@@ -54,7 +36,6 @@ fn main():
 
     h := head(200)
     println("head_len   = " + str(len(h)))
-    # every line of the header block ends CRLF: count the 13s and the 10s
     cr := 0
     lf := 0
     for i := 0; i < len(h); i += 1:

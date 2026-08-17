@@ -1,10 +1,3 @@
-# `where hashable(T)`: constrain a type parameter to be usable as a map KEY.
-# T is introduced by a list param and then used as a map key in the body, so the
-# constraint is load-bearing -- without it a bad key type (e.g. float) would fail
-# deep in the body; with it, instantiation gives a clean signature error
-# (tests/reject/where_hashable_bad.ty). Exercises every key shape the predicate
-# accepts: int + string (scalars), a fieldless enum, and a composite struct
-# (value-hashed via the same key_hashable path the standalone map-key check uses).
 
 enum Color:
     Red

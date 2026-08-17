@@ -1,11 +1,3 @@
-# The Err half of `fn main() -> Result(void, string)`: an unhandled Err reaching
-# the entry point prints its message to stderr and exits 1.
-#
-# It lives in tests/abort/ because the main golden lane requires exit 0. It locks
-# its exact stderr in a sibling .err rather than being grepped for `tycho:` --
-# there is no `tycho:` here, and there should not be: the message is the
-# PROGRAM's, not a runtime trap's, and `die(msg)` prints a user message bare for
-# the same reason.
 fn step(n: int) -> Result(int, string):
     if n > 1:
         return Err("step " + str(n) + " failed")

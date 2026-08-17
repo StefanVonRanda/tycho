@@ -1,43 +1,3 @@
-#!/usr/bin/env python3
-# parallel-for GATE coverage: one program per `parallel for` soundness gate, plus
-# a valid baseline that exercises the SAME construct without tripping it.
-# Deterministic, not random. The body of a chunk has hard rules -- no early exit
-# (return / break-to-the-parfor / or_return), no in-place mutation or `inout`-pass
-# of a captured variable, an outer variable may be updated ONLY as a +/* reduction
-# read nowhere else, a zero-based int range -- and each rule is a SOUNDNESS
-# gate: a chunk that violates one silently miscompiles (a private copy drained, a
-# partial read as the whole, an early exit that can't cross a thread boundary).
-#
-# A case is a (name, expect, program). `expect` -- what tychoc SHOULD say -- is
-# the oracle: the fixture must really trip (or really not trip) the gate. An
-# accepted program must also emit C that COMPILES (an accept that emits broken C
-# is a codegen/fail-open bug, reported too).
-#
-# HISTORY -- THE PARITY ASSERTION WAS RETIRED 2026-07-29. Until then this lane was
-# also a DIFFERENTIAL: tychoc and the frozen self-hosted tychoc0 had to agree on
-# every verdict. That mattered because the fixpoint differential only compared the
-# OUTPUT of programs BOTH compilers accept, so a disagreement on WHETHER to accept
-# was invisible to it -- and tychoc0 was found to FAIL-OPEN on return-in-parfor
-# (it leaned on tychoc as the oracle and never ported the gates at all).
-#
-# WHY IT WENT: compiler/tychoc0.ty is FROZEN, and the breaking loop-syntax change
-# of 2026-07-29 (the three-clause `for`, bare `for:` and `parallel for i in 0..<N:`
-# replace the old `range()` counting header, which was deleted) means it can no
-# longer parse the corpus, so no lane builds it.
-# See compiler/fixpoint.sh's header, ROADMAP.md and docs/architecture.md.
-#
-# The PROGRAMS BELOW were left in the deleted syntax by that change and only
-# rewritten 2026-07-30 (the loops-cleanup plan). Until then every one of them was
-# rejected at parse: the nine accept baselines failed loudly, but the sixteen
-# reject fixtures still "passed" -- rejected for saying `range()`, not for tripping
-# the gate each one exists to test. This lane is not in `make ci`, so nothing said
-# so. Anything added here must be run by hand.
-#
-# WHAT IS LOST: the ability to catch a SECOND implementation failing to enforce a
-# gate. What remains -- tychoc against the written-down `expect` oracle -- is the
-# half that gates the compiler people actually ship, and it is unchanged.
-#
-# Usage: run_parforparity.py        (no seeds -- the case set is fixed)
 import os, subprocess, sys, tempfile, shutil
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -117,16 +77,6 @@ fn main():
         acc = acc + i
         acc = acc * i
 ''',
-# REPLACES the retired `range_step` fixture. Until 2026-07-29 the counting header
-# was `range(a, b, step)` and a non-unit step was a SOUNDNESS gate (a strided space
-# cannot be chunked); `parallel for i in range(0, 10, 2)` was its fixture. `0..<N`
-# has no step syntax at all, so that die_at is now unreachable by construction and
-# is kept only as a fail-closed assertion (src/tychoc.c:7895@r_step). The constraint that
-# took its place is the LOWER bound: `0..<N` demands a literal `0`
-# (src/tychoc.c:4085@i_dotlt), so this is the range-shape rejection that still has a source
-# spelling. Folding the old stride into the body (`0..<5` with `i * 2`) was the
-# other option and was rejected: it turns a gate fixture into a second accept
-# baseline that duplicates `reduction_add` and asserts nothing.
 "range_nonzero_start": '''\
 fn main():
     acc := 0

@@ -1,49 +1,3 @@
-/* Companion C for tools/tycho-debug/main.ty (the `tycho debug` gdb adapter),
- * linked via `tychoc --shim tools/tycho-debug/debug_shim.c`.
- *
- * The debugger drives a gdb MI session over two pipes: it writes MI commands
- * to gdb's stdin and reads gdb's stdout until the `(gdb)` prompt. core:os
- * cannot express that (system/popen are one-way), so fork/pipe/dup2/exec and
- * a line reader live here. Pure libc/POSIX -- nothing external to install.
- *
- * SIGNALS, AND WHY THEY LOOK THE WAY THEY DO.
- *
- *   gdb is spawned into its OWN process group (setpgid in the child), so a
- *   terminal Ctrl-C reaches the tool and never gdb. The tool's SIGINT handler
- *   (installed here) does the only async-signal-safe thing there is: store to
- *   a sig_atomic_t. A blocked read then returns EINTR, and dbgx_readline
- *   reports that as an interrupt (NULL + the dbgx_interrupted flag) rather
- *   than as EOF -- so a Ctrl-C mid-`next` does not look like gdb dying. The
- *   tool answers the flag by SIGINT-ing the INFERIOR's pid (dbgx_kill): MI
- *   stays in its default SYNC mode, where gdb does not read commands while the
- *   inferior runs, so `-exec-interrupt` written to the pipe would sit
- *   unprocessed -- but gdb is the tracer, so a signal delivered to the
- *   inferior is intercepted and reported as *stopped at the current source
- *   line. (The mi-async route was probed on gdb 17.2 and rejected: with
- *   `-gdb-set mi-async on` the FIRST -exec-run misses every breakpoint and
- *   swallows the inferior's output.)
- *
- *   The handler is installed WITHOUT SA_RESTART so the interrupted read
- *   actually surfaces; SIGPIPE is ignored so a dead gdb cannot kill the tool
- *   in the middle of a write (the write then returns -1 and the tool reports
- *   it).
- *
- *   WINDOWS (_WIN32): the same session over CreateProcess pipes (the child
- *   gets a NEW console -- the isolation setpgid provides on POSIX) and a
- *   SetConsoleCtrlHandler that sets the same flag. Two documented gaps remain
- *   there: a blocked pipe read has no EINTR, so Ctrl-C while the inferior
- *   runs does nothing (`q` still quits), and the tool's POSIX-shell-quoted
- *   command line is literal under cmd.exe (a path with spaces breaks the gdb
- *   invocation) -- both are the CI leg's job.
- *
- * FFI SHAPES (match the emitted C): tycho `int` == tycho_int (int64_t, defined
- * below -- this shim is a separate translation unit), tycho `string` ==
- * char*, `ptr` == void*, `-> Option(string)` == nullable char* (NULL -> None,
- * copied into the caller's arena immediately, so the line buffer here is only
- * valid until the next dbgx_readline call -- the same contract core:io's
- * iox_read_line documents). The first field of the handle struct is the Line
- * reader, so dbgx_readline treats a gdb handle and the stdin handle alike.
- */
 #ifndef _DEFAULT_SOURCE
 #define _DEFAULT_SOURCE          /* glibc: expose setpgid without -std noise */
 #endif
@@ -169,11 +123,6 @@ typedef struct {
 #endif
 } Dbg;
 
-/* Install the tool's SIGINT/console-Ctrl-C handler: set a flag only. On POSIX
- * without SA_RESTART the blocked read EINTRs and surfaces the flag; on Windows
- * a console control handler runs on a NEW thread and a blocked pipe read has
- * no EINTR to wake -- so the flag is set but nothing reads it until the next
- * command boundary (the documented no-interrupt-while-running gap, phase 5). */
 static void dbgx_install_sigint(void) {
 #ifdef _WIN32
     SetConsoleCtrlHandler(
@@ -190,16 +139,6 @@ static void dbgx_install_sigint(void) {
 }
 
 #ifdef _WIN32
-/* Windows spawn: cmd via cmd.exe /c, stdin/stdout/stderr as pipes, in a NEW
- * console (the isolation setpgid provides on POSIX -- a terminal Ctrl-C in the
- * tool's console never reaches gdb or the inferior). The child ends of the
- * pipes are inherited; the parent ends become fds via _open_osfhandle, so the
- * Line reader and dbgx_write work unchanged.
- *
- * The `cmd` string reaching here is quoted for THIS shell: main.ty's shq emits
- * cmd.exe double quotes on Windows and sh single quotes elsewhere. It used to
- * emit only the POSIX form, so single quotes arrived literal and a quoted path
- * reached gdb with the quotes still in it. */
 void *dbgx_spawn(const char *cmd) {
     if (!cmd) return NULL;
     HANDLE in_r, in_w, out_r, out_w;
@@ -345,18 +284,6 @@ tycho_int dbgx_is_windows(void) {
 #endif
 }
 
-/* Run a command line through the shell; the raw status, 0 == ok. Replaces the
- * tool's three `os.system` calls, which reach cmd.exe VERBATIM on Windows (that
- * is core:os's documented contract, SECURITY.md) -- and cmd cannot execute a
- * command NAME written with forward slashes, which is what $TYCHOC is. The
- * compile step therefore failed for every program, and the tool reported
- * "compile failed" for source that compiles fine: all 6 legs of `make
- * debug-check` were red on Windows.
- *
- * Only the first token is rewritten; arguments keep their forward slashes,
- * which the CRT takes. Same shape as tools/lsp_shim.c:62 and
- * tools/tycho_shim.c. gap: a command NAME containing a space still needs
- * quoting this does not add. */
 tycho_int dbgx_run(const char *cmd) {
     if (!cmd) return -1;
 #ifdef _WIN32
@@ -392,12 +319,6 @@ tycho_int dbgx_remove(const char *path) {
  * signal could not be delivered (the inferior already exited -- harmless). */
 tycho_int dbgx_kill(tycho_int pid, tycho_int sig) {
 #ifdef _WIN32
-    /* gap: no SIGINT-to-inferior on Windows in phase 5 -- Windows has no
-     * kill(2), the console handler cannot wake a blocked pipe read, and a
-     * TerminateProcess would KILL the inferior rather than stop it at its
-     * source line (the clean stop needs GenerateConsoleCtrlEvent to the gdb
-     * console + overlapped reads; CI leg). Ctrl-C therefore does nothing
-     * while the inferior runs; `q` still quits. */
     (void)pid; (void)sig;
     return -1;
 #else

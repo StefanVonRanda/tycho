@@ -1,144 +1,3 @@
-# prunner -- the fixture corpus of `tests/run.sh`, run through a bounded worker
-# pool, in Tycho.
-#
-# Phase 1 built the pool on a toy workload (a list of `true`/`false` commands)
-# and measured it: 243 items, no losses over 10 runs, maxconc = ncpu = 16, 14.8x
-# over sequential. Phase 2 -- this file -- replaces the toy workload with the
-# real one: compile each fixture, run it, compare it against its golden.
-#
-# Build and run, from the repo root:
-#     make test-fast            # builds build/prunner and runs it -- the whole lane
-#     make prunner              # build only
-# Or by hand (every path below is repo-relative, exactly as `tests/run.sh` is,
-# and `tests/run.sh:31` cd's to the repo root for the same reason):
-#     ./build/prunner                 # pool, the default
-#     ./build/prunner --mode=seq      # the same jobs one at a time -- the baseline
-#     ./build/prunner --mode=both     # both, for the timing comparison
-#     ./build/prunner --stats         # add the one-line loss/concurrency summary
-#
-# ---------------------------------------------------------------------------
-# THIS IS THE FAST LANE, NOT THE AUTHORITY. `make test` still runs `tests/run.sh`,
-# and phase 4 of the prunner plan decided that deliberately
-# rather than for lack of agreement: this program is compiled BY THE COMPILER IT
-# TESTS, so a tychoc regression in string comparison, in `os.run`'s exit code, or
-# in the `parallel for` fan-out lands inside the judge and can turn every verdict
-# green at once. `tests/run.sh` scores with `cmp`, `grep` and `test` -- programs no
-# change in this repo can break. Reach for this lane while iterating; let
-# `make test` be what says the tree is green, and diff the two when they
-# disagree (`--mode=seq` re-runs the same jobs one at a time in this program,
-# which separates "the pool did it" from "the judge did it").
-#
-# ---------------------------------------------------------------------------
-# LANES COVERED, AND WHY THESE.
-#
-# Every one of `tests/run.sh`'s scoring loops is here, because the invariant the
-# Pre-flight names -- "the count is the invariant" -- is only worth much if the
-# count is the SAME count. Covering a subset would mean comparing a partial
-# report against a whole one that has to be filtered first; covering all of it
-# means the comparison is a straight `diff` of two whole reports.
-#
-#   pos        examples/*.ty and tests/*.ty     (tests/run.sh:214-220@queue_positive)
-#   pos        tests/pkg/<name>/main.ty         (tests/run.sh:223-238@queue_positive)
-#   reject     tests/reject/*.ty                (tests/run.sh:299-331@reject_)
-#   rejectpkg  tests/reject/pkg/<name>/main.ty  (tests/run.sh:332-363@rejectpkg_)
-#   abort      tests/abort/*.ty                 (tests/run.sh:364-398@abort_)
-#   diag       tests/diag/*.ty                  (tests/run.sh:399-423@diag_)
-#   warn       tests/warn/*.ty                  (tests/run.sh:428-451@warn_)
-#   warnpkg    tests/warn/pkg/<name>/main.ty    (tests/run.sh:471-493@warnpkg_)
-#
-# The two pos rows name the worker-pool branch a normal run takes; RECORD=1
-# enumerates the same fixtures sequentially at `tests/run.sh:184-199@run_fixture`.
-# Each row is anchored on a token, not left a bare range: a bare range stays "in
-# bounds" while the code under it moves, which is how all seven of these rotted
-# with `check_citations.py` green throughout (2026-08-11). The per-lane counts
-# that used to be here are gone for the same reason -- `tests/run.sh`'s closing
-# `passed: N   failed: N` prints today's, and a lane's size is `ls <glob> | wc -l`.
-#
-# What is deliberately NOT reproduced: RECORD=1 (goldens are recorded by
-# `make test-update` and a parallel runner has no business writing them),
-# TYCHO_NO_ASAN, $CC (hardcoded `cc`), the ILP32 lane, and the six-space
-# indented dump of the failing log/diff that `tests/run.sh` prints under a FAIL.
-# The dump is unbounded and would need its own ordering discipline; the
-# parenthesised REASON is reproduced verbatim, which is what identifies the
-# failure. See the note on `--mode=seq` below for how a FAIL is meant to be
-# investigated.
-#
-# ---------------------------------------------------------------------------
-# HOW CAPTURED OUTPUT STAYS ATTRIBUTED TO ITS JOB.
-#
-# Phase 1 could use `os.system` (`corelib/os/os.ty:32`) because it wanted an
-# exit code and nothing else. This one has to keep each fixture's stdout and
-# stderr apart from fifteen others', so it uses `os.run`
-# (`corelib/os/os.ty:36`), which pipes the child through `popen(3)` and hands
-# back `Output{code, out}`. Three things keep that straight, and none of them is
-# a lock:
-#
-#   1. `os.run` is SYNCHRONOUS INSIDE THE WORKER. The pipe is opened, drained and
-#      closed inside one `parallel for` iteration, so a captured string is only
-#      ever touched by the iteration that produced it. There is no shared stdout
-#      to interleave on -- that is exactly what `os.system` had and why phase 1
-#      could not have done this. (The capture is used for the child's EXIT CODE;
-#      what gets compared is always a file -- see "COMPARISON IS BYTE-EXACT".)
-#   2. EVERY child's stderr is redirected explicitly (`2>&1` when the merge is
-#      what `tests/run.sh` compares, `2>$d/serr` when it is scored separately).
-#      An unredirected stderr is inherited from the parent -- `corelib/os/os.ty:11`
-#      says so -- and inherited stderr from 16 concurrent children IS the
-#      interleaving problem. Nothing here writes to the terminal but the report.
-#   3. EACH JOB OWNS A PRIVATE TEMP DIRECTORY, `<tmp>/<name>`. `tests/run.sh` can
-#      share one $TMP because it is sequential, and it does: `$TMP/rj`,
-#      `$TMP/rj.log`, `$TMP/ab.c` are FIXED names reused by every fixture in
-#      those lanes (`tests/run.sh:178`, `:197`). Run that concurrently and two
-#      rejects race on one log. Fixture names are unique across lanes (the
-#      `reject_`/`abort_`/`diag_`/`warn_`/`pkg_` prefixes are what make them so),
-#      so the name is the directory and no two jobs can collide.
-#
-# The result then leaves the worker the only way it can: `docs/spec/13-concurrency.md:100`
-# permits a `parallel for` body exactly one outer-scope write, a `+`/`*`
-# reduction on `int`/`float`, so a per-fixture verdict cannot be pushed into an
-# array from the body. It is `send`-ed into a second channel carrying its own
-# index, and `scatter` below puts it back at that index. Attribution is
-# therefore by construction, not by arrival order.
-#
-# ---------------------------------------------------------------------------
-# COMPARISON IS BYTE-EXACT, AND IT IS THE ORACLE'S OWN INSTRUMENT.
-#
-# Every verdict below that compares two byte sequences shells out to the exact
-# tool `tests/run.sh` uses at the corresponding line -- `cmp -s`, `grep -q`,
-# `test -s` -- over a FILE the child wrote, never over a string this program
-# read back. That is not stylistic. `os.run` hands its capture back as a
-# `string` (`corelib/os/os.ty:36`, via the `osx_run_out(r) -> string` extern at
-# `corelib/os/os.ty:28`), and `io.read` returns a string too, so both stop at the
-# first NUL byte. A golden or a diagnostic containing a NUL would therefore have
-# been compared on its PREFIX ONLY, and the failure direction is the bad one: a
-# truncated output equal to a truncated golden scores `ok`. No golden in the tree
-# contains a NUL today, so the string form agreed with `tests/run.sh` on this
-# corpus -- but "agrees on today's data" is not the property a gate needs, and
-# this was `plan.md`'s phase 9. Comparison now cannot disagree with the oracle,
-# because it is the oracle's comparison.
-#
-# ---------------------------------------------------------------------------
-# WHAT HAPPENS WHEN A JOB DIES MID-RUN.
-#
-# Measured, not assumed (the prunner plan). A runtime abort inside one
-# `parallel for` iteration terminates the WHOLE PROCESS: the `tycho:` message
-# goes to stderr, the exit status is 1, and no report is printed at all. The
-# other fifteen chunks do not carry on and no summary is emitted -- so the
-# parallel runner degrades the same way the sequential one does, by taking the
-# report down with it. There is no path on which a dead worker leaves a tidy
-# green summary behind. The report-level defences below (`NO RESULT`,
-# `DUPLICATE RESULT`) cover the other direction: a result that is lost or
-# doubled in the channel while the process stays alive.
-#
-# ---------------------------------------------------------------------------
-# WHY THE REPORT IS BYTE-IDENTICAL ACROSS RUNS.
-#
-# Work completes out of order and nothing is printed from a worker. Results are
-# buffered, scattered back to their corpus index (`scatter`), and only then
-# printed, in index order. The corpus order is itself canonical: `io.list`
-# returns readdir order, which is a filesystem artefact, so every enumeration
-# below runs through `sort.asc` before a job is built. Nothing in the report
-# carries a timing, a pid or a path from the temp directory -- `--stats`, which
-# does carry timings, is opt-in and off by default for exactly that reason.
 package main
 import "core:os"
 import "core:io"
@@ -146,7 +5,6 @@ import "core:cli"
 import "core:sort"
 import "core:strings"
 
-# One unit of work. `kind` selects which of `tests/run.sh`'s loops scores it.
 struct Job:
     kind: string
     name: string
@@ -154,15 +12,10 @@ struct Job:
     golden: string
     stdin: string
 
-# What a job decided. `reason` is "" when ok, else the parenthesised text
-# `tests/run.sh`'s `note()` (tests/run.sh:60) would print.
 struct Verdict:
     ok: int
     reason: string
 
-# A finished job. idx is the corpus index -- the whole of the attribution story.
-# t0/t1 are monotonic `clock()` nanoseconds, kept so achieved concurrency can be
-# MEASURED rather than inferred from wall-clock (the phase 1 method).
 struct Res:
     idx: int
     ok: int
@@ -183,9 +36,6 @@ fn ty_files(dir: string) -> [string]:
             push(out, es[i])
     return sort.asc(out)
 
-# Subdirectories of `dir`. `corelib/io/io.ty:25` documents `list` as [] for
-# anything that is not a directory, so a non-empty listing is a directory --
-# sound here because every package fixture directory has files in it.
 fn subdirs(dir: string) -> [string]:
     out := []string
     es := io.list(dir)
@@ -194,7 +44,6 @@ fn subdirs(dir: string) -> [string]:
             push(out, es[i])
     return sort.asc(out)
 
-# tests/run.sh:116 -- a fixture may supply stdin, else /dev/null is fed.
 fn stdin_for(p: string) -> string:
     if io.exists(p):
         return p
@@ -202,7 +51,6 @@ fn stdin_for(p: string) -> string:
 
 fn build_jobs() -> [Job]:
     js := []Job
-    # tests/run.sh:113-118 -- examples/ then tests/, golden tests/<name>.out.
     ex := ty_files("examples")
     for i := 0; i < len(ex); i += 1:
         n := strings.strip_suffix(ex[i], ".ty")
@@ -213,46 +61,35 @@ fn build_jobs() -> [Job]:
         n := strings.strip_suffix(ts[i], ".ty")
         push(js, Job("pos", n, "tests/" + ts[i], "tests/" + n + ".out",
                      stdin_for("tests/" + n + ".in")))
-    # tests/run.sh:124-133 -- each tests/pkg/<name>/ is one package program.
     pk := subdirs("tests/pkg")
     for i := 0; i < len(pk); i += 1:
         d := pk[i]
         push(js, Job("pos", "pkg_" + d, "tests/pkg/" + d + "/main.ty",
                      "tests/pkg/" + d + ".out", stdin_for("tests/pkg/" + d + ".in")))
-    # tests/run.sh:170-185 -- invalid programs the compiler must refuse.
     rj := ty_files("tests/reject")
     for i := 0; i < len(rj); i += 1:
         b := strings.strip_suffix(rj[i], ".ty")
         push(js, Job("reject", "reject_" + b, "tests/reject/" + rj[i], "", ""))
-    # tests/run.sh:191-203 -- package-level rejects. run.sh `continue`s past a
-    # directory with no main.ty rather than scoring it, so this skips too.
     rp := subdirs("tests/reject/pkg")
     for i := 0; i < len(rp); i += 1:
         e := "tests/reject/pkg/" + rp[i] + "/main.ty"
         if io.exists(e):
             push(js, Job("rejectpkg", "rejectpkg_" + rp[i], e, "", ""))
-    # tests/run.sh:345-373 -- valid programs whose RUN must die cleanly. The
-    # `.err` golden is OPTIONAL (tests/run.sh:356); judge_abort tests for it.
     ab := ty_files("tests/abort")
     for i := 0; i < len(ab); i += 1:
         b := strings.strip_suffix(ab[i], ".ty")
         push(js, Job("abort", "abort_" + b, "tests/abort/" + ab[i],
                      "tests/abort/" + b + ".err", ""))
-    # tests/run.sh:380-398 -- exact compiler stderr locked as <name>.err.
     dg := ty_files("tests/diag")
     for i := 0; i < len(dg); i += 1:
         b := strings.strip_suffix(dg[i], ".ty")
         push(js, Job("diag", "diag_" + b, "tests/diag/" + dg[i],
                      "tests/diag/" + b + ".err", ""))
-    # tests/run.sh:267-290 -- valid programs whose exact WARNING text is locked.
-    # Compile only, never run: a deadlock fixture hangs by construction.
     wn := ty_files("tests/warn")
     for i := 0; i < len(wn); i += 1:
         b := strings.strip_suffix(wn[i], ".ty")
         push(js, Job("warn", "warn_" + b, "tests/warn/" + wn[i],
                      "tests/warn/" + b + ".err", ""))
-    # tests/run.sh:471-493 -- package-mode builds whose WHOLE stderr is locked,
-    # empty golden allowed. Same skip-a-directory-without-main.ty rule as above.
     wp := subdirs("tests/warn/pkg")
     for i := 0; i < len(wp); i += 1:
         e := "tests/warn/pkg/" + wp[i] + "/main.ty"
@@ -261,22 +98,11 @@ fn build_jobs() -> [Job]:
                          "tests/warn/pkg/" + wp[i] + ".err", ""))
     return js
 
-# ---- the verdicts ----------------------------------------------------------
-# One function per lane, each a transcription of the corresponding loop in
-# `tests/run.sh`. The reason strings are verbatim so a FAIL line is diffable
-# against the sequential runner's.
 
-# tests/run.sh:84's own grep, verbatim, over the same file. This used to read the
-# file with `io.read` and match in Tycho; it does not any more, and the reason is
-# the general one written up under "COMPARISON IS BYTE-EXACT" above -- `io.read`
-# returns a string and stops at the first NUL, so a sanitizer report printed
-# after one would have gone unnoticed HERE, in the direction that turns a real
-# failure into a PASS.
 fn sanitizer_report(f: string) -> bool:
     return os.run("grep -qiE 'runtime error|AddressSanitizer|Sanitizer|ERROR: ' " +
                   f + " 2>/dev/null").code == 0
 
-# tests/run.sh:63-110, minus RECORD mode.
 fn judge_pos(j: Job, d: string) -> Verdict:
     if not io.exists(j.entry):
         return Verdict(0, "no main.ty")
@@ -286,9 +112,6 @@ fn judge_pos(j: Job, d: string) -> Verdict:
     r := os.run("./tychoc " + j.entry + " --emit-c -o " + d + "/out >" + d + "/log 2>&1")
     if r.code != 0:
         return Verdict(0, "transpile")
-    # tests/run.sh:92 -- the corelib shims this program's imports pulled in,
-    # spliced onto both cc lines. A captured string rather than a file: this is a
-    # link line, not a comparison, and a path cannot contain a NUL.
     shims := os.run("./tychoc " + j.entry + " --print-shims 2>/dev/null | tr '\n' ' '").out
     r = os.run("cc -O2 -fwrapv -std=c11 -o " + nat + " " + c + " " + shims + " -lm 2>" + d + "/log")
     if r.code != 0:
@@ -297,21 +120,15 @@ fn judge_pos(j: Job, d: string) -> Verdict:
                "-fwrapv -std=c11 -o " + san + " " + c + " " + shims + " -lm 2>" + d + "/log")
     if r.code != 0:
         return Verdict(0, "sanitizer cc")
-    # stdout is the thing being scored, so it goes to a FILE rather than through
-    # the capture pipe (see "COMPARISON IS BYTE-EXACT"); stderr is discarded
-    # exactly as tests/run.sh:78 discards it.
     nr := os.run(nat + " <" + j.stdin + " >" + d + "/nout 2>/dev/null")
     if nr.code != 0:
         return Verdict(0, "native exit " + str(nr.code))
-    # ASAN_OPTIONS is exported once at tests/run.sh:50; here it rides on the
-    # command, because the pool has no process-global environment to set.
     sr := os.run("ASAN_OPTIONS=detect_leaks=1 " + san + " <" + j.stdin + " >" + d +
                  "/sout 2>" + d + "/serr")
     if sr.code != 0:
         return Verdict(0, "sanitizer exit " + str(sr.code))
     if sanitizer_report(d + "/serr"):
         return Verdict(0, "sanitizer report")
-    # tests/run.sh:87 and tests/run.sh:104 -- both are `cmp -s`, and so are these.
     if os.run("cmp -s " + d + "/nout " + d + "/sout").code != 0:
         return Verdict(0, "native vs sanitizer output differ")
     if not io.exists(j.golden):
@@ -320,28 +137,14 @@ fn judge_pos(j: Job, d: string) -> Verdict:
         return Verdict(0, "output != golden (" + j.golden + ")")
     return Verdict(1, "")
 
-# tests/run.sh:170-203. A silent refusal is as bad as an acceptance, so the
-# diagnostic must be non-empty -- `2>&1` into the captured pipe is the same
-# merge tests/run.sh:178 makes into a file.
 fn judge_reject(j: Job, d: string, what: string) -> Verdict:
     r := os.run("./tychoc " + j.entry + " --emit-c -o " + d + "/rj >" + d + "/rj.log 2>&1")
     if r.code == 0:
         return Verdict(0, "tychoc ACCEPTED an invalid " + what)
-    # tests/run.sh:180's `[ ! -s ]`, not a string test on a captured pipe: a
-    # diagnostic whose first byte is a NUL is a non-empty FILE and an empty
-    # STRING, and it is the file that is the truth.
     if os.run("test -s " + d + "/rj.log").code != 0:
         return Verdict(0, "tychoc rejected but with no diagnostic")
     return Verdict(1, "")
 
-# tests/run.sh:306-317, the FLAT reject lane only -- the pkg loop has no such
-# branch. OPT-IN: a fixture may pin WHY it is refused with a `# expect: <text>`
-# line, asserted as a literal substring of the diagnostic; a fixture without one
-# scores exactly as before. `printf %s "$(...)"` reproduces run.sh's own
-# command substitution, trailing newline stripped, so an empty `# expect:` is an
-# empty FILE here just as it is an empty STRING there; and `grep -qFf` matches
-# the pattern from that file, which is `grep -qF -- "$exp"` with no shell
-# quoting between the fixture's text and the match.
 fn judge_expect(j: Job, d: string) -> Verdict:
     e := d + "/exp"
     _ := os.run("printf %s \"$(sed -n 's/^# expect: //p' " + j.entry +
@@ -352,7 +155,6 @@ fn judge_expect(j: Job, d: string) -> Verdict:
         return Verdict(0, "diagnostic does not contain the expected text: " + io.read(e))
     return Verdict(1, "")
 
-# tests/run.sh:345-373. Builds, then must die nonzero naming itself.
 fn judge_abort(j: Job, d: string) -> Verdict:
     r := os.run("./tychoc " + j.entry + " --emit-c -o " + d + "/ab >" + d + "/ab.log 2>&1")
     if r.code == 0:
@@ -363,40 +165,29 @@ fn judge_abort(j: Job, d: string) -> Verdict:
     x := os.run(d + "/ab.bin </dev/null >/dev/null 2>" + d + "/ab.err")
     if x.code == 0:
         return Verdict(0, "runtime abort did not fire (exit 0)")
-    # tests/run.sh:356-366 -- a fixture MAY lock its exact stderr instead of the
-    # `tycho:` grep: an `Err` out of `main` prints the PROGRAM's message and
-    # there is no runtime trap to name. No golden on disk means the older shape,
-    # scored by the grep below exactly as before.
     if io.exists(j.golden):
         if os.run("cmp -s " + d + "/ab.err " + j.golden).code != 0:
             return Verdict(0, "stderr differs from " + j.golden)
         return Verdict(1, "")
-    # tests/run.sh:367's `grep -q 'tycho:'`, over the file rather than a read of it.
     if os.run("grep -q 'tycho:' " + d + "/ab.err 2>/dev/null").code != 0:
         return Verdict(0, "died (exit " + str(x.code) + ") but without a 'tycho:' message")
     return Verdict(1, "")
 
-# tests/run.sh:234-252, minus RECORD mode.
 fn judge_diag(j: Job, d: string) -> Verdict:
     r := os.run("./tychoc " + j.entry + " --emit-c -o " + d + "/dg >" + d + "/dg.log 2>&1")
     if r.code == 0:
         return Verdict(0, "compiler ACCEPTED an invalid program")
     if not io.exists(j.golden):
         return Verdict(0, "no golden — run 'make test-update'")
-    # tests/run.sh:246 -- `cmp -s` of the merged log against the golden.
     if os.run("cmp -s " + d + "/dg.log " + j.golden).code != 0:
         return Verdict(0, "diagnostic != golden (" + j.golden + ")")
     return Verdict(1, "")
 
-# tests/run.sh:267-290, minus RECORD mode. Only stderr is scored: the
-# "wrote <path>" line goes to stdout and would bake a temp path into the golden,
-# so stdout goes to a file and is never looked at.
 fn judge_warn(j: Job, d: string) -> Verdict:
     r := os.run("./tychoc " + j.entry + " --emit-c -o " + d + "/wn >" + d + "/wn.out 2>" +
                 d + "/wn.err")
     if r.code != 0:
         return Verdict(0, "compiler REJECTED a valid program")
-    # tests/run.sh:275 then tests/run.sh:284 -- `grep -q`, then `cmp -s`.
     if os.run("grep -q 'warning:' " + d + "/wn.err 2>/dev/null").code != 0:
         return Verdict(0, "no warning emitted (the lint this fixture locks stopped firing)")
     if not io.exists(j.golden):
@@ -405,9 +196,6 @@ fn judge_warn(j: Job, d: string) -> Verdict:
         return Verdict(0, "warning != golden (" + j.golden + ")")
     return Verdict(1, "")
 
-# tests/run.sh:471-493, minus RECORD mode. No `grep -q 'warning:'` leg, on
-# purpose: this lane's assertion is WHICH warnings a package build prints, and an
-# empty golden is a legal answer. Reasons verbatim, as everywhere here.
 fn judge_warnpkg(j: Job, d: string) -> Verdict:
     r := os.run("./tychoc " + j.entry + " --emit-c -o " + d + "/wnp >" + d + "/wnp.out 2>" +
                 d + "/wnp.err")
@@ -425,12 +213,6 @@ fn judge(j: Job, tmp: string) -> Verdict:
     d := tmp + "/" + j.name
     _ := io.make_dir(d)
     if j.kind == "reject":
-        # tests/run.sh:174-177. A FLAT reject fixture must not declare a
-        # `package` header: detect_package (src/tychoc.c:13273-13279) would turn
-        # the compile into a whole-DIRECTORY one (src/tychoc.c:13672) and the
-        # fixture would be "refused" for a sibling's error rather than its own,
-        # which neither runner's reject lane can distinguish. Same `grep -q` and
-        # the same FAIL reason as run.sh, so the two reports stay byte-identical.
         if os.run("grep -q '^package [A-Za-z_]' " + j.entry).code == 0:
             return Verdict(0, "declares a package header -- it would be compiled against every sibling in tests/reject/; move it to tests/reject/pkg/<name>/")
         v := judge_reject(j, d, "program")
@@ -449,11 +231,6 @@ fn judge(j: Job, tmp: string) -> Verdict:
         return judge_warnpkg(j, d)
     return judge_pos(j, d)
 
-# ---- the pool --------------------------------------------------------------
-# Unchanged in shape from phase 1: `docs/spec/13-concurrency.md:127` says a
-# Channel(T) cannot be returned, stored in a container or captured, so the pool
-# is a SCOPE and not an object; both channels are created and consumed here. The
-# fan-out follows `tests/conc/workers.ty:18-24`, which stores no task handles.
 
 fn produce(ch: Channel(int), n: int) -> int:
     for i := 0; i < n; i += 1:
@@ -492,8 +269,6 @@ fn run_pool(js: [Job], tmp: string) -> [Res]:
         println("BUG: producer sent " + str(sent) + " of " + str(n))
     return out
 
-# The same jobs one at a time -- the baseline the pool is measured against, and
-# the mode to re-run under when a FAIL needs its log looked at.
 fn run_seq(js: [Job], tmp: string) -> [Res]:
     out := []Res
     for i := 0; i < len(js); i += 1:
@@ -533,10 +308,6 @@ fn max_overlap(rs: [Res]) -> int:
             best = c
     return best
 
-# The report, in the format of `tests/run.sh` so the two are directly diffable.
-# THE INVARIANT (Pre-flight): the failure this design is afraid of is a green
-# report over quietly dropped work, so a corpus index that produced no result is
-# not silence -- it is a FAIL line naming the fixture, and it is counted.
 fn report(js: [Job], rs: [Res], stats: int, mode: string, ns: int) -> int:
     n := len(js)
     slots := scatter(rs, n)
@@ -577,16 +348,12 @@ fn main():
     c := cli.parse(cli.argv())
     mode := cli.get(c, "mode", "pool")
     stats := 0
-    # `--stats` is a bare flag, so it lands in Cli.flags, not Cli.keys:
-    # `cli.flag`, not `cli.has` (corelib/cli/cli.ty:160-171).
     if cli.flag(c, "stats"):
         stats = 1
     js := build_jobs()
     if len(js) == 0:
         println("prunner: no fixtures found — run me from the repo root")
         return
-    # One scratch root per process; every job gets a private subdirectory of it,
-    # because tests/run.sh's fixed $TMP/rj, $TMP/ab names would race here.
     tmp := strings.trim(os.run("mktemp -d").out)
     if tmp == "":
         println("prunner: could not create a temp directory")

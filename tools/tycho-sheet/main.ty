@@ -6,28 +6,6 @@ import "core:strings"
 import "cell"
 import "sheet"
 
-# tycho-sheet -- a spreadsheet engine. THIS SLICE HAS NO SCREEN.
-#
-# What it has instead is `--script`, which drives the grid from a file of
-# commands and prints what a screen would show. That is deliberate and it is
-# first, not last: an engine whose only entry point is a UI cannot be checked by
-# anything but a human squinting at it, and this tree has been bitten by exactly
-# that. tools/tycho-ed/main.ty took the same shape for the same reason.
-#
-# The script language, one command per line:
-#
-#   # ...                comment; blank lines ignored
-#   set <ref> <text>     type into a cell: `set A1 42`, `set B1 =A1*2`
-#   get <ref>            print one cell's value
-#   recalc               recalculate the whole sheet in dependency order
-#   dump                 every occupied cell: reference, source, value
-#   chain <n>            build an n-deep chain A1 = A2 + 1 ... A<n> = 1
-#   roundtrip <literal>  render a float and report whether it reads back equal
-#
-# `set` reports a malformed formula as `ERR ...` and carries on, because a
-# script is a test and a rejection is an observation. The distinction that
-# matters is in cell/cell.ty: `=1/` is an ERR here and stores nothing, while
-# `=1/0` is accepted and shows #DIV/0! in the cell.
 
 fn _ref(s: string) -> Result((int, int), string):
     ok, row, col := cell.ref_of(s)

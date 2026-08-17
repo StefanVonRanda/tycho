@@ -1,18 +1,3 @@
-# An array element cannot be void. This is the ONLY element type an array
-# refuses -- the diagnostic used to be an allow-list ("int, float, bool, string,
-# a struct, an array, or an Option") that named neither what works nor what does
-# not: `[bytes]`, `[(int, int)]` and `[[string: int]]` all compile and none of
-# them appears in that list. the loops-cleanup plan.
-#
-# This guard is reached through a VALUE, not through a type annotation, and that
-# is still true now that `void` is spellable. `[void]` never gets here: the
-# spelling is licensed one level deep, for a Result's ok payload only, so the
-# element type dies first on `'void' is a type only as a Result's ok payload`
-# (tests/reject/option_void.ty is the same refusal for `Option(void)`). What
-# reaches this line is an element whose TYPE is void because the expression
-# produces nothing -- a call to a procedure with no return type, below.
-#
-#   error: an array element cannot be void -- this element produces no value (a call to a procedure that returns nothing?)
 fn nothing():
     println("no return type, so this call has no value")
 

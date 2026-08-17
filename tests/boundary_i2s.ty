@@ -1,17 +1,3 @@
-# NUMERIC-BOUNDARY fixture 4/5: int -> string conversion at the boundaries.
-#
-# This is the Phase 6a bug class. The runtime's int->string helper (`i2s` /
-# tycho_int_to_str) truncated on ILP32 because it formatted through a host
-# `long`. A converter is also the classic home of the -2^63 negation bug: the
-# usual "if (n < 0) { out '-'; n = -n; }" shape overflows on exactly one input,
-# -2^63, because +2^63 is not representable. Nothing in the suite printed that
-# value, so nothing would have caught it.
-#
-# `str(int)` is the only way a program observes an int, so every other fixture's
-# golden depends on this path being exact. That makes it worth pinning directly.
-#
-# Spec basis: docs/spec/03-types.md 5.2.1 -- values -2^63 .. 2^63-1.
-# Values are read from an array so the conversion happens at RUN TIME.
 
 fn main():
     v := [2147483647, 2147483648, 4294967295, 4294967296,

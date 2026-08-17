@@ -1,8 +1,3 @@
-# `inout` on a scalar array element (`f(&a[i])`) must project a mutable lvalue.
-# Regression for a tychoc codegen crash: it emitted a bogus tycho_arr_C<garbage>_ptr
-# for the built-in int/str/float arrays (which had no _ptr helper), so the C failed
-# to compile. Composite-element arrays already worked. tychoc0 was fine. Both must
-# agree now, including through a struct field.
 
 struct S:
     xs: [int]

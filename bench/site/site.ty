@@ -1,15 +1,3 @@
-# site benchmark (tycho): render N Markdown pages to HTML, transiently.
-#
-# Each page is read + rendered inside the loop body, whose per-scope arena is
-# reclaimed every iteration -- so peak RSS stays FLAT (one page's working set)
-# no matter how many pages, with zero manual free and zero GC. The renderer is
-# inlined (no corelib imports) so tycho / Go / C do byte-identical work and agree
-# on the FNV-1a-32 checksum of every rendered byte. The point is the language's
-# memory model on a realistic string-building workload, not corelib (the
-# examples/site dogfood already proves the corelib composition).
-#
-#   site <pages-dir> <N>   ->   pages=N bytes=B fnv=H
-# (single-file, no `package` -- only builtins, so no corelib imports needed.)
 
 fn atoi(s: string) -> int:
     v := 0

@@ -1,6 +1,3 @@
-# The match subject must be evaluated exactly once, not once per arm test.
-# Regression: tychoc0 pasted the subject's C text into every arm test + payload
-# bind, so a side-effecting subject (pop-like) ran N times.
 enum Step:
     Go(int)
     Halt

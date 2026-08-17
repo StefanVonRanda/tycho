@@ -1,18 +1,3 @@
-# Phase 5: `parallel for i in 0..<N:` -- the counting spelling for `parallel
-# for`. Implicit step 1, ascending, EXCLUSIVE upper bound, so the body runs for
-# i in 0 .. N-1 and there is no zero-step case at all (unlike `range()`, which
-# rejects a literal 0 step and aborts on a runtime one).
-#
-# Parsed at src/tychoc.c:3660-3701 into the same S_FORRANGE node `range(0, N)`
-# builds, so the whole CC-3 path below it -- resolve_parfor's capture/reduction
-# scan, the lifted `__parN` chunk proc, the fan-out over K = tycho_ncpu() tasks
-# at src/tychoc.c:10828 -- is the code that was already there and already
-# exercised. Nothing about chunking is new; only the spelling is.
-#
-# Every value here is a closed form, checked by hand before the golden was
-# recorded, and every one is chunk-count-independent: integer + and * are
-# associative and exact, so the answers do not depend on how many threads the
-# host has (float reductions may reassociate, which is why there are none).
 
 fn score(n: int) -> int:
     return n * n

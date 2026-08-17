@@ -1,5 +1,3 @@
-# Gap fix (composition): a generic call's RESULT can now feed another generic in
-# tychoc0 -- nested directly (f(g(x))) or via a bound variable -- matching tychoc.
 fn box(xs: [$T]) -> [$T]:
     out := []
     for v in xs:

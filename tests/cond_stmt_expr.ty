@@ -1,23 +1,3 @@
-# Conditions that lower to a GCC statement-expression `({ ... })`.
-#
-# `cond_unwrap` drops ONE redundant outer paren layer from an if/while
-# condition (`if ((a == b))` -> `if (a == b)`). It used to strip whenever the
-# first byte was '(' and its match was the last byte -- which is exactly the
-# shape of a statement-expression. A checked bool array read lowers to
-# `({ Arr_bool _a = h_arr; _a.data[hi_bchk(0LL, _a.len)]; })`, so the strip
-# removed the '(' that MAKES it a statement-expression and emitted
-# `if ({ ... }) {`, which cc rejects: "expected expression before '{' token".
-#
-# tychoc0 accepted the program (exit 0) and handed the user C that would not
-# compile -- a fail-open into broken output. tychoc survived THIS shape only
-# because it lowers a checked array read to a helper call rather than a
-# statement-expression; it had the identical defect via `if wait(t):`
-# (see tests/conc/cond_wait.ty).
-#
-# Both compilers now refuse to strip when the byte after '(' is '{'. Redundant
-# parens elsewhere must still be stripped, so this fixture also exercises the
-# plain shapes that SHOULD unwrap, and the shapes where a statement-expression
-# is nested inside a larger condition (safe to expose).
 
 struct Flags:
     bits: [bool]
@@ -76,10 +56,6 @@ fn main():
     else:
         println("if-rparen-lit")
 
-    # the value-`if` form (ROADMAP 2.1). It is NOT a third call site: a value-`if`
-    # re-enters the ordinary `if` codegen via SValDecl (see the comment at
-    # compiler/tychoc0.ty:9454), so it reaches the same cond_unwrap. It was
-    # broken on baseline for the same reason and is covered here explicitly.
     v := if arr[1]:
         10
     else:
