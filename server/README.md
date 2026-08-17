@@ -67,6 +67,12 @@ shared listening fd. The pool is built by **recursive fan-out** — worker *k*
 spawns worker *k+1* into a frame-local, then enters its own loop:
 
 ```tycho
+struct Config:
+    root: string
+
+fn accept_loop(cfg: Config, srv: int, wid: int) -> int:
+    return wid
+
 fn worker(cfg: Config, srv: int, wid: int, remaining: int) -> int:
     if remaining > 1:
         peer := spawn worker(cfg, srv, wid + 1, remaining - 1)

@@ -153,9 +153,25 @@ the receiver's compile-time type), the receiver is passed by value like any argu
 type can be a receiver — a struct, an `int`, anything. Calls chain, including on call results:
 
 ```tycho
-a.add(b).norm1()        # == norm1(add(a, b))
+struct Vec:
+    x: int
+    y: int
+
+fn add(p: Vec, q: Vec) -> Vec:
+    return Vec(p.x + q.x, p.y + q.y)
+
+fn norm1(p: Vec) -> int:
+    return p.x + p.y
+
+fn doubled(k: int) -> int:
+    return k * 2
+
+a := Vec(1, 2)
+b := Vec(3, 4)
+
+m := a.add(b).norm1()   # == norm1(add(a, b))
 n := 21
-n.doubled()             # == doubled(n) -- an int receiver
+d := n.doubled()        # == doubled(n) -- an int receiver
 ```
 
 This extends to the built-ins that take a receiver-shaped first argument, so the operations you

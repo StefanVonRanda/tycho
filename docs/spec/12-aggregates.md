@@ -389,9 +389,20 @@ nesting and through array-valued fields, and a field MAY be taken as an `inout`
 argument; all of these are **places**:
 
 ```tycho
+struct Point:
+    x: int
+    y: int
+
+struct Tagged:
+    x: int
+    tags: [string]
+
 struct Span:
     lo: Point
     hi: Point
+
+fn bump(n: inout int):
+    n = n + 1
 
 r := Span(Point(0, 0), Point(1, 1))
 p := Tagged(5, ["a"])
@@ -601,12 +612,20 @@ therefore usable both as a **place** and as an **rvalue**, and callable as a
 **method** on its first parameter, whose type selects the subscript:
 
 ```tycho
+struct Node:
+    weight: int
+
+struct Graph:
+    nodes: [Node]
+
 subscript edge(g: Graph, i: int) -> inout Node:
     yield &g.nodes[i]
 
-g.edge(1).weight = 10        # write in place through the projection — no copy
-w := g.edge(0).weight        # read through it
-bump(&g.edge(0).weight)      # a field of the projection as an `inout` argument
+fn demo():
+    g := Graph([Node(1), Node(2)])
+    g.edge(1).weight = 10        # write in place through the projection — no copy
+    w := g.edge(0).weight        # read through it
+    println(str(w))
 ```
 
 The following rules are checked at compile time and MUST be enforced; each fails

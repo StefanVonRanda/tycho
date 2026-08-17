@@ -178,6 +178,14 @@ def main():
                 nskip += 1
                 print("    skip  %s:%d  %s" % (f, line, skip))
                 continue
+            # `...` is not Tycho. A fence using it as an elided body is showing
+            # the SHAPE of a construct, not a program -- filling the bodies in
+            # would obscure the very thing it illustrates.
+            if re.search(r'^[ \t]*\.\.\.[ \t]*$', body, re.M):
+                nskip += 1
+                print("    skip  %s:%d  a shape illustration: `...` marks an elided body"
+                      % (f, line))
+                continue
             # the block that follows decides what this fence claims
             want = None       # ```output -> run it, stdout must match
             expect_fail = False   # a block naming an error -> it must NOT compile

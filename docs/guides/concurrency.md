@@ -97,6 +97,20 @@ On the compute-bound reduction this keeps up with C-pthreads here: 37 ms vs C's 
 items until the channel is closed **and** drained:
 
 ```tycho
+struct Job:
+    id: int
+
+fn work(j: Job) -> int:
+    return j.id
+
+fn produce(ch: Channel(Job), n: int):
+    for i := 0; i < n; i += 1:
+        send(ch, Job(i))
+    close(ch)
+
+n := 8
+results := 0
+
 jobs := channel(Job, 16)            # cap bounds buffered work — backpressure
 pr := spawn produce(jobs, n)        # producer sends, then close(jobs) when done
 parallel for j in jobs:             # K = ncpu() workers share the one queue

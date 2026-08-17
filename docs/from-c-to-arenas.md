@@ -60,6 +60,7 @@ type.** You cannot store or return a pointer into another value's memory, and as
 copies:
 
 ```tycho
+a := [1, 2, 3]
 b := a        # b is an independent copy, not an alias
 ```
 
