@@ -490,7 +490,7 @@
         <ul class="feat">
           <li><b>Concurrency</b><span>spawn, channels, parallel-for</span></li>
           <li><b>FFI to C</b><span>extern fn, handles, bytes</span></li>
-          <li><b>Packages + corelib</b><span>import, 38 modules</span></li>
+          <li><b>Packages + corelib</b><span>import, 45 packages</span></li>
         </ul>
       </div>
     </div>
@@ -504,7 +504,7 @@
     <p class="marker rv"><span class="n">§04</span> How it's checked</p>
     <h2 class="rv">An experiment, but a heavily-checked one.</h2>
     <div class="spec2 rv">
-      <div class="row"><span class="k">Compilers</span><span class="v">Two: a reference written in C, and a frozen compiler <b>written in Tycho that compiles itself</b>, running on the same implicit arenas it emits.</span></div>
+      <div class="row"><span class="k">Compilers</span><span class="v">One: a reference written in C. An earlier compiler written in Tycho <b>proved self-hosting and is now retired</b> — its 17,244 lines stay in the corpus as the largest single test input.</span></div>
       <div class="row"><span class="k">Corpus</span><span class="v"><span class="cmd">make test</span> builds and runs <b>723 fixtures</b> against committed goldens, each under ASan/UBSan/LeakSanitizer.</span></div>
       <div class="row"><span class="k">Sanitizers</span><span class="v">A fuzzer runs random programs through <b>two builds of each program</b> — native <span class="cmd">-O2</span> against ASan/UBSan — and the disagreement is the oracle; every example is built twice and compared to a golden.</span></div>
       <div class="row"><span class="k">Gate</span><span class="v"><span class="cmd">make ci</span> runs the whole check suite on your own machine — there's no cloud CI to take on faith.</span></div>
