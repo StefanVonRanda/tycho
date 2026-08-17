@@ -111,6 +111,7 @@ enum Status:
 
 status := Active
 
+
 label := match status:          # inferred type (all arms must agree)
     Active:
         "on"

@@ -560,6 +560,7 @@ returns `default` on a miss instead of the zero value — the same read, spelled
 a method:
 
 ```tycho
+counts := ["ada": 1]
 counts["ada"] = counts.get("ada", 0) + 1   # equivalent to counts["ada"] += 1
 ```
 
@@ -573,6 +574,7 @@ iterate a map; `k in m` only tests membership. For a newtype or fieldless-enum
 key type, `keys` returns the wrapped key values.
 
 ```tycho
+counts := ["ada": 1, "alan": 2]
 for k in keys(counts):
     println(k + " = " + str(counts[k]))
 ```
@@ -763,6 +765,13 @@ match s:
   declare-then-assign-in-each-arm form (§14).
 
 ```tycho
+enum Status:
+    Active
+    Idle
+    Done
+
+status := Active
+
 label := match status:          # value match — each arm ends in a value expression
     Active:  "on"
     Idle:    "waiting"

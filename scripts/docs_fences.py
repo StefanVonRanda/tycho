@@ -38,7 +38,9 @@ SKIP = re.compile(r'^[ \t]*<!--[ \t]*fence-skip:[ \t]*(.*?)[ \t]*-->[ \t]*$', re
 DECL = re.compile(r'^[ \t]*(package|import)[ \t]')
 TOPDECL = re.compile(r'^(struct|enum|type|const|handle|fn|extern|subscript)[ \t]')
 DECLNAME = re.compile(r'^(?:struct|enum|type|const|handle|subscript|fn)[ \t]+([A-Za-z_]\w*)')
-BINDNAME = re.compile(r'^[ \t]*([A-Za-z_]\w*)[ \t]*:=')
+# TOP-LEVEL bindings only: a `xs :=` inside a loop body is not in scope for a
+# later fence, so treating it as one drops the outer binding and breaks the page.
+BINDNAME = re.compile(r'^([A-Za-z_]\w*)[ \t]*:=')
 HASFN = re.compile(r'^[ \t]*(extern[ \t]+("[^"]*"[ \t]+)?)?fn[ \t]', re.M)
 # a line that is only an expression: no :=, no =, not a statement keyword
 STMT_KW = re.compile(r'^[ \t]*(if|for|while|match|return|push|delete|println|print|'
@@ -57,6 +59,13 @@ def fences(text):
         sm = SKIP.match(tail.strip())
         out.append((m.group(1), m.group(2), line, sm.group(1) if sm else None))
     return out
+
+
+def heading_lines(text):
+    """Line numbers of `##`-level headings: a section is the scope a reader
+       assumes, so the carry-over resets there. A page that reuses `a` for an
+       array in one section and a struct in another is not inconsistent."""
+    return [i for i, l in enumerate(text.split('\n'), 1) if re.match(r'^## ', l)]
 
 
 def bind_bare(body):
@@ -170,8 +179,13 @@ def main():
     for f in files:
         text = open(os.path.join(ROOT, f), encoding='utf-8', errors='replace').read()
         fs = fences(text)
+        heads = heading_lines(text)
         carry = ""
+        last_line = 0
         for i, (lang, body, line, skip) in enumerate(fs):
+            if any(last_line < h < line for h in heads):
+                carry = ""      # new section: the previous one's names are out of scope
+            last_line = line
             if lang == 'c':
                 # a C fence is checked for SYNTAX only: most are excerpts of a
                 # shim or of emitted code, so they will not link, but a snippet
