@@ -386,6 +386,30 @@ static atomic_size_t st_live, st_peak_live, st_alloc_calls, st_alloc_bytes,
                      st_os_bytes, st_os_blocks, st_block_gets,
                      st_arenas, st_arena_frees;
 
+/* ---- where the TIME goes (TYCHO_ARENA_STATS) -----------------------------
+ * The memory counters above show the model stays bounded. They say nothing
+ * about what it COSTS, and "no GC" is a claim about time as much as space.
+ *
+ * WHAT IS TIMED, AND WHAT IS DELIBERATELY NOT. Only the paths that can take
+ * real time: the malloc when the block pool cannot satisfy a request, and
+ * arena teardown. The bump allocator is NOT timed and must not be -- a bump is
+ * a few nanoseconds and clock_gettime is an order of magnitude more, so timing
+ * it would report mostly the cost of asking what time it is, and would slow the
+ * very path the design exists to keep fast. Its COUNT is already reported; a
+ * per-bump cost belongs in a microbenchmark, not in a counter that changes the
+ * thing it counts.
+ *
+ * So `os` + `teardown` against `wall` reads as: everything not accounted for
+ * here is the program doing its own work. That is the number worth having. */
+static atomic_size_t st_ns_os, st_ns_teardown;
+static uint64_t st_t0_ns;                    /* set by the constructor, before main */
+
+static uint64_t st_now_ns(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000000000u + (uint64_t)ts.tv_nsec;
+}
+
 static void st_peak_up(atomic_size_t *pk, size_t cur) {   /* high-water CAS, shared by the global and per-label counters */
     size_t p = atomic_load_explicit(pk, memory_order_relaxed);
     while (cur > p && !atomic_compare_exchange_weak_explicit(
@@ -488,6 +512,30 @@ static void stats_dump(void) {
         reuse, gets, gets ? 100.0 * (double)reuse / (double)gets : 0.0,
         (size_t)atomic_load(&st_arenas), (size_t)atomic_load(&st_arena_frees));
 
+    /* Time. `rest` is wall minus what the arena spent, so it is the program's
+     * own work PLUS the untimed bump path -- named that way rather than called
+     * "application time", because a bump is not free and this does not measure
+     * it. Threads make the arena figures a SUM across threads, which can exceed
+     * a wall clock; the percentages are marked when that happens rather than
+     * silently reading over 100. */
+    {
+        uint64_t wall = st_t0_ns ? (st_now_ns() - st_t0_ns) : 0;
+        double os_ns = (double)atomic_load(&st_ns_os);
+        double td_ns = (double)atomic_load(&st_ns_teardown);
+        double w = (double)wall;
+        const char *note = (w > 0.0 && os_ns + td_ns > w) ? "   (summed across threads; exceeds wall)" : "";
+        fprintf(stderr,
+            "  time:        %.3f ms wall\n"
+            "               %.3f ms in malloc from the OS (%.1f%%)\n"
+            "               %.3f ms in arena teardown (%.1f%%)%s\n"
+            "               the bump path is deliberately not timed -- see the note\n"
+            "               beside st_ns_os in the runtime; %zu allocations happened\n",
+            w / 1e6,
+            os_ns / 1e6, w > 0.0 ? 100.0 * os_ns / w : 0.0,
+            td_ns / 1e6, w > 0.0 ? 100.0 * td_ns / w : 0.0, note,
+            (size_t)atomic_load(&st_alloc_calls));
+    }
+
     StLbl *rows[TYCHO_NLBL]; int n = 0;
     for (int i = 0; i < TYCHO_NLBL; i++)
         if (atomic_load(&st_lbl[i].key) && atomic_load(&st_lbl[i].bytes)) rows[n++] = &st_lbl[i];
@@ -515,7 +563,7 @@ static void stats_dump(void) {
 __attribute__((constructor)) static void stats_init(void) {
     const char *e = getenv("TYCHO_ARENA_STATS");
     /* 1 = summary + the top TYCHO_LBL_SHOW functions; "full"/"all" = every function. */
-    if (e && *e && *e != '0') { g_arena_stats = (*e == 'f' || *e == 'a') ? 2 : 1; atexit(stats_dump); }
+    if (e && *e && *e != '0') { st_t0_ns = st_now_ns(); g_arena_stats = (*e == 'f' || *e == 'a') ? 2 : 1; atexit(stats_dump); }
     /* TYCHO_BLOCK: override the default block size (bytes). A measurement knob so
      * the block-size question is a sweep, not a rebuild; 0/absent = default. */
     const char *bs = getenv("TYCHO_BLOCK");
@@ -560,9 +608,11 @@ static HBlock *block_get(size_t cap) {
             b->next = NULL;
             return b;
         }
+    uint64_t t_os = g_arena_stats ? st_now_ns() : 0;
     HBlock *b = (HBlock *)malloc(sizeof(HBlock) + cap);
     if (!b) tycho_oom();
     if (g_arena_stats) {
+        atomic_fetch_add_explicit(&st_ns_os, (size_t)(st_now_ns() - t_os), memory_order_relaxed);
         atomic_fetch_add_explicit(&st_os_bytes, sizeof(HBlock) + cap, memory_order_relaxed);
         atomic_fetch_add_explicit(&st_os_blocks, 1, memory_order_relaxed);
     }
@@ -708,7 +758,9 @@ void arena_reset(Arena *a) {
 
 /* Release the arena entirely (scope/call end): all blocks go to the pool. */
 void arena_free(Arena *a) {
+    uint64_t t_td = 0;
     if (g_arena_stats) {
+        t_td = st_now_ns();
         atomic_fetch_add_explicit(&st_arena_frees, 1, memory_order_relaxed);
         st_drop_live(a);
     }
@@ -716,6 +768,8 @@ void arena_free(Arena *a) {
     a->freelist = NULL; a->nfree = 0;
     block_release_chain(a->head);
     a->head = NULL;
+    if (g_arena_stats)
+        atomic_fetch_add_explicit(&st_ns_teardown, (size_t)(st_now_ns() - t_td), memory_order_relaxed);
 }
 
 /* ---- tasks (CC-1: `spawn f(args)` / `wait(t)`) --------------------------
