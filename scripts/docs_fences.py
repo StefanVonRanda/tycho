@@ -65,7 +65,11 @@ def bind_bare(body):
     k = [0]
     for l in body.split('\n'):
         s = l.split('#')[0].rstrip()
-        if (s.strip() and not STMT_KW.match(s) and not DECL.match(s)
+        # ONLY a top-level line: an indented line is inside a block, and a match
+        # arm (`Ok(fd): fd`) rewritten to `_fenceN := Ok(fd): fd` is not an
+        # expression at all -- that mangling was reported as a doc defect.
+        if (s[:1] not in (' ', '\t')
+                and s.strip() and not STMT_KW.match(s) and not DECL.match(s)
                 and ':=' not in s and not re.search(r'[^=!<>]=[^=]', s)
                 and not s.rstrip().endswith(':')
                 and re.match(r'^[ \t]*[A-Za-z_"\[(]', s)):
@@ -131,7 +135,12 @@ def wrap(body, preamble=""):
         (head if DECL.match(l) else rest).append(l)
     decls, stmts = split_top('\n'.join(rest))
     inner = '\n'.join('    ' + l if l.strip() else l for l in stmts.split('\n'))
-    return '\n'.join(head) + '\n' + decls + '\nfn main():\n' + inner + '\n    return\n'
+    top = '\n'.join(head)
+    # an `import` needs the file to declare its own package first
+    if any(l.lstrip().startswith('import') for l in head) and \
+       not any(l.lstrip().startswith('package') for l in head):
+        top = 'package main\n' + top
+    return top + '\n' + decls + '\nfn main():\n' + inner + '\n    return\n'
 
 
 def compiles(src, tmp, run=False):
