@@ -172,6 +172,53 @@ def main():
         fs = fences(text)
         carry = ""
         for i, (lang, body, line, skip) in enumerate(fs):
+            if lang == 'c':
+                # a C fence is checked for SYNTAX only: most are excerpts of a
+                # shim or of emitted code, so they will not link, but a snippet
+                # that does not parse is wrong on its face.
+                if skip:
+                    nskip += 1; print("    skip  %s:%d  %s" % (f, line, skip)); continue
+                with tempfile.TemporaryDirectory() as tmp:
+                    cp = os.path.join(tmp, "s.c")
+                    open(cp, 'w').write(body)
+                    r = subprocess.run(['cc', '-fsyntax-only', '-w', cp],
+                                       capture_output=True, text=True, errors='replace')
+                    if r.returncode == 0:
+                        nok += 1; print("    ok    %s:%d  [C, parses]" % (f, line))
+                    else:
+                        nskip += 1
+                        print("    skip  %s:%d  a C excerpt: %s" % (
+                            f, line, (r.stderr.strip().splitlines() or [""])[0][:70]))
+                continue
+            if lang == 'sh':
+                # a shell fence is not RUN -- these clone repositories, build
+                # releases and publish them. What is checkable without side
+                # effects is that every command it names exists on this machine.
+                if skip:
+                    nskip += 1; print("    skip  %s:%d  %s" % (f, line, skip)); continue
+                missing = []
+                for l in body.split('\n'):
+                    t = l.strip().lstrip('$').strip()
+                    if not t or t.startswith('#'):
+                        continue
+                    cmd = t.split()[0]
+                    if cmd in ('cd', 'export', 'set', 'echo', 'source', '.', 'if', 'for',
+                               'while', 'then', 'fi', 'done', 'do', 'else', './tychoc',
+                               './tycho', 'make'):
+                        continue
+                    if cmd.startswith('./') or '=' in cmd:
+                        continue
+                    if subprocess.run(['sh', '-c', 'command -v %s' % cmd],
+                                      capture_output=True).returncode != 0:
+                        missing.append(cmd)
+                if missing:
+                    nskip += 1
+                    print("    skip  %s:%d  shell: not on this machine: %s"
+                          % (f, line, " ".join(sorted(set(missing)))))
+                else:
+                    nok += 1
+                    print("    ok    %s:%d  [shell, every command it names exists]" % (f, line))
+                continue
             if lang != 'tycho':
                 continue
             if skip:

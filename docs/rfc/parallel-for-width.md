@@ -110,7 +110,17 @@ Neither: **the counting form already binds the identity**, and the width slot
 this RFC added supplies the count.
 
 ```tycho
-parallel(N) for wid in 0..<N:      # N workers, each with its own wid
+struct Config:
+    root: string
+
+fn accept_loop(cfg: Config, srv: int, wid: int) -> int:
+    return wid
+
+N := 4
+cfg := Config(".")
+srv := 0
+
+parallel(4) for wid in 0..<N:      # N workers, each with its own wid
     accept_loop(cfg, srv, wid)
 ```
 

@@ -199,9 +199,9 @@ needs `A` to run first says so, and then the order is a property of the
 statements rather than of the backend:
 
 ```tycho
-    x := side("A")
-    y := side("B")
-    println(x + y)
+    p := side("A")
+    q := side("B")
+    println(p + q)
 ```
 
 The two pinned exceptions above do not extend to this case. Both were pinned on

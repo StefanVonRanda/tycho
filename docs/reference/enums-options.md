@@ -104,6 +104,13 @@ plain `x =` / place assignment, or a `return`. The value of the taken branch/arm
 value bound, assigned, or returned:
 
 ```tycho
+enum Status:
+    Active
+    Idle
+    Done
+
+status := Status.Active
+
 label := match status:          # inferred type (all arms must agree)
     Active:
         "on"

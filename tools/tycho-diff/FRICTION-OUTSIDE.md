@@ -113,6 +113,7 @@ frontier array `v` and must snapshot it at every edit distance to backtrack late
 In C that is a `memcpy` per round and a lifetime question; in a GC'd language it
 is a `.clone()` you must remember. Here:
 
+<!-- fence-skip: quoted from the program that hit this friction; `trace` belongs to that program, not to this document -->
 ```tycho
 push(trace, v)      # a SNAPSHOT, not an alias
 ```

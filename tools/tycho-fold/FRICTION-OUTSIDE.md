@@ -13,6 +13,7 @@ one non-author, so the item is not closed.**
 
 ## 1. `utf8.decode` returns a tuple, and a zero-length step is a live hazard
 
+<!-- fence-skip: quoted from the program that hit this friction; `utf8` belongs to that program, not to this document -->
 ```tycho
 cp, nb := utf8.decode(line, i)
 if nb <= 0:

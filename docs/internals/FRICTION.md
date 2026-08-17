@@ -2757,6 +2757,7 @@ elements directly.
 **There is a working form, one line longer**, and it is worth knowing because
 the two refusals above read like "arrays of tuples are unusable":
 
+<!-- fence-skip: quoted from the program that hit this friction; `xs` belongs to that program, not to this document -->
 ```tycho
 for p in xs:
     k, q := p            # destructure the loop variable in the body
@@ -4032,6 +4033,7 @@ message, at `08f50a5f`:
 
 **So the only expressible shape is point-free.** Nothing may be named:
 
+<!-- fence-skip: quoted from the program that hit this friction; `doc` belongs to that program, not to this document -->
 ```tycho
 doc.render(doc.join(doc.of(expand_all(text, keys, vals)),
                     doc.add(doc.empty(), "-- rendered " + str(n) + " line(s)")),
@@ -4078,6 +4080,7 @@ reject siblings and `tests/reject/variadic_empty_untyped.ty` pin the refusals.
 
 ### 38. ~~A variadic called through a package qualifier did not pack~~ — **FIXED 2026-08-14**
 
+<!-- fence-skip: quoted from the program that hit this friction; `vp` belongs to that program, not to this document -->
 ```tycho
 vp.sum(1, 2, 3)     # error: 'vp__sum' takes 1 argument(s), got 3
 local_sum(1, 2, 3)  # fine -- the same declaration, called unqualified
@@ -4096,6 +4099,7 @@ saw it: every variadic call in the tree was same-package.
 
 ### 39. ~~Explicit type arguments did not parse on a qualified name~~ — **FIXED 2026-08-14**
 
+<!-- fence-skip: quoted from the program that hit this friction; `vp` belongs to that program, not to this document -->
 ```tycho
 vp.ident$(int)(5)   # error: expected ')'   <-- pointing at the '$'
 ```
@@ -4110,6 +4114,7 @@ Appendix A, §7.5 and §15.3 all moved with it.
 
 ### 40. ~~An empty generic variadic refused the type it was handed~~ — **FIXED 2026-08-14**
 
+<!-- fence-skip: quoted from the program that hit this friction; `names from its own program` belongs to that program, not to this document -->
 ```tycho
 count$(int)()   # error: cannot infer the element type of an empty variadic
                 #        call to generic 'count'; pass at least one argument
@@ -4171,6 +4176,7 @@ and zero goldens pinned a mangled name (measured before the change), and
 
 ### 42. ~~`for k in m` reported an index the user never wrote~~ — **FIXED 2026-08-14**
 
+<!-- fence-skip: quoted from the program that hit this friction; `names from its own program` belongs to that program, not to this document -->
 ```tycho
 for k in m:        # error: map key must be string, got int
 ```
@@ -4242,6 +4248,7 @@ which is the one thing that can produce a handle (an `extern` opener).
 
 ### 44. ~~A BARE handle as a struct field was accepted~~ — **FIXED 2026-08-14**
 
+<!-- fence-skip: quoted from the program that hit this friction; `File` belongs to that program, not to this document -->
 ```tycho
 struct S:
     f: File      # accepted; every other aggregate refuses it
@@ -4377,6 +4384,7 @@ both real users already use.
 
 ### 47. ~~A deprecated function taken as a VALUE warned nowhere~~ — **FIXED 2026-08-14**
 
+<!-- fence-skip: quoted from the program that hit this friction; `stale` belongs to that program, not to this document -->
 ```tycho
 f := stale        # no warning
 println(str(f(1)))  # and none here either -- the call names `f`
