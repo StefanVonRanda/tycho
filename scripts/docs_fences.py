@@ -29,6 +29,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TYCHOC = os.path.join(ROOT, "tychoc")
@@ -259,6 +260,10 @@ def main():
                               "generated file it was cut from]" % (f, line))
                 continue
             if lang == 'sh':
+                # join `\`-continuations first: otherwise the second physical line
+                # of a wrapped command looks like a command of its own, and a bare
+                # URL is reported as "not on this machine"
+                joined = re.sub(r'\\\n\s*', ' ', body)
                 # A TEMPLATE names a file the prose tells the reader to create.
                 # The gate creates it -- from the page's next Tycho fence, which
                 # is the snippet the prose means -- and runs the command for real.
@@ -388,9 +393,98 @@ def main():
                               "it exits %d: %s" % (f, line, r.returncode,
                               (r.stderr.strip().splitlines() or [""])[-1][:44]))
                     continue
-                unsafe = [u for u in UNSAFE if u in body]
+                # A fence that STARTS tycho-httpd and then talks to it is the
+                # one shell fence whose subject is BEHAVIOUR rather than a
+                # command line, so stubbing curl would turn every documented
+                # status code into a stub's exit 0. Run it against a real
+                # server instead: bind `--port 0` so the kernel picks (nothing
+                # depends on 8080 being free), read the bound port out of the
+                # banner exactly as `server/run.sh` does, and substitute it.
+                if './tycho-httpd' in joined and '--port' in joined:
+                    if not os.access(os.path.join(ROOT, 'tychoc'), os.X_OK):
+                        nskip += 1
+                        print("    skip  %s:%d  needs ./tychoc to build the server -- "
+                              "run 'make' first" % (f, line)); continue
+                    with tempfile.TemporaryDirectory() as tmp:
+                        srv = os.path.join(tmp, 'tycho-httpd')
+                        b = subprocess.run([os.path.join(ROOT, 'tychoc'),
+                                            'server/main.ty', '-o', srv],
+                                           capture_output=True, text=True, cwd=ROOT,
+                                           timeout=300, errors='replace')
+                        if b.returncode != 0:
+                            nfail += 1
+                            fails.append("%s:%d -- server/main.ty does not build: %s"
+                                         % (f, line,
+                                            (b.stderr.strip().splitlines() or [""])[-1][:60]))
+                            continue
+                        errlog = os.path.join(tmp, 'srv.err')
+                        with open(errlog, 'wb') as eh:
+                            proc = subprocess.Popen(
+                                [srv, '--root', 'server/www', '--host', '127.0.0.1',
+                                 '--port', '0'], cwd=ROOT, stdout=subprocess.DEVNULL,
+                                stderr=eh, stdin=subprocess.DEVNULL)
+                        try:
+                            port, t0 = None, time.time()
+                            while time.time() - t0 < 10.0:
+                                seen = open(errlog, 'rb').read().decode('utf-8', 'replace')
+                                m = re.search(r'on http://\S+:(\d+)/', seen)
+                                if m:
+                                    port = m.group(1); break
+                                if proc.poll() is not None:
+                                    break
+                                time.sleep(0.02)
+                            if port is None:
+                                nfail += 1
+                                fails.append("%s:%d -- tycho-httpd printed no readiness "
+                                             "banner within 10s" % (f, line))
+                                continue
+                            cmds = [l for l in joined.split('\n')
+                                    if l.strip() and './tycho-httpd' not in l]
+                            script = "\n".join(cmds).replace(':8080', ':' + port)
+                            r = subprocess.run(['sh', '-e', '-c', script],
+                                               capture_output=True, text=True, cwd=ROOT,
+                                               timeout=60, errors='replace',
+                                               stdin=subprocess.DEVNULL)
+                            if 'curl' not in script and r.returncode == 0:
+                                # the fence starts the server and says "open
+                                # this" -- so the documented claim is that the
+                                # URL serves, and nothing in the fence checks it
+                                r = subprocess.run(
+                                    ['curl', '-so', '/dev/null', '-w', '%{http_code}',
+                                     'http://127.0.0.1:%s/' % port],
+                                    capture_output=True, text=True, timeout=30,
+                                    errors='replace', stdin=subprocess.DEVNULL)
+                        finally:
+                            proc.kill(); proc.wait()
+                    # every `# comment` on those lines is an assertion, so the
+                    # expected answers are READ OUT OF THE FENCE rather than
+                    # hard-coded here: a status code or a content type the prose
+                    # promises must appear in what curl printed. `-e` covers the
+                    # rest (a `cmp` that differs, a `grep` that matches nothing)
+                    cmts = " ".join(re.findall(r'#(.*)$', joined, re.M))
+                    # an octet of a dotted address is not a status code
+                    want = sorted(set(re.findall(r'(?<![.:\d])[1-5]\d\d(?![.\d])', cmts))
+                                  | set(re.findall(r'\b[a-z]+/[a-z0-9+.-]+\b', cmts)))
+                    got = [w for w in want if w in r.stdout]
+                    want = [w for w in want if w not in r.stdout]
+                    if r.returncode == 0 and not want:
+                        nok += 1; nsh += 1
+                        # say what was asserted, not what the richest fence
+                        # asserts -- these two fences check different things
+                        print("    ok    %s:%d  [RAN against a real tycho-httpd on port %s, "
+                              "exit 0%s]" % (f, line, port,
+                              (": " + ", ".join(got)) if got
+                              else "; the root it says to open answers 200"))
+                    else:
+                        nfail += 1
+                        fails.append("%s:%d -- run against a real tycho-httpd exits %d%s"
+                                     % (f, line, r.returncode,
+                                        (", and curl never printed " + "/".join(want))
+                                        if want else ""))
+                    continue
+                unsafe = [u for u in UNSAFE if u in joined]
                 missing = []
-                for l in body.split('\n'):
+                for l in joined.split('\n'):
                     t = l.strip().lstrip('$').strip()
                     if not t or t.startswith('#'):
                         continue
