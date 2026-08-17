@@ -214,8 +214,15 @@ def main():
                 PRELUDE = ("#include <stdio.h>\n#include <stdlib.h>\n"
                            "#include <string.h>\n#include <stdint.h>\n"
                            "typedef int64_t tycho_int;\n"
-                           "typedef struct Arena Arena;\n"
-                           "typedef struct { char *data; tycho_int len; } TychoStr;\n")
+                           "typedef struct Arena { char *base; size_t used, cap; "
+                           "struct Arena *parent; } Arena;\n"
+                           "typedef struct Region { Arena *a; } Region;\n"
+                           "typedef struct { char *data; tycho_int len; } TychoStr;\n"
+                           # the arena API these excerpts are excerpts OF
+                           "Arena *arena_new(Arena *parent);\n"
+                           "void *arena_alloc(Arena *a, size_t n);\n"
+                           "void arena_free(Arena *a);\n"
+                           "void arena_reset(Arena *a);\n")
                 with tempfile.TemporaryDirectory() as tmp:
                     cp = os.path.join(tmp, "s.c")
                     forms = [("as written", PRELUDE + body),
