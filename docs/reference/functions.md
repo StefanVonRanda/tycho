@@ -178,10 +178,13 @@ This extends to the built-ins that take a receiver-shaped first argument, so the
 reach for most read the same way your own functions do:
 
 ```tycho
-s.split(",")            # == split(s, ",")
+s := "a,b"
+xs := [1, 2]
+
+parts := s.split(",")   # == split(s, ",")
 xs.push(9)              # == push(xs, 9)
-xs.len()                # == len(xs)
-n.to_float()            # == to_float(n)
+k := xs.len()           # == len(xs)
+f := n.to_float()       # == to_float(n)
 ```
 
 `recv.name(args)` on a built-in lowers to `name(recv, args)` and is checked by the exact same

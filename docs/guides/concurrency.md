@@ -143,6 +143,11 @@ queue; `send` blocks on a full channel, which is the loop's backpressure.
 ## Channels — the one shared object
 
 ```tycho
+fn consumer(ch: Channel(string)) -> int:
+    return 0
+
+i := 1
+
 ch := channel(string, 256)        # bounded; created here, freed at THIS scope's exit
 w := spawn consumer(ch)           # fn consumer(ch: Channel(string)) -> int
 ch.send("item-" + str(i))         # deep copy IN (blocks when full; dies if closed)

@@ -101,10 +101,21 @@ declaration's direct right-hand side.
 (non-blocking) and `closed` (every listed channel closed and drained) arm:
 
 ```tycho
+fn do_job(j: int):
+    println("job " + str(j))
+
+fn note(e: string):
+    println("event " + e)
+
+jobs := channel(int, 4)
+events := channel(string, 4)
+close(jobs)
+close(events)
+
 for true:
     select:
         recv(jobs, j):
-            handle(j)
+            do_job(j)
         recv(events, e):
             note(e)
         closed:
