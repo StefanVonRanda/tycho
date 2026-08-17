@@ -87,10 +87,23 @@ the backing buffer; no pointer is exposed to Tycho, and the projection is
 bounds-checked exactly as a read is (§16.2). The following are all places:
 
 ```tycho
+struct Tagged:
+    x: int
+    tags: [string]
+
+fn bump(n: inout int):
+    n = n + 1
+
+a := [1, 2, 3]
+i := 0
+v := 9
+ps := [Tagged(1, ["a"]), Tagged(2, ["b"])]
+grid := [[10, 20], [30, 40]]
+
 a[i] = v                 # replace an element
 ps[0].x = 10             # a field of a struct element
 push(ps[0].tags, "x")    # grow an array-valued field of an element, in place
-grid[1][2] = 60          # an element of a nested array
+grid[1][1] = 60          # an element of a nested array
 bump(&ps[1].x)           # a field of an element passed as an `inout` argument
 ```
 
@@ -376,6 +389,13 @@ nesting and through array-valued fields, and a field MAY be taken as an `inout`
 argument; all of these are **places**:
 
 ```tycho
+struct Span:
+    lo: Point
+    hi: Point
+
+r := Span(Point(0, 0), Point(1, 1))
+p := Tagged(5, ["a"])
+
 r.lo.x = 100             # a nested-struct field, in place
 p.tags[0] = "x"          # an element of an array-valued field
 push(p.tags, "y")        # grow an array-valued field, in place
@@ -485,9 +505,16 @@ uniquely owned at the mutation and updates it in place, so a `+=` loop is O(n)
 total, not O(n²):
 
 ```tycho
-counts[w] += 1                    # zero-initialized on first sight, then incremented
-push(index[term], doc)            # grow a [string: [int]] value in place
-totals[user].balance = 0          # mutate a struct-valued entry's field in place
+struct Account:
+    balance: int
+
+counts := []string: int
+index := []string: [int]
+totals := ["ada": Account(10)]
+
+counts["ada"] += 1                # zero-initialized on first sight, then incremented
+push(index["tycho"], 1)           # grow a [string: [int]] value in place
+totals["ada"].balance = 0         # mutate a struct-valued entry's field in place
 ```
 
 ### 18.3 `m[k]` as an rvalue — reading never inserts
@@ -522,7 +549,7 @@ returns `default` on a miss instead of the zero value — the same read, spelled
 a method:
 
 ```tycho
-counts[w] = counts.get(w, 0) + 1    # equivalent to counts[w] += 1
+counts["ada"] = counts.get("ada", 0) + 1   # equivalent to counts["ada"] += 1
 ```
 
 ### 18.6 `keys(m)`

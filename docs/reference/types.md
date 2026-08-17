@@ -120,10 +120,18 @@ call arguments, `return`, stores, literal elements — *checks* the expression a
 This is Pierce–Turner local inference, and it lets the annotation-light forms work:
 
 ```tycho
+import "core:iter"
+
+fn tally(m: [string: int], extra: [int]) -> int:
+    return len(m) + len(extra)
+
+em := []string: int
+f := 1.5
+
 xs : [int] = []              # bare [] takes the expected array type
-counts(em, [])               # ...in argument position too
+n := tally(em, [])           # ...in argument position too
 g := f + 2                   # an int literal adapts to a float context (f : float)
-iter.map(xs, fn(x): x * 2)   # lambda params + return from the expected fn type
+doubled := iter.map(xs, fn(x: int) -> int: x * 2)   # lambda params from the expected fn type
 
 ys := []                     # a bare decl stays pending...
 push(ys, 3)                  # ...until its first grounding use types it ([int])

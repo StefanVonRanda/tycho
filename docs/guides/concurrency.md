@@ -38,6 +38,9 @@ Concurrency works in `tychoc`, the reference transpiler.
 ## spawn / wait — structured tasks
 
 ```tycho
+fn count(path: string) -> int:
+    return len(path)
+
 t := spawn count("a.txt")     # args deep-copied into the task's arena, then the thread starts
 u := spawn count("b.txt")
 total := wait(t) + u.wait()   # join; result deep-copied into the waiting scope; task arena freed

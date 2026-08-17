@@ -38,6 +38,7 @@ SKIP = re.compile(r'^[ \t]*<!--[ \t]*fence-skip:[ \t]*(.*?)[ \t]*-->[ \t]*$', re
 DECL = re.compile(r'^[ \t]*(package|import)[ \t]')
 TOPDECL = re.compile(r'^(struct|enum|type|const|handle|fn|extern|subscript)[ \t]')
 DECLNAME = re.compile(r'^(?:struct|enum|type|const|handle|subscript|fn)[ \t]+([A-Za-z_]\w*)')
+BINDNAME = re.compile(r'^[ \t]*([A-Za-z_]\w*)[ \t]*:=')
 HASFN = re.compile(r'^[ \t]*(extern[ \t]+("[^"]*"[ \t]+)?)?fn[ \t]', re.M)
 # a line that is only an expression: no :=, no =, not a statement keyword
 STMT_KW = re.compile(r'^[ \t]*(if|for|while|match|return|push|delete|println|print|'
@@ -97,6 +98,17 @@ def split_top(text):
 def declared(text):
     """Top-level names a fence declares, so the carry-over does not redeclare them."""
     return {m.group(1) for m in (DECLNAME.match(l) for l in text.split('\n')) if m}
+
+
+def bound(text):
+    """`name :=` bindings a fence makes; the carry must not bind them again."""
+    return {m.group(1) for m in (BINDNAME.match(l) for l in text.split('\n')) if m}
+
+
+def drop_binds(text, names):
+    """Drop `name := ...` lines the current fence rebinds."""
+    return '\n'.join(l for l in text.split('\n')
+                     if not (BINDNAME.match(l) and BINDNAME.match(l).group(1) in names))
 
 
 def drop_decls(text, names):
@@ -191,19 +203,20 @@ def main():
                 if carry:
                     # the carry must not redeclare what this fence declares --
                     # a page that shows `struct Point` twice is not an error
-                    pre = drop_decls(carry, declared(body) | {"main"})
+                    pre = drop_binds(drop_decls(carry, declared(body) | {"main"}), bound(body))
                     attempts += [("wrapped, with this page's earlier fences", wrap(body, pre)),
                                  ("wrapped, earlier fences, bare expressions bound",
                                   wrap(bind_bare(body), pre)),
                                  ("this page's earlier fences, as written", pre + "\n" + body)]
 
-                err = ""
+                errs = {}
                 if os.environ.get("DUMP") == "%s:%d" % (f, line):
                     for how, src in attempts:
                         print("----- attempt: %s\n%s" % (how, src), file=sys.stderr)
                 for how, src in attempts:
-                    got, err = compiles(src, tmp, run=bool(want))
+                    got, e = compiles(src, tmp, run=bool(want))
                     if got is None:
+                        errs[how] = e
                         continue
                     if want is not None:
                         if got.strip() != want.strip():
@@ -220,6 +233,15 @@ def main():
                     break
                 else:
                     nfail += 1
+                    # report the most CONTEXTUAL attempt's error: the last one is
+                    # "as written with the carry prepended", which always fails
+                    # with "expected 'fn'" because Tycho has no top-level
+                    # statements -- true, and never the reason the fence is broken.
+                    order = ["wrapped, earlier fences, bare expressions bound",
+                             "wrapped, with this page's earlier fences",
+                             "wrapped, bare expressions bound",
+                             "wrapped in a main", "+ an empty main", "as written"]
+                    err = next((errs[k] for k in order if errs.get(k)), "")
                     first = [l for l in err.split('\n') if 'error:' in l]
                     fails.append("%s:%d -- %s" % (f, line, first[0].strip() if first else "does not compile"))
             # only a fence that COMPILED joins the carry-over: a broken one would
@@ -227,7 +249,8 @@ def main():
             if ok_body is not None:
                 # a page may show `struct Point` in several fences; keep the
                 # newest declaration of each name so the carry stays compilable
-                carry = drop_decls(carry, declared(ok_body)) + "\n" + ok_body + "\n"
+                carry = (drop_binds(drop_decls(carry, declared(ok_body)), bound(ok_body))
+                         + "\n" + ok_body + "\n")
 
     for x in fails:
         print("docs-fences: FAIL " + x, file=sys.stderr)

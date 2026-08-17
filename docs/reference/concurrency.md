@@ -50,6 +50,9 @@ function can never return while its tasks run, and an un-waited task can never l
 ## `parallel for`
 
 ```tycho
+fn score(i: int) -> int:
+    return i % 7
+
 total := 0
 parallel for i in 0..<1000000:      # K = min(ncpu(), 64) chunk tasks (TYCHO_THREADS overrides)
     total += score(i)               # reduction: chunk-local partials, folded at join
