@@ -932,7 +932,8 @@ class Gen:
             env[b] = t0
             return
 
-            n = self.r.randint(1, 4)                # empty literal, push, len, a[i].f read/write, gather)
+        if k == "soa_use":       # empty literal, push, len, a[i].f read/write, gather
+            n = self.r.randint(1, 4)
             s = self.fresh("sp"); kk = self.fresh("k"); g = self.fresh("g"); ii = self.fresh("i")
             self.emit(ind, s + " := soa []SoaP")
             self.count(ind, kk, str(n))
@@ -1167,8 +1168,9 @@ class Gen:
             self.count(ind, i, str(self.r.randint(2,3)))
             benv = dict(env); benv[i] = "int"
             if self.r.random() < 0.45:           # heap built, THEN a conditional break/continue:
-                bc = self.r.choice(["continue", "break"])   # the loop-iteration arena (and the
-                self.emit(ind+1, ls + " := mkarr(" + str(self.r.randint(1,4)) + ")")  # on the jump
+                bc = self.r.choice(["continue", "break"])
+                ls = self.fresh("ls")        # the loop-iteration arena must free on the jump
+                self.emit(ind+1, ls + " := mkarr(" + str(self.r.randint(1,4)) + ")")
                 self.emit(ind+1, "acc = acc + len(" + ls + ")")
                 self.emit(ind+1, "if " + i + " % 2 == 1:")
                 self.emit(ind+2, bc)

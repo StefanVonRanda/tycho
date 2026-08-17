@@ -81,8 +81,6 @@ def main():
         if (seed + 1) % 100 == 0:
             print("... %d/%d  ok=%d skip=%d FAIL=%d" % (seed + 1, n, tally["ok"], tally["skip"], tally["FAIL"]))
     print("DONE: ok=%d skip=%d FAIL=%d" % (tally["ok"], tally["skip"], tally["FAIL"]))
-          "\n      retired 2026-07-29 -- see this file's header. This is now a smoke"
-          "\n      test, not a differential.")
     sys.exit(1 if tally["FAIL"] else 0)
 
 if __name__ == "__main__":
