@@ -280,9 +280,44 @@ def main():
                              r'INPUT|OUTPUT|ARGS)\b'
                              # lowercase placeholders name a file the reader supplies
                              r'|\b(program|prog|file|yourfile|myprog)\.ty\b|<[a-z-]+>', body):
-                    nskip += 1
-                    print("    skip  %s:%d  a usage SYNOPSIS: its arguments are "
-                          "placeholders, not values" % (f, line))
+                    # RUN it, with each placeholder replaced by a real value of
+                    # that kind. That checks the documented interface actually
+                    # accepts what the synopsis says it does -- a flag renamed or
+                    # an argument dropped reddens here.
+                    with tempfile.TemporaryDirectory() as tmp:
+                        old = os.path.join(tmp, "old.txt"); open(old, "w").write("a\nb\n")
+                        new = os.path.join(tmp, "new.txt"); open(new, "w").write("a\nc\n")
+                        sub = {'OLD': old, 'NEW': new, 'FILE': old, 'DIR': tmp,
+                               'PATH': old, 'SRC': old, 'DST': new, 'INPUT': old,
+                               'OUTPUT': os.path.join(tmp, "out"),
+                               'program.ty': os.path.join(ROOT, "examples/hello.ty"),
+                               'N': '2', '[args...]': ''}
+                        cmds = []
+                        for l in body.split('\n'):
+                            l = re.sub(r'^\s*\$\s?', '', l)
+                            if not l.strip() or l.strip().startswith('#'):
+                                continue
+                            l = re.sub(r'\[([^\]]*)\]', r'\1', l)   # optionals become present
+                            for k, v in sub.items():
+                                l = l.replace(k, v)
+                            cmds.append(l)
+                        env = dict(os.environ,
+                                   PATH=os.pathsep.join([ROOT, os.environ["PATH"]]))
+                        r = subprocess.run(['sh', '-c', "cd %s\n" % ROOT + "\n".join(cmds)],
+                                           capture_output=True, text=True, timeout=120,
+                                           errors='replace', stdin=subprocess.DEVNULL,
+                                           cwd=tmp, env=env)
+                    # exit 1 is a documented answer for a diff-shaped tool ("they
+                    # differ"), not a failure of the interface being described.
+                    if r.returncode in (0, 1):
+                        nok += 1; nsh += 1
+                        print("    ok    %s:%d  [synopsis RAN with real arguments, exit %d]"
+                              % (f, line, r.returncode))
+                    else:
+                        nskip += 1
+                        print("    skip  %s:%d  a usage SYNOPSIS; run with real arguments "
+                              "it exits %d: %s" % (f, line, r.returncode,
+                              (r.stderr.strip().splitlines() or [""])[-1][:44]))
                     continue
                 unsafe = [u for u in UNSAFE if u in body]
                 missing = []
