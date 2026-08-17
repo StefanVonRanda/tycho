@@ -52,7 +52,7 @@ spec-check:
 	@sh scripts/spec_check.sh
 
 docs-fences: tychoc
-	@sh scripts/docs_fences.sh
+	@python3 scripts/docs_fences.py
 
 check-links:
 	@sh scripts/check_links.sh

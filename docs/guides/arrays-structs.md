@@ -33,11 +33,11 @@ exclusive borrow for the duration of a call and cannot be stored.
 # arrays — homogeneous, growable
 xs := [1, 2, 3]          # [int] inferred
 ys := []string           # empty; element type required when empty
-xs[0]                     # index read
+first := xs[0]            # index read
 xs[0] = 9                 # index write (in place)
-len(xs)                   # length
+n := len(xs)              # length
 push(xs, 4)               # append in place  (xs is inout)
-pop(xs)                    # remove last, returns it
+last := pop(xs)           # remove last, returns it
 
 # structs — nominal, fields are values
 struct Point:
@@ -45,14 +45,14 @@ struct Point:
     y: int
 
 p := Point(1, 2)           # positional construction, fields in declaration order
-p.x                        # field read
+px := p.x                  # field read
 p.y = 5                    # field write (in place)
 
 # nesting is just trees of values
 struct Line:
     a: Point
     b: Point
-labels: [string]           # a struct field that is an array, etc.
+labels: [string] = []      # a field that is an array, etc.
 ```
 
 No `null`. "Maybe a value" needs an optional/sum type (see §7); that is a

@@ -242,7 +242,8 @@ def main():
             # `...` is not Tycho. A fence using it as an elided body is showing
             # the SHAPE of a construct, not a program -- filling the bodies in
             # would obscure the very thing it illustrates.
-            if re.search(u'^[ \t]*(\\.\\.\\.|\u2026)[ \t]*$', body, re.M):
+            if re.search(u'^[ \t]*(\\.\\.\\.|\u2026)[ \t]*$|:[ \t]+(\\.\\.\\.|\u2026)[ \t]*$',
+                         body, re.M):
                 nskip += 1
                 print("    skip  %s:%d  a shape illustration: `...` marks an elided body"
                       % (f, line))

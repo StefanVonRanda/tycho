@@ -103,10 +103,11 @@ struct Job:
 fn work(j: Job) -> int:
     return j.id
 
-fn produce(ch: Channel(Job), n: int):
+fn produce(ch: Channel(Job), n: int) -> int:
     for i := 0; i < n; i += 1:
         send(ch, Job(i))
     close(ch)
+    return n
 
 n := 8
 results := 0
@@ -175,10 +176,21 @@ workers can take one. Send-after-close and double-close die loudly.
 ## select — multi-channel fan-in
 
 ```tycho
+fn do_job(j: int):
+    println("job " + str(j))
+
+fn note(e: string):
+    println("event " + e)
+
+jobs := channel(int, 4)
+events := channel(string, 4)
+close(jobs)
+close(events)
+
 for true:
     select:
         recv(jobs, j):
-            handle(j)
+            do_job(j)
         recv(events, e):
             note(e)
         closed:                   # every listed channel closed AND drained

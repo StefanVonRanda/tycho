@@ -135,6 +135,7 @@ wrong is treating the first binder as unavailable.
 
 The natural spelling for per-worker identity is a second binder:
 
+<!-- fence-skip: a REJECTED spelling, kept to show what was not proposed; `tests/reject/for_two_binders.ty` pins the refusal -->
 ```tycho
 parallel(4) for x, wid in work:     # NOT proposed
 ```

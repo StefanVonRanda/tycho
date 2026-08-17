@@ -120,12 +120,20 @@ label := match status:          # inferred type (all arms must agree)
     Done:
         "finished"
 
+a := 3
+b := 7
+
 max := if a > b:                # `elif` chains are allowed; an `else` is required
     a
 else:
     b
 
-return match parse(s):          # each arm's value is returned
+fn parse(t: string) -> Result(int, string):
+    return Ok(len(t))
+
+s := "42"
+
+x := match parse(s):            # each arm's value is the result
     Ok(v):
         v
     Err(_):
