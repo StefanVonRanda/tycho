@@ -325,6 +325,7 @@ compiler additionally models them as **diverging**: control does not leave the
 call. A conforming implementation MUST therefore accept either one as the tail of
 a value `if`/`match` branch, even though the branch produces no value:
 
+<!-- fence-skip: norun: binds a socket; built and type-checked, but the gate does not listen on a port -->
 ```tycho
 import "core:net"
 

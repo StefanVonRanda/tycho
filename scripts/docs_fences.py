@@ -152,17 +152,32 @@ def wrap(body, preamble=""):
     return top + '\n' + decls + '\nfn main():\n' + inner + '\n    return\n'
 
 
-def compiles(src, tmp, run=False):
+def compiles(src, tmp, run=False, execute=True):
+    """Build the fence, and RUN it. Returns (stdout, error) or (None, error).
+
+    Every fence that builds is executed, not only the ones with a stated
+    output: a snippet can compile and still abort on an index, a division or a
+    failed unwrap, and "it compiles" would call that verified. stdin is empty
+    and the run is bounded, so a fence that waits for input or loops forever
+    reports that instead of hanging the gate.
+    """
     p = os.path.join(tmp, "f.ty")
     open(p, 'w', encoding='utf-8').write(src)
     exe = os.path.join(tmp, "f")
-    args = [TYCHOC, p, "-o", exe] if run else [TYCHOC, p, "--emit-c", "-o", exe]
-    r = subprocess.run(args, capture_output=True, text=True, errors='replace')
+    r = subprocess.run([TYCHOC, p, "-o", exe],
+                       capture_output=True, text=True, errors='replace')
     if r.returncode != 0:
         return None, (r.stderr or r.stdout)
-    if not run:
+    if not execute:
         return "", ""
-    q = subprocess.run([exe], capture_output=True, text=True, timeout=20, errors='replace')
+    try:
+        q = subprocess.run([exe], capture_output=True, text=True, timeout=10,
+                           errors='replace', stdin=subprocess.DEVNULL)
+    except subprocess.TimeoutExpired:
+        return None, "error: ran for 10s without exiting"
+    if q.returncode != 0:
+        return None, ("error: compiled, but exited %d when run: %s"
+                      % (q.returncode, (q.stderr or "").strip().splitlines()[:1]))
     return q.stdout, ""
 
 
@@ -235,7 +250,8 @@ def main():
                 continue
             if lang != 'tycho':
                 continue
-            if skip:
+            norun = bool(skip and skip.startswith('norun:'))
+            if skip and not norun:
                 nskip += 1
                 print("    skip  %s:%d  %s" % (f, line, skip))
                 continue
@@ -295,7 +311,7 @@ def main():
                     for how, src in attempts:
                         print("----- attempt: %s\n%s" % (how, src), file=sys.stderr)
                 for how, src in attempts:
-                    got, e = compiles(src, tmp, run=bool(want))
+                    got, e = compiles(src, tmp, run=bool(want), execute=not norun)
                     if got is None:
                         errs[how] = e
                         continue
@@ -338,8 +354,9 @@ def main():
 
     for x in fails:
         print("docs-fences: FAIL " + x, file=sys.stderr)
-    print("docs-fences: %d fence(s) compiled, %d of them RUN against their stated output, "
-          "%d skipped, %d failure(s)" % (nok, nrun, nskip, nfail))
+    print("docs-fences: %d snippet(s) verified -- every Tycho fence is BUILT AND RUN "
+          "(exit 0), %d of them with stdout compared to the ```output block beside it; "
+          "%d skipped with a stated reason, %d failure(s)" % (nok, nrun, nskip, nfail))
     return 1 if nfail else 0
 
 

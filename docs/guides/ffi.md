@@ -45,7 +45,7 @@ An `extern fn` is a bodyless declaration whose name *is* the C symbol name,
 optionally prefixed with the library to link:
 
 ```tycho
-extern fn getpid() -> int                                # libc (already linked)
+extern fn random() -> int                                # libc (already linked)
 extern fn hypot(x: float, y: float) -> float             # libm (already linked)
 extern "z" fn crc32(crc: int, buf: string, n: int) -> int    # links -lz
 extern "SDL2" fn SDL_Init(flags: int) -> int                 # links -lSDL2

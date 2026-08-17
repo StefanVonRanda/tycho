@@ -9,11 +9,17 @@
 and can optionally name the library to link.
 
 ```tycho
-extern fn getpid() -> int                            # libc
+extern fn random() -> int                            # libc
 extern "m" fn cos(x: float) -> float                 # links -lm
 extern fn sx_col_text(stmt: ptr, i: int) -> string   # C string in, Tycho string out
 extern fn crc32(data: bytes, len: u32) -> u32        # sized ints: real uint32_t at the C ABI
 ```
+
+**The declared signature must match the C header's.** Tycho `int` lowers to
+`int64_t`, so `extern fn getpid() -> int` collides with `unistd.h`'s `pid_t`
+return and the emitted C will not compile: `conflicting types for 'getpid'`.
+Declare the width the header actually uses (`i32`, `u32`, ...) when it is not
+64-bit.
 
 ## The boundary
 
