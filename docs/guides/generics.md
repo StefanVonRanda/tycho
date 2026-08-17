@@ -165,7 +165,10 @@ helper points at the instantiation, not always the line you expected — which t
 # a `where` clause turns an instantiation-time body error
 # into a checked-up-front signature error with a clear message.
 fn sum(xs: [$T]) -> T where numeric(T):
-    …
+    total := zero$(T)
+    for x in xs:
+        total = total + x
+    return total
 ```
 
 The `where` predicates are a *fixed, compiler-known* set (not user-defined type

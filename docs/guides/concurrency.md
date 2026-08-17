@@ -153,8 +153,8 @@ ch := channel(string, 256)        # bounded; created here, freed at THIS scope's
 w := spawn consumer(ch)           # fn consumer(ch: Channel(string)) -> int
 ch.send("item-" + str(i))         # deep copy IN (blocks when full; dies if closed)
 match recv(ch):                   # deep copy OUT -> Option(T)
-    Some(s): ...
-    None:    ...                  # closed AND drained
+    Some(s): println(s)
+    None:    println("drained")   # closed AND drained
 close(ch)
 n := wait(w)
 ```

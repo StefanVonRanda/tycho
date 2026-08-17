@@ -78,14 +78,19 @@ cell's arena, and `recv` copies out into the receiver's arena, returning `Option
 means **closed and drained**.
 
 ```tycho
+fn consumer(ch: Channel(string)) -> int:
+    return 0
+
+i := 1
+
 ch := channel(string, 256)          # bounded; the creating scope frees it
 w := spawn consumer(ch)             # fn consumer(ch: Channel(string)) -> int
 ch.send("item-" + str(i))           # deep copy in (blocks when full)
 match recv(ch):                     # deep copy out
     Some(s):
-        ...
+        println(s)
     None:                           # closed and drained
-        ...
+        println("drained")
 close(ch)
 n := wait(w)
 ```

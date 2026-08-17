@@ -164,8 +164,13 @@ def compiles(src, tmp, run=False, execute=True):
     p = os.path.join(tmp, "f.ty")
     open(p, 'w', encoding='utf-8').write(src)
     exe = os.path.join(tmp, "f")
-    r = subprocess.run([TYCHOC, p, "-o", exe],
-                       capture_output=True, text=True, errors='replace')
+    args = [TYCHOC, p, "-o", exe]
+    # `extern "sqlite3" fn ...` names the library the fence needs; pass it on
+    for lib in set(re.findall(r'extern[ \t]+"([A-Za-z0-9_+-]+)"', src)):
+        if subprocess.run(["pkg-config", "--exists", lib],
+                          capture_output=True).returncode == 0:
+            args += ["--link", lib]
+    r = subprocess.run(args, capture_output=True, text=True, errors='replace')
     if r.returncode != 0:
         return None, (r.stderr or r.stdout)
     if not execute:
