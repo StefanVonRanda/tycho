@@ -304,10 +304,43 @@ def main():
                           # binds a fixed port: the result depends on what else
                           # is listening, which is not a property of the doc
                           '--port', 'tycho-httpd')
-                if re.search(r'^\s*\((gdb|lldb)\)', body, re.M):
-                    nskip += 1
-                    print("    skip  %s:%d  a debugger TRANSCRIPT: `(gdb)`/`(lldb)` are "
-                          "prompts, and the lines after them are its output" % (f, line))
+                dbg = re.search(r'^\s*\((gdb|lldb)\)', body, re.M)
+                if dbg:
+                    # A transcript is not a script, but the SESSION it records can
+                    # be driven: build a program with -g and feed the debugger the
+                    # commands the fence shows. What it proves is the claim the doc
+                    # makes -- a breakpoint set on a .ty line binds to a .ty line.
+                    tool = dbg.group(1)
+                    if subprocess.run(['sh', '-c', 'command -v ' + tool],
+                                      capture_output=True).returncode != 0:
+                        nskip += 1
+                        print("    skip  %s:%d  a %s transcript; %s is not on this machine"
+                              % (f, line, tool, tool))
+                        continue
+                    cmds = [re.sub(r'#.*$', '', l).split(')', 1)[1].strip()
+                            for l in body.split('\n') if l.strip().startswith('(' + tool)]
+                    with tempfile.TemporaryDirectory() as tmp:
+                        src = os.path.join(tmp, "program.ty")
+                        open(src, 'w').write(open(os.path.join(ROOT, "examples/hello.ty")).read())
+                        b = subprocess.run([TYCHOC, src, "-g", "-o",
+                                            os.path.join(tmp, "program")],
+                                           capture_output=True, text=True, errors='replace')
+                        args = ['gdb', '-batch']
+                        for c in cmds:
+                            args += ['-ex', c]
+                        args += ['-ex', 'quit', os.path.join(tmp, "program")]
+                        r = subprocess.run(args, capture_output=True, text=True,
+                                           errors='replace', timeout=90,
+                                           stdin=subprocess.DEVNULL, cwd=tmp)
+                    if b.returncode == 0 and r.returncode == 0 and 'program.ty:' in r.stdout:
+                        nok += 1; nsh += 1
+                        print("    ok    %s:%d  [%s session RAN; the breakpoint bound to a "
+                              ".ty line]" % (f, line, tool))
+                    else:
+                        nfail += 1
+                        fails.append("%s:%d -- the %s session in this fence does not run: %s"
+                                     % (f, line, tool,
+                                        (r.stderr.strip().splitlines() or ["no .ty line"])[-1][:50]))
                     continue
                 # a SYNOPSIS is not a command: `tycho-diff [--stat] OLD NEW`
                 # names its arguments in the usual placeholder style, and running

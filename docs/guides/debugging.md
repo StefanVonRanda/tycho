@@ -27,7 +27,8 @@ Then debug the binary as if it were hand-written C, but stepping lands on
 gdb ./program
 (gdb) break program.ty:7      # break on a Tycho source line
 (gdb) run
-(gdb) step                    # steps through program.ty, not the generated C
+(gdb) next                    # stays on program.ty lines
+(gdb) step                    # descends into the generated C and the runtime
 ```
 
 **macOS (lldb)** — the toolchain leaves DWARF in the intermediate objects, and
