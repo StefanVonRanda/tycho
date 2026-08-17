@@ -736,13 +736,20 @@ rules make `match` safe:
   there is no way to read a payload that does not belong to the current variant.
 
 ```tycho
+enum Shape:
+    Circle(float)
+    Rect(int, int)
+    Unit
+
+s := Circle(1.5)
+
 match s:
     Circle(r):               # r bound to the payload
-        …
+        println(str(r))
     Rect(w, h):              # multiple payload fields bind in order
-        …
+        println(str(w * h))
     Unit:                    # no payload, no bindings
-        …
+        println("unit")
 ```
 
 ### 19.4 Statement `match` versus value `match`

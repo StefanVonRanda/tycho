@@ -77,13 +77,20 @@ struct, including recursive payloads that name the enum itself. See [Generics](g
 payload in one step:
 
 ```tycho
+enum Shape:
+    Circle(float)
+    Rect(int, int)
+    Unit
+
+shape := Circle(1.5)
+
 match shape:
     Circle(r):               # r is bound to the payload (a float here)
-        ...
+        println(str(r))
     Rect(w, h):              # multiple payload fields bind in order
-        ...
+        println(str(w * h))
     Unit:                    # no payload, no bindings
-        ...
+        println("unit")
 ```
 
 Two rules keep `match` safe:

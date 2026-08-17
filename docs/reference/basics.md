@@ -119,28 +119,41 @@ map entry (`m[k] += 1`).
 There is exactly one loop keyword, `for`, in four shapes — it does everything a `while` would.
 
 ```tycho
+cond := true
+other := false
+n := 3
+a := 3
+b := 0
+s := 1
+xs := [10, 20]
+
 if cond:
-    ...
+    println("then")
 elif other:                 # zero or more elif branches
-    ...
+    println("elif")
 else:
-    ...
+    println("else")
 
 for cond:                   # condition form: repeat while cond is true
-    ...
+    cond = false
 for:                        # infinite form: until a break or a return
-    ...
+    break
 for i := 0; i < n; i += 1:  # three-clause form: i goes 0 .. n-1
-    ...
+    println(str(i))
 for i := a; i > b; i -= s:  # counting down — the direction is in the condition
-    ...
+    println(str(i))
 for x in xs:                # foreach: each element of an array, or each byte of a string
-    ...
+    println(str(x))
 
-break                       # exit the nearest enclosing loop
-continue                    # skip to its next iteration (runs the post clause)
-pass                        # do nothing — the body for a block that has no work
 ```
+
+Inside a loop body:
+
+| | |
+|---|---|
+| `break` | exit the nearest enclosing loop |
+| `continue` | skip to its next iteration (runs the post clause) |
+| `pass` | do nothing — the body for a block that has no work |
 
 In the three-clause form all three clauses are required (`for:` is the only degenerate form);
 the init is a declaration or an assignment, the post is an assignment to a variable, and a
