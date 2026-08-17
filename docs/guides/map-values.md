@@ -44,6 +44,13 @@ directions:
 Because both directions copy, value semantics holds end to end:
 
 ```tycho
+fn use(n: int):
+    println(str(n))
+
+m := ["a": 1]
+default := 0
+other := 2
+
 v := m.get("a", default)
 m["a"] = other                 # rehashes, moves slots
 use(v)                         # still the old value — v is its own copy

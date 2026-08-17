@@ -30,12 +30,21 @@ bytes, nested structs, and inner buffers too, so mutating the copy never touches
 original.
 
 ```tycho
-ps := [Point(1, 2), Point(3, 4)]   # array of structs
-push(ps, Point(5, 6))
+struct Point:
+    x: int
+    y: int
+    tags: [string]
+
+fn bump(n: inout int):
+    n = n + 1
+
+ps := [Point(1, 2, []), Point(3, 4, [])]   # array of structs
+push(ps, Point(5, 6, []))
 total := ps[1].x + ps[1].y         # index, then read a field
 
 grid := [][int]                    # array of arrays
 push(grid, [1, 2, 3])
+push(grid, [4, 5, 6])
 cell := grid[0][2]                 # 3
 ```
 
@@ -196,9 +205,11 @@ for — many entities, a pass at a time over one field.
 ordinary array value, so its cost depends entirely on what you do with it:
 
 ```tycho
+import "core:arrays"
+
 xs := [10, 20, 30, 40, 50]
-print(str(sum(xs[1:4])))      # passed to a read-only param: a ZERO-COPY view -> 90
-mid := xs[1:4]                # stored: a deep copy, owning its own buffer
+print(str(arrays.sum(xs[1:4])))   # passed to a read-only param: a ZERO-COPY view -> 90
+mid := xs[1:4]                    # stored: a deep copy, owning its own buffer
 ```
 
 Passing a slice to a function that only reads its parameter **costs nothing** — the

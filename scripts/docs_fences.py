@@ -161,7 +161,9 @@ def main():
     if not os.path.exists(TYCHOC):
         print("docs-fences: no ./tychoc -- run 'make' first", file=sys.stderr)
         return 2
-    files = subprocess.run(['git', 'ls-files', 'docs/*.md', 'README.md', 'CONTRIBUTING.md'],
+    # every tracked .md, not a hand-listed subset: a snippet in
+    # examples/*/README.md or tools/*/README.md is a snippet a reader copies.
+    files = subprocess.run(['git', 'ls-files', '*.md'],
                            capture_output=True, text=True, cwd=ROOT).stdout.split()
     nok = nskip = nfail = nrun = 0
     fails = []
@@ -238,7 +240,10 @@ def main():
                     note = "" if how == "as written" else "  (%s)" % how
                     print("    ok    %s:%d%s%s" % (f, line, note,
                                                    "  [ran, output matches]" if want else ""))
-                    ok_body = body
+                    # carry the form that COMPILED: if binding bare expressions
+                    # is what made it work, the raw body would poison every
+                    # later fence on the page with the same bare expressions.
+                    ok_body = bind_bare(body) if "bare expressions bound" in how else body
                     break
                 else:
                     nfail += 1
