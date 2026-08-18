@@ -22,7 +22,6 @@ fn has(t: Trie, s: string, i: int) -> bool:
 fn count(t: Trie) -> int:              # total nodes incl. root
     acc := 1
     ks := keys(t.kids)
-    j := 0
     for j := 0; j < len(ks); j += 1:
         acc = acc + count(t.kids[ks[j]])
     return acc
@@ -32,7 +31,6 @@ fn nwords(t: Trie) -> int:             # how many complete words are stored
     if t.word:
         acc = 1
     ks := keys(t.kids)
-    j := 0
     for j := 0; j < len(ks); j += 1:
         acc = acc + nwords(t.kids[ks[j]])
     return acc

@@ -85,7 +85,7 @@ call must still be copied to a longer-lived arena — a property of the arena mo
 
 ```tycho
 x := 41          # declare + infer the type from the initializer
-y : int = 1      # declare with an explicit type
+_y : int = 1      # declare with an explicit type
 x = x + 1        # assign (the variable must already exist)
 x += 1           # compound assignment: `x op= e` desugars to `x = x op e`
 ```
@@ -185,3 +185,18 @@ guarantee was lost with it, deliberately:** `range()` rejected a literal `0` ste
 time and aborted on a runtime `0`; a post clause is arbitrary code, so `for i := 0; i < n;
 i += 0:` is an infinite loop that nothing diagnoses. To count in parallel, use
 `parallel for i in 0..<N:`, which steps by 1 implicitly and so has no zero-step case at all.
+
+## Unused names
+
+A local declared with `:=` or with an explicit type and never read again is a
+compile **error** — `'x' declared and not used`. A name whose first character is
+`_` is exempt, which is how you keep a binding whose only job is to own a value
+until the scope ends. `_` is an ordinary *typed* variable here, not a discard, so
+a scope that drops both an int and a string needs two names (`_n`, `_s`) rather
+than `_` twice.
+
+Parameters, loop variables, and match/select bindings are never reported.
+
+A function nothing ever calls is a **warning**, not an error. It is reported
+after code generation, because a callee reached only from a generic body is not
+resolved until that body is instantiated.

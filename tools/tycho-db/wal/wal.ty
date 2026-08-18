@@ -211,14 +211,14 @@ fn append(lg: inout Log, r: Rec) -> Result(int, WalErr):
         Err(e): return Err(NotWritten(lg.path))
     # THE FLUSH IS THE POINT OF THE WHOLE FILE, so it happens before the lsn is
     # handed back and before any caller can take Ok as licence to touch the store.
-    hit := _sync(lg.path) or_return
+    _hit := _sync(lg.path) or_return
     # And on the append that CREATED the log, the parent directory too: the file's
     # bytes and the file's NAME are flushed by different calls, so a log synced
     # without its parent can come back from a power cut as a log that does not
     # exist. Only on create -- later appends change no directory entry, so paying
     # this per record would be cost with nothing bought.
     if created:
-        dhit := _sync(path.dir(lg.path)) or_return
+        _dhit := _sync(path.dir(lg.path)) or_return
     lg.end += len(frame)
     lg.next_lsn += 1
     return Ok(lg.next_lsn)
@@ -236,14 +236,14 @@ fn checkpoint(db: inout store.Db, lg: inout Log) -> Result(bool, WalErr):
     # that guard true and useless against a power cut. So the guard now waits for
     # the device, and the store file's directory entry is flushed with it because
     # this is the write that may have created it.
-    shit := _sync(db.path) or_return
-    sdhit := _sync(path.dir(db.path)) or_return
+    _shit := _sync(db.path) or_return
+    _sdhit := _sync(path.dir(db.path)) or_return
     match io.write_bytes(lg.path, _header(lg.next_lsn)):
         Ok(): pass
         Err(e): return Err(NotWritten(lg.path))
     # And the rewound header itself, so a crash cannot resurrect the old records
     # from a stale page and replay them over a store that already has them.
-    lhit := _sync(lg.path) or_return
+    _lhit := _sync(lg.path) or_return
     lg.base_lsn = lg.next_lsn
     lg.end = HDR
     return Ok(true)
@@ -296,7 +296,7 @@ fn open_db(store_path: string) -> Result(Session, WalErr):
     for r in sc.recs:
         lsn += 1
         if lsn > db.applied_lsn:
-            ok := _apply(&db, r) or_return
+            _ok := _apply(&db, r) or_return
             replayed += 1
 
     lg := Log(lp, base, base + len(sc.recs), sc.end)
@@ -315,7 +315,7 @@ fn open_db(store_path: string) -> Result(Session, WalErr):
         # Flushed like any other log write: this one SHORTENS the file, and a
         # truncation left in the page cache can come back as the torn tail it
         # just removed.
-        thit := _sync(lp) or_return
+        _thit := _sync(lp) or_return
         lg.end = len(out)
 
     return Ok(Session(db, lg, replayed, sc.torn, rebuilt))

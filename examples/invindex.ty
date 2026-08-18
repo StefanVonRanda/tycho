@@ -7,7 +7,6 @@ struct Posting:
 # lowercase ASCII and drop everything that is not a letter (punctuation, digits)
 fn normalize(w: string) -> string:
     r := ""
-    i := 0
     for i := 0; i < len(w); i += 1:
         c := w[i]
         if c >= 65 and c <= 90:          # 'A'..'Z' -> 'a'..'z'
@@ -38,7 +37,6 @@ fn add(postings: inout [Posting], tidx: inout [string: int], term: string, doc: 
 
 fn index_doc(postings: inout [Posting], tidx: inout [string: int], text: string, doc: int):
     words := split(text, " ")
-    i := 0
     for i := 0; i < len(words); i += 1:
         t := normalize(words[i])
         if len(t) > 0:
@@ -58,11 +56,10 @@ fn query_and(postings: [Posting], tidx: [string: int], terms: [string]) -> [int]
     p0 := term_slot(tidx, terms[0])
     if p0 < 0:
         return res
-    ci := 0
     for ci := 0; ci < len(postings[p0].docs); ci += 1:     # candidates = first term's docs (sorted)
         doc := postings[p0].docs[ci]
         ok := true
-        ti := 1
+        _ := 1
         for ti := 1; ti < len(terms); ti += 1:
             pj := term_slot(tidx, terms[ti])
             if pj < 0 or not contains(postings[pj].docs, doc):
@@ -73,7 +70,6 @@ fn query_and(postings: [Posting], tidx: [string: int], terms: [string]) -> [int]
 
 fn join_ints(xs: [int]) -> string:
     s := ""
-    i := 0
     for i := 0; i < len(xs); i += 1:
         if i > 0:
             s = s + ", "
@@ -90,7 +86,6 @@ fn main():
 
     postings := []Posting
     tidx := []string: int
-    d := 0
     for d := 0; d < len(corpus); d += 1:
         index_doc(&postings, &tidx, corpus[d], d)
 
@@ -109,7 +104,6 @@ fn main():
     # term frequency: total occurrences of "the" across the corpus
     pt := term_slot(tidx, "the")
     tf := 0
-    fi := 0
     for fi := 0; fi < len(postings[pt].freqs); fi += 1:
         tf += postings[pt].freqs[fi]
     println("freq(the) = " + str(tf))                                           # 4

@@ -16,7 +16,6 @@ fn main():
     c.idx[2] = 99                   # reinsert -> appends to the order tail
     ks := keys(c.idx)
     out := ""
-    i := 0
     for i := 0; i < len(ks); i += 1:
         out = out + str(ks[i]) + "=" + str(c.idx[ks[i]]) + " "
     println(out)              # 1=10 3=30 2=99

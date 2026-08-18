@@ -42,7 +42,6 @@ fn worker(ch: Channel(string)) -> [string: int]:
             Some(path):
                 text := read_file(path)
                 cur := ""
-                i := 0
                 for i := 0; i < len(text); i += 1:
                     c := text[i]
                     if c >= 65 and c <= 90:

@@ -74,7 +74,6 @@ fn main():
         total := 0
         for i := 0; i < n; i += 1:
             html := render(read_file(dir + "/" + str(i) + ".md"))
-            j := 0
             for j := 0; j < len(html); j += 1:
                 fnv = (fnv ^ html[j]) % 4294967296
                 fnv = (fnv * 16777619) % 4294967296

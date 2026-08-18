@@ -102,8 +102,8 @@ fn build_tables() -> Tables:
                 [0, 0, 0, 0, 0, 0, 0, 0],
                 [0, 0, 0, 0, 0, 0, 0, 0])
     for sq := 0; sq < 64; sq += 1:
-        f := sq % 8
-        r := sq / 8
+        _f := sq % 8
+        _r := sq / 8
         kn := 0
         for i := 0; i < 8; i += 1:
             df := 0
@@ -327,7 +327,7 @@ fn side_at(b: Board, sq: int) -> int:
 
 # is `sq` attacked by `side`'s pieces?
 fn attacked(b: Board, tab: Tables, sq: int, by: int) -> bool:
-    bit := 1 << sq
+    _bit := 1 << sq
     # pawn attacks: a white pawn at p attacks p+7 (left-up) and p+9
     # (right-up); a black pawn at p attacks p-7 and p-9. So sq is attacked by
     # a white pawn at sq-7 or sq-9, and by a black pawn at sq+7 or sq+9. The
@@ -349,7 +349,7 @@ fn attacked(b: Board, tab: Tables, sq: int, by: int) -> bool:
     if (tab.king[sq] & b.kings[by]) != 0:
         return true
     # sliders
-    occ := occ_all(b)
+    _occ := occ_all(b)
     for i := 0; i < 8; i += 1:
         df := 0
         dr := 0

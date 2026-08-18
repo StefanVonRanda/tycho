@@ -12,7 +12,6 @@ fn main():
     r := 0
     for r < 300:                             # churn: triggers GC; each cycle rescans `live`
         xs := []int
-        j := 0
         for j := 0; j < 50000; j += 1:
             push(xs, (r + j) % 997)
         s := 0

@@ -221,7 +221,6 @@ fn selfcheck():
 
 fn main():
     av := cli.argv()
-    tab := 0
     if len(av) < 1:
         die("usage: tycho-rsa selfcheck | keygen <bits> | modexp <a> <e> <m> | primetest <n>")
     if av[0] == "selfcheck":

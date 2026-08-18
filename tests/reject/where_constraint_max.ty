@@ -1,5 +1,5 @@
 # 05-generics.md:63 / 02-grammar.md:78: a `where` clause "allows at most 8
-# constraints". src/tychoc.c:3650. This one has 9.
+# constraints". src/tychoc.c:3651. This one has 9.
 fn f(a0: $T0, a1: $T1, a2: $T2, a3: $T3, a4: $T4, a5: $T5, a6: $T6, a7: $T7, a8: $T8) -> int where numeric(T0), numeric(T1), numeric(T2), numeric(T3), numeric(T4), numeric(T5), numeric(T6), numeric(T7), numeric(T8):
     return a0
 

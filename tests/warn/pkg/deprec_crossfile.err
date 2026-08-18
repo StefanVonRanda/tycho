@@ -1,2 +1,4 @@
 tests/warn/pkg/deprec_crossfile/main.ty:8: warning: `old.stale` is deprecated: use fresh(x) instead. Removed in 1.0.
      8 |     println(str(old.stale(3)))
+tests/warn/pkg/deprec_crossfile/old/old.ty:9: warning: 'fresh' is never called
+     9 | fn fresh(x: int) -> int:

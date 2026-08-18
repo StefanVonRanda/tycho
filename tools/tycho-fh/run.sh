@@ -145,20 +145,20 @@ fn boom() -> Result(int, string):
     return Err("nope")
 
 fn use() -> Result(int, string):
-    f := fh_open("tools/tycho-fh/fh.c", "r")
+    _f := fh_open("tools/tycho-fh/fh.c", "r")
     v := boom() or_return
     return Ok(v)
 
 fn loops():
     for i := 0; i < 5; i += 1:
-        f := fh_open("tools/tycho-fh/fh.c", "r")
+        _f := fh_open("tools/tycho-fh/fh.c", "r")
         if i == 1:
             continue
         if i == 3:
             break
     for j := 0; j < 3; j += 1:
         if j > 0:
-            g := fh_open("tools/tycho-fh/fh.c", "r")
+            _g := fh_open("tools/tycho-fh/fh.c", "r")
             pass
 
 fn main():

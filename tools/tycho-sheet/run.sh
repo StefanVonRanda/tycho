@@ -490,7 +490,7 @@ fn cycle(names: [string], srcs: [string]) -> Result(void, string):
         match sheet.set(&sh, row, col, srcs[i]):
             Ok(): pass
             Err(m): return Err("set " + names[i] + " was refused: " + m)
-    n := sheet.recalc(&sh)
+    _n := sheet.recalc(&sh)
     ok0, r0, c0 := cell.ref_of(names[0])
     v := sheet.get(&sh, r0, c0)
     if cell.is_bad(v):

@@ -29,12 +29,10 @@ fn main():
     root := Trie([]int: Trie, false)
     nn := 1                                       # the root node
     nwords := 0
-    w := 0
     for w := 0; w < n; w += 1:
         state = state * 6364136223846793005 + 1442695040888963407
         wlen := 3 + ((state & 1073741823) % 5)    # length 3..7
         s := ""
-        j := 0
         for j := 0; j < wlen; j += 1:
             state = state * 6364136223846793005 + 1442695040888963407
             s = s + chr(97 + ((state & 1073741823) % 26))   # 'a'..'z'

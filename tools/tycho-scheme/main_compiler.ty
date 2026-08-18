@@ -1,6 +1,5 @@
 
 package main
-import "core:strings"
 
 # ---------------------------------------------------------------------------
 # shared state (threaded as inout -- no mutable module state)
@@ -692,7 +691,7 @@ fn emit_define(target: Val, body: Val, ctx: inout Ctx, em: inout Emit, infos: [F
                 VSym(nm):
                     fname = nm
                 _: die_c("bad define")
-            params := collect_params(fnrest)
+            _params := collect_params(fnrest)
             body2 := begin_of(body)
             info := infos[tagseq]
             mytag := tagseq
@@ -720,7 +719,7 @@ fn emit_define(target: Val, body: Val, ctx: inout Ctx, em: inout Emit, infos: [F
 
 # (lambda (params) body...): compile the fn, then emit (tag . env) on the stack
 fn emit_lambda(params_list: Val, body: Val, ctx: inout Ctx, em: inout Emit, infos: [FnInfo], fns: inout [FnCode], calls: inout [CallPatch], tagseq: inout int):
-    params := collect_params(params_list)
+    _params := collect_params(params_list)
     body2 := begin_of(body)
     info := infos[tagseq]
     mytag := tagseq
@@ -787,7 +786,7 @@ fn emit_apply_expr(op: Val, rest: Val, ctx: inout Ctx, em: inout Emit, infos: [F
             match head:
                 VSym(s):
                     if s == "lambda":
-                        params := collect_params(car(body))
+                        _params := collect_params(car(body))
                         body2 := begin_of(cdr(body))
                         info := infos[tagseq]
                         mytag := tagseq

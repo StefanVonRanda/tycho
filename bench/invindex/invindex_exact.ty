@@ -24,11 +24,9 @@ fn query_and(postings: [Posting], tidx: [string: int], terms: [string]) -> int:
     if p0 < 0:
         return 0
     hits := 0
-    ci := 0
     for ci := 0; ci < len(postings[p0].docs); ci += 1:
         doc := postings[p0].docs[ci]
         ok := true
-        ti := 1
         for ti := 1; ti < len(terms); ti += 1:
             pj := tidx.get(terms[ti], 0 - 1)
             if pj < 0 or not contains(postings[pj].docs, doc):
@@ -61,29 +59,23 @@ fn main():
 
     # build postings, then preallocate each list to its exact size (no later growth)
     postings := []Posting
-    ti := 0
     for ti := 0; ti < len(terms); ti += 1:
         push(postings, Posting(terms[ti], []int, []int))
-    pj := 0
     for pj := 0; pj < len(postings); pj += 1:
         reserve(postings[pj].docs, counts[pj])
         reserve(postings[pj].freqs, counts[pj])
 
     # pass 2: fill (regenerate the same sequence; push never grows)
     seed = 1
-    d2 := 0
     for d2 := 0; d2 < n; d2 += 1:
-        k := 0
         for k := 0; k < w; k += 1:
             seed = (seed * 1103515245 + 12345) % 2147483647
             slot := tidx.get("t" + str(seed % v), 0 - 1)
             fill_one(&postings, slot, d2)
 
     sum := 0
-    pi := 0
     for pi := 0; pi < len(postings); pi += 1:
         sum += len(postings[pi].term) + len(postings[pi].docs)
-        fj := 0
         for fj := 0; fj < len(postings[pi].freqs); fj += 1:
             sum += postings[pi].freqs[fj]
 

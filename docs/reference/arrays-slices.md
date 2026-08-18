@@ -11,13 +11,13 @@ struct, or another array — nested as deep as you like.
 
 ```tycho
 xs := [10, 20, 30]      # literal
-ys := []int             # empty (element type required)
+_ys := []int             # empty (element type required)
 push(xs, 40)            # append in place
-last := pop(xs)         # remove and return the last element (aborts if empty)
+_last := pop(xs)         # remove and return the last element (aborts if empty)
 len(xs)                 # length -> int
 xs[0]                   # index read (bounds-checked)
 xs[0] = 99              # index write (bounds-checked)
-zs := xs                # value semantics: zs is an independent deep copy
+_zs := xs                # value semantics: zs is an independent deep copy
 ```
 
 An out-of-bounds index aborts with a message rather than reading stray memory. This check is
@@ -40,12 +40,12 @@ fn bump(n: inout int):
 
 ps := [Point(1, 2, []), Point(3, 4, [])]   # array of structs
 push(ps, Point(5, 6, []))
-total := ps[1].x + ps[1].y         # index, then read a field
+_total := ps[1].x + ps[1].y         # index, then read a field
 
 grid := [][int]                    # array of arrays
 push(grid, [1, 2, 3])
 push(grid, [4, 5, 6])
-cell := grid[0][2]                 # 3
+_cell := grid[0][2]                 # 3
 ```
 
 ## Elements are places
@@ -106,7 +106,7 @@ copied **by value** (a plain memcpy for scalar elements, deep for heap elements)
 
 ```tycho
 v: [3]int = [10, 20, 30]     # inline, exactly 3 elements
-w := v                        # a full value copy
+_w := v                        # a full value copy
 v[0] = 99                     # w[0] is still 10 — no sharing
 len(v)                        # 3, a compile-time constant (no runtime field)
 
@@ -218,7 +218,7 @@ import "core:arrays"
 
 xs := [10, 20, 30, 40, 50]
 print(str(arrays.sum(xs[1:4])))   # passed to a read-only param: a ZERO-COPY view -> 90
-mid := xs[1:4]                    # stored: a deep copy, owning its own buffer
+_mid := xs[1:4]                    # stored: a deep copy, owning its own buffer
 ```
 
 Passing a slice to a function that only reads its parameter **costs nothing** — the

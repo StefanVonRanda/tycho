@@ -63,7 +63,7 @@ struct Trie:
 
 fn insert(t: inout Trie, s: string):
     cur := 0
-    i := 0
+    _i := 0
     for i := 0; i < len(s); i += 1:
         c := s[i]
         if not (c in t.nodes[cur].kids):
@@ -134,7 +134,7 @@ An arena returns memory at **scope exit**, not incrementally — but dead buffer
 incrementally. The compiler proves when a heap buffer is dead and uniquely owned (a
 reassigned loop-carried local; value semantics guarantees no aliasing) and hands it back to
 the arena via `arena_recycle` (`runtime/tycho_rt.c@arena_recycle`, emitted by the compiler at
-`src/tychoc.c:11244@arena_recycle`); the next same-or-smaller allocation in that arena reuses it instead
+`src/tychoc.c:11365@arena_recycle`); the next same-or-smaller allocation in that arena reuses it instead
 of bumping — the reuse analysis Perceus derives from runtime refcounts, derived here from
 static value semantics. So transient churn inside one scope recycles, and peak is bounded
 by the largest single transient rather than the sum — but the arena keeps its high-water

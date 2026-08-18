@@ -91,7 +91,6 @@ fn main():
     meta := [-1, -1, 0]
     hits := 0
     sum := 0
-    op := 0
     for op := 0; op < nops; op += 1:
         state = state * 6364136223846793005 + 1442695040888963407
         key := (state & 1073741823) % keyspace

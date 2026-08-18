@@ -43,7 +43,7 @@ fn count(path: string) -> int:
 
 t := spawn count("a.txt")     # args deep-copied into the task's arena, then the thread starts
 u := spawn count("b.txt")
-total := wait(t) + u.wait()   # join; result deep-copied into the waiting scope; task arena freed
+_total := wait(t) + u.wait()   # join; result deep-copied into the waiting scope; task arena freed
 ```
 
 `spawn` takes a **direct call** to a named function — the argument list *is* the
@@ -113,7 +113,7 @@ n := 8
 results := 0
 
 jobs := channel(Job, 16)            # cap bounds buffered work — backpressure
-pr := spawn produce(jobs, n)        # producer sends, then close(jobs) when done
+_pr := spawn produce(jobs, n)        # producer sends, then close(jobs) when done
 parallel for j in jobs:             # K = ncpu() workers share the one queue
     results = results + work(j)     # ordinary reduction, folded at the join
 ```
@@ -156,7 +156,7 @@ match recv(ch):                   # deep copy OUT -> Option(T)
     Some(s): println(s)
     None:    println("drained")   # closed AND drained
 close(ch)
-n := wait(w)
+_n := wait(w)
 ```
 
 A channel is a bounded **lock-free MPMC queue**, internally synchronized so value

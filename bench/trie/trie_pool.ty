@@ -11,12 +11,10 @@ fn main():
     reserve(pool, 300000)
     push(pool, Trie([]int: int, false))
     nwords := 0
-    w := 0
     for w := 0; w < n; w += 1:
         state = state * 6364136223846793005 + 1442695040888963407
         wlen := 3 + ((state & 1073741823) % 5)    # length 3..7
         idx := 0                                  # the root is node 0
-        j := 0
         for j := 0; j < wlen; j += 1:
             state = state * 6364136223846793005 + 1442695040888963407
             c := 97 + ((state & 1073741823) % 26) # 'a'..'z'

@@ -210,7 +210,7 @@ fn main():
             r1 := channel(Res, 16)
             r2 := channel(Res, 16)
             r3 := channel(Res, 16)
-            st := spawn store(cmd, r0, r1, r2, r3)
+            _st := spawn store(cmd, r0, r1, r2, r3)
             # worker 0's accept loop runs here, in main's frame; the store's
             # handle stays live beside it, so the daemon never returns.
             worker(srv, cmd, r0, r1, r2, r3, 0, NWORKERS, idle)

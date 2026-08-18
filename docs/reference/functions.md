@@ -168,9 +168,9 @@ fn doubled(k: int) -> int:
 a := Vec(1, 2)
 b := Vec(3, 4)
 
-m := a.add(b).norm1()   # == norm1(add(a, b))
+_m := a.add(b).norm1()   # == norm1(add(a, b))
 n := 21
-d := n.doubled()        # == doubled(n) -- an int receiver
+_d := n.doubled()        # == doubled(n) -- an int receiver
 ```
 
 This extends to the built-ins that take a receiver-shaped first argument, so the operations you
@@ -180,10 +180,10 @@ reach for most read the same way your own functions do:
 s := "a,b"
 xs := [1, 2]
 
-parts := s.split(",")   # == split(s, ",")
+_parts := s.split(",")   # == split(s, ",")
 xs.push(9)              # == push(xs, 9)
-k := xs.len()           # == len(xs)
-f := n.to_float()       # == to_float(n)
+_k := xs.len()           # == len(xs)
+_f := n.to_float()       # == to_float(n)
 ```
 
 `recv.name(args)` on a built-in lowers to `name(recv, args)` and is checked by the exact same

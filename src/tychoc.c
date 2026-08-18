@@ -1772,6 +1772,7 @@ struct Stmt {
     int      parallel;                   /* S_FORRANGE: `parallel for` (CC-3) */
     int      foreach;                    /* S_FORRANGE parallel: deferred `parallel for x in EXPR` (name=var, r_start=src ident, body=raw); resolve_parfor type-branches array vs channel */
     int      par_id;                     /* S_FORRANGE parallel: index into g_parfor */
+    int      synth;                      /* compiler-made S_DECL (foreach temp / loop var): exempt from the unused-local check */
     Expr    *par_width;                  /* S_FORRANGE parallel: `parallel(W) for`, NULL = ncpu() */
 };
 
@@ -2293,7 +2294,7 @@ static Type parse_type_inner(Parser *ps) {
             return mt;
         }
         eat(ps, TK_RBRACKET, "']'");
-        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2144) sits after a die_at */
+        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2147) sits after a die_at */
             die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
         return arr_of(elem);   /* fixed [int]/[float]/[string] or a composite */
     }
@@ -2648,7 +2649,7 @@ static Expr *parse_primary(Parser *ps) {
                 e->ival = mt; e->op = TK_COLON;
                 return e;
             }
-            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:1964): parse_type never yields T_VOID */
+            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:1967): parse_type never yields T_VOID */
                 die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
             e->ival = arr_of(elem);   /* type carried to the resolver */
             return e;
@@ -3804,12 +3805,12 @@ static Stmt *parse_stmt(Parser *ps) {
             int uid = g_forin_uid++;
             char *cn = sfmt("_fc%d", uid), *iv = sfmt("_fi%d", uid);
             Stmt *tmp = new_stmt(S_DECL, t->line);   /* _fcN := COLL (the prelude) */
-            tmp->name = cn; tmp->expr = coll;
+            tmp->name = cn; tmp->expr = coll; tmp->synth = 1;
             Expr *cref = new_expr(E_IDENT, t->line); cref->sval = cn; cref->pkg = g_cur_pkg_prefix;
             Expr *iref = new_expr(E_IDENT, t->line); iref->sval = iv; iref->pkg = g_cur_pkg_prefix;
             Expr *idx = new_expr(E_INDEX, t->line); idx->lhs = cref; idx->rhs = iref; idx->forin = 1;
             Stmt *elem = new_stmt(S_DECL, t->line);  /* x := _fcN[_fiN] */
-            elem->name = var->text; elem->expr = idx;
+            elem->name = var->text; elem->expr = idx; elem->synth = 1;
             Stmt *fr = new_stmt(S_FORRANGE, t->line);
             fr->name = iv;
             Expr *zero = new_expr(E_INT, t->line); zero->ival = 0;
@@ -4635,7 +4636,7 @@ static void parse_type_decl_at(Parser *ps) {
  * everywhere else (no reserved words added). Stage A parses them and records
  * the package name + imports; imports are not yet resolved (Stage B). */
 static const char *g_parsed_package = NULL;   /* package of the file just parsed (NULL = none) */
-typedef struct { const char *alias; const char *path; int line; const char *file; } Import;
+typedef struct { const char *alias; const char *path; int line; const char *file; int used; int muted; } Import;
 static Import *g_imports;
 static int    g_imports_cap = 0;
 static int    g_nimports = 0;
@@ -4658,6 +4659,8 @@ static void parse_import_decl(Parser *ps) {
     g_imports[g_nimports].path  = path->text;
     g_imports[g_nimports].line  = kw->line;
     g_imports[g_nimports].file  = g_srcname;   /* import scope is per-FILE; g_srcname moves per file at parse time */
+    g_imports[g_nimports].used  = 0;
+    g_imports[g_nimports].muted = g_mute_warn; /* a dependency under corelib is not the caller's to fix */
     g_nimports++;
     accept(ps, TK_NEWLINE);
 }
@@ -4749,10 +4752,21 @@ static char *resolve_pkg_dir(const char *importer_dir, const char *path) {
 
 static char *pkg_prefix_for(const char *qualifier) {
     const char *pkgname = qualifier;
+    int aliased = 0;
+    /* Every qualifier resolution funnels through here, which is what makes this
+     * the one place that can mark an import USED without missing a call site.
+     * gap: marking is NOT file-scoped. g_srcname is only repointed at a proc's
+     * own file when that proc carries a srcfile, so an entry file's use would be
+     * attributed to the wrong file and reported as unused -- a false ERROR, the
+     * one outcome worth avoiding. Cost: if two files import the same package and
+     * only one uses it, the other's dead import is missed. The per-file gate
+     * above still forces every file to import what it names. */
     for (int i = 0; i < g_nimports; i++) {
         if (g_imports[i].alias && !strcmp(g_imports[i].alias, qualifier)) {
-            pkgname = pkg_basename(g_imports[i].path);
-            break;
+            if (!aliased) { pkgname = pkg_basename(g_imports[i].path); aliased = 1; }
+            g_imports[i].used = 1;
+        } else if (!strcmp(pkg_basename(g_imports[i].path), qualifier)) {
+            g_imports[i].used = 1;
         }
     }
     return sfmt("%s__", pkgname);
@@ -4778,6 +4792,21 @@ static int is_imported_pkg_anywhere(const char *name) {
     for (int i = 0; i < g_nimports; i++)
         if (import_names(&g_imports[i], name)) return 1;
     return 0;
+}
+
+/* Go's rule: an import nothing in its file uses is an error. Run after the whole
+ * program is resolved -- `used` is set by pkg_prefix_for, which every qualifier
+ * goes through. A dependency's own file is muted: not the caller's to fix. */
+static void report_unused_imports(void) {
+    int n = 0;
+    for (int i = 0; i < g_nimports; i++) {
+        if (g_imports[i].used || g_imports[i].muted) continue;
+        fprintf(stderr, "%s:%d: error: `%s` imported and not used in this file\n",
+                g_imports[i].file ? g_imports[i].file : "<input>",
+                g_imports[i].line, g_imports[i].path);
+        n++;
+    }
+    if (n) exit(1);
 }
 
 static const char *nominal_name(const char *nm) {
@@ -4944,6 +4973,7 @@ typedef struct {
     int         nparams;
     int         builtin;
     int         is_extern;   /* FFI: call the C symbol `name` directly (no arena arg); str ret arena-copied */
+    int         used;        /* resolved by name at least once -- see sig_find */
 } Sig;
 
 static Sig  *g_sigs;       /* dynamic (was fixed 512; outgrown once at 256) */
@@ -5034,9 +5064,14 @@ static void add_pkg_deps(const char *dir) {
     fclose(f);
 }
 
-static Sig *sig_find(const char *name) {
+static Sig *sig_find_quiet(const char *name) {   /* lookup that does not mark `used` */
     for (int i = 0; i < g_nsigs; i++)
         if (!strcmp(g_sigs[i].name, name)) return &g_sigs[i];
+    return NULL;
+}
+static Sig *sig_find(const char *name) {
+    for (int i = 0; i < g_nsigs; i++)
+        if (!strcmp(g_sigs[i].name, name)) { g_sigs[i].used = 1; return &g_sigs[i]; }
     return NULL;
 }
 
@@ -5112,16 +5147,72 @@ static void register_builtins(void) {
 
 /* can_mutate: may the variable's aggregate be mutated in place (push /
  * index-set)? Locals yes; parameters are immutable borrows (no). */
-typedef struct { char *name; Type type; int can_mutate; Expr *lit; } Var;   /* lit != NULL: an immutable named literal (const) -- folded at each use */
+typedef struct { char *name; Type type; int can_mutate; Expr *lit; int used; int line; int report; } Var;   /* lit != NULL: an immutable named literal (const) -- folded at each use */
 static Var *g_vars;
 static int g_nvars = 0, g_vars_cap = 0;
+static int g_unused_local = 0;
 /* >=0: the next resolve_block dup-checks declarations from this g_vars index
  * (a function's top block uses its param base, so a local `:=` colliding with a
  * parameter is caught); a nested block uses its own start. Reset after one use. */
 static int g_dup_base = -1;
 
 static int  vars_mark(void) { return g_nvars; }
-static void vars_restore(int m) { g_nvars = m; }
+
+/* Go's rule, narrowed: only a plain `x := ...` is reported. Parameters, loop
+ * vars, match/select binds and destructuring targets are pushed through the
+ * same function but are not the programmer's to justify, so they stay silent.
+ * `_` is an ordinary variable here (not a discard) and is the idiomatic way to
+ * throw a value away, so it is never reported. A dependency's own file is
+ * skipped: an unused local under corelib is not the caller's to fix. */
+/* Mark every identifier in an expression the RESOLVER never walks. `par_width`
+ * goes parse -> codegen with no resolve_expr in between, so nothing in it would
+ * ever be marked used and `parallel(w) for ...` would falsely report `w` dead. */
+static Var *vars_lookup(const char *name);
+static void mark_idents_used(Expr *e) {
+    if (!e) return;
+    if (e->kind == E_IDENT && e->sval) vars_lookup(e->sval);
+    mark_idents_used(e->lhs);
+    mark_idents_used(e->rhs);
+    for (int i = 0; i < e->nargs; i++) mark_idents_used(e->args[i]);
+}
+
+static void vars_report_decl(void) {
+    if (!g_nvars) return;
+    const char *n = g_vars[g_nvars - 1].name;
+    /* A leading `_` means the programmer meant to drop it. Tycho's `_` is an
+     * ordinary TYPED variable, not Go's discard, so one `_` cannot absorb an int
+     * and a string in the same scope -- hence the whole `_name` family, not just
+     * the bare one. The compiler's own temps (`_fc0`, `_fi0`) share the shape. */
+    if (n && n[0] == '_') return;
+    if (g_srcname && strstr(g_srcname, "corelib/")) return;   /* crude on purpose; skipping is the safe direction */
+    g_vars[g_nvars - 1].report = 1;
+}
+
+/* Collected, not printed: a scope pops mid-resolve, so printing here would put
+ * an unused-local ahead of a real diagnostic that the program dies on a moment
+ * later -- and a probe asserting WHY it was refused would then read the wrong
+ * reason. Drained once resolve has finished without dying. */
+typedef struct { const char *file; int line; const char *name; } UnusedLocal;
+static UnusedLocal *g_ul; static int g_nul = 0, g_ul_cap = 0;
+
+static void vars_restore(int m) {
+    for (int i = m; i < g_nvars; i++) {
+        if (!g_vars[i].report || g_vars[i].used) continue;
+        TBL_ENSURE(g_ul, g_nul, g_ul_cap);
+        g_ul[g_nul].file = g_srcname;
+        g_ul[g_nul].line = g_vars[i].line;
+        g_ul[g_nul].name = g_vars[i].name;
+        g_nul++;
+        g_unused_local++;
+    }
+    g_nvars = m;
+}
+
+static void report_unused_locals(void) {
+    for (int i = 0; i < g_nul; i++)
+        fprintf(stderr, "%s:%d: error: '%s' declared and not used\n",
+                g_ul[i].file, g_ul[i].line, g_ul[i].name);
+}
 /* §3.7: the uppercase namespace is compile-time only (types, enum variants,
  * consts), so no runtime binding can shadow a constructor. Every binding form
  * funnels here -- parameters, `:=`, destructuring, loop vars, match and select
@@ -5136,6 +5227,9 @@ static void vars_push(const char *name, Type t, int can_mutate, int line) {
     g_vars[g_nvars].type = t;
     g_vars[g_nvars].can_mutate = can_mutate;
     g_vars[g_nvars].lit = NULL;
+    g_vars[g_nvars].used = 0;
+    g_vars[g_nvars].line = line;
+    g_vars[g_nvars].report = 0;
     g_nvars++;
 }
 /* a local const: immutable, folded at use (lit carries the literal Expr) */
@@ -5145,16 +5239,19 @@ static void vars_push_const(const char *name, Type t, Expr *lit) {
     g_vars[g_nvars].type = t;
     g_vars[g_nvars].can_mutate = 0;
     g_vars[g_nvars].lit = lit;
+    g_vars[g_nvars].used = 0;
+    g_vars[g_nvars].line = 0;
+    g_vars[g_nvars].report = 0;
     g_nvars++;
 }
 static Var *vars_lookup(const char *name) {   /* innermost binding, or NULL */
     for (int i = g_nvars - 1; i >= 0; i--)
-        if (!strcmp(g_vars[i].name, name)) return &g_vars[i];
+        if (!strcmp(g_vars[i].name, name)) { g_vars[i].used = 1; return &g_vars[i]; }
     return NULL;
 }
 static int vars_find(const char *name, Type *out) {
     for (int i = g_nvars - 1; i >= 0; i--)
-        if (!strcmp(g_vars[i].name, name)) { *out = g_vars[i].type; return 1; }
+        if (!strcmp(g_vars[i].name, name)) { g_vars[i].used = 1; *out = g_vars[i].type; return 1; }
     return 0;
 }
 static int vars_can_mutate(const char *name) {
@@ -5363,7 +5460,7 @@ static void collect_idents(Expr *e, const char **out, int *n, int cap) {
     }
     if (e->kind == E_CALL) {   /* Neither name on a call is a child expr: the callee lives in
                                 * sval (`g(x)` where g is a closure) and a method call's RECEIVER
-                                * lives in qual (`m.get(k)`, src/tychoc.c:2914), because the parser
+                                * lives in qual (`m.get(k)`, src/tychoc.c:2917), because the parser
                                 * cannot tell it from a package call. Both are outer reads; missing
                                 * qual let `m` reach the lifted body uncaptured and the C compiler,
                                 * not tychoc, reported `h_m undeclared`. pf_scan_expr already does
@@ -6634,7 +6731,7 @@ static Type resolve_expr_inner(Expr *e) {
             if (e->nargs != s->nparams)
                 die_at(e->line, "'%s' takes %d argument(s), got %d",
                        nominal_name(e->sval), s->nparams, e->nargs);
-            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:5868 */
+            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:6131 */
             for (int i = 0; i < e->nargs; i++) {
                 g_in_arg++;
                 Type at_ = resolve_exp(e->args[i], s->params[i]);   /* fixes a None arg */
@@ -7174,7 +7271,7 @@ static void pf_capture(Expr *id) {
 /* capture an outer local named by a STRING rather than by an E_IDENT node -- the
  * callee of `f(x)` and the receiver of `o.f(x)` live in E_CALL's sval/qual, not
  * in a child expr. The synthesized read is resolved in the enclosing scope with
- * every other capture (src/tychoc.c:7541). Non-locals (global fns, builtins,
+ * every other capture (src/tychoc.c:7806). Non-locals (global fns, builtins,
  * enum constructors, package qualifiers) fail vars_find and are dropped. */
 static void pf_capture_name(const char *n, int line) {
     Type vt;
@@ -7197,10 +7294,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:6891),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7154),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:7165). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:7428). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
@@ -7221,7 +7318,7 @@ static void pf_scan_expr(Expr *e) {
     }
     /* A call's callee is NOT an E_IDENT child of the node: `f(x)` keeps the name
      * in sval, and `o.f(x)` keeps the receiver in qual because the parser cannot
-     * tell it from a package call (src/tychoc.c:2908). The generic descent below
+     * tell it from a package call (src/tychoc.c:2911). The generic descent below
      * visits lhs/rhs/args only, so a fn-typed local reached the lifted chunk proc
      * uncaptured and the C compiler -- not tychoc -- reported the undeclared name.
      * The lambda capture analysis already does the sval half (src/tychoc.c@collect_idents). */
@@ -7333,6 +7430,7 @@ static void pf_scan_stmt(Stmt *s, int loopdepth) {
             pf_scan_body(s->body, s->nbody, loopdepth + 1);
             return;
         case S_FORRANGE: {   /* incl. a nested parallel for: walk it like a loop; it lifts itself later */
+            mark_idents_used(s->par_width);   /* parse -> codegen with no resolve_expr between */
             pf_scan_expr(s->r_start); pf_scan_expr(s->r_stop);
             int save = g_pf_nloc;
             pf_add_local(s->name);
@@ -7441,7 +7539,7 @@ static void resolve_parfor(Stmt *s) {
             Expr *iref = new_expr(E_IDENT, s->line); iref->sval = iv; iref->pkg = "";
             Expr *c2 = new_expr(E_IDENT, s->line); c2->sval = coll->sval; c2->pkg = coll->pkg;
             Expr *idx = new_expr(E_INDEX, s->line); idx->lhs = c2; idx->rhs = iref;
-            Stmt *elem = new_stmt(S_DECL, s->line); elem->name = var; elem->expr = idx;
+            Stmt *elem = new_stmt(S_DECL, s->line); elem->name = var; elem->expr = idx; elem->synth = 1;
             Stmt **nb = (Stmt **)xmalloc((size_t)(rn + 1) * sizeof(Stmt *));
             nb[0] = elem;
             for (int k = 0; k < rn; k++) nb[k + 1] = rb[k];
@@ -7797,6 +7895,7 @@ static void resolve_stmt(Stmt *s, Type ret) {
                     die_at(s->line, "a value if/match cannot produce a task handle");
                 s->decl_type = t;
                 vars_push(s->name, t, 1, s->line);
+                if (!s->synth) vars_report_decl();
                 ctrl_rewrite_tails(s->ctrl, S_ASSIGN, s->name, NULL);   /* tails become `name = tail` */
                 break;
             }
@@ -7815,6 +7914,7 @@ static void resolve_stmt(Stmt *s, Type ret) {
                 g_pend[g_npend].name = s->name; g_pend[g_npend].decl = s; g_pend[g_npend].done = 0; g_npend++;
                 s->decl_type = T_PENDING;
                 vars_push(s->name, T_PENDING, 1, s->line);
+                if (!s->synth) vars_report_decl();
                 break;
             }
             Type t = s->typed_decl ? resolve_exp(s->expr, s->annot) : resolve_expr(s->expr);
@@ -7843,6 +7943,7 @@ static void resolve_stmt(Stmt *s, Type ret) {
                 die_at(s->line, "a channel cannot be copied -- it is freed once, when its creating scope exits, and a second name hides every send and receive from the compiler's analysis; bind the channel(...) directly, or pass this one as an argument");
             s->decl_type = t;
             vars_push(s->name, t, 1, s->line);
+            if (!s->synth) vars_report_decl();
             break;
         }
         case S_MDECL: {   /* a, b := f() — destructure a tuple into fresh locals */
@@ -8200,6 +8301,7 @@ static void resolve_stmt(Stmt *s, Type ret) {
             break;
         }
         case S_FORRANGE: {
+            mark_idents_used(s->par_width);
             if (s->parallel) { resolve_parfor(s); break; }   /* CC-3: body resolves inside the lifted chunk proc */
             if (resolve_expr(s->r_start) != T_INT ||
                 resolve_expr(s->r_stop)  != T_INT)
@@ -8795,6 +8897,25 @@ static void resolve_program(ProcVec *prog) {
     check_channel_liveness(prog);   /* CC-6: after every body is resolved (parallel-for desugars are in place) */
 }
 
+/* A function nothing ever resolved by name. A WARNING and not an error on
+ * purpose: this is name-based reachability, not a real call graph, so an
+ * indirect call through a value the resolver never saw by name would be a false
+ * positive -- and a false ERROR is the one outcome not worth the feature.
+ * Restricted to the program's own files; a dependency exports what it likes. */
+static void report_dead_procs(ProcVec *prog) {
+    for (int i = 0; i < prog->n; i++) {
+        Proc *pr = prog->v[i];
+        if (!pr->name || !strcmp(pr->name, "main")) continue;
+        if (pr->srcfile && strstr(pr->srcfile, "corelib/")) continue;
+        Sig *sg = sig_find_quiet(pr->name);
+        if (!sg || sg->used || sg->is_extern || sg->builtin) continue;
+        diag_use_proc(pr);
+        const char *shown = strstr(pr->name, "__");   /* diagnostics name the SOURCE spelling, never the mangled one */
+        warn_at(pr->line, "'%s' is never called", shown ? shown + 2 : pr->name);
+    }
+}
+
+
 /* ------------------------------------------------------------- codegen */
 /* --- bounds-check elision for monotone loop indices -----------------------
  * Inside `for i in range(len(A)):` (start 0, step +1), the access `A[i]` is
@@ -8882,7 +9003,7 @@ static const char *for3_elidable_arr(Stmt *s) {
     if (!bound || bound->kind != E_CALL || !bound->sval || strcmp(bound->sval, "len") ||
         bound->nargs != 1 || !bound->args[0] || bound->args[0]->kind != E_IDENT) return NULL;
     if (IS_BOUNDED(bound->args[0]->type)) return NULL;   /* bounded stores in .v, not .data — elision emits .data[i], so never elide it */
-    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3667-3672) */
+    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3670-3675) */
     if (!post || post->kind != S_ASSIGN || !post->name || strcmp(post->name, iv)) return NULL;
     Expr *inc = post->expr;
     if (!inc || inc->kind != E_BINOP || inc->op != TK_PLUS) return NULL;
@@ -13819,12 +13940,16 @@ int main(int argc, char **argv) {
     }
     check_finite_types();   /* reject by-value-recursive types before the resolver */
     resolve_program(&prog);
+    report_unused_imports();   /* after resolve: every qualifier has been through pkg_prefix_for */
+    if (g_unused_local) { report_unused_locals(); exit(1); }   /* drained only if resolve did not die first */
 
     if (want_symbols) { emit_symbols(&prog); return 0; }   /* LSP index; no codegen */
 
     FILE *o = c_to_stdout ? stdout : fopen(c_path, "wb");
     if (!o) { fprintf(stderr, "tychoc: cannot write %s\n", c_path); return 1; }
     gen_program(o, &prog);
+    report_dead_procs(&prog);  /* AFTER codegen: a generic body is only resolved at instantiation, so a
+                                * callee reached solely from one is not marked until gen_program runs */
     if (c_to_stdout) fflush(o); else fclose(o);
 
     if (emit_c_only) {

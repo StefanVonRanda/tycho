@@ -32,12 +32,12 @@ exclusive borrow for the duration of a call and cannot be stored.
 ```tycho
 # arrays — homogeneous, growable
 xs := [1, 2, 3]          # [int] inferred
-ys := []string           # empty; element type required when empty
-first := xs[0]            # index read
+_ys := []string           # empty; element type required when empty
+_first := xs[0]            # index read
 xs[0] = 9                 # index write (in place)
-n := len(xs)              # length
+_n := len(xs)              # length
 push(xs, 4)               # append in place  (xs is inout)
-last := pop(xs)           # remove last, returns it
+_last := pop(xs)           # remove last, returns it
 
 # structs — nominal, fields are values
 struct Point:
@@ -45,14 +45,14 @@ struct Point:
     y: int
 
 p := Point(1, 2)           # positional construction, fields in declaration order
-px := p.x                  # field read
+_px := p.x                  # field read
 p.y = 5                    # field write (in place)
 
 # nesting is just trees of values
 struct Line:
     a: Point
     b: Point
-labels: [string] = []      # a field that is an array, etc.
+_labels: [string] = []      # a field that is an array, etc.
 ```
 
 No `null`. "Maybe a value" needs an optional/sum type (see §7); that is a
@@ -90,7 +90,7 @@ fn read_lines() -> [string]:
     return lines              # whole array deep-copied into caller's arena
 
 fn main():
-    ls := read_lines()        # ls owns its buffer + string bytes, in main's arena
+    _ls := read_lines()        # ls owns its buffer + string bytes, in main's arena
 ```
 
 - `push` grows `lines`' backing buffer **in `lines`' arena** (geometric

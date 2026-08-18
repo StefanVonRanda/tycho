@@ -128,7 +128,6 @@ fn blog_index() -> string:
         push(titles, pg.title)
     ord := sort.argsort_desc(dates)
     md := "# Blog\n\n"
-    k := 0
     for k := 0; k < len(ord); k += 1:
         j := ord[k]
         md = md + "- " + dates[j] + " — [" + titles[j] + "](/blog/" + slugs[j] + ")\n"
@@ -163,7 +162,6 @@ fn route(req: httpd.Request) -> httpd.Response:
 fn main():
     raw := args()
     serve := false
-    i := 0
     for i := 0; i < len(raw); i += 1:
         if raw[i] == "--serve":
             serve = true
@@ -190,7 +188,7 @@ fn main():
             # HTTP/1.1 keep-alive: serve requests off one socket until the peer
             # asks to close, hangs up, or goes idle for IDLE_MS -- the timeout is
             # what stops a slow-loris peer from pinning this loop forever.
-            armed := net.set_read_timeout_ms(conn, IDLE_MS)
+            _armed := net.set_read_timeout_ms(conn, IDLE_MS)
             alive := true
             for alive:
                 # Err says which failure: httpd.Malformed deserves a 400, while
@@ -198,7 +196,7 @@ fn main():
                 match httpd.read_request(conn):
                     Err(e):
                         if e == httpd.Malformed:
-                            w := httpd.write_response(conn, httpd.text_response(400, "bad request\n"))
+                            _w := httpd.write_response(conn, httpd.text_response(400, "bad request\n"))
                         alive = false
                     Ok(req):
                         alive = not httpd.connection_close(req)
@@ -217,7 +215,6 @@ fn main():
         # handler and print status + body. Golden-locked (no socket needed).
         cr := httpd.crlf()
         paths := ["/", "/blog", "/blog/hello-tycho", "/wiki/getting-started", "/blog/../secret", "/blog/missing", "/nope"]
-        j := 0
         for j := 0; j < len(paths); j += 1:
             req := result.unwrap_or(httpd.parse_request("GET " + paths[j] + " HTTP/1.1" + cr + cr), httpd.bad_request())
             resp := route(req)
@@ -227,7 +224,6 @@ fn main():
         # static assets are served as raw bytes (not through route); print their
         # metadata -- content type + byte length -- rather than dumping binary.
         spaths := ["/static/style.css", "/favicon.ico", "/static/missing.png", "/static/../secret"]
-        k := 0
         for k := 0; k < len(spaths); k += 1:
             a := static_asset(spaths[k])
             if a.ok:

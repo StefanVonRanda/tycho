@@ -25,7 +25,7 @@ subscript edge(g: Graph, i: int) -> inout Node:
 fn main():
     g := Graph([Node(1), Node(2)])
     g.edge(1).weight = 10        # write in place through the projection — no copy
-    w := g.edge(0).weight        # read through it
+    _w := g.edge(0).weight        # read through it
     bump(&g.edge(0).weight)      # a field of the projection as an `inout` argument
 ```
 

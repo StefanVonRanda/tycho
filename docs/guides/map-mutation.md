@@ -60,7 +60,7 @@ words := ["ada", "alan", "ada"]
 cnt := []string: int
 for w in words:
     cnt[w] = cnt[w] + 1     # read cnt[w] (0 if absent), store back
-miss := cnt["absent"]       # 0, and "absent" is NOT added to the map
+_miss := cnt["absent"]       # 0, and "absent" is NOT added to the map
 ```
 
 A composite (array/struct/map) value isn't returned by a bare read — use

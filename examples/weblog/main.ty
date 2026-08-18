@@ -71,7 +71,6 @@ fn parse_line(line: string) -> Rec:
 fn ranked(m: [string:int]) -> [string]:
     ks := keys(m)
     vals := []int
-    i := 0
     for i := 0; i < len(ks); i += 1:
         push(vals, m[ks[i]])
     idx := sort.argsort_desc(vals)
@@ -164,7 +163,6 @@ fn main():
 
     println("status classes:")
     scs := sort.asc(keys(status))
-    i := 0
     for i := 0; i < len(scs); i += 1:
         println("  " + strings.pad_right(scs[i], 6, " ") + strings.pad_left(str(status[scs[i]]), 6, " "))
     println("")

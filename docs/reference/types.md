@@ -129,9 +129,9 @@ em := []string: int
 f := 1.5
 
 xs : [int] = []              # bare [] takes the expected array type
-n := tally(em, [])           # ...in argument position too
-g := f + 2                   # an int literal adapts to a float context (f : float)
-doubled := iter.map(xs, fn(x: int) -> int: x * 2)   # lambda params from the expected fn type
+_n := tally(em, [])           # ...in argument position too
+_g := f + 2                   # an int literal adapts to a float context (f : float)
+_doubled := iter.map(xs, fn(x: int) -> int: x * 2)   # lambda params from the expected fn type
 
 ys := []                     # a bare decl stays pending...
 push(ys, 3)                  # ...until its first grounding use types it ([int])

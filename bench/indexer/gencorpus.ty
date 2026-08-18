@@ -19,10 +19,8 @@ fn main():
     vocab := 5000
 
     state := 2463534242             # fixed LCG seed
-    f := 0
     for f := 0; f < n_files; f += 1:
         body := ""
-        w := 0
         for w := 0; w < words_per_file; w += 1:
             state = (state * 1103515245 + 12345) % 2147483648
             idx := state % vocab

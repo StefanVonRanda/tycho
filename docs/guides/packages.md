@@ -145,3 +145,10 @@ and a second resolution rule waits until a real multi-entry project feels the
 
 Package fixtures live in `tests/pkg/<name>/` (entry `main.ty`, golden
 `tests/pkg/<name>.out`). `make test` compiles the entry with `tychoc`.
+## Imports are per-file
+
+An `import` is visible only in the file that writes it. A second file in the same
+package that names that package must import it as well — using a package this
+file did not import is an error, even when a sibling file already imported it and
+the build therefore resolved it. An import that no file in the build uses is an
+error too.

@@ -61,7 +61,7 @@ copies:
 
 ```tycho
 a := [1, 2, 3]
-b := a        # b is an independent copy, not an alias
+_b := a        # b is an independent copy, not an alias
 ```
 
 Now a value can leave a scope in exactly two ways, and *both are written in the source*:

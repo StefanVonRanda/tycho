@@ -868,7 +868,7 @@ fn read_source(path: string) -> Result(string, RErr):
         Err(other):
             return Err(RErr("cannot read: " + path))
         Ok(sz):
-            ok := sz
+            _ok := sz
     return Ok(io.read(path))
 
 # The source path decides the reader, on its extension and nothing else. There

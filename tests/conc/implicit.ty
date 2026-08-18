@@ -28,7 +28,7 @@ fn looper() -> int:
     return total
 
 fn main():
-    d := spawn slow(50)                # never waited: joined at main's end
+    _d := spawn slow(50)                # never waited: joined at main's end
     print(str(early(1000)))
     print(str(early(5)))
     print(str(looper()))

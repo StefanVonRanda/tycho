@@ -37,7 +37,7 @@ fn count(path: string) -> int:
 
 t1 := spawn count("a.txt")     # args deep-copied into the task's own arena
 t2 := spawn count("b.txt")     # runs in parallel
-total := wait(t1) + t2.wait()  # blocks; result deep-copied back out
+_total := wait(t1) + t2.wait()  # blocks; result deep-copied back out
 ```
 
 `spawn f(args)` takes a direct call — the argument list *is* the capture list, explicit and by
@@ -92,7 +92,7 @@ match recv(ch):                     # deep copy out
     None:                           # closed and drained
         println("drained")
 close(ch)
-n := wait(w)
+_n := wait(w)
 ```
 
 Channel memory is bounded by capacity × payload, for every element type. Channels cannot be

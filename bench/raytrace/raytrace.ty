@@ -66,7 +66,6 @@ fn main():
     ns := 40
 
     scene := []Sphere
-    k := 0
     for k := 0; k < ns; k += 1:
         col := k % 5
         row := k / 5
@@ -85,9 +84,7 @@ fn main():
 
     acc := 0
 
-    j := 0
     for j := 0; j < ny; j += 1:
-        i := 0
         for i := 0; i < nx; i += 1:
             u := (to_float(i) / to_float(nx)) * 2.0 - 1.0
             v := 1.0 - (to_float(j) / to_float(ny)) * 2.0
@@ -95,7 +92,6 @@ fn main():
 
             best := 1000000.0
             hit := 0 - 1
-            m := 0
             for m := 0; m < len(scene); m += 1:
                 t := hit_sphere(origin, dir, scene[m])
                 if t > 0.0:

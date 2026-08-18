@@ -30,7 +30,6 @@ fn main():
     println("sh=" + str(sh))        # 8
 
     s := ""
-    i := 0
     for i := 0; i < 3; i += 1:
         s += "ab"                        # in-place accumulator
     println("s=" + s)               # ababab

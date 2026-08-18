@@ -15,9 +15,7 @@ fn main():
 
     idx := []string: [int]
     seed := 1
-    d := 0
     for d := 0; d < n; d += 1:
-        j := 0
         for j := 0; j < w; j += 1:
             seed = (seed * 1103515245 + 12345) % 2147483647    # LCG, stays in [0, 2^31)
             tid := seed % v
@@ -25,11 +23,9 @@ fn main():
 
     ks := keys(idx)
     sum := 0
-    ki := 0
     for ki := 0; ki < len(ks); ki += 1:
         dl := idx.get(ks[ki], []int)
         sum += len(ks[ki]) + len(dl)
-        di := 0
         for di := 0; di < len(dl); di += 1:
             sum += dl[di]
     println("vocab=" + str(len(ks)) + " checksum=" + str(sum))

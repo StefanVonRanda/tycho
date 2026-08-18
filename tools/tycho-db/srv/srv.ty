@@ -200,10 +200,10 @@ fn serve_conn(conn: int, db: inout store.Db, lg: inout wal.Log) -> Result(int, S
             break
         t := strings.trim(line)
         if t == "" or strings.starts_with(t, "--"):
-            w := send_block(conn, _one("ok")) or_return
+            _w := send_block(conn, _one("ok")) or_return
             continue
         if strings.to_upper(t) == "QUIT":
-            w := send_block(conn, _one("ok bye")) or_return
+            _w := send_block(conn, _one("ok bye")) or_return
             break
         served = served + 1
         resp: [string] = []
@@ -213,7 +213,7 @@ fn serve_conn(conn: int, db: inout store.Db, lg: inout wal.Log) -> Result(int, S
                     Ok(o): resp = render(o)
                     Err(e): push(resp, "err " + exec.err_str(e))
             Err(e): push(resp, "err " + sql.err_str(e))
-        w := send_block(conn, resp) or_return
+        _w := send_block(conn, resp) or_return
     return Ok(served)
 
 # Accept, serve, checkpoint, repeat. Never returns Ok in practice -- the daemon

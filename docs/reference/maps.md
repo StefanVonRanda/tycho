@@ -11,11 +11,11 @@ in Tycho, a map is a value — assigning one deep-copies it, two maps compare en
 
 ```tycho
 counts := ["ada": 1, "alan": 2]   # a [string: int], typed from the literal
-empty := []string: int            # an empty map (key and value types required)
+_empty := []string: int            # an empty map (key and value types required)
 
 counts["grace"] = 5               # add or overwrite
-has := "ada" in counts            # membership test -> bool
-n := len(counts)                  # entry count -> int
+_has := "ada" in counts            # membership test -> bool
+_n := len(counts)                  # entry count -> int
 delete counts["alan"]             # remove a key (a no-op if absent)
 ```
 

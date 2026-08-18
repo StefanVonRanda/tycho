@@ -180,8 +180,8 @@ fn main() -> Result(void, string):
         t1 := spawn stage.source_cancellable(raw, done, [5, 8, 5])
         t2 := spawn stage.try_transform(raw, res, "range", refuse8)
         outcome := stage.guard(res, done)
-        n1 := wait(t1)
-        n2 := wait(t2)
+        _n1 := wait(t1)
+        _n2 := wait(t2)
         match outcome:
             Ok(items): return Err("try_transform ACCEPTED the element its step refused")
             Err(e): return Err(stage.err_str(e))
