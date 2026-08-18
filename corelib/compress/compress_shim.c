@@ -13,10 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
-#ifndef TYCHO_INT_T
-#define TYCHO_INT_T
-typedef int64_t tycho_int;
-#endif
+#include "../tycho.h"
 
 /* windowBits 15 | 16 selects zlib's gzip wrapper (header + CRC32 + length). */
 #define GZIP_WBITS (15 + 16)

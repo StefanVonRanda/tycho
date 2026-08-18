@@ -13813,7 +13813,10 @@ int main(int argc, char **argv) {
     const char *optdbg = debug ? "-O0 -g" : "-O3";   /* -g: unoptimized + DWARF so gdb/lldb step the .ty source */
     for (int i = 0; i < g_nshims; i++) shims = sfmt("%s %s", shims, g_shims[i]);   /* auto-discovered <pkg>_shim.c */
     const char *pkgdeps = g_pkgdeps ? g_pkgdeps : "";   /* pkg-config flags from <pkg>/deps (cflags + libs, trailing) */
-    char *cmd = sfmt("%s %s -fwrapv%s -pthread -o %s %s%s -lm%s%s %s", cc, optdbg, march, base, c_path, shims, links, extra, pkgdeps);
+    /* -I the corelib root so ANY shim can `#include <tycho.h>` for the ABI types,
+       instead of hand-declaring `tycho_int` as all 13 in-tree shims once did. */
+    char *incdir = sfmt(" -I%s", corelib_root());
+    char *cmd = sfmt("%s %s -fwrapv%s -pthread%s -o %s %s%s -lm%s%s %s", cc, optdbg, march, incdir, base, c_path, shims, links, extra, pkgdeps);
     int rc = system(cmd);
     if (rc != 0) { fprintf(stderr, "tychoc: C compilation failed (%s)\n", cmd); return 1; }   /* the .c SURVIVES a cc failure on purpose: it is the evidence the printed command refers to */
     remove(c_path);

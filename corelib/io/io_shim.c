@@ -76,10 +76,7 @@ static ssize_t ty_pwrite(int fd, const void *buf, size_t n, long long off) {
 #define pwrite(fd, b, n, o) ty_pwrite((fd), (b), (n), (o))
 #define mkdir(p, m) _mkdir(p)   /* mingw's mkdir takes one argument */
 #endif
-#ifndef TYCHO_INT_T
-#define TYCHO_INT_T
-typedef int64_t tycho_int;
-#endif
+#include "../tycho.h"
 
 typedef struct { FILE *f; char *buf; size_t cap; } IoLines;
 

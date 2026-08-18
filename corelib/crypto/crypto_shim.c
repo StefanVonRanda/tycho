@@ -5,10 +5,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
-#ifndef TYCHO_INT_T
-#define TYCHO_INT_T
-typedef int64_t tycho_int;
-#endif
+#include "../tycho.h"
 
 static const char *const ERRTAG = "!err";     /* non-hex failure sentinel for string returns */
 

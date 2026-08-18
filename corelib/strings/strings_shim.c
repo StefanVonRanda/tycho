@@ -24,10 +24,7 @@
 /* int64-migration: Tycho `int` lowers to tycho_int (int64_t) in the emitted
  * program; this shim is a separate translation unit, so it defines the same type
  * to match the FFI ABI on ILP32/LLP64, not just LP64. */
-#ifndef TYCHO_INT_T
-#define TYCHO_INT_T
-typedef int64_t tycho_int;
-#endif
+#include "../tycho.h"
 
 #define TY_PF_OK        0
 #define TY_PF_OVERFLOW  1    /* ERANGE and the result is infinite */

@@ -35,10 +35,7 @@ static void ty_net_init(void) {
 #include <stdio.h>
 #include <stdint.h>
 #include <errno.h>              /* EAGAIN/EWOULDBLOCK: SO_RCVTIMEO vs a real error */
-#ifndef TYCHO_INT_T
-#define TYCHO_INT_T
-typedef int64_t tycho_int;
-#endif
+#include "../tycho.h"
 
 /* Resolve host + port to a single IPv4 endpoint via getaddrinfo. A numeric IP
  * (e.g. "127.0.0.1") resolves offline -- no DNS -- so the loopback test stays

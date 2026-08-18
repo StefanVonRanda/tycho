@@ -20,10 +20,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
-#ifndef TYCHO_INT_T
-#define TYCHO_INT_T
-typedef int64_t tycho_int;
-#endif
+#include "../tycho.h"
 
 /* Every subject crosses as (s, n) -- n is Tycho's len(), an O(1) header read --
  * because a Tycho string may hold an interior NUL and a bare `char*` ends at it.

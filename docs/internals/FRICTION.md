@@ -2664,7 +2664,17 @@ wanted, because neither needs one.
 
 The original text follows.
 
-### 11. A first `--shim` C file must hand-declare `tycho_int`, because there is no header to include
+### 11. ~~A first `--shim` C file must hand-declare `tycho_int`, because there is no header to include~~ — **CLOSED 2026-08-18**
+
+`corelib/tycho.h` exists and tychoc passes `-I` at the corelib root, so any
+shim anywhere can `#include <tycho.h>`. Proved from a temp directory outside
+the repo: a two-line shim with no typedef of its own builds and returns 42.
+The 13 in-tree shims include it by relative path instead, because
+`tests/run.sh` rolls its OWN cc line with no `-I` -- discovered by two pkg
+fixtures going red, which is the reason the relative form is the one in the
+tree and `<tycho.h>` is the one a user writes. The record of what the item
+said when open follows.
+
 
 A shim is its own translation unit, compiled standalone — which is the whole
 point of `make shim-check` (`Makefile:298`, "every corelib `<pkg>_shim.c` must

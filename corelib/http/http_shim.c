@@ -3,10 +3,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdint.h>
-#ifndef TYCHO_INT_T
-#define TYCHO_INT_T
-typedef int64_t tycho_int;
-#endif
+#include "../tycho.h"
 
 /* `status` stays a genuine C `long`: curl_easy_getinfo(CURLINFO_RESPONSE_CODE,
  * &status) writes a libc `long` here, so the field must match curl's ABI. Only

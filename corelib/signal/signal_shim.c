@@ -16,10 +16,7 @@
 #endif
 #include <stdint.h>
 
-#ifndef TYCHO_INT_T
-#define TYCHO_INT_T
-typedef int64_t tycho_int;
-#endif
+#include "../tycho.h"
 
 /* The listening fd the handler will shut down, and whether a shutdown signal has
  * arrived. `volatile sig_atomic_t` is the only shape a handler may write; an fd

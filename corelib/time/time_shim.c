@@ -8,10 +8,7 @@
 /* int64-migration: Tycho `int` lowers to tycho_int (int64_t) in the emitted
  * program; this shim is a separate translation unit, so it defines the same
  * type to match the FFI ABI on ILP32/LLP64, not just LP64. */
-#ifndef TYCHO_INT_T
-#define TYCHO_INT_T
-typedef int64_t tycho_int;
-#endif
+#include "../tycho.h"
 
 static void tmx_nanosleep(tycho_int ns) {
     struct timespec req, rem;

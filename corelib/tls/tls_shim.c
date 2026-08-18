@@ -22,10 +22,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
-#ifndef TYCHO_INT_T
-#define TYCHO_INT_T
-typedef int64_t tycho_int;
-#endif
+#include "../tycho.h"
 
 typedef struct { SSL_CTX *ctx; SSL *ssl; int fd; } Tls;
 

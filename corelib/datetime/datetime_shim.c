@@ -233,10 +233,7 @@ static int ty_posix_tz_offset(const char *tz, long long secs, long *out) {
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
-#ifndef TYCHO_INT_T
-#define TYCHO_INT_T
-typedef int64_t tycho_int;
-#endif
+#include "../tycho.h"
 
 tycho_int dtx_local_offset(tycho_int secs) {
     time_t t = (time_t)secs;

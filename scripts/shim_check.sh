@@ -21,7 +21,7 @@ for shim in corelib/*/*_shim.c; do
         depflags="$(pkg-config --cflags $pkgs 2>/dev/null || true)"
     fi
 
-    if out="$($CC -std=c11 -fsyntax-only $depflags "$shim" 2>&1)"; then
+    if out="$($CC -std=c11 -fsyntax-only -Icorelib $depflags "$shim" 2>&1)"; then
         echo "ok   $shim"
         ok=$((ok + 1))
     else

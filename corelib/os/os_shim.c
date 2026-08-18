@@ -13,10 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
-#ifndef TYCHO_INT_T
-#define TYCHO_INT_T
-typedef int64_t tycho_int;
-#endif
+#include "../tycho.h"
 
 #ifdef _WIN32
 #include <windows.h>            /* CreateProcessA / CreatePipe -- the argv path */
