@@ -43,7 +43,8 @@ fn count(path: string) -> int:
 
 t := spawn count("a.txt")     # args deep-copied into the task's arena, then the thread starts
 u := spawn count("b.txt")
-_total := wait(t) + u.wait()   # join; result deep-copied into the waiting scope; task arena freed
+total := wait(t) + u.wait()    # join; result deep-copied into the waiting scope; task arena freed
+println(str(total))
 ```
 
 `spawn` takes a **direct call** to a named function — the argument list *is* the
@@ -113,9 +114,11 @@ n := 8
 results := 0
 
 jobs := channel(Job, 16)            # cap bounds buffered work — backpressure
-_pr := spawn produce(jobs, n)        # producer sends, then close(jobs) when done
+pr := spawn produce(jobs, n)         # producer sends, then close(jobs) when done
 parallel for j in jobs:             # K = ncpu() workers share the one queue
     results = results + work(j)     # ordinary reduction, folded at the join
+wait(pr)                            # join the producer before reporting
+println(str(results))
 ```
 
 This is the bounded-fan-out idiom — N items not known up front, at most `cap`
@@ -156,7 +159,8 @@ match recv(ch):                   # deep copy OUT -> Option(T)
     Some(s): println(s)
     None:    println("drained")   # closed AND drained
 close(ch)
-_n := wait(w)
+n := wait(w)
+println(str(n))
 ```
 
 A channel is a bounded **lock-free MPMC queue**, internally synchronized so value

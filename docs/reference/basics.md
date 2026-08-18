@@ -197,6 +197,10 @@ than `_` twice.
 
 Parameters, loop variables, and match/select bindings are never reported.
 
+Fences on this page and in the specification use `_name` where a value is bound
+only to show the syntax and reading it would add nothing. The guides do the
+opposite and use what they bind.
+
 A function nothing ever calls is a **warning**, not an error. It is reported
 after code generation, because a callee reached only from a generic body is not
 resolved until that body is instantiated.

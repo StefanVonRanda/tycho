@@ -131,7 +131,8 @@ the address of your local automatically; no hand-written shim:
 extern "sqlite3" fn sqlite3_open(path: string, db: inout ptr) -> int
 
 db := null
-_rc := sqlite3_open("app.db", &db)     # the compiler emits sqlite3_open(path, &db)
+rc := sqlite3_open("app.db", &db)      # the compiler emits sqlite3_open(path, &db)
+println(str(rc))
 ```
 
 A `inout` extern parameter is declared to C as a pointer to its type (`ptr → void**`,

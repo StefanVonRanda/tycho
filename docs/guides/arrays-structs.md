@@ -32,12 +32,13 @@ exclusive borrow for the duration of a call and cannot be stored.
 ```tycho
 # arrays — homogeneous, growable
 xs := [1, 2, 3]          # [int] inferred
-_ys := []string           # empty; element type required when empty
-_first := xs[0]            # index read
+ys := []string            # empty; element type required when empty
+first := xs[0]             # index read
 xs[0] = 9                 # index write (in place)
-_n := len(xs)              # length
+n := len(xs)               # length
 push(xs, 4)               # append in place  (xs is inout)
-_last := pop(xs)           # remove last, returns it
+last := pop(xs)            # remove last, returns it
+println(str(first) + " " + str(n) + " " + str(last) + " " + str(len(ys)))
 
 # structs — nominal, fields are values
 struct Point:
@@ -45,14 +46,15 @@ struct Point:
     y: int
 
 p := Point(1, 2)           # positional construction, fields in declaration order
-_px := p.x                  # field read
+px := p.x                   # field read
 p.y = 5                    # field write (in place)
+println(str(px) + " " + str(p.y))
 
 # nesting is just trees of values
 struct Line:
     a: Point
     b: Point
-_labels: [string] = []      # a field that is an array, etc.
+    labels: [string]       # a field that is an array, etc.
 ```
 
 No `null`. "Maybe a value" needs an optional/sum type (see §7); that is a
@@ -90,7 +92,8 @@ fn read_lines() -> [string]:
     return lines              # whole array deep-copied into caller's arena
 
 fn main():
-    _ls := read_lines()        # ls owns its buffer + string bytes, in main's arena
+    ls := read_lines()         # ls owns its buffer + string bytes, in main's arena
+    println(str(len(ls)))
 ```
 
 - `push` grows `lines`' backing buffer **in `lines`' arena** (geometric
