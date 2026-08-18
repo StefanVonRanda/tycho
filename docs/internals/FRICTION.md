@@ -1075,7 +1075,17 @@ refusal. Below is what writing it surfaced, **ranked**, worst first. The last
 group is the entries that got smaller as they were written down, and they are
 labelled as such rather than padded.
 
-### 1. The one-shot digest is what the language makes natural — this is a language default steering library shape
+### 1. ~~The one-shot digest is what the language makes natural~~ — **DOWNGRADED 2026-08-18: `core:sha256` streams now**
+
+`corelib/sha256/sha256.ty` has `init`, `update`, `final` and `final_hex`, so the
+package this actually matters for — `tycho-ar` stakes file integrity on it —
+can hash something it does not hold entire. `core:md5`, `core:hash` and
+`core:crypto` remain one-shot, and that is the verdict rather than a backlog:
+md5 is kept for reading other people's formats, `core:hash` is a hash-table
+hash over a key already in hand, and AEAD is defined over a whole message. The
+language default the item describes is real; it now has an exception where the
+shape called for one. The record of what the item said when open follows.
+
 
 **The whole corelib hashes messages the caller already holds entire**, and it is
 not an oversight. `core:sha256` is `digest(msg)` and `hex(msg)`, both over one
@@ -1194,7 +1204,13 @@ tells the two apart.
 
 The original text follows.
 
-### 3. `compress.decompress` cannot distinguish empty from corrupt
+### 3. ~~`compress.decompress` cannot distinguish empty from corrupt~~ — **CLOSED 2026-08-18, by probe**
+
+Re-probed today and it distinguishes them: a round-tripped empty payload gives
+`Ok` with length 0, a payload cut in half gives `Err`, and zero bytes in gives
+`Err`. Empty is an answer and corrupt is an error. The record of what the item
+said when open follows.
+
 
 Measured, not reasoned. A probe compressing `""`, a 65-byte payload with byte 12
 XORed by `0xFF`, and that payload cut in half:
