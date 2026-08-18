@@ -693,47 +693,36 @@ void arena_reset(Arena *a) {
 }
 
 /* Release the arena entirely (scope/call end): all blocks go to the pool. */
-/* Split hot/cold on purpose. arena_free runs at EVERY scope exit, and merely
- * MENTIONING st_now_ns() in its body cost 1.7x on bench/binary_trees (511ms vs
- * 302ms) even with g_arena_stats off and the clock never called -- a call in the
- * body is enough to change how this function is compiled into its callers. The
- * pointer work lives in arena_free_hot; the clock lives only in the cold half. */
-static inline void arena_free_hot(Arena *a) {
+void arena_free(Arena *a) {
+    uint64_t t_td = 0;
+    if (g_arena_stats) {
+        t_td = st_now_ns();
+        /* Count a TEARDOWN, not a call. A waited task's root is freed twice by
+         * design -- eagerly at the wait, then again by the scope-exit
+         * tycho_task_finish, which the runtime documents as a no-op because
+         * head/bkt/freelist are already NULL. Counting the call made "arenas
+         * created" and "arenas freed" disagree by one per waited task: a two-task
+         * program reported 11 created and 13 freed, which reads as a leak in the
+         * one report whose job is to show there is not one.
+         *
+         * "Released something" is the honest predicate: it is false for the
+         * redundant free, and also for an arena created and never allocated into
+         * -- which is a real arena whose teardown genuinely does nothing, so the
+         * two figures can differ for that reason and it is information, not an
+         * artefact. The redundant calls are reported separately rather than
+         * hidden. */
+        if (a->head || a->bkt || a->freelist)
+            atomic_fetch_add_explicit(&st_arena_frees, 1, memory_order_relaxed);
+        else
+            atomic_fetch_add_explicit(&st_arena_free_noop, 1, memory_order_relaxed);
+        st_drop_live(a);
+    }
     if (a->bkt) { free(a->bkt); a->bkt = NULL; }   /* release the lazily-allocated table */
     a->freelist = NULL; a->nfree = 0;
     block_release_chain(a->head);
     a->head = NULL;
-}
-
-__attribute__((noinline)) static void arena_free_stats(Arena *a) {
-    uint64_t t_td = st_now_ns();
-    /* Count a TEARDOWN, not a call. A waited task's root is freed twice by
-     * design -- eagerly at the wait, then again by the scope-exit
-     * tycho_task_finish, which the runtime documents as a no-op because
-     * head/bkt/freelist are already NULL. Counting the call made "arenas
-     * created" and "arenas freed" disagree by one per waited task: a two-task
-     * program reported 11 created and 13 freed, which reads as a leak in the
-     * one report whose job is to show there is not one.
-     *
-     * "Released something" is the honest predicate: it is false for the
-     * redundant free, and also for an arena created and never allocated into
-     * -- which is a real arena whose teardown genuinely does nothing, so the
-     * two figures can differ for that reason and it is information, not an
-     * artefact. The redundant calls are reported separately rather than
-     * hidden. */
-    if (a->head || a->bkt || a->freelist)
-        atomic_fetch_add_explicit(&st_arena_frees, 1, memory_order_relaxed);
-    else
-        atomic_fetch_add_explicit(&st_arena_free_noop, 1, memory_order_relaxed);
-    st_drop_live(a);
-    arena_free_hot(a);
-    atomic_fetch_add_explicit(&st_ns_teardown, (size_t)(st_now_ns() - t_td), memory_order_relaxed);
-}
-
-/* Release the arena entirely (scope/call end): all blocks go to the pool. */
-void arena_free(Arena *a) {
-    if (g_arena_stats) { arena_free_stats(a); return; }
-    arena_free_hot(a);
+    if (g_arena_stats)
+        atomic_fetch_add_explicit(&st_ns_teardown, (size_t)(st_now_ns() - t_td), memory_order_relaxed);
 }
 
 /* ---- tasks (CC-1: `spawn f(args)` / `wait(t)`) --------------------------
