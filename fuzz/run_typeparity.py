@@ -7,21 +7,21 @@ RUN_TIMEOUT = 30
 
 # type -> (literal form, variable name declared in the prelude)
 OPERANDS = {
-    "int":    ("7",           "vi"),
-    "float":  ("2.5",         "vf"),
-    "char":   ("'A'",         "vc"),
-    "string": ('"x"',         "vs"),
-    "bool":   ("true",        "vb"),
-    "u32":    ("to_u32(7)",   "vu"),
-    "u64":    ("to_u64(7)",   "vw"),
-    "f32":    ("to_f32(2.5)", "vg"),
+    "int":    ("7",           "_vi"),
+    "float":  ("2.5",         "_vf"),
+    "char":   ("'A'",         "_vc"),
+    "string": ('"x"',         "_vs"),
+    "bool":   ("true",        "_vb"),
+    "u32":    ("to_u32(7)",   "_vu"),
+    "u64":    ("to_u64(7)",   "_vw"),
+    "f32":    ("to_f32(2.5)", "_vg"),
 }
 TYPES = list(OPERANDS)
 OPS = ["+", "-", "*", "/", "%", "<<", ">>", "&", "|", "^",
        "<", ">", "<=", ">=", "==", "!=", "and", "or"]
 PRELUDE = ('fn main():\n'
-           '    vi := 7\n    vf := 2.5\n    vc := \'A\'\n    vs := "x"\n    vb := true\n'
-           '    vu := to_u32(7)\n    vw := to_u64(7)\n    vg := to_f32(2.5)\n')
+           '    _vi := 7\n    _vf := 2.5\n    _vc := \'A\'\n    _vs := "x"\n    _vb := true\n'
+           '    _vu := to_u32(7)\n    _vw := to_u64(7)\n    _vg := to_f32(2.5)\n')
 
 SIZED   = {"u32", "u64"}                  # is_sized_int() over this matrix's types
 INTEGER = {"int"} | SIZED
@@ -79,7 +79,7 @@ def forms(t):
     return [lit, var]
 
 def program(lform, op, rform):
-    return PRELUDE + "    c := %s %s %s\n" % (lform, op, rform)
+    return PRELUDE + "    _c := %s %s %s\n" % (lform, op, rform)
 
 def classify(rc, err):
     if rc < 0:

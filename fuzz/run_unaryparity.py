@@ -12,30 +12,30 @@ struct Pt:
     x: int
     y: int
 fn main():
-    n := 7
-    f := 1.5
-    ch := 'A'
-    s := "z"
-    b := true
-    ai := [1, 2]
-    oi := Some(1)
-    pt := Pt(1, 2)
-    sl := Slot(5)
-    mt := Meters(2.0)
+    _n := 7
+    _f := 1.5
+    _ch := 'A'
+    _s := "z"
+    _b := true
+    _ai := [1, 2]
+    _oi := Some(1)
+    _pt := Pt(1, 2)
+    _sl := Slot(5)
+    _mt := Meters(2.0)
 '''
 
 # (var, nominal label, erased base, is_newtype)
 OPERANDS = [
-    ("n",  "int",          "int",    False),
-    ("f",  "float",        "float",  False),
-    ("ch", "char",         "char",   False),
-    ("s",  "string",       "string", False),
-    ("b",  "bool",         "bool",   False),
-    ("ai", "[int]",        "[int]",  False),
-    ("oi", "Option(int)",  "Option(int)", False),
-    ("pt", "Pt",           "Pt",     False),
-    ("sl", "Slot",         "int",    True),
-    ("mt", "Meters",       "float",  True),
+    ("_n",  "int",          "int",    False),
+    ("_f",  "float",        "float",  False),
+    ("_ch", "char",         "char",   False),
+    ("_s",  "string",       "string", False),
+    ("_b",  "bool",         "bool",   False),
+    ("_ai", "[int]",        "[int]",  False),
+    ("_oi", "Option(int)",  "Option(int)", False),
+    ("_pt", "Pt",           "Pt",     False),
+    ("_sl", "Slot",         "int",    True),
+    ("_mt", "Meters",       "float",  True),
 ]
 OPS = ["-", "~", "not"]
 
@@ -54,7 +54,7 @@ def skip_case(op, operand):
     return False
 
 def program(op, var):
-    return PRELUDE + "    c := %s\n" % expr(op, var)
+    return PRELUDE + "    _c := %s\n" % expr(op, var)
 
 def classify(rc):
     if rc < 0:

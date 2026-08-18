@@ -22,10 +22,14 @@ class Gen:
     RESERVED = {"i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64"}
 
     def fresh(self, p="v"):
+        # Leading `_`: generated locals are frequently bound and never read, and an
+        # unused local is a compile error now. Every prefix here is a LOCAL (no
+        # function or type name comes through fresh), and `_name` privacy applies
+        # to top-level symbols only, so this changes nothing the fuzzer tests.
         self.uid += 1
         while p + str(self.uid) in Gen.RESERVED:
             self.uid += 1
-        return p + str(self.uid)
+        return "_" + p + str(self.uid)
 
     def emit(self, ind, s):
         self.out.append("    " * ind + s)

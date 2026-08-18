@@ -15,42 +15,42 @@ struct Pr:
     a: int
     b: string
 fn main():
-    ai := [1, 2]
-    af := [1.0]
-    asx := ["x"]
-    oi := Some(1)
-    os := Some("x")
-    pt := Pt(1, 2)
-    pr := Pr(1, "x")
-    ti := (1, 2)
-    ts := ("a", "b")
-    mi := ["k": 1]
-    ms := ["k": "v"]
-    n := 7
-    f := 1.5
-    s := "z"
-    sl := Slot(5)
-    mt := Meters(2.0)
+    _ai := [1, 2]
+    _af := [1.0]
+    _asx := ["x"]
+    _oi := Some(1)
+    _os := Some("x")
+    _pt := Pt(1, 2)
+    _pr := Pr(1, "x")
+    _ti := (1, 2)
+    _ts := ("a", "b")
+    _mi := ["k": 1]
+    _ms := ["k": "v"]
+    _n := 7
+    _f := 1.5
+    _s := "z"
+    _sl := Slot(5)
+    _mt := Meters(2.0)
 '''
 
 # (var, nominal type, erased base, is_newtype)
 OPERANDS = [
-    ("ai",  "[int]",            "[int]",    False),
-    ("af",  "[float]",          "[float]",  False),
-    ("asx", "[string]",         "[string]", False),
-    ("oi",  "Option(int)",      "Option(int)",    False),
-    ("os",  "Option(string)",   "Option(string)", False),
-    ("pt",  "Pt",               "Pt", False),
-    ("pr",  "Pr",               "Pr", False),
-    ("ti",  "(int,int)",        "(int,int)",       False),
-    ("ts",  "(string,string)",  "(string,string)", False),
-    ("mi",  "[string:int]",     "[string:int]",    False),
-    ("ms",  "[string:string]",  "[string:string]", False),
-    ("n",   "int",    "int",    False),
-    ("f",   "float",  "float",  False),
-    ("s",   "string", "string", False),
-    ("sl",  "Slot",   "int",    True),
-    ("mt",  "Meters", "float",  True),
+    ("_ai",  "[int]",            "[int]",    False),
+    ("_af",  "[float]",          "[float]",  False),
+    ("_asx", "[string]",         "[string]", False),
+    ("_oi",  "Option(int)",      "Option(int)",    False),
+    ("_os",  "Option(string)",   "Option(string)", False),
+    ("_pt",  "Pt",               "Pt", False),
+    ("_pr",  "Pr",               "Pr", False),
+    ("_ti",  "(int,int)",        "(int,int)",       False),
+    ("_ts",  "(string,string)",  "(string,string)", False),
+    ("_mi",  "[string:int]",     "[string:int]",    False),
+    ("_ms",  "[string:string]",  "[string:string]", False),
+    ("_n",   "int",    "int",    False),
+    ("_f",   "float",  "float",  False),
+    ("_s",   "string", "string", False),
+    ("_sl",  "Slot",   "int",    True),
+    ("_mt",  "Meters", "float",  True),
 ]
 OPS = ["==", "!="]
 
@@ -58,7 +58,7 @@ def skip_pair(l, r):
     return False
 
 def program(lvar, op, rvar):
-    return PRELUDE + "    c := %s %s %s\n" % (lvar, op, rvar)
+    return PRELUDE + "    _c := %s %s %s\n" % (lvar, op, rvar)
 
 def classify(rc):
     if rc < 0:
