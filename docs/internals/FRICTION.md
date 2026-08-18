@@ -194,6 +194,32 @@ nothing about the error model makes accuracy free at the call site.
 
 ### The real remaining debt — the open list, re-scored in place
 
+**Re-scored 2026-08-18 by PROBE, not by reading.** Every entry below was scored
+by writing a program and compiling it; the verdict is the compiler's own message
+or the program's own output. Two moved.
+
+| # | the claim | what a probe returned today | verdict |
+|---|---|---|---|
+| 1 | the whole corelib hashes messages held entire | `corelib/sha256/sha256.ty` now has `init`/`update`/`final`/`final_hex`; `corelib/md5`, `corelib/hash`, `corelib/crypto` have none | **DOWNGRADED** — true for 3 of 4, false for the one that matters most |
+| 3 | `compress.decompress` cannot tell empty from corrupt | round-tripped empty → `Ok len=0`; a halved payload → `Err`; zero bytes in → `Err` | **CLOSED** |
+| 5 | a `bytes` slice clamps, so it is not a bounds check | `b[1:99]` on a 3-byte value returns length 2, no trap | **OPEN** |
+| 11 | a first `--shim` C file must hand-declare `tycho_int` | no generated header exists anywhere in the tree; 13 of 14 shims declare it themselves | **OPEN** |
+| 12 | `for` does not destructure a tuple, and a tuple is not indexable | *"a `for` binds one name"*; *"can only index an array, a string, by…"* | **OPEN**, both halves |
+| 37 | `sink` cannot express a builder | *"'f' is consumed by a `sink` parameter but is mentioned 2 times"* | **OPEN** |
+| 48 | a subscript cannot read two fields of its receiver | `make grid-check` green, and its own report says the flat 2-D limit *"still refused"* | **OPEN**, and the only one a gate watches |
+| 56 | `decimal.from_str` fails open to a WRONG number | `from_str("12.5x")` returns **1.25** — not 12.5, not 0, not an error; `from_str_checked` refuses | **OPEN as a hazard**; the strict sibling works, the trap is that the short name is the wrong one |
+
+**The shape of what is left.** Six open, one downgraded, one closed. None is a
+bug: 5, 12, 37 and 48 are deliberate rules whose cost shows up only when you
+write a particular shape, and 11 and 56 are ergonomics. That is the honest
+summary — the language does not have defects on this list, it has edges, and
+every one of them was found by writing a program rather than by reading the
+compiler.
+
+**What this pass did NOT re-score:** the other 86 numbered entries in this file,
+and the per-item prose below, which still carries its 2026-07-31 framing.
+
+
 **Re-scored 2026-07-31 against `3ddc8fd` — 11 open items.** 43 commits since the
 previous pass: `core:signal`, `io.mtime` / `io.read_at` / `io.size`,
 `Last-Modified` / `304`, `Range` / `206` / `416`, bounded worker retry, and a
@@ -4496,7 +4522,17 @@ containment in a struct, enum, Option or array are all re-checked when the type
 arrives through `$T`. `[$N]T` in a struct field stays unreachable that way --
 the type cannot be named at a call site to infer it.
 
-### 56. `decimal.from_str` fails open to a WRONG NUMBER, not to zero — **strict sibling added 2026-08-14**
+### 56. ~~`decimal.from_str` fails open to a WRONG NUMBER, not to zero~~ — **CLOSED 2026-08-18: the lax name is deprecated**
+
+`from_str` is marked `# deprecated:` and every call site now warns at compile
+time, naming `from_str_checked` and quoting the failure (`"12.5x"` returns
+1.25). Behaviour is unchanged, so no program breaks; the silence is what was
+removed. The parse body moved to a private `parse_unchecked` so the checked
+path does not warn on its own delegation. All three `tools/tycho-q` sites and
+the worked example moved to the checked call; `corelib/test/decimal` keeps the
+lax one deliberately, since testing it is the point. The record of what the
+item said when open follows.
+
 
 Found by sweeping every corelib parse function for FRICTION #4's shape after
 closing it. `core:decimal` is the money type — the package header calls itself

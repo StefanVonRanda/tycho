@@ -15,7 +15,7 @@ fn from_int(n: int) -> Decimal:
 
 # Parse "[-|+]digits[.digits]". No point -> scale 0; a trailing point -> scale 0;
 # a leading point (".5") -> integer part 0. Delegates the digit parsing to bignum.
-fn from_str(s: string) -> Decimal:
+fn parse_unchecked(s: string) -> Decimal:
     n := len(s)
     point := 0 - 1
     i := 0
@@ -28,6 +28,10 @@ fn from_str(s: string) -> Decimal:
     coeffstr := substr(s, 0, point) + substr(s, point + 1, n)   # drop the '.'
     sc := n - point - 1                # digits after the point
     return Decimal(bignum.from_str(coeffstr), sc)
+
+# deprecated: use from_str_checked(s) -- from_str fails OPEN on malformed input: "12.5x" returns 1.25, not 12.5 and not an error. Removed in 1.0.
+fn from_str(s: string) -> Decimal:
+    return parse_unchecked(s)
 
 # Why from_str_checked refused. from_str above stays LAX and unchanged, so no
 # caller moves -- the same split core:strings has between parse_int and
@@ -70,7 +74,7 @@ fn from_str_checked(s: string) -> Result(Decimal, DecErr):
         return Err(TwoPoints)
     if digits == 0:
         return Err(NoDigits)
-    return Ok(from_str(s))
+    return Ok(parse_unchecked(s))
 
 fn neg(a: Decimal) -> Decimal:
     return Decimal(bignum.neg(a.coeff), a.scale)

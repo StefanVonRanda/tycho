@@ -244,7 +244,9 @@ fn parse_primary(ts: [Tok], p: inout int) -> Result(Expr, PErr):
         return Ok(ELit(VInt(strings.parse_int(t.text))))
     if t.kind == T_DEC:
         p = p + 1
-        return Ok(ELit(VDec(decimal.from_str(t.text))))
+        match decimal.from_str_checked(t.text):
+            Ok(d): return Ok(ELit(VDec(d)))
+            Err(e): return Err(PErr("a decimal literal", t.text, t.off))
     if t.kind == T_STR:
         p = p + 1
         return Ok(ELit(VStr(t.text)))
@@ -827,9 +829,11 @@ fn classify(cell: string) -> Value:
         # the cell, so none of them is taken.
         if str(n) == cell:
             return VInt(n)
-    d := decimal.from_str(cell)
-    if decimal.to_str(d) == cell:
-        return VDec(d)
+    match decimal.from_str_checked(cell):
+        Ok(d):
+            if decimal.to_str(d) == cell:
+                return VDec(d)
+        Err(e): pass
     return VStr(cell)
 
 # ---------------------------------------------------------------------------
@@ -944,9 +948,11 @@ fn a_kind(k: string) -> string:
 
 fn json_float_cell(path: string, r: int, key: string, lx: string) -> Result(Value, RErr):
     if num_shape(lx) != 0:
-        d := decimal.from_str(lx)
-        if decimal.to_str(d) == lx:
-            return Ok(VDec(d))
+        match decimal.from_str_checked(lx):
+            Ok(d):
+                if decimal.to_str(d) == lx:
+                    return Ok(VDec(d))
+            Err(e): pass
     return Err(RErr(path + ": row " + str(r + 1) + ", key `" + key + "`: the number " + lx + " has no exact decimal spelling here. tycho-q reads a JSON number through core:decimal, whose shape is `-? digit+ ( \".\" digit+ )?` and nothing else -- the same shape a CSV cell must match -- so an exponent (`1e3`) and a negative zero (`-0.0`) are refused rather than rounded through a float. Write the value in plain positional notation, or as a string if the text is what matters (see DECISION 3 at the top of tools/tycho-q/main.ty)"))
 
 # One JSON value as a cell. JSON did not lose the type, so this BELIEVES it and

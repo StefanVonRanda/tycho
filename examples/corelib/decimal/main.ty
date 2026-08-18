@@ -13,16 +13,21 @@ fn show(r: Result(decimal.Decimal, decimal.DivErr)) -> string:
         Err(decimal.BadScale(s)): return "refused (bad scale " + str(s) + ")"
         Err(decimal.BadMode(m)): return "refused (bad mode " + str(m) + ")"
 
+fn money(s: string) -> decimal.Decimal:
+    match decimal.from_str_checked(s):
+        Ok(d): return d
+        Err(e): die("not a decimal: " + s)
+
 fn main():
-    a := decimal.from_str("0.1")
-    b := decimal.from_str("0.2")
+    a := money("0.1")
+    b := money("0.2")
     println("0.1 + 0.2 = " + decimal.to_str(decimal.add(a, b)))
 
-    price := decimal.from_str("19.99")
+    price := money("19.99")
     subtotal := decimal.mul(price, decimal.from_int(3))
     println("19.99 x 3 = " + decimal.to_str(subtotal))
 
-    paid := decimal.from_str("100.00")
+    paid := money("100.00")
     println("change    = " + decimal.to_str(decimal.sub(paid, subtotal)))
 
     eight := decimal.from_int(8)
