@@ -1,6 +1,6 @@
 source : fixture.json
 status : 0
-bytes  : 153
-sha256 : 5124059f6a7ee320f20ca58672982b9852d1b25c98e0de8ec8324a5cc00741f3
+bytes  : 151
+sha256 : 3f4d59121753c86614bf62394b22b79385f83e81f75eed7db63b8db5b651822d
 content: json object, 5 keys: name, language, stars, topics, owner
-cached : tycho_fetch_5124059f6a7ee320.json
+cached : tycho_fetch_3f4d59121753c866.json
