@@ -50,6 +50,17 @@ lldb ./program
 (`-g` alone still produces a runnable binary on macOS; the `.dSYM` step is only
 needed for source-level stepping.)
 
+> **Unverified on the gating host.** Every other command block in this
+> repository's docs is executed by `make docs-fences` and must exit 0. The three
+> lines above are the one exception: `dsymutil` is Xcode's and writes a Mach-O
+> `.dSYM`, so a Linux gate cannot run them and installing `lldb` there would not
+> change that. The lane *does* drive them on macOS — run `make docs-fences` on a
+> Mac and this block is checked like any other. Until someone does, treat it as
+> the one procedure here that has not been machine-checked. The gdb block above
+> is driven for real on every run, and the DWARF emitted by the two commands
+> above names `program.ty` on 31 line-table entries, so the part this rests on —
+> a breakpoint set on a `.ty` line binding to one — is not in doubt.
+
 ## `tycho debug` — the gdb adapter
 
 `tycho debug` (the `tycho-debug` tool in `tools/tycho-debug/`) wraps the raw
