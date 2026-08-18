@@ -100,6 +100,20 @@ be pre-sized.
 
 ## Example
 
+A `[K: [K2: V]]` accumulator is one statement. The inner map is created on first
+touch, so there is no initialisation step and no extract-mutate-reassign:
+
+```tycho
+counts := []string: [string: int]
+counts["the"]["fox"] += 1
+counts["the"]["fox"] += 1
+println(str(counts["the"]["fox"]))
+```
+
+```output
+2
+```
+
 The test suite hits every form: a `[string: [int]]` index built with
 `push(m[k], v)`, a nested `m[k][i] = x`, an `[int: int]` counter with `m[k] += 1`
 from a zero start, a struct value via `m[k].field = x`, single-eval of a
