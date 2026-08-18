@@ -1,0 +1,9 @@
+# A `bytes` slice CLAMPS out-of-range bounds, it does not trap
+# (docs/spec/03-types.md, the `b[i:j]` row). A parser must not use a slice as
+# its bounds check: compare len() first. This fixture pins the clamp so a change
+# to trapping cannot land silently.
+fn main():
+    b := to_bytes("abc")
+    println(str(len(b[1:99])))
+    println(str(len(b[9:99])))
+    println(str(len(b[0:3])))

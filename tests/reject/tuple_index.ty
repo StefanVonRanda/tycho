@@ -1,0 +1,5 @@
+# A tuple is not indexable. Deliberate, and the sibling of the one-binder `for`
+# rule in tests/reject/for_two_binders.ty: destructure in an assignment instead.
+fn main():
+    t := ("a", 1)
+    println(t[0])

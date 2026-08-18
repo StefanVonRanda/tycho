@@ -202,19 +202,24 @@ or the program's own output. Two moved.
 |---|---|---|---|
 | 1 | the whole corelib hashes messages held entire | `corelib/sha256/sha256.ty` now has `init`/`update`/`final`/`final_hex`; `corelib/md5`, `corelib/hash`, `corelib/crypto` have none | **DOWNGRADED** — true for 3 of 4, false for the one that matters most |
 | 3 | `compress.decompress` cannot tell empty from corrupt | round-tripped empty → `Ok len=0`; a halved payload → `Err`; zero bytes in → `Err` | **CLOSED** |
-| 5 | a `bytes` slice clamps, so it is not a bounds check | `b[1:99]` on a 3-byte value returns length 2, no trap | **OPEN** |
-| 11 | a first `--shim` C file must hand-declare `tycho_int` | no generated header exists anywhere in the tree; 13 of 14 shims declare it themselves | **OPEN** |
-| 12 | `for` does not destructure a tuple, and a tuple is not indexable | *"a `for` binds one name"*; *"can only index an array, a string, by…"* | **OPEN**, both halves |
-| 37 | `sink` cannot express a builder | *"'f' is consumed by a `sink` parameter but is mentioned 2 times"* | **OPEN** |
-| 48 | a subscript cannot read two fields of its receiver | `make grid-check` green, and its own report says the flat 2-D limit *"still refused"* | **OPEN**, and the only one a gate watches |
-| 56 | `decimal.from_str` fails open to a WRONG number | `from_str("12.5x")` returns **1.25** — not 12.5, not 0, not an error; `from_str_checked` refuses | **OPEN as a hazard**; the strict sibling works, the trap is that the short name is the wrong one |
+| 5 | a `bytes` slice clamps, so it is not a bounds check | `b[1:99]` on a 3-byte value returns length 2, no trap | **CLOSED** — deliberate, now pinned by `tests/bytes_slice_clamp.ty` |
+| 11 | a first `--shim` C file must hand-declare `tycho_int` | no generated header existed; 13 of 14 shims declared it themselves | **CLOSED** — `corelib/tycho.h` ships and tychoc passes `-I` |
+| 12 | `for` does not destructure a tuple, and a tuple is not indexable | *"a `for` binds one name"*; *"can only index an array, a string, by…"* | **CLOSED** — deliberate, both halves pinned |
+| 37 | `sink` cannot express a builder | *"'f' is consumed by a `sink` parameter but is mentioned 2 times"* | **CLOSED** — deliberate, now pinned |
+| 48 | a subscript cannot read two fields of its receiver | `make grid-check` green, and its own report says the flat 2-D limit *"still refused"* | **CLOSED** — recorded as a judgement call in its own entry, and already gated |
+| 56 | `decimal.from_str` fails open to a WRONG number | `from_str("12.5x")` returns **1.25** — not 12.5, not 0, not an error | **CLOSED** — the lax name is deprecated and every call site warns |
 
-**The shape of what is left.** Six open, one downgraded, one closed. None is a
-bug: 5, 12, 37 and 48 are deliberate rules whose cost shows up only when you
-write a particular shape, and 11 and 56 are ergonomics. That is the honest
-summary — the language does not have defects on this list, it has edges, and
-every one of them was found by writing a program rather than by reading the
-compiler.
+**All eight are closed as of 2026-08-18.** Two took code (11, 56). Four were
+already-made decisions filed as if they were open (5, 12, 37, 48) — the verdict
+existed in the spec, in a reject fixture, or in the source, and what was missing
+was that three of the four rules had NOTHING asserting them, so a silent change
+could have landed. Each has a pin now. 1 downgraded and 3 closed on the probe
+alone.
+
+**What none of this is:** evidence the language is easy. Every entry here was
+found by its own designer writing his own program. The list being empty means
+the known edges are recorded and pinned, not that a stranger would not find
+ten more in an afternoon.
 
 **What this pass did NOT re-score:** the other 86 numbered entries in this file,
 and the per-item prose below, which still carries its 2026-07-31 framing.
@@ -1354,7 +1359,15 @@ exit 1)`) before the runtime was restored.
 
 The original entry follows.
 
-### 5. `bytes` slices clamp, so a slice is not a bounds check
+### 5. ~~`bytes` slices clamp, so a slice is not a bounds check~~ — **CLOSED 2026-08-18: deliberate, and PINNED**
+
+The clamp is the documented rule (`docs/spec/03-types.md`, the `b[i:j]` row: it
+clamps exactly as a string slice does) and it is not changing. What was missing
+is that nothing asserted it, so a change to trapping could have landed in
+silence. `tests/bytes_slice_clamp.ty` pins all three cases now. The hazard is
+real and the answer is a rule, not a fix: compare `len` first, never use a slice
+as a bounds check. The record of what the item said when open follows.
+
 
 `data[p:p + 8]` past the end of a `bytes` value yields three bytes rather than
 trapping (`docs/spec/03-types.md:139`). For a format parser that is a trap dressed
@@ -2776,7 +2789,16 @@ it (`for a, b, c in xs:` too). Pinned by `tests/reject/for_two_binders.ty`;
 `p[0]` is left alone, since a positional accessor on a tuple is a type-system
 question this entry does not argue for. The original entry follows.
 
-### 12. A `for` binding does not destructure a tuple, and a tuple is not indexable
+### 12. ~~A `for` binding does not destructure a tuple, and a tuple is not indexable~~ — **CLOSED 2026-08-18: deliberate, and both halves PINNED**
+
+The one-binder `for` was decided on 2026-08-13 with its own diagnostic, measured
+against both neighbours (Go's first binder and Odin's second are the INDEX, so a
+second binder meaning something else would take a slot every reader expects),
+and pinned by `tests/reject/for_two_binders.ty`. The second half was unpinned
+until today: `tests/reject/tuple_index.ty` now holds it. Destructure in an
+assignment, which is supported. The record of what the item said when open
+follows.
+
 
 Found writing a dependency resolver: `for name, src in [("resolvable", ok),
 ("cyclic", bad)]:` is refused with `expected ':' before the block`, pointing at
@@ -4050,7 +4072,16 @@ does `corelib/`. A parameter mode exercised only by its own fixtures.
 `tools/tycho-tmpl` is a line-oriented template renderer whose document builder
 (`tools/tycho-tmpl/doc/`) consumes at every step.
 
-### 37. `sink` cannot express a builder, and the spec described a copy that never happened
+### 37. ~~`sink` cannot express a builder~~ — **CLOSED 2026-08-18: deliberate, and PINNED**
+
+The rule and its reasoning are in the source (`src/tychoc.c@sink_arg_into`):
+rather than silently copy, require the move-vs-copy to be visible. The cost is
+real — the composition must be point-free and a value observed before it is
+consumed has to be recomputed — and it is the price of the rule, not a defect.
+`tests/reject/sink_builder_two_mentions.ty` pins the refusal now, so a change
+reddens instead of going quiet. The record of what the item said when open
+follows.
+
 
 Four refusals, in the order a builder hits them. Each is the compiler's own
 message, at `08f50a5f`:

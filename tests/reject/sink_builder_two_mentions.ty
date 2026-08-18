@@ -1,0 +1,17 @@
+# A `sink` argument must be the variable's ONLY mention, so the grow-then-consume
+# builder shape is inexpressible and the composition has to be point-free.
+# Deliberate: src/tychoc.c@sink_arg_into makes the move-vs-copy visible instead
+# of silently copying.
+struct Doc:
+    body: string
+
+fn add(d: sink Doc, s: string) -> Doc:
+    return Doc(d.body + s)
+
+fn render(d: sink Doc) -> string:
+    return d.body
+
+fn main():
+    f := Doc("")
+    f = add(f, "one")
+    println(render(f))

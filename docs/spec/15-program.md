@@ -21,7 +21,7 @@ those rules.
 > rules, diagnosed separately); compilation unit
 > `compile_package` `:13494-13499@compile_package`, driver `:13600-13699@int main(`;
 > `extern` `parse_extern_fn` `:4234-4312@parse_extern_fn`; the C compiler
-> invocation `:13817@system(cmd)`.
+> invocation `:13820@system(cmd)`.
 
 ## 27. Program structure
 
@@ -128,8 +128,8 @@ form* and its role in program structure.
 
 For a program that is not stopped early (e.g. `--emit-c`, `--symbols`), the
 reference implementation compiles the emitted C and links it into the output
-executable with a single C-compiler invocation (`src/tychoc.c:13816@-fwrapv`,
-run at `src/tychoc.c:13817@system(cmd)`).
+executable with a single C-compiler invocation (`src/tychoc.c:13819@-fwrapv`,
+run at `src/tychoc.c:13820@system(cmd)`).
 The invocation has the shape:
 
 ```text
@@ -145,7 +145,7 @@ with these normative properties:
   undefined behavior, which is precisely Tycho's integer-overflow contract
   ([§5.2.1](03-types.md#521-int)): a conforming realization on C MUST compile
   such that signed overflow wraps and never traps or miscompiles
-  (`src/tychoc.c:13816@-fwrapv`).
+  (`src/tychoc.c:13819@-fwrapv`).
 - **`-lm` is always passed**, so bare libc math externs (e.g. `extern fn sqrt`)
   link with no `"m"` annotation (`src/tychoc.c:4931@-lm is always passed`).
 - **`-pthread` is always passed**, supporting the concurrency runtime

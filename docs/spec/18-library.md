@@ -388,8 +388,8 @@ async-signal-safe:
 1. save `errno` into an automatic `int`, because `shutdown()` may clobber it and
    the interrupted thread is entitled to find its own value;
 2. store `1` to the flag `shutdown_requested` reads
-   (`corelib/signal/signal_shim.c:68@sigx_flag`);
-3. load the registered descriptor (`corelib/signal/signal_shim.c:69@sigx_fd`);
+   (`corelib/signal/signal_shim.c:65@sigx_flag`);
+3. load the registered descriptor (`corelib/signal/signal_shim.c:66@sigx_fd`);
 4. if that descriptor is non-negative, call `shutdown(fd, SHUT_RDWR)`
    (`corelib/signal/signal_shim.c:70@shutdown`) — a bare syscall that allocates
    nothing and takes no userspace lock the interrupted thread could already hold;
@@ -402,11 +402,11 @@ which is ordinary code. Two orderings are load-bearing and an implementation
 **MUST** preserve both:
 
 - **The descriptor is registered before the first `sigaction`**
-  (`corelib/signal/signal_shim.c:110@sigx_fd`), so a signal arriving mid-install
+  (`corelib/signal/signal_shim.c:107@sigx_fd`), so a signal arriving mid-install
   can never find a handler in place and a stale or absent descriptor to act on. An
   unregistered descriptor **MUST** leave the handler setting only the flag.
 - **The handler is installed with `sa_flags = 0`**
-  (`corelib/signal/signal_shim.c:115@sa_flags`), that is, **without
+  (`corelib/signal/signal_shim.c:112@sa_flags`), that is, **without
   `SA_RESTART`**. This is observable, so it is normative: with `sa_flags = 0` the
   thread that receives the signal finds its `accept` interrupted and `net.accept`
   reports `Err` (§32.24), which is the wind-down path a program is entitled to
