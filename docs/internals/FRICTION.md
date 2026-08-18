@@ -912,7 +912,7 @@ handling, and the difference is deliberate rather than unfinished.
   , which the `register_conn` / `retire_conn` additions pushed down): calling a Tycho function from
   handler context is a *language* feature, because every Tycho value lives in a
   bump-allocated arena that is not re-entrant and channel operations park behind a mutex
-  (`runtime/tycho_rt.c:904@mu`) — a handler that interrupts the allocator or the lock
+  (`runtime/tycho_rt.c:915@mu`) — a handler that interrupts the allocator or the lock
   holder and then allocates or touches a channel deadlocks or corrupts the process it was
   invoked to shut down. **What a general version would need, so the next person costs it
   rather than rediscovers it:** (1) an async-signal-safe hand-off out of handler context —
@@ -5752,3 +5752,41 @@ citations now point where the prose always meant.
 something *about the machine it runs on* rather than something about the tree
 will be green for the author forever. The only way to see it was to run it
 somewhere else — and "somewhere else" is exactly what §1 and §7 are asking for.
+
+### 86. A gated timer nobody ran cost 1.7x, and the gate that caught it went unread — **FIXED 2026-08-18**
+
+`3a94b652` added `TYCHO_ARENA_STATS` timing. Its own header says the bump path
+is deliberately not timed "because clock_gettime is an order of magnitude more
+[than a bump] and would slow the very path the design exists to keep fast". That
+reasoning was right and aimed one function too high: the clock went into
+`arena_free`, which runs at **every scope exit**, and `bench/binary_trees` went
+from 302ms to 509ms.
+
+**The clock never executed.** Every timing call is behind `if (g_arena_stats)`,
+off by default. Merely *mentioning* `st_now_ns()` in `arena_free`'s body was
+enough — a call in the body changes how the function is compiled into its
+callers. Measured by deleting only the two timing lines and keeping every
+counter: 511ms → 323ms. Splitting the pointer work into `arena_free_hot` and
+leaving the clock in a `noinline` cold half took it to **296ms**, which is
+faster than the 302ms before the regression and matches v0.7.0's 295-298ms.
+
+| tree | tycho | ratio to C |
+|---|---|---|
+| v0.7.0 | 295 / 298 / 298 ms | 37-39% |
+| `3a94b652^` | 302 ms | 38% |
+| `3a94b652` .. `main` | 509 / 512 / 514 ms | 65% |
+| after this fix | 296 / 296 / 296 ms | 37-38% |
+
+**The gate was never the problem.** `bench/guard.sh` reported it correctly, in
+the exact words `tree-alloc perf regressed`, as step `[10/13]` of `make ci`, from
+the day it landed. It shipped anyway because the sweep was red at that step and
+the line was skimmed. That is the failure this file keeps recording in a new
+costume: a green-except-one sweep trains you to read the verdict instead of the
+steps, and the one step you stop reading is the one carrying the finding.
+
+It also went unnoticed because the standing instruction is to run the lanes that
+can redden for a change rather than the sweep — correct, and it means a lane
+whose subject is *the tree as a whole* has no change that obviously implicates
+it. Nothing about a docs commit says "re-run the perf gate".
+
+Found only because an unrelated branch ran every lane it had skipped.

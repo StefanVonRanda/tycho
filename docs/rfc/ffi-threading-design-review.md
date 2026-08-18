@@ -61,7 +61,7 @@ heavy: every `spawn` is one OS thread via `pthread_create`
 full deep-copy of captures per chunk (`src/tychoc.c:4148-4161`), there is no
 thread pool or work-stealing (`docs/guides/concurrency.md:137-139`), spawning is
 unbounded, and a panic/abort in any task `exit(1)`s the whole process
-(`docs/guides/concurrency.md:141`, `runtime/tycho_rt.c:897-910`).
+(`docs/guides/concurrency.md:141`, `runtime/tycho_rt.c:908-921`).
 
 **Top recommendations (ranked, both areas):**
 
@@ -315,7 +315,7 @@ these cases, and the docs only partially flag them:
    not mentioned as a limit.
 4. **Panic/abort in a task kills the whole process.** Any runtime error in a
    task — bounds check, `pop` from empty, OOM, divide, `exit(1)` paths
-   throughout `runtime/tycho_rt.c` (e.g. `:887-902`, `:87`, `:893-894`) — takes
+   throughout `runtime/tycho_rt.c` (e.g. `:898-913`, `:87`, `:904-905`) — takes
    down every other task with it. Documented (`docs/guides/concurrency.md:141`) but
    worth elevating: there is no task-level isolation of failure, unlike Erlang
    processes, which the intro compares Tycho to (`docs/guides/concurrency.md:8-9`).

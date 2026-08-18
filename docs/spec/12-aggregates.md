@@ -340,7 +340,7 @@ Its fixtures are in `tests/` and `tests/abort/` (Appendix E.2.1).
 > case `src/tychoc.c:10380@gen_arith_op`, operands never reordered
 > `src/tychoc.c:10377@int la = is_array`; the runtime length check, emitted only
 > when both sides are arrays `src/tychoc.c:10400@tycho_ew_len`, and the abort
-> itself `runtime/tycho_rt.c:2827@arithmetic on arrays of different lengths`;
+> itself `runtime/tycho_rt.c:2838@arithmetic on arrays of different lengths`;
 > literal-zero divisor `src/tychoc.c:6945@division by zero`.
 
 ---
