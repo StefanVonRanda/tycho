@@ -1,0 +1,7 @@
+# A sibling file uses a package only THIS file imported. Imports are per-file.
+# expect: this file does not `import` it
+package main
+import "core:strings"
+
+fn main():
+    println(str(strings.parse_int("1") + helper("2")))

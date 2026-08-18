@@ -1,0 +1,8 @@
+# The leak in TYPE position, which parses through a different site than the
+# expression one. pkg/a.ty imports it; pkg/b.ty names the type without importing.
+# expect: this file does not `import` it
+package main
+import "pkg"
+
+fn main():
+    println(str(pkg.take(pkg.mk())))

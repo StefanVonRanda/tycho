@@ -1,0 +1,5 @@
+package pkg
+import "../other"
+
+fn mk() -> other.T:
+    return other.T(7)

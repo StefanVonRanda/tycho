@@ -1874,6 +1874,8 @@ static char *pkg_mangle(const char *n) {   /* identity when the prefix is empty 
     return g_cur_pkg_prefix[0] ? sfmt("%s%s", g_cur_pkg_prefix, n) : (char *)n;
 }
 static char *pkg_prefix_for(const char *qualifier);   /* defined after the import table */
+static int is_imported_pkg(const char *name);         /* per-file visibility */
+static int is_imported_pkg_anywhere(const char *name);
 static void check_pkg_private(const char *qualifier, const char *name, int line);   /* B3: reject cross-package access to a leading-underscore name */
 
 static char *type_mangle_ident(Type t);   /* fwd: defined with the Stage-1 generics helpers */
@@ -2291,7 +2293,7 @@ static Type parse_type_inner(Parser *ps) {
             return mt;
         }
         eat(ps, TK_RBRACKET, "']'");
-        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2142) sits after a die_at */
+        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2144) sits after a die_at */
             die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
         return arr_of(elem);   /* fixed [int]/[float]/[string] or a composite */
     }
@@ -2334,6 +2336,11 @@ static Type parse_type_inner(Parser *ps) {
         const char *nm;
         if (peek(ps, 1)->kind == TK_DOT && peek(ps, 2)->kind == TK_IDENT) {
             /* qualified type `pkg.Type` -> the imported package's mangled name */
+            /* gap: parse-time, so this only sees imports from files parsed BEFORE this
+             * one -- a leak in the first-parsed file is still missed here. */
+            if (is_imported_pkg_anywhere(t->text) && !is_imported_pkg(t->text))
+                die_at(t->line, "package '%s' is used here but this file does not `import` it "
+                       "(another file in the build does; imports are per-file)", t->text);
             check_pkg_private(t->text, peek(ps, 2)->text, t->line);
             nm = sfmt("%s%s", pkg_prefix_for(t->text), peek(ps, 2)->text);
             ps->p += 2;                  /* skip qualifier + dot; the type-name ident is consumed on a hit below */
@@ -2641,7 +2648,7 @@ static Expr *parse_primary(Parser *ps) {
                 e->ival = mt; e->op = TK_COLON;
                 return e;
             }
-            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:1962): parse_type never yields T_VOID */
+            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:1964): parse_type never yields T_VOID */
                 die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
             e->ival = arr_of(elem);   /* type carried to the resolver */
             return e;
@@ -4628,7 +4635,7 @@ static void parse_type_decl_at(Parser *ps) {
  * everywhere else (no reserved words added). Stage A parses them and records
  * the package name + imports; imports are not yet resolved (Stage B). */
 static const char *g_parsed_package = NULL;   /* package of the file just parsed (NULL = none) */
-typedef struct { const char *alias; const char *path; int line; } Import;
+typedef struct { const char *alias; const char *path; int line; const char *file; } Import;
 static Import *g_imports;
 static int    g_imports_cap = 0;
 static int    g_nimports = 0;
@@ -4650,6 +4657,7 @@ static void parse_import_decl(Parser *ps) {
     g_imports[g_nimports].alias = alias;
     g_imports[g_nimports].path  = path->text;
     g_imports[g_nimports].line  = kw->line;
+    g_imports[g_nimports].file  = g_srcname;   /* import scope is per-FILE; g_srcname moves per file at parse time */
     g_nimports++;
     accept(ps, TK_NEWLINE);
 }
@@ -4750,11 +4758,25 @@ static char *pkg_prefix_for(const char *qualifier) {
     return sfmt("%s__", pkgname);
 }
 
+static int import_names(const Import *im, const char *name) {
+    return (im->alias && !strcmp(im->alias, name)) || !strcmp(pkg_basename(im->path), name);
+}
+
+/* Visible in the CURRENT file only (Go's rule). An import with no recorded file
+ * is a single-file build and stays visible. */
 static int is_imported_pkg(const char *name) {
     for (int i = 0; i < g_nimports; i++) {
-        if (g_imports[i].alias && !strcmp(g_imports[i].alias, name)) return 1;
-        if (!strcmp(pkg_basename(g_imports[i].path), name)) return 1;
+        if (g_imports[i].file && g_srcname && strcmp(g_imports[i].file, g_srcname) != 0) continue;
+        if (import_names(&g_imports[i], name)) return 1;
     }
+    return 0;
+}
+
+/* Imported by SOME file of this compilation -- the difference between the two is
+ * exactly a file free-riding on a sibling's import. */
+static int is_imported_pkg_anywhere(const char *name) {
+    for (int i = 0; i < g_nimports; i++)
+        if (import_names(&g_imports[i], name)) return 1;
     return 0;
 }
 
@@ -5341,7 +5363,7 @@ static void collect_idents(Expr *e, const char **out, int *n, int cap) {
     }
     if (e->kind == E_CALL) {   /* Neither name on a call is a child expr: the callee lives in
                                 * sval (`g(x)` where g is a closure) and a method call's RECEIVER
-                                * lives in qual (`m.get(k)`, src/tychoc.c:2907), because the parser
+                                * lives in qual (`m.get(k)`, src/tychoc.c:2914), because the parser
                                 * cannot tell it from a package call. Both are outer reads; missing
                                 * qual let `m` reach the lifted body uncaptured and the C compiler,
                                 * not tychoc, reported `h_m undeclared`. pf_scan_expr already does
@@ -6089,6 +6111,9 @@ static Type resolve_expr_inner(Expr *e) {
                 /* already package-resolved by an earlier pass over this same node -- e->sval
                  * is the mangled name and must not be prefixed a second time (see Expr.pkg_done). */
             } else if (e->qual) {
+                if (is_imported_pkg_anywhere(e->qual) && !is_imported_pkg(e->qual))
+                    die_at(e->line, "package '%s' is used here but this file does not `import` it "
+                           "(another file in the build does; imports are per-file)", e->qual);
                 check_pkg_private(e->qual, e->sval, e->line);
                 int _vi;
                 char *q = sfmt("%s%s", pkg_prefix_for(e->qual), e->sval);
@@ -6609,7 +6634,7 @@ static Type resolve_expr_inner(Expr *e) {
             if (e->nargs != s->nparams)
                 die_at(e->line, "'%s' takes %d argument(s), got %d",
                        nominal_name(e->sval), s->nparams, e->nargs);
-            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:5846 */
+            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:5868 */
             for (int i = 0; i < e->nargs; i++) {
                 g_in_arg++;
                 Type at_ = resolve_exp(e->args[i], s->params[i]);   /* fixes a None arg */
@@ -7149,7 +7174,7 @@ static void pf_capture(Expr *id) {
 /* capture an outer local named by a STRING rather than by an E_IDENT node -- the
  * callee of `f(x)` and the receiver of `o.f(x)` live in E_CALL's sval/qual, not
  * in a child expr. The synthesized read is resolved in the enclosing scope with
- * every other capture (src/tychoc.c:7516). Non-locals (global fns, builtins,
+ * every other capture (src/tychoc.c:7541). Non-locals (global fns, builtins,
  * enum constructors, package qualifiers) fail vars_find and are dropped. */
 static void pf_capture_name(const char *n, int line) {
     Type vt;
@@ -7172,10 +7197,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:6866),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:6891),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:7140). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:7165). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
@@ -7196,7 +7221,7 @@ static void pf_scan_expr(Expr *e) {
     }
     /* A call's callee is NOT an E_IDENT child of the node: `f(x)` keeps the name
      * in sval, and `o.f(x)` keeps the receiver in qual because the parser cannot
-     * tell it from a package call (src/tychoc.c:2901). The generic descent below
+     * tell it from a package call (src/tychoc.c:2908). The generic descent below
      * visits lhs/rhs/args only, so a fn-typed local reached the lifted chunk proc
      * uncaptured and the C compiler -- not tychoc -- reported the undeclared name.
      * The lambda capture analysis already does the sval half (src/tychoc.c@collect_idents). */
@@ -8857,7 +8882,7 @@ static const char *for3_elidable_arr(Stmt *s) {
     if (!bound || bound->kind != E_CALL || !bound->sval || strcmp(bound->sval, "len") ||
         bound->nargs != 1 || !bound->args[0] || bound->args[0]->kind != E_IDENT) return NULL;
     if (IS_BOUNDED(bound->args[0]->type)) return NULL;   /* bounded stores in .v, not .data — elision emits .data[i], so never elide it */
-    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3660-3665) */
+    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3667-3672) */
     if (!post || post->kind != S_ASSIGN || !post->name || strcmp(post->name, iv)) return NULL;
     Expr *inc = post->expr;
     if (!inc || inc->kind != E_BINOP || inc->op != TK_PLUS) return NULL;

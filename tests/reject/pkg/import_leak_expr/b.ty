@@ -1,0 +1,4 @@
+package main
+
+fn helper(s: string) -> int:
+    return strings.parse_int(s)

@@ -206,7 +206,7 @@ escape either, so it cannot contain a backtick; one is written by joining a
 `StrPiece`, so it joins with adjacent pieces of either kind, and there is no
 `` f`…` `` interpolated raw form.
 
-> Provenance: `src/tychoc.c:410-437`; adjacent join `:2244-2267`;
+> Provenance: `src/tychoc.c:410-437`; adjacent join `:2246-2269`;
 > [§3.9.4](01-lexical.md#394-string-literals). Fixtures:
 > `tests/rawstring.ty`, `tests/reject/rawstring_unterminated.ty`.
 
