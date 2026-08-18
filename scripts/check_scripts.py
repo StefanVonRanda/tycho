@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Every tracked .py and .sh must parse.
 
-WHY THIS LANE EXISTS. On 2026-08-17 a sweep that deleted every line MENTIONING
-`tychoc0` deleted two lines of CODE in `fuzz/gen.py`, because each carried a
-trailing comment about it. One was a syntax error and `make fuzz-quick` caught
+WHY THIS LANE EXISTS. On 2026-08-17 a sweep that deleted every line mentioning
+a retired term deleted two lines of CODE in `fuzz/gen.py`, because each carried
+a trailing comment using it. One was a syntax error and `make fuzz-quick` caught
 it at push time by accident -- that file happens to be one fuzz-quick imports.
 
 The other is the reason this exists. Deleting a branch HEADER

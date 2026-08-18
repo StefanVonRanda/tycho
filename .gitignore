@@ -259,3 +259,6 @@ dist/
 # python bytecode from running the gate scripts directly
 __pycache__/
 *.pyc
+
+# a working assessment, not documentation -- stays on disk, never published
+OVERVIEW.md
