@@ -1,4 +1,0 @@
-tests/diag/multi_error_parse.ty:4: error: expected a type (int, float, bool, string, [int], or a struct)
-     4 | fn a() -> :
-tests/diag/multi_error_parse.ty:7: error: expected a type (int, float, bool, string, [int], or a struct)
-     7 | fn b() -> :

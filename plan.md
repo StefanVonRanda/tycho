@@ -19,33 +19,35 @@ deleted rather than ticked, per the same rule.
   passwords into a single derived key. A sweep covers the sites its author has in
   mind, which are the ones already fixed.
 
-## Parse errors inside an unclosed bracket
+## Batch error reporting -- parse errors
 
-Parse errors batch now (2026-08-19) -- EXCEPT when the failed construct leaves a
-bracket open. Then only one is reported, and the cause is in the LEXER, not the
-parser.
+Type errors batch (per statement, landed 2026-08-19). PARSE errors still report
+exactly one: they fire before any recovery point, so `die_at` flushes and exits.
 
-**Measured, from a token dump.** `fn a(:` never closes its `(`, and the lexer
-suppresses NEWLINE/INDENT/DEDENT while `bracket_depth > 0`
-(`src/tychoc.c@bracket_depth`) -- correct for line continuation. The
-consequence is that the whole rest of the file becomes one logical line: the
-dump showed zero layout tokens after the unclosed `(`. No parser-level resync
-can recover that, because the block structure is gone before the parser runs.
-This is why the first attempt looked like a resync bug and was not one.
+**An attempt on 2026-08-19 was built, measured and REVERTED.** Recording why, so
+the next attempt does not repeat it. A `setjmp` in `parse_program`'s declaration
+loop plus a resync that skipped forward to the next token in column 1 did report
+both of two malformed `fn` headers -- and added a spurious third error at the
+body of every declaration after the first failure.
 
-**What would fix it:** in the lexer, treat a line beginning in column 1 with a
-RESERVED declaration keyword (`fn`, `struct`, `enum`, `handle`, `type`) as
-proof the bracket was never closed -- report the unclosed bracket at its opening
-line and reset `bracket_depth`. Those five are reserved
-(see `~/.claude/skills/tycho-syntax`), so none can legally begin a continuation
-line; the contextual words (`const`, `import`, `package`, `extern`) must NOT be
-used, since a variable may be named after them.
+**Cause, from a token dump at the landing point:** `TK_INDENT` and `TK_DEDENT`
+are lexed tokens carrying `col = 0` (`src/tychoc.c@TK_INDENT`), so a
+column-based scan walks straight past them. The `DEDENT` closing the aborted
+body gets skipped, the block nesting the parser is counting never rebalances,
+and the next declaration is parsed against a stream missing its `NEWLINE`/
+`INDENT` pair -- the dump showed `fn main ( ) :` followed directly by the body's
+first identifier.
 
-- **Done when:** two `fn a(:`-style headers report 2, and the error names the
-  unclosed bracket's own line rather than a confused downstream one.
-- **Verify:** `make test` (expect 732). **Gates:** `make test`,
-  `make editors-check` (it parses every `.ty` in the tree, so a lexer change is
-  exactly what it exists to catch), `sh scripts/entrypoints.sh`.
+**What a working attempt needs:** resync on the INDENT/DEDENT structure rather
+than on columns -- track the depth the failed construct opened and consume
+exactly the DEDENTs that close it, which is what Mojo's
+`ParserBase::skipUntilIndentation` does with its `openBrackets` vector. Clearing
+`Parser.depth` alone is not enough; that was tried and changed nothing.
+
+- **Done when:** two malformed `fn` headers report 2, and a file with one
+  malformed header followed by valid declarations reports exactly 1.
+- **Verify:** `make test` (expect 731). **Gates:** `make test`,
+  `sh scripts/asan_self.sh`, `sh scripts/entrypoints.sh`.
 
 ## Blocked, not scheduled
 
