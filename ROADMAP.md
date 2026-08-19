@@ -123,10 +123,23 @@ is byte-based while the codepoint count lives in a separate import — correct
 layering that makes the NATURAL program the wrong one, wrong only on input the
 author probably never tried.
 
-**The count is now three programs, all by ONE non-author. §1 asks for three by
-TWO people, so it is NOT closed** — and the remaining half is the half that
-cannot be worked around, because the whole point of the requirement is a second
-mental model rather than a second program.
+**Four now exist, across four different halves of the surface** — `tycho-diff`
+(algorithms), `tycho-hash` (concurrency), `tycho-fold` (text and codepoints), and
+the 2026-08-19 FFI probe ([record](docs/internals/probe-ffi-2026-08-19.md);
+its program was thrown away, the record being the artifact). By the letter above
+that meets the requirement. It is left OPEN deliberately: the probes keep
+returning things the author could not have found, and
+[docs/internals/probe-procedure.md](docs/internals/probe-procedure.md) shows the
+surface still at zero — generics, newtypes, `subscript`, `bounded[N]`, `select`
+and the enum/Option/Result error paths have no non-author program at all. Closing
+it at four would stop the one instrument that is working.
+
+What they established is worth more than the count. The first three each found
+the CHECK harder to get right than the code — a determinism sweep that compared
+eight workers against eight, a word-set comparison that flagged 111 legal hard
+breaks, a `\xff` fixture that was valid UTF-8 under dash. The fourth's most
+useful finding was not in its own report at all: its C shim returned a pointer
+into a directory stream it had already closed, and only ASan saw it.
 
 What the three did establish, and it is worth more than the count: across
 `tycho-diff`, `tycho-hash` and `tycho-fold`, **every one found the CHECK harder to
