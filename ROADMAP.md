@@ -66,9 +66,19 @@ came from the author dogfooding against a program he also designed. That
 catches a lot — the file is unusually honest about its own defeats — but it
 cannot catch what only a stranger's mental model produces.
 
-Concretely: **three non-trivial programs by two people who did not write the
-compiler**, each with its friction written down. Until then the API freeze is
-guesswork about which parts of the surface people actually reach for.
+Concretely: **three non-trivial programs written against the docs alone**, each
+with its friction written down, and each targeting a different half of the
+surface. Until then the API freeze is guesswork about which parts of the surface
+people actually reach for.
+
+The original wording asked for two *people*. No second human reviewer was found
+— the author tried and could not recruit one — so this condition is met by
+programs written by LLM agents working from `docs/` without reading
+`src/tychoc.c`. That is a weaker instrument and the weakness is stated here
+rather than hidden: an agent prompted from the same docs by the same person
+converges on the same paths, which is why the requirement is *different halves
+of the surface*, not merely three programs. A fourth program over ground already
+covered is worth less than the first one that reaches an untouched part.
 
 **One of the three exists**: `tools/tycho-diff`, a Myers O(ND)
 line differ with unified output, written against `docs/` alone by someone who had
