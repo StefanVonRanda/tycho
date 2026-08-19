@@ -49,6 +49,48 @@ exactly the DEDENTs that close it, which is what Mojo's
 - **Verify:** `make test` (expect 731). **Gates:** `make test`,
   `sh scripts/asan_self.sh`, `sh scripts/entrypoints.sh`.
 
+## Parse-error batching -- reverted twice, and why
+
+Type errors batch (per statement). PARSE errors still report one. Two attempts
+are now recorded so a third does not repeat either.
+
+**Attempt 1 (column-based resync).** Reported both errors and invented a third
+at the body of every later declaration. Cause: INDENT/DEDENT are lexed tokens
+carrying `col = 0`, so a column scan walks past them and loses the DEDENT that
+closes the aborted body.
+
+**Attempt 2 (depth-tracking resync + lexer unclosed-bracket detection).** Got
+all four batching classes correct and passed make test 733/0, asan-self,
+editors-check, entrypoints, corelib and fuzz-reject at 40 seeds -- then
+`make ci` ran fuzz-reject at **200** seeds and found a heap-buffer-overflow in
+tychoc on seed 95 (`fuzz/findings/reject_seed_95.ty`, kept). Reverted in
+`78335b81` / `ab976f03`.
+
+**What is known about the crash**, so the next attempt starts here:
+
+- ASan: `heap-buffer-overflow` in `at()` (`src/tychoc.c@at`), called from
+  `parse_program`'s declaration-loop condition; the allocation trace points at
+  `tv_push`'s realloc of the token vector.
+- `origin/main` on the same input reports only a pre-existing 96-byte leak, no
+  overflow -- so it was introduced by the parse recovery, not latent.
+- THREE fixes were tried and none removed it: clamping the resync to a
+  precomputed EOF index; making `ProcVec out` static (it is written between
+  setjmp and longjmp, so as a plain local its fields are indeterminate after
+  recovery -- that reasoning is sound and the change should be kept in any
+  retry, it simply was not the whole cause); and bounding the loop condition
+  itself by that EOF index.
+- Untested hypothesis, and the most promising: `force_type_decl`
+  (`src/tychoc.c@force_type_decl`) parses a type declaration OUT OF ORDER from
+  inside another declaration's parse, over `g_tdecl_toks`. A longjmp out of that
+  nested parse unwinds through a second, inner Parser -- so `decl_start` and
+  `ps.p` belong to different parsers. Verify that before writing more code.
+- 40 seeds was not enough to see it; use `python3 fuzz/run_reject.py 200`.
+
+- **Done when:** two malformed `fn` headers report 2, and
+  `python3 fuzz/run_reject.py 200` is FAIL=0.
+- **Gates:** `make test`, `sh scripts/asan_self.sh`,
+  `python3 fuzz/run_reject.py 200`, `make editors-check`.
+
 ## Blocked, not scheduled
 
 **ROADMAP §1** wants three non-trivial programs by **two** people; three exist,
