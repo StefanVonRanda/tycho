@@ -19,30 +19,23 @@ deleted rather than ticked, per the same rule.
   passwords into a single derived key. A sweep covers the sites its author has in
   mind, which are the ones already fixed.
 
-## From the FFI probe (dusize, 2026-08-19)
+## Next agent probe -- generics, newtypes, or the error paths
 
-An LLM agent built a 245-line directory analyser using `extern fn`, `handle` and
-`soa` from `docs/` alone. It reported 12 findings; me rebuilt the program on
-`main` and checked each. Two were fixed on 2026-08-19 (is_null accepts a
-handle; ffi.md states the returned-string lifetime); what is left is below. **The probe ran against the v0.7.0 tarball, so some of
-its findings were already fixed** -- `bytes` as a parameter name now says
-"'bytes' is a reserved keyword and cannot be used as a parameter name", not
-"expected a parameter name". Only what survived checking is below.
+`docs/internals/probe-procedure.md` has the setup, the brief shape and how to
+read the result. The 2026-08-19 FFI run is recorded in
+`docs/internals/probe-ffi-2026-08-19.md`; its two findings are fixed and the
+program was thrown away, the record being the artifact.
 
-### 3. Land dusize as §1's third program -- BLOCKED on fixing its shim
-
-It compiles and runs on `main`, and would close §1. It must not land while its
-shim has the use-after-free above. Fix (strdup before `closedir`, or keep the
-stream open), then file it as `tools/tycho-du/` with the LOG as
-`FRICTION-OUTSIDE.md`, matching tycho-diff and tycho-hash.
-- **Gates:** `sh scripts/entrypoints.sh`, and a `run.sh` + lane if it is kept.
-
-### Checked and NOT actionable
-
-`chr` byte range, no int/float mixing, no structs across the FFI, `sink`
-semantics -- all documented, and the probe's log says so itself. The `inout`
-overlap refusal on `&stats[j], &stats[j+1]` is real and is the limitation
-already recorded as FRICTION #48 for tycho-grid.
+- **Aim:** measured over the existing records, ZERO non-author programs touch
+  generics, newtypes, `subscript`, `bounded[N]`, `select`, or enum/Option/Result
+  error paths. Channels have one. Pick one of the zeros.
+- **Two things the last run taught, both in the procedure:** build the compiler
+  from `main` rather than the v0.7.0 tarball, or part of the report describes
+  diagnostics already fixed; and run the agent's own code under the sanitizers,
+  because the best finding last time was a use-after-free in its C shim that its
+  log never mentioned.
+- **Done when:** a record lands under `docs/internals/`, and anything actionable
+  in it is either fixed or written here.
 
 ## Blocked, not scheduled
 
