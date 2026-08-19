@@ -19,28 +19,28 @@ deleted rather than ticked, per the same rule.
   passwords into a single derived key. A sweep covers the sites its author has in
   mind, which are the ones already fixed.
 
-## Batch error reporting (`src/tychoc.c@die_at`)
+## Batch error reporting -- the remaining two halves
 
-- **Scope:** `die_at` calls `exit(1)`, so a file with three type errors reports
-  one. Measured 2026-08-18: three `"x" + 1` errors -> 1 reported.
-- **Done when:** that fixture reports 3, and `tests/reject/` + `tests/diag/`
-  still report exactly one error each where they pin one.
-- **Two halves, and only one is hard.** Read out of Mojo's frontend
-  (`KGEN/lib/MojoParser`, sparse clone, 2026-08-18):
-  - *Parse errors:* copy `ParserBase::skipUntilIndentation(minIndent, ...)` --
-    on error, skip tokens until a line at or below the failed construct's
-    indentation, tracking bracket depth, then resume at the next declaration.
-    Mojo is indentation-structured like Tycho, so this maps directly. It
-    suppresses diagnostics WHILE skipping, which is the cascade fix.
-  - *Type errors:* needs a poison type. Tycho has `T_PENDING` and `T_UNBOUND`
-    but neither survives resolve, so neither works as one.
-- **Copy the exit policy too:** Mojo emits every diagnostic, then checks
-  `diags.isErrorEmitted()` once at the end and refuses to emit IR
-  (`KGEN/lib/MojoParser/EntryPoint.cpp`). Tycho must likewise never write C
-  after any error.
-- **Verify:** `make test` (expect 728). **Gates:** `make test`,
-  `sh scripts/entrypoints.sh`. Not `make ci`.
-- **Not doing:** the `--allow-unused` downgrade flag, decided 2026-08-18.
+Landed 2026-08-19: one error per PROC, all collected, printed together, and no C
+emitted after any of them. `die_at` records the diagnostic and longjmps to a
+per-proc `setjmp` in `resolve_program`; all 565 call sites are unchanged and
+still `noreturn`. Fixture `tests/diag/multi_error.ty` pins two.
+
+What still reports only ONE error:
+
+- **Several errors inside the same proc.** The boundary is the whole proc, so
+  the first error abandons the rest of that body. Needs statement-level
+  recovery, which needs a poison type -- `T_PENDING` and `T_UNBOUND` both
+  resolve away (`src/tychoc.c:785`) so neither can serve.
+- **Parse errors.** They fire before any recovery point exists, so `die_at`
+  flushes and exits. Needs Mojo's `skipUntilIndentation` shape: on error, skip
+  to a line at or below the failed construct's indentation tracking bracket
+  depth, suppressing diagnostics while skipping.
+
+- **Verify:** `make test` (expect 729). **Gates:** `make test`,
+  `sh scripts/entrypoints.sh`, `sh scripts/asan_self.sh` -- the last one because
+  longjmp is the risk here, and it was clean over 746 compiles for the part that
+  landed.
 
 ## Attached notes on diagnostics (`src/tychoc.c@die_at`)
 

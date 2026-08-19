@@ -13,9 +13,9 @@ provide the widths and behavior stated here even where its backend's native
 types differ (for example, a C backend MUST realize `int` as a 64-bit type even
 on a target where C `long` is 32 bits).
 
-> Provenance: scalar tags `src/tychoc.c:630-651`; C lowering `c_type`
-> `:1262-1302`; equality/ordering `:6537-6570`; newtype decl `parse_typedecl`
-> `:4136-4155`.
+> Provenance: scalar tags `src/tychoc.c:650-671`; C lowering `c_type`
+> `:1306-1346`; equality/ordering `:6581-6614`; newtype decl `parse_typedecl`
+> `:4180-4199`.
 
 ## 5.1 The type-identity model
 
@@ -229,9 +229,9 @@ dynamic element — `[bool]` is a supported array type — and is rejected only 
 the inline fixed-capacity forms `[N]T`, `[$N]T` and `bounded[N]T`, which have no
 bool codegen.
 
-> Provenance: dynamic `[T]` tests `void` alone (`src/tychoc.c:2280@elem`); the
-> fixed forms test both (`src/tychoc.c:1943-1944`), as does `bounded[N]T`
-> (`src/tychoc.c:1835-1836`). Detailed in
+> Provenance: dynamic `[T]` tests `void` alone (`src/tychoc.c:2324@elem`); the
+> fixed forms test both (`src/tychoc.c:1987-1988`), as does `bounded[N]T`
+> (`src/tychoc.c:1879-1880`). Detailed in
 > [§16.7](12-aggregates.md#167-element-type-restriction).
 
 ### 5.3.2 Fixed-size arrays `[N]T`
@@ -331,7 +331,7 @@ as a top-level key type.
 Map operations (`m[k]` as a place, absent-key read yielding the value's zero,
 `k in m`, `delete m[k]`, `m.get`) are specified in §18.
 
-> Provenance: `map_of` `src/tychoc.c:1197-1226`; `key_hashable` `:1149-1163`.
+> Provenance: `map_of` `src/tychoc.c:1241-1270`; `key_hashable` `:1193-1207`.
 
 ### 5.3.6 Enums, `Option`, `Result`
 
@@ -496,5 +496,5 @@ One asymmetry follows and is intentional: `bool` is comparable and `str`-able bu
 is not ordered. (`char` is comparable, ordered, and `str`-able — its `str` is the
 one-byte glyph.)
 
-> Provenance: `src/tychoc.c:6371-6404` (equality/ordering resolver); function-
-> value identity equality `:9783@identity equality`.
+> Provenance: `src/tychoc.c:6415-6448` (equality/ordering resolver); function-
+> value identity equality `:9839@identity equality`.

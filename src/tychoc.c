@@ -27,6 +27,7 @@
 #include <dirent.h>
 #include <unistd.h>
 #include <locale.h>
+#include <setjmp.h>
 #ifdef _WIN32
 #include <io.h>         /* _setmode/_fileno: binary stdout/stderr (the CRT's */
 #include <fcntl.h>      /* text mode adds \r to every \n -- diag goldens,    */
@@ -62,18 +63,37 @@ static void src_snippet(const char *src, int line, int col) {
     if (col > 0 && col <= (eol - p) + 1) fprintf(stderr, "       | %*s^\n", col - 1, "");
 }
 
+/* Batch reporting. Every one of die_at's 565 call sites is written assuming it
+ * never returns, so it still never does -- it longjmps to the per-proc recovery
+ * point in resolve_program instead of exiting. One error per proc, then the next
+ * proc is resolved; everything collected is printed at the end and the compiler
+ * exits WITHOUT emitting C, the same rule Mojo states at
+ * KGEN/lib/MojoParser/EntryPoint.cpp ("we emitted an error and then recovered
+ * ... the caller should not verify it"). Before resolve there is no recovery
+ * point, so die_at flushes and exits exactly as it always did. */
+typedef struct {
+    const char *file; int line; int col; char *msg; const char *src;
+    const char *inst_file; int inst_line; const char *inst_src;
+} Diag;
+static Diag *g_diags = NULL;
+static int g_ndiags = 0, g_diags_cap = 0;
+static jmp_buf g_recov;
+static int g_can_recover = 0;
+static void diag_push(int line, char *msg);
+static void diag_flush(void);
+
 __attribute__((noreturn, format(printf, 2, 3)))
 static void die_at(int line, const char *fmt, ...) {
+    char buf[4096];
     va_list ap; va_start(ap, fmt);
-    fprintf(stderr, "%s:%d: error: ", g_srcname, line);
-    vfprintf(stderr, fmt, ap);
-    fputc('\n', stderr);
+    vsnprintf(buf, sizeof buf, fmt, ap);
     va_end(ap);
-    src_snippet(g_src, line, g_err_col);
-    if (g_inst_from) {   /* the refusal fired inside a generic's body; the line above is the template's, so name the call that chose the types */
-        fprintf(stderr, "%s:%d: note: required from here -- this call instantiated the generic\n", g_inst_from, g_inst_from_line);
-        src_snippet(g_inst_from_src, g_inst_from_line, 0);
-    }
+    char *msg = (char *)malloc(strlen(buf) + 1);
+    if (!msg) { fputs("tychoc: out of memory\n", stderr); exit(1); }
+    strcpy(msg, buf);
+    diag_push(line, msg);
+    if (g_can_recover) longjmp(g_recov, 1);
+    diag_flush();
     exit(1);
 }
 
@@ -805,6 +825,30 @@ enum { T_VOID, T_INT, T_BOOL, T_STRING, T_ARRAY_INT, T_ARRAY_STRING, T_MAP_SI, T
     if ((n) >= (cap)) { (cap) = (cap) ? (cap) * 2 : 16; \
         (tbl) = xrealloc((tbl), (size_t)(cap) * sizeof *(tbl)); } \
 } while (0)
+
+static void diag_push(int line, char *msg) {
+    TBL_ENSURE(g_diags, g_ndiags, g_diags_cap);
+    g_diags[g_ndiags].file = g_srcname; g_diags[g_ndiags].line = line;
+    g_diags[g_ndiags].col  = g_err_col;  g_diags[g_ndiags].msg  = msg;
+    g_diags[g_ndiags].src  = g_src;
+    g_diags[g_ndiags].inst_file = g_inst_from;
+    g_diags[g_ndiags].inst_line = g_inst_from_line;
+    g_diags[g_ndiags].inst_src  = g_inst_from_src;
+    g_ndiags++;
+}
+
+static void diag_flush(void) {
+    for (int i = 0; i < g_ndiags; i++) {
+        Diag *d = &g_diags[i];
+        fprintf(stderr, "%s:%d: error: %s\n", d->file, d->line, d->msg);
+        src_snippet(d->src, d->line, d->col);
+        if (d->inst_file) {   /* the refusal fired inside a generic's body; name the call that chose the types */
+            fprintf(stderr, "%s:%d: note: required from here -- this call instantiated the generic\n",
+                    d->inst_file, d->inst_line);
+            src_snippet(d->inst_src, d->inst_line, 0);
+        }
+    }
+}
 /* Reserve capacity for at least `need` total elements up front (for a run of
  * appends with no per-item ENSURE, e.g. the builtin signatures). */
 #define TBL_RESERVE(tbl, need, cap) do { \
@@ -2294,7 +2338,7 @@ static Type parse_type_inner(Parser *ps) {
             return mt;
         }
         eat(ps, TK_RBRACKET, "']'");
-        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2147) sits after a die_at */
+        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2191) sits after a die_at */
             die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
         return arr_of(elem);   /* fixed [int]/[float]/[string] or a composite */
     }
@@ -2649,7 +2693,7 @@ static Expr *parse_primary(Parser *ps) {
                 e->ival = mt; e->op = TK_COLON;
                 return e;
             }
-            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:1967): parse_type never yields T_VOID */
+            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2011): parse_type never yields T_VOID */
                 die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
             e->ival = arr_of(elem);   /* type carried to the resolver */
             return e;
@@ -5460,7 +5504,7 @@ static void collect_idents(Expr *e, const char **out, int *n, int cap) {
     }
     if (e->kind == E_CALL) {   /* Neither name on a call is a child expr: the callee lives in
                                 * sval (`g(x)` where g is a closure) and a method call's RECEIVER
-                                * lives in qual (`m.get(k)`, src/tychoc.c:2917), because the parser
+                                * lives in qual (`m.get(k)`, src/tychoc.c:2961), because the parser
                                 * cannot tell it from a package call. Both are outer reads; missing
                                 * qual let `m` reach the lifted body uncaptured and the C compiler,
                                 * not tychoc, reported `h_m undeclared`. pf_scan_expr already does
@@ -6731,7 +6775,7 @@ static Type resolve_expr_inner(Expr *e) {
             if (e->nargs != s->nparams)
                 die_at(e->line, "'%s' takes %d argument(s), got %d",
                        nominal_name(e->sval), s->nparams, e->nargs);
-            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:6131 */
+            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:6175 */
             for (int i = 0; i < e->nargs; i++) {
                 g_in_arg++;
                 Type at_ = resolve_exp(e->args[i], s->params[i]);   /* fixes a None arg */
@@ -7271,7 +7315,7 @@ static void pf_capture(Expr *id) {
 /* capture an outer local named by a STRING rather than by an E_IDENT node -- the
  * callee of `f(x)` and the receiver of `o.f(x)` live in E_CALL's sval/qual, not
  * in a child expr. The synthesized read is resolved in the enclosing scope with
- * every other capture (src/tychoc.c:7806). Non-locals (global fns, builtins,
+ * every other capture (src/tychoc.c:7850). Non-locals (global fns, builtins,
  * enum constructors, package qualifiers) fail vars_find and are dropped. */
 static void pf_capture_name(const char *n, int line) {
     Type vt;
@@ -7294,10 +7338,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7154),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7198),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:7428). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:7472). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
@@ -7318,7 +7362,7 @@ static void pf_scan_expr(Expr *e) {
     }
     /* A call's callee is NOT an E_IDENT child of the node: `f(x)` keeps the name
      * in sval, and `o.f(x)` keeps the receiver in qual because the parser cannot
-     * tell it from a package call (src/tychoc.c:2911). The generic descent below
+     * tell it from a package call (src/tychoc.c:2955). The generic descent below
      * visits lhs/rhs/args only, so a fn-typed local reached the lifted chunk proc
      * uncaptured and the C compiler -- not tychoc -- reported the undeclared name.
      * The lambda capture analysis already does the sval half (src/tychoc.c@collect_idents). */
@@ -8847,11 +8891,22 @@ static void resolve_program(ProcVec *prog) {
     }
     Sig *m = sig_find("main");
     if (!m) { fprintf(stderr, "%s: error: no 'main' procedure\n", g_srcname); exit(1); }
-    for (int i = 0; i < prog->n; i++) {
+    /* `i` is volatile because it is written after setjmp and read after longjmp;
+     * a non-volatile local would be indeterminate there. The recovery boundary
+     * is the PROC: one error per proc, then resolve the next one. State that a
+     * longjmp skipped past (the var stack, the typaram stack, the instantiation
+     * note) is reset below, and nothing is emitted afterwards anyway. */
+    for (volatile int i = 0; i < prog->n; i++) {
         Proc *pr = prog->v[i];
         diag_use_proc(pr);   /* package mode: body-resolve errors name THIS proc's file */
         if (pr->is_extern) continue;   /* FFI: no body to resolve */
         if (pr->generic) continue;     /* generics: the template body is resolved+emitted per instance (gen_program) */
+        if (setjmp(g_recov)) {         /* this proc failed; its diagnostic is stored, try the next */
+            g_can_recover = 0; g_nvars = 0; g_ncur_typarams = 0;
+            g_inst_from = NULL; g_dup_base = -1;
+            continue;
+        }
+        g_can_recover = 1;
         g_nvars = 0;
         /* arrays ([int]/[string]) are passed as read-only borrows (their
          * buffer is shared, so in-place push/set would hit the caller); all
@@ -8894,6 +8949,7 @@ static void resolve_program(ProcVec *prog) {
         if (pr->ret != T_VOID && !block_ends_in_return(pr->body, pr->nbody))
             warn_at(pr->line, "not all paths of '%s' return a value (a fall-off-the-end yields a zero value)", pr->name);
     }
+    g_can_recover = 0;   /* the jmp_buf's frame is about to go away; a later die_at must exit, not jump */
     check_channel_liveness(prog);   /* CC-6: after every body is resolved (parallel-for desugars are in place) */
 }
 
@@ -9003,7 +9059,7 @@ static const char *for3_elidable_arr(Stmt *s) {
     if (!bound || bound->kind != E_CALL || !bound->sval || strcmp(bound->sval, "len") ||
         bound->nargs != 1 || !bound->args[0] || bound->args[0]->kind != E_IDENT) return NULL;
     if (IS_BOUNDED(bound->args[0]->type)) return NULL;   /* bounded stores in .v, not .data — elision emits .data[i], so never elide it */
-    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3670-3675) */
+    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3714-3719) */
     if (!post || post->kind != S_ASSIGN || !post->name || strcmp(post->name, iv)) return NULL;
     Expr *inc = post->expr;
     if (!inc || inc->kind != E_BINOP || inc->op != TK_PLUS) return NULL;
@@ -13940,6 +13996,7 @@ int main(int argc, char **argv) {
     }
     check_finite_types();   /* reject by-value-recursive types before the resolver */
     resolve_program(&prog);
+    if (g_ndiags) { diag_flush(); exit(1); }   /* every proc's error, then stop -- never emit C after one */
     report_unused_imports();   /* after resolve: every qualifier has been through pkg_prefix_for */
     if (g_unused_local) { report_unused_locals(); exit(1); }   /* drained only if resolve did not die first */
 

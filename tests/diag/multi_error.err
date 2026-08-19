@@ -1,0 +1,4 @@
+tests/diag/multi_error.ty:3: error: cannot concatenate string with int
+     3 |     return "x" + 1
+tests/diag/multi_error.ty:6: error: cannot concatenate string with int
+     6 |     return "y" + 2

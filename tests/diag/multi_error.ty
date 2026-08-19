@@ -1,0 +1,9 @@
+# Batch reporting: one error per PROC, all reported, none suppressed by the first.
+fn a() -> int:
+    return "x" + 1
+
+fn b() -> int:
+    return "y" + 2
+
+fn main():
+    println(str(a() + b()))
