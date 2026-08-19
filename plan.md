@@ -24,36 +24,9 @@ deleted rather than ticked, per the same rule.
 Record: `docs/internals/probe-generics-2026-08-19.md`. Each rebuilt on `main`
 before being written here; the program was thrown away.
 
-### 1. A NULL path reaches the `cc` command line
-
-`cc ... -I(null) ...` then `sh: 1: Syntax error: "(" unexpected`, when the
-compiler cannot resolve its corelib. `%s` on a NULL. The user is shown an error
-about their shell, on the first command they run.
-- **Done when:** an unresolvable corelib path is a diagnostic naming corelib and
-  `TYCHO_CORELIB`, and no `(null)` can reach a command line.
-- **Reproduce:** move `tychoc` away from `corelib/`, unset `TYCHO_CORELIB`,
-  compile a program with no imports.
-- **Gates:** `make test`, `sh scripts/entrypoints.sh`.
-
-### 2. `-> [T]` misparses, but only with a `where` clause
-
-`fn f(xs: [$T]) -> [T] where comparable(T):` gives "a fixed-size array length
-must be an integer literal". Without the `where` the same signature compiles and
-runs; with `-> [$T]` it compiles either way. The error names fixed-size arrays,
-which the author never used.
-- **Done when:** the three forms agree, or the refusal names the real cause.
-- **Gates:** `make test` -- add a reject or diag fixture pinning whichever way it
-  is resolved.
-
-### 3. Generic struct type arguments: all-parameter or all-concrete
-
-`Index($K, [$V])` AND `Index($K, [float])` are both refused with "may not
-partially mention a type parameter", though the second mentions none partially.
-The rule exists only in the error text -- `docs/reference/generics.md` does not
-state it.
-- **Done when:** the rule is in `generics.md`, and the message describes what it
-  actually enforces.
-- **Gates:** the two doc gates; `make test` if the check changes.
+**Items 1-3 fixed 2026-08-19.** A NULL corelib path no longer reaches the `cc`
+line; `-> [T]` after a `where` clause parses as an array; and the generic
+type-argument rule is documented with a message that describes it. What is left:
 
 ### 4 and 5 -- documentation only
 

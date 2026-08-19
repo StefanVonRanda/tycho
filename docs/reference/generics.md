@@ -87,6 +87,23 @@ Generic enums are monomorphized exactly like generic structs, including **recurs
 name the enum itself** — both directly (`Node(Tree($T), $T, Tree($T))`) and through a container
 (`Node([Tree($T)])`, the generic-AST case).
 
+**A type argument list is all-parameters or all-concrete.** Applying a generic to
+its own parameters, in order, is a recursive reference and is deferred until the
+instance is built:
+
+```tycho
+struct Node($T):
+    v: $T
+    kids: [Node($T)]
+```
+
+Anything else must be entirely concrete — `Index(string, [float])`. A list that
+mixes the two is refused even when each argument alone would be legal, so
+`Index($K, [float])` does not work in a parameter position and neither does
+`Index($K, [$V])`. Write the helper against the concrete instantiation, or make
+it generic over the whole struct (`ix: inout Index($K, $V)`).
+
+
 ## Composition
 
 A generic type composes with the rest of the language uniformly — a `Box(int)` may be a map

@@ -1,0 +1,12 @@
+# `-> [T]` after a `where` clause used to parse as a FIXED-SIZE array of length
+# T, because `where` is a contextual identifier and so "starts a type". The same
+# signature without a where compiled fine, which is what hid it.
+fn firstn(xs: [$T], n: int) -> [T] where comparable(T):
+    out := []$T
+    for i := 0; i < n and i < len(xs); i += 1:
+        push(out, xs[i])
+    return out
+
+fn main():
+    println(str(len(firstn([3, 1, 2], 2))))
+    println(str(len(firstn(["a", "b"], 1))))

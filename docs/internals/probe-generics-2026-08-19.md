@@ -46,15 +46,17 @@ it as `T` after", which holds everywhere except here.
 
 ## 3. A generic struct's type arguments must be all-parameter or all-concrete
 
-```
+```text
 fn idx_append(ix: inout Index($K, [$V])) where hashable(K):
 fn idx_c(ix: inout Index($K, [float])) where hashable(K):
 ```
 Both refused with *"a type argument may not partially mention a type parameter"*.
 The second contains no partial mention at all — `$K` is a bare parameter and
 `[float]` is concrete — so the rule is stricter than its own message describes.
-The rule appears nowhere in `docs/reference/generics.md`; the error text is the
-only place it is written down.
+The rule appeared nowhere in `docs/reference/generics.md`; the error text was the
+only place it was written down. **Both fixed the same day**: the message now says
+the arguments must be *either* exactly the generic's own parameters in order *or*
+all concrete, and `generics.md` states the rule with an example.
 
 ## 4. `fn name$(K, V)()` is not the declaration form
 

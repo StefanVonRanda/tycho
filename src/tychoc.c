@@ -2417,7 +2417,18 @@ static Type parse_type_inner(Parser *ps) {
             die_at(cur(ps)->line, "a fixed-size array length cannot be an imported const ('%s.%s') -- its value is not known at parse time. Use an unqualified `const` declared in this file, or a dynamic [T]",
                    cur(ps)->text, peek(ps, 2)->text);
         int size_is_int   = at(ps, TK_INT) && peek(ps, 1)->kind == TK_RBRACKET;
-        int size_is_const = at(ps, TK_IDENT) && peek(ps, 1)->kind == TK_RBRACKET &&
+        /* A name already in scope as a TYPE PARAMETER is never an array length.
+         * Without this, `-> [T] where comparable(T)` read as a fixed-size array
+         * of length T -- because `where` is a contextual identifier and so
+         * "starts a type" -- and reported a fixed-size-array rule the author had
+         * not used. The same signature without a `where` parsed correctly, which
+         * is what made it look like `[T]` was simply illegal (generics probe,
+         * 2026-08-19). */
+        int size_is_typaram = 0;
+        if (at(ps, TK_IDENT))
+            for (int z = 0; z < g_ncur_typarams; z++)
+                if (!strcmp(g_cur_typarams[z], cur(ps)->text)) { size_is_typaram = 1; break; }
+        int size_is_const = !size_is_typaram && at(ps, TK_IDENT) && peek(ps, 1)->kind == TK_RBRACKET &&
                             tok_starts_type(peek(ps, 2)->kind);
         if (size_is_int || size_is_const) {
             int64_t fixn;
@@ -2525,9 +2536,9 @@ static Type parse_type_inner(Parser *ps) {
                 if (self_ref) return STRUCT_TYPE(sid);
                 for (int i = 0; i < np; i++)
                     if (has_typaram(args[i]))
-                        die_at(t->line, "generic struct '%s': a type argument may not partially mention a type "
-                               "parameter; use the generic applied to its own parameters (a recursive reference) "
-                               "or to concrete types", g_structs[sid].name);
+                        die_at(t->line, "generic struct '%s': its type arguments must be EITHER exactly its own "
+                               "parameters, in order (a recursive reference), OR all concrete -- a list mixing "
+                               "the two is not supported, even where each argument alone would be legal", g_structs[sid].name);
                 Type *binds = new_binds();
                 for (int i = 0; i < np; i++) binds[(int)(g_structs[sid].typarams[i] - T_TYPARAM_BASE)] = args[i];
                 return STRUCT_TYPE(struct_instantiate(sid, binds));
@@ -2554,9 +2565,10 @@ static Type parse_type_inner(Parser *ps) {
                 if (self_ref) return ENUM_TYPE(eid);
                 for (int i = 0; i < np; i++)
                     if (has_typaram(args[i]))
-                        die_at(t->line, "generic enum '%s': a type argument may not partially mention a type "
-                               "parameter; use the generic applied to its own parameters (a recursive reference) "
-                               "or to concrete types", g_enums[eid].name);
+                        die_at(t->line, "generic enum '%s': its type arguments must be EITHER exactly its own "
+                               "parameters, in order (a recursive reference), OR all concrete -- a list mixing "
+                               "the two is not supported, even where each argument alone would be legal",
+                               g_enums[eid].name);
                 Type *binds = new_binds();
                 for (int i = 0; i < np; i++) binds[(int)(g_enums[eid].typarams[i] - T_TYPARAM_BASE)] = args[i];
                 return ENUM_TYPE(enum_instantiate(eid, binds));
@@ -5673,7 +5685,7 @@ static void collect_idents(Expr *e, const char **out, int *n, int cap) {
     }
     if (e->kind == E_CALL) {   /* Neither name on a call is a child expr: the callee lives in
                                 * sval (`g(x)` where g is a closure) and a method call's RECEIVER
-                                * lives in qual (`m.get(k)`, src/tychoc.c:3174), because the parser
+                                * lives in qual (`m.get(k)`, src/tychoc.c:3186), because the parser
                                 * cannot tell it from a package call. Both are outer reads; missing
                                 * qual let `m` reach the lifted body uncaptured and the C compiler,
                                 * not tychoc, reported `h_m undeclared`. pf_scan_expr already does
@@ -6946,7 +6958,7 @@ static Type resolve_expr_inner(Expr *e) {
             if (e->nargs != s->nparams)
                 die_at(e->line, "'%s' takes %d argument(s), got %d",
                        nominal_name(e->sval), s->nparams, e->nargs);
-            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:6451 */
+            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:6463 */
             for (int i = 0; i < e->nargs; i++) {
                 g_in_arg++;
                 Type at_ = resolve_exp(e->args[i], s->params[i]);   /* fixes a None arg */
@@ -7505,7 +7517,7 @@ static void pf_capture(Expr *id) {
 /* capture an outer local named by a STRING rather than by an E_IDENT node -- the
  * callee of `f(x)` and the receiver of `o.f(x)` live in E_CALL's sval/qual, not
  * in a child expr. The synthesized read is resolved in the enclosing scope with
- * every other capture (src/tychoc.c:8147). Non-locals (global fns, builtins,
+ * every other capture (src/tychoc.c:8159). Non-locals (global fns, builtins,
  * enum constructors, package qualifiers) fail vars_find and are dropped. */
 static void pf_capture_name(const char *n, int line) {
     Type vt;
@@ -7528,10 +7540,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7495),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7507),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:7769). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:7781). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
@@ -7552,7 +7564,7 @@ static void pf_scan_expr(Expr *e) {
     }
     /* A call's callee is NOT an E_IDENT child of the node: `f(x)` keeps the name
      * in sval, and `o.f(x)` keeps the receiver in qual because the parser cannot
-     * tell it from a package call (src/tychoc.c:3168). The generic descent below
+     * tell it from a package call (src/tychoc.c:3180). The generic descent below
      * visits lhs/rhs/args only, so a fn-typed local reached the lifted chunk proc
      * uncaptured and the C compiler -- not tychoc -- reported the undeclared name.
      * The lambda capture analysis already does the sval half (src/tychoc.c@collect_idents). */
@@ -9281,7 +9293,7 @@ static const char *for3_elidable_arr(Stmt *s) {
     if (!bound || bound->kind != E_CALL || !bound->sval || strcmp(bound->sval, "len") ||
         bound->nargs != 1 || !bound->args[0] || bound->args[0]->kind != E_IDENT) return NULL;
     if (IS_BOUNDED(bound->args[0]->type)) return NULL;   /* bounded stores in .v, not .data — elision emits .data[i], so never elide it */
-    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3927-3932) */
+    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3939-3944) */
     if (!post || post->kind != S_ASSIGN || !post->name || strcmp(post->name, iv)) return NULL;
     Expr *inc = post->expr;
     if (!inc || inc->kind != E_BINOP || inc->op != TK_PLUS) return NULL;
@@ -14244,7 +14256,13 @@ int main(int argc, char **argv) {
     const char *pkgdeps = g_pkgdeps ? g_pkgdeps : "";   /* pkg-config flags from <pkg>/deps (cflags + libs, trailing) */
     /* -I the corelib root so ANY shim can `#include <tycho.h>` for the ABI types,
        instead of hand-declaring `tycho_int` as all 13 in-tree shims once did. */
-    char *incdir = sfmt(" -I%s", corelib_root());
+    /* No corelib found: a program that imports one already died in
+     * resolve_pkg_dir with a diagnostic naming TYCHO_CORELIB. One that imports
+     * none needs no include path -- and formatting NULL here put a literal
+     * "(null)" on the cc line, which the shell then read as a subshell and
+     * reported as ITS OWN syntax error (generics probe, 2026-08-19). */
+    const char *cl_root = corelib_root();
+    char *incdir = cl_root ? sfmt(" -I%s", cl_root) : (char *)"";
     char *cmd = sfmt("%s %s -fwrapv%s -pthread%s -o %s %s%s -lm%s%s %s", cc, optdbg, march, incdir, base, c_path, shims, links, extra, pkgdeps);
     int rc = system(cmd);
     if (rc != 0) { fprintf(stderr, "tychoc: C compilation failed (%s)\n", cmd); return 1; }   /* the .c SURVIVES a cc failure on purpose: it is the evidence the printed command refers to */

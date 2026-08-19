@@ -30,7 +30,7 @@ records, these have **no** non-author program at all:
 
 | surface | non-author programs touching it |
 |---|---|
-| generics | 0 |
+| generics | 1 ([record](probe-generics-2026-08-19.md)) |
 | newtypes | 0 |
 | `subscript` | 0 |
 | `bounded[N]` | 0 |
@@ -39,7 +39,9 @@ records, these have **no** non-author program at all:
 | channels | 1 (`tools/tycho-hash`) |
 
 Covered: algorithms and strings (`tycho-diff`), concurrency (`tycho-hash`), text
-and codepoints (`tycho-fold`), FFI + `handle` + `soa` (2026-08-19).
+and codepoints (`tycho-fold`), FFI + `handle` + `soa`
+([record](probe-ffi-2026-08-19.md)), and generics + payload enums + Option/Result
+([record](probe-generics-2026-08-19.md)) — the generics row above is now 1, not 0.
 
 ## The brief
 
