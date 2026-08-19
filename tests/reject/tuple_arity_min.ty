@@ -1,5 +1,5 @@
 # 02-grammar.md:137,:170 / 03-types.md:193: a tuple type has 2-8 elements.
-# src/tychoc.c:1982. This one has 1.
+# src/tychoc.c:2020. This one has 1.
 fn mk() -> (int):
     return 1
 

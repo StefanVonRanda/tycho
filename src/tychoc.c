@@ -75,6 +75,7 @@ typedef struct {
     const char *file; int line; int col; char *msg; const char *src;
     const char *inst_file; int inst_line; const char *inst_src;
     const char *note_file; int note_line; const char *note_src; char *note_msg;
+    int from_lexer;   /* an unclosed-bracket report: it already explains this line */
 } Diag;
 /* An error's second location: "declared here", "a sibling imported it here".
  * A call site fills this immediately before die_at, which consumes and clears
@@ -92,6 +93,7 @@ static int g_can_recover = 0;
  * parse will"). The first error is never suppressed: g_ndiags gates it. */
 static const char *g_poison[256];
 static int g_npoison = 0;
+static int g_lexing = 0;   /* set while the lexer runs, so its diagnostics can be marked */
 static void diag_push(int line, char *msg);
 static void diag_flush(void);
 
@@ -441,6 +443,7 @@ static TokVec lex(const char *src) {
     indent_stack[0] = 0;
     int line = 0;
     int bracket_depth = 0;   /* (...) / [...] nesting: >0 joins physical lines (implicit continuation) */
+    int bracket_line = 0;    /* line of the outermost currently-open bracket, for the unclosed-bracket error */
     /* Continuation state. `pend` means the previous line ended on an operator;
      * `pend_col` is that line's own indent. The join is NOT decided there --
      * see the retraction at the top of the loop for why it cannot be. */
@@ -477,6 +480,30 @@ static TokVec lex(const char *src) {
             while (*p && *p != '\n') p++;
             if (*p == '\n') p++;
             continue;
+        }
+
+        /* A bracket left open swallows the REST OF THE FILE as one continuation
+         * line -- no NEWLINE, no INDENT, no DEDENT -- so every later diagnostic
+         * is nonsense and error batching stops working. A line starting in
+         * column 1 with a RESERVED declaration keyword cannot be a continuation
+         * in any valid program, so it is proof the bracket was never closed.
+         * Only reserved words qualify: `const`/`import`/`package`/`extern` are
+         * contextual and a variable may be named after them. */
+        if (bracket_depth > 0 && col == 0) {   /* col counts leading whitespace: 0 == column 1 */
+            static const char *decl_kw[] = { "fn", "struct", "enum", "handle", "type" };
+            for (size_t z = 0; z < sizeof decl_kw / sizeof *decl_kw; z++) {
+                size_t kl = strlen(decl_kw[z]);
+                if (!strncmp(p, decl_kw[z], kl) && !(isalnum((unsigned char)p[kl]) || p[kl] == '_')) {
+                    char buf[160];
+                    snprintf(buf, sizeof buf,
+                             "unclosed '(' or '[' opened on line %d -- `%s` here can only start a "
+                             "declaration, so the bracket was never closed", bracket_line, decl_kw[z]);
+                    char *m = (char *)malloc(strlen(buf) + 1);
+                    if (m) { strcpy(m, buf); g_lexing = 1; diag_push(bracket_line, m); g_lexing = 0; }
+                    bracket_depth = 0; cont = 0;   /* resume real layout so the rest of the file still lexes */
+                    break;
+                }
+            }
         }
 
         /* emit INDENT / DEDENT for this logical line -- only at bracket depth 0,
@@ -769,7 +796,7 @@ static TokVec lex(const char *src) {
             else if (c == '~') k = TK_TILDE;
             else if (c == '$') k = TK_DOLLAR;   /* generics: `$T` introduces a type parameter */
             else { g_err_col = tcol; die_at(line, "unexpected character '%c'", c); }
-            if (k == TK_LPAREN || k == TK_LBRACKET) bracket_depth++;
+            if (k == TK_LPAREN || k == TK_LBRACKET) { if (!bracket_depth) bracket_line = line; bracket_depth++; }
             else if ((k == TK_RPAREN || k == TK_RBRACKET) && bracket_depth > 0) bracket_depth--;
             tv_push(&out, (Tok){k, NULL, 0, line, 0, tcol});
             p += len;
@@ -851,6 +878,16 @@ enum { T_VOID, T_INT, T_BOOL, T_STRING, T_ARRAY_INT, T_ARRAY_STRING, T_MAP_SI, T
 } while (0)
 
 static void diag_push(int line, char *msg) {
+    /* The same file is lexed more than once in a package build, so an identical
+     * lex-time diagnostic can arrive twice. Report each distinct one once. */
+    for (int i = 0; i < g_ndiags; i++)
+        if (g_diags[i].line == line && g_diags[i].msg && !strcmp(g_diags[i].msg, msg)
+            && g_diags[i].file && g_srcname && !strcmp(g_diags[i].file, g_srcname)) { free(msg); return; }
+    /* The unclosed-bracket report names the construct's real mistake; a parser
+     * complaint about the same line is the same fact said worse. */
+    for (int i = 0; i < g_ndiags; i++)
+        if (g_diags[i].from_lexer && g_diags[i].line == line && !g_lexing
+            && g_diags[i].file && g_srcname && !strcmp(g_diags[i].file, g_srcname)) { free(msg); return; }
     TBL_ENSURE(g_diags, g_ndiags, g_diags_cap);
     g_diags[g_ndiags].file = g_srcname; g_diags[g_ndiags].line = line;
     g_diags[g_ndiags].col  = g_err_col;  g_diags[g_ndiags].msg  = msg;
@@ -862,6 +899,7 @@ static void diag_push(int line, char *msg) {
     g_diags[g_ndiags].note_line = g_note_line;
     g_diags[g_ndiags].note_src  = g_note_src;
     g_diags[g_ndiags].note_msg  = g_note_msg;
+    g_diags[g_ndiags].from_lexer = g_lexing;
     g_note_file = NULL; g_note_src = NULL; g_note_line = 0; g_note_msg = NULL;   /* consumed */
     g_ndiags++;
 }
@@ -2385,7 +2423,7 @@ static Type parse_type_inner(Parser *ps) {
             return mt;
         }
         eat(ps, TK_RBRACKET, "']'");
-        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2238) sits after a die_at */
+        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2276) sits after a die_at */
             die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
         return arr_of(elem);   /* fixed [int]/[float]/[string] or a composite */
     }
@@ -2742,7 +2780,7 @@ static Expr *parse_primary(Parser *ps) {
                 e->ival = mt; e->op = TK_COLON;
                 return e;
             }
-            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2058): parse_type never yields T_VOID */
+            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2096): parse_type never yields T_VOID */
                 die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
             e->ival = arr_of(elem);   /* type carried to the resolver */
             return e;
@@ -5604,7 +5642,7 @@ static void collect_idents(Expr *e, const char **out, int *n, int cap) {
     }
     if (e->kind == E_CALL) {   /* Neither name on a call is a child expr: the callee lives in
                                 * sval (`g(x)` where g is a closure) and a method call's RECEIVER
-                                * lives in qual (`m.get(k)`, src/tychoc.c:3010), because the parser
+                                * lives in qual (`m.get(k)`, src/tychoc.c:3048), because the parser
                                 * cannot tell it from a package call. Both are outer reads; missing
                                 * qual let `m` reach the lifted body uncaptured and the C compiler,
                                 * not tychoc, reported `h_m undeclared`. pf_scan_expr already does
@@ -6877,7 +6915,7 @@ static Type resolve_expr_inner(Expr *e) {
             if (e->nargs != s->nparams)
                 die_at(e->line, "'%s' takes %d argument(s), got %d",
                        nominal_name(e->sval), s->nparams, e->nargs);
-            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:6275 */
+            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:6313 */
             for (int i = 0; i < e->nargs; i++) {
                 g_in_arg++;
                 Type at_ = resolve_exp(e->args[i], s->params[i]);   /* fixes a None arg */
@@ -7428,7 +7466,7 @@ static void pf_capture(Expr *id) {
 /* capture an outer local named by a STRING rather than by an E_IDENT node -- the
  * callee of `f(x)` and the receiver of `o.f(x)` live in E_CALL's sval/qual, not
  * in a child expr. The synthesized read is resolved in the enclosing scope with
- * every other capture (src/tychoc.c:7963). Non-locals (global fns, builtins,
+ * every other capture (src/tychoc.c:8001). Non-locals (global fns, builtins,
  * enum constructors, package qualifiers) fail vars_find and are dropped. */
 static void pf_capture_name(const char *n, int line) {
     Type vt;
@@ -7451,10 +7489,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7311),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7349),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:7585). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:7623). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
@@ -7475,7 +7513,7 @@ static void pf_scan_expr(Expr *e) {
     }
     /* A call's callee is NOT an E_IDENT child of the node: `f(x)` keeps the name
      * in sval, and `o.f(x)` keeps the receiver in qual because the parser cannot
-     * tell it from a package call (src/tychoc.c:3004). The generic descent below
+     * tell it from a package call (src/tychoc.c:3042). The generic descent below
      * visits lhs/rhs/args only, so a fn-typed local reached the lifted chunk proc
      * uncaptured and the C compiler -- not tychoc -- reported the undeclared name.
      * The lambda capture analysis already does the sval half (src/tychoc.c@collect_idents). */
@@ -8566,7 +8604,7 @@ static void resolve_stmt(Stmt *s, Type ret) {
 
 static void resolve_block(Stmt **body, int n, Type ret) {
     int m = vars_mark();
-    int dbase = g_dup_base >= 0 ? g_dup_base : m;   /* fn top block: params included; nested block: own start */
+    volatile int dbase = g_dup_base >= 0 ? g_dup_base : m;   /* read after longjmp */   /* fn top block: params included; nested block: own start */
     g_dup_base = -1;
     int pm = g_npend;
     /* Statement-level recovery, nested inside the per-proc one: a failed statement
@@ -9204,7 +9242,7 @@ static const char *for3_elidable_arr(Stmt *s) {
     if (!bound || bound->kind != E_CALL || !bound->sval || strcmp(bound->sval, "len") ||
         bound->nargs != 1 || !bound->args[0] || bound->args[0]->kind != E_IDENT) return NULL;
     if (IS_BOUNDED(bound->args[0]->type)) return NULL;   /* bounded stores in .v, not .data — elision emits .data[i], so never elide it */
-    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3763-3768) */
+    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3801-3806) */
     if (!post || post->kind != S_ASSIGN || !post->name || strcmp(post->name, iv)) return NULL;
     Expr *inc = post->expr;
     if (!inc || inc->kind != E_BINOP || inc->op != TK_PLUS) return NULL;
