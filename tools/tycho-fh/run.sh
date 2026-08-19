@@ -96,6 +96,29 @@ probe "closecall" 'fn main():
     close(fh_open("/etc/hostname", "r"))
     println("x")'                                               'handle variable'
 
+# [5b] is_null MUST accept a handle -- it is the only way to ask whether an
+# opener succeeded, and before 2026-08-19 the obvious spelling was refused while
+# the destructor went on to free NULL at scope exit (found by the dusize FFI
+# probe). Passing is a borrow, so the handle must still be usable afterwards.
+mkdir -p "$T/isnull"
+printf '%s\n%s\n' "$PRE" 'fn main():
+    f := fh_open("/etc/hostname", "r")
+    if is_null(f):
+        println("null")
+    println(str(fh_getc(f)))
+    close(f)' > "$T/isnull/main.ty"
+$TYCHOC --emit-c -o "$T/isnull/p" "$T/isnull/main.ty" > "$T/isnull/err" 2>&1 \
+    || { note "[5b] is_null(handle) was REFUSED -- a failed open cannot be detected"; head -1 "$T/isnull/err"; }
+
+# and it must still refuse a non-pointer, or the check is decoration
+mkdir -p "$T/isnullneg"
+printf '%s\n%s\n' "$PRE" 'fn main():
+    x := 5
+    println(str(is_null(x)))' > "$T/isnullneg/main.ty"
+if $TYCHOC --emit-c -o "$T/isnullneg/p" "$T/isnullneg/main.ty" > "$T/isnullneg/err" 2>&1; then
+    note "[5b] is_null ACCEPTED an int -- the handle exception widened it too far"
+fi
+
 # [6] a borrow is still a borrow -- the [5] fix must not make passing consume
 mkdir -p "$T/borrow"
 printf '%s\n%s\n' "$PRE" 'fn main():

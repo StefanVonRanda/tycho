@@ -17,7 +17,7 @@ their own chapters and are out of scope here.
 > Provenance: `Sig` builtins `src/tychoc.c:4714-4821`; conversion magic
 > `:6444-6500`; `len` `:6502-6508`; `keys`/`push`/`pop`/`reserve` `:6560-6655`;
 > `m.get` sugar `:5991-6004`,`:5856-5871`; `zero$` `:5939-5965`; concurrency
-> magic `:6318-6401`; `map_*` removal `:2711-2712`; `die` codegen `:10746-10747`.
+> magic `:6318-6401`; `map_*` removal `:2711-2712`; `die` codegen `:10754-10755`.
 
 ## 29.1 Builtins are part of the language
 
@@ -82,8 +82,8 @@ numeric-polymorphic like `str`.
 `print`, `println`, and `eprint` accept a `string` only; they do not implicitly
 stringify. All nine are `Sig` builtins with fixed signatures.
 
-> Provenance: `src/tychoc.c:4828-4835`,`:4911-4912`,`:4921-4922`; `eprint` codegen `:10336@tycho_eprint`; `die` codegen
-> `:10746-10747`.
+> Provenance: `src/tychoc.c:4828-4835`,`:4911-4912`,`:4921-4922`; `eprint` codegen `:10344@tycho_eprint`; `die` codegen
+> `:10754-10755`.
 
 ## 29.4 Conversions
 
@@ -127,7 +127,7 @@ serves both), and `to_char` is not in the UFCS builtin set, so `to_char(n)` is t
 only spelling — `n.to_char()` is not.
 
 > Provenance: conversion magic `src/tychoc.c:6171-6227`; `chr` and `to_char` `Sig`
-> `:5337@.name="to_char"`, their shared codegen `:10119-10121`;
+> `:5337@.name="to_char"`, their shared codegen `:10127-10129`;
 > `is_null`/`to_ptr` `Sig` `:4923-4924`. `to_i32` (and the rest of
 > `to_u8`..`to_f32`) is **not** a `Sig`: it is `is_sized_conv` `:1225-1229` /
 > `sized_conv_target` `:1214-1224`, resolved inline at `:6460-6466`. The abort
@@ -233,7 +233,7 @@ There is **no** `empty$(T)` builtin. An `empty()` returning `[$T]` is an ordinar
 user-written generic, and `empty$(int)` is merely the `name$(…)` call form
 applied to it ([§7.5](05-generics.md)).
 
-> Provenance: `zero$` `src/tychoc.c:5939-5965`; `defaultable` predicate `:8756@"defaultable"`.
+> Provenance: `zero$` `src/tychoc.c:5939-5965`; `defaultable` predicate `:8764@"defaultable"`.
 
 ## 29.9 Concurrency
 
@@ -262,7 +262,7 @@ likewise as `t.wait()`. `close` is overloaded across a channel and an FFI handle
 > task/channel method sugar `:5966-5980`. `ncpu()`'s value is
 > `runtime/tycho_rt.c:930-945` (`TYCHO_THREADS` first, else
 > `sysconf(_SC_NPROCESSORS_ONLN)`); the fan-out that does **not** follow it above
-> 64 is `src/tychoc.c:11307@_pk > 64`.
+> 64 is `src/tychoc.c:11315@_pk > 64`.
 
 ## 29.10 Filesystem and time
 
@@ -356,7 +356,7 @@ and a conforming program cannot invoke them directly. This is the language's
 **fail-closed** posture ([§1.3](00-conventions.md#13-conformance)) — abnormal
 conditions terminate rather than proceed into undefined behavior.
 
-> Provenance: `die` `Sig` `src/tychoc.c:5338@.name="die"`, codegen `:10746-10747`; `exit` `Sig`
+> Provenance: `die` `Sig` `src/tychoc.c:5338@.name="die"`, codegen `:10754-10755`; `exit` `Sig`
 > beside it and codegen beside `die`'s; divergence `expr_diverges`, with the tail
 > skips in `ctrl_rewrite_tails` / `ctrl_collect_tails` and the all-diverge
 > rejection in the `S_DECL` value-`ctrl` arm of `resolve_stmt`; no

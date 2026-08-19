@@ -36,12 +36,18 @@ Here's what can cross:
   **zero-extended** for `u8`/`u16` (so `u8(-1)` reads back as `255`, `i8(200)` as `-56`).
 - **`string`** — passed as a C `char*`; a C-returned string is **copied into the caller's
   arena** at the call site, so Tycho never holds a pointer into C-owned memory. A nullable C
-  return is declared `-> Option(string)`.
+  return is declared `-> Option(string)`. **The pointer must still be valid when your
+  function returns** — the copy happens after it does, so returning a pointer into
+  something you freed first is a use-after-free that a normal build will not catch.
+  `closedir(d); return ent->d_name;` is the shape that gets this wrong: the `dirent`
+  belongs to the stream just closed. Copy it, or close later.
 - **`bytes`** — a binary buffer (interior NULs intact), crossing as a `(pointer, length)` pair.
 - **`[int]` and `[float]`** — a scalar array crosses as a `(const T*, long)` pair (like
   `bytes`); an array of any other element type does not.
 - **`ptr`** — an opaque foreign handle, a `void*` Tycho never dereferences. The `null` literal
-  and `is_null(p)` work on it.
+  and `is_null(p)` work on it. `is_null` accepts a `handle` too, which is how you check
+  whether an opener succeeded; the scope-exit free is null-guarded, so a failed open is
+  safe to let fall out of scope.
 - **typed `handle`s** — `handle Name: free: c_fn` declares a `void*` whose C destructor runs
   automatically at scope exit (RAII), so a foreign resource won't leak or get used after close.
   What makes that hold is that a handle is **affine — exactly one owner**, and the rules are

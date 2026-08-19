@@ -92,10 +92,10 @@ rejects anything outside the scalar/string/`ptr` table, failing closed:
   (rejects composite params), `:2792` (rejects composite return).
 - Type table: `docs/guides/ffi.md:62-71`. `int/char/float/bool` → scalar long/double;
   `string` → `char *`; `ptr` → `void *`; void return allowed.
-- Link line assembled in one `cc` call: `src/tychoc.c:9245-9272`. Each
+- Link line assembled in one `cc` call: `src/tychoc.c:9253-9280`. Each
   `extern "Lib"` adds `-lLib` (`:5731` `add_link`). `--link/--shim/--pkg`
-  passthrough at `:9570-9574`. Auto-discovered `<pkg>_shim.c` + `deps`
-  pkg-config at `:9327-9330`, `:3201-3226`, `:10210-10212`.
+  passthrough at `:9578-9582`. Auto-discovered `<pkg>_shim.c` + `deps`
+  pkg-config at `:9335-9338`, `:3201-3226`, `:10218-10220`.
 - String return is arena-copied so Tycho never holds a foreign pointer
   (`src/tychoc.c:6544-6551`, `tycho_str_from_c`, NULL→`""`).
 
@@ -146,7 +146,7 @@ The rule (`docs/guides/ffi.md:89-106`): a returned `string` is copied into the
 caller's arena; `NULL` becomes `""`. An optimization — the **read-once
 borrow** — skips the copy when the result is the *direct* argument of
 `len()`/`print()`/`println()` (`src/tychoc.c@is_extern_str_call`, applied at
-`src/tychoc.c:10523` for `len`, `:10650` and `:10657` for print/println). Footguns:
+`src/tychoc.c:10531` for `len`, `:10658` and `:10665` for print/println). Footguns:
 
 - `NULL → ""` silently erases the C/Tycho distinction between "no value" and
   "empty string". A caller that needs to detect absence cannot (the crypto
@@ -239,7 +239,7 @@ opt-out.**
   cannot express.
 - *Why.* Removes the most common reason a binding needs hand-written C.
 - *Incremental or fundamental.* Incremental, medium effort (codegen of a small
-  C wrapper, alongside the existing shim plumbing at `src/tychoc.c:9024-9027`).
+  C wrapper, alongside the existing shim plumbing at `src/tychoc.c:9032-9035`).
 - *Risk.* Low — generated C is mechanical; fail closed to `--shim` if the shape
   is anything non-trivial.
 

@@ -6978,6 +6978,14 @@ static Type resolve_expr_inner(Expr *e) {
                                    /* F5: aggregates are str()-able too */
                                    is_array(ab) || is_map(ab) || IS_STRUCT(ab) || IS_ENUM(ab) ||
                                    IS_TUP(ab) || IS_OPT(ab) || IS_RES(ab));
+                    /* A handle IS the void* is_null exists to test, and a handle
+                     * opener that failed has no other way to be checked -- the
+                     * obvious spelling was refused and the destructor then freed
+                     * NULL at scope exit (found by the dusize FFI probe). Passing
+                     * is a borrow, so this does not consume the handle. */
+                    if (s->builtin && s->params[i] == T_PTR && IS_HANDLE(at_)
+                        && !strcmp(e->sval, "is_null"))
+                        continue;
                     if (s->builtin && s->params[i] == T_STRING && strable)
                         die_at(e->line, "argument %d of '%s' is %s, expected string -- wrap it with str(...), e.g. %s(str(x))",
                                i + 1, nominal_name(e->sval), type_name(at_), nominal_name(e->sval));
@@ -7497,7 +7505,7 @@ static void pf_capture(Expr *id) {
 /* capture an outer local named by a STRING rather than by an E_IDENT node -- the
  * callee of `f(x)` and the receiver of `o.f(x)` live in E_CALL's sval/qual, not
  * in a child expr. The synthesized read is resolved in the enclosing scope with
- * every other capture (src/tychoc.c:8139). Non-locals (global fns, builtins,
+ * every other capture (src/tychoc.c:8147). Non-locals (global fns, builtins,
  * enum constructors, package qualifiers) fail vars_find and are dropped. */
 static void pf_capture_name(const char *n, int line) {
     Type vt;
@@ -7520,10 +7528,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7487),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7495),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:7761). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:7769). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
