@@ -74,7 +74,14 @@ static void src_snippet(const char *src, int line, int col) {
 typedef struct {
     const char *file; int line; int col; char *msg; const char *src;
     const char *inst_file; int inst_line; const char *inst_src;
+    const char *note_file; int note_line; const char *note_src; char *note_msg;
 } Diag;
+/* An error's second location: "declared here", "a sibling imported it here".
+ * A call site fills this immediately before die_at, which consumes and clears
+ * it, so a note can never leak onto an unrelated later diagnostic. */
+static const char *g_note_file = NULL, *g_note_src = NULL;
+static int g_note_line = 0;
+static char *g_note_msg = NULL;
 static Diag *g_diags = NULL;
 static int g_ndiags = 0, g_diags_cap = 0;
 static jmp_buf g_recov;
@@ -834,7 +841,24 @@ static void diag_push(int line, char *msg) {
     g_diags[g_ndiags].inst_file = g_inst_from;
     g_diags[g_ndiags].inst_line = g_inst_from_line;
     g_diags[g_ndiags].inst_src  = g_inst_from_src;
+    g_diags[g_ndiags].note_file = g_note_file;
+    g_diags[g_ndiags].note_line = g_note_line;
+    g_diags[g_ndiags].note_src  = g_note_src;
+    g_diags[g_ndiags].note_msg  = g_note_msg;
+    g_note_file = NULL; g_note_src = NULL; g_note_line = 0; g_note_msg = NULL;   /* consumed */
     g_ndiags++;
+}
+
+__attribute__((format(printf, 4, 5)))
+static void note_at(const char *file, const char *src, int line, const char *fmt, ...) {
+    char buf[1024];
+    va_list ap; va_start(ap, fmt);
+    vsnprintf(buf, sizeof buf, fmt, ap);
+    va_end(ap);
+    char *m = (char *)malloc(strlen(buf) + 1);
+    if (!m) return;                     /* a note is an extra; never fail the compile over one */
+    strcpy(m, buf);
+    g_note_file = file; g_note_src = src; g_note_line = line; g_note_msg = m;
 }
 
 static void diag_flush(void) {
@@ -842,6 +866,11 @@ static void diag_flush(void) {
         Diag *d = &g_diags[i];
         fprintf(stderr, "%s:%d: error: %s\n", d->file, d->line, d->msg);
         src_snippet(d->src, d->line, d->col);
+        if (d->note_msg) {
+            fprintf(stderr, "%s:%d: note: %s\n", d->note_file ? d->note_file : d->file,
+                    d->note_line, d->note_msg);
+            src_snippet(d->note_src, d->note_line, 0);
+        }
         if (d->inst_file) {   /* the refusal fired inside a generic's body; name the call that chose the types */
             fprintf(stderr, "%s:%d: note: required from here -- this call instantiated the generic\n",
                     d->inst_file, d->inst_line);
@@ -908,7 +937,7 @@ static void task_container_err(void) {
 #define T_HANDLE_BASE 58368
 #define IS_HANDLE(t) ((t) >= T_HANDLE_BASE && (t) < T_HANDLE_BASE + 256)
 #define HANDLE_ID(t) ((int)((t) - T_HANDLE_BASE))
-typedef struct { const char *name; const char *free_fn; int line; } HandleType;
+typedef struct { const char *name; const char *free_fn; int line; const char *file; const char *src; } HandleType;
 static HandleType g_handles[256];
 static int g_nhandles = 0;
 static int handle_find(const char *name) {
@@ -1215,7 +1244,7 @@ static Type tup_elem(Type t, int i) { return g_tuptypes[TUP_ID(t)].elems[i]; }
  * a newtype value supports its base's arithmetic/ordering/str ONLY between two
  * values of the SAME newtype, so units can't be mixed. Construct with Meters(x),
  * unwrap with to_int/to_float. Named like structs; registered at parse time. */
-typedef struct { char *name; Type under; } NewtypeDef;
+typedef struct { char *name; Type under; int line; const char *file; const char *src; } NewtypeDef;
 static NewtypeDef *g_newtypes;
 static int g_nnewtypes = 0, g_newtypes_cap = 0;
 #define T_SOA_BASE  28672  /* struct-of-arrays types `soa [Struct]`, above newtypes */
@@ -1921,6 +1950,7 @@ static char *pkg_mangle(const char *n) {   /* identity when the prefix is empty 
 static char *pkg_prefix_for(const char *qualifier);   /* defined after the import table */
 static int is_imported_pkg(const char *name);         /* per-file visibility */
 static int is_imported_pkg_anywhere(const char *name);
+static void note_sibling_import(const char *name);   /* points the per-file import error at the sibling that did import it */
 static void check_pkg_private(const char *qualifier, const char *name, int line);   /* B3: reject cross-package access to a leading-underscore name */
 
 static char *type_mangle_ident(Type t);   /* fwd: defined with the Stage-1 generics helpers */
@@ -2338,7 +2368,7 @@ static Type parse_type_inner(Parser *ps) {
             return mt;
         }
         eat(ps, TK_RBRACKET, "']'");
-        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2191) sits after a die_at */
+        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2221) sits after a die_at */
             die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
         return arr_of(elem);   /* fixed [int]/[float]/[string] or a composite */
     }
@@ -2383,9 +2413,11 @@ static Type parse_type_inner(Parser *ps) {
             /* qualified type `pkg.Type` -> the imported package's mangled name */
             /* gap: parse-time, so this only sees imports from files parsed BEFORE this
              * one -- a leak in the first-parsed file is still missed here. */
-            if (is_imported_pkg_anywhere(t->text) && !is_imported_pkg(t->text))
+            if (is_imported_pkg_anywhere(t->text) && !is_imported_pkg(t->text)) {
+                note_sibling_import(t->text);
                 die_at(t->line, "package '%s' is used here but this file does not `import` it "
                        "(another file in the build does; imports are per-file)", t->text);
+            }
             check_pkg_private(t->text, peek(ps, 2)->text, t->line);
             nm = sfmt("%s%s", pkg_prefix_for(t->text), peek(ps, 2)->text);
             ps->p += 2;                  /* skip qualifier + dot; the type-name ident is consumed on a hit below */
@@ -2693,7 +2725,7 @@ static Expr *parse_primary(Parser *ps) {
                 e->ival = mt; e->op = TK_COLON;
                 return e;
             }
-            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2011): parse_type never yields T_VOID */
+            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2041): parse_type never yields T_VOID */
                 die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
             e->ival = arr_of(elem);   /* type carried to the resolver */
             return e;
@@ -4460,6 +4492,8 @@ static void parse_handle(Parser *ps) {
     eat(ps, TK_NEWLINE, "newline");
     eat(ps, TK_DEDENT, "dedent");
     g_handles[g_nhandles].name = nm;
+    g_handles[g_nhandles].file = g_srcname;     /* so a refusal's note names the declaring FILE, not the erring one */
+    g_handles[g_nhandles].src  = g_src;
     g_handles[g_nhandles].free_fn = fn->text;   /* a C symbol; emitted as free_fn(h) at scope exit */
     g_handles[g_nhandles].line = nameT->line;
     g_nhandles++;
@@ -4606,6 +4640,9 @@ static void parse_typedecl(Parser *ps) {
     eat(ps, TK_NEWLINE, "newline");
     g_newtypes[g_nnewtypes].name = pkg_mangle(nameT->text);
     g_newtypes[g_nnewtypes].under = under;
+    g_newtypes[g_nnewtypes].line = nameT->line;   /* so a type mismatch can point at the declaration */
+    g_newtypes[g_nnewtypes].file = g_srcname;
+    g_newtypes[g_nnewtypes].src  = g_src;
     g_nnewtypes++;
 }
 
@@ -4680,7 +4717,7 @@ static void parse_type_decl_at(Parser *ps) {
  * everywhere else (no reserved words added). Stage A parses them and records
  * the package name + imports; imports are not yet resolved (Stage B). */
 static const char *g_parsed_package = NULL;   /* package of the file just parsed (NULL = none) */
-typedef struct { const char *alias; const char *path; int line; const char *file; int used; int muted; } Import;
+typedef struct Import { const char *alias; const char *path; int line; const char *file; int used; int muted; } Import;
 static Import *g_imports;
 static int    g_imports_cap = 0;
 static int    g_nimports = 0;
@@ -4836,6 +4873,18 @@ static int is_imported_pkg_anywhere(const char *name) {
     for (int i = 0; i < g_nimports; i++)
         if (import_names(&g_imports[i], name)) return 1;
     return 0;
+}
+
+/* The sibling import this file is free-riding on, attached to the error as a note. */
+static void note_sibling_import(const char *name) {
+    for (int i = 0; i < g_nimports; i++)
+        if (import_names(&g_imports[i], name)
+            && g_imports[i].file
+            && (!g_srcname || strcmp(g_imports[i].file, g_srcname) != 0)) {
+            note_at(g_imports[i].file, NULL, g_imports[i].line,
+                    "`%s` is imported here, in another file of the build", g_imports[i].path);
+            return;
+        }
 }
 
 /* Go's rule: an import nothing in its file uses is an error. Run after the whole
@@ -5504,7 +5553,7 @@ static void collect_idents(Expr *e, const char **out, int *n, int cap) {
     }
     if (e->kind == E_CALL) {   /* Neither name on a call is a child expr: the callee lives in
                                 * sval (`g(x)` where g is a closure) and a method call's RECEIVER
-                                * lives in qual (`m.get(k)`, src/tychoc.c:2961), because the parser
+                                * lives in qual (`m.get(k)`, src/tychoc.c:2993), because the parser
                                 * cannot tell it from a package call. Both are outer reads; missing
                                 * qual let `m` reach the lifted body uncaptured and the C compiler,
                                 * not tychoc, reported `h_m undeclared`. pf_scan_expr already does
@@ -6252,9 +6301,11 @@ static Type resolve_expr_inner(Expr *e) {
                 /* already package-resolved by an earlier pass over this same node -- e->sval
                  * is the mangled name and must not be prefixed a second time (see Expr.pkg_done). */
             } else if (e->qual) {
-                if (is_imported_pkg_anywhere(e->qual) && !is_imported_pkg(e->qual))
+                if (is_imported_pkg_anywhere(e->qual) && !is_imported_pkg(e->qual)) {
+                    note_sibling_import(e->qual);
                     die_at(e->line, "package '%s' is used here but this file does not `import` it "
                            "(another file in the build does; imports are per-file)", e->qual);
+                }
                 check_pkg_private(e->qual, e->sval, e->line);
                 int _vi;
                 char *q = sfmt("%s%s", pkg_prefix_for(e->qual), e->sval);
@@ -6775,7 +6826,7 @@ static Type resolve_expr_inner(Expr *e) {
             if (e->nargs != s->nparams)
                 die_at(e->line, "'%s' takes %d argument(s), got %d",
                        nominal_name(e->sval), s->nparams, e->nargs);
-            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:6175 */
+            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:6224 */
             for (int i = 0; i < e->nargs; i++) {
                 g_in_arg++;
                 Type at_ = resolve_exp(e->args[i], s->params[i]);   /* fixes a None arg */
@@ -6810,6 +6861,17 @@ static Type resolve_expr_inner(Expr *e) {
                     if (s->builtin && s->params[i] == T_STRING && strable)
                         die_at(e->line, "argument %d of '%s' is %s, expected string -- wrap it with str(...), e.g. %s(str(x))",
                                i + 1, nominal_name(e->sval), type_name(at_), nominal_name(e->sval));
+                    {   /* a newtype is erased in lowering, so "is int, expected Cents" reads
+                         * as a compiler quirk until you see that Cents IS an int, declared here. */
+                        Type ntt = IS_NEWTYPE(s->params[i]) ? s->params[i] : (IS_NEWTYPE(at_) ? at_ : T_VOID);
+                        if (ntt != T_VOID) {
+                            int nid2 = NT_ID(ntt);
+                            if (nid2 >= 0 && nid2 < g_nnewtypes && g_newtypes[nid2].line)
+                                note_at(g_newtypes[nid2].file, g_newtypes[nid2].src, g_newtypes[nid2].line,
+                                        "`%s` is a distinct type over %s, declared here -- it does not accept its underlying type implicitly",
+                                        nominal_name(g_newtypes[nid2].name), type_name(g_newtypes[nid2].under));
+                        }
+                    }
                     die_at(e->line, "argument %d of '%s' is %s, expected %s",
                            i + 1, nominal_name(e->sval), type_name(at_), type_name(s->params[i]));
                 }
@@ -7315,7 +7377,7 @@ static void pf_capture(Expr *id) {
 /* capture an outer local named by a STRING rather than by an E_IDENT node -- the
  * callee of `f(x)` and the receiver of `o.f(x)` live in E_CALL's sval/qual, not
  * in a child expr. The synthesized read is resolved in the enclosing scope with
- * every other capture (src/tychoc.c:7850). Non-locals (global fns, builtins,
+ * every other capture (src/tychoc.c:7912). Non-locals (global fns, builtins,
  * enum constructors, package qualifiers) fail vars_find and are dropped. */
 static void pf_capture_name(const char *n, int line) {
     Type vt;
@@ -7338,10 +7400,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7198),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7260),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:7472). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:7534). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
@@ -7362,7 +7424,7 @@ static void pf_scan_expr(Expr *e) {
     }
     /* A call's callee is NOT an E_IDENT child of the node: `f(x)` keeps the name
      * in sval, and `o.f(x)` keeps the receiver in qual because the parser cannot
-     * tell it from a package call (src/tychoc.c:2955). The generic descent below
+     * tell it from a package call (src/tychoc.c:2987). The generic descent below
      * visits lhs/rhs/args only, so a fn-typed local reached the lifted chunk proc
      * uncaptured and the C compiler -- not tychoc -- reported the undeclared name.
      * The lambda capture analysis already does the sval half (src/tychoc.c@collect_idents). */
@@ -7980,6 +8042,13 @@ static void resolve_stmt(Stmt *s, Type ret) {
              * task to a second name would alias it -> two waits possible. */
             if (IS_TASK(t) && s->expr->kind != E_SPAWN)
                 die_at(s->line, "a task handle cannot be copied or re-bound -- bind the spawn directly (t := spawn f(...))");
+            if (IS_HANDLE(t) && s->expr->kind != E_CALL) {
+                int hid = HANDLE_ID(t);   /* say WHICH type is affine, and what frees it */
+                if (hid >= 0 && hid < g_nhandles && g_handles[hid].line)
+                    note_at(g_handles[hid].file, g_handles[hid].src, g_handles[hid].line,
+                            "`%s` is a handle, declared here -- `%s` frees it once at scope exit",
+                            g_handles[hid].name, g_handles[hid].free_fn);
+            }
             if (IS_HANDLE(t) && s->expr->kind != E_CALL)
                 die_at(s->line, "a handle cannot be copied -- it is freed once, at the end of its scope, and a second name would free it twice; bind the opener directly (f := open(...)), or pass this one as an argument, which borrows it");
             if (IS_CHAN(t) && !(s->expr->kind == E_CALL && s->expr->sval
@@ -9059,7 +9128,7 @@ static const char *for3_elidable_arr(Stmt *s) {
     if (!bound || bound->kind != E_CALL || !bound->sval || strcmp(bound->sval, "len") ||
         bound->nargs != 1 || !bound->args[0] || bound->args[0]->kind != E_IDENT) return NULL;
     if (IS_BOUNDED(bound->args[0]->type)) return NULL;   /* bounded stores in .v, not .data — elision emits .data[i], so never elide it */
-    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3714-3719) */
+    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3746-3751) */
     if (!post || post->kind != S_ASSIGN || !post->name || strcmp(post->name, iv)) return NULL;
     Expr *inc = post->expr;
     if (!inc || inc->kind != E_BINOP || inc->op != TK_PLUS) return NULL;

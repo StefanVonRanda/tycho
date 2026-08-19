@@ -31,7 +31,7 @@ What still reports only ONE error:
 - **Several errors inside the same proc.** The boundary is the whole proc, so
   the first error abandons the rest of that body. Needs statement-level
   recovery, which needs a poison type -- `T_PENDING` and `T_UNBOUND` both
-  resolve away (`src/tychoc.c:785`) so neither can serve.
+  resolve away (`src/tychoc.c:792`) so neither can serve.
 - **Parse errors.** They fire before any recovery point exists, so `die_at`
   flushes and exits. Needs Mojo's `skipUntilIndentation` shape: on error, skip
   to a line at or below the failed construct's indentation tracking bracket
@@ -41,25 +41,6 @@ What still reports only ONE error:
   `sh scripts/entrypoints.sh`, `sh scripts/asan_self.sh` -- the last one because
   longjmp is the risk here, and it was clean over 746 compiles for the part that
   landed.
-
-## Attached notes on diagnostics (`src/tychoc.c@die_at`)
-
-- **Scope:** every Tycho diagnostic names ONE line. Mojo attaches a second
-  location to the same error -- "declared here", "the other argument is here".
-  Counted 2026-08-18: 149 `attachNote` sites in `KGEN/lib/MojoParser`, against
-  1 `note:` in `src/tychoc.c`.
-- **Where it pays first:** the errors whose interesting location is a
-  DECLARATION, not the use -- the newtype refusals (`make ledger-check`), the
-  affine-handle refusals (`make fh-check`), and the per-file import gate added
-  on this branch, which says a file did not import a package without pointing at
-  where a sibling did.
-- **Done when:** at least those three carry a note naming the other line, and a
-  diag fixture pins the two-line shape.
-- **Independent of batch reporting** -- do either first.
-- **Verify:** `make test` (expect 728; `tests/diag/*.err` goldens move by
-  design). **Gates:** `make test`, `make ledger-check`, `make fh-check`.
-- **Unchecked:** me read the note call sites, not `SharedState.cpp` (4,080 lines)
-  where their diagnostic engine lives, so "cheap" is an estimate.
 
 ## Blocked, not scheduled
 

@@ -1,0 +1,9 @@
+# An error names the USE; the note names the DECLARATION and says why.
+type Cents = int
+
+fn add(a: Cents, b: Cents) -> Cents:
+    return a + b
+
+fn main():
+    c := Cents(5)
+    println(str(add(c, 7)))
