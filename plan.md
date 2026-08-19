@@ -21,15 +21,31 @@ deleted rather than ticked, per the same rule.
 
 ## Batch error reporting -- parse errors
 
-Statement-level recovery landed 2026-08-19: several errors in one proc are all
-reported now. What remains is PARSE errors, which fire before any recovery point
-exists, so `die_at` flushes and exits on the first one.
+Type errors batch (per statement, landed 2026-08-19). PARSE errors still report
+exactly one: they fire before any recovery point, so `die_at` flushes and exits.
 
-- **Scope:** Mojo's shape (`KGEN/lib/MojoParser/ParserBase.cpp@skipUntilIndentation`):
-  on error skip to a line at or below the failed construct's indentation,
-  tracking bracket depth, suppressing diagnostics while skipping.
-- **Done when:** a file with two malformed `fn` headers reports 2. Today it
-  reports 1 (measured 2026-08-19).
+**An attempt on 2026-08-19 was built, measured and REVERTED.** Recording why, so
+the next attempt does not repeat it. A `setjmp` in `parse_program`'s declaration
+loop plus a resync that skipped forward to the next token in column 1 did report
+both of two malformed `fn` headers -- and added a spurious third error at the
+body of every declaration after the first failure.
+
+**Cause, from a token dump at the landing point:** `TK_INDENT` and `TK_DEDENT`
+are lexed tokens carrying `col = 0` (`src/tychoc.c@TK_INDENT`), so a
+column-based scan walks straight past them. The `DEDENT` closing the aborted
+body gets skipped, the block nesting the parser is counting never rebalances,
+and the next declaration is parsed against a stream missing its `NEWLINE`/
+`INDENT` pair -- the dump showed `fn main ( ) :` followed directly by the body's
+first identifier.
+
+**What a working attempt needs:** resync on the INDENT/DEDENT structure rather
+than on columns -- track the depth the failed construct opened and consume
+exactly the DEDENTs that close it, which is what Mojo's
+`ParserBase::skipUntilIndentation` does with its `openBrackets` vector. Clearing
+`Parser.depth` alone is not enough; that was tried and changed nothing.
+
+- **Done when:** two malformed `fn` headers report 2, and a file with one
+  malformed header followed by valid declarations reports exactly 1.
 - **Verify:** `make test` (expect 731). **Gates:** `make test`,
   `sh scripts/asan_self.sh`, `sh scripts/entrypoints.sh`.
 
