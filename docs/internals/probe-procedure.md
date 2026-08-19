@@ -31,12 +31,16 @@ records, these have **no** non-author program at all:
 | surface | non-author programs touching it |
 |---|---|
 | generics | 1 ([record](probe-generics-2026-08-19.md)) |
-| newtypes | 0 |
-| `subscript` | 0 |
-| `bounded[N]` | 0 |
-| `select` | 0 |
-| enums / `Option` / `Result` error paths | 0 |
+| newtypes | 1 ([record](probe-newtype-subscript-bounded-2026-08-19.md)) |
+| `subscript` | 1 (same record) |
+| `bounded[N]` | 1 (same record) |
+| `select` | 1 ([record](probe-select-2026-08-19.md)) |
+| enums / `Option` / `Result` error paths | 1 (covered by the generics run) |
 | channels | 1 (`tools/tycho-hash`) |
+
+**Every surface listed above now has at least one record** (2026-08-19). The
+table is kept as the shape to re-derive when new language features land, not as
+a list of gaps.
 
 Covered: algorithms and strings (`tycho-diff`), concurrency (`tycho-hash`), text
 and codepoints (`tycho-fold`), FFI + `handle` + `soa`
