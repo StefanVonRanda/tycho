@@ -1,0 +1,11 @@
+# Two malformed declarations, both reported. Resync walks from where the failed
+# declaration began, tracking INDENT/DEDENT depth, and stops at the next
+# column-1 token at depth 0 -- columns alone miss those tokens, which carry col 0.
+fn a() -> :
+    return 1
+
+fn b() -> :
+    return 2
+
+fn main():
+    println("x")

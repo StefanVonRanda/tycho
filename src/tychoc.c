@@ -5045,12 +5045,41 @@ static void parse_const(Parser *ps) {
 }
 
 static ProcVec parse_program(Tok *toks) {
-    Parser ps = { toks, 0, 0 };
+    /* `static` so a longjmp cannot leave the parser position indeterminate.
+     * parse_program runs once per file and never recursively; reset on entry. */
+    static Parser ps;
+    static int decl_start;
+    ps = (Parser){ toks, 0, 0 };
+    decl_start = 0;
     ProcVec out = {0};
     g_parsed_package = NULL;                     /* reset per file; set if a `package` decl is seen */
     scan_type_decls(toks);                       /* order-free types: where each top-level type declaration starts */
     while (!at(&ps, TK_EOF)) {
+        if (setjmp(g_recov)) {
+            /* Resync on the BLOCK structure, not on columns. INDENT/DEDENT are
+             * real tokens carrying col 0, so a column scan walks past them and
+             * loses the DEDENT that closes the aborted body -- the next
+             * declaration then parses against a stream missing its NEWLINE and
+             * INDENT. Instead walk from where THIS declaration began, tracking
+             * net depth, and stop at the first column-1 token that starts a new
+             * declaration at depth 0. */
+            g_can_recover = 0;
+            ps.depth = 0;
+            int net = 0, k = decl_start;
+            for (;;) {
+                TokKind kk = ps.t[k].kind;
+                if (kk == TK_EOF) break;
+                if (kk == TK_INDENT) net++;
+                else if (kk == TK_DEDENT) net--;
+                else if (k > decl_start && net <= 0 && ps.t[k].col == 1 && kk != TK_NEWLINE) break;
+                k++;
+            }
+            ps.p = k;
+            continue;
+        }
+        g_can_recover = 1;
         if (accept(&ps, TK_NEWLINE)) continue;
+        decl_start = ps.p;   /* where the declaration about to be parsed begins */
         if (at(&ps, TK_IDENT) && !strcmp(cur(&ps)->text, "package")) { parse_package_decl(&ps); continue; }
         if (at(&ps, TK_IDENT) && !strcmp(cur(&ps)->text, "import"))  { parse_import_decl(&ps);  continue; }
         if (at(&ps, TK_IDENT) && !strcmp(cur(&ps)->text, "extern") && peek(&ps, 1)->kind != TK_LPAREN) {
@@ -5068,6 +5097,11 @@ static ProcVec parse_program(Tok *toks) {
         if (out.n == out.cap) { out.cap = out.cap ? out.cap * 2 : 8; out.v = (Proc **)xrealloc(out.v, (size_t)out.cap * sizeof(Proc *)); }
         out.v[out.n++] = pr;
     }
+    g_can_recover = 0;   /* the jmp_buf's frame ends here */
+    /* A recovered parse error must stop the build BEFORE anything downstream
+     * reads a half-parsed AST -- registration, the `no main` check, resolve. */
+    if (g_ndiags) { diag_flush(); exit(1); }
+
     return out;
 }
 
@@ -6843,7 +6877,7 @@ static Type resolve_expr_inner(Expr *e) {
             if (e->nargs != s->nparams)
                 die_at(e->line, "'%s' takes %d argument(s), got %d",
                        nominal_name(e->sval), s->nparams, e->nargs);
-            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:6241 */
+            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:6275 */
             for (int i = 0; i < e->nargs; i++) {
                 g_in_arg++;
                 Type at_ = resolve_exp(e->args[i], s->params[i]);   /* fixes a None arg */
@@ -7394,7 +7428,7 @@ static void pf_capture(Expr *id) {
 /* capture an outer local named by a STRING rather than by an E_IDENT node -- the
  * callee of `f(x)` and the receiver of `o.f(x)` live in E_CALL's sval/qual, not
  * in a child expr. The synthesized read is resolved in the enclosing scope with
- * every other capture (src/tychoc.c:7929). Non-locals (global fns, builtins,
+ * every other capture (src/tychoc.c:7963). Non-locals (global fns, builtins,
  * enum constructors, package qualifiers) fail vars_find and are dropped. */
 static void pf_capture_name(const char *n, int line) {
     Type vt;
@@ -7417,10 +7451,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7277),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7311),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:7551). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:7585). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
