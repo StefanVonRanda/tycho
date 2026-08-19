@@ -312,3 +312,9 @@ environments — exactly Tycho's only mode); Tycho skips the `inout`-to-disjoint
 machinery and gets the expressiveness from chunk-copy + merge at a copy cost that
 *is* the design point. Share-nothing message copying is the Erlang/Pony model, and
 the channel core is Vyukov's bounded MPMC queue.
+
+**When `spawn` pays.** A task is a 1:1 OS thread, so each `spawn` costs roughly
+20 µs to create and join on this machine — measured over 2000 tasks. Work
+shorter than that loses to its own overhead; `spawn` a chunk, not an item.
+`parallel for` already chunks to `ncpu()`, so it pays that cost once per loop
+rather than once per iteration.

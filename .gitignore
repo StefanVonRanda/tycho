@@ -262,3 +262,11 @@ __pycache__/
 
 # a working assessment, not documentation -- stays on disk, never published
 OVERVIEW.md
+
+# Stray build outputs at the repo root: no Makefile target creates them,
+# a doc fence run from here rewrites them, and every sweep left the tree dirty.
+/program
+/program.c
+/tycho-diff
+/tycho-fold
+/tycho-hash
