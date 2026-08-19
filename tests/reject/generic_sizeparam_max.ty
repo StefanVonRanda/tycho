@@ -1,5 +1,5 @@
 # 05-generics.md:20: "... and 16 size parameters may be introduced per generic."
-# src/tychoc.c:2013. This signature introduces 17.
+# src/tychoc.c:2076. This signature introduces 17.
 fn f(a0: [$N0]int, a1: [$N1]int, a2: [$N2]int, a3: [$N3]int, a4: [$N4]int, a5: [$N5]int, a6: [$N6]int, a7: [$N7]int, a8: [$N8]int, a9: [$N9]int, a10: [$N10]int, a11: [$N11]int, a12: [$N12]int, a13: [$N13]int, a14: [$N14]int, a15: [$N15]int, a16: [$N16]int) -> int:
     return len(a0)
 

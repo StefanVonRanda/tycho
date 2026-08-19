@@ -1,6 +1,6 @@
 # 03-types.md:334-338: `soa` is in neither the permitted nor the forbidden list;
 # it is excluded by the permitted list being closed ("MUST be one of"), and
-# src/tychoc.c:4207-4209 refuses it (a soa is not is_array/is_map/IS_STRUCT).
+# src/tychoc.c:4270-4272 refuses it (a soa is not is_array/is_map/IS_STRUCT).
 struct P:
     x: int
 

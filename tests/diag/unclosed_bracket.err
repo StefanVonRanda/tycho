@@ -1,0 +1,4 @@
+tests/diag/unclosed_bracket.ty:4: error: unclosed '(' or '[' opened on line 4 -- `fn` here can only start a declaration, so the bracket was never closed
+     4 | fn a(:
+tests/diag/unclosed_bracket.ty:7: error: unclosed '(' or '[' opened on line 7 -- `fn` here can only start a declaration, so the bracket was never closed
+     7 | fn b(:
