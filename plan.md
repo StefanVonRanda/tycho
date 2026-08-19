@@ -68,6 +68,15 @@ top-level `X := 6` -- `const NAME = expr` is the form, in spec §12.2 but not on
 the reference page, and its error (`expected 'fn'`) is the only one in three
 runs that did not name its own fix.
 
+### 5. `const` refuses an array literal with a message naming the wrong rule
+
+`const XS = [1, 2, 3]` gives *"const value must be a literal"* -- and `[1, 2, 3]`
+is a literal. Same class as finding 2: the message states a rule that is not the
+rule being enforced. Found by the mimo-v2.5 run, the one thing that round found
+that the Claude round did not.
+- **Done when:** the message says what a const may actually hold.
+- **Gates:** `make test`.
+
 ### Three runs in a row hit this
 
 `tychoc` compiles every `.ty` beside the entry file as one package, so two

@@ -1,5 +1,10 @@
 # Generics probe, 2026-08-19 — what a first-time reader hits
 
+> **Provenance.** This run was a Claude subagent spawned inside the author's
+> own session, not an independent third party — see
+> [probe-model-comparison-2026-08-20.md](probe-model-comparison-2026-08-20.md).
+> Every finding below was rebuilt on `main` before being written down, so the
+> findings stand; the independence does not.
 A fresh agent was given a stripped checkout, a compiler built from `main`, and
 one instruction: build a real program using generic functions, a generic
 container of its own, and payload enums with `Option`/`Result`. It produced an

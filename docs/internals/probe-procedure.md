@@ -54,6 +54,16 @@ for the log to record what went RIGHT as well as what did not — a log that onl
 complains is not evidence. Do not hand over `~/.claude/skills/tycho-syntax`; the
 mistakes it lists are exactly what the probe exists to re-discover.
 
+## Which model to use
+
+Measured 2026-08-20 by running all four probes twice, once with Claude
+subagents and once with `mimo-v2.5` through the `pi` CLI:
+[probe-model-comparison-2026-08-20.md](probe-model-comparison-2026-08-20.md).
+The weaker model did not behave more like a newcomer — it mostly produced
+expectation mismatches against Python and C, and one of its four runs died at
+`repetition_truncation` without writing a log at all. **A probe's value came
+from where it was aimed, not from which model held the pen.**
+
 ## Reading the result
 
 **Build and run the agent's code under the sanitizers yourself.** The 2026-08-19
