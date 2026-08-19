@@ -19,28 +19,19 @@ deleted rather than ticked, per the same rule.
   passwords into a single derived key. A sweep covers the sites its author has in
   mind, which are the ones already fixed.
 
-## Batch error reporting -- the remaining two halves
+## Batch error reporting -- parse errors
 
-Landed 2026-08-19: one error per PROC, all collected, printed together, and no C
-emitted after any of them. `die_at` records the diagnostic and longjmps to a
-per-proc `setjmp` in `resolve_program`; all 565 call sites are unchanged and
-still `noreturn`. Fixture `tests/diag/multi_error.ty` pins two.
+Statement-level recovery landed 2026-08-19: several errors in one proc are all
+reported now. What remains is PARSE errors, which fire before any recovery point
+exists, so `die_at` flushes and exits on the first one.
 
-What still reports only ONE error:
-
-- **Several errors inside the same proc.** The boundary is the whole proc, so
-  the first error abandons the rest of that body. Needs statement-level
-  recovery, which needs a poison type -- `T_PENDING` and `T_UNBOUND` both
-  resolve away (`src/tychoc.c:792`) so neither can serve.
-- **Parse errors.** They fire before any recovery point exists, so `die_at`
-  flushes and exits. Needs Mojo's `skipUntilIndentation` shape: on error, skip
-  to a line at or below the failed construct's indentation tracking bracket
-  depth, suppressing diagnostics while skipping.
-
-- **Verify:** `make test` (expect 729). **Gates:** `make test`,
-  `sh scripts/entrypoints.sh`, `sh scripts/asan_self.sh` -- the last one because
-  longjmp is the risk here, and it was clean over 746 compiles for the part that
-  landed.
+- **Scope:** Mojo's shape (`KGEN/lib/MojoParser/ParserBase.cpp@skipUntilIndentation`):
+  on error skip to a line at or below the failed construct's indentation,
+  tracking bracket depth, suppressing diagnostics while skipping.
+- **Done when:** a file with two malformed `fn` headers reports 2. Today it
+  reports 1 (measured 2026-08-19).
+- **Verify:** `make test` (expect 731). **Gates:** `make test`,
+  `sh scripts/asan_self.sh`, `sh scripts/entrypoints.sh`.
 
 ## Blocked, not scheduled
 

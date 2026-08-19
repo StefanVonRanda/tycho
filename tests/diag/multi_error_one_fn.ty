@@ -1,0 +1,7 @@
+# Three errors in ONE proc: the recovery boundary is the statement, not the fn.
+# The uses of a, b and c below report nothing -- a cascade of the same mistake.
+fn main():
+    a := "x" + 1
+    b := "y" + 2
+    c := "z" + 3
+    println(str(a) + str(b) + str(c))
