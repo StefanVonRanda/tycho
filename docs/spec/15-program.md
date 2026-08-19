@@ -16,12 +16,12 @@ the C boundary, and how — is [§24](14-ffi.md). This chapter
 specifies only *program- and package-level* structure and does not restate
 those rules.
 
-> Provenance: entry point `src/tychoc.c:9003@no 'main' procedure` (no `main`),
-> `:9046@takes no parameters` and `:9049@returns nothing or` (the two signature
+> Provenance: entry point `src/tychoc.c:9037@no 'main' procedure` (no `main`),
+> `:9080@takes no parameters` and `:9083@returns nothing or` (the two signature
 > rules, diagnosed separately); compilation unit
-> `compile_package` `:13810-13815@compile_package`, driver `:14005-14104@int main(`;
+> `compile_package` `:13844-13849@compile_package`, driver `:14039-14138@int main(`;
 > `extern` `parse_extern_fn` `:4337-4415@parse_extern_fn`; the C compiler
-> invocation `:14138@system(cmd)`.
+> invocation `:14172@system(cmd)`.
 
 ## 27. Program structure
 
@@ -68,7 +68,7 @@ which returns a `[string]` ([§29](16-builtins.md)). The array
 mirrors the process `argv` exactly, so `args()[0]` is the **program name** (the
 path by which the executable was invoked) and the operands follow at
 `args()[1]` onward (`runtime/tycho_rt.c@tycho_args`, wired from the generated
-`main` at `src/tychoc.c:13575@tycho_argc`). `args()` is never empty for a normally-launched
+`main` at `src/tychoc.c:13609@tycho_argc`). `args()` is never empty for a normally-launched
 program.
 
 ### 27.2 The compilation unit
@@ -90,7 +90,7 @@ Whether a source file participates in the package system is decided by the
 presence of a `package` declaration. The entry file is compiled in **package
 mode** (the whole directory plus its import graph, §28.5) iff it begins with a
 `package` declaration; a file with no `package` declaration is a **single-file
-program** compiled alone (`src/tychoc.c:14067@compile_package`). A single-file program has
+program** compiled alone (`src/tychoc.c:14101@compile_package`). A single-file program has
 the same entry-point rule (§27.1) and is a degenerate one-package unit.
 
 ### 27.3 `extern` declarations
@@ -128,8 +128,8 @@ form* and its role in program structure.
 
 For a program that is not stopped early (e.g. `--emit-c`, `--symbols`), the
 reference implementation compiles the emitted C and links it into the output
-executable with a single C-compiler invocation (`src/tychoc.c:14137@-fwrapv`,
-run at `src/tychoc.c:14138@system(cmd)`).
+executable with a single C-compiler invocation (`src/tychoc.c:14171@-fwrapv`,
+run at `src/tychoc.c:14172@system(cmd)`).
 The invocation has the shape:
 
 ```text
@@ -145,20 +145,20 @@ with these normative properties:
   undefined behavior, which is precisely Tycho's integer-overflow contract
   ([§5.2.1](03-types.md#521-int)): a conforming realization on C MUST compile
   such that signed overflow wraps and never traps or miscompiles
-  (`src/tychoc.c:14137@-fwrapv`).
+  (`src/tychoc.c:14171@-fwrapv`).
 - **`-lm` is always passed**, so bare libc math externs (e.g. `extern fn sqrt`)
-  link with no `"m"` annotation (`src/tychoc.c:5093@-lm is always passed`).
+  link with no `"m"` annotation (`src/tychoc.c:5127@-lm is always passed`).
 - **`-pthread` is always passed**, supporting the concurrency runtime
   ([§20](13-concurrency.md)).
 - **Optimization / debug:** `-O3` is the portable default; `-g` selects `-O0 -g`
-  (unoptimized with debug info) instead (`src/tychoc.c:14131@optdbg`).
+  (unoptimized with debug info) instead (`src/tychoc.c:14165@optdbg`).
 - **`-march=native` is opt-in** via `--native`. It is host-CPU-specific and MUST
-  NOT be assumed portable across machines (`src/tychoc.c:14130@march`).
-- The default C compiler is `cc` (`src/tychoc.c:14013@"cc"`); `--cc <compiler>`
-  overrides it (`src/tychoc.c:14035@--cc`).
+  NOT be assumed portable across machines (`src/tychoc.c:14164@march`).
+- The default C compiler is `cc` (`src/tychoc.c:14047@"cc"`); `--cc <compiler>`
+  overrides it (`src/tychoc.c:14069@--cc`).
 
 Three CLI options let a program splice additional flags onto this line for FFI
-(`src/tychoc.c:14042-14044`):
+(`src/tychoc.c:14076-14078`):
 
 - **`--link <lib>`** appends a raw `-l<lib>`.
 - **`--pkg <name>`** runs `pkg-config --cflags --libs <name>` and appends the
@@ -190,7 +190,7 @@ are collapsed. A program whose closure declares no `deps` prints nothing and exi
 0.
 
 `-L<dir>` and `-I<dir>` (attached or separated) also accumulate onto the line
-(`src/tychoc.c:14038@-L`). Every library/package name that reaches the shell — from
+(`src/tychoc.c:14072@-L`). Every library/package name that reaches the shell — from
 `extern "Lib"`, `--link`, or `--pkg` — MUST be restricted to a conservative
 character set (`[A-Za-z0-9._+-]`) and rejected otherwise, so compiling an
 untrusted source cannot inject a shell command (`src/tychoc.c@cc_safe_name`). The `extern "Lib"` libraries, the auto-discovered
@@ -221,17 +221,17 @@ syntax"; merge at `src/tychoc.c@merge_pkg`).
 A package's symbols are reached from another package by a **qualified name**
 `pkg.symbol`, where `pkg` is the importing binding (§28.2). The qualified form
 applies to types, functions, struct/enum constructors, and enum variants alike
-— `geom.Point`, `geom.add`, `geom.Red` (`src/tychoc.c:6003@payload-less` handles a
+— `geom.Point`, `geom.add`, `geom.Red` (`src/tychoc.c:6037@payload-less` handles a
 payload-less `pkg.Variant`).
 
 Every non-entry package's `package NAME` MUST equal the final component of the
 import path that reached it — which, for a relative import, is its directory
-name (`src/tychoc.c:13789@declares`, checked against `src/tychoc.c@pkg_basename` of
+name (`src/tychoc.c:13823@declares`, checked against `src/tychoc.c@pkg_basename` of
 the import path). The **entry package may be named anything**: its name is taken from the
 entry file's own `package` declaration and is not constrained to the directory
-name (`src/tychoc.c@detect_package`, called at `src/tychoc.c:14066@detect_package`;
+name (`src/tychoc.c@detect_package`, called at `src/tychoc.c:14100@detect_package`;
 `compile_package` starts the merge at that name with an empty prefix,
-`src/tychoc.c:13814@merge_pkg`).
+`src/tychoc.c:13848@merge_pkg`).
 
 ### 28.2 Import declarations
 
@@ -271,7 +271,7 @@ aliased form `import ALIAS "PATH"` binds the package under `ALIAS` instead
 
 `package` and `import` are **contextual**: they are special only as the leading
 identifier of a top-level item and remain ordinary identifiers elsewhere, so
-they are not reserved words (`src/tychoc.c:5054-5055`). A bound package name,
+they are not reserved words (`src/tychoc.c:5083-5084`). A bound package name,
 however, is effectively reserved within the file: because a bare `pkg.symbol`
 is disambiguated by treating `pkg` as an imported package first, a program
 SHOULD NOT shadow an imported binding with a local of the same name
@@ -286,7 +286,7 @@ symbols keep their plain names; every imported package `P` uses the prefix
 `P__`, applied uniformly to every definition and every reference — including the
 generated type families for its arrays, tuples, maps, and helper functions
 (`src/tychoc.c@pkg_mangle`; `g_cur_pkg_prefix` set per package at
-`src/tychoc.c:13782@g_cur_pkg_prefix`, reset at `src/tychoc.c:13803@g_cur_pkg_prefix`; [packages.md](../guides/packages.md) §"How it builds").
+`src/tychoc.c:13816@g_cur_pkg_prefix`, reset at `src/tychoc.c:13837@g_cur_pkg_prefix`; [packages.md](../guides/packages.md) §"How it builds").
 Two identically-named symbols in different packages are therefore distinct after
 mangling. `extern` C symbols are the sole exception and are never prefixed
 (§27.3).
@@ -296,8 +296,8 @@ with `_` is **private to its own package**: it is usable from any file *within*
 that package, but a qualified `pkg._name` from another package MUST be rejected
 with a diagnostic (`src/tychoc.c@check_pkg_private`; enforced at the
 qualified-reference sites `src/tychoc.c:2438@check_pkg_private`,
-`src/tychoc.c:3104@check_pkg_private`, `src/tychoc.c:6006@check_pkg_private`,
-`src/tychoc.c:6326@check_pkg_private`). Every other top-level
+`src/tychoc.c:3104@check_pkg_private`, `src/tychoc.c:6040@check_pkg_private`,
+`src/tychoc.c:6360@check_pkg_private`). Every other top-level
 symbol is exported and visible to importers. There is no visibility keyword;
 the underscore convention is the whole of the rule.
 
@@ -345,18 +345,18 @@ implementation MUST:
 2. **Scan its `.ty` files in sorted order.** All `*.ty` files in the directory
    are collected and sorted by name, so the merge order is deterministic and
    independent of directory-listing order (`src/tychoc.c@scan_pkg_files`; the
-   sort at `src/tychoc.c:13710@qsort`). A directory with no `.ty` files is an
-   error (`src/tychoc.c:13709@has no .ty files`).
+   sort at `src/tychoc.c:13744@qsort`). A directory with no `.ty` files is an
+   error (`src/tychoc.c:13743@has no .ty files`).
 3. **Load imports first (post-order).** Every import found in the package's file
    headers is resolved (§28.4) and merged **before** this package's own
    definitions, so a definition's dependencies are already registered when it is
-   parsed (`src/tychoc.c:13767@load imported packages first`).
+   parsed (`src/tychoc.c:13801@load imported packages first`).
 4. **Require the declared package name.** Every file in the directory MUST carry
    a `package` declaration, and it MUST equal the package name expected for this
    directory (§28.1); a missing declaration or a mismatch MUST be rejected
-   (`src/tychoc.c:13785@but has no`).
+   (`src/tychoc.c:13819@but has no`).
 5. **Append into the one shared AST**, mangling each package's names by its
-   `P__` prefix (§28.3) into the single flat namespace (`src/tychoc.c:13799@prog->v`).
+   `P__` prefix (§28.3) into the single flat namespace (`src/tychoc.c:13833@prog->v`).
 
 The resulting program is then finiteness-checked, resolved, and code-generated
 as a whole ([§5](03-types.md), [§6](04-inference.md);
@@ -366,7 +366,7 @@ as a whole ([§5](03-types.md), [§6](04-inference.md);
 ### 28.6 Package foreign dependencies (`deps` and shims)
 
 A package MAY carry C-backed machinery that is built and linked automatically
-when the package is imported (`src/tychoc.c:13746@add_pkg_deps`):
+when the package is imported (`src/tychoc.c:13780@add_pkg_deps`):
 
 - **Companion shim.** A co-located `<pkg>/<pkg>_shim.c` is auto-added to the
   link line as a compiled companion source (`src/tychoc.c@add_shim`), so a
@@ -379,9 +379,9 @@ when the package is imported (`src/tychoc.c:13746@add_pkg_deps`):
   onto the C compiler line (§27.4), so a shim that `#include`s a system header
   builds against the right flags (`src/tychoc.c@add_pkg_deps`). A `deps` name
   that pkg-config cannot resolve prints a diagnostic
-  (`src/tychoc.c:5172@could not resolve dependency`); the missing library
+  (`src/tychoc.c:5206@could not resolve dependency`); the missing library
   then surfaces as a link error at the `cc` stage. Note that
-  `deps` is consulted **only alongside a shim** (`src/tychoc.c:13746@file_exists`); a `deps` file with
+  `deps` is consulted **only alongside a shim** (`src/tychoc.c:13780@file_exists`); a `deps` file with
   no companion shim contributes nothing.
 
 `deps`-backed packages are the boundary between the two conformance tiers
@@ -391,4 +391,4 @@ tier**: a conforming implementation **MAY** omit them and still conform at the
 diagnosed rather than silently mis-linked. The reference test harness embodies
 this split — it probes the same `deps` and **skips** (rather than fails) a
 package's tests when the external library is unavailable (`corelib/run.sh`, per
-the note at `src/tychoc.c:5121@SKIPS`).
+the note at `src/tychoc.c:5155@SKIPS`).
