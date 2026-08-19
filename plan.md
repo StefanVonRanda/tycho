@@ -19,6 +19,34 @@ deleted rather than ticked, per the same rule.
   passwords into a single derived key. A sweep covers the sites its author has in
   mind, which are the ones already fixed.
 
+## Parse errors inside an unclosed bracket
+
+Parse errors batch now (2026-08-19) -- EXCEPT when the failed construct leaves a
+bracket open. Then only one is reported, and the cause is in the LEXER, not the
+parser.
+
+**Measured, from a token dump.** `fn a(:` never closes its `(`, and the lexer
+suppresses NEWLINE/INDENT/DEDENT while `bracket_depth > 0`
+(`src/tychoc.c@bracket_depth`) -- correct for line continuation. The
+consequence is that the whole rest of the file becomes one logical line: the
+dump showed zero layout tokens after the unclosed `(`. No parser-level resync
+can recover that, because the block structure is gone before the parser runs.
+This is why the first attempt looked like a resync bug and was not one.
+
+**What would fix it:** in the lexer, treat a line beginning in column 1 with a
+RESERVED declaration keyword (`fn`, `struct`, `enum`, `handle`, `type`) as
+proof the bracket was never closed -- report the unclosed bracket at its opening
+line and reset `bracket_depth`. Those five are reserved
+(see `~/.claude/skills/tycho-syntax`), so none can legally begin a continuation
+line; the contextual words (`const`, `import`, `package`, `extern`) must NOT be
+used, since a variable may be named after them.
+
+- **Done when:** two `fn a(:`-style headers report 2, and the error names the
+  unclosed bracket's own line rather than a confused downstream one.
+- **Verify:** `make test` (expect 732). **Gates:** `make test`,
+  `make editors-check` (it parses every `.ty` in the tree, so a lexer change is
+  exactly what it exists to catch), `sh scripts/entrypoints.sh`.
+
 ## Blocked, not scheduled
 
 **ROADMAP §1** wants three non-trivial programs by **two** people; three exist,
