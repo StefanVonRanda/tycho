@@ -1,13 +1,5 @@
 package num
 
-# A variadic over `int`. `f()` supplies an empty `[int]`, so the identity is the
-# answer for no arguments rather than a special case.
-fn sum(xs: ...int) -> int:
-    t := 0
-    for x in xs:
-        t = t + x
-    return t
-
 fn count(xs: ...$T) -> int:
     return len(xs)
 

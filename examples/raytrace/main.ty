@@ -16,9 +16,6 @@ fn v_sub(a: Vec3, b: Vec3) -> Vec3:
 fn v_scale(v: Vec3, s: float) -> Vec3:
     return Vec3(v.x * s, v.y * s, v.z * s)
 
-fn v_mul(a: Vec3, b: Vec3) -> Vec3:
-    return Vec3(a.x * b.x, a.y * b.y, a.z * b.z)
-
 fn v_dot(a: Vec3, b: Vec3) -> float:
     return a.x * b.x + a.y * b.y + a.z * b.z
 

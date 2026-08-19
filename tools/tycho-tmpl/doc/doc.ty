@@ -34,6 +34,3 @@ fn render(d: sink Doc, sep: string) -> string:
             out = out + sep
         out = out + d.parts[i]
     return out
-
-fn count(d: Doc) -> int:      # an ordinary borrow: reading does not consume
-    return d.n

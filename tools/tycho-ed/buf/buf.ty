@@ -125,14 +125,6 @@ fn from_text(text: string) -> Buf:
 fn from_text_gap(text: string) -> Buf:
     return _from(text, true)
 
-fn text(b: Buf) -> string:
-    out := ""
-    for i := 0; i < len(b.lines); i += 1:
-        if i > 0:
-            out += "\n"
-        out += b.lines[i]
-    return out
-
 fn line_count(b: Buf) -> int:
     return len(b.lines)
 

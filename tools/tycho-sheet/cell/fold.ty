@@ -22,9 +22,6 @@ fn env_get(e: inout Env, row: int, col: int) -> Value:
 fn MAX_CELLS() -> int:
     return 1048576
 
-fn _num_of(v: Value) -> Result(float, CellErr):
-    return to_num(v)
-
 # x^y. corelib has no float pow and this slice does not link libm, so an integer
 # exponent is done by repeated multiplication and a fractional one is refused by
 # name rather than approximated. Saying "unsupported" is honest; returning a

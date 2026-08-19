@@ -1,13 +1,6 @@
-examples/raytrace/main.ty -> examples/raytrace/main.ty:19: warning: 'v_mul' is never called
-tools/tycho-chess/main.ty -> tools/tycho-chess/main.ty:761: warning: 'popcnt' is never called
 tools/tycho-db/main.ty -> tools/tycho-db/exec/exec.ty:107: warning: 'cols' is copied into this aggregate because it is still live afterwards; if you do not need it after this, make this its last use and the copy goes away
 tools/tycho-db/main.ty -> tools/tycho-db/exec/exec.ty:119: warning: 'vals' is copied into this aggregate because it is still live afterwards; if you do not need it after this, make this its last use and the copy goes away
-tools/tycho-ed/main.ty -> tools/tycho-ed/buf/buf.ty:128: warning: 'text' is never called
 tools/tycho-grid/main.ty -> tools/tycho-grid/main.ty:108: warning: `sum_all` is deprecated: use total(g, nrows, ncols) -- sum_all walks the rows and predates the subscript
 tools/tycho-kv/main.ty -> tools/tycho-kv/main.ty:196: warning: not all paths of 'kv_lookup' return a value (a fall-off-the-end yields a zero value)
-tools/tycho-make/main.ty -> tools/tycho-make/graph/graph.ty:193: warning: 'order' is never called
 tools/tycho-scheme/main.ty -> tools/tycho-scheme/main.ty:32: warning: not all paths of 'lookup' return a value (a fall-off-the-end yields a zero value)
-tools/tycho-sheet/main.ty -> tools/tycho-sheet/cell/fold.ty:25: warning: '_num_of' is never called
-tools/tycho-stat/main.ty -> tools/tycho-stat/num/num.ty:5: warning: 'sum' is never called
 tools/tycho-tally/main.ty -> tools/tycho-tally/main.ty:72: warning: 'hostile' is copied into this aggregate because it is still live afterwards; if you do not need it after this, make this its last use and the copy goes away
-tools/tycho-tmpl/main.ty -> tools/tycho-tmpl/doc/doc.ty:38: warning: 'count' is never called

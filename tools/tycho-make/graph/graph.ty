@@ -186,15 +186,6 @@ fn sinks(g: Graph) -> [string]:
             push(out, g.nodes[i].name)
     return out
 
-# Kahn's algorithm, dependencies first. The inner scan takes the LOWEST-INDEXED
-# ready node, which is the declaration-order tie-break the header promises; a
-# ready set kept in any other structure would be one refactor away from a
-# host-dependent answer.
-fn order(g: Graph) -> Result([string], MakeErr):
-    match order_idx(g):
-        Ok(ix): return Ok(names_at(g, ix))
-        Err(e): return Err(e)
-
 fn names_at(g: Graph, ix: [int]) -> [string]:
     out := []string
     for i := 0; i < len(ix); i += 1:

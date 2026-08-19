@@ -758,13 +758,6 @@ fn piece_board(b: Board, side: int, pt: int) -> int:
         return b.queens[side]
     return b.kings[side]
 
-fn popcnt(bb: int) -> int:
-    n := 0
-    for bb != 0:
-        n = n + 1
-        bb = bb & (bb - 1)
-    return n
-
 # a full rehash from the bitboards: ~30 set-bit iterations per node. Cheaper
 # than incremental hashing to GET right; the TT-on/off gate would redden any
 # missed delta, so the simplicity is the point.
