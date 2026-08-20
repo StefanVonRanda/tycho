@@ -44,7 +44,9 @@ in `u32`). They behave like `int`/`float` but at a defined width:
 ### `char`
 
 A `char` is one byte, written with a quoted literal — `'x'`, with the escapes
-`\n \t \r \0 \\ \'`. It interoperates with `int` deliberately and narrowly:
+`\n \t \r \0 \\ \'` and `\xNN` (exactly two hex digits, either case: `'\x41'` is
+`'A'`). That set is **not** the one a [string literal](#string-escapes) takes. It
+interoperates with `int` deliberately and narrowly:
 
 - `char ± int` is a `char` (a byte offset — `'a' + 1` is `'b'`). The result keeps the
   `char` type but its value is the ordinary integer result — it is **not** reduced to
@@ -69,6 +71,39 @@ interior `\0` bytes survive — which is what you want for hashing, crypto, and 
 element `& 0xFF`) builds a binary buffer from computed bytes — the way to produce a
 `bytes` with interior NULs in pure Tycho. `bytes` also crosses the [FFI](ffi.md)
 boundary as a `(pointer, length)` pair.
+
+## String escapes
+
+A string literal takes exactly five escapes; anything else is a compile error that
+names the set — `unsupported escape \q (use \n \t \r \\ \")`.
+
+| escape | byte | |
+|---|---|---|
+| `\n` | 10 | newline |
+| `\t` | 9 | tab |
+| `\r` | 13 | carriage return |
+| `\\` | 92 | backslash |
+| `\"` | 34 | double quote |
+
+There is no `\0`, `\'`, `\a`, `\b`, `\f`, `\v`, `\e`, `\xNN` or `\uNNNN`. A single
+quote needs no escape — `"it's"` is a valid literal. For any other byte, build it:
+`chr(27)` is a one-byte string holding ESC, and `to_bytes(xs)` over an `[int]` is
+the way to a `bytes` with interior NULs. An `f"..."` lexes the same five and
+rejects the same rest. A [`char` literal](#char) is a **different** set — it takes
+`\0`, `\'` and `\xNN`, and refuses `\"`.
+
+```tycho
+fn main():
+    println("tab:\there")
+    println("quote:\" backslash:\\")
+    println(str(len("a\rb")))
+```
+
+```output
+tab:	here
+quote:" backslash:\
+3
+```
 
 ## String interpolation
 
