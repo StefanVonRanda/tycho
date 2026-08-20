@@ -1,0 +1,7 @@
+# A named function inside another used to fail as "expected '(' after fn in a
+# lambda" -- the parser's construct, not the writer's. Found by an agent probe,
+# 2026-08-20.
+fn main():
+    fn helper() -> int:
+        return 1
+    println(str(helper()))

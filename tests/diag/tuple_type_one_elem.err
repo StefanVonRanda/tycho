@@ -1,0 +1,2 @@
+tests/diag/tuple_type_one_elem.ty:3: error: a tuple type needs at least two elements; parentheses do not group a type, so write it bare
+     3 | fn f(g: (fn(int) -> int)) -> int:

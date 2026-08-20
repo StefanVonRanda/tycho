@@ -5,7 +5,7 @@ Tycho calls C through `extern` functions. The boundary is deliberately narrow an
 crosses is copied so that Tycho never holds a pointer into C-owned memory nor
 exposes its own storage to C.
 
-> Provenance: `docs/reference/ffi.md`; `parse_extern_fn` `src/tychoc.c:4089-4160`;
+> Provenance: `docs/reference/ffi.md`; `parse_extern_fn` `src/tychoc.c:4096-4167`;
 > boundary copy routines `runtime/tycho_rt.c:1097-1109`,`:1620@tycho_arr_int_from_c`,`:1601-1612`.
 
 ## 24. `extern` and the C boundary

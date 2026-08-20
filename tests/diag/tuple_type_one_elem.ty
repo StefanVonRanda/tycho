@@ -1,0 +1,7 @@
+# `(T)` is a one-element tuple, not a grouped type. The old message named only
+# the tuple arity and left the reader no way to the fix. Agent probe, 2026-08-20.
+fn f(g: (fn(int) -> int)) -> int:
+    return g(1)
+
+fn main():
+    println(str(f(fn(x: int) -> int: x)))

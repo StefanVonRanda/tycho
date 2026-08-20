@@ -14,8 +14,8 @@ types differ (for example, a C backend MUST realize `int` as a 64-bit type even
 on a target where C `long` is 32 bits).
 
 > Provenance: scalar tags `src/tychoc.c:726-747`; C lowering `c_type`
-> `:1516-1556`; equality/ordering `:6871-6904`; newtype decl `parse_typedecl`
-> `:4405-4424`.
+> `:1516-1556`; equality/ordering `:6878-6911`; newtype decl `parse_typedecl`
+> `:4412-4431`.
 
 ## 5.1 The type-identity model
 
@@ -229,7 +229,7 @@ dynamic element — `[bool]` is a supported array type — and is rejected only 
 the inline fixed-capacity forms `[N]T`, `[$N]T` and `bounded[N]T`, which have no
 bool codegen.
 
-> Provenance: dynamic `[T]` tests `void` alone (`src/tychoc.c:2445@elem`); the
+> Provenance: dynamic `[T]` tests `void` alone (`src/tychoc.c:2447@elem`); the
 > fixed forms test both (`src/tychoc.c:2097-2098`), as does `bounded[N]T`
 > (`src/tychoc.c:1988-1989`). Detailed in
 > [§16.7](12-aggregates.md#167-element-type-restriction).
@@ -496,5 +496,5 @@ One asymmetry follows and is intentional: `bool` is comparable and `str`-able bu
 is not ordered. (`char` is comparable, ordered, and `str`-able — its `str` is the
 one-byte glyph.)
 
-> Provenance: `src/tychoc.c:6598-6631` (equality/ordering resolver); function-
-> value identity equality `:10081@identity equality`.
+> Provenance: `src/tychoc.c:6605-6638` (equality/ordering resolver); function-
+> value identity equality `:10088@identity equality`.

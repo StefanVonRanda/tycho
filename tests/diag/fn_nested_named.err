@@ -1,0 +1,2 @@
+tests/diag/fn_nested_named.ty:5: error: a named function cannot be declared inside another -- declare 'helper' at the top level, or use a lambda 'fn(x): expr'
+     5 |     fn helper() -> int:
