@@ -1,0 +1,8 @@
+# An instance of a generic struct is named `Stack__int` internally; a diagnostic
+# must print `Stack(int)`, the spelling the source can type. Agent probe, 2026-08-20.
+struct Stack($T):
+    items: [$T]
+
+fn main():
+    s : Stack(int) = Stack([]string)
+    println(str(len(s.items)))

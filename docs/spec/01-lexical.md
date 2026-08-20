@@ -242,9 +242,9 @@ bars an uppercase spelling from every run-time binding position. They are
   > implementation, not a conformance requirement; **selection** is the
   > normative part.
 
-> Provenance: contextual dispatch at `src/tychoc.c:5068-5077` (top level),
-> `:3702@"const"`/`:3725@"delete"` (`const`/`delete`), `:2316@soa [Struct]`/`:2876@soa []Struct` (`soa`),
-> `:4294@"where"` (`where`), `:4265@"sink"` (`sink`), `:3956@"range"` (`range`, refusal only).
+> Provenance: contextual dispatch at `src/tychoc.c:5079-5088` (top level),
+> `:3713@"const"`/`:3736@"delete"` (`const`/`delete`), `:2327@soa [Struct]`/`:2887@soa []Struct` (`soa`),
+> `:4305@"where"` (`where`), `:4276@"sink"` (`sink`), `:3967@"range"` (`range`, refusal only).
 
 ## 3.8 Operators and punctuation
 
@@ -286,7 +286,7 @@ chains) is limited to a fixed depth; a more deeply nested expression is rejected
 (`expression nesting too deep`) — a fail-closed guard, the expression-level
 counterpart to the indentation-depth bound (§3.4).
 
-> Provenance: `src/tychoc.c:2754-2760`.
+> Provenance: `src/tychoc.c:2765-2771`.
 
 ### 3.9.1 Integer literals
 
@@ -467,9 +467,9 @@ is a single four-byte literal and not a run-time concatenation.
 > control-byte rejection `:448-451`; per-piece length bound `:644@char buf[4096]`,`:671@bn + 2 >= (int)sizeof buf`;
 > raw piece `:463-612`, its re-escape table `:696-699`, its control-byte
 > rejection `:475-476`, its per-piece bound `:746@rn + 2 >= (int)sizeof rbuf`,`:749@rn + 1 >= (int)sizeof rbuf`,
-> its unterminated diagnostic `:753@unterminated raw string literal`; adjacent join `:2517-2540`; `const` string fold
-> `:4653-4657`; codegen pastes the escaped text into a C string literal
-> `:10763@TYCHO_LIT`; that literal's decoded length `runtime/tycho_rt.c:1237@sizeof s - 1`.
+> its unterminated diagnostic `:753@unterminated raw string literal`; adjacent join `:2528-2551`; `const` string fold
+> `:4664-4668`; codegen pastes the escaped text into a C string literal
+> `:10795@TYCHO_LIT`; that literal's decoded length `runtime/tycho_rt.c:1237@sizeof s - 1`.
 > Fixtures: `tests/rawstring.ty`,
 > `tests/reject/rawstring_unterminated.ty`.
 
@@ -488,7 +488,7 @@ a type accepted by `str` (the numeric and string scalars); other hole types are
 rejected with the same diagnostic `str` gives ([§29](16-builtins.md)).
 
 > Provenance: lexing — the identifier scanner declines the `f` of `f"…"` `src/tychoc.c:629@!(c == 'f' && p[1] == '"')`, the string scanner takes it `:376-461`;
-> desugar `interp_join` / `desugar_interp`, `:2387-2462`.
+> desugar `interp_join` / `desugar_interp`, `:2398-2473`.
 
 ### 3.9.6 Boolean and pointer literals
 

@@ -1,0 +1,2 @@
+tests/diag/generic_inst_name.ty:7: error: declared type Stack(int) but value is Stack(string)
+     7 |     s : Stack(int) = Stack([]string)

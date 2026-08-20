@@ -1,0 +1,17 @@
+# A generic struct infers its type args FROM its field values, so the constructor
+# used to resolve each argument with no expected type -- and a bare [] there is the
+# no-context error, even with Stack(int) written on the left. Agent probe, 2026-08-20.
+struct Stack($T):
+    items: [$T]
+
+fn main():
+    a : Stack(int) = Stack([])
+    push(a.items, 7)
+    println(str(a.items[0]))
+
+    b : Stack(string) = Stack([])
+    push(b.items, "x")
+    println(b.items[0])
+
+    c := Stack([1, 2, 3])          # inference from values still works
+    println(str(len(c.items)))
