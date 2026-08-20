@@ -64,6 +64,34 @@ expectation mismatches against Python and C, and one of its four runs died at
 `repetition_truncation` without writing a log at all. **A probe's value came
 from where it was aimed, not from which model held the pen.**
 
+## Launching it
+
+`sh scripts/probe_run.sh <probe-dir> "<prompt>" [model]` runs the agent under a
+watchdog and says why it ended. Do not just background `pi -p` and wait: it does
+not reliably exit. The 2026-08-20 core-surface probe wrote its last file at 09:36,
+printed its closing summary, and was still resident at 10:01 at 0.0% CPU.
+
+From outside, "still working" and "finished but will not exit" look identical.
+From inside they do not — an agent thinking, or waiting on an API round trip,
+writes no files but still accrues CPU time; a wedged one accrues none. So the
+runner requires **both** signals before killing: zero CPU-time delta *and* no
+write under the probe directory, sustained for `QUIET` seconds (default 300),
+with `MAX` (default 3600) as a hard cap.
+
+```
+QUIET=240 MAX=3000 sh scripts/probe_run.sh /home/igzo/probe-foo \
+    "Read BRIEF.md in this directory and carry it out completely." mimo-v2.5
+```
+
+**Do not replace this with a plain timeout.** The most productive probe of
+2026-08-20 ran 993 s and looked stuck at the five-minute mark while four siblings
+had already finished; it was busy throughout and returned five findings, one a
+real compiler defect. `--selfcheck` runs both controls — a wedged process must be
+caught, a working one must be left alone.
+
+Across 31 probes the quiescence path has never actually fired; every one exited
+on its own. Its evidence is those two controls, not field use.
+
 ## Reading the result
 
 **Build and run the agent's code under the sanitizers yourself.** The 2026-08-19
