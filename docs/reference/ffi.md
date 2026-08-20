@@ -41,6 +41,12 @@ Here's what can cross:
   something you freed first is a use-after-free that a normal build will not catch.
   `closedir(d); return ent->d_name;` is the shape that gets this wrong: the `dirent`
   belongs to the stream just closed. Copy it, or close later.
+  **The copy is all the call site does — it never frees your pointer**, so a `malloc`ed
+  return leaks, silently, in a normal build. This is the opposite of `bytes` below, where
+  Tycho *does* free the C buffer (`runtime/tycho_rt.c@tycho_bytes_from_c`), so the two
+  cannot be reasoned about together. Return a `static` or `__thread` buffer instead —
+  `corelib/net/net_shim.c@netx_peer_addr` is that shape — or keep the pointer in your
+  shim and free it on the next call.
 - **`bytes`** — a binary buffer (interior NULs intact), crossing as a `(pointer, length)` pair.
 - **`[int]` and `[float]`** — a scalar array crosses as a `(const T*, long)` pair (like
   `bytes`); an array of any other element type does not.
