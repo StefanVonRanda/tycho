@@ -1,0 +1,15 @@
+# A qualified variant on a Result arm printed the MANGLED name (`json__Err`).
+# tools/tycho-ledger/run.sh:67 already fails a lane for that in the newtype
+# path; this one shipped untouched. Agent probe, 2026-08-20.
+# expect: not 'json.Err'
+package main
+import "core:json"
+
+fn get() -> Result(int, string):
+    return Ok(1)
+
+fn main():
+    println(json.err_reason(json.err_at(1, 0)))
+    match get():
+        Ok(v): println(str(v))
+        json.Err(e): println(e)

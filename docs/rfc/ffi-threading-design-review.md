@@ -58,7 +58,7 @@ pointer enters Tycho's owned world — but it pushes real cost onto users:
 moment FFI, process-global C state, or a panic is involved**. It is also
 heavy: every `spawn` is one OS thread via `pthread_create`
 (`runtime/tycho_rt.c:236-238`), `parallel for` fans out `ncpu` threads with a
-full deep-copy of captures per chunk (`src/tychoc.c:4323-4336`), there is no
+full deep-copy of captures per chunk (`src/tychoc.c:4329-4342`), there is no
 thread pool or work-stealing (`docs/guides/concurrency.md:137-139`), spawning is
 unbounded, and a panic/abort in any task `exit(1)`s the whole process
 (`docs/guides/concurrency.md:141`, `runtime/tycho_rt.c:908-921`).
@@ -92,12 +92,12 @@ rejects anything outside the scalar/string/`ptr` table, failing closed:
   (rejects composite params), `:2811` (rejects composite return).
 - Type table: `docs/guides/ffi.md:62-71`. `int/char/float/bool` → scalar long/double;
   `string` → `char *`; `ptr` → `void *`; void return allowed.
-- Link line assembled in one `cc` call: `src/tychoc.c:9280-9307`. Each
-  `extern "Lib"` adds `-lLib` (`:5750` `add_link`). `--link/--shim/--pkg`
-  passthrough at `:9605-9609`. Auto-discovered `<pkg>_shim.c` + `deps`
-  pkg-config at `:9362-9365`, `:3220-3245`, `:10245-10247`.
+- Link line assembled in one `cc` call: `src/tychoc.c:9292-9319`. Each
+  `extern "Lib"` adds `-lLib` (`:5756` `add_link`). `--link/--shim/--pkg`
+  passthrough at `:9617-9621`. Auto-discovered `<pkg>_shim.c` + `deps`
+  pkg-config at `:9374-9377`, `:3220-3245`, `:10257-10259`.
 - String return is arena-copied so Tycho never holds a foreign pointer
-  (`src/tychoc.c:6563-6570`, `tycho_str_from_c`, NULL→`""`).
+  (`src/tychoc.c:6574-6581`, `tycho_str_from_c`, NULL→`""`).
 
 ### Pain point 1 — no composite types cross
 
@@ -127,7 +127,7 @@ package marshals **all** binary data as lowercase hex
 
 `ptr` is `void *` with only three operations: pass back to C, compare
 (`==`/`!=` vs another `ptr` or `null`), and `is_null` (`docs/guides/ffi.md:108-110`;
-`E_NULL` → `T_PTR` at `src/tychoc.c:3638`; literal at `:1763`). Three distinct
+`E_NULL` → `T_PTR` at `src/tychoc.c:3644`; literal at `:1763`). Three distinct
 hazards, none mitigated:
 
 - **No type tag.** A `sqlite3 *` and a `FILE *` are both `ptr`; the compiler
@@ -146,7 +146,7 @@ The rule (`docs/guides/ffi.md:89-106`): a returned `string` is copied into the
 caller's arena; `NULL` becomes `""`. An optimization — the **read-once
 borrow** — skips the copy when the result is the *direct* argument of
 `len()`/`print()`/`println()` (`src/tychoc.c@is_extern_str_call`, applied at
-`src/tychoc.c:10558` for `len`, `:10685` and `:10692` for print/println). Footguns:
+`src/tychoc.c:10570` for `len`, `:10697` and `:10704` for print/println). Footguns:
 
 - `NULL → ""` silently erases the C/Tycho distinction between "no value" and
   "empty string". A caller that needs to detect absence cannot (the crypto
@@ -189,7 +189,7 @@ Ranked by value / effort.
   parameter, and an extern returning `bytes` uses an out-param-len shim
   convention (or a small compiler-known `{ptr,len}` return struct emitted by
   Tycho, copied into the arena like the current string return at
-  `src/tychoc.c:6563-6570`).
+  `src/tychoc.c:6574-6581`).
 - *Why.* Eliminates the hex-marshaling tax that dominates the crypto package
   and would hit any binary-data library (compression, image, network, hashing).
   Halves memory and removes the encode/decode CPU and code.
@@ -207,7 +207,7 @@ Ranked by value / effort.
   compiler treats `Db` as distinct from `ptr` and from other handles (fixes the
   wrong-handle hazard, pain point 3a), and emits the named free at scope exit
   for an *owned* handle (fixes the leak, pain point 3b) — reusing the existing
-  task/channel finalizer mechanism (`src/tychoc.c:6924-6935`) that already runs
+  task/channel finalizer mechanism (`src/tychoc.c:6935-6946`) that already runs
   destructor calls at scope end.
 - *Why.* Turns the most dangerous FFI primitive into something the compiler can
   reason about. Most handle-based libs (SQLite, SDL, curl) become safe-by-default.
@@ -239,7 +239,7 @@ opt-out.**
   cannot express.
 - *Why.* Removes the most common reason a binding needs hand-written C.
 - *Incremental or fundamental.* Incremental, medium effort (codegen of a small
-  C wrapper, alongside the existing shim plumbing at `src/tychoc.c:9059-9062`).
+  C wrapper, alongside the existing shim plumbing at `src/tychoc.c:9071-9074`).
 - *Risk.* Low — generated C is mechanical; fail closed to `--shim` if the shape
   is anything non-trivial.
 
@@ -260,7 +260,7 @@ opt-out.**
   fresh root arena (`tycho_task_new`, `:218-224`). Thread creation +
   teardown + a fresh arena per task is the per-spawn cost.
 - **`parallel for` forks `ncpu` threads with full capture copy per chunk.** K =
-  `tycho_ncpu()` chunk tasks (`src/tychoc.c:4424-4437`; runtime `:818-825`,
+  `tycho_ncpu()` chunk tasks (`src/tychoc.c:4430-4443`; runtime `:818-825`,
   `TYCHO_THREADS` overrides). Every captured variable is deep-copied into each
   chunk's root arena — the honest per-chunk cost, documented at
   `docs/guides/concurrency.md:59`. For large captures this is real memory and time.
@@ -322,7 +322,7 @@ these cases, and the docs only partially flag them:
 5. **Affine/implicit-join edge cases.** The affine rules are enforced and look
    sound (double-wait dies loudly, `runtime/tycho_rt.c:247-250`; implicit join
    at every scope exit, `:260-265`; `parallel for` rejects captured tasks /
-   inout captures / cross-chunk mutation, `src/tychoc.c:4395-4490`). No unsafety
+   inout captures / cross-chunk mutation, `src/tychoc.c:4401-4496`). No unsafety
    found here — call out as *verified sound*, not a gap.
 
 ### Threading — ranked recommendations

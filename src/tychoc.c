@@ -3430,6 +3430,12 @@ static Stmt *parse_match(Parser *ps, int line, int value) {
                 if (!accept(ps, TK_PIPE)) break;
             }
         } else {
+            /* A string arm is the one scalar `match` does not take -- say so, rather
+             * than listing the variant forms to someone who wrote a literal. */
+            if (at(ps, TK_STR))
+                die_at(peek(ps, 0)->line,
+                       "`match` does not take a string arm -- int, char, bool, a range and a "
+                       "const name do; for strings use an if/elif chain on `==`");
             Tok *vn = eat(ps, TK_IDENT, "a match arm `Variant(bindings):` or `Variant:`");
             const char *vqual = NULL, *vname = vn->text;
             if (accept(ps, TK_DOT)) {           /* qualified `pkg.Variant:` */
@@ -6100,6 +6106,11 @@ static Type resolve_expr_inner(Expr *e) {
              * (`if is_ctl(b[i])`) wants, it needs no allocation, and it keeps
              * `b[i]` and `s[i]` from meaning different things for one repr. */
             if (bt == T_STRING || bt == T_BYTES) return e->type = T_INT;
+            /* A tuple is the near miss here: `t[0]` is the C/Python habit, and the
+             * list above never mentions the `.0` that would have worked. */
+            if (IS_TUP(bt))
+                die_at(e->line, "a tuple element is named `.0`, `.1`, ... not `[i]` -- "
+                                "the index must be a constant position, so it is not a subscript");
             die_at(e->line, "can only index an array, a string, bytes, or a map (as a place)");
         }
         case E_SLICE: {   /* xs[a:b] — a sub-range of the same array/soa type; s[a:b] -> a substring */
@@ -6965,7 +6976,7 @@ static Type resolve_expr_inner(Expr *e) {
             if (e->nargs != s->nparams)
                 die_at(e->line, "'%s' takes %d argument(s), got %d",
                        nominal_name(e->sval), s->nparams, e->nargs);
-            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:6470 */
+            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:6481 */
             for (int i = 0; i < e->nargs; i++) {
                 g_in_arg++;
                 Type at_ = resolve_exp(e->args[i], s->params[i]);   /* fixes a None arg */
@@ -7532,7 +7543,7 @@ static void pf_capture(Expr *id) {
 /* capture an outer local named by a STRING rather than by an E_IDENT node -- the
  * callee of `f(x)` and the receiver of `o.f(x)` live in E_CALL's sval/qual, not
  * in a child expr. The synthesized read is resolved in the enclosing scope with
- * every other capture (src/tychoc.c:8174). Non-locals (global fns, builtins,
+ * every other capture (src/tychoc.c:8185). Non-locals (global fns, builtins,
  * enum constructors, package qualifiers) fail vars_find and are dropped. */
 static void pf_capture_name(const char *n, int line) {
     Type vt;
@@ -7555,10 +7566,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7522),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7533),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:7796). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:7807). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
@@ -8362,7 +8373,8 @@ static void resolve_stmt(Stmt *s, Type ret) {
                     } else if (!strcmp(arm->variant, "Err")) {
                         match_arm_payload(arm, errt, "Err", &err);
                     } else {
-                        die_at(arm->line, "a Result's arms are Ok(x), Err(e), and _, not '%s'", arm->variant);
+                        die_at(arm->line, "a Result's arms are Ok(x), Err(e), and _, not '%s'",
+                               nominal_name(arm->variant));   /* unmangled: print what the source can type */
                     }
                     resolve_block(arm->body, arm->nbody, ret);
                     vars_restore(m);
@@ -9308,7 +9320,7 @@ static const char *for3_elidable_arr(Stmt *s) {
     if (!bound || bound->kind != E_CALL || !bound->sval || strcmp(bound->sval, "len") ||
         bound->nargs != 1 || !bound->args[0] || bound->args[0]->kind != E_IDENT) return NULL;
     if (IS_BOUNDED(bound->args[0]->type)) return NULL;   /* bounded stores in .v, not .data — elision emits .data[i], so never elide it */
-    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3946-3951) */
+    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3952-3957) */
     if (!post || post->kind != S_ASSIGN || !post->name || strcmp(post->name, iv)) return NULL;
     Expr *inc = post->expr;
     if (!inc || inc->kind != E_BINOP || inc->op != TK_PLUS) return NULL;

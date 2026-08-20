@@ -1,0 +1,10 @@
+# `match` takes int/char/bool/range/const-name arms but not a string. The old
+# message listed the VARIANT forms to someone who had written a literal. Agent
+# probe, 2026-08-20.
+fn f(s: string) -> int:
+    match s:
+        "a": return 1
+        _: return 0
+
+fn main():
+    println(str(f("a")))

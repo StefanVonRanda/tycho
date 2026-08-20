@@ -1,5 +1,5 @@
 # 05-generics.md:61 / 02-grammar.md:78: the type-set form allows "up to 16
-# types". src/tychoc.c:3838. This one lists 17.
+# types". src/tychoc.c:3844. This one lists 17.
 fn f(a: $T) -> int where T: int | int | int | int | int | int | int | int | int | int | int | int | int | int | int | int | int:
     return 1
 

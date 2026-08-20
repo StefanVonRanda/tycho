@@ -307,7 +307,7 @@ pick-up order is written out in full under "What moved this pass" below.
    (*Earlier phases*) — reproduced verbatim again at
    `3ddc8fd` with a scratch program: `spawn work(1)` gives `error: a statement must be a
    declaration, assignment, or call -- a bare expression has no effect`
-   (`src/tychoc.c:3824`, unmoved since the previous pass), which still never states the
+   (`src/tychoc.c:3830`, unmoved since the previous pass), which still never states the
    real rule — a task handle must be *bound* so the compiler can hang the implicit join on
    it. **One line of diagnostic text at a known line.** Open only because nobody has spent
    it, through two re-scores.
@@ -341,15 +341,15 @@ pick-up order is written out in full under "What moved this pass" below.
    rejected at the *definition* with `error: 'die' is already defined`. **The reason is
    pinned:** the definition-time duplicate check is
    `if (sig_find(pr->name) || consts_find(pr->name)) die_dup_proc(...)`
-   (`src/tychoc.c:8529`), and `sig_find` searches `g_sigs` — which holds `die` and `exit`
-   as real entries (`src/tychoc.c:4823-4824`, inside `src/tychoc.c@register_builtins`)
+   (`src/tychoc.c:8541`), and `sig_find` searches `g_sigs` — which holds `die` and `exit`
+   as real entries (`src/tychoc.c:4829-4830`, inside `src/tychoc.c@register_builtins`)
    but **holds no entry for `send`, `recv` or `close` at all**; those three are recognised
-   ad hoc during resolution (`src/tychoc.c:6115`, `src/tychoc.c:6124`,
-   `src/tychoc.c:6143`). So it is not a table that omits three rows, it is three builtins
-   that were never in the table. **The code is ~1 line** at `src/tychoc.c:8529`; the open
+   ad hoc during resolution (`src/tychoc.c:6126`, `src/tychoc.c:6135`,
+   `src/tychoc.c:6154`). So it is not a table that omits three rows, it is three builtins
+   that were never in the table. **The code is ~1 line** at `src/tychoc.c:8541`; the open
    part is the decision — which builtin names are shadowable — because landing it newly
    rejects any program defining `send`/`recv`/`close`. Note the generic path a line above
-   (`src/tychoc.c:8523`) consults the same two tables plus `generic_find`, so whatever is
+   (`src/tychoc.c:8535`) consults the same two tables plus `generic_find`, so whatever is
    decided has to be written twice.
 
    And the "corelib layering decision" this item wanted taken **was already
@@ -379,7 +379,7 @@ pick-up order is written out in full under "What moved this pass" below.
      the reference bounds it at **64**, so above 64 the fan-out is narrower than `ncpu()`
      reports". The old text's "uses `ncpu()` chunks" — false on both counts, the `min`
      and the cap — is gone. The compiler side is cited anchored from the spec's own
-     provenance block, `src/tychoc.c:11342@_pk > 64`, so the gate now polices it.
+     provenance block, `src/tychoc.c:11354@_pk > 64`, so the gate now polices it.
    - **`ncpu()`'s false definition is corrected**, which was the other half:
      `docs/spec/16-builtins.md:236` states outright that it is "the *requested* worker
      count, **not** the width a `parallel for` will actually use" and that "a program that
@@ -403,10 +403,10 @@ pick-up order is written out in full under "What moved this pass" below.
      on 2026-07-30; `docs/spec/13-concurrency.md:81-83` is the corrected text and no
      longer says this.)*
    - The width is now **readable from Tycho**: `ncpu()` is a registered builtin
-     (`src/tychoc.c:5355@ncpu`, lowering at `src/tychoc.c:10386@tycho_ncpu`), so a program can at least
+     (`src/tychoc.c:5361@ncpu`, lowering at `src/tychoc.c:10398@tycho_ncpu`), so a program can at least
      ask. Measured on this box: `ncpu()` → 16.
    - There was an **undocumented hard ceiling of 64 chunks** — `if (_pk < 1) _pk = 1; if
-     (_pk > 64) _pk = 64;` (`src/tychoc.c:10636`, inside `src/tychoc.c@gen_parfor`) —
+     (_pk > 64) _pk = 64;` (`src/tychoc.c:10648`, inside `src/tychoc.c@gen_parfor`) —
      which `docs/spec/13-concurrency.md` did not mention, so on a box with more than 64
      CPUs the spec's "uses `ncpu()` chunks" was false. **That half is a ~1-line spec fix
      and should be split out and taken** — *it was, and closing it is what closed this
@@ -788,7 +788,7 @@ shape: a bounded pool over a channel with a fan-in, over jobs that all terminate
   continuously; the results channel filling and parking a worker did not happen, or at
   least was not measured.
 - **Nothing above 64 workers as a real workload.** The 64-chunk probe used synthetic 50 ms
-  sleeps; the real corpus ran at `ncpu()` = 16, nowhere near `src/tychoc.c:10636`.
+  sleeps; the real corpus ran at `ncpu()` = 16, nowhere near `src/tychoc.c:10648`.
 - **No nested parallelism** — no `parallel for` inside a spawned task, and no pool inside
   a pool.
 
@@ -989,7 +989,7 @@ swept. Recorded so the next reader knows they exist and why nobody fixed them:
   §22.1 and the `ncpu()` correction. The shift bands are mechanical and were
   written down at the time (`docs/guides/concurrency.md` old ≥105 → +13;
   `docs/spec/13-concurrency.md` old 83..112 → +8, and so on).
-- **`src/tychoc.c:3581`** points at `gen_parfor` 98 lines short of where it is.
+- **`src/tychoc.c:3587`** points at `gen_parfor` 98 lines short of where it is.
 - **The package-mode comment above `dup_other_file`** cites two sites and both
   are wrong — one lands in array-copy codegen, the other in an enum comment.
 
@@ -1327,9 +1327,9 @@ confirmed, not a divergence between them. An array aborts on all four, and the
 check is **purely a runtime one**: `a[2:10]` on a 5-element array compiles
 cleanly (exit 0 from tychoc) and dies only when run, so there is no
 compile-time arm to strengthen. The array check is emitted inline into the
-generated C by the compiler — `src/tychoc.c:10918-10920` for an ordinary array
+generated C by the compiler — `src/tychoc.c:10930-10932` for an ordinary array
 (the path the probe above took) and the same test again at
-`src/tychoc.c:10899-10901` for the SoA variant, both spelling it
+`src/tychoc.c:10911-10913` for the SoA variant, both spelling it
 `_lo < 0 || _hi > len || _lo > _hi`, which is why all four shapes abort and not
 just the two that overrun. The clamp is `runtime/tycho_rt.c@tycho_str_substr`,
 whose three lines are exactly `start<0 -> 0`, `end>n -> n`, `end<start -> start`.
@@ -1441,7 +1441,7 @@ an array slice that ABORTS, the MUST NOT infer-from-return rule, and
 The entry's load-bearing sentence — "the builtins are `println`, `die` (stderr,
 then exit 1) and `exit(n)`", so "**a non-fatal warning is inexpressible**" — is
 **false, and was false when it was written**. `eprint(s)` is a builtin: registered
-at `src/tychoc.c:5350@eprint`, emitted as `tycho_eprint`, and defined as
+at `src/tychoc.c:5356@eprint`, emitted as `tycho_eprint`, and defined as
 `fputs(s, stderr)` in `runtime/tycho_rt.c@tycho_eprint`. It is specified —
 `docs/spec/16-builtins.md:74@eprint` says "Write `s`'s bytes to stderr; no
 newline, **no exit**" — and it was added on 2026-06-14 in `61fa0dc`
@@ -2018,12 +2018,12 @@ language changes, which is why this ranks below three corelib items that are not
 >    and runs. The decoration is one underscore per arm, not an invented
 >    identifier. What is refused is dropping the parens entirely —
 >    `VInt: return 1` → `error: VInt binds 1 value(s), got 0`
->    (`src/tychoc.c:8395`).
+>    (`src/tychoc.c:8407`).
 > 2. *"without binding a payload"* — a **nullary** variant needs no match at
 >    all: `if v == VNull:` compiles and runs. `==` is a working discriminator
 >    for the payload-free half of an enum. It stops at the other half:
 >    `if v == VInt:` → `error: VInt carries a payload — write VInt(...)`
->    (`src/tychoc.c:5951`).
+>    (`src/tychoc.c:5957`).
 >
 > So the real gap is narrower than the heading: **a payload-carrying variant
 > has no value-level discriminator**, and `match` is the only test for it.
@@ -2067,7 +2067,7 @@ which arms actually use their payloads.
 > error: or_return propagates a PErr error, but the function's error type is RErr
 > ```
 >
-> — `src/tychoc.c:5937-5939`. So the rule is "no *implicit* conversion", not
+> — `src/tychoc.c:5943-5945`. So the rule is "no *implicit* conversion", not
 > "no conversion".
 >
 > The second, smaller true claim: `map_err` takes a **constant** replacement
@@ -2740,7 +2740,7 @@ records the toll, which is one copied block per shim and is paid once.
   `grep -E '^fn .*-> \[string\]' corelib/strings/strings.ty` returned only
   `lines`. That grep cannot find it: `split(s, sep) -> [string]` is a **language
   builtin**, specified at `docs/spec/16-builtins.md:150` and registered at
-  `src/tychoc.c:5363@.name="split"`, so it is in no package at all.
+  `src/tychoc.c:5369@.name="split"`, so it is in no package at all.
   `corelib/strings/strings.ty:170` says so in a comment one line above `lines`
   — "(split(s, sep) and find(s, sub) are language builtins -- not duplicated
   here.)" — and `corelib/test/wordfreq/main.ty:22` is a word-frequency program
@@ -3146,7 +3146,7 @@ struct Plan($T):
 ```
 
 **The asymmetry, in one line.** A `fn($T) -> $T` typedef is deliberately NOT
-emitted — `src/tychoc.c:12844` skips any function type mentioning a type
+emitted — `src/tychoc.c:12856` skips any function type mentioning a type
 parameter, because `$T` lowers to `void` and a `void` parameter is invalid C.
 But the composite-array BODY loop emitted `struct TychoArrC0_ { FnC0 *data; }`
 for the template's dead `[fn($T)->$T]` anyway, naming the typedef that was just
@@ -3762,8 +3762,8 @@ that there is no element-wise `+` for `string` elements. The message was built
 from the element type at two sites, where `arr_elem(lt)` was spelled into a
 sentence that reads as a claim about the language.
 
-**FIXED 2026-08-13, both sites** (`src/tychoc.c:7251@element-wise` and
-`src/tychoc.c:7306@element-wise`, anchored per this file's header rule). The
+**FIXED 2026-08-13, both sites** (`src/tychoc.c:7262@element-wise` and
+`src/tychoc.c:7317@element-wise`, anchored per this file's header rule). The
 false clause is gone and `+` now names the operation the caller actually wanted:
 
 ```

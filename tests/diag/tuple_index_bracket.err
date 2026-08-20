@@ -1,0 +1,2 @@
+tests/diag/tuple_index_bracket.ty:9: error: a tuple element is named `.0`, `.1`, ... not `[i]` -- the index must be a constant position, so it is not a subscript
+     9 |     println(str(t[0]))

@@ -1,0 +1,2 @@
+tests/diag/match_string_arm.ty:6: error: `match` does not take a string arm -- int, char, bool, a range and a const name do; for strings use an if/elif chain on `==`
+     6 |         "a": return 1
