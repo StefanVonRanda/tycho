@@ -19,9 +19,9 @@ those rules.
 > Provenance: entry point `src/tychoc.c:9237@no 'main' procedure` (no `main`),
 > `:9280@takes no parameters` and `:9283@returns nothing or` (the two signature
 > rules, diagnosed separately); compilation unit
-> `compile_package` `:14074-14193@compile_package`, driver `:14276-14444@int main(`;
+> `compile_package` `:14074-14193@compile_package`, driver `:14278-14453@int main(`;
 > `extern` `parse_extern_fn` `:4547-4650@parse_extern_fn`; the C compiler
-> invocation `:14440@system(cmd)`.
+> invocation `:14449@system(cmd)`.
 
 ## 27. Program structure
 
@@ -90,7 +90,7 @@ Whether a source file participates in the package system is decided by the
 presence of a `package` declaration. The entry file is compiled in **package
 mode** (the whole directory plus its import graph, §28.5) iff it begins with a
 `package` declaration; a file with no `package` declaration is a **single-file
-program** compiled alone (`src/tychoc.c:14363@compile_package`). A single-file program has
+program** compiled alone (`src/tychoc.c:14372@compile_package`). A single-file program has
 the same entry-point rule (§27.1) and is a degenerate one-package unit.
 
 ### 27.3 `extern` declarations
@@ -128,8 +128,8 @@ form* and its role in program structure.
 
 For a program that is not stopped early (e.g. `--emit-c`, `--symbols`), the
 reference implementation compiles the emitted C and links it into the output
-executable with a single C-compiler invocation (`src/tychoc.c:14439@-fwrapv`,
-run at `src/tychoc.c:14440@system(cmd)`).
+executable with a single C-compiler invocation (`src/tychoc.c:14448@-fwrapv`,
+run at `src/tychoc.c:14449@system(cmd)`).
 The invocation has the shape:
 
 ```text
@@ -145,20 +145,20 @@ with these normative properties:
   undefined behavior, which is precisely Tycho's integer-overflow contract
   ([§5.2.1](03-types.md#521-int)): a conforming realization on C MUST compile
   such that signed overflow wraps and never traps or miscompiles
-  (`src/tychoc.c:14439@-fwrapv`).
+  (`src/tychoc.c:14448@-fwrapv`).
 - **`-lm` is always passed**, so bare libc math externs (e.g. `extern fn sqrt`)
   link with no `"m"` annotation (`src/tychoc.c:5267@-lm is always passed`).
 - **`-pthread` is always passed**, supporting the concurrency runtime
   ([§20](13-concurrency.md)).
 - **Optimization / debug:** `-O3` is the portable default; `-g` selects `-O0 -g`
-  (unoptimized with debug info) instead (`src/tychoc.c:14427@optdbg`).
+  (unoptimized with debug info) instead (`src/tychoc.c:14436@optdbg`).
 - **`-march=native` is opt-in** via `--native`. It is host-CPU-specific and MUST
-  NOT be assumed portable across machines (`src/tychoc.c:14426@march`).
-- The default C compiler is `cc` (`src/tychoc.c:14284@"cc"`); `--cc <compiler>`
-  overrides it (`src/tychoc.c:14306@--cc`).
+  NOT be assumed portable across machines (`src/tychoc.c:14435@march`).
+- The default C compiler is `cc` (`src/tychoc.c:14286@"cc"`); `--cc <compiler>`
+  overrides it (`src/tychoc.c:14315@--cc`).
 
 Three CLI options let a program splice additional flags onto this line for FFI
-(`src/tychoc.c:14313-14315`):
+(`src/tychoc.c:14322-14324`):
 
 - **`--link <lib>`** appends a raw `-l<lib>`.
 - **`--pkg <name>`** runs `pkg-config --cflags --libs <name>` and appends the
@@ -190,7 +190,7 @@ are collapsed. A program whose closure declares no `deps` prints nothing and exi
 0.
 
 `-L<dir>` and `-I<dir>` (attached or separated) also accumulate onto the line
-(`src/tychoc.c:14309@-L`). Every library/package name that reaches the shell — from
+(`src/tychoc.c:14318@-L`). Every library/package name that reaches the shell — from
 `extern "Lib"`, `--link`, or `--pkg` — MUST be restricted to a conservative
 character set (`[A-Za-z0-9._+-]`) and rejected otherwise, so compiling an
 untrusted source cannot inject a shell command (`src/tychoc.c@cc_safe_name`). The `extern "Lib"` libraries, the auto-discovered
@@ -229,7 +229,7 @@ import path that reached it — which, for a relative import, is its directory
 name (`src/tychoc.c:14053@declares`, checked against `src/tychoc.c@pkg_basename` of
 the import path). The **entry package may be named anything**: its name is taken from the
 entry file's own `package` declaration and is not constrained to the directory
-name (`src/tychoc.c@detect_package`, called at `src/tychoc.c:14362@detect_package`;
+name (`src/tychoc.c@detect_package`, called at `src/tychoc.c:14371@detect_package`;
 `compile_package` starts the merge at that name with an empty prefix,
 `src/tychoc.c:14078@merge_pkg`).
 

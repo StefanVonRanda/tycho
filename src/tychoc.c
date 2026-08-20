@@ -14246,6 +14246,8 @@ static void tychoc_usage(FILE *f)
 "\n"
 "Output\n"
 "  -o <name>          name the output (with --emit-c, writes <name>.c)\n"
+"  --                 end of flags: the next argument is the source, even if it\n"
+"                     starts with '-' (put -o and other flags BEFORE it)\n"
 "  --emit-c           stop at the C; to stdout unless -o names a file\n"
 "  -g                 build with debug information\n"
 "  --native           tune the build for this machine\n"
@@ -14292,7 +14294,14 @@ int main(int argc, char **argv) {
     char *extra = sfmt("%s", "");   /* FFI: extra cc link/include flags (-L/-I/--link/--pkg) */
     char *shims = sfmt("%s", "");   /* FFI: companion C shim sources (--shim) compiled+linked alongside */
 
+    int end_of_flags = 0;   /* set by `--`: every later argv element is a path, never a flag */
+
     for (int i = 1; i < argc; i++) {
+        /* `tychoc -- -weird.ty`. Without this a source whose name starts with '-'
+         * cannot be compiled at all: it is read as a flag and rejected, and only
+         * `./-weird.ty` works. Agent probe attacking the CLI, 2026-08-20. */
+        if (!end_of_flags && !strcmp(argv[i], "--")) { end_of_flags = 1; continue; }
+        if (end_of_flags) { input = argv[i]; continue; }
         if (!strcmp(argv[i], "-o") && i + 1 < argc) out = argv[++i];
         else if (!strcmp(argv[i], "--emit-c")) emit_c_only = 1;
         else if (!strcmp(argv[i], "--symbols")) want_symbols = 1;

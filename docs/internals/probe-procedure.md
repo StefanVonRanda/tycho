@@ -25,27 +25,31 @@ that half was archaeology.
 ## Aim it at something untouched
 
 A program over ground already covered returns little — the 2026-08-19 markov run
-found two doc gaps against tycho-diff's four. Measured over the existing
-records, these have **no** non-author program at all:
+found two doc gaps against tycho-diff's four. Eight rounds since have covered most
+of the language surface, so this list is now a **shape to re-derive**, not a gap
+list: when a feature lands, ask which of these it belongs to and whether anything
+outside this repo has driven it.
 
-| surface | non-author programs touching it |
+| surface | covered by |
 |---|---|
-| generics | 1 ([record](probe-generics-2026-08-19.md)) |
-| newtypes | 1 ([record](probe-newtype-subscript-bounded-2026-08-19.md)) |
-| `subscript` | 1 (same record) |
-| `bounded[N]` | 1 (same record) |
-| `select` | 1 ([record](probe-select-2026-08-19.md)) |
-| enums / `Option` / `Result` error paths | 1 (covered by the generics run) |
-| channels | 1 (`tools/tycho-hash`) |
+| algorithms, strings, text | tycho-diff, tycho-fold, R5 `text`, R1 `core` |
+| generics, enums, Option/Result | [generics](probe-generics-2026-08-19.md), R4 `gen2`, R5 `state` |
+| newtypes, `subscript`, `bounded` | [record](probe-newtype-subscript-bounded-2026-08-19.md) |
+| `select`, channels, concurrency | [select](probe-select-2026-08-19.md), tycho-hash, R3 `conc` |
+| FFI, `handle`, `soa` | [ffi](probe-ffi-2026-08-19.md), R3–R5 `ffi2`/`ffi3`/`ffi4` |
+| value semantics, arenas | R1 `mem`, R3 `arena`, R7 `churn` |
+| packages, libraries, visibility | R1 `pkg`, R8 `lib` |
+| numerics, floats | R1 `num`, R6 `float` |
+| sockets, files, argv | R6 `net`, R4 `io2` |
+| unicode | R8 `uni` |
+| **the compiler itself** | R8 `cli`, `huge`, `msgs` |
 
-**Every surface listed above now has at least one record** (2026-08-19). The
-table is kept as the shape to re-derive when new language features land, not as
-a list of gaps.
-
-Covered: algorithms and strings (`tycho-diff`), concurrency (`tycho-hash`), text
-and codepoints (`tycho-fold`), FFI + `handle` + `soa`
-([record](probe-ffi-2026-08-19.md)), and generics + payload enums + Option/Result
-([record](probe-generics-2026-08-19.md)) — the generics row above is now 1, not 0.
+**The last row paid best.** Rounds one to seven asked for programs and mostly
+found doc gaps and message quality; round eight pointed probes at tychoc's own
+CLI, at generated source, and at the diagnostics as a subject, and returned two
+real defects and a quadratic codegen path. When choosing where to aim, prefer a
+surface with no lane over one with no probe — `grep <feature> tests/run.sh`
+coming back empty is the strongest signal available.
 
 ## The brief
 

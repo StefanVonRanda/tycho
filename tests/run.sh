@@ -425,6 +425,23 @@ else
     echo "ok    bundle_blames_right_file"; pass=$((pass + 1))
 fi
 
+# `--` ends the flags, so a source whose name starts with '-' can be compiled at
+# all. Without it the name is read as a flag and only `./-name.ty` works. The
+# second leg is what keeps the first honest: WITHOUT `--` the name must still be
+# refused, or the fix would have quietly made every stray argument a source.
+DW="$TMP/dashname"; rm -rf "$DW"; mkdir -p "$DW"
+printf 'fn main():\n    println("dash ok")\n' > "$DW/-weird.ty"
+( cd "$DW" && "$OLDPWD/$TYCHOC" -o "$DW/dw" -- -weird.ty ) >"$TMP/dw.log" 2>&1
+if [ ! -x "$DW/dw" ] || [ "$("$DW/dw" 2>/dev/null)" != "dash ok" ]; then
+    note "dashname_after_ddash" "a '-' source did not build through \`--\`"
+    sed 's/^/      /' "$TMP/dw.log"; fail=$((fail + 1)); fails="$fails dashname_after_ddash"
+elif ( cd "$DW" && "$OLDPWD/$TYCHOC" -weird.ty ) >/dev/null 2>&1; then
+    note "dashname_after_ddash" "a '-' source was accepted WITHOUT \`--\` -- flags are no longer flags"
+    fail=$((fail + 1)); fails="$fails dashname_after_ddash"
+else
+    echo "ok    dashname_after_ddash"; pass=$((pass + 1))
+fi
+
 for hi in tests/diag/*.ty; do
     [ -e "$hi" ] || continue
     name="diag_$(basename "$hi" .ty)"
