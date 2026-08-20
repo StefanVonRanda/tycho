@@ -14043,7 +14043,14 @@ static void bundle_pkg(const char *dir, int is_entry) {
 
     char *imp_paths[256]; int n_imp = 0;
     for (int i = 0; i < nf; i++) {
+        /* Point the diagnostic at the file being LEXED, as merge_pkg does above.
+         * Without this, g_srcname is still the entry file, so a lexer error in any
+         * sibling was reported at `main.ty:1` -- the wrong file, sending the reader
+         * to edit one that is fine. The plain build got it right; only --bundle
+         * was wrong. Agent probe, 2026-08-20. */
+        g_srcname = files[i];
         char *s = read_file(files[i]);
+        g_src = s;
         TokVec t = lex(s);
         scan_imports(t.v, imp_paths, &n_imp, 256);
     }

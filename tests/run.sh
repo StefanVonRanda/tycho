@@ -392,6 +392,39 @@ else
     echo "ok    clobber_emit_c"; pass=$((pass + 1))
 fi
 
+# --bundle had NO lane at all, which is how a wrong-file diagnostic shipped in it:
+# bundle_pkg lexed each package file without pointing g_srcname at it, so a lexer
+# error in ANY sibling was reported against the entry file, at line 1 of a file that
+# was fine. The plain build was always right, which is what makes the pair below the
+# test -- the two modes must name the SAME file.
+BW="$TMP/bundle"; rm -rf "$BW"; mkdir -p "$BW/app"
+printf 'package app\nfn main():\n    println("ok")\n' > "$BW/app/main.ty"
+if ! "$TYCHOC" "$BW/app/main.ty" --bundle > "$BW/out.ty" 2>"$TMP/bw.log" || [ ! -s "$BW/out.ty" ]; then
+    note "bundle_clean" "--bundle failed on a well-formed package"
+    sed 's/^/      /' "$TMP/bw.log"; fail=$((fail + 1)); fails="$fails bundle_clean"
+elif ! "$TYCHOC" "$BW/out.ty" --emit-c -o "$BW/rt" >"$TMP/bw.log" 2>&1; then
+    note "bundle_clean" "the bundled source does not compile"
+    sed 's/^/      /' "$TMP/bw.log"; fail=$((fail + 1)); fails="$fails bundle_clean"
+else
+    echo "ok    bundle_clean"; pass=$((pass + 1))
+fi
+printf 'this is not tycho {{{ garbage\n' > "$BW/app/junk.ty"
+"$TYCHOC" "$BW/app/main.ty" --bundle >/dev/null 2>"$TMP/bw.bundle"
+"$TYCHOC" "$BW/app/main.ty" --emit-c -o "$BW/plain" >/dev/null 2>"$TMP/bw.plain"
+_bf=$(sed -n '1s/:.*//p' "$TMP/bw.bundle"); _pf=$(sed -n '1s/:.*//p' "$TMP/bw.plain")
+if [ -z "$_bf" ] || [ -z "$_pf" ]; then
+    note "bundle_blames_right_file" "one of the two modes accepted a broken sibling"
+    fail=$((fail + 1)); fails="$fails bundle_blames_right_file"
+elif [ "$_bf" != "$_pf" ]; then
+    note "bundle_blames_right_file" "--bundle blamed $_bf, the plain build blamed $_pf"
+    fail=$((fail + 1)); fails="$fails bundle_blames_right_file"
+elif ! grep -q 'junk\.ty' "$TMP/bw.bundle"; then
+    note "bundle_blames_right_file" "neither mode named junk.ty, the file that is actually broken"
+    fail=$((fail + 1)); fails="$fails bundle_blames_right_file"
+else
+    echo "ok    bundle_blames_right_file"; pass=$((pass + 1))
+fi
+
 for hi in tests/diag/*.ty; do
     [ -e "$hi" ] || continue
     name="diag_$(basename "$hi" .ty)"
