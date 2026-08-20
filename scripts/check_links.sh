@@ -56,9 +56,15 @@ done
 
 python3 "$root/scripts/check_reachable.py" || touch "$fail"
 
+# The fragment. Above, `path="${target%%#*}"` throws the `#...` away, so a link into
+# a RENAMED section resolved to the file and passed -- 9 did, five of them spelling
+# `#what-1-0-requires` for `## What 1.0 requires` (GitHub deletes the `.`, it does
+# not hyphenate it). Controls: `python3 scripts/check_anchors.py --selfcheck`.
+python3 "$root/scripts/check_anchors.py" || touch "$fail"
+
 if [ -f "$fail" ]; then
     rm -f "$fail"
-    echo "link check: FAILED (dead links, raw control bytes, or unreachable docs above)"
+    echo "link check: FAILED (dead links, dead anchors, raw control bytes, or unreachable docs above)"
     exit 1
 fi
 echo "link check: ok ($(git ls-files '*.md' | grep -vcE 'examples/[^/]*/content/') markdown files, no dead relative links; $(git ls-files '*.md' | wc -l) free of raw control bytes)"

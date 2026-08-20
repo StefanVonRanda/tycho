@@ -54,7 +54,7 @@ A conforming implementation MUST abort on each of the following:
 - **Task misuse:** a second `wait` on a task; exceeding the concurrent-task
   ceiling; a thread-creation failure.
 - **Out of memory.**
-- **`die(msg)`** — the explicit user abort ([§14.8](10-statements.md#148-die-and-termination)).
+- **`die(msg)`** — the explicit user abort ([§14.8](10-statements.md#148-die-exit-and-termination)).
 
 > **Removed 2026-07-30: "a `range` step of zero".** This list carried a bullet
 > reading "a literal `0` step is a compile error; a step that evaluates to `0` at

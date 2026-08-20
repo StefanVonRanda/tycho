@@ -82,7 +82,7 @@ is spelled exactly as a `match` arm spells it — bare `V` for an enum of the
 current package, qualified `pkg.V` for an imported one — with the same rejection
 if the name is not a variant of that enum. It applies uniformly to nullary and
 payload-carrying variants, and binds **no** payload; to read a payload, use
-`match` ([§19.4](12-aggregates.md#194-match)). `is` does **not** chain: `a is X
+`match` ([§19.4](12-aggregates.md#194-statement-match-versus-value-match)). `is` does **not** chain: `a is X
 is Y` is a compile error, because its result is a `bool` and no `bool` holds a
 variant. It binds tighter than a comparison and looser than every arithmetic
 operator, so `a is X and b is Y` groups as `(a is X) and (b is Y)`.

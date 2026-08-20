@@ -36,5 +36,5 @@ every page compiles and produces the shown output.
   instead of restating the principle; [the thesis](../thesis.md) explains the claim
   and the evidence (no GC, no `free`, no data races on owned values).
 - **Examples are real.** Every code sample compiles and runs under `tychoc`, the
-  reference transpiler (see [The evidence](../../README.md#the-evidence)). Output shown
+  reference transpiler (see [The testing campaign](../../README.md#the-testing-campaign)). Output shown
   in a comment is the actual output.

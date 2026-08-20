@@ -195,7 +195,7 @@ The language surface is **feature-complete but not frozen** — value semantics,
 implicit arenas, concurrency, generics, closures, UFCS, FFI, and the `sink`
 consuming convention are all in. Pre-1.0 means they can still change; what a
 freeze is waiting on is in
-[ROADMAP.md](ROADMAP.md#what-1-0-requires). So the feature work I find useful
+[ROADMAP.md](ROADMAP.md#what-10-requires). So the feature work I find useful
 now is **ergonomics polish, not new pillars**:
 
 - **User-defined projections** — yielding subscripts that generalize the built-in

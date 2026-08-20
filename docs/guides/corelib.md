@@ -646,4 +646,4 @@ release.
 Before 1.0 none of that binds: a removal needs the changelog entry and nothing
 else. Which packages are in the frozen surface is a decision 1.0 has to make,
 not one inherited from this list — see
-[ROADMAP.md](../../ROADMAP.md#what-1-0-requires).
+[ROADMAP.md](../../ROADMAP.md#what-10-requires).
