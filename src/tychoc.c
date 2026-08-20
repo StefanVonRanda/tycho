@@ -14233,6 +14233,31 @@ int main(int argc, char **argv) {
     char *c_path = sfmt("%s.c", base);
     int c_to_stdout = emit_c_only && !out;
 
+    /* NEVER eat a .c this compiler did not write. The intermediate path is derived
+     * (from -o, else the source stem) and used to be written unconditionally, so
+     * `tychoc foo.ty` beside a hand-written foo.c destroyed it -- written over, then
+     * remove()d on success, leaving nothing. No flags needed and nothing to do with
+     * FFI; an agent probe hit the loud --shim form of it on 2026-08-20 and the silent
+     * form is the one that costs work. A file WE left (cc failed last run, kept as
+     * evidence) starts with the runtime banner and is fair game. --emit-c is exempt:
+     * naming the path is the point of the flag. */
+    if (!emit_c_only && !c_to_stdout) {
+        FILE *ex = fopen(c_path, "rb");
+        if (ex) {
+            char head[80];
+            size_t n = fread(head, 1, sizeof head - 1, ex);
+            head[n] = '\0';
+            fclose(ex);
+            if (!strstr(head, "Tycho runtime")) {
+                fprintf(stderr, "tychoc: %s already exists and was not written by tychoc -- "
+                                "the intermediate C would destroy it.\n"
+                                "  rename it, or build elsewhere with -o <dir>/<name>\n",
+                        c_path);
+                return 1;
+            }
+        }
+    }
+
     char *src = read_file(input);
     TokVec toks = lex(src);
     const char *pkg = detect_package(toks.v);

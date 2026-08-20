@@ -19,9 +19,9 @@ those rules.
 > Provenance: entry point `src/tychoc.c:9153@no 'main' procedure` (no `main`),
 > `:9196@takes no parameters` and `:9199@returns nothing or` (the two signature
 > rules, diagnosed separately); compilation unit
-> `compile_package` `:13982-14094@compile_package`, driver `:14177-14320@int main(`;
+> `compile_package` `:13982-14094@compile_package`, driver `:14177-14345@int main(`;
 > `extern` `parse_extern_fn` `:4501-4604@parse_extern_fn`; the C compiler
-> invocation `:14316@system(cmd)`.
+> invocation `:14341@system(cmd)`.
 
 ## 27. Program structure
 
@@ -90,7 +90,7 @@ Whether a source file participates in the package system is decided by the
 presence of a `package` declaration. The entry file is compiled in **package
 mode** (the whole directory plus its import graph, §28.5) iff it begins with a
 `package` declaration; a file with no `package` declaration is a **single-file
-program** compiled alone (`src/tychoc.c:14239@compile_package`). A single-file program has
+program** compiled alone (`src/tychoc.c:14264@compile_package`). A single-file program has
 the same entry-point rule (§27.1) and is a degenerate one-package unit.
 
 ### 27.3 `extern` declarations
@@ -128,8 +128,8 @@ form* and its role in program structure.
 
 For a program that is not stopped early (e.g. `--emit-c`, `--symbols`), the
 reference implementation compiles the emitted C and links it into the output
-executable with a single C-compiler invocation (`src/tychoc.c:14315@-fwrapv`,
-run at `src/tychoc.c:14316@system(cmd)`).
+executable with a single C-compiler invocation (`src/tychoc.c:14340@-fwrapv`,
+run at `src/tychoc.c:14341@system(cmd)`).
 The invocation has the shape:
 
 ```text
@@ -145,15 +145,15 @@ with these normative properties:
   undefined behavior, which is precisely Tycho's integer-overflow contract
   ([§5.2.1](03-types.md#521-int)): a conforming realization on C MUST compile
   such that signed overflow wraps and never traps or miscompiles
-  (`src/tychoc.c:14315@-fwrapv`).
+  (`src/tychoc.c:14340@-fwrapv`).
 - **`-lm` is always passed**, so bare libc math externs (e.g. `extern fn sqrt`)
   link with no `"m"` annotation (`src/tychoc.c:5221@-lm is always passed`).
 - **`-pthread` is always passed**, supporting the concurrency runtime
   ([§20](13-concurrency.md)).
 - **Optimization / debug:** `-O3` is the portable default; `-g` selects `-O0 -g`
-  (unoptimized with debug info) instead (`src/tychoc.c:14303@optdbg`).
+  (unoptimized with debug info) instead (`src/tychoc.c:14328@optdbg`).
 - **`-march=native` is opt-in** via `--native`. It is host-CPU-specific and MUST
-  NOT be assumed portable across machines (`src/tychoc.c:14302@march`).
+  NOT be assumed portable across machines (`src/tychoc.c:14327@march`).
 - The default C compiler is `cc` (`src/tychoc.c:14185@"cc"`); `--cc <compiler>`
   overrides it (`src/tychoc.c:14207@--cc`).
 
@@ -229,7 +229,7 @@ import path that reached it — which, for a relative import, is its directory
 name (`src/tychoc.c:13961@declares`, checked against `src/tychoc.c@pkg_basename` of
 the import path). The **entry package may be named anything**: its name is taken from the
 entry file's own `package` declaration and is not constrained to the directory
-name (`src/tychoc.c@detect_package`, called at `src/tychoc.c:14238@detect_package`;
+name (`src/tychoc.c@detect_package`, called at `src/tychoc.c:14263@detect_package`;
 `compile_package` starts the merge at that name with an empty prefix,
 `src/tychoc.c:13986@merge_pkg`).
 

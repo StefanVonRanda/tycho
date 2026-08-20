@@ -355,6 +355,43 @@ for hi in tests/abort/*.ty; do
     fi
 done
 
+# The intermediate .c must never destroy a file tychoc did not write. `tychoc
+# foo.ty` derives foo.c, wrote it unconditionally and remove()d it on success, so
+# a hand-written foo.c beside foo.ty was gone with no warning and no flags
+# involved. No .ty fixture can reach this -- it is driver behaviour, and the
+# subject is a file that must still EXIST afterwards.
+CW="$TMP/clobber"; rm -rf "$CW"; mkdir -p "$CW"
+printf 'fn main():\n    println("hi")\n' > "$CW/foo.ty"
+: > "$CW/canary"; echo '/* USER FILE */' > "$CW/foo.c"
+for _cwname in bare out shim; do
+    case "$_cwname" in
+        bare) _cw="" ;;
+        out)  _cw="-o $CW/foo" ;;
+        shim) _cw="--shim $CW/foo.c -o $CW/foo" ;;
+    esac
+    name="clobber_refused_$_cwname"
+    # shellcheck disable=SC2086
+    if "$TYCHOC" "$CW/foo.ty" $_cw >"$TMP/cw.log" 2>&1; then
+        note "$name" "tychoc SUCCEEDED with a foreign foo.c in the way"; fail=$((fail + 1)); fails="$fails $name"
+    elif [ ! -f "$CW/foo.c" ] || ! grep -q 'USER FILE' "$CW/foo.c"; then
+        note "$name" "the user's foo.c was destroyed"; fail=$((fail + 1)); fails="$fails $name"
+    else
+        echo "ok    $name"; pass=$((pass + 1))
+    fi
+done
+# The other half: a .c WE left behind (cc failed last run, kept as evidence) and
+# --emit-c's named output must still be writable, or the guard has broken both
+# the rebuild path and the documented debugging path.
+rm -f "$CW/foo.c"
+if ! "$TYCHOC" "$CW/foo.ty" --emit-c -o "$CW/foo" >"$TMP/cw.log" 2>&1 || [ ! -f "$CW/foo.c" ]; then
+    note "clobber_emit_c" "--emit-c no longer writes its .c"; fail=$((fail + 1)); fails="$fails clobber_emit_c"
+elif ! "$TYCHOC" "$CW/foo.ty" -o "$CW/foo" >"$TMP/cw.log" 2>&1; then
+    note "clobber_regen" "a tycho-written .c was refused instead of overwritten"
+    sed 's/^/      /' "$TMP/cw.log"; fail=$((fail + 1)); fails="$fails clobber_regen"
+else
+    echo "ok    clobber_emit_c"; pass=$((pass + 1))
+fi
+
 for hi in tests/diag/*.ty; do
     [ -e "$hi" ] || continue
     name="diag_$(basename "$hi" .ty)"
