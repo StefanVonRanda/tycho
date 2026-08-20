@@ -26,10 +26,12 @@ describes a different one and sends the reader to convert, which is not the fix.
 ## 2. `bounded[N]T` is missing from the reference index, and nothing shows how to build one
 
 `docs/reference/index.md` claims to catalogue every feature and contains **zero**
-occurrences of `bounded`. All prose lives in spec §5.3.10. Worse, `grep -rn
-"bounded\[" docs/` finds only type-position mentions — **no document anywhere
-shows how to construct one.** The agent guessed `x : bounded[N]T = []` and says
-it was lucky.
+occurrences of `bounded`. All prose lives in spec §5.3.10. The agent reported that no document shows how to CONSTRUCT one. **That part was
+wrong, and so was my first write-up of it** — `docs/reference/arrays-slices.md`
+has a whole section with `b: bounded[4]int = [1, 2]` in it. The real gap is that
+the index row never named `bounded`, so neither the agent nor I found the
+section; both of us grepped and concluded from the miss. Fixed by naming it in
+the index row.
 
 ## 3. `pop` and slicing are rejected on `bounded`, so it cannot be dequeued
 

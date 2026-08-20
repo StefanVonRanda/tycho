@@ -3692,7 +3692,7 @@ static Stmt *parse_stmt(Parser *ps) {
         eat(ps, TK_EQ, "'=' after the constant name");
         Expr *lit = const_fold(parse_expr(ps), 0);   /* local: literals + int arithmetic, no sibling-const refs */
         if (!is_literal_expr(lit))
-            die_at(lit->line, "const value must be a literal");
+            die_at(lit->line, "a `const` must be a single scalar literal -- an int, float, string, bool or char. Arrays, maps and struct literals are not allowed, and neither is an expression");
         eat(ps, TK_NEWLINE, "newline");
         Stmt *s = new_stmt(S_CONST, t->line);
         s->name = nameT->text; s->expr = lit;
@@ -5112,7 +5112,7 @@ static void parse_const(Parser *ps) {
     eat(ps, TK_EQ, "'=' after the constant name");
     Expr *lit = const_fold(parse_expr(ps), 1);   /* top level: also resolve backward const refs */
     if (!is_literal_expr(lit))
-        die_at(lit->line, "const value must be a literal");
+        die_at(lit->line, "a `const` must be a single scalar literal -- an int, float, string, bool or char. Arrays, maps and struct literals are not allowed, and neither is an expression");
     char *nm = pkg_mangle(nameT->text);
     int vi;
     if (struct_find(nm) >= 0 || enum_find(nm) >= 0 || newtype_find(nm) >= 0
@@ -7341,6 +7341,14 @@ static Type resolve_expr_inner(Expr *e) {
             if (lt == T_BYTES || rt == T_BYTES)
                 die_at(e->line, "bytes has no arithmetic (got %s, %s) -- bytes supports `a + b` and `b + 'c'` (concat), `b[i]` (the byte value, an int) and `b[i:j]` (a sub-buffer); for anything else use to_str(b)",
                        type_name(lt), type_name(rt));
+            /* Two newtypes over the same base still refuse each other, and the
+             * generic wording ("two ints or two floats") is FALSE for that pair
+             * -- both ARE ints -- while its advice (convert one side) is not the
+             * fix either. Say the real rule (probe, 2026-08-19). */
+            if (IS_NEWTYPE(lt) && IS_NEWTYPE(rt))
+                die_at(e->line, "arithmetic on two different newtypes: '%s' and '%s' are distinct types even though both "
+                       "are over %s -- unwrap one with to_under(x), or make both sides the same newtype",
+                       type_name(lt), type_name(rt), type_name(base_of(lt)));
             die_at(e->line, "arithmetic requires two ints or two floats (got %s, %s) -- convert one side, e.g. to_float(x) to compute in floats, or to_int(x) in ints",
                    type_name(lt), type_name(rt));
         }
@@ -7517,7 +7525,7 @@ static void pf_capture(Expr *id) {
 /* capture an outer local named by a STRING rather than by an E_IDENT node -- the
  * callee of `f(x)` and the receiver of `o.f(x)` live in E_CALL's sval/qual, not
  * in a child expr. The synthesized read is resolved in the enclosing scope with
- * every other capture (src/tychoc.c:8159). Non-locals (global fns, builtins,
+ * every other capture (src/tychoc.c:8167). Non-locals (global fns, builtins,
  * enum constructors, package qualifiers) fail vars_find and are dropped. */
 static void pf_capture_name(const char *n, int line) {
     Type vt;
@@ -7540,10 +7548,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7507),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7515),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:7781). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:7789). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
@@ -12210,12 +12218,34 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                 indent(o, ind + 2); fprintf(o, "goto _sel_done_%d;\n", id);
                 indent(o, ind + 1); fprintf(o, "} if (_st == 0) _open%d = 1; }\n", id);
             }
-            indent(o, ind + 1); fprintf(o, "if (!_open%d) {\n", id);
-            for (int i = 0; i < s->narms; i++)
-                if (!strcmp(s->arms[i].variant, "closed"))
-                    gen_block(o, s->arms[i].body, s->arms[i].nbody, ind + 2, scope, ret);
-            indent(o, ind + 2); fprintf(o, "goto _sel_done_%d;\n", id);
-            indent(o, ind + 1); fprintf(o, "}\n");
+            /* Only take the all-closed exit when a `closed:` arm actually exists.
+             * This block used to be emitted unconditionally, so a select with a
+             * `recv` arm and a `default:` arm but no `closed:` arm took NEITHER
+             * once the channels were closed and drained: the empty `!_open`
+             * branch jumped straight past the default. Measured before the fix --
+             * 100 iterations of that shape gave 1 recv and 0 defaults, and an
+             * unbounded loop spun forever doing nothing (select probe,
+             * 2026-08-19). With no closed arm, all-closed now falls through to
+             * `default:`, or to the pause-and-retry below when there is none. */
+            int has_closed = 0, has_def_arm = 0;
+            for (int i = 0; i < s->narms; i++) {
+                if (!strcmp(s->arms[i].variant, "closed"))  has_closed  = 1;
+                if (!strcmp(s->arms[i].variant, "default")) has_def_arm = 1;
+            }
+            /* Skip the all-closed exit ONLY when a `default:` arm exists to take
+             * instead. Skipping it whenever there is no `closed:` arm turned a
+             * recv-only select on a closed, empty channel from a fall-through
+             * into an infinite pause-and-retry -- a hang is worse than the no-op
+             * this fix exists to remove, and it changes behaviour for programs
+             * that were relying on the fall-through. */
+            if (has_closed || !has_def_arm) {
+                indent(o, ind + 1); fprintf(o, "if (!_open%d) {\n", id);
+                for (int i = 0; i < s->narms; i++)
+                    if (!strcmp(s->arms[i].variant, "closed"))
+                        gen_block(o, s->arms[i].body, s->arms[i].nbody, ind + 2, scope, ret);
+                indent(o, ind + 2); fprintf(o, "goto _sel_done_%d;\n", id);
+                indent(o, ind + 1); fprintf(o, "}\n");
+            }
             int has_def = 0;
             for (int i = 0; i < s->narms; i++)
                 if (!strcmp(s->arms[i].variant, "default")) {

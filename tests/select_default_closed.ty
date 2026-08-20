@@ -1,0 +1,28 @@
+# A select with `recv` + `default:` and no `closed:` used to take NEITHER arm
+# once the channel was closed and drained -- an unbounded loop of that shape
+# spun forever doing nothing. `recv`-only must still fall through, not hang.
+fn p(ch: Channel(int)) -> int:
+    send(ch, 7)
+    return 0
+
+fn main():
+    ch := channel(int, 4)
+    t := spawn p(ch)
+    n := wait(t)
+    close(ch)
+    hits := 0
+    defs := 0
+    for i := 0; i < 10; i += 1:
+        select:
+            recv(ch, v):
+                hits += v
+            default:
+                defs += 1
+    println("hits=" + str(hits) + " defaults=" + str(defs) + " n=" + str(n))
+
+    c2 := channel(int, 2)
+    close(c2)
+    select:
+        recv(c2, w):
+            println("unreachable " + str(w))
+    println("recv-only fell through")

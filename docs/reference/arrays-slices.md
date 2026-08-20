@@ -179,6 +179,11 @@ fn main():
 - An initialiser with more elements than the capacity is a **compile** error; a `push` past
   it is a clean runtime abort (`push to a full bounded[2]`), not a reallocation.
 
+`pop` and slicing are **not** supported on a `bounded` — the refusals name the
+workaround (`pop is not supported on a bounded[...] yet; read the last element via
+len()-1 and rebuild`). A `bounded` is therefore a stack you push and index, not a
+queue you can dequeue from the front.
+
 Reach for it when a count is small and bounded and you want the storage inline — no arena
 allocation, and the whole thing copies with its owner. `tools/tycho-grid/` uses one.
 

@@ -469,7 +469,7 @@ is a single four-byte literal and not a run-time concatenation.
 > rejection `:475-476`, its per-piece bound `:746@rn + 2 >= (int)sizeof rbuf`,`:749@rn + 1 >= (int)sizeof rbuf`,
 > its unterminated diagnostic `:753@unterminated raw string literal`; adjacent join `:2515-2538`; `const` string fold
 > `:4640-4644`; codegen pastes the escaped text into a C string literal
-> `:10736@TYCHO_LIT`; that literal's decoded length `runtime/tycho_rt.c:1237@sizeof s - 1`.
+> `:10744@TYCHO_LIT`; that literal's decoded length `runtime/tycho_rt.c:1237@sizeof s - 1`.
 > Fixtures: `tests/rawstring.ty`,
 > `tests/reject/rawstring_unterminated.ty`.
 

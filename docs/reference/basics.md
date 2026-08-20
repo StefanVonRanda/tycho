@@ -46,7 +46,7 @@ fn main():
 ```
 
 This is copy-in/copy-out (equivalent to `x = incr(x)`), so it preserves value semantics: the
-`&` argument must name a mutable variable, and the same variable cannot be passed to two `inout`
+`&` argument must name a mutable place — a variable, or a field of one (`&b.asks`), and the same variable cannot be passed to two `inout`
 parameters of one call (that would be overlapping mutable access). `inout` covers `int`, `bool`,
 value structs, and the heap aggregates (`[int]`, `[string]`, heap-bearing structs, maps) —
 including `push`/growth and element/field mutation through the borrow. `inout string` works too:

@@ -14,7 +14,7 @@ every page compiles and produces the shown output.
 | --- | --- |
 | [Basics](basics.md) | procedures, parameters (`inout`), declarations and assignment, expressions and operators, control flow |
 | [Types](types.md) | the scalar types, `bytes`, string interpolation, distinct `type` newtypes, bidirectional type inference |
-| [Arrays and slices](arrays-slices.md) | `[T]`, nested arrays, element places, slices `xs[a:b]` |
+| [Arrays and slices](arrays-slices.md) | `[T]`, nested arrays, element places, slices `xs[a:b]`, fixed-capacity `bounded[N]T` |
 | [Structs and tuples](structs-tuples.md) | `struct`, nested and recursive fields, tuples and multiple return values |
 | [Maps](maps.md) | `[K: V]` for scalar and composite keys, any value type, `m[k]` as a place |
 | [Subscripts](subscripts.md) | user-defined projections: `subscript … -> inout U: yield &<place>`, a zero-copy view generalizing `&m[k]` |

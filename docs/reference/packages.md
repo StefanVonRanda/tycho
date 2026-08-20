@@ -1,5 +1,13 @@
 # Packages
 
+> **One program per directory.** `tychoc` compiles every `.ty` file beside the
+> entry file as one package, so two programs cannot share a directory — the
+> second one's declarations collide with the first's and the error names a file
+> you did not compile (`'Index' is already defined`). A file with an `import` is
+> a package: give it its own directory. Four separate first-time readers hit
+> this in one day.
+
+
 > **Memory:** A multi-package build merges all reachable files into one AST and emits
 > one C file, so the same per-scope arena codegen applies regardless of which package
 > a definition came from. There is no separate compilation and no cross-package
