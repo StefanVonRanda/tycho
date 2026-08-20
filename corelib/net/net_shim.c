@@ -142,7 +142,7 @@ tycho_int netx_port_of(tycho_int fd) {
  * one listening fd, so a single shared buffer would be a data race on the one
  * field an access log wants most (crypto_shim.c:43 sets the same precedent). The
  * caller only ever sees a copy anyway -- an extern `-> string` return is wrapped
- * in tycho_str_copy at the call site (src/tychoc.c:9306-9309), so the borrow ends
+ * in tycho_str_copy at the call site (src/tychoc.c:9341-9344), so the borrow ends
  * before the next request can overwrite it. */
 const char *netx_peer_addr(tycho_int fd) {
     static __thread char buf[INET6_ADDRSTRLEN];

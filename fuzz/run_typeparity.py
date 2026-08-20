@@ -32,7 +32,7 @@ def is_lit(t, form):
 
 def adapt(lt, ll, rt, rl):
     """Sized-numeric literal adaptation, in the resolver's own order
-    (`src/tychoc.c:6626-6635`): an int literal takes the other side's u32/u64;
+    (`src/tychoc.c:6661-6670`): an int literal takes the other side's u32/u64;
     an int OR float literal takes the other side's f32. Value-directional --
     a typed variable never changes width."""
     if ll and lt == "int" and rt in SIZED: lt = rt
@@ -46,32 +46,32 @@ def expect(lt, lform, op, rt, rform):
     arm it encodes, so a rule change shows up here as a citation that no longer
     reads the way the code does."""
     ll, rl = is_lit(lt, lform), is_lit(rt, rform)
-    if op in ("and", "or"):                       # `src/tychoc.c:6610` -- bool operands, no adaptation
+    if op in ("and", "or"):                       # `src/tychoc.c:6645` -- bool operands, no adaptation
         return "accept" if lt == "bool" and rt == "bool" else "reject"
     lt, rt = adapt(lt, ll, rt, rl)
-    if op in ("==", "!="):                        # `src/tychoc.c:6641` -- structural, but the types must be EQUAL.
+    if op in ("==", "!="):                        # `src/tychoc.c:6676` -- structural, but the types must be EQUAL.
         # Note the deliberate asymmetry with ordering below: there is no
         # int-literal-to-float adaptation on the equality path, so `2.5 == 7` is a
-        # type error while `2.5 < 7` is not (`src/tychoc.c:6652-6659` explains why).
+        # type error while `2.5 < 7` is not (`src/tychoc.c:6687-6694` explains why).
         return "accept" if lt == rt else "reject"
-    if op in ("<", ">", "<=", ">="):              # `src/tychoc.c:6656-6663`
+    if op in ("<", ">", "<=", ">="):              # `src/tychoc.c:6691-6698`
         if lt == "float" and rt == "int" and rl: rt = "float"
         elif rt == "float" and lt == "int" and ll: lt = "float"
         return "accept" if lt == rt and lt in ORDERED else "reject"
-    if op == "+" and lt == "string":              # `src/tychoc.c:6670` -- string + string|char, ONE-directional
+    if op == "+" and lt == "string":              # `src/tychoc.c:6705` -- string + string|char, ONE-directional
         return "accept" if rt in ("string", "char") else "reject"
-    if op in ("<<", ">>"):                        # `src/tychoc.c:6692-6698`
+    if op in ("<<", ">>"):                        # `src/tychoc.c:6727-6733`
         return "accept" if lt in INTEGER and rt in INTEGER else "reject"
-    if op in ("%", "&", "|", "^"):                # `src/tychoc.c:6802` -- two MATCHING integers
+    if op in ("%", "&", "|", "^"):                # `src/tychoc.c:6837` -- two MATCHING integers
         return "accept" if lt in INTEGER and lt == rt else "reject"
     # arithmetic `+ - * /`
-    if lt == rt and lt in ({"int", "float", "f32"} | SIZED):   # `src/tychoc.c:6812-6824`
+    if lt == rt and lt in ({"int", "float", "f32"} | SIZED):   # `src/tychoc.c:6847-6859`
         return "accept"
     if op in ("+", "-") and (lt == "char" or rt == "char") \
-       and lt in ("char", "int") and rt in ("char", "int"):    # `src/tychoc.c:6820-6823` -- char±int, int±char, char±char
+       and lt in ("char", "int") and rt in ("char", "int"):    # `src/tychoc.c:6855-6858` -- char±int, int±char, char±char
         return "accept"
-    if lt == "float" and rt == "int" and rl: return "accept"   # `src/tychoc.c:6829`
-    if rt == "float" and lt == "int" and ll: return "accept"   # `src/tychoc.c:6833`
+    if lt == "float" and rt == "int" and rl: return "accept"   # `src/tychoc.c:6864`
+    if rt == "float" and lt == "int" and ll: return "accept"   # `src/tychoc.c:6868`
     return "reject"
 
 def forms(t):

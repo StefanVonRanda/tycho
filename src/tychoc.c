@@ -216,6 +216,41 @@ static char *sfmt(const char *fmt, ...) {
     return s;
 }
 
+/* Append-only string builder. `out = sfmt("%s ...", out, ...)` in a loop reformats
+ * the WHOLE accumulated string per element, so emitting an N-element literal costs
+ * O(N^2) bytes copied. Measured 2026-08-20: 30000 int elements took 5.6 s and the
+ * same count of strings did not finish in 45 s, while the same array built with
+ * 30000 push() statements took 55 ms -- the literal, not the elements, was the cost.
+ * Found by an agent probe generating oversized sources. */
+typedef struct { char *b; size_t n, cap; } SBuf;
+
+static void sb_init(SBuf *s) { s->b = NULL; s->n = 0; s->cap = 0; }
+
+__attribute__((format(printf, 2, 3)))
+static void sb_addf(SBuf *s, const char *fmt, ...) {
+    va_list ap; va_start(ap, fmt);
+    char *piece = NULL;
+    if (vasprintf(&piece, fmt, ap) < 0 || !piece) { fprintf(stderr, "tychoc: oom\n"); exit(1); }
+    va_end(ap);
+    size_t len = strlen(piece);
+    if (s->n + len + 1 > s->cap) {
+        size_t want = s->cap ? s->cap * 2 : 256;
+        while (want < s->n + len + 1) want *= 2;
+        char *nb = (char *)realloc(s->b, want);
+        if (!nb) { fprintf(stderr, "tychoc: oom\n"); exit(1); }
+        s->b = nb; s->cap = want;
+    }
+    memcpy(s->b + s->n, piece, len + 1);
+    s->n += len;
+    free(piece);
+}
+
+/* The finished string; never NULL, so a caller can return it unconditionally. */
+static char *sb_done(SBuf *s) {
+    if (!s->b) { s->b = (char *)malloc(1); if (!s->b) { fprintf(stderr, "tychoc: oom\n"); exit(1); } s->b[0] = '\0'; }
+    return s->b;
+}
+
 static void *xmalloc(size_t n) {
     void *p = malloc(n);
     if (!p) { fprintf(stderr, "tychoc: oom\n"); exit(1); }
@@ -2472,7 +2507,7 @@ static Type parse_type_inner(Parser *ps) {
             return mt;
         }
         eat(ps, TK_RBRACKET, "']'");
-        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2415) sits after a die_at */
+        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2450) sits after a die_at */
             die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
         return arr_of(elem);   /* fixed [int]/[float]/[string] or a composite */
     }
@@ -2835,7 +2870,7 @@ static Expr *parse_primary(Parser *ps) {
                 e->ival = mt; e->op = TK_COLON;
                 return e;
             }
-            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2233): parse_type never yields T_VOID */
+            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2268): parse_type never yields T_VOID */
                 die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
             e->ival = arr_of(elem);   /* type carried to the resolver */
             return e;
@@ -5709,7 +5744,7 @@ static void collect_idents(Expr *e, const char **out, int *n, int cap) {
     }
     if (e->kind == E_CALL) {   /* Neither name on a call is a child expr: the callee lives in
                                 * sval (`g(x)` where g is a closure) and a method call's RECEIVER
-                                * lives in qual (`m.get(k)`, src/tychoc.c:3204), because the parser
+                                * lives in qual (`m.get(k)`, src/tychoc.c:3239), because the parser
                                 * cannot tell it from a package call. Both are outer reads; missing
                                 * qual let `m` reach the lifted body uncaptured and the C compiler,
                                 * not tychoc, reported `h_m undeclared`. pf_scan_expr already does
@@ -7004,7 +7039,7 @@ static Type resolve_expr_inner(Expr *e) {
             if (e->nargs != s->nparams)
                 die_at(e->line, "'%s' takes %d argument(s), got %d",
                        nominal_name(e->sval), s->nparams, e->nargs);
-            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:6501 */
+            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:6536 */
             for (int i = 0; i < e->nargs; i++) {
                 g_in_arg++;
                 Type at_ = resolve_exp(e->args[i], s->params[i]);   /* fixes a None arg */
@@ -7592,7 +7627,7 @@ static void pf_capture(Expr *id) {
 /* capture an outer local named by a STRING rather than by an E_IDENT node -- the
  * callee of `f(x)` and the receiver of `o.f(x)` live in E_CALL's sval/qual, not
  * in a child expr. The synthesized read is resolved in the enclosing scope with
- * every other capture (src/tychoc.c:8234). Non-locals (global fns, builtins,
+ * every other capture (src/tychoc.c:8269). Non-locals (global fns, builtins,
  * enum constructors, package qualifiers) fail vars_find and are dropped. */
 static void pf_capture_name(const char *n, int line) {
     Type vt;
@@ -7615,10 +7650,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7582),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7617),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:7856). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:7891). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
@@ -7639,7 +7674,7 @@ static void pf_scan_expr(Expr *e) {
     }
     /* A call's callee is NOT an E_IDENT child of the node: `f(x)` keeps the name
      * in sval, and `o.f(x)` keeps the receiver in qual because the parser cannot
-     * tell it from a package call (src/tychoc.c:3198). The generic descent below
+     * tell it from a package call (src/tychoc.c:3233). The generic descent below
      * visits lhs/rhs/args only, so a fn-typed local reached the lifted chunk proc
      * uncaptured and the C compiler -- not tychoc -- reported the undeclared name.
      * The lambda capture analysis already does the sval half (src/tychoc.c@collect_idents). */
@@ -9369,7 +9404,7 @@ static const char *for3_elidable_arr(Stmt *s) {
     if (!bound || bound->kind != E_CALL || !bound->sval || strcmp(bound->sval, "len") ||
         bound->nargs != 1 || !bound->args[0] || bound->args[0]->kind != E_IDENT) return NULL;
     if (IS_BOUNDED(bound->args[0]->type)) return NULL;   /* bounded stores in .v, not .data — elision emits .data[i], so never elide it */
-    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3963-3968) */
+    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3998-4003) */
     if (!post || post->kind != S_ASSIGN || !post->name || strcmp(post->name, iv)) return NULL;
     Expr *inc = post->expr;
     if (!inc || inc->kind != E_BINOP || inc->op != TK_PLUS) return NULL;
@@ -10993,40 +11028,48 @@ static char *gen_expr(Expr *e, const char *arena) {
                 /* map literal: build empty in `arena`, then put each pair. The
                  * runtime put copies the key bytes into `arena`. args interleave
                  * k0,v0,k1,v1,...; an empty literal (nargs 0) just yields {0}. */
-                char *out = sfmt("({ %s_l%d = %s(%s, 0L);",
-                                 c_type(e->type), id, map_rt(e->type, "with_cap"), arena);
+                SBuf sb; sb_init(&sb);
+                sb_addf(&sb, "({ %s_l%d = %s(%s, 0L);",
+                        c_type(e->type), id, map_rt(e->type, "with_cap"), arena);
                 for (int i = 0; i + 1 < e->nargs; i += 2)
-                    out = sfmt("%s %s(%s, &_l%d, %s, %s);",
-                               out, map_rt(e->type, "put"), arena, id,
-                               key_rt(e->type, gen_expr(e->args[i], arena)),
-                               gen_expr(e->args[i + 1], arena));
-                return sfmt("%s _l%d; })", out, id);
+                    sb_addf(&sb, " %s(%s, &_l%d, %s, %s);",
+                            map_rt(e->type, "put"), arena, id,
+                            key_rt(e->type, gen_expr(e->args[i], arena)),
+                            gen_expr(e->args[i + 1], arena));
+                sb_addf(&sb, " _l%d; })", id);
+                return sb_done(&sb);
             }
             if (IS_FIXARR(e->type)) {   /* [N]T fixed literal: fill the inline v[] (elements deep-copied into `arena`) */
                 Type felem = arr_elem(e->type);
-                char *out = sfmt("({ %s_l%d;", c_type(e->type), id);
+                SBuf sb; sb_init(&sb);
+                sb_addf(&sb, "({ %s_l%d;", c_type(e->type), id);
                 for (int i = 0; i < e->nargs; i++)
-                    out = sfmt("%s _l%d.v[%d] = %s;", out, id, i, alias_arg(felem, arena, e->args[i], e->args, e->nargs));
-                return sfmt("%s _l%d; })", out, id);
+                    sb_addf(&sb, " _l%d.v[%d] = %s;", id, i, alias_arg(felem, arena, e->args[i], e->args, e->nargs));
+                sb_addf(&sb, " _l%d; })", id);
+                return sb_done(&sb);
             }
             if (IS_BOUNDED(e->type)) {   /* bounded[N]T literal: fill v[0..k], len = k (k <= N, checked in resolve_exp) */
                 Type felem = arr_elem(e->type);
-                char *out = sfmt("({ %s_l%d = {0};", c_type(e->type), id);
+                SBuf sb; sb_init(&sb);
+                sb_addf(&sb, "({ %s_l%d = {0};", c_type(e->type), id);
                 for (int i = 0; i < e->nargs; i++)
-                    out = sfmt("%s _l%d.v[%d] = %s;", out, id, i, alias_arg(felem, arena, e->args[i], e->args, e->nargs));
-                return sfmt("%s _l%d.len = %dL; _l%d; })", out, id, e->nargs, id);
+                    sb_addf(&sb, " _l%d.v[%d] = %s;", id, i, alias_arg(felem, arena, e->args[i], e->args, e->nargs));
+                sb_addf(&sb, " _l%d.len = %dL; _l%d; })", id, e->nargs, id);
+                return sb_done(&sb);
             }
             /* array literal: build with_cap, then store each element. copy_into
              * deep-copies it into `arena` so the array owns its bytes — a plain
              * assign for int/float, tycho_str_copy for string, the element's deep
              * copy for a struct or nested array. */
             Type elem = arr_elem(e->type);
-            char *out = sfmt("({ %s_l%d = tycho_arr_%s_with_cap(%s, %dL);",
-                             c_type(e->type), id, arr_fn(e->type), arena, e->nargs);
+            SBuf sb; sb_init(&sb);
+            sb_addf(&sb, "({ %s_l%d = tycho_arr_%s_with_cap(%s, %dL);",
+                    c_type(e->type), id, arr_fn(e->type), arena, e->nargs);
             for (int i = 0; i < e->nargs; i++)
-                out = sfmt("%s _l%d.data[%d] = %s;", out, id, i,
-                           alias_arg(elem, arena, e->args[i], e->args, e->nargs));
-            return sfmt("%s _l%d.len = %dL; _l%d; })", out, id, e->nargs, id);
+                sb_addf(&sb, " _l%d.data[%d] = %s;", id, i,
+                        alias_arg(elem, arena, e->args[i], e->args, e->nargs));
+            sb_addf(&sb, " _l%d.len = %dL; _l%d; })", id, e->nargs, id);
+            return sb_done(&sb);
         }
         case E_FIELD: {
             if (e->lhs->kind == E_INDEX && IS_SOA(e->lhs->lhs->type)) {
