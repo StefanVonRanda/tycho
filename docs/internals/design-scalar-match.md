@@ -124,7 +124,7 @@ instead of seven labels with a shared body).
 - Ranges emit as **consecutive case labels** (`case 48: case 49: ... case 57:`).
   Unrolling, not GNU `case 48 ... 57:`: the ranges in the tree are all small
   (7–10 values), and unrolling is portable under any dialect. (The repo
-  compiles with plain `cc`, no `-std` — `src/tychoc.c:14448@-fwrapv` — so GNU case
+  compiles with plain `cc`, no `-std` — `src/tychoc.c:14473@-fwrapv` — so GNU case
   ranges would work, but there is no reason to depend on them.)
 - The table-vs-binary-search decision is **cc's**, not ours: at `-O2`, GCC and
   Clang lower a dense switch to a jump table and a sparse one to a binary

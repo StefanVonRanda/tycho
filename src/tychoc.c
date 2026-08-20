@@ -12780,6 +12780,31 @@ static Expr *clone_expr_inner(Expr *e, Type *binds) {
         c->ival = (long)subst_type((Type)e->ival, binds);
     if (e->kind == E_CALL && e->sval && !strcmp(e->sval, "channel") && has_typaram((Type)e->ival))   /* `channel($T, n)`: ival is the written element type, resolved straight to chan_of */
         c->ival = (long)subst_type((Type)e->ival, binds);
+    if (e->kind == E_LAMBDA) {
+        /* A lambda inside a generic needs its OWN LamInfo per instantiation. The
+         * index in ival is shared otherwise, so the lifted proc keeps the template's
+         * unsubstituted $T params and `ftype` caches the first instantiation's type
+         * for every later one -- which is why passing a lambda to a generic function
+         * from inside another generic was rejected. Agent probe, 2026-08-20. */
+        LamInfo *src = &g_laminfo[e->ival];
+        TBL_ENSURE(g_laminfo, g_nlaminfo, g_laminfo_cap);
+        int nid = g_nlaminfo++;
+        Proc *np = (Proc *)xmalloc(sizeof(Proc));
+        *np = *src->proc;
+        np->name = sfmt("__lam%d", nid);
+        np->ret  = subst_type(src->proc->ret, binds);
+        np->params = (Param *)xmalloc((size_t)(src->proc->nparams ? src->proc->nparams : 1) * sizeof(Param));
+        for (int i = 0; i < src->proc->nparams; i++) {
+            np->params[i] = src->proc->params[i];
+            np->params[i].type = subst_type(src->proc->params[i].type, binds);
+        }
+        np->body = (Stmt **)xmalloc((size_t)(src->proc->nbody ? src->proc->nbody : 1) * sizeof(Stmt *));
+        for (int i = 0; i < src->proc->nbody; i++) np->body[i] = clone_stmt(src->proc->body[i], binds);
+        g_laminfo[nid].proc  = np;
+        g_laminfo[nid].ncap  = 0;      /* capture analysis reruns for this instance */
+        g_laminfo[nid].ftype = T_VOID; /* and so does the type: never inherit the template's */
+        c->ival = nid;
+    }
     if (e->ntypeargs > 0) {                                   /* explicit `f$(T, ...)` type args */
         c->typeargs = (Type *)xmalloc((size_t)e->ntypeargs * sizeof(Type));
         for (int i = 0; i < e->ntypeargs; i++) c->typeargs[i] = subst_type(e->typeargs[i], binds);

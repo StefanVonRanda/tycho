@@ -3146,7 +3146,7 @@ struct Plan($T):
 ```
 
 **The asymmetry, in one line.** A `fn($T) -> $T` typedef is deliberately NOT
-emitted — `src/tychoc.c:12948` skips any function type mentioning a type
+emitted — `src/tychoc.c:12973` skips any function type mentioning a type
 parameter, because `$T` lowers to `void` and a `void` parameter is invalid C.
 But the composite-array BODY loop emitted `struct TychoArrC0_ { FnC0 *data; }`
 for the template's dead `[fn($T)->$T]` anyway, naming the typedef that was just

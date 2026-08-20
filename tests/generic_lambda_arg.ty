@@ -1,0 +1,21 @@
+# A lambda passed to a generic function FROM INSIDE another generic was rejected:
+# the E_LAMBDA node's LamInfo index was shared across instantiations, so the lifted
+# proc kept the template's unsubstituted $T and `ftype` cached the first
+# instantiation's type for every later one. Agent probe, 2026-08-20.
+fn map_array(xs: [$T], f: fn($T) -> $T) -> [$T]:
+    out : [$T] = []
+    for x in xs:
+        push(out, f(x))
+    return out
+
+fn twice(xs: [$T]) -> [$T]:
+    return map_array(xs, fn(x: $T) -> $T: x)
+
+fn bump(xs: [$T], by: $T) -> [$T]:       # the lambda also CAPTURES a local
+    return map_array(xs, fn(x: $T) -> $T: x + by)
+
+fn main():
+    println(str(twice([7, 8])[0]))       # two instantiations of the same lambda...
+    println(twice(["z"])[0])             # ...at different types
+    println(str(bump([1, 2, 3], 10)[2]))
+    println(bump(["a", "b"], "!")[1])
