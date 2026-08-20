@@ -1,0 +1,2 @@
+tests/diag/enum_qualified_variant.ty:9: error: 'Circle' is a variant of enum Shape, not a package member -- variant names are global, write Circle(...)
+     9 |     s := Shape.Circle(1.0)

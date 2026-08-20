@@ -6,7 +6,7 @@ The only implicit adaptation is of **literals** (§8.1); every value-level
 conversion is an explicit builtin call (§8.2).
 
 > Provenance: conversion builtins `src/tychoc.c:6212-6268`; literal adaptation
-> in the binary-op and checking paths `:6885-6899`,`:7177-7188`, and its array-literal element path `:7157-7166`.
+> in the binary-op and checking paths `:6894-6908`,`:7194-7205`, and its array-literal element path `:7174-7183`.
 
 ## 8.1 Literal adaptation
 

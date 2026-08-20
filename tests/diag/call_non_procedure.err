@@ -1,0 +1,2 @@
+tests/diag/call_non_procedure.ty:6: error: 'x' has type int, not a procedure -- it cannot be called
+     6 |     println(str(x()))

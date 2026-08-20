@@ -1,0 +1,12 @@
+# `Shape.Circle(1.0)` where Shape is an enum in this file used to report
+# `package 'Shape' has no symbol` and tell the reader to import their own enum.
+# Variant names are global. Agent probe, 2026-08-20.
+enum Shape:
+    Circle(float)
+    Square(float)
+
+fn main():
+    s := Shape.Circle(1.0)
+    match s:
+        Circle(r): println(str(r))
+        Square(a): println(str(a))

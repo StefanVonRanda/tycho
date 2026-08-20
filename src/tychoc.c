@@ -6485,6 +6485,15 @@ static Type resolve_expr_inner(Expr *e) {
                         die_at(e->line, "'%s' is a builtin, not a member of package '%s' -- "
                                "call it directly: %s(...)",
                                nominal_name(e->sval), e->qual, nominal_name(e->sval));
+                    /* `Shape.Circle(1.0)` -- the qualifier is an ENUM in scope, not a package.
+                     * Variant names are global, so telling the writer to import their own enum
+                     * sends them nowhere. Same reasoning as the builtin case above, and checked
+                     * here for the same reason. Agent probe, 2026-08-20. */
+                    { int _evi;
+                      if (enum_find(e->qual) >= 0 && variant_find(nominal_name(e->sval), &_evi) >= 0)
+                          die_at(e->line, "'%s' is a variant of enum %s, not a package member -- "
+                                 "variant names are global, write %s(...)",
+                                 nominal_name(e->sval), e->qual, nominal_name(e->sval)); }
                     if (sg) die_at(e->line, "package '%s' has no symbol '%s'; did you mean '%s'?%s", e->qual, nominal_name(e->sval), sg, imp);
                     die_at(e->line, "package '%s' has no symbol '%s'%s", e->qual, nominal_name(e->sval), imp);
                 }
@@ -6974,6 +6983,14 @@ static Type resolve_expr_inner(Expr *e) {
               else if (e->ntypeargs > 0) die_at(e->line, "explicit type arguments given, but '%s' is not a generic function", nominal_name(e->sval)); }
             Sig *s = sig_find(e->sval);
             if (!s) {
+                /* A LOCAL by this name is in scope: the writer called a value, they did not
+                 * misspell a procedure. Checked first, because the corelib fuzzy-match below
+                 * is confident and wrong here -- `x()` on an int suggested importing fmath
+                 * for its `e`, one letter away and unrelated. Agent probe, 2026-08-20. */
+                Type lvt;
+                if (!e->qual && vars_find(e->sval, &lvt))
+                    die_at(e->line, "'%s' has type %s, not a procedure -- it cannot be called",
+                           nominal_name(e->sval), type_name(lvt));
                 int cl_strong = 0;
                 const char *cl = corelib_hint(e->sval, &cl_strong);   /* F8: a corelib package/function by this name? */
                 if (cl && cl_strong) die_at(e->line, "unknown procedure '%s' -- %s", nominal_name(e->sval), cl);   /* high-confidence stdlib match beats a weak local typo */
@@ -6987,7 +7004,7 @@ static Type resolve_expr_inner(Expr *e) {
             if (e->nargs != s->nparams)
                 die_at(e->line, "'%s' takes %d argument(s), got %d",
                        nominal_name(e->sval), s->nparams, e->nargs);
-            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:6492 */
+            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:6501 */
             for (int i = 0; i < e->nargs; i++) {
                 g_in_arg++;
                 Type at_ = resolve_exp(e->args[i], s->params[i]);   /* fixes a None arg */
@@ -7575,7 +7592,7 @@ static void pf_capture(Expr *id) {
 /* capture an outer local named by a STRING rather than by an E_IDENT node -- the
  * callee of `f(x)` and the receiver of `o.f(x)` live in E_CALL's sval/qual, not
  * in a child expr. The synthesized read is resolved in the enclosing scope with
- * every other capture (src/tychoc.c:8217). Non-locals (global fns, builtins,
+ * every other capture (src/tychoc.c:8234). Non-locals (global fns, builtins,
  * enum constructors, package qualifiers) fail vars_find and are dropped. */
 static void pf_capture_name(const char *n, int line) {
     Type vt;
@@ -7598,10 +7615,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7565),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7582),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:7839). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:7856). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed

@@ -106,7 +106,7 @@ fn main():
         bump(&xs)
 ''',
 # The RHS of a multi-assign must be a single TUPLE-valued expression
-# (src/tychoc.c:7744-7747), so this fixture's original body `a, b = b, a` was never
+# (src/tychoc.c:7761-7764), so this fixture's original body `a, b = b, a` was never
 # valid Tycho: it died at "expected newline" in the parser and never reached the
 # capture gate it names. That was invisible while the whole file died earlier still,
 # on `range()`. Respelled through a tuple-returning call, it now trips

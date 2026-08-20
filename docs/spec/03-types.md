@@ -14,7 +14,7 @@ types differ (for example, a C backend MUST realize `int` as a 64-bit type even
 on a target where C `long` is 32 bits).
 
 > Provenance: scalar tags `src/tychoc.c:726-747`; C lowering `c_type`
-> `:1516-1556`; equality/ordering `:6900-6933`; newtype decl `parse_typedecl`
+> `:1516-1556`; equality/ordering `:6909-6942`; newtype decl `parse_typedecl`
 > `:4429-4448`.
 
 ## 5.1 The type-identity model
@@ -496,5 +496,5 @@ One asymmetry follows and is intentional: `bool` is comparable and `str`-able bu
 is not ordered. (`char` is comparable, ordered, and `str`-able — its `str` is the
 one-byte glyph.)
 
-> Provenance: `src/tychoc.c:6627-6660` (equality/ordering resolver); function-
-> value identity equality `:10132@identity equality`.
+> Provenance: `src/tychoc.c:6636-6669` (equality/ordering resolver); function-
+> value identity equality `:10149@identity equality`.

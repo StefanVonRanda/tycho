@@ -1,0 +1,6 @@
+# `x()` where x is a local int used to report `unknown procedure 'x'` and then
+# fuzzy-match corelib, landing on `fmath.e` -- one letter away, unrelated, and a
+# confident suggestion built on a wrong assumption. Agent probe, 2026-08-20.
+fn main():
+    x := 5
+    println(str(x()))
