@@ -85,9 +85,11 @@ The package system is a whole-program transpile, not a linker pipeline:
 - The transpiler reads the entry package, follows every `import`, merges all
   reachable definitions into one AST, and emits one `.c`. There's no linker step
   and no per-package object file.
-- **A file with no `package` declaration is a standalone single-file program.**
-  The `package` keyword is what switches on directory-package mode, so every
-  single-file program compiles unchanged.
+- **A file with no `package` declaration is a standalone single-file program** —
+  provided it imports nothing. The `package` keyword is what switches on
+  directory-package mode, so every single-file program compiles unchanged. An
+  `import` makes the file a package: it must then declare one, and live in its own
+  directory ([Packages reference](../reference/packages.md)).
 - **Main-package symbols keep their plain names.** Only imported packages get a
   `pkg__` prefix, applied uniformly to every definition and reference. This
   includes the generated type families — `Arr_geom__Point` for `[geom.Point]`,
