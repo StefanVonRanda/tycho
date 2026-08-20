@@ -25,7 +25,7 @@ as an operator or keyword (`m[k]`, `k in m`, `delete`, `for x in xs`) lives on i
 
 | Builtin | Type | Notes |
 | --- | --- | --- |
-| `str(x)` | `int`/`float`/`bool` `-> string` | A float prints as the shortest decimal (15, 16 or 17 significant digits) that reads back as the same `float`, always with a `.`; a bool prints `true`/`false`. |
+| `str(x)` | `int`/`float`/`bool` `-> string` | A **finite** float prints as the shortest decimal (15, 16 or 17 significant digits) that reads back as the same `float`, always with a `.`; a bool prints `true`/`false`. NaN and the infinities are the exception — see below. |
 | `to_float(n)` | `int -> float` | Widen. |
 | `to_int(x)` | `float -> int` | Truncate toward zero. |
 | `to_bytes(s)` / `to_str(b)` | `string <-> bytes` | Same byte buffer; `bytes` may carry interior NULs. |
@@ -33,13 +33,21 @@ as an operator or keyword (`m[k]`, `k in m`, `delete`, `for x in xs`) lives on i
 | `chr(n)` | `int -> string` | The one-byte string for byte value `n` (`0`–`255`). |
 | `to_char(n)` | `int -> char` | The byte value `n` as a `char`. Outside `0..255` it **aborts** — where `chr(n)` returns a one-byte *string*, this returns a `char`. |
 
+**NaN and the infinities do not round-trip.** `str` hands those three to the host C
+library, which on glibc spells them `-nan`, `inf` and `-inf` — no decimal point, and not
+the same text on every platform. `strings.parse_float` refuses all three by design, so a
+float written with `str` and read back with `parse_float` survives only if it was finite.
+`x == x` is false for exactly NaN, and `x - x == 0.0` is false for exactly NaN and the
+infinities, which is how to check before serialising.
+
 (A newtype's `to_int` / `to_float` / `to_str` / `to_bool` / `to_under` unwrappers are on the
 [Types](types.md#distinct-newtypes-type) page.)
 
 ## Strings
 
 Strings are byte buffers; `len`, `s[i]`, `substr`, and `find` are all byte-oriented (not
-Unicode-aware). String escapes: `\n \t \\ \"`.
+Unicode-aware). String escapes: `\n \t \r \\ \"` — those five and no others, with the
+`char` set and the rejected spellings on the [Types](types.md#string-escapes) page.
 
 | Builtin | Type | Notes |
 | --- | --- | --- |
