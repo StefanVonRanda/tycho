@@ -219,6 +219,10 @@ measurements and the cases where it costs, is in [thesis.md](thesis.md).
 
 ## Next steps
 
+- **Reaching for the core library?** Every program in this tutorial stands alone,
+  so none of them needed a `package` line. The moment you add an `import`, the file
+  becomes a package and must say so — put `package main` on line 1, and give the
+  program its own directory. See **[Packages](reference/packages.md)**.
 - **[Language reference](reference/index.md)** — the precise behavior of every feature.
 - **[Examples](../examples/)** — larger runnable programs (a JSON parser, an HTTP client,
   a static-site generator, a ray tracer).
