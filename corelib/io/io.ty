@@ -291,6 +291,45 @@ fn make_dir(p: string) -> Result(bool, IoErr):
         return Err(NotFound)
     return Err(Failed)
 
+# `mkdir -p`: create every missing component of `p`. `Ok(true)` if at least one
+# was created, `Ok(false)` if they all already existed -- the same "did I do
+# anything" boolean `make_dir` returns, so a caller can tell a fresh tree from a
+# reused one. `Err` names the FIRST component that failed and stops there.
+fn make_dir_all(p: string) -> Result(bool, IoErr):
+    if has_nul(p):
+        return Err(BadPath)
+    if len(p) == 0 or p == "." or p == "/":
+        return Ok(false)
+    rooted := p[0] == 47
+    parts := split(p, "/")
+    cur := ""
+    made := false
+    for i := 0; i < len(parts); i += 1:
+        seg := parts[i]
+        if len(seg) == 0 or seg == ".":
+            continue
+        if len(cur) == 0:
+            if rooted:
+                cur = "/" + seg
+            else:
+                cur = seg
+        else:
+            cur = cur + "/" + seg
+        # A Windows drive letter ("C:") is a ROOT, not a creatable directory:
+        # mkdir("C:") fails, so seeding `cur` with it and moving on is what makes
+        # an absolute Windows destination work at all. Guarded to the first
+        # segment of a non-rooted path, exactly two characters, a letter then
+        # ':', so a POSIX directory named that way lower down is unaffected.
+        # (A UNC root, //host/share, is not handled.)
+        alpha := (seg[0] >= 65 and seg[0] <= 90) or (seg[0] >= 97 and seg[0] <= 122)
+        drive := len(seg) == 2 and seg[1] == 58 and alpha
+        if cur == seg and drive:
+            continue
+        did := make_dir(cur) or_return
+        if did:
+            made = true
+    return Ok(made)
+
 fn remove(p: string) -> Result(bool, IoErr):
     if has_nul(p):
         return Err(BadPath)

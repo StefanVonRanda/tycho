@@ -259,6 +259,20 @@ fn main():
     mkonfile := io.make_dir(binf)        # Exists: EEXIST on a plain file is not
     mkdeep := io.make_dir("/tmp/tycho_corelib_io_absent.xyz/child")   # NotFound: no parent
     println(f"mkdir={fswhy(mk)} again={fswhy(mkagain)} onfile={fswhy(mkonfile)} noparent={fswhy(mkdeep)}")
+    # make_dir_all: `mkdir -p`, where make_dir is one mkdir(2). The interesting
+    # line is `again` -- an idempotent second run must report `already`, not
+    # `did`, or a caller cannot tell a fresh tree from a reused one.
+    deep := "/tmp/tycho_corelib_io_deep"
+    d3 := io.remove(deep + "/a/b/c")     # unprinted: prior state is unknown
+    d2 := io.remove(deep + "/a/b")       # unprinted: ditto
+    d1 := io.remove(deep + "/a")
+    d0 := io.remove(deep)
+    mkall := io.make_dir_all(deep + "/a/b/c")      # did: four components created
+    mkall2 := io.make_dir_all(deep + "/a/b/c")     # already: idempotent
+    mkallf := io.make_dir_all(binf + "/child")     # a plain file as a component
+    mkalldot := io.make_dir_all(".")               # already: nothing to create
+    println(f"mkall={fswhy(mkall)} again={fswhy(mkall2)} onfile={fswhy(mkallf)} dot={fswhy(mkalldot)}")
+    println(f"mkall_isdir={dwhy(io.is_dir(deep + "/a/b/c"))}")
     dfull := io.is_dir("/tmp")
     dempty := io.is_dir(edir)
     dfile := io.is_dir(binf)
@@ -459,6 +473,7 @@ fn nul_checks():
     println(f"nul_wbytes={vwhy(io.write_bytes(nb, to_bytes("z")))} nul_wat={vwhy(io.write_at(nb, 0, to_bytes("z")))}")
     println(f"nul_setm={vwhy(io.set_mtime(nb, 1))} nul_sync={vwhy(io.sync(nb))}")
     println(f"nul_mkdir={fswhy(io.make_dir(nb))} nul_remove={fswhy(io.remove(nb))}")
+    println(f"nul_mkall={fswhy(io.make_dir_all(nb))}")
     # The destructive half, asserted on the FILESYSTEM rather than on a status:
     # after eight write-shaped calls at `nb`, `nt` must still be a file holding the
     # same five bytes. Without the guard write/write_bytes rewrote it.

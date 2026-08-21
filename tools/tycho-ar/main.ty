@@ -255,43 +255,15 @@ fn parse(archive: string, data: bytes) -> [Entry]:
     return out
 
 fn mkdir_p(p: string):
-    if len(p) == 0 or p == "." or p == "/":
-        return
-    rooted := p[0] == 47
-    parts := split(p, "/")
-    cur := ""
-    for i := 0; i < len(parts); i += 1:
-        seg := parts[i]
-        if len(seg) == 0 or seg == ".":
-            continue
-        if len(cur) == 0:
-            if rooted:
-                cur = "/" + seg
-            else:
-                cur = seg
-        else:
-            cur = cur + "/" + seg
-        # A Windows drive letter ("C:") is a ROOT, not a creatable directory:
-        # mkdir("C:") fails, and this died there for every absolute destination
-        # on Windows -- `x` could not extract into C:/anything. Seed `cur` with
-        # it and move to the first real component. Guarded to the first segment
-        # of a non-rooted path, exactly two characters, a letter then ':', so a
-        # POSIX directory that happens to be named like that lower down is
-        # unaffected. (A UNC root, //host/share, is not handled here.)
-        alpha := (seg[0] >= 65 and seg[0] <= 90) or (seg[0] >= 97 and seg[0] <= 122)
-        drive := len(seg) == 2 and seg[1] == 58 and alpha
-        if cur == seg and drive:
-            continue
-        # `Ok(_)` because BOTH booleans are successes -- true created it, false
-        # it was already a directory -- and there is nothing to do with either.
-        # The arm is `continue` rather than empty because an arm with no body is
-        # `error: expected an indented block`; the match is the last thing in the
-        # loop, so `continue` is exactly "nothing more to do here".
-        match io.make_dir(cur):
-            Ok(_):
-                continue
-            Err(e):
-                die("tycho-ar: cannot create directory " + cur)
+    # `Ok(_)` because BOTH booleans are successes -- true created something,
+    # false it was all already there -- and an extractor has nothing to do with
+    # either. The Windows drive-letter rule this used to carry moved into
+    # `corelib/io/io.ty@make_dir_all` with the rest of the walk.
+    match io.make_dir_all(p):
+        Ok(_):
+            return
+        Err(e):
+            die("tycho-ar: cannot create directory " + p)
 
 fn cmd_t(archive: string):
     entries := parse(archive, read_archive(archive))

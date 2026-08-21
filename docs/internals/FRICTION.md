@@ -1599,7 +1599,17 @@ shrank them. Padding this list would make the eight above harder to act on.
   signature says `string`. **Smaller than it looked:** it is one signature away
   from symmetric with `io.read_bytes` and it never actually cost this program a
   bug, only a paragraph of comment justifying a line. Legibility, not safety.
-- **No `mkdir -p`.** `corelib/io/io_shim.c@iox_make_dir` is one `mkdir(2)`, which
+- ~~**No `mkdir -p`.**~~ — **CLOSED 2026-08-21: `corelib/io/io.ty@make_dir_all`.**
+  Pure Tycho over `make_dir`, no shim; `tools/tycho-ar/main.ty@mkdir_p` is the
+  wrapper that names the error and is now 6 lines. **The entry was half wrong and
+  the correction is the interesting part:** `docs/guides/corelib.md` already
+  refused this in writing — *"one entry, never recursive, no `mkdir -p` and no
+  `rm -rf` behind a corelib name"* — so the bullet was asking for something the
+  tree had decided against, and neither document knew about the other. The rule
+  was narrowed rather than dropped: what it protects is that no name is SECRETLY
+  recursive, `_all` is the disclosure, and there is still deliberately no
+  `remove_all`. The record of what the bullet said when open follows.
+  `corelib/io/io_shim.c@iox_make_dir` is one `mkdir(2)`, which
   is the correct primitive, and `Ok(false)` for "already a directory" is exactly
   the right interface — it is what makes the loop idempotent. Every caller writing
   into a tree it does not own rebuilds the component chain;

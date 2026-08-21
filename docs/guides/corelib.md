@@ -378,11 +378,17 @@ element type instead of a family of per-type siblings.
   resolve `list`'s empty-directory-vs-non-directory ambiguity, which is a missing `stat(2)`
   and never a return type: `is_dir(p) -> Result(bool, io.IoErr)` asks it (an **empty directory is
   a directory**, which `len(list(p)) > 0` gets wrong), and `make_dir(p)` / `remove(p)` —
-  `mkdir(2)` and `remove(3)`, **one entry, never recursive**, no `mkdir -p` and no `rm -rf` behind
-  a corelib name — answer `Ok(true)` for "changed it" and `Ok(false)` for "it was already how you
+  `mkdir(2)` and `remove(3)`, **one entry each, never recursive** — answer `Ok(true)` for "changed it" and `Ok(false)` for "it was already how you
   asked", splitting `EEXIST` into `Ok(false)` (already a directory: goal met) and `Err(Exists)`
   (something else is in the way), and `remove` refusing a **non-empty directory with
-  `Err(Failed)`**. Three more are HTTP answers `tycho-httpd` could not otherwise give: `mtime(p) -> Result(int, io.IoErr)`, whole seconds on `now()`'s clock, where a **directory
+  `Err(Failed)`**. `make_dir_all(p)` is the `mkdir -p`, and it is a **separate name on
+  purpose**: it walks the components, returns `Ok(true)` if it created at least one and
+  `Ok(false)` if the whole path was already there, and stops at the first component it could
+  not make. The rule the old wording was reaching for is not "corelib has no recursion" but
+  **"no corelib name is secretly recursive"** — the `_all` is the disclosure. There is
+  deliberately **no `remove_all`**: a recursive delete is the one where a caller's wrong path
+  costs data that is not coming back, and that half of the prohibition stands.
+  Three more are HTTP answers `tycho-httpd` could not otherwise give: `mtime(p) -> Result(int, io.IoErr)`, whole seconds on `now()`'s clock, where a **directory
   is `Ok`** because it has a modification time; `size(p) -> Result(int, io.IoErr)`, a length
   without reading the file, where a **directory is `Err(IsDir)`** because `st_size` there is the
   entry structure and not readable bytes, and `size` succeeds on exactly the paths `read_at` can

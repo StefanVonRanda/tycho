@@ -257,7 +257,11 @@ bounded-memory streaming reader `open_lines`/`read_line`/`close_lines` plus
 **libc-only shim** (`io_shim.c`; no `deps`) for everything the builtins do not
 reach: the streaming reader is a `getline` loop in it, `exists(p)`, `is_dir(p)`,
 `make_dir(p)` and `remove(p)` are `stat(2)`, `mkdir(2)` and `remove(3)`, and so
-are the three below. Core tier. Nothing aborts; a call returns
+are the three below. `make_dir_all(p) -> Result(bool, IoErr)` is `mkdir -p`,
+pure Tycho over `make_dir` with no shim of its own: `Ok(true)` if at least one
+component was created, `Ok(false)` if every one already existed, `Err` at the
+first component that failed. A bare Windows drive letter (`C:`) is a root and is
+skipped rather than created; a UNC root (`//host/share`) is not handled. Core tier. Nothing aborts; a call returns
 `Result(T, IoErr)` wherever a sentinel would be ambiguous and mirrors the
 builtins' sentinels elsewhere. `docs/guides/corelib.md:267-298`; shim
 `corelib/io/io_shim.c`.

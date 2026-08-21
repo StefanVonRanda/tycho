@@ -15,6 +15,8 @@ byte_cat len=9 at5=66 at8=33 eqsrc=1
 byte_rebuild len=5 same=1 clamped=2
 reinterp_ret=[ABCDEFGH] len=8 churn=6400
 mkdir=did again=already onfile=Exists noparent=NotFound
+mkall=did again=already onfile=Exists dot=already
+mkall_isdir=dir
 isdir_tmp=dir isdir_empty=dir
 isdir_file=file isdir_missing=NotFound
 list_empty=0 old_test_says_dir=0
@@ -53,5 +55,6 @@ nul_isdir=BadPath nul_mtime=BadPath nul_size=BadPath
 nul_wbytes=BadPath nul_wat=BadPath
 nul_setm=BadPath nul_sync=BadPath
 nul_mkdir=BadPath nul_remove=BadPath
+nul_mkall=BadPath
 nul_target_intact=[HELLO] nul_target_is_file=file
 nul_cleanup=did
