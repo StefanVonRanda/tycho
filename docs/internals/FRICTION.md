@@ -1589,7 +1589,11 @@ eight members — with the `set_mtime` call stubbed out.
 Recorded because they were hit, ranked below the line because writing them out
 shrank them. Padding this list would make the eight above harder to act on.
 
-- **No `io.write_bytes`.** Writing bytes is `io.write(p, to_str(b))`, which is
+- ~~**No `io.write_bytes`.**~~ — **CLOSED by commit 2b226aa2; struck 2026-08-21.**
+  `corelib/io/io.ty@write_bytes` takes `bytes` and returns
+  `Result(void, IoErr)`, classified as `read_bytes` is, and `write_at` landed
+  beside it. The record of what the bullet said when open follows.
+  Writing bytes is `io.write(p, to_str(b))`, which is
   correct — `runtime/tycho_rt.c@tycho_write_file` fwrites the length header to a
   `"wb"` handle — but a caller has to read the runtime to know that, because the
   signature says `string`. **Smaller than it looked:** it is one signature away
@@ -1600,6 +1604,13 @@ shrank them. Padding this list would make the eight above harder to act on.
   the right interface — it is what makes the loop idempotent. Every caller writing
   into a tree it does not own rebuilds the component chain;
   `tools/tycho-ar/main.ty@mkdir_p` is 18 lines of it. **Real, and 18 lines.**
+  **Re-scored 2026-08-21 — reproduces, and the number was wrong in the
+  cheap direction:** `@mkdir_p` is **39 lines**, not 18. "Every caller" was
+  also too strong — it is the tree's ONLY recursive one; `tools/tycho-fetch`
+  and `tools/prunner` call `io.make_dir` once, for a parent they already own.
+  So the cost is 39 lines in one place rather than a little in many, which
+  makes it a smaller argument for a corelib entry point than the bullet
+  implies, not a larger one.
 - **A package cannot mark a top-level function internal.** Every `fn` in
   `corelib/sha256/sha256.ty` is callable as `sha256.<name>` from an importing
   program — `k_table`, `h_init`, `ch`, `maj`, `pow2`, `hex2` all probed and
