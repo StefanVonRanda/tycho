@@ -1106,13 +1106,15 @@ to spell `inout`. A one-shot `digest(msg)` needs that decision from nobody, so
 that is the interface that gets written.
 
 `inout` is a complete answer and it works well — on `[u32]`, on `bytes`, and it
-forwards (`tools/tycho-ar/main.ty@sha_feed` hands its own `&H` to
-`@sha_block`). Nothing here is broken. What is true is that **the default steers
+forwards (tycho-ar's own `sha_feed` handed its own `&H` to `sha_block`).
+Nothing here is broken. What is true is that **the default steers
 the library**, and a whole family of interfaces went one-shot because of it.
 
 **What it cost, measured.** Hashing a file in bounded memory meant writing
-SHA-256: ~60 lines across `tools/tycho-ar/main.ty`, `@sha_feed`,
-`@sha_finish`, `@sha_bytes` and `@sha_file`. Digests match `sha256sum` on 14 sizes
+SHA-256: ~60 lines across `tools/tycho-ar/main.ty` — `sha_feed`,
+`sha_finish`, `sha_bytes` and `sha_file`, all four hand-rolled and none of them
+in that file any more (commit 2b226aa2 moved it to `core:sha256`'s streaming
+API). Digests match `sha256sum` on 14 sizes
 straddling the 64-byte block, the padding overflow and the 64 KiB chunk. And the
 saving is real but partial: `sha256.digest` expands its message into `buf := []int`
 — **one machine int per byte** — so hashing an n-byte file allocated ~8n bytes of
@@ -1609,8 +1611,11 @@ shrank them. Padding this list would make the eight above harder to act on.
 - **`core:io` is path-based, with no file handles.** The compressor's read and the
   digest's reads are separate `open(2)`s over the same path, so an archiver cannot
   read a file atomically. A writer racing between them is **detectable** — a read
-  returning zero before the expected length is fatal in
-  `tools/tycho-ar/main.ty@sha_file` — but not preventable. Unlike the two items
+  returning zero before the expected length was fatal in tycho-ar's `sha_file`
+  — but not preventable. **Closed as written, 2026-08-21:** the archiver stopped
+  re-reading. `member_of` hashes the buffer it already read and compressed
+  (`tools/tycho-ar/main.ty@member_of`), so there is one `open(2)` per file and no
+  window for a writer to race into. Unlike the two items
   above this is the shape of the whole package rather than one missing call, which
   is why it is an entry here and not a proposal.
 - **No expression line continuation.** `x := a + b +` followed by a continuation

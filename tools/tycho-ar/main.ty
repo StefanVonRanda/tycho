@@ -13,13 +13,6 @@ const MAGIC   = "TYAR1\n"
 const MFOOTER = "\nTYAR-M\n"
 const TRAILER = "TYAR-END\n"
 
-# The read granularity for hashing. A MULTIPLE OF 64 on purpose: SHA-256's block
-# is 64 bytes, so a chunk this size is a whole number of blocks and the carry
-# between chunks is empty for every read but the last. Correctness does not
-# depend on that -- `sha_feed` carries a partial block either way -- but it means
-# the common path never copies.
-const CHUNK = 65536
-
 # One regular file, as the archive will record it. Built entirely before
 # anything is written, so a read failure aborts before a partial archive lands.
 struct Member:
@@ -35,37 +28,6 @@ struct Member:
 fn sha_bytes(b: bytes) -> string:
     st := sha256.init()
     sha256.update(&st, b)
-    return sha256.final_hex(&st)
-
-# sha256 of a FILE, read CHUNK bytes at a time. `size` is the authoritative
-# length -- the caller passes the length of the buffer it compressed, so the
-# digest and the payload provably describe the same byte count. See CHUNKED
-# HASHING above for why the termination condition looks like this: `io.read_at`
-# answers an at-or-past-EOF offset with `Ok` and zero bytes rather than an error,
-# so "got nothing" cannot be a loop exit.
-fn sha_file(abs: string, size: int) -> string:
-    st := sha256.init()
-    off := 0
-    for off < size:
-        want := size - off
-        if want > CHUNK:
-            want = CHUNK
-        chunk := to_bytes("")
-        match io.read_at(abs, off, want):
-            Ok(b):
-                chunk = b
-            Err(e):
-                die("tycho-ar: cannot read " + abs + " at offset " + str(off))
-        n := len(chunk)
-        if n == 0:
-            die("tycho-ar: " + abs + ": read 0 bytes at offset " + str(off) + " of " + str(size) + " (file changed under us)")
-        # Cannot happen -- the request was clamped to `size - off` -- but a read
-        # that returns more than it was asked for would walk `off` past `size`
-        # and hash the wrong span, so it is checked rather than trusted.
-        if n > want:
-            die("tycho-ar: " + abs + ": read " + str(n) + " bytes at offset " + str(off) + ", asked for " + str(want))
-        sha256.update(&st, chunk)
-        off = off + n
     return sha256.final_hex(&st)
 
 # Every regular file under `root`, as paths relative to `root`, in `readdir`
@@ -118,7 +80,10 @@ fn member_of(root: string, rel: string) -> Member:
         Err(e):
             die("tycho-ar: cannot stat " + abs)
     packed := compress.compress(raw)
-    return Member(rel, len(raw), mt, sha_file(abs, len(raw)), sha_bytes(packed), packed)
+    # Hashed from `raw`, the SAME buffer that was compressed -- not re-read from
+    # disk, which would let a file rewritten between the two reads produce an
+    # archive whose recorded digest does not describe its own stored payload.
+    return Member(rel, len(raw), mt, sha_bytes(raw), sha_bytes(packed), packed)
 
 fn encode_member(m: Member) -> bytes:
     # Written as three statements, not one expression over three lines: an
