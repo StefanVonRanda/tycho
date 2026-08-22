@@ -1,5 +1,6 @@
 package main
 
+import "core:io"
 import "core:strings"
 
 # ---- FFI: the spawn/pipe/signal shim (debug_shim.c) ----
@@ -61,11 +62,29 @@ struct Sess:
     src: string
     bin: string          # the -g compiled binary, removed at quit
 
+# TYCHOC wins; then a tychoc sitting BESIDE this binary; then PATH. The middle
+# rung is what makes `./tycho-debug f.ty` work in a checkout, where ./tychoc is
+# right there and not on PATH -- it failed with `sh: 1: tychoc: not found`,
+# which reads as a broken install rather than a lookup rule. tychoc itself finds
+# its corelib beside its own binary; this is the same rule for the same reason.
+# argv[0] with no separator means PATH resolved us, so there is no sibling to
+# look beside and the PATH spelling is the honest answer.
 fn compiler() -> string:
     c := getenv("TYCHOC")
-    if c == "":
-        return "tychoc"
-    return c
+    if c != "":
+        return c
+    argv := args()
+    if len(argv) > 0:
+        me := argv[0]
+        cut := -1
+        for i := 0; i < len(me); i += 1:
+            if me[i] == 47 or me[i] == 92:
+                cut = i
+        if cut >= 0:
+            beside := me[0:cut + 1] + "tychoc"
+            if io.exists(beside):
+                return beside
+    return "tychoc"
 
 # Quote ONE argument for the shell that will parse the line: sh on POSIX,
 # cmd.exe on Windows (dbgx_run is system(), and dbgx_spawn runs `cmd.exe /c`).
