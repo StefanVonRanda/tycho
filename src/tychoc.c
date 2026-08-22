@@ -5460,6 +5460,36 @@ static void mark_idents_used(Expr *e) {
     for (int i = 0; i < e->nargs; i++) mark_idents_used(e->args[i]);
 }
 
+static int under_corelib(const char *dir);   /* defined beside the package walker */
+
+/* Is the file being resolved part of corelib ITSELF? corelib is exempt from the
+ * unused-local check; the exemption used to be `strstr(g_srcname, "corelib/")`,
+ * which answered a question about SPELLING rather than location and was wrong
+ * both ways -- every program under `examples/corelib/` lost the check, and a
+ * corelib reached by any other path lost the exemption and stopped compiling.
+ * Memoised on the file NAME (not its pointer, which a per-file allocation could
+ * reuse): under_corelib canonicalises through the filesystem and this is asked
+ * once per declared variable.
+ * gap: nothing in the tree reddens if this regresses to a spelling test. The
+ * proof is two compiles of ONE program at two paths, which no lane here does. */
+static int src_in_corelib(void) {
+    static char *seen = NULL;
+    static int ans = 0;
+    if (!g_srcname) return 0;
+    if (seen && !strcmp(seen, g_srcname)) return ans;
+    free(seen);
+    seen = xstrndup(g_srcname, strlen(g_srcname));
+    const char *cut = strrchr(g_srcname, '/');
+#ifdef _WIN32
+    const char *bs = strrchr(g_srcname, '\\');
+    if (bs && (!cut || bs > cut)) cut = bs;
+#endif
+    char *dir = cut ? xstrndup(g_srcname, (size_t)(cut - g_srcname)) : xstrndup(".", 1);
+    ans = under_corelib(dir);
+    free(dir);
+    return ans;
+}
+
 static void vars_report_decl(void) {
     if (!g_nvars) return;
     const char *n = g_vars[g_nvars - 1].name;
@@ -5468,7 +5498,7 @@ static void vars_report_decl(void) {
      * and a string in the same scope -- hence the whole `_name` family, not just
      * the bare one. The compiler's own temps (`_fc0`, `_fi0`) share the shape. */
     if (n && n[0] == '_') return;
-    if (g_srcname && strstr(g_srcname, "corelib/")) return;   /* crude on purpose; skipping is the safe direction */
+    if (src_in_corelib()) return;
     g_vars[g_nvars - 1].report = 1;
 }
 

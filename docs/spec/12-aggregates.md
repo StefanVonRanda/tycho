@@ -12,10 +12,10 @@ produces a **place** (an lvalue); the general place, borrow, and `inout` rules
 are in [§11](07-memory-model.md#11-inout).
 
 > Provenance: array element restriction `src/tychoc.c:2244-2245`,`:2261-2262`;
-> `pop`-empty abort `:13588@pop from an empty array`,`:13588@pop from an empty array`; `reserve` `:6714-6740`,`:10119-10125`; tuple
+> `pop`-empty abort `:13618@pop from an empty array`,`:13618@pop from an empty array`; `reserve` `:6714-6740`,`:10119-10125`; tuple
 > arity `:2411@a tuple has at most 8 elements`,`:2416@a tuple type needs at least two elements`, index `:5443-5451`; destructuring `:3683-3697`,`:8210-8226`;
 > map read (pure `map_get`, no insert) `:5927-5942`; map place insert+zero
-> `:10924-10933`; `keys()` insertion order — the walk `:13750@m.elive[e]` over the append-only entries array `:13502@m->ecount++`; `delete` → `map_del`
+> `:10924-10933`; `keys()` insertion order — the walk `:13780@m.elive[e]` over the append-only entries array `:13532@m->ecount++`; `delete` → `map_del`
 > `:3531-3555`,`:6637-6643`; subscript parse + rules `:4135-4187`, dispatch
 > `:4210-4218`; `or_return` `:5803-5820`.
 
@@ -125,7 +125,7 @@ first argument.
 | `reserve(a, n)` | Grow backing capacity to at least `n`; `len` is unchanged. |
 
 `push` and `pop` require element type equality: `v` MUST have type `T` for a
-`[T]`. `pop(a)` on an **empty** array MUST abort (`src/tychoc.c:13389@pop`); it is not
+`[T]`. `pop(a)` on an **empty** array MUST abort (`src/tychoc.c:13419@pop`); it is not
 silently zero-returning. `reserve(a, n)` is a capacity hint only — it copies the
 existing elements into a buffer of capacity `≥ n` and is a no-op when
 `n ≤ cap`; it never changes `len` and never inserts elements
@@ -330,18 +330,18 @@ Its fixtures are in `tests/` and `tests/abort/` (Appendix E.2.1).
 > Provenance: two-array arm `src/tychoc.c:6749-6779`, broadcast arm
 > `src/tychoc.c:6808-6834`; per-element-type operator set
 > `src/tychoc.c:1405@elem_arith_ok`; fixed-length mismatch
-> `src/tychoc.c:7322@on a fixed array requires the same static length`; mixed
-> kinds `src/tychoc.c:7314@cannot mix a fixed array and a growable array`;
-> `bounded`/`[$N]T` `src/tychoc.c:7304@IS_BOUNDED`; element-type mismatch
-> `src/tychoc.c:7307@arr_elem(lt) != arr_elem(rt)`; scalar must land at the
-> element type `src/tychoc.c:7376@requires the scalar to have the array's element type`,
+> `src/tychoc.c:7352@on a fixed array requires the same static length`; mixed
+> kinds `src/tychoc.c:7344@cannot mix a fixed array and a growable array`;
+> `bounded`/`[$N]T` `src/tychoc.c:7334@IS_BOUNDED`; element-type mismatch
+> `src/tychoc.c:7337@arr_elem(lt) != arr_elem(rt)`; scalar must land at the
+> element type `src/tychoc.c:7406@requires the scalar to have the array's element type`,
 > its literal adaptation `src/tychoc.c:6819-6824`; the fresh spine
-> `src/tychoc.c:10797@arena_alloc`, the per-element emit shared with the scalar
-> case `src/tychoc.c:10781@gen_arith_op`, operands never reordered
-> `src/tychoc.c:10778@int la = is_array`; the runtime length check, emitted only
-> when both sides are arrays `src/tychoc.c:10801@tycho_ew_len`, and the abort
+> `src/tychoc.c:10827@arena_alloc`, the per-element emit shared with the scalar
+> case `src/tychoc.c:10811@gen_arith_op`, operands never reordered
+> `src/tychoc.c:10808@int la = is_array`; the runtime length check, emitted only
+> when both sides are arrays `src/tychoc.c:10831@tycho_ew_len`, and the abort
 > itself `runtime/tycho_rt.c:2838@arithmetic on arrays of different lengths`;
-> literal-zero divisor `src/tychoc.c:7272@division by zero`.
+> literal-zero divisor `src/tychoc.c:7302@division by zero`.
 
 ---
 
@@ -851,7 +851,7 @@ The short-circuited payload (`Err`'s error, or `None`) is promoted into the
 caller's storage, so it outlives the return
 ([§10](07-memory-model.md#10-object-lifetimes-and-storage)). `or_return` MUST NOT
 appear inside a `parallel for` body — a chunk has no early exit
-(`src/tychoc.c:7644@or_return`).
+(`src/tychoc.c:7674@or_return`).
 
 ```tycho
 fn parse_digit(s: string) -> Result(int, string):

@@ -65,8 +65,8 @@ mismatches, and literal adaptation of a broadcast scalar — is
 > Provenance: array ⊕ array arm `src/tychoc.c:6749-6779`; broadcast arm
 > `src/tychoc.c:6808-6834`; the per-element-type operator set
 > `src/tychoc.c:1405@elem_arith_ok`; the arms an array operand still falls
-> through to — shift `src/tychoc.c:7280@shift operators require integer operands`,
-> modulo/bitwise `src/tychoc.c:7389@modulo / bitwise operators`.
+> through to — shift `src/tychoc.c:7310@shift operators require integer operands`,
+> modulo/bitwise `src/tychoc.c:7419@modulo / bitwise operators`.
 
 **Comparison** (`== != < > <= >=`) and `in`. Both operands MUST share a type.
 `==`/`!=` apply to any type except `void` and are structural except for function
@@ -113,8 +113,8 @@ the result takes the **left** operand's type. So `x << n` is well-typed for a
 (sign-preserving) shift on signed `int` and a **logical** shift on `u32`/`u64`.
 
 > Provenance: the shift arm accepts any two integers and returns the left type —
-> `src/tychoc.c:6729-6735`, result at `src/tychoc.c:7196@lt`. The bitwise arm is
-> the one that requires a match: `src/tychoc.c:7356@rt`. Exhaustively pinned by
+> `src/tychoc.c:6729-6735`, result at `src/tychoc.c:7226@lt`. The bitwise arm is
+> the one that requires a match: `src/tychoc.c:7386@rt`. Exhaustively pinned by
 > `fuzz/run_typeparity.py`, whose shift clause encodes this rule over the full
 > operand matrix.
 

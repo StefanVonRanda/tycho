@@ -82,7 +82,7 @@ numeric-polymorphic like `str`.
 `print`, `println`, and `eprint` accept a `string` only; they do not implicitly
 stringify. All nine are `Sig` builtins with fixed signatures.
 
-> Provenance: `src/tychoc.c:4899-4906`,`:4982-4983`,`:4992-4993`; `eprint` codegen `:10467@tycho_eprint`; `die` codegen
+> Provenance: `src/tychoc.c:4899-4906`,`:4982-4983`,`:4992-4993`; `eprint` codegen `:10497@tycho_eprint`; `die` codegen
 > `:10877-10878`.
 
 ## 29.4 Conversions
@@ -233,7 +233,7 @@ There is **no** `empty$(T)` builtin. An `empty()` returning `[$T]` is an ordinar
 user-written generic, and `empty$(int)` is merely the `name$(…)` call form
 applied to it ([§7.5](05-generics.md)).
 
-> Provenance: `zero$` `src/tychoc.c:6010-6036`; `defaultable` predicate `:8887@"defaultable"`.
+> Provenance: `zero$` `src/tychoc.c:6010-6036`; `defaultable` predicate `:8917@"defaultable"`.
 
 ## 29.9 Concurrency
 
@@ -262,7 +262,7 @@ likewise as `t.wait()`. `close` is overloaded across a channel and an FFI handle
 > task/channel method sugar `:6037-6051`. `ncpu()`'s value is
 > `runtime/tycho_rt.c:930-945` (`TYCHO_THREADS` first, else
 > `sysconf(_SC_NPROCESSORS_ONLN)`); the fan-out that does **not** follow it above
-> 64 is `src/tychoc.c:11446@_pk > 64`.
+> 64 is `src/tychoc.c:11476@_pk > 64`.
 
 ## 29.10 Filesystem and time
 
@@ -361,5 +361,5 @@ conditions terminate rather than proceed into undefined behavior.
 > skips in `ctrl_rewrite_tails` / `ctrl_collect_tails` and the all-diverge
 > rejection in the `S_DECL` value-`ctrl` arm of `resolve_stmt`; no
 > `assert`/`panic`/`abort` name in `register_builtins` `:4894-5001` or the
-> `resolve_expr` magic block (`case E_CALL:` `:6263@case E_CALL:`, running
-> through `reserve` at `:6930@"reserve"`).
+> `resolve_expr` magic block (`case E_CALL:` `:6293@case E_CALL:`, running
+> through `reserve` at `:6960@"reserve"`).

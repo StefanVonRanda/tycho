@@ -17,7 +17,7 @@ fn describe(r: Result(bytes, io.IoErr)) -> string:
 
 fn main():
     p := "/tmp/tycho_example_result.txt"
-    w := io.write(p, "one\ntwo\n")
+    _ := io.write(p, "one\ntwo\n")   # bool, and this example's subject is below
 
     rb := io.read_bytes(p)
     body := result.unwrap_or(rb, to_bytes(""))

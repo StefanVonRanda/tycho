@@ -33,7 +33,6 @@ fn to_lower(s: string) -> string:
 fn starts_with(s: string, prefix: string) -> bool:
     if len(prefix) > len(s):
         return false
-    i := 0
     for i := 0; i < len(prefix); i += 1:
         if s[i] != prefix[i]:
             return false
@@ -43,7 +42,6 @@ fn ends_with(s: string, suffix: string) -> bool:
     if len(suffix) > len(s):
         return false
     off := len(s) - len(suffix)
-    i := 0
     for i := 0; i < len(suffix); i += 1:
         if s[off + i] != suffix[i]:
             return false
@@ -54,7 +52,6 @@ fn contains(s: string, sub: string) -> bool:
 
 fn repeat(s: string, n: int) -> string:
     r := ""
-    i := 0
     for i := 0; i < n; i += 1:
         r = r + s
     return r
