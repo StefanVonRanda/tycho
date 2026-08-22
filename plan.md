@@ -271,7 +271,7 @@ self-built twice, the two emitted `.c` identical.
     arm that dies "codegen lands in Phase 7"); `compiler/driver/` and
     `compiler/main.ty` gained the two modes and nothing else.
 
-- [ ] **Phase 3b — the parse sweep is not a runnable lane**
+- [x] **Phase 3b — the parse sweep is not a runnable lane**
   - Scope: a `run.sh` (or a `scripts/` entry) for the Phase 3 legs. The sweep and
     the SYNTAX-vs-SEMANTIC classifier that produced the evidence above live in a
     scratch directory, so nothing in the tree can redden when the parser
@@ -281,6 +281,58 @@ self-built twice, the two emitted `.c` identical.
   - Verify: the lane green at 274/91/47/290, plus one of Phase 3's three
     controls reddening it.
   - Do NOT run: any test lane. Nothing outside the new script is touched.
+
+  - **Done 2026-08-23.** `compiler/run.sh` (`make parse-check`), the committed
+    split in `compiler/reject_class.tsv` (337 rows), the census golden
+    `compiler/census.expected.out`, and the generator
+    `scripts/classify_rejects.py` recovered from scratch. The lane rebuilds
+    `tychoc1` through its Makefile dependency, so a compiler that no longer
+    BUILDS cannot present as green — hit once during this phase, when a first
+    attempt at the control failed to compile and `sh compiler/run.sh` scored
+    the stale binary all green.
+
+    ```
+    $ make parse-check
+    leg1  tests/*.ty: files=274 parse-ok=274 fail=0
+    leg1b corelib/**.ty: files=91 parse-ok=91 fail=0
+      SYNTAX-NOT-REJECTED tests/reject/float_lit_overflow_neg.ty :: float literal out of range: ...
+      SYNTAX-NOT-REJECTED tests/reject/int_hex_overflow.ty :: integer literal out of range
+      SYNTAX-NOT-REJECTED tests/reject/int_literal_overflow.ty :: integer literal out of range
+    leg2  tests/reject/*.ty: SYNTAX=47 rejected=44 missed=3 (KNOWN 3) | SEMANTIC=290 accepted=290 wrongly-rejected=0
+    leg3  census: 120 kinds, 83576 nodes over 365 files
+    parse-check: all green
+    ```
+
+    The three misses are the literal-range check Phase 2b owns. They are
+    KNOWN by NAME, not by count: the lane compares the missed set against
+    three literals, so a new miss reddens and so does a fixed one.
+
+    **Cost: ~2.5 s** (2.84 / 2.47 / 2.46 s, three runs, first cold).
+
+    **The control — the `ast.Named` one, because it is the only one of Phase
+    3's three that the accept/reject legs cannot see.** Dropping the wrapper
+    from a `name: value` call argument in `_args`:
+
+    ```
+    leg1  tests/*.ty: files=274 parse-ok=274 fail=0
+    leg1b corelib/**.ty: files=91 parse-ok=91 fail=0
+    leg2  tests/reject/*.ty: SYNTAX=47 rejected=44 missed=3 (KNOWN 3) | SEMANTIC=290 accepted=290 wrongly-rejected=0
+    leg3  census: 119 kinds, 83567 nodes over 365 files
+    parse-check: the AST census moved -- the tree changed shape, not just the verdict
+    72d71
+    < e.Named=9
+    parse-check: FAILED
+    make: *** [Makefile:167: parse-check] Error 1
+    ```
+
+    Legs 1, 1b and 2 stayed fully green on all 611 files. Reverted; the census
+    is back at 120 kinds / 83576 nodes and the lane is green.
+
+    Two gates my diff can move, both run: `make goldens-check` ok (519 golden
+    files, all tracked, none ignored — it required the `!/compiler/*.out`
+    un-ignore, without which the census golden is green on disk and absent
+    from a fresh clone) and `make script-check` ok (25 .py, 96 .sh).
+    `python3 scripts/check_citations.py` ok.
 
 - [ ] **Phase 4 — parser: declarations**
   - Scope: `compiler/parse/`. `fn`, `struct`, `enum`, `newtype`, `handle`,
@@ -354,3 +406,21 @@ self-built twice, the two emitted `.c` identical.
   - Done when: `make clean` removes `tychoc1`.
   - Verify: `make tychoc1 && make clean && test ! -e tychoc1`.
   - Do NOT run: any test lane. This is one word in a `rm -f` line.
+
+- [ ] **Phase 3c — `scripts/check_goldens.py` carried a stale NO_GOLDEN entry**
+  - Found while wiring Phase 3b: `NO_GOLDEN` still excused `compiler/run.sh`
+    ("a differential, not a golden") for a file `603d8fbd` deleted wholesale.
+    The entry was removed in Phase 3b's commit, because the new lane could not
+    go green under it — the gate itself printed "is in NO_GOLDEN but the scan
+    found a golden -- remove the entry", which is the gate working.
+  - Scope: audit the other 19 `NO_GOLDEN` entries for runners that no longer
+    exist. Nothing else in the tree checks that list against `git ls-files`.
+  - Verify: `make goldens-check` (~0.08 s) and nothing else.
+
+- [ ] **Phase 3d — `CONTRIBUTING.md`'s gate table has no `parse-check` row**
+  - Phase 3b added the row to the gitignored `CLAUDE.md` only, which its scope
+    lock named. The tracked contributor copy ("Which gate for which change") is
+    what a fresh clone reads, and it is now one gate behind.
+  - Scope: one trimmed row in `CONTRIBUTING.md`. No internal history.
+  - Verify: `python3 scripts/check_citations.py` and `sh scripts/check_links.sh`.
+    Nothing else — it is a Markdown edit.

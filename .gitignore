@@ -114,6 +114,10 @@ gmon.out
 
 # ...but the recorded test-suite goldens ARE tracked (expected output, not a
 # build artifact). Must come after the broad *.out rule above.
+# the parse lane's AST census golden (compiler/census.expected.out) is tracked
+# too -- *.out above would otherwise leave it green on disk and absent from a
+# fresh clone, the trap this paragraph exists for.
+!/compiler/*.out
 !/tests/*.out
 # package-program goldens live in a subdir, so they need a separate un-ignore
 !/tests/pkg/*.out

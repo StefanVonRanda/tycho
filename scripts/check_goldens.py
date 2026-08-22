@@ -137,7 +137,6 @@ NO_GOLDEN = {
     "bench/site/run.sh": "self-consistency checksum, as bench/conc/run.sh",
     "bench/trie/run.sh": "self-consistency checksum, as bench/conc/run.sh",
     "bench/window/run.sh": "timing only",
-    "compiler/run.sh": "a differential, not a golden -- see its header, two binaries must print identically",
     "server/run.sh": "asserts HTTP responses from a live daemon, not a recorded stdout",
     "tests/recursion/run.sh": "asserts the compiler fails closed on deep input; no recorded output",
     "tools/tycho-debug/run.sh": "a behavioral lane: asserts transcript substrings over a live gdb session; a golden would redden on gdb upgrades, not tool changes (see its header)",
