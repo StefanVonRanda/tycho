@@ -1,0 +1,20 @@
+package ast
+
+# The tree tychoc1 builds. Phase 1 covers exactly what `fn main(): print(str(1))`
+# needs; every later phase widens these three enums rather than replacing them.
+
+enum Expr:
+    IntLit(int)
+    StrLit(string)
+    Name(string)
+    Call(string, [Expr])
+
+enum Stmt:
+    ExprStmt(Expr)
+
+struct Fn:
+    name: string
+    body: [Stmt]
+
+struct Unit:
+    fns: [Fn]

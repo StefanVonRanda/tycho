@@ -1,0 +1,33 @@
+package driver
+
+import "core:io"
+import "../ast"
+import "../emit"
+import "../lex"
+import "../parse"
+
+# The compile pipeline, and the one place that knows where the runtime source
+# lives. src/tychoc.c embeds runtime/tycho_rt.c at BUILD time via an awk-made
+# header; tychoc1 reads the same file at EMIT time instead, which keeps the two
+# compilers on one copy of the runtime at the cost of tychoc1 needing that path
+# to exist. `--runtime` is the escape hatch when it does not.
+
+fn read_runtime(path: string) -> string:
+    match io.read_text(path):
+        Ok(s): return s
+        Err(e): die("tychoc1: cannot read runtime '" + path + "'")
+    return ""
+
+fn compile_str(src: string, runtime: string) -> string:
+    toks := lex.tokenize(src)
+    u := parse.unit(toks)
+    return runtime + emit.unit(u)
+
+fn compile(src_path: string, runtime_path: string, out_c: string):
+    src := ""
+    match io.read_text(src_path):
+        Ok(s): src = s
+        Err(e): die("tychoc1: cannot read '" + src_path + "'")
+    c := compile_str(src, read_runtime(runtime_path))
+    if not io.write(out_c, c):
+        die("tychoc1: cannot write '" + out_c + "'")

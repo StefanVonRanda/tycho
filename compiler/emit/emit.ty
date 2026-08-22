@@ -1,0 +1,64 @@
+package emit
+
+import "../ast"
+
+# ast -> C, against the same runtime ABI src/tychoc.c targets: one
+# `void h_<fn>(Arena *_parent)` per function, an `arena_child` scope inside it,
+# and a per-statement temp arena for the values the statement allocates.
+
+fn _expr(e: ast.Expr) -> string:
+    match e:
+        ast.IntLit(v): return str(v) + "LL"
+        ast.StrLit(s): return "\"" + s + "\""
+        ast.Name(n): return n
+        ast.Call(name, args):
+            if name == "str" and len(args) == 1:
+                return "tycho_int_to_str(&_t, " + _expr(args[0]) + ")"
+            if name == "print" and len(args) == 1:
+                return "tycho_print_s(" + _expr(args[0]) + ")"
+            die("tychoc1: unsupported call '" + name + "' with " +
+                str(len(args)) + " argument(s)")
+    return ""
+
+fn _stmt(s: ast.Stmt) -> string:
+    match s:
+        ast.ExprStmt(e):
+            return "    { Arena _t = arena_new(0); " + _expr(e) +
+                   "; arena_free(&_t); }\n"
+    return ""
+
+fn _proto(f: ast.Fn) -> string:
+    return "void h_" + f.name + "(Arena *_parent);\n"
+
+fn _body(f: ast.Fn) -> string:
+    out := "void h_" + f.name + "(Arena *_parent) {\n"
+    out = out + "    Arena _scope = arena_child(_parent); _scope.name = \"" +
+          f.name + "\";\n"
+    for s in f.body:
+        out = out + _stmt(s)
+    out = out + "    arena_free(&_scope);\n}\n"
+    return out
+
+fn _entry() -> string:
+    return "\nint main(int argc, char **argv) {\n" +
+        "    tycho_hash_seed_init();  /* random per-process map-hash seed, before any map use */\n" +
+        "    tycho_argc = argc; tycho_argv = argv;  /* exposed to the program via args() */\n" +
+        "    Arena _root = arena_new(0);  /* root arena; default block size */\n" +
+        "    h_main(&_root);\n" +
+        "    arena_free(&_root);\n" +
+        "    return 0;\n}\n"
+
+fn unit(u: ast.Unit) -> string:
+    has_main := false
+    for f in u.fns:
+        if f.name == "main":
+            has_main = true
+    if not has_main:
+        die("tychoc1: no 'main' procedure")
+    out := "\n/* ---- generated from Tycho source ---- */\n\n"
+    for f in u.fns:
+        out = out + _proto(f)
+    out = out + "\n"
+    for f in u.fns:
+        out = out + _body(f)
+    return out + _entry()

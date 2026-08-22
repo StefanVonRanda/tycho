@@ -1,0 +1,105 @@
+package lex
+
+# Bytes -> tokens, including the INDENT/DEDENT pair that significant
+# indentation needs. Phase 1 lexes the subset `fn main(): print(str(1))` uses;
+# the token STRUCTURE is the part later phases build on, not the character set.
+
+struct Tok:
+    kind: string      # ident int str punct newline indent dedent eof
+    text: string
+    line: int
+
+fn is_digit(c: int) -> bool:
+    return c >= 48 and c <= 57
+
+fn is_ident_start(c: int) -> bool:
+    return (c >= 97 and c <= 122) or (c >= 65 and c <= 90) or c == 95
+
+fn is_ident(c: int) -> bool:
+    return is_ident_start(c) or is_digit(c)
+
+# A line whose first non-space byte is '\n' or '#' carries no indentation
+# information at all -- measuring it would emit a DEDENT the source never
+# asked for, which is the classic blank-line-in-a-block bug.
+fn _blank_at(src: string, j: int) -> bool:
+    n := len(src)
+    return j >= n or src[j] == 10 or src[j] == 35
+
+fn tokenize(src: string) -> [Tok]:
+    toks := []Tok
+    stack := []int
+    push(stack, 0)
+    n := len(src)
+    i := 0
+    line := 1
+    at_start := true
+    for i < n:
+        if at_start:
+            col := 0
+            j := i
+            for j < n and src[j] == 32:
+                col += 1
+                j += 1
+            if _blank_at(src, j):
+                for j < n and src[j] != 10:
+                    j += 1
+                if j < n:
+                    j += 1
+                    line += 1
+                i = j
+                continue
+            i = j
+            at_start = false
+            if col > stack[len(stack) - 1]:
+                push(stack, col)
+                push(toks, Tok("indent", "", line))
+            else:
+                for col < stack[len(stack) - 1]:
+                    pop(stack)
+                    push(toks, Tok("dedent", "", line))
+            continue
+        c := src[i]
+        if c == 32 or c == 9 or c == 13:
+            i += 1
+            continue
+        if c == 35:
+            for i < n and src[i] != 10:
+                i += 1
+            continue
+        if c == 10:
+            push(toks, Tok("newline", "", line))
+            line += 1
+            i += 1
+            at_start = true
+            continue
+        if is_ident_start(c):
+            s := i
+            for i < n and is_ident(src[i]):
+                i += 1
+            push(toks, Tok("ident", src[s:i], line))
+            continue
+        if is_digit(c):
+            s := i
+            for i < n and is_digit(src[i]):
+                i += 1
+            push(toks, Tok("int", src[s:i], line))
+            continue
+        if c == 34:
+            i += 1
+            s := i
+            for i < n and src[i] != 34:
+                i += 1
+            body := src[s:i]
+            if i < n:
+                i += 1
+            push(toks, Tok("str", body, line))
+            continue
+        push(toks, Tok("punct", src[i:i + 1], line))
+        i += 1
+    if not at_start:
+        push(toks, Tok("newline", "", line))
+    for len(stack) > 1:
+        pop(stack)
+        push(toks, Tok("dedent", "", line))
+    push(toks, Tok("eof", "", line))
+    return toks

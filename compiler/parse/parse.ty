@@ -1,0 +1,91 @@
+package parse
+
+import "../ast"
+import "../lex"
+
+# Tokens -> ast. The cursor is carried as an int and handed back with every
+# node rather than living in a mutable parser struct, because a Tycho struct is
+# a value and a `p.i += 1` inside a callee would not be seen by its caller.
+
+fn _at(toks: [lex.Tok], i: int) -> lex.Tok:
+    if i >= len(toks):
+        return toks[len(toks) - 1]
+    return toks[i]
+
+fn _fail(t: lex.Tok, want: string):
+    die("tychoc1: line " + str(t.line) + ": expected " + want + ", found " +
+        t.kind + " '" + t.text + "'")
+
+fn _expect(toks: [lex.Tok], i: int, kind: string, text: string) -> int:
+    t := _at(toks, i)
+    if t.kind != kind or (len(text) > 0 and t.text != text):
+        if len(text) > 0:
+            _fail(t, "'" + text + "'")
+        _fail(t, kind)
+    return i + 1
+
+fn expr(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
+    t := _at(toks, i0)
+    if t.kind == "int":
+        return (ast.IntLit(strings_to_int(t.text)), i0 + 1)
+    if t.kind == "str":
+        return (ast.StrLit(t.text), i0 + 1)
+    if t.kind == "ident":
+        i := i0 + 1
+        nx := _at(toks, i)
+        if nx.kind == "punct" and nx.text == "(":
+            i += 1
+            xs := []ast.Expr
+            for _at(toks, i).text != ")":
+                a, j := expr(toks, i)
+                push(xs, a)
+                i = j
+                if _at(toks, i).text == ",":
+                    i += 1
+            i = _expect(toks, i, "punct", ")")
+            return (ast.Call(t.text, xs), i)
+        return (ast.Name(t.text), i)
+    _fail(t, "an expression")
+    return (ast.IntLit(0), i0)
+
+# The lexer already guaranteed every byte is a digit, so there is nothing for a
+# checked parse to reject -- strings.parse_int's fail-open behaviour cannot
+# reach us here.
+fn strings_to_int(s: string) -> int:
+    v := 0
+    for k := 0; k < len(s); k += 1:
+        v = v * 10 + (s[k] - 48)
+    return v
+
+fn stmt(toks: [lex.Tok], i0: int) -> (ast.Stmt, int):
+    e, i := expr(toks, i0)
+    i = _expect(toks, i, "newline", "")
+    return (ast.ExprStmt(e), i)
+
+fn func(toks: [lex.Tok], i0: int) -> (ast.Fn, int):
+    i := _expect(toks, i0, "ident", "fn")
+    nm := _at(toks, i)
+    if nm.kind != "ident":
+        _fail(nm, "a function name")
+    i += 1
+    i = _expect(toks, i, "punct", "(")
+    i = _expect(toks, i, "punct", ")")
+    i = _expect(toks, i, "punct", ":")
+    i = _expect(toks, i, "newline", "")
+    i = _expect(toks, i, "indent", "")
+    body := []ast.Stmt
+    for _at(toks, i).kind != "dedent" and _at(toks, i).kind != "eof":
+        s, j := stmt(toks, i)
+        push(body, s)
+        i = j
+    i = _expect(toks, i, "dedent", "")
+    return (ast.Fn(nm.text, body), i)
+
+fn unit(toks: [lex.Tok]) -> ast.Unit:
+    fns := []ast.Fn
+    i := 0
+    for _at(toks, i).kind != "eof":
+        f, j := func(toks, i)
+        push(fns, f)
+        i = j
+    return ast.Unit(fns)

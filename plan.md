@@ -41,7 +41,7 @@ self-built twice, the two emitted `.c` identical.
 
 ## Phases
 
-- [ ] **Phase 1 — skeleton and `print(str(1))` end to end**
+- [x] **Phase 1 — skeleton and `print(str(1))` end to end**
   - Scope: `compiler/{lex,parse,ast,emit,driver}/`, `compiler/main.ty`, a
     `tychoc1` target in `Makefile`. No `types/` yet. `print(1)` does not
     compile under `./tychoc` — `print` takes a string — so the milestone
@@ -51,6 +51,44 @@ self-built twice, the two emitted `.c` identical.
     `./tychoc` produces from the same source.
   - Verify: build both, run both, `cmp` the two stdouts; show the diff of the
     two emitted `.c` and state what differs and why.
+  - **Done 2026-08-22.** `compiler/{ast,lex,parse,emit,driver}/` + `compiler/main.ty`,
+    `tychoc1` target at `Makefile:28-34`, `/tychoc1` at `.gitignore:23`.
+
+    ```
+    $ make tychoc1
+    ./tychoc compiler/main.ty -o tychoc1
+    built tychoc1
+    $ ./tychoc  $S/ms/m.ty --emit-c -o $S/a     # m.ty is `fn main():\n    print(str(1))`
+    $ ./tychoc1 $S/ms/m.ty --emit-c -o $S/b
+    $ diff $S/a.c $S/b.c
+    2845,2849d2844
+    < (five blank lines)
+    $ cc -O2 -fwrapv -std=c11 -w $S/a.c -o $S/a.bin -lpthread -lm
+    $ cc -O2 -fwrapv -std=c11 -w $S/b.c -o $S/b.bin -lpthread -lm
+    $ $S/a.bin > $S/a.out; $S/b.bin > $S/b.out; cmp $S/a.out $S/b.out
+    STDOUT-IDENTICAL            # both files are the single byte `1` (print adds no newline)
+    ```
+
+    **What differs in the `.c`, and why:** exactly five blank lines, nothing
+    else. Both files carry `runtime/tycho_rt.c` verbatim as lines 1-2841
+    (`diff <(head -2841 a.c) runtime/tycho_rt.c` is empty), then
+    `/* ---- generated from Tycho source ---- */`. `./tychoc` emits a blank
+    separator for each of its empty declaration sections (typedefs, structs,
+    enums, generics, extern protos) before the function prototypes; `tychoc1`
+    has no such sections yet and emits one blank line. Every generated line —
+    the `h_main` prototype, the `arena_child` scope, the temp-arena statement
+    `{ Arena _t = arena_new(0); tycho_print_s(tycho_int_to_str(&_t, 1LL)); arena_free(&_t); }`,
+    and the whole `int main` stanza — is byte-identical.
+
+    **Negative control** (the `cmp` leg is not vacuous): `tychoc1` on
+    `print(str(2))` built and run the same way gives `c.out`, and
+    `cmp a.out c.out` exits 1 with `differ: byte 1, line 1`.
+
+    **The runtime-source assumption in Pre-flight is settled: read-at-emit-time
+    works.** `driver.read_runtime` reads `runtime/tycho_rt.c` through
+    `core:io.read_text`, defaulting to that repo-relative path, with
+    `--runtime <path>` as the override. The cost is real and unchanged: run
+    from anywhere but the repo root and `--runtime` is mandatory.
 
 - [ ] **Phase 2 — lexer complete**
   - Scope: `compiler/lex/`. Every token of the locked language: the 30 reserved
@@ -135,3 +173,13 @@ self-built twice, the two emitted `.c` identical.
   - Verify: `cmp` on the two self-built `.c`; and
     `grep -rn '\./tychoc\b' --include=run.sh .` returning only `$TYCHOC`
     assignments.
+
+- [ ] **Phase 11 — `make clean` does not remove `tychoc1`** (found in Phase 1,
+  out of scope there)
+  - Scope: `Makefile:387`, the first `rm -f` line of `clean`. It names `tychoc`
+    and every other built binary; `tychoc1` was added at `Makefile:28-34` and
+    is not in that list, so `make clean && make` leaves a stale `tychoc1`
+    behind — which is exactly the artifact a fixpoint check must not inherit.
+  - Done when: `make clean` removes `tychoc1`.
+  - Verify: `make tychoc1 && make clean && test ! -e tychoc1`.
+  - Do NOT run: any test lane. This is one word in a `rm -f` line.

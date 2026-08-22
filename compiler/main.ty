@@ -1,0 +1,38 @@
+package main
+
+import "core:strings"
+import "driver"
+
+fn usage():
+    die("usage: tychoc1 <file.ty> --emit-c -o <name> [--runtime runtime/tycho_rt.c]")
+
+fn main():
+    av := args()
+    src := ""
+    out := ""
+    rt := "runtime/tycho_rt.c"
+    emit_c := false
+    i := 1
+    for i < len(av):
+        a := av[i]
+        if a == "--emit-c":
+            emit_c = true
+        elif a == "-o":
+            i += 1
+            if i >= len(av):
+                usage()
+            out = av[i]
+        elif a == "--runtime":
+            i += 1
+            if i >= len(av):
+                usage()
+            rt = av[i]
+        elif strings.starts_with(a, "-"):
+            die("tychoc1: unknown option '" + a + "'")
+        else:
+            src = a
+        i += 1
+    if len(src) == 0 or len(out) == 0 or not emit_c:
+        usage()
+    driver.compile(src, rt, out + ".c")
+    print("wrote " + out + ".c")

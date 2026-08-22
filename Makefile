@@ -25,6 +25,14 @@ build:
 tychoc: src/tychoc.c $(EMBED)
 	$(CC) $(CFLAGS) -Ibuild src/tychoc.c -o tychoc
 
+# The second compiler, written in Tycho and built by the C bootstrap. It reads
+# runtime/tycho_rt.c at emit time rather than embedding it, so it must be run
+# from the repo root or given --runtime.
+TYCHOC1_SRC := compiler/main.ty $(wildcard compiler/*/*.ty)
+
+tychoc1: tychoc $(TYCHOC1_SRC)
+	./tychoc compiler/main.ty -o tychoc1
+
 tycho: tychoc tools/tycho.ty tools/tycho_shim.c
 	./tychoc tools/tycho.ty --shim tools/tycho_shim.c -o tycho
 
