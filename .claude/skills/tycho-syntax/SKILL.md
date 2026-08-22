@@ -167,6 +167,32 @@ compile. One row per rule, not per fixture.
 A newtype is distinct **everywhere** — argument position, comparison, map key —
 and it is erased at runtime, so nothing catches it later. `to_under(x)` unwraps.
 
+## What the compiler already tells you
+
+`tests/diag/` exists because these mistakes were expected. The message usually
+carries the fix, so read it before guessing:
+
+| You will write | Tycho requires | The compiler says |
+|---|---|---|
+| `while cond:` | `for cond:` | `Tycho has no `while` — use `for cond:` for a conditional loop` |
+| `for i in range(n):` | `for i := 0; i < n; i += 1:` | ``range()` was removed` |
+| `for i in 0..<n:` (sequential) | the three-clause form | ``0..<N` counts only in a `parallel for`` |
+| `eprintln(s)` | `eprint(s + "\n")` | `stderr has no println` |
+| a named `fn` inside a `fn` | declare it at top level | `a named function cannot be declared inside another` |
+| `1 + 2.5` | convert one side | `arithmetic requires two ints or two floats (got int, float)` |
+| `match s:` with string arms | `if`/`elif` on strings | ``match` does not take a string arm — int, char, bool, a range and a const name do` |
+| `Shape.Circle` | `Circle` | `'Circle' is a variant of enum Shape, not a package member — variant names are global` |
+| `xs := [string]` | `xs := []string` | ``[string]` is the TYPE, not a value` |
+| `fn main() -> int:` | return nothing, or `Result(void, string)` | `'main' returns nothing or Result(void, string), not int` |
+| `(int)` as a tuple type | a tuple needs two elements | `parentheses do not group a type` |
+| `Empty` from a generic enum | `Empty$(int)` | `supply the type explicitly, e.g. Empty$(int)` |
+
+Two habits worth trusting: a misspelling gets a suggestion (`unknown variable
+'coutn'; did you mean 'count'?` — the same for fields, types and procedures),
+and calling a corelib function you have not imported names the package —
+`unknown procedure 'sort' — core:arrays provides `sort` — add `import
+"core:arrays"``.
+
 ## Generics and `where`
 
 The five predicates are closed. The compiler lists them when you invent one:
