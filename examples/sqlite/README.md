@@ -25,7 +25,7 @@ the whole stack working against a serious C library:
 A note on integer widths: SQLite's result codes are all non-negative, so reading its
 32-bit `int` returns as tycho's 64-bit `int` is correct here without ceremony. A C
 function that can return a *negative* `int` needs `to_i32(...)` around the call to
-sign-extend it (still no shim) — see `docs/guides/ffi.md`.
+sign-extend it (still no shim) — see `docs/reference/ffi.md`.
 
 ## Build & run
 
