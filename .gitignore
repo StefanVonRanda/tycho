@@ -185,7 +185,10 @@ gmon.out
 !/tools/tycho-sat/*.out
 
 # Claude Code session state (locks, worktrees) — never publish
-/.claude/
+/.claude/*
+# ...but the agent skills SHIP: they are the correction layer that lets any
+# LLM write Tycho, and one on a maintainer's own machine helps nobody.
+!/.claude/skills/
 dist/
 
 # generated wiki mirror (see scripts/sync-wiki.py, make wiki)
