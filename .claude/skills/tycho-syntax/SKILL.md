@@ -167,6 +167,28 @@ compile. One row per rule, not per fixture.
 A newtype is distinct **everywhere** — argument position, comparison, map key —
 and it is erased at runtime, so nothing catches it later. `to_under(x)` unwraps.
 
+## Generics and `where`
+
+The five predicates are closed. The compiler lists them when you invent one:
+`unknown `where` predicate 'fancy' (known: numeric, comparable, has_str,
+hashable, defaultable)`.
+
+| Habit | The compiler says |
+|---|---|
+| `where` on a function with no `$T` | ``where` constraints require a generic function (one with a `$T` parameter)` |
+| `where` naming something that is not a parameter | ``where` refers to 'Q', which is not a type parameter of this function` |
+| a type parameter that appears only in the return type | `no argument fixes 'empty''s type parameter $T — it appears only in the return type` |
+| a `float` as a map key, or under `hashable(K)` | `instantiated with K = float, which does not satisfy `hashable(K)`` |
+| a `string` under `numeric(T)` | `instantiated with T = string, which does not satisfy `numeric(T)`` |
+| a struct with no zero value under `defaultable(T)` | `instantiated with T = P, which does not satisfy `defaultable(T)`` |
+
+A constraint is checked **at the instantiation**, and the message names it —
+`'sm' instantiated with T = string`. When a generic fails, the type that broke it
+is in the error, not left for you to work out.
+
+The affine refusals hold through a generic and say where it happened: `a struct
+field cannot be a channel — 'Box' was instantiated at one`.
+
 ## Two mechanical traps when probing
 
 **Sibling `.ty` files share a package.** `tychoc` compiles every `.ty` beside
