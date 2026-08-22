@@ -151,7 +151,7 @@ self-built twice, the two emitted `.c` identical.
     `compiler/parse/parse.ty` was retargeted from the Phase 1 kind names
     (`ident`/`punct`) to `kw`/`op`; nothing else outside `compiler/lex/` moved.
 
-- [ ] **Phase 2b — three lexer parity gaps deferred out of Phase 2**
+- [x] **Phase 2b — three lexer parity gaps deferred out of Phase 2**
   - Scope: `compiler/lex/lex.ty`. Each is a place where `src/tychoc.c` does more
     than lexing and Phase 2 stopped at the token boundary.
     1. **No integer-literal overflow check.** `src/tychoc.c` dies with
@@ -177,6 +177,130 @@ self-built twice, the two emitted `.c` identical.
   - Verify: a probe per item, plus the Phase 2 dump/round-trip/census legs
     unmoved over the 365-file corpus.
   - Do NOT run: any test lane. Nothing outside `compiler/` is touched.
+
+  - **Done 2026-08-23.** All three in `compiler/lex/lex.ty`, plus a
+    `--dump-dnotes` mode (`compiler/main.ty`, `compiler/driver/driver.ty`) so
+    item 2 is observable. `tokenize_ex` is now a wrapper over `tokenize_all`,
+    which returns `([Tok], [DNote])`; the notes are a SIDE TABLE, as in
+    `src/tychoc.c`, because a note is not a syntactic element and putting one in
+    the stream would make every consumer skip it.
+
+    **Item 1 — over-wide literals.** Ported `src/tychoc.c:657`'s
+    `v > (INT64_MAX - d) / litbase` accumulator guard and, for floats, the
+    `strings.Overflow` arm of `strings.parse_float`. Only `Overflow` dies:
+    `src/tychoc.c`'s `c_strtod` returns 0 for a total underflow and does not
+    check, so dying on `Underflow` would be a divergence, not a fix.
+
+    ```
+    $ ./tychoc1 tests/reject/int_hex_overflow.ty --parse
+    tychoc1: line 2: integer literal out of range                    (was: PARSE-OK 1)
+    $ ./tychoc1 tests/reject/int_literal_overflow.ty --parse
+    tychoc1: line 3: integer literal out of range                    (was: PARSE-OK 1)
+    $ ./tychoc1 tests/reject/float_lit_overflow_neg.ty --parse
+    tychoc1: line 2: float literal out of range: `1e400` exceeds the largest
+    float (IEEE-754 binary64); write 1.0/0.0 for an infinity          (was: PARSE-OK 1)
+    ```
+
+    The BEFORE column is measured, not remembered: a compiler built from
+    `git archive HEAD compiler` accepts all three with exit 0.
+
+    **The boundary control** — a refuse-everything check scores full marks
+    without it. `9223372036854775807`, `0x7FFFFFFFFFFFFFFF`, the 63-bit binary
+    form, `1.7976931348623157e308` and `1e-400` all still parse (`PARSE-OK 1`),
+    and one past each boundary is refused with the message `./tychoc` prints
+    verbatim:
+
+    ```
+    9223372036854775808   tychoc1(1): integer literal out of range | tychoc(1): integer literal out of range
+    0x10000000000000000   tychoc1(1): integer literal out of range | tychoc(1): integer literal out of range
+    1e309                 tychoc1(1): float literal out of range: `1e309` ... | tychoc(1): float literal out of range: `1e309` ...
+    ```
+
+    **Item 2 — `# deprecated:` notes.** `dnote_of` is `src/tychoc.c@dnote_scan`
+    verbatim, called only from the comment-ONLY line branch, so a trailing
+    comment can never carry a note. `dnote_above` is the line-above lookup.
+
+    ```
+    $ ./tychoc1 corelib/sort/sort.ty --dump-dnotes
+    109 deprecated: use sort_by(xs, cmp) -- by_key(xs, k) is sort_by(...). Removed in 1.0.
+    attached fn by_key: use sort_by(xs, cmp) -- ...
+    $ ./tychoc1 corelib/decimal/decimal.ty --dump-dnotes
+    32 deprecated: use from_str_checked(s) -- ...
+    attached fn from_str: use from_str_checked(s) -- ...
+    ```
+
+    A five-case probe pins the two false-positive/false-negative shapes
+    `make grid-check` gates (FRICTION #46, #47): the note is found and trimmed
+    at both ends, prose that merely MENTIONS `deprecated:` mid-sentence is not a
+    note, a TRAILING comment is not a note, and an empty tail is no note at all.
+
+    **Item 3 — the recovery batches.** The decl-keyword site records the
+    diagnostic and puts `bracket_depth` back to 0 so real layout resumes; every
+    recorded error is printed together at the end.
+
+    ```
+    $ ./tychoc1 <probe with two unclosed brackets> --parse
+    tychoc1: line 2: unclosed '(' or '[' opened on line 2 -- `fn` here can only start a declaration, ...
+    tychoc1: line 6: unclosed '(' or '[' opened on line 6 -- `fn` here can only start a declaration, ...
+    ```
+
+    Before: **one** error, line 2, then exit. `./tychoc` on the same file prints
+    those two first, then two parser errors that are Phase 9's work.
+
+    **Negative controls, each observed and reverted.** The first one did not
+    apply — deleting the guard left `imax` unused, the build failed, the lane
+    ran the STALE `tychoc1` and reported `all green`. That green was the
+    control lying, not the fix working (tycho-verify §3, §4), and it is why the
+    build line is checked before every verdict below.
+
+    | control | observed |
+    |---|---|
+    | delete the int accumulator guard | `parse-check` exit 1, `rejected=45 missed=2`, both int fixtures named |
+    | float `Overflow` arm -> `fv = 0.0` | `parse-check` exit 1, `rejected=46 missed=1`, the float fixture named |
+    | delete the `dnote_of` call | `--dump-dnotes` empty on the probe AND on `corelib/sort/sort.ty` |
+    | recovery no longer clears `bracket_depth` | line 2 reported three times, line 6 never — the bracket stays open and the file never re-lexes |
+
+    The two halves of item 1 redden the lane independently.
+
+    **`compiler/run.sh` leg 2's expectation was updated, deliberately and
+    stated here.** It named the three misses by NAME, so fixing them reddened
+    it. The exemption was not widened: the `KNOWN` list is DELETED and replaced
+    with `[ "$sa" = 0 ]`, so any accepted SYNTAX fixture now fails the lane —
+    a strictly tighter check than the set comparison it replaces. Both int
+    controls above are the proof that the new leg can still fail.
+
+    ```
+    leg1  tests/*.ty: files=274 parse-ok=274 fail=0
+    leg1b corelib/**.ty: files=91 parse-ok=91 fail=0
+    leg2  tests/reject/*.ty: SYNTAX=47 rejected=47 missed=0 | SEMANTIC=290 accepted=290 wrongly-rejected=0
+    leg3  census: 120 kinds, 83576 nodes over 365 files
+    parse-check: all green
+    ```
+
+    **The Phase 2 legs are unmoved.** Over the same 365-file corpus, run under
+    `/bin/sh` because zsh does not word-split an unquoted `$FILES` and a first
+    attempt silently scored one "file":
+
+    ```
+    corpus=365 round-trip: ok=365 fail=0 | dump identical to HEAD tychoc1 on 365 of 365
+    ```
+
+    The dump leg is stronger than a count: every token line is compared
+    byte-for-byte against a compiler built from `git archive HEAD compiler`.
+    `compiler/census.expected.out` is **unchanged** — `cmp` matched and the file
+    is absent from `git diff --stat`.
+
+- [ ] **Phase 2b-1 — `src/tychoc.c` has the unclosed-bracket recovery block twice**
+  - Found while porting item 3. The `decl_kw` recovery appears at
+    `src/tychoc.c:527` and again at `src/tychoc.c:552`, character-identical
+    apart from a comment. The second is DEAD: the first sets `bracket_depth = 0`,
+    so the second's `bracket_depth > 0` guard can never hold. `grep -c 'decl_kw\[\] = '`
+    is 2.
+  - Scope: `src/tychoc.c` only. Delete one block.
+  - Done when: one block remains and the two-unclosed-bracket probe prints the
+    same two diagnostics it prints today.
+  - Verify: `make test`, and re-anchor citations (`scripts/reanchor_citations.py`)
+    — every `src/tychoc.c` edit moves 60-140 refs.
 
 - [x] **Phase 3 — parser: expressions and statements**
   - Scope: `compiler/parse/`, `compiler/ast/`. Full expression grammar with

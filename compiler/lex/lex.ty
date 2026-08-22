@@ -92,6 +92,39 @@ fn postfixable(kind: string, text: string) -> bool:
 fn _die(line: int, msg: string):
     die("tychoc1: line " + str(line) + ": " + msg)
 
+# --- `# deprecated:` doc notes ----------------------------------------------
+# src/tychoc.c@dnote_scan runs during lexing and only on a comment-ONLY line, so
+# a trailing comment can never carry a note. The note is what follows
+# `deprecated:` with both ends trimmed; an empty tail is no note at all.
+
+struct DNote:
+    line: int         # the comment's own line
+    msg: string       # the text after `deprecated:`
+
+fn dnote_of(src: string, cs: int, ce: int) -> string:
+    m := cs
+    for m < ce and src[m] == 35:
+        m += 1
+    for m < ce and (src[m] == 32 or src[m] == 9):
+        m += 1
+    tag := "deprecated:"
+    if ce - m < len(tag) or src[m:m + len(tag)] != tag:
+        return ""
+    m += len(tag)
+    for m < ce and (src[m] == 32 or src[m] == 9):
+        m += 1
+    e := ce
+    for e > m and (src[e - 1] == 32 or src[e - 1] == 13):
+        e -= 1
+    return src[m:e]
+
+# src/tychoc.c@dnote_above: the note is attached to the line immediately below it.
+fn dnote_above(notes: [DNote], line: int) -> string:
+    for i := 0; i < len(notes); i += 1:
+        if notes[i].line == line - 1:
+            return notes[i].msg
+    return ""
+
 # --- literal scanners -------------------------------------------------------
 # Each takes the index of the opening delimiter and returns the index just past
 # the closing one.
@@ -271,11 +304,23 @@ fn is_op_start(c: int) -> bool:
 fn tokenize(src: string) -> [Tok]:
     return tokenize_ex(src, false)
 
+fn tokenize_ex(src: string, keep_trivia: bool) -> [Tok]:
+    return tokenize_all(src, keep_trivia).0
+
+# The `# deprecated:` notes this file's comments carry, in source order. They are
+# a SIDE TABLE rather than tokens for the same reason src/tychoc.c keeps them in
+# one: a note is not a syntactic element, and putting it in the stream would make
+# every consumer skip it.
+fn dnotes(src: string) -> [DNote]:
+    return tokenize_all(src, false).1
+
 # `keep_trivia` adds a "comment" token carrying its own source slice. Nothing in
 # the pipeline reads them; they exist so the round-trip control can assert that
 # every non-whitespace byte of the source is covered by exactly one token.
-fn tokenize_ex(src: string, keep_trivia: bool) -> [Tok]:
+fn tokenize_all(src: string, keep_trivia: bool) -> ([Tok], [DNote]):
     toks := []Tok
+    notes := []DNote
+    errs := []string
     stack := []int
     push(stack, 0)
     n := len(src)
@@ -320,6 +365,10 @@ fn tokenize_ex(src: string, keep_trivia: bool) -> [Tok]:
             cs := p
             for p < n and src[p] != 10:
                 p += 1
+            if p > cs:
+                dn := dnote_of(src, cs, p)
+                if len(dn) > 0:
+                    push(notes, DNote(line, dn))
             if keep_trivia and p > cs:
                 push(toks, _t("comment", src[cs:p], line, cs - ls + 1, src[cs:p]))
             if p < n:
@@ -335,8 +384,14 @@ fn tokenize_ex(src: string, keep_trivia: bool) -> [Tok]:
                 k += 1
             w := src[p:k]
             if w == "fn" or w == "struct" or w == "enum" or w == "handle" or w == "type":
-                _die(bracket_line, "unclosed '(' or '[' opened on line " + str(bracket_line) +
-                    " -- `" + w + "` here can only start a declaration, so the bracket was never closed")
+                # Recorded, not fatal: src/tychoc.c pushes the diagnostic and puts
+                # bracket_depth back to 0 so real layout resumes and the rest of
+                # the file still lexes, which is what makes error batching work.
+                push(errs, "line " + str(bracket_line) + ": unclosed '(' or '[' opened on line " +
+                    str(bracket_line) + " -- `" + w +
+                    "` here can only start a declaration, so the bracket was never closed")
+                bracket_depth = 0
+                cont = false
 
         if bracket_depth == 0 and not cont:
             if col > stack[len(stack) - 1]:
@@ -400,16 +455,26 @@ fn tokenize_ex(src: string, keep_trivia: bool) -> [Tok]:
                 raw := src[s:p]
                 if is_float:
                     fv := 0.0
+                    # Overflow is the only Err src/tychoc.c dies on: its c_strtod
+                    # returns 0 for a total underflow and does not check, so
+                    # dying here would be a divergence rather than a fix.
                     match strings.parse_float(raw):
                         Ok(v): fv = v
-                        Err(e): fv = 0.0
+                        Err(strings.Overflow): _die(line, "float literal out of range: `" + raw +
+                            "` exceeds the largest float (IEEE-754 binary64); write 1.0/0.0 for an infinity")
+                        Err(strings.Underflow): fv = 0.0
+                        Err(strings.Empty): fv = 0.0
+                        Err(strings.Syntax): fv = 0.0
                     push(toks, Tok("float", raw, line, tcol, 0, fv, raw))
                     last_kind = "float"
                     last_text = raw
                 else:
                     v := 0
+                    imax := 9223372036854775807     # INT64_MAX; tycho `int` is i64
                     for q := digits; q < p; q += 1:
                         d := hex_val(src[q])
+                        if v > (imax - d) / litbase:
+                            _die(line, "integer literal out of range")
                         v = v * litbase + d
                     push(toks, Tok("int", raw, line, tcol, v, 0.0, raw))
                     last_kind = "int"
@@ -503,9 +568,14 @@ fn tokenize_ex(src: string, keep_trivia: bool) -> [Tok]:
             p += 1
 
     if bracket_depth > 0:
-        _die(bracket_line, "unclosed '(' or '[' opened on line " + str(bracket_line))
+        push(errs, "line " + str(bracket_line) + ": unclosed '(' or '[' opened on line " + str(bracket_line))
+    if len(errs) > 0:
+        msg := ""
+        for i := 0; i < len(errs); i += 1:
+            msg = msg + "tychoc1: " + errs[i] + "\n"
+        die(msg)
     for len(stack) > 1:
         pop(stack)
         push(toks, _t("dedent", "", line, 1, ""))
     push(toks, _t("eof", "", line, 1, ""))
-    return toks
+    return (toks, notes)

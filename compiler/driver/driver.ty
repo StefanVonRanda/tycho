@@ -49,6 +49,25 @@ fn dump_tokens(src_path: string):
         out = out + str(t.line) + ":" + str(t.col) + " " + t.kind + " " + t.text + "\n"
     print(out)
 
+# The `# deprecated:` notes the lexer kept, one per line, so the fn each one
+# attaches to can be named. `dnote_above` is the same lookup src/tychoc.c does.
+fn dump_dnotes(src_path: string):
+    src := ""
+    match io.read_text(src_path):
+        Ok(s): src = s
+        Err(e): die("tychoc1: cannot read '" + src_path + "'")
+    notes := lex.dnotes(src)
+    toks := lex.tokenize(src)
+    out := ""
+    for k := 0; k < len(notes); k += 1:
+        out = out + str(notes[k].line) + " deprecated: " + notes[k].msg + "\n"
+    for k := 0; k + 1 < len(toks); k += 1:
+        if toks[k].kind == "kw" and toks[k].text == "fn" and toks[k + 1].kind == "ident":
+            d := lex.dnote_above(notes, toks[k].line)
+            if len(d) > 0:
+                out = out + "attached fn " + toks[k + 1].text + ": " + d + "\n"
+    print(out)
+
 # Whitespace is the only thing a token stream is allowed to lose, so it is
 # removed from BOTH sides -- including from inside string literals, since the
 # same removal is applied to each. What survives is the real property: every

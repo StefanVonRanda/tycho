@@ -58,10 +58,10 @@ leg_accept() {
 leg_accept "leg1  tests/*.ty" "$(ls tests/*.ty)" 274
 leg_accept "leg1b corelib/**.ty" "$(find corelib -name '*.ty' | sort)" 91
 
-# [2] -- the reject corpus, split. The three SYNTAX misses are the literal-range
-# check plan.md defers to Phase 2b; they are named here, so a NEW miss reddens
-# and a FIXED one reddens too rather than quietly widening the exemption.
-KNOWN="tests/reject/float_lit_overflow_neg.ty tests/reject/int_hex_overflow.ty tests/reject/int_literal_overflow.ty"
+# [2] -- the reject corpus, split. There is no exemption list any more: Phase 2b
+# closed the three literal-range misses this leg used to name
+# (float_lit_overflow_neg, int_hex_overflow, int_literal_overflow), so every
+# SYNTAX fixture must now be rejected and `missed` must be 0.
 sr=0; sa=0; ma=0; mr=0
 : > "$T/missed"; : > "$T/wrong"
 while IFS='	' read -r f cls line msg; do
@@ -73,12 +73,10 @@ while IFS='	' read -r f cls line msg; do
         SEMANTICreject) mr=$((mr+1)); echo "$f" >> "$T/wrong"; echo "  SEMANTIC-WRONGLY-REJECTED $f :: $msg" ;;
     esac
 done < "$TSV"
-echo "leg2  tests/reject/*.ty: SYNTAX=$((sr+sa)) rejected=$sr missed=$sa (KNOWN 3) | SEMANTIC=$((ma+mr)) accepted=$ma wrongly-rejected=$mr"
+echo "leg2  tests/reject/*.ty: SYNTAX=$((sr+sa)) rejected=$sr missed=$sa | SEMANTIC=$((ma+mr)) accepted=$ma wrongly-rejected=$mr"
 [ "$((sr+sa))" = 47 ] && [ "$((ma+mr))" = 290 ] || { echo "parse-check: the split moved -- expected SYNTAX=47 SEMANTIC=290"; rc=1; }
 [ "$mr" = 0 ] || { echo "parse-check: a SEMANTIC fixture was rejected; a parser cannot see a type error"; rc=1; }
-if [ "$(sort "$T/missed" | tr '\n' ' ')" != "$(echo $KNOWN | tr ' ' '\n' | sort | tr '\n' ' ')" ]; then
-    echo "parse-check: the SYNTAX misses are not the 3 known literal-range fixtures"; rc=1
-fi
+[ "$sa" = 0 ] || { echo "parse-check: a SYNTAX fixture was accepted; the parser must refuse it"; rc=1; }
 
 # [3] -- the census, against a recorded golden
 for f in $(ls tests/*.ty) $(find corelib -name '*.ty' | sort); do
