@@ -2232,6 +2232,16 @@ fallible counterpart at all** — no `try_filter`, no `filter` over
 `fn($T) -> Result(int, $E)` — so every stage of a query engine that can fail, which
 is most of them, is a plain `for` loop with `or_return` in the body instead.
 
+> **~~Both halves are STALE, re-scored by probe 2026-08-22.~~** `filter` takes
+> `keep: fn($T) -> bool` (`corelib/iter/iter.ty:18`), not an int, so the 0/1
+> spelling is gone; and the fallible counterparts exist —
+> `try_filter(xs, keep: fn($T) -> Result(bool, $E)) -> Result([$T], $E)`
+> (`corelib/iter/iter.ty:27`) beside `try_map` (`corelib/iter/iter.ty:12`).
+> The paragraph above is kept because the REASONING is still the lesson: the
+> first draft read this as a language rule against fallible higher-order
+> functions, and the correction to "it is one signature" is what stopped someone
+> being sent to the compiler.
+
 **Cost to fix: a signature, not a language change**, which is precisely what the
 correction bought. The broad version of this claim would have sent someone to the
 compiler.
@@ -2272,6 +2282,14 @@ shrank them. Padding this list would make the seven above harder to act on.
   language one**: `from '/tmp/x.csv'` works, the escape hatch predates the
   problem, and the fix is in this program's lexer. Recorded only because the
   diagnostic points away from the cause.
+  **Re-scored by probe 2026-08-22 — REPRODUCES, with two corrections.** The
+  entry's own example no longer parses at all: the query is `select … from …`
+  now, not `from … select …`, so the shape to run is
+  `tycho-q "select a from /tmp/x.csv"`. And the diagnostic has stopped pointing
+  away from the cause — it reads `unexpected token / (expected a source path
+  after from)`, which names the right thing and merely shows `/` as the
+  offending token. The quoted form returns the row. What is left is a lexer wart
+  with a diagnostic that now describes it, which is a smaller entry than it was.
 
 ### What did not go wrong, which is also data
 
