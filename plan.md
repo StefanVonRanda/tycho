@@ -458,7 +458,7 @@ self-built twice, the two emitted `.c` identical.
     from a fresh clone) and `make script-check` ok (25 .py, 96 .sh).
     `python3 scripts/check_citations.py` ok.
 
-- [ ] **Phase 4 — parser: declarations**
+- [x] **Phase 4 — parser: declarations**
   - Scope: `compiler/parse/`. `fn`, `struct`, `enum`, `newtype`, `handle`,
     `soa`, `bounded[N]T`, generics with `$T` and `where` (comma-separated, five
     closed predicates), `import`, `package`, `const`, `extern`, `subscript`,
@@ -468,6 +468,107 @@ self-built twice, the two emitted `.c` identical.
     verdict on every file.
   - Verify: a per-file verdict differential against `./tychoc --emit-c`
     (parse-only comparison: both accept, or both reject), zero disagreements.
+
+  - **Done 2026-08-23.** Corpus stated first: the new ground was **179** `.ty`
+    files (`tools` 57, `examples` 70, `server` 1, `bench` 51) on top of Phase 3's
+    274 + 91. The verdict differential is committed as
+    `compiler/verdict_diff.py`, run as **leg5** of `make parse-check`, and
+    covers **1,078** files — every `.ty` under the six roots, including the
+    `tests/conc`, `tests/diag` and `tests/reject/pkg` subtrees no other leg
+    reaches. It is the leg that found three of the four verdict defects.
+
+    ```
+    $ make parse-check
+    leg1  tests/*.ty: files=274 parse-ok=274 fail=0
+    leg1b corelib/**.ty: files=91 parse-ok=91 fail=0
+    leg1c tools+examples+server+bench: files=179 parse-ok=179 fail=0
+    leg2  tests/reject/*.ty: SYNTAX=57 rejected=57 missed=0 | SEMANTIC=280 accepted=280 wrongly-rejected=0
+    leg3  census: 122 kinds, 182646 nodes over 544 files
+    leg4  declaration rules: refused=5/5 accepted=5/5
+    leg5  whole-tree verdicts: files=1078 tychoc(accept=552 semantic=452 syntax=74) disagreements=0
+    parse-check: all green
+    ```
+
+    **Cost: ~11.0 s** (11.17 / 10.85 / 10.95 s), up from ~2.5 s; leg1c, leg4 and
+    leg5 are the added ~8.5 s.
+
+    Four verdict defects, each found by the differential and each fixed:
+
+    - a subscript written as a PLACE (`b.grid.at(r, col) = v`,
+      `tools/tycho-grid/main.ty:88`) was refused. `src/tychoc.c:4136` allows
+      `E_CALL` as an assignment target, and its one `E_CALL` covers both the
+      named and the indirect call, which split in this AST into `Call` and
+      `CallVal`. Only `Call` was listed. The single failure in the 179.
+    - eleven declaration rules `src/tychoc.c` enforces at parse time were not
+      enforced at all: a variadic that is also `inout`/`sink`; `sink` or `...`
+      on an `extern` parameter; `inout`/`sink` on a `subscript` parameter;
+      `where` on a non-generic fn; a `where` predicate outside the closed five;
+      a `where` naming a type parameter the signature does not have, in both the
+      predicate and the type-set form; a `const` that does not fold to one
+      scalar literal, at top level (backward refs resolved) and locally (not);
+      and the two structural subscript rules — the yielded place must be rooted
+      in a parameter, and no parameter may appear in it twice.
+    - `parallel(65)` and `parallel(0)` were accepted. `src/tychoc.c:3883`
+      range-checks a LITERAL width at parse time.
+    - `parallel for x in EXPR` accepted a non-name source. `src/tychoc.c:4024`
+      requires a variable, because a channel cannot be aliased into a temp.
+
+    **The reject split moved 47/290 to 57/280, and that is a correction, not a
+    regression.** Nine fixtures classified SEMANTIC by Phase 3b were refused the
+    moment the parser learned these rules. Re-reading each site: the `where`
+    predicate set is five fixed names, the type-parameter list is what the
+    signature just read, the subscript place rules are structural, and a `const`
+    is folded by `src/tychoc.c@const_fold` at parse time. **None reaches a symbol
+    table.** Eight entries were removed from `scripts/classify_rejects.py`'s
+    `NEEDS_SYMBOLS` and the table regenerated; a tenth fixture
+    (`tests/reject/const_expr_localref.ty`) moved to SYNTAX with it and forced
+    the local-const fold, which `src/tychoc.c:3752` runs with backward refs OFF
+    — so `const D = K * 2` is legal at top level and refused in a body.
+
+    Two more classifier corrections came from leg5: package privacy and the
+    foreign-variant spelling ARE semantic (`is_imported_pkg`, the variant table)
+    and were being scored SYNTAX; the unclosed-bracket and no-package messages
+    are built by `snprintf`/`fprintf` and matched no format string, which the
+    differential reports as a failure rather than skipping.
+
+    **Eight negative controls, each observed and reverted.** C1 the variadic
+    marker rule, C2 `extern` taking `sink`, C3 `subscript` taking `inout` — each
+    reddened its OWN leg4 probe and nothing else (`refused=3/5`, `4/5`, `4/5`).
+    C4 the open `where` predicate set, C5 the unfolded top-level `const`, C6 the
+    unchecked subscript root — each reddened leg2 by name and nothing else. C8
+    the unchecked `parallel for` source, run through leg5, took it to
+    `disagreements=1` naming `tests/diag/parfor_expr_source.ty`.
+
+    **C7 is the one the verdict differential cannot see**, which is why it is
+    here: dropping the `# deprecated:` attachment left legs 1, 1b, 1c, 2 and 4
+    fully green over all 1,090 files, and only the census moved.
+
+    ```
+    leg1  tests/*.ty: files=274 parse-ok=274 fail=0
+    leg1b corelib/**.ty: files=91 parse-ok=91 fail=0
+    leg1c tools+examples+server+bench: files=179 parse-ok=179 fail=0
+    leg2  tests/reject/*.ty: SYNTAX=57 rejected=57 missed=0 | SEMANTIC=280 accepted=280 wrongly-rejected=0
+    leg3  census: 121 kinds, 182643 nodes over 544 files
+    parse-check: the AST census moved -- the tree changed shape, not just the verdict
+    < d.deprecated=3
+    leg4  declaration rules: refused=5/5 accepted=5/5
+    parse-check: FAILED
+    ```
+
+    The census golden was re-recorded for three reasons, all intended: the
+    corpus grew from 365 to 544 files, `d.deprecated` is a new kind, and a
+    top-level `const` now holds its FOLDED literal, which is what drops
+    `e.Binop:*` and its siblings.
+
+    leg4 exists because eleven of these rules had no fixture anywhere. Its five
+    refusals are each paired with an accepting twin one token away, and all ten
+    were checked against `./tychoc` first — five REJECT, five accept, matching.
+    The `ok_subscript` twin is also the only program in either corpus that
+    writes through a subscript, which is the `CallVal` place form above.
+
+    Three gates my diff can move, all run: `make goldens-check` ok (519 golden
+    files, all tracked), `make script-check` ok (25 .py, 96 .sh — it covers the
+    new `compiler/verdict_diff.py`), `python3 scripts/check_citations.py` ok.
 
 - [ ] **Phase 5 — `types/`: names, packages, scoping**
   - Scope: `compiler/types/`. Package and import resolution, the function table,
@@ -530,6 +631,13 @@ self-built twice, the two emitted `.c` identical.
   - Done when: `make clean` removes `tychoc1`.
   - Verify: `make tychoc1 && make clean && test ! -e tychoc1`.
   - Do NOT run: any test lane. This is one word in a `rm -f` line.
+
+- [ ] **Phase 4b — `CONTRIBUTING.md`'s gate table has no `parse-check` cost**
+  (found in Phase 4). Phase 3d already notes the row is missing entirely. The
+  figure has since moved: the lane is ~11.0 s, not the ~2.5 s Phase 3b measured,
+  because legs 1c, 4 and 5 were added. Whoever writes that row writes 11.0 s and
+  the five legs, not the two-leg description.
+  - Do NOT run: any test lane. It is a Markdown edit; the two doc gates only.
 
 - [ ] **Phase 3c — `scripts/check_goldens.py` carried a stale NO_GOLDEN entry**
   - Found while wiring Phase 3b: `NO_GOLDEN` still excused `compiler/run.sh`

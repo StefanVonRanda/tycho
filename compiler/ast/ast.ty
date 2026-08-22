@@ -124,6 +124,7 @@ struct Fn:
     body: [Stmt]
     is_extern: bool
     lib: string
+    dnote: string                      # the `# deprecated:` line above it, "" if none
 
 struct FieldD:
     name: string

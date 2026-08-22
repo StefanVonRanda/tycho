@@ -21,11 +21,15 @@ PARSE_END = 5245                   # end of parse_program
 
 # Parse-region sites that consult a table tychoc1 has not built yet. Matched as
 # substrings of the FORMAT string, so each names a rule rather than a line.
+#
+# Eight rules were dropped from this list in Phase 4, having been misjudged: the
+# `where` predicate set is a fixed five names, the type-parameter list is what
+# the signature just read, the subscript place rules are structural, and a
+# `const` is folded at parse time by src/tychoc.c@const_fold. None of the four
+# reaches a symbol table, so a parser must refuse them and they are SYNTAX.
 NEEDS_SYMBOLS = [
     "unknown type",
     "is already defined",
-    "is not a type parameter of this function",
-    "which is not a type parameter of this function",
     "a fixed-size array length must be an integer literal",
     "a bounded capacity must be an integer literal",
     "soa requires a struct element type",
@@ -35,8 +39,9 @@ NEEDS_SYMBOLS = [
     "collides with the builtin",
     "this file does not `import` it",
     "a subscript receiver may not be generic",
+    "is package-private",                              # is_imported_pkg
+    "but a variant of another package's enum",         # the variant table
     "extern fn '%s'",
-    "a `const` must be a single scalar literal",
     "a bounded element cannot be",
     "a fixed-size array element cannot be",
     "an array element type cannot be void",
@@ -53,14 +58,9 @@ NEEDS_SYMBOLS = [
     "too many size parameters",
     "a struct type parameter must be written",
     "an enum type parameter must be written",
-    "`where` constraints require a generic function",
-    "unknown `where` predicate",
     "was instantiated at one",
     "is not a variant of",
-    "const expression divides by zero",
     "a bounded capacity must be positive",
-    "a subscript must yield a place rooted in",
-    "is used more than once in the yielded place",
 ]
 
 
@@ -74,6 +74,8 @@ FALLBACK = [
     ("unsupported escape", "SYNTAX"),                  # the lexer's escape set
     ("literal needs", "SYNTAX"),                       # the lexer's 0x / 0b scanners
     ("no 'main' procedure", "SEMANTIC"),               # whole-program, after parsing
+    ("unclosed '(' or '['", "SYNTAX"),                 # the lexer, message built by snprintf
+    ("must declare its own package first", "SEMANTIC"),# whole-program, an fprintf after parsing
 ]
 
 

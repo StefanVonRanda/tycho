@@ -277,6 +277,8 @@ fn census(u: Unit) -> [string]:
             push(out, "d.fn")
         if len(f.typarams) > 0:
             push(out, "d.generic")
+        if len(f.dnote) > 0:
+            push(out, "d.deprecated")
         for w in f.wheres:
             push(out, "d.where")
         out = _cps(f.params, out)

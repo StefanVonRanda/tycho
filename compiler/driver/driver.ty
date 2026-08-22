@@ -20,8 +20,8 @@ fn read_runtime(path: string) -> string:
     return ""
 
 fn compile_str(src: string, runtime: string) -> string:
-    toks := lex.tokenize(src)
-    u := parse.unit(toks)
+    toks, notes := lex.tokenize_all(src, false)
+    u := parse.unit(toks, notes)
     return runtime + emit.unit(u)
 
 fn compile(src_path: string, runtime_path: string, out_c: string):
@@ -114,11 +114,13 @@ fn _read(src_path: string) -> string:
     return ""
 
 fn parse_only(src_path: string):
-    u := parse.unit(lex.tokenize(_read(src_path)))
+    toks, notes := lex.tokenize_all(_read(src_path), false)
+    u := parse.unit(toks, notes)
     print("PARSE-OK " + str(len(u.fns)) + "\n")
 
 fn parse_census(src_path: string):
-    u := parse.unit(lex.tokenize(_read(src_path)))
+    toks, notes := lex.tokenize_all(_read(src_path), false)
+    u := parse.unit(toks, notes)
     ks := ast.census(u)
     counts := []string: int
     for k in ks:

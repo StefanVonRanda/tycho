@@ -78,15 +78,15 @@ tests/reject/cond_if_str.ty	SEMANTIC	8434	if condition must be bool
 tests/reject/cond_if_void.ty	SEMANTIC	8434	if condition must be bool
 tests/reject/cond_value_if_int.ty	SEMANTIC	8434	if condition must be bool
 tests/reject/const_dup.ty	SEMANTIC	4275	'MAX' is already defined
-tests/reject/const_expr_divzero.ty	SEMANTIC	5147	const expression divides by zero
-tests/reject/const_expr_float.ty	SEMANTIC	3754	a `const` must be a single scalar literal -- an int, float, string, bool or char. Arrays, maps and struct literals are not allowed, and neither is an expression
-tests/reject/const_expr_localref.ty	SEMANTIC	3754	a `const` must be a single scalar literal -- an int, float, string, bool or char. Arrays, maps and struct literals are not allowed, and neither is an expression
+tests/reject/const_expr_divzero.ty	SYNTAX	5147	const expression divides by zero
+tests/reject/const_expr_float.ty	SYNTAX	3754	a `const` must be a single scalar literal -- an int, float, string, bool or char. Arrays, maps and struct literals are not allowed, and neither is an expression
+tests/reject/const_expr_localref.ty	SYNTAX	3754	a `const` must be a single scalar literal -- an int, float, string, bool or char. Arrays, maps and struct literals are not allowed, and neither is an expression
 tests/reject/const_generic_size_conflict.ty	SEMANTIC	8960	argument 2 of 'g' is [4]int, which does not fit the parameter pattern
 tests/reject/const_generic_size_dynamic_arg.ty	SEMANTIC	8960	argument 1 of 'f' is [int], which does not fit the parameter pattern
 tests/reject/const_generic_size_return_only.ty	SEMANTIC	9016	the return type of 'mk' has a type parameter not fixed by any argument; pass it explicitly, e.g. mk$(int)
 tests/reject/const_generic_size_struct_field.ty	SEMANTIC	9218	a struct field cannot be a `[$N]T` size-parameterized array -- use a fixed `[N]T` or a dynamic `[T]`
 tests/reject/const_named_none.ty	SEMANTIC	4275	'None' is already defined
-tests/reject/const_nonliteral.ty	SEMANTIC	3754	a `const` must be a single scalar literal -- an int, float, string, bool or char. Arrays, maps and struct literals are not allowed, and neither is an expression
+tests/reject/const_nonliteral.ty	SYNTAX	3754	a `const` must be a single scalar literal -- an int, float, string, bool or char. Arrays, maps and struct literals are not allowed, and neither is an expression
 tests/reject/const_reassign.ty	SEMANTIC	8385	cannot assign to constant 'X'
 tests/reject/dotlt_sequential.ty	SYNTAX	3987	`0..<N` counts only in a `parallel for` -- write `for i := 0; i < N; i += 1:` for a sequential count
 tests/reject/dup_field.ty	SYNTAX	4694	duplicate field 'x'
@@ -275,10 +275,10 @@ tests/reject/string_escape.ty	SYNTAX	0	unsupported escape \  (use \n \t \r \\ \"
 tests/reject/struct_mutual_by_value.ty	SEMANTIC	12683	infinite type: A contains itself by value — use an array ([A]) or Option([A]) for indirection
 tests/reject/struct_named_ok.ty	SEMANTIC	4275	'Ok' is already defined
 tests/reject/struct_typaram_max.ty	SYNTAX	4662	too many struct type parameters (max 16)
-tests/reject/subscript_dangling.ty	SEMANTIC	4464	a subscript must yield a place rooted in one of its parameters (else the projection would dangle)
+tests/reject/subscript_dangling.ty	SYNTAX	4464	a subscript must yield a place rooted in one of its parameters (else the projection would dangle)
 tests/reject/subscript_generic_recv.ty	SEMANTIC	4440	a subscript receiver may not be generic ('Pool($T)'): declare the subscript on a concrete instance
 tests/reject/subscript_not_place.ty	SYNTAX	4455	a subscript must yield a place: `yield &<place>` (e.g. `yield &g.nodes[i]`)
-tests/reject/subscript_param_twice.ty	SEMANTIC	4468	subscript parameter 'i' is used more than once in the yielded place (v1: at most once)
+tests/reject/subscript_param_twice.ty	SYNTAX	4468	subscript parameter 'i' is used more than once in the yielded place (v1: at most once)
 tests/reject/subscript_type_mismatch.ty	SEMANTIC	6363	subscript 'at' is declared `-> inout string` but yields a place of type int
 tests/reject/sum_annot_arg_payload.ty	SEMANTIC	7562	declared type Option(string) but value is Some(int)
 tests/reject/sum_annot_array_payload_widen.ty	SEMANTIC	7562	declared type Option([u32]) but value is Some([int])
@@ -301,7 +301,7 @@ tests/reject/tuple_index_range.ty	SEMANTIC	6003	tuple index 10 out of range (the
 tests/reject/two_stmts_one_line.ty	SYNTAX	2059	expected newline
 tests/reject/type_forward_unknown.ty	SEMANTIC	2631	unknown type 'Q'; did you mean 'S'?
 tests/reject/type_mismatch.ty	SEMANTIC	7113	argument 1 of 'print' is int, expected string -- wrap it with str(...), e.g. print(str(x))
-tests/reject/typeset_badtp.ty	SEMANTIC	4349	`where Q: ...`: 'Q' is not a type parameter of this function
+tests/reject/typeset_badtp.ty	SYNTAX	4349	`where Q: ...`: 'Q' is not a type parameter of this function
 tests/reject/typeset_notin.ty	SEMANTIC	8982	'pick' instantiated with T = float, which is not in the type set { int | string }
 tests/reject/ufcs_builtin_bad_recv.ty	SEMANTIC	6923	push's first argument must be an array or soa
 tests/reject/underscore_not_discard.ty	SEMANTIC	8389	`_` is not a discard -- it is an ordinary variable, and this one was never declared. To drop a result, call it as a statement (`f(x)`); to keep it, name it (`x := f(x)`)
@@ -326,12 +326,12 @@ tests/reject/void_bound_to_decl.ty	SEMANTIC	8307	cannot bind a void value
 tests/reject/void_grounds_pending_push.ty	SEMANTIC	5830	cannot infer the type of 'xs' from this use
 tests/reject/void_not_a_type.ty	SEMANTIC	2516	'void' is a type only as a Result's ok payload, as in Result(void, string)
 tests/reject/void_push_value.ty	SEMANTIC	6936	push's value must be int
-tests/reject/where_bad_tp.ty	SEMANTIC	4367	`where` refers to 'Q', which is not a type parameter of this function
+tests/reject/where_bad_tp.ty	SYNTAX	4367	`where` refers to 'Q', which is not a type parameter of this function
 tests/reject/where_constraint_max.ty	SYNTAX	4344	at most 8 `where` constraints per function
 tests/reject/where_defaultable_bad.ty	SEMANTIC	8986	'total' instantiated with T = P, which does not satisfy `defaultable(T)`
 tests/reject/where_hashable_bad.ty	SEMANTIC	8986	'distinct' instantiated with T = float, which does not satisfy `hashable(T)`
-tests/reject/where_nongeneric.ty	SEMANTIC	4341	`where` constraints require a generic function (one with a `$T` parameter)
+tests/reject/where_nongeneric.ty	SYNTAX	4341	`where` constraints require a generic function (one with a `$T` parameter)
 tests/reject/where_numeric.ty	SEMANTIC	8986	'sm' instantiated with T = string, which does not satisfy `numeric(T)`
 tests/reject/where_typeset_max.ty	SYNTAX	4356	at most 16 types in a `where` type set
-tests/reject/where_unknown_pred.ty	SEMANTIC	4362	unknown `where` predicate 'fancy' (known: numeric, comparable, has_str, hashable, defaultable -- or use a type set, `T: int | float`)
+tests/reject/where_unknown_pred.ty	SYNTAX	4362	unknown `where` predicate 'fancy' (known: numeric, comparable, has_str, hashable, defaultable -- or use a type set, `T: int | float`)
 tests/reject/zero_bad_type.ty	SEMANTIC	6307	zero$([int]): only int, float, bool, and string are defaultable

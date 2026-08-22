@@ -1003,7 +1003,10 @@ fn simple(toks: [lex.Tok], i0: int) -> (ast.Stmt, int, bool):
     i = i2
     if _isop(toks, i, "="):
         i += 1
-        if not (e is ast.Index) and not (e is ast.Field) and not (e is ast.TupIdx) and not (e is ast.Call):
+        # src/tychoc.c:4136 allows E_CALL as a target; its E_CALL covers BOTH the
+        # named form and the indirect one, which split here into Call/CallVal.
+        if not (e is ast.Index) and not (e is ast.Field) and not (e is ast.TupIdx) and
+           not (e is ast.Call) and not (e is ast.CallVal):
             _die(t, "cannot assign to this expression")
         if _iskw(toks, i, "if") or _iskw(toks, i, "match"):
             c, j := value_ctrl(toks, i)
@@ -1106,6 +1109,10 @@ fn forstmt(toks: [lex.Tok], i0: int, par: bool) -> (ast.Stmt, int):
         if _isid(toks, i, "range") and _isop(toks, i + 1, "("):
             _die(t, "`range()` was removed: write `for i := 0; i < N; i += 1:` to count")
         coll, j := expr(toks, i)
+        # src/tychoc.c:4024 -- an array and a channel source are both scalar
+        # handles, so the source must NAME one; a temp could alias a channel.
+        if par and not (coll is ast.Name):
+            _die(t, "parallel for over a collection or channel must name a variable (bind it first)")
         i = _op(toks, j, ":")
         i = _expect(toks, i, "newline", "")
         b, k := block(toks, i)
@@ -1157,7 +1164,12 @@ fn stmt(toks: [lex.Tok], i0: int) -> (ast.Stmt, int):
         i = _op(toks, j, "=")
         e, k := expr(toks, i)
         i = _expect(toks, k, "newline", "")
-        return (ast.ConstS(nm, [e]), i)
+        # src/tychoc.c:3752 folds a LOCAL const with refs off -- no sibling-const
+        # refs -- so `const D = K * 2` is refused here and accepted at top level.
+        v := _const_fold(e, []ast.ConstD, t)
+        if not _is_lit(v):
+            _die(t, "a `const` must be a single scalar literal -- an int, float, string, bool or char. Arrays, maps and struct literals are not allowed, and neither is an expression")
+        return (ast.ConstS(nm, [v]), i)
 
     if t.kind == "ident" and t.text == "pass" and
             (_k(toks, i + 1) == "newline" or _k(toks, i + 1) == "dedent" or _k(toks, i + 1) == "eof"):
@@ -1217,6 +1229,13 @@ fn stmt(toks: [lex.Tok], i0: int) -> (ast.Stmt, int):
             a, j := expr(toks, i + 1)
             push(w, a)
             i = _op(toks, j, ")")
+            # src/tychoc.c:3883 -- range-checked only when the width is a literal.
+            match a:
+                ast.IntLit(v):
+                    if v < 1 or v > 64:
+                        _die(t, "a `parallel` width is 1..64, got " + str(v) +
+                            " -- 64 is the fan-out cap, and a width below 1 has no meaning")
+                _: pass
         if not _iskw(toks, i, "for"):
             _die(t, "expected 'for' after 'parallel'")
         s, j := forstmt(toks, i + 1, true)
@@ -1247,7 +1266,12 @@ fn block(toks: [lex.Tok], i0: int) -> ([ast.Stmt], int):
 
 # --- declarations -----------------------------------------------------------
 
-fn _params(toks: [lex.Tok], i0: int, extern_fn: bool) -> ([ast.Param], int):
+# `mode` is which of the three parameter lists this is. src/tychoc.c does not
+# share one parser between them: `fn` takes inout/sink/..., src/tychoc.c@parse_extern_fn
+# takes inout alone, and src/tychoc.c@parse_subscript goes straight to parse_type.
+# A marker this list does not take is left for `ty` to read as a type name, which
+# is exactly how tychoc reports it ("unknown type 'sink'").
+fn _params(toks: [lex.Tok], i0: int, mode: string) -> ([ast.Param], int):
     i := i0
     out := []ast.Param
     for not _isop(toks, i, ")"):
@@ -1256,15 +1280,17 @@ fn _params(toks: [lex.Tok], i0: int, extern_fn: bool) -> ([ast.Param], int):
         is_inout := false
         is_sink := false
         is_variadic := false
-        if _iskw(toks, i, "inout"):
+        if _iskw(toks, i, "inout") and mode != "subscript":
             is_inout = true
             i += 1
-        elif _isid(toks, i, "sink"):
+        elif _isid(toks, i, "sink") and mode == "fn":
             is_sink = true
             i += 1
-        if _isop(toks, i, "..."):
+        if _isop(toks, i, "...") and mode == "fn":
             is_variadic = true
             i += 1
+        if is_variadic and (is_inout or is_sink):
+            _die(_at(toks, i), "a variadic parameter cannot also be inout or sink")
         a, k := ty(toks, i)
         i = k
         push(out, ast.Param(nm, [a], is_inout, is_sink, is_variadic))
@@ -1277,14 +1303,29 @@ fn _params(toks: [lex.Tok], i0: int, extern_fn: bool) -> ([ast.Param], int):
             _die(_at(toks, i0), "a variadic parameter must be the last parameter")
     return (out, i)
 
-fn _wheres(toks: [lex.Tok], i0: int) -> ([string], int):
+fn _is_where_pred(s: string) -> bool:
+    return s == "numeric" or s == "comparable" or s == "has_str" or
+           s == "hashable" or s == "defaultable"
+
+fn _has_name(xs: [string], s: string) -> bool:
+    for x in xs:
+        if x == s:
+            return true
+    return false
+
+# `tps` is the function's own `$T` parameters. src/tychoc.c@parse_fn closes both
+# halves at parse time: the predicate against a fixed five-name set, and every
+# type-parameter mention against the signature that was just read.
+fn _wheres(toks: [lex.Tok], i0: int, tps: [string]) -> ([string], int):
     i := i0 + 1
     out := []string
     for true:
-        p, j := _ident(toks, i, "a `where` predicate or a type parameter")
+        p, j := _ident(toks, i, "a `where` predicate (numeric/comparable/has_str/hashable/defaultable) or a type parameter")
         i = j
         if _isop(toks, i, ":"):
             # type-set form `T: int | float`
+            if not _has_name(tps, p):
+                _die(_at(toks, i), "`where " + p + ": ...`: '" + p + "' is not a type parameter of this function")
             a, k := ty(toks, i + 1)
             i = k
             nset := 1
@@ -1296,8 +1337,13 @@ fn _wheres(toks: [lex.Tok], i0: int) -> ([string], int):
                 _die(_at(toks, i0), "at most 16 types in a `where` type set")
             push(out, p)
         else:
+            if not _is_where_pred(p):
+                _die(_at(toks, i), "unknown `where` predicate '" + p +
+                    "' (known: numeric, comparable, has_str, hashable, defaultable -- or use a type set, `T: int | float`)")
             i = _op(toks, i, "(")
             tn, k := _ident(toks, i, "a type-parameter name")
+            if not _has_name(tps, tn):
+                _die(_at(toks, i), "`where` refers to '" + tn + "', which is not a type parameter of this function")
             i = _op(toks, k, ")")
             push(out, p + "(" + tn + ")")
         if not _isop(toks, i, ","):
@@ -1336,11 +1382,44 @@ fn _collect_typarams_ty(t: ast.Ty, acc: [string]) -> [string]:
         _: return out
     return out
 
-fn func(toks: [lex.Tok], i0: int) -> (ast.Fn, int):
+# The `$N` size parameters of a signature, kept apart from the `$T` type
+# parameters: src/tychoc.c@parse_fn counts either kind towards `generic`, but a
+# `where` clause may only name a `$T`.
+fn _collect_sizeparams_ty(t: ast.Ty, acc: [string]) -> [string]:
+    out := acc
+    match t:
+        ast.TName(q, n, args):
+            for a in args:
+                out = _collect_sizeparams_ty(a, out)
+            return out
+        ast.TArr(k): return _collect_sizeparams_ty(k[0], out)
+        ast.TSoa(k): return _collect_sizeparams_ty(k[0], out)
+        ast.TFix(s, k):
+            if len(s) > 0 and s[0] == 36:            # '$'
+                push(out, s[1:])
+            return _collect_sizeparams_ty(k[0], out)
+        ast.TBnd(s, k): return _collect_sizeparams_ty(k[0], out)
+        ast.TMap(ks):
+            for a in ks:
+                out = _collect_sizeparams_ty(a, out)
+            return out
+        ast.TTup(ks):
+            for a in ks:
+                out = _collect_sizeparams_ty(a, out)
+            return out
+        ast.TFn(hr, ks):
+            for a in ks:
+                out = _collect_sizeparams_ty(a, out)
+            return out
+        _: return out
+    return out
+
+fn func(toks: [lex.Tok], i0: int, notes: [lex.DNote]) -> (ast.Fn, int):
     i := _expect(toks, i0, "kw", "fn")
     nm, j := _ident(toks, i, "a procedure name")
+    dn := lex.dnote_above(notes, _at(toks, i).line)
     i = _op(toks, j, "(")
-    ps, k := _params(toks, i, false)
+    ps, k := _params(toks, i, "fn")
     i = k
     ret := []ast.Ty
     if _isop(toks, i, "->"):
@@ -1348,20 +1427,25 @@ fn func(toks: [lex.Tok], i0: int) -> (ast.Fn, int):
         push(ret, r)
         i = m
     tps := []string
+    szs := []string
     for p in ps:
         for a in p.ty:
             tps = _collect_typarams_ty(a, tps)
+            szs = _collect_sizeparams_ty(a, szs)
     for r in ret:
         tps = _collect_typarams_ty(r, tps)
+        szs = _collect_sizeparams_ty(r, szs)
     wh := []string
     if _isid(toks, i, "where"):
-        w, m := _wheres(toks, i)
+        if len(tps) == 0 and len(szs) == 0:
+            _die(_at(toks, i), "`where` constraints require a generic function (one with a `$T` parameter)")
+        w, m := _wheres(toks, i, tps)
         wh = w
         i = m
     i = _op(toks, i, ":")
     i = _expect(toks, i, "newline", "")
     body, m2 := block(toks, i)
-    return (ast.Fn(nm, ps, ret, tps, wh, body, false, ""), m2)
+    return (ast.Fn(nm, ps, ret, tps, wh, body, false, "", dn), m2)
 
 fn externfn(toks: [lex.Tok], i0: int) -> (ast.Fn, int):
     i := i0 + 1
@@ -1372,7 +1456,7 @@ fn externfn(toks: [lex.Tok], i0: int) -> (ast.Fn, int):
     i = _expect(toks, i, "kw", "fn")
     nm, j := _ident(toks, i, "a C function name")
     i = _op(toks, j, "(")
-    ps, k := _params(toks, i, true)
+    ps, k := _params(toks, i, "extern")
     i = k
     ret := []ast.Ty
     if _isop(toks, i, "->"):
@@ -1380,7 +1464,7 @@ fn externfn(toks: [lex.Tok], i0: int) -> (ast.Fn, int):
         push(ret, r)
         i = m
     i = _expect(toks, i, "newline", "")
-    return (ast.Fn(nm, ps, ret, []string, []string, []ast.Stmt, true, lib), i)
+    return (ast.Fn(nm, ps, ret, []string, []string, []ast.Stmt, true, lib, ""), i)
 
 fn structd(toks: [lex.Tok], i0: int) -> (ast.StructD, int):
     i := _expect(toks, i0, "kw", "struct")
@@ -1490,11 +1574,61 @@ fn newtyped(toks: [lex.Tok], i0: int) -> (ast.NewtypeD, int):
     i = _expect(toks, k, "newline", "")
     return (ast.NewtypeD(nm, u), i)
 
+# The child expressions of a node, so a place can be walked without a second
+# copy of every variant. src/tychoc.c walks lhs/rhs/args for the same reason.
+fn _kids(e: ast.Expr) -> [ast.Expr]:
+    match e:
+        ast.Field(k, f): return k
+        ast.TupIdx(k, n): return k
+        ast.Index(k): return k
+        ast.Slice(a, b, k): return k
+        ast.Call(q, n, ts, k): return k
+        ast.CallVal(k): return k
+        ast.Named(n, k): return k
+        ast.Binop(o, k): return k
+        ast.Unop(o, k): return k
+        ast.IsVar(k, q, n): return k
+        ast.ArrLit(k): return k
+        ast.MapLit(k): return k
+        ast.Tuple(k): return k
+        ast.SomeE(k): return k
+        ast.OkE(k): return k
+        ast.ErrE(k): return k
+        ast.SpawnE(k): return k
+        ast.OrRet(k): return k
+        ast.Spread(k): return k
+        ast.Addr(k): return k
+        ast.ChanE(t, k): return k
+        ast.Lambda(p, r, k): return k
+        _: return []ast.Expr
+    return []ast.Expr
+
+# src/tychoc.c@place_root_name: the base identifier of a place spine, or "" when
+# the root is not a plain variable.
+fn _place_root(e: ast.Expr) -> string:
+    match e:
+        ast.Name(n): return n
+        ast.Field(k, f): return _place_root(k[0])
+        ast.Index(k): return _place_root(k[0])
+        _: return ""
+    return ""
+
+fn _uses(e: ast.Expr, name: string) -> int:
+    cnt := 0
+    match e:
+        ast.Name(v):
+            if v == name:
+                cnt = 1
+        _: pass
+    for c in _kids(e):
+        cnt += _uses(c, name)
+    return cnt
+
 fn subscriptd(toks: [lex.Tok], i0: int) -> (ast.SubscriptD, int):
     i := i0 + 1
     nm, j := _ident(toks, i, "a subscript name")
     i = _op(toks, j, "(")
-    ps, k := _params(toks, i, false)
+    ps, k := _params(toks, i, "subscript")
     i = _op(toks, k, "->")
     if not _iskw(toks, i, "inout"):
         _die(_at(toks, i), "a subscript must yield an inout projection: `-> inout <type>`")
@@ -1513,9 +1647,122 @@ fn subscriptd(toks: [lex.Tok], i0: int) -> (ast.SubscriptD, int):
     for _k(toks, i) == "newline":
         i += 1
     i = _expect(toks, i, "dedent", "")
+    # The two rules src/tychoc.c@parse_subscript checks structurally, right here:
+    # a place rooted anywhere but a parameter would dangle, and a parameter used
+    # twice in the place would be evaluated twice at the call site.
+    inner := _kids(y)[0]
+    rooted := false
+    for p in ps:
+        if p.name == _place_root(inner):
+            rooted = true
+    if not rooted:
+        _die(_at(toks, i0), "a subscript must yield a place rooted in one of its parameters (else the projection would dangle)")
+    for p in ps:
+        if _uses(inner, p.name) > 1:
+            _die(_at(toks, i0), "subscript parameter '" + p.name +
+                "' is used more than once in the yielded place (v1: at most once)")
     return (ast.SubscriptD(nm, ps, r, y), i)
 
-fn unit(toks: [lex.Tok]) -> ast.Unit:
+# src/tychoc.c@is_literal_expr. An f-string is deliberately not one: its body is
+# not known until the interpolations are resolved.
+fn _is_lit(e: ast.Expr) -> bool:
+    if e is ast.IntLit:
+        return true
+    if e is ast.FloatLit:
+        return true
+    if e is ast.BoolLit:
+        return true
+    if e is ast.StrLit:
+        return true
+    if e is ast.CharLit:
+        return true
+    return false
+
+fn _const_ref(cs: [ast.ConstD], name: string) -> [ast.Expr]:
+    out := []ast.Expr
+    for c in cs:
+        if c.name == name:
+            push(out, c.value)
+    return out
+
+fn _int_of(e: ast.Expr) -> ([int], bool):
+    match e:
+        ast.IntLit(v): return ([v], true)
+        _: return ([]int, false)
+    return ([]int, false)
+
+# src/tychoc.c@const_fold, the top-level `refs` form: a `const` is folded to one
+# literal AT PARSE TIME, so `const MB = 1024 * 1024` is a literal and anything
+# that does not collapse -- an array, a forward reference, a call -- is refused
+# by the caller. Divide-by-zero and a negative shift die here, as they do there.
+fn _const_fold(e: ast.Expr, cs: [ast.ConstD], t: lex.Tok) -> ast.Expr:
+    match e:
+        ast.Name(n):
+            r := _const_ref(cs, n)
+            if len(r) == 1:
+                return r[0]
+            return e
+        ast.Unop(o, k):
+            a := _const_fold(k[0], cs, t)
+            if o == "-":
+                match a:
+                    ast.IntLit(v): return ast.IntLit(-v)
+                    ast.FloatLit(v): return ast.FloatLit(-v)
+                    _: return e
+            if o == "~":
+                match a:
+                    ast.IntLit(v): return ast.IntLit(~v)
+                    _: return e
+            return e
+        ast.Binop(o, k):
+            if len(k) != 2:
+                return e
+            a := _const_fold(k[0], cs, t)
+            b := _const_fold(k[1], cs, t)
+            if o == "+":
+                match a:
+                    ast.StrLit(x):
+                        match b:
+                            ast.StrLit(y): return ast.StrLit(x + y)
+                            _: pass
+                    _: pass
+            xs, aok := _int_of(a)
+            ys, bok := _int_of(b)
+            if not aok or not bok:
+                return e
+            x := xs[0]
+            y := ys[0]
+            if o == "+":
+                return ast.IntLit(x + y)
+            if o == "-":
+                return ast.IntLit(x - y)
+            if o == "*":
+                return ast.IntLit(x * y)
+            if o == "/" or o == "%":
+                if y == 0:
+                    _die(t, "const expression divides by zero")
+                if o == "/":
+                    return ast.IntLit(x / y)
+                return ast.IntLit(x % y)
+            if o == "&":
+                return ast.IntLit(x & y)
+            if o == "|":
+                return ast.IntLit(x | y)
+            if o == "^":
+                return ast.IntLit(x ^ y)
+            if o == "<<" or o == ">>":
+                if y < 0:
+                    _die(t, "const expression shifts by a negative count")
+                if y >= 64:
+                    return ast.IntLit(0)
+                if o == "<<":
+                    return ast.IntLit(x << y)
+                return ast.IntLit(x >> y)
+            return e
+        _: return e
+    return e
+
+fn unit(toks: [lex.Tok], notes: [lex.DNote]) -> ast.Unit:
     pkg := ""
     imports := []ast.ImportD
     fns := []ast.Fn
@@ -1556,11 +1803,15 @@ fn unit(toks: [lex.Tok]) -> ast.Unit:
             i = j
             continue
         if _isid(toks, i, "const"):
+            ct := _at(toks, i)
             nm, j := _ident(toks, i + 1, "a constant name after 'const'")
             i = _op(toks, j, "=")
             e, k := expr(toks, i)
             i = _expect(toks, k, "newline", "")
-            push(cts, ast.ConstD(nm, e))
+            v := _const_fold(e, cts, ct)
+            if not _is_lit(v):
+                _die(ct, "a `const` must be a single scalar literal -- an int, float, string, bool or char. Arrays, maps and struct literals are not allowed, and neither is an expression")
+            push(cts, ast.ConstD(nm, v))
             continue
         if _isid(toks, i, "subscript"):
             s, j := subscriptd(toks, i)
@@ -1587,7 +1838,7 @@ fn unit(toks: [lex.Tok]) -> ast.Unit:
             push(nts, n)
             i = j
             continue
-        f, j := func(toks, i)
+        f, j := func(toks, i, notes)
         push(fns, f)
         i = j
     return ast.Unit(pkg, imports, fns, sts, ens, nts, hds, cts, sbs)
