@@ -752,7 +752,7 @@ self-built twice, the two emitted `.c` identical.
   - Verify: `python3 scripts/check_citations.py` and `sh scripts/check_links.sh`.
     Nothing else — it is a Markdown edit.
 
-- [ ] **Phase 5b — the AST carries no line numbers** (found in Phase 5, out of
+- [x] **Phase 5b — the AST carries no line numbers** (found in Phase 5, out of
   scope there)
   - `ast.Fn`, `ast.StructD` and almost every `ast.Expr` variant have no line
     field, so every diagnostic `compiler/types/` emits names the FILE and no
@@ -763,6 +763,108 @@ self-built twice, the two emitted `.c` identical.
   - Verify: `make parse-check`. Expect leg3's census to be UNCHANGED — a field
     is not a node kind — and say so if it moves.
   - Do NOT run: `make test`. Nothing here reaches `src/tychoc.c`.
+
+  - **Done 2026-08-23.** Every `ast.Expr` and `ast.Stmt` variant carries its
+    source line as its FIRST payload element, every declaration struct carries
+    one as its LAST field, and `ast.line_of` / `ast.sline_of` read it back.
+    `compiler/parse/` stamps it from the token the node starts at (`_ln`), and
+    `types.R` carries the walk's current line so `_err` / `_late` print
+    `file:line: error: msg` as `src/tychoc.c` does.
+
+    **Leg 1 — `make parse-check`, all eight legs plus the new one:**
+
+    ```
+    leg1  tests/*.ty: files=274 parse-ok=274 fail=0
+    leg1b corelib/**.ty: files=91 parse-ok=91 fail=0
+    leg1c tools+examples+server+bench: files=179 parse-ok=179 fail=0
+    leg2  tests/reject/*.ty --parse: SYNTAX=57 rejected=57 missed=0 | NAME+SEMANTIC=280 accepted=280 wrongly-rejected=0
+    leg2b tests/reject/*.ty --resolve: SYNTAX+NAME=84 rejected=84 missed=0 | SEMANTIC=253 accepted=253 wrongly-rejected=0
+    leg3  census: 122 kinds, 182646 nodes over 544 files
+    leg7  resolution census: 4011 distinct targets, 165333 resolved uses
+    leg4  declaration rules: refused=5/5 accepted=5/5
+    leg5  whole-tree verdicts: files=1078 tychoc(accept=552 semantic=403 name=49 syntax=74) disagreements=0
+    leg6  whole-tree resolution: disagreements=0 unused-local/import on an accepted file=0
+    leg8  NAME diagnostic file:line vs ./tychoc: scored=49 agree=49 disagree=0 unlocated=0
+    parse-check: all green
+    ```
+
+    **Both censuses are UNCHANGED**, as predicted — a field is not a node kind,
+    and neither golden was re-recorded (`git status` shows `census.expected.out`
+    and `rcensus.expected.out` unmodified). Phase 1's milestone is unmoved too:
+    `./tychoc1` on `fn main(): print(str(1))` still differs from `./tychoc`'s C
+    by the same five blank lines.
+
+    **Leg 2 — the lines checked against `./tychoc`, not merely present.** This
+    is where the phase earned its keep. The first run of the comparison scored
+    **7 disagreements out of 27** while every verdict leg stayed green:
+
+    ```
+    LINE-DISAGREE tests/reject/const_dup.ty              tychoc=:3  tychoc1=:1
+    LINE-DISAGREE tests/reject/dup_fn_variant.ty         tychoc=:10 tychoc1=:7
+    LINE-DISAGREE tests/reject/dup_fn_variant_fn_first.ty tychoc=:5 tychoc1=:9
+    LINE-DISAGREE tests/reject/dup_struct_enum.ty        tychoc=:3  tychoc1=:1
+    LINE-DISAGREE tests/reject/handle_then_enum.ty       tychoc=:4  tychoc1=:1
+    LINE-DISAGREE tests/reject/handle_then_newtype.ty    tychoc=:4  tychoc1=:1
+    LINE-DISAGREE tests/reject/handle_then_struct.ty     tychoc=:4  tychoc1=:1
+    ```
+
+    **The cause was REGISTRATION ORDER, and it is a real defect the line
+    exposed.** `build_table` walked the seven declaration categories in array
+    order — every `fn`, then every struct, then every enum — so of two colliding
+    declarations it named whichever category came first. `src/tychoc.c` registers
+    a struct/enum/newtype/handle/const/subscript *as it parses*, so the one
+    written LATER loses; a `fn` is checked afterwards in `resolve_program`
+    (`src/tychoc.c@die_dup_proc`), which names the PROC whichever side was
+    written first. `dup_fn_variant_fn_first.ty`'s own header states that rule.
+    `compiler/types/resolve.ty` now merges the six parse-time categories into
+    one source-ordered walk (`DeclRef`) and registers functions last. After the
+    fix: **49 of 49 NAME files agree with `./tychoc` on both file and line**, up
+    from the 27 reject fixtures the brief named — leg8 scores the whole tree's
+    NAME class, which is 49 files.
+
+    One diagnostic had no location at all on tychoc1's side and was found by the
+    same leg: the package-less-`import` refusal in `compiler/types/load.ty` was a
+    bare `die()`. It names `entry:line` now, from the offending import's own line.
+
+    **Leg 3 — two negative controls, each observed, each reverted.** Neither is
+    visible to any other leg, which is the whole argument for leg8:
+
+    | control | leg8 | legs 5/6 |
+    |---|---|---|
+    | `_ln` records `line + 1` (the declaration/parameter sites) | **disagree=27**, exit 1 | green |
+    | `ast.line_of` returns `l + 1` for `Name` (the expression sites) | **disagree=12**, exit 1 | green |
+
+    Two controls rather than one because the lines reach `_err` by two routes,
+    and a single control would have left the other route unproven. Both were
+    reverted and the lane is green at 49/49.
+
+    **Leg 4 — the lane carries it from the repo.** leg8 lives in
+    `compiler/verdict_diff.py`, which already runs both compilers over all 1,078
+    files, so the comparison costs no extra process; `make parse-check` is
+    ~15.5 s, unchanged. It fails on a disagreement, on an unlocated NAME
+    diagnostic, and if the number of files it scored is not the number of NAME
+    files leg5 counted — a leg that silently scores 0 of 49 is the failure mode
+    it is written against.
+
+- [ ] **Phase 5d — `'X' is already defined` says more than `src/tychoc.c` does**
+  (found in Phase 5b, out of scope there: 5b's contract was the LINE, not the
+  message). Where a top-level name collides, `compiler/types/resolve.ty` appends
+  `(<kind> in <file>)` and `src/tychoc.c` does not:
+
+  ```
+  tychoc :  tests/reject/dup_struct_enum.ty:3: error: 'X' is already defined
+  tychoc1:  tests/reject/dup_struct_enum.ty:3: error: 'X' is already defined (struct in tests/reject/dup_struct_enum.ty)
+  ```
+
+  `src/tychoc.c@die_dup_proc` does have a two-file form, but it fires only when
+  the other declaration is in a DIFFERENT file of the same package, and it is
+  worded differently. Phase 9 pins message text byte for byte and owns this;
+  recorded here so it is not rediscovered.
+  - Done when: the seven `'%s' is already defined` sites agree with
+    `src/tychoc.c` on text as well as line, including the cross-file form.
+  - Verify: extend leg8 in `compiler/verdict_diff.py` to compare the MESSAGE for
+    the NAME class, not only `file:line`. State the new agree count.
+  - Do NOT run: `make test`.
 
 - [ ] **Phase 5c — three name rules `compiler/types/` does not implement**
   (found in Phase 5). Each is a rule the symbol table alone decides, each still

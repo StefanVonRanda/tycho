@@ -29,44 +29,88 @@ struct Param:
     is_inout: bool
     is_sink: bool
     is_variadic: bool
+    line: int
 
 # --- expressions ------------------------------------------------------------
 
+# EVERY variant's FIRST payload element is the 1-based source LINE of the token
+# the node starts at -- the line src/tychoc.c names in `file:line: error: ...`.
+# It is first rather than last so the two variants that already carried nothing
+# but a line (NullLit, NoneE) keep their arity, and so `line_of` below reads the
+# same slot in every arm.
 enum Expr:
-    IntLit(int)
-    FloatLit(float)
-    StrLit(string)
-    FStrLit(string)                    # f"..." -- the body, interpolation deferred
-    CharLit(int)
-    BoolLit(bool)
-    NullLit(int)                       # payload: line
-    Name(string)
-    Field([Expr], string)              # recv, field name
-    TupIdx([Expr], int)                # recv, .0 / .1
-    Index([Expr])                      # recv, index
-    Slice(bool, bool, [Expr])          # has_lo, has_hi; recv, then lo, then hi
-    Call(string, string, [Ty], [Expr]) # qualifier, name, explicit type args, args
-    CallVal([Expr])                    # indirect: callee, then args
-    Named(string, [Expr])              # a `name: value` call argument
-    Binop(string, [Expr])              # operator spelling, two operands
-    Unop(string, [Expr])               # - ~ not, one operand
-    IsVar([Expr], string, string)      # subject, qualifier, variant name
-    ArrLit([Expr])
-    MapLit([Expr])                     # k0, v0, k1, v1, ...
-    EmptyArr([Ty])                     # []T, or empty for a bare untyped []
-    EmptyMap([Ty])                     # []K: V
-    SoaLit([Ty])                       # soa []S
-    Tuple([Expr])
-    SomeE([Expr])
-    OkE([Expr])                        # empty for `Ok()`
-    ErrE([Expr])
-    NoneE(int)                         # payload: line
-    SpawnE([Expr])
-    OrRet([Expr])
-    Spread([Expr])                     # x...
-    Addr([Expr])                       # &place
-    ChanE([Ty], [Expr])                # channel(T, cap)
-    Lambda([Param], [Ty], [Expr])      # params, return type (0 or 1), body expression
+    IntLit(int, int)                   # line, value
+    FloatLit(int, float)
+    StrLit(int, string)
+    FStrLit(int, string)               # f"..." -- the body, interpolation deferred
+    CharLit(int, int)
+    BoolLit(int, bool)
+    NullLit(int)                       # line only
+    Name(int, string)
+    Field(int, [Expr], string)         # recv, field name
+    TupIdx(int, [Expr], int)           # recv, .0 / .1
+    Index(int, [Expr])                 # recv, index
+    Slice(int, bool, bool, [Expr])     # has_lo, has_hi; recv, then lo, then hi
+    Call(int, string, string, [Ty], [Expr]) # qualifier, name, explicit type args, args
+    CallVal(int, [Expr])               # indirect: callee, then args
+    Named(int, string, [Expr])         # a `name: value` call argument
+    Binop(int, string, [Expr])         # operator spelling, two operands
+    Unop(int, string, [Expr])          # - ~ not, one operand
+    IsVar(int, [Expr], string, string) # subject, qualifier, variant name
+    ArrLit(int, [Expr])
+    MapLit(int, [Expr])                # k0, v0, k1, v1, ...
+    EmptyArr(int, [Ty])                # []T, or empty for a bare untyped []
+    EmptyMap(int, [Ty])                # []K: V
+    SoaLit(int, [Ty])                  # soa []S
+    Tuple(int, [Expr])
+    SomeE(int, [Expr])
+    OkE(int, [Expr])                   # empty for `Ok()`
+    ErrE(int, [Expr])
+    NoneE(int)                         # line only
+    SpawnE(int, [Expr])
+    OrRet(int, [Expr])
+    Spread(int, [Expr])                # x...
+    Addr(int, [Expr])                  # &place
+    ChanE(int, [Ty], [Expr])           # channel(T, cap)
+    Lambda(int, [Param], [Ty], [Expr]) # params, return type (0 or 1), body expression
+
+fn line_of(e: Expr) -> int:
+    match e:
+        IntLit(l, v): return l
+        FloatLit(l, v): return l
+        StrLit(l, v): return l
+        FStrLit(l, v): return l
+        CharLit(l, v): return l
+        BoolLit(l, v): return l
+        NullLit(l): return l
+        Name(l, v): return l
+        Field(l, k, f): return l
+        TupIdx(l, k, n): return l
+        Index(l, k): return l
+        Slice(l, a, b, k): return l
+        Call(l, q, n, ts, k): return l
+        CallVal(l, k): return l
+        Named(l, n, k): return l
+        Binop(l, o, k): return l
+        Unop(l, o, k): return l
+        IsVar(l, k, q, n): return l
+        ArrLit(l, k): return l
+        MapLit(l, k): return l
+        EmptyArr(l, t): return l
+        EmptyMap(l, t): return l
+        SoaLit(l, t): return l
+        Tuple(l, k): return l
+        SomeE(l, k): return l
+        OkE(l, k): return l
+        ErrE(l, k): return l
+        NoneE(l): return l
+        SpawnE(l, k): return l
+        OrRet(l, k): return l
+        Spread(l, k): return l
+        Addr(l, k): return l
+        ChanE(l, t, k): return l
+        Lambda(l, p, r, b): return l
+    return 0
 
 # --- match / select arms ----------------------------------------------------
 
@@ -78,6 +122,8 @@ struct Pat:
     hiname: string
     ranged: bool
 
+# A struct carries its line as the LAST field -- unlike an enum, where it is
+# first -- so every existing positional constructor gains one argument at the end.
 struct Arm:
     kind: string                       # variant scalar recv default closed
     qual: string
@@ -89,29 +135,54 @@ struct Arm:
     pats: [Pat]
     ch: [Expr]                         # the select `recv(ch, x)` channel
     body: [Stmt]
+    line: int
 
 # --- statements -------------------------------------------------------------
 
+# Same rule as Expr: the first payload element is the source line.
 enum Stmt:
-    ExprStmt([Expr])
-    Decl(string, [Ty], [Expr], [Stmt]) # name, annotation, rhs, value if/match
-    MDecl(bool, [string], [Expr])      # true for `:=`, false for `=`
-    Assign(string, [Expr])
-    PlaceSet([Expr])                   # target place, value
-    ConstS(string, [Expr])
+    ExprStmt(int, [Expr])
+    Decl(int, string, [Ty], [Expr], [Stmt]) # name, annotation, rhs, value if/match
+    MDecl(int, bool, [string], [Expr]) # true for `:=`, false for `=`
+    Assign(int, string, [Expr])
+    PlaceSet(int, [Expr])              # target place, value
+    ConstS(int, string, [Expr])
     PassS(int)
-    ReturnS([Expr])                    # empty for a bare `return`
+    ReturnS(int, [Expr])               # empty for a bare `return`
     BreakS(int)
     ContinueS(int)
-    IfS([Expr], [Stmt], [Stmt])        # condition, body, else branch
-    WhileS([Expr], [Stmt])             # `for cond:` and bare `for:`
-    For3([Stmt], [Expr], [Stmt])       # exactly [init, post], condition, body
-    ForIn(string, [Expr], [Stmt])      # `for x in COLL:`
-    ForRange(string, [Expr], [Stmt])   # `parallel for i in 0..<N:`
-    ParallelS([Expr], [Stmt])          # width (0 or 1), the single loop statement
-    MatchS([Expr], [Arm])
-    SelectS([Arm])
-    DeleteS([Expr])                    # `delete m[k]` -- the index place
+    IfS(int, [Expr], [Stmt], [Stmt])   # condition, body, else branch
+    WhileS(int, [Expr], [Stmt])        # `for cond:` and bare `for:`
+    For3(int, [Stmt], [Expr], [Stmt])  # exactly [init, post], condition, body
+    ForIn(int, string, [Expr], [Stmt]) # `for x in COLL:`
+    ForRange(int, string, [Expr], [Stmt]) # `parallel for i in 0..<N:`
+    ParallelS(int, [Expr], [Stmt])     # width (0 or 1), the single loop statement
+    MatchS(int, [Expr], [Arm])
+    SelectS(int, [Arm])
+    DeleteS(int, [Expr])               # `delete m[k]` -- the index place
+
+fn sline_of(s: Stmt) -> int:
+    match s:
+        ExprStmt(l, k): return l
+        Decl(l, n, t, r, v): return l
+        MDecl(l, d, ns, r): return l
+        Assign(l, n, r): return l
+        PlaceSet(l, k): return l
+        ConstS(l, n, k): return l
+        PassS(l): return l
+        ReturnS(l, k): return l
+        BreakS(l): return l
+        ContinueS(l): return l
+        IfS(l, c, b, e): return l
+        WhileS(l, c, b): return l
+        For3(l, ip, c, b): return l
+        ForIn(l, n, c, b): return l
+        ForRange(l, n, c, b): return l
+        ParallelS(l, w, b): return l
+        MatchS(l, c, a): return l
+        SelectS(l, a): return l
+        DeleteS(l, k): return l
+    return 0
 
 # --- declarations -----------------------------------------------------------
 
@@ -125,46 +196,56 @@ struct Fn:
     is_extern: bool
     lib: string
     dnote: string                      # the `# deprecated:` line above it, "" if none
+    line: int
 
 struct FieldD:
     name: string
     ty: Ty
+    line: int
 
 struct StructD:
     name: string
     typarams: [string]
     fields: [FieldD]
+    line: int
 
 struct Variant:
     name: string
     payload: [Ty]
+    line: int
 
 struct EnumD:
     name: string
     typarams: [string]
     variants: [Variant]
+    line: int
 
 struct NewtypeD:
     name: string
     under: Ty
+    line: int
 
 struct HandleD:
     name: string
     free_fn: string
+    line: int
 
 struct ConstD:
     name: string
     value: Expr
+    line: int
 
 struct SubscriptD:
     name: string
     params: [Param]
     ret: Ty
     place: Expr
+    line: int
 
 struct ImportD:
     alias: string
     path: string
+    line: int
 
 struct Unit:
     pkg: string

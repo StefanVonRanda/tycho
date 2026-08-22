@@ -185,7 +185,7 @@ fn load(entry: string, argv0: string) -> Program:
         # src/tychoc.c: a package-less file is a single-file build, and an
         # `import` in one is a hard error rather than a silently unloaded package.
         if len(u.imports) > 0:
-            die("tychoc1: to `import` a package, this file must declare its own package first -- add `package main` (or another name) as the first line")
+            die(entry + ":" + str(u.imports[0].line) + ": error: to `import` a package, this file must declare its own package first -- add `package main` (or another name) as the first line")
         fs := []File
         push(fs, File(entry, dir, "", "", u))
         return Program(fs, dir, "", entry, root)

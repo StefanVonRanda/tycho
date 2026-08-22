@@ -22,6 +22,15 @@ twice against the SAME tychoc verdict:
 and every file tychoc ACCEPTS must resolve with `late=0` -- the unused-local and
 unused-import diagnostics, which src/tychoc.c drains only after resolve succeeds
 and which therefore only mean anything on a file it accepts.
+
+Phase 5b added leg8, and it is the one leg here whose subject is not a VERDICT.
+Every diagnostic now carries `file:line`, and a line that is present but WRONG
+satisfies "the AST has a line field" while failing Phase 9, which pins message
+text byte for byte -- legs 5 and 6 are green either way, because the file is
+refused with or without the right number in it. So each NAME file's location is
+compared against ./tychoc's for the same input. It found 7 on its first run: the
+six parse-time declaration categories were being registered in ARRAY order, so
+of two colliding declarations tychoc1 named the wrong one.
 """
 import os, re, subprocess, sys
 
@@ -38,26 +47,27 @@ def tychoc_verdict(path):
     r = subprocess.run(["./tychoc", path, "--emit-c", "-o", "/tmp/_vd_out"],
                        capture_output=True, text=True)
     if r.returncode == 0:
-        return "ACCEPT", ""
-    msg = ""
+        return "ACCEPT", "", ""
+    msg = loc = ""
     for ln in r.stderr.split("\n"):
-        m = re.match(r"^(?:tychoc: )?(?:\S+?(?::\d+)?: )?error: (.*)$", ln)
+        m = re.match(r"^(?:tychoc: )?(?:(\S+?(?::\d+)?): )?error: (.*)$", ln)
         if m:
-            msg = m.group(1).strip()
+            loc = m.group(1) or ""
+            msg = m.group(2).strip()
             break
         if ln.startswith("tychoc: ") and ": error:" not in ln:
             msg = ln[8:].strip()
             break
     hits = [s for s in SITES if s[2].match(msg) and LIT(s[1]) >= 8]
     if not hits:
-        return (C.fallback(msg) or "UNMATCHED"), msg
+        return (C.fallback(msg) or "UNMATCHED"), msg, loc
     best = max(hits, key=lambda h: LIT(h[1]))
     needs = any(k in best[1] for k in C.NEEDS_SYMBOLS)
     if best[0] < C.PARSE_END and not needs:
-        return "SYNTAX", msg
+        return "SYNTAX", msg, loc
     if any(k in best[1] for k in C.NAME_SITES):
-        return "NAME", msg
-    return "SEMANTIC", msg
+        return "NAME", msg, loc
+    return "SEMANTIC", msg, loc
 
 
 def main():
@@ -66,8 +76,9 @@ def main():
                    for n in ns if n.endswith(".ty"))
     n = {"ACCEPT": 0, "SEMANTIC": 0, "NAME": 0, "SYNTAX": 0, "UNMATCHED": 0}
     bad = rbad = lbad = 0
+    lok = lbad2 = lskip = 0
     for f in files:
-        cls, msg = tychoc_verdict(f)
+        cls, msg, loc = tychoc_verdict(f)
         n[cls] += 1
         p = subprocess.run(["./tychoc1", f, "--parse"], capture_output=True, text=True)
         parsed = p.returncode == 0
@@ -87,6 +98,17 @@ def main():
             print("  RESOLVE-DISAGREE %s tychoc=%s tychoc1=%s :: %s"
                   % (f, cls, "accept" if resolved else "reject",
                      (msg or q.stderr.split("\n")[0]).strip()[:90]))
+        if cls == "NAME":
+            m = re.search(r"^(\S+:\d+): error: ", q.stderr, re.M)
+            mine = m.group(1) if m else ""
+            if not loc or not mine:
+                lskip += 1
+                print("  LINE-UNLOCATED %s tychoc=%r tychoc1=%r" % (f, loc, mine))
+            elif mine != loc:
+                lbad2 += 1
+                print("  LINE-DISAGREE %s tychoc=%s tychoc1=%s" % (f, loc, mine))
+            else:
+                lok += 1
         if cls == "ACCEPT" and resolved:
             late = [w for w in q.stdout.split() if w.startswith("late=")]
             if late and late[0] != "late=0":
@@ -96,10 +118,15 @@ def main():
           % (len(files), n["ACCEPT"], n["SEMANTIC"], n["NAME"], n["SYNTAX"], bad))
     print("leg6  whole-tree resolution: disagreements=%d unused-local/import on an accepted file=%d"
           % (rbad, lbad))
+    print("leg8  NAME diagnostic file:line vs ./tychoc: scored=%d agree=%d disagree=%d unlocated=%d"
+          % (lok + lbad2 + lskip, lok, lbad2, lskip))
+    if lok + lbad2 + lskip != n["NAME"]:
+        print("parse-check: leg8 scored %d of %d NAME files" % (lok + lbad2 + lskip, n["NAME"]))
+        return 1
     if len(files) != EXPECT:
         print("parse-check: the tree is %d .ty files, expected %d" % (len(files), EXPECT))
         return 1
-    return 1 if (bad or rbad or lbad) else 0
+    return 1 if (bad or rbad or lbad or lbad2 or lskip) else 0
 
 
 if __name__ == "__main__":

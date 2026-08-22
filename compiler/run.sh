@@ -33,6 +33,10 @@
 #        use is printed as the package-mangled name it resolved to, so
 #        preferring a top-level const over a local -- which leaves legs 1..6
 #        fully green -- moves a counted line.
+#   [8]  every NAME file's `file:line` compared against ./tychoc's for the same
+#        input. Phase 5b put a line on every AST node, and a line that is
+#        PRESENT BUT WRONG passes every leg above: the file is refused either
+#        way. Printed by compiler/verdict_diff.py alongside legs 5 and 6.
 #
 # The split in compiler/reject_class.tsv is COMMITTED, not recomputed: it is
 # grounded in src/tychoc.c's diagnostic sites (see scripts/classify_rejects.py),

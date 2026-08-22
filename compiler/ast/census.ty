@@ -68,27 +68,27 @@ fn _ces(es: [Expr], acc: [string]) -> [string]:
 fn _ce(e: Expr, acc: [string]) -> [string]:
     out := acc
     match e:
-        IntLit(v): push(out, "e.IntLit")
-        FloatLit(v): push(out, "e.FloatLit")
-        StrLit(v): push(out, "e.StrLit")
-        FStrLit(v): push(out, "e.FStrLit")
-        CharLit(v): push(out, "e.CharLit")
-        BoolLit(v): push(out, "e.BoolLit")
-        NullLit(v): push(out, "e.NullLit")
-        Name(v): push(out, "e.Name")
-        Field(k, f):
+        IntLit(l, v): push(out, "e.IntLit")
+        FloatLit(l, v): push(out, "e.FloatLit")
+        StrLit(l, v): push(out, "e.StrLit")
+        FStrLit(l, v): push(out, "e.FStrLit")
+        CharLit(l, v): push(out, "e.CharLit")
+        BoolLit(l, v): push(out, "e.BoolLit")
+        NullLit(l): push(out, "e.NullLit")
+        Name(l, v): push(out, "e.Name")
+        Field(l, k, f):
             push(out, "e.Field")
             out = _ces(k, out)
-        TupIdx(k, n):
+        TupIdx(l, k, n):
             push(out, "e.TupIdx")
             out = _ces(k, out)
-        Index(k):
+        Index(l, k):
             push(out, "e.Index")
             out = _ces(k, out)
-        Slice(hl, hh, k):
+        Slice(l, hl, hh, k):
             push(out, "e.Slice")
             out = _ces(k, out)
-        Call(q, n, tas, args):
+        Call(l, q, n, tas, args):
             push(out, "e.Call")
             if len(q) > 0:
                 push(out, "e.CallQual")
@@ -96,66 +96,66 @@ fn _ce(e: Expr, acc: [string]) -> [string]:
                 push(out, "e.CallTypeArgs")
             out = _cts(tas, out)
             out = _ces(args, out)
-        CallVal(k):
+        CallVal(l, k):
             push(out, "e.CallVal")
             out = _ces(k, out)
-        Named(n, k):
+        Named(l, n, k):
             push(out, "e.Named")
             out = _ces(k, out)
-        Binop(o, k):
+        Binop(l, o, k):
             push(out, "e.Binop:" + o)
             out = _ces(k, out)
-        Unop(o, k):
+        Unop(l, o, k):
             push(out, "e.Unop:" + o)
             out = _ces(k, out)
-        IsVar(k, q, n):
+        IsVar(l, k, q, n):
             push(out, "e.IsVar")
             out = _ces(k, out)
-        ArrLit(k):
+        ArrLit(l, k):
             push(out, "e.ArrLit")
             out = _ces(k, out)
-        MapLit(k):
+        MapLit(l, k):
             push(out, "e.MapLit")
             out = _ces(k, out)
-        EmptyArr(ts):
+        EmptyArr(l, ts):
             push(out, "e.EmptyArr")
             out = _cts(ts, out)
-        EmptyMap(ts):
+        EmptyMap(l, ts):
             push(out, "e.EmptyMap")
             out = _cts(ts, out)
-        SoaLit(ts):
+        SoaLit(l, ts):
             push(out, "e.SoaLit")
             out = _cts(ts, out)
-        Tuple(k):
+        Tuple(l, k):
             push(out, "e.Tuple")
             out = _ces(k, out)
-        SomeE(k):
+        SomeE(l, k):
             push(out, "e.SomeE")
             out = _ces(k, out)
-        OkE(k):
+        OkE(l, k):
             push(out, "e.OkE")
             out = _ces(k, out)
-        ErrE(k):
+        ErrE(l, k):
             push(out, "e.ErrE")
             out = _ces(k, out)
-        NoneE(v): push(out, "e.NoneE")
-        SpawnE(k):
+        NoneE(l): push(out, "e.NoneE")
+        SpawnE(l, k):
             push(out, "e.SpawnE")
             out = _ces(k, out)
-        OrRet(k):
+        OrRet(l, k):
             push(out, "e.OrRet")
             out = _ces(k, out)
-        Spread(k):
+        Spread(l, k):
             push(out, "e.Spread")
             out = _ces(k, out)
-        Addr(k):
+        Addr(l, k):
             push(out, "e.Addr")
             out = _ces(k, out)
-        ChanE(ts, k):
+        ChanE(l, ts, k):
             push(out, "e.ChanE")
             out = _cts(ts, out)
             out = _ces(k, out)
-        Lambda(ps, r, b):
+        Lambda(l, ps, r, b):
             push(out, "e.Lambda")
             out = _cps(ps, out)
             out = _cts(r, out)
@@ -191,10 +191,10 @@ fn _cb(b: [Stmt], acc: [string]) -> [string]:
 fn _cs(s: Stmt, acc: [string]) -> [string]:
     out := acc
     match s:
-        ExprStmt(k):
+        ExprStmt(l, k):
             push(out, "s.ExprStmt")
             out = _ces(k, out)
-        Decl(n, an, rhs, ctrl):
+        Decl(l, n, an, rhs, ctrl):
             push(out, "s.Decl")
             if len(an) > 0:
                 push(out, "s.DeclTyped")
@@ -203,63 +203,63 @@ fn _cs(s: Stmt, acc: [string]) -> [string]:
             out = _cts(an, out)
             out = _ces(rhs, out)
             out = _cb(ctrl, out)
-        MDecl(isd, ns, rhs):
+        MDecl(l, isd, ns, rhs):
             if isd:
                 push(out, "s.MDecl")
             else:
                 push(out, "s.MAssign")
             out = _ces(rhs, out)
-        Assign(n, k):
+        Assign(l, n, k):
             push(out, "s.Assign")
             out = _ces(k, out)
-        PlaceSet(k):
+        PlaceSet(l, k):
             push(out, "s.PlaceSet")
             out = _ces(k, out)
-        ConstS(n, k):
+        ConstS(l, n, k):
             push(out, "s.ConstS")
             out = _ces(k, out)
-        PassS(v): push(out, "s.PassS")
-        ReturnS(k):
+        PassS(l): push(out, "s.PassS")
+        ReturnS(l, k):
             push(out, "s.ReturnS")
             out = _ces(k, out)
-        BreakS(v): push(out, "s.BreakS")
-        ContinueS(v): push(out, "s.ContinueS")
-        IfS(c, b, e):
+        BreakS(l): push(out, "s.BreakS")
+        ContinueS(l): push(out, "s.ContinueS")
+        IfS(l, c, b, e):
             push(out, "s.IfS")
             if len(e) > 0:
                 push(out, "s.Else")
             out = _ces(c, out)
             out = _cb(b, out)
             out = _cb(e, out)
-        WhileS(c, b):
+        WhileS(l, c, b):
             push(out, "s.WhileS")
             out = _ces(c, out)
             out = _cb(b, out)
-        For3(ip, c, b):
+        For3(l, ip, c, b):
             push(out, "s.For3")
             out = _cb(ip, out)
             out = _ces(c, out)
             out = _cb(b, out)
-        ForIn(n, c, b):
+        ForIn(l, n, c, b):
             push(out, "s.ForIn")
             out = _ces(c, out)
             out = _cb(b, out)
-        ForRange(n, c, b):
+        ForRange(l, n, c, b):
             push(out, "s.ForRange")
             out = _ces(c, out)
             out = _cb(b, out)
-        ParallelS(w, b):
+        ParallelS(l, w, b):
             push(out, "s.ParallelS")
             out = _ces(w, out)
             out = _cb(b, out)
-        MatchS(c, arms):
+        MatchS(l, c, arms):
             push(out, "s.MatchS")
             out = _ces(c, out)
             out = _carms(arms, out)
-        SelectS(arms):
+        SelectS(l, arms):
             push(out, "s.SelectS")
             out = _carms(arms, out)
-        DeleteS(k):
+        DeleteS(l, k):
             push(out, "s.DeleteS")
             out = _ces(k, out)
     return out

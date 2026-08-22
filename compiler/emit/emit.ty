@@ -8,10 +8,10 @@ import "../ast"
 
 fn _expr(e: ast.Expr) -> string:
     match e:
-        ast.IntLit(v): return str(v) + "LL"
-        ast.StrLit(s): return "\"" + s + "\""
-        ast.Name(n): return n
-        ast.Call(q, name, tas, args):
+        ast.IntLit(l, v): return str(v) + "LL"
+        ast.StrLit(l, s): return "\"" + s + "\""
+        ast.Name(l, n): return n
+        ast.Call(l, q, name, tas, args):
             if len(q) == 0 and name == "str" and len(args) == 1:
                 return "tycho_int_to_str(&_t, " + _expr(args[0]) + ")"
             if len(q) == 0 and name == "print" and len(args) == 1:
@@ -23,7 +23,7 @@ fn _expr(e: ast.Expr) -> string:
 
 fn _stmt(s: ast.Stmt) -> string:
     match s:
-        ast.ExprStmt(es):
+        ast.ExprStmt(l, es):
             return "    { Arena _t = arena_new(0); " + _expr(es[0]) +
                    "; arena_free(&_t); }\n"
         _: die("tychoc1: unsupported statement -- codegen lands in Phase 7")

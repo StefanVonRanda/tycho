@@ -28,6 +28,13 @@ import "../ast"
 # src/tychoc.c does, never less -- which is the property the accept corpora in
 # compiler/run.sh measure.
 
+# One declaration's position in its file, so build_table can walk the six
+# parse-time categories in SOURCE order rather than in array order.
+struct DeclRef:
+    line: int
+    cat: int                           # 1 struct 2 enum 3 newtype 4 handle 5 const 6 subscript
+    idx: int
+
 struct Sym:
     name: string                       # mangled: `<pkg>__<name>`, bare in the entry package
     kind: string                       # fn generic extern struct enum variant newtype handle const subscript
@@ -39,6 +46,7 @@ struct Binding:
     kind: string                       # local param bind loopvar typaram lconst
     used: bool
     report: bool                       # a plain `x := ...`, the only form Go's rule reports
+    line: int
 
 struct R:
     syms: [Sym]
@@ -51,6 +59,7 @@ struct R:
     file_imports: [ast.ImportD]
     pkg_used: [string: bool]
     file: string
+    line: int                          # the line of the node being walked
     prefix: string
     root: string
     entry_in_corelib: bool
@@ -99,8 +108,12 @@ fn _builtin_ctors() -> [string: bool]:
         m[n] = true
     return m
 
+# src/tychoc.c prints `file:line: error: msg` for every one of these. The line
+# is the walk's current node, set by _expr/_stmt and by the declaration loops --
+# a stale one is the failure this cannot see for itself, which is why
+# compiler/run.sh leg 9 compares every NAME rejection against ./tychoc's line.
 fn _err(rs: inout R, msg: string):
-    push(rs.errs, rs.file + ": error: " + msg)
+    push(rs.errs, rs.file + ":" + str(rs.line) + ": error: " + msg)
 
 # src/tychoc.c drains `declared and not used` and `imported and not used` only
 # AFTER resolve has finished without dying (report_unused_locals /
@@ -111,7 +124,7 @@ fn _err(rs: inout R, msg: string):
 # for the wrong reason. They are kept, printed and gated -- over the ACCEPT
 # corpus, where src/tychoc.c does reach the end and the count must be zero.
 fn _late(rs: inout R, msg: string):
-    push(rs.late, rs.file + ": error: " + msg)
+    push(rs.late, rs.file + ":" + str(rs.line) + ": error: " + msg)
 
 fn _note(rs: inout R, key: string):
     rs.counts[key] = rs.counts.get(key, 0) + 1
@@ -131,7 +144,7 @@ fn _add(rs: inout R, name: string, kind: string, file: string, pkg: string):
 
 fn build_table(p: Program) -> R:
     rs := R([]Sym, []string: int, []Binding, 0, []string: int, []ast.ImportD, []string,
-            []ast.ImportD, []string: bool, "", "", p.root, false, false, false, []string: bool, []string, []string)
+            []ast.ImportD, []string: bool, "", 0, "", p.root, false, false, false, []string: bool, []string, []string)
     rs.bsigs = _builtin_sigs()
     rs.entry_in_corelib = under_corelib(p.root, p.entry_dir)
     ctors := _builtin_ctors()
@@ -140,7 +153,76 @@ fn build_table(p: Program) -> R:
         for im in f.unit.imports:
             push(rs.all_imports, im)
             push(rs.all_imp_file, f.path)
+        # REGISTRATION ORDER IS PART OF THE DIAGNOSTIC. src/tychoc.c registers a
+        # struct/enum/newtype/handle/const/subscript AS IT PARSES, so of two
+        # colliding declarations the one written LATER is the one named; a `fn`
+        # is checked afterwards, in resolve_program (src/tychoc.c@die_dup_proc),
+        # which names the PROC whichever side came first. Walking the categories
+        # in array order registered every fn before every struct and got 7 of
+        # the 27 NAME fixtures' lines wrong while every verdict leg stayed green.
+        ds := []DeclRef
+        for k := 0; k < len(f.unit.structs); k += 1:
+            push(ds, DeclRef(f.unit.structs[k].line, 1, k))
+        for k := 0; k < len(f.unit.enums); k += 1:
+            push(ds, DeclRef(f.unit.enums[k].line, 2, k))
+        for k := 0; k < len(f.unit.newtypes); k += 1:
+            push(ds, DeclRef(f.unit.newtypes[k].line, 3, k))
+        for k := 0; k < len(f.unit.handles); k += 1:
+            push(ds, DeclRef(f.unit.handles[k].line, 4, k))
+        for k := 0; k < len(f.unit.consts); k += 1:
+            push(ds, DeclRef(f.unit.consts[k].line, 5, k))
+        for k := 0; k < len(f.unit.subscripts); k += 1:
+            push(ds, DeclRef(f.unit.subscripts[k].line, 6, k))
+        for a := 0; a < len(ds); a += 1:
+            b := a
+            for c := a + 1; c < len(ds); c += 1:
+                if ds[c].line < ds[b].line:
+                    b = c
+            tmp := ds[a]
+            ds[a] = ds[b]
+            ds[b] = tmp
+        for d in ds:
+            if d.cat == 1:
+                sd := f.unit.structs[d.idx]
+                rs.line = sd.line
+                if sd.name in ctors:
+                    _err(&rs, "'" + sd.name + "' collides with the builtin constructor")
+                _add(&rs, f.prefix + sd.name, "struct", f.path, f.pkg)
+            elif d.cat == 2:
+                ed := f.unit.enums[d.idx]
+                rs.line = ed.line
+                if ed.name in ctors:
+                    _err(&rs, "'" + ed.name + "' collides with the builtin constructor")
+                _add(&rs, f.prefix + ed.name, "enum", f.path, f.pkg)
+                for v in ed.variants:
+                    rs.line = v.line
+                    if v.name in ctors:
+                        _err(&rs, "'" + v.name + "' is already defined")
+                    _add(&rs, f.prefix + v.name, "variant", f.path, f.pkg)
+            elif d.cat == 3:
+                nd := f.unit.newtypes[d.idx]
+                rs.line = nd.line
+                if nd.name in ctors:
+                    _err(&rs, "'" + nd.name + "' collides with the builtin constructor")
+                _add(&rs, f.prefix + nd.name, "newtype", f.path, f.pkg)
+            elif d.cat == 4:
+                hd := f.unit.handles[d.idx]
+                rs.line = hd.line
+                if hd.name in ctors:
+                    _err(&rs, "'" + hd.name + "' is already defined")
+                _add(&rs, f.prefix + hd.name, "handle", f.path, f.pkg)
+            elif d.cat == 5:
+                cd := f.unit.consts[d.idx]
+                rs.line = cd.line
+                if cd.name in ctors:
+                    _err(&rs, "'" + cd.name + "' is already defined")
+                _add(&rs, f.prefix + cd.name, "const", f.path, f.pkg)
+            else:
+                sb := f.unit.subscripts[d.idx]
+                rs.line = sb.line
+                _add(&rs, f.prefix + "subscript$" + sb.name, "subscript", f.path, f.pkg)
         for fd in f.unit.fns:
+            rs.line = fd.line
             if fd.name in ctors:
                 _err(&rs, "'" + fd.name + "' is already defined")
             if fd.is_extern:
@@ -150,32 +232,6 @@ fn build_table(p: Program) -> R:
                 _add(&rs, f.prefix + fd.name, "generic", f.path, f.pkg)
             else:
                 _add(&rs, f.prefix + fd.name, "fn", f.path, f.pkg)
-        for sd in f.unit.structs:
-            if sd.name in ctors:
-                _err(&rs, "'" + sd.name + "' collides with the builtin constructor")
-            _add(&rs, f.prefix + sd.name, "struct", f.path, f.pkg)
-        for ed in f.unit.enums:
-            if ed.name in ctors:
-                _err(&rs, "'" + ed.name + "' collides with the builtin constructor")
-            _add(&rs, f.prefix + ed.name, "enum", f.path, f.pkg)
-            for v in ed.variants:
-                if v.name in ctors:
-                    _err(&rs, "'" + v.name + "' is already defined")
-                _add(&rs, f.prefix + v.name, "variant", f.path, f.pkg)
-        for nd in f.unit.newtypes:
-            if nd.name in ctors:
-                _err(&rs, "'" + nd.name + "' collides with the builtin constructor")
-            _add(&rs, f.prefix + nd.name, "newtype", f.path, f.pkg)
-        for hd in f.unit.handles:
-            if hd.name in ctors:
-                _err(&rs, "'" + hd.name + "' is already defined")
-            _add(&rs, f.prefix + hd.name, "handle", f.path, f.pkg)
-        for cd in f.unit.consts:
-            if cd.name in ctors:
-                _err(&rs, "'" + cd.name + "' is already defined")
-            _add(&rs, f.prefix + cd.name, "const", f.path, f.pkg)
-        for sb in f.unit.subscripts:
-            _add(&rs, f.prefix + "subscript$" + sb.name, "subscript", f.path, f.pkg)
     return rs
 
 # --- scopes -----------------------------------------------------------------
@@ -186,7 +242,10 @@ fn _mark(rs: inout R) -> int:
 fn _restore(rs: inout R, m: int):
     for i := m; i < rs.nvars; i += 1:
         if rs.vars[i].report and not rs.vars[i].used:
+            keep := rs.line
+            rs.line = rs.vars[i].line
             _late(&rs, "'" + rs.vars[i].name + "' declared and not used")
+            rs.line = keep
     rs.nvars = m
 
 fn _push(rs: inout R, name: string, kind: string, report: bool):
@@ -207,7 +266,7 @@ fn _push(rs: inout R, name: string, kind: string, report: bool):
     # accept-corpus file this pass refused.
     if rs.in_generic:
         r = false
-    b := Binding(name, kind, false, r)
+    b := Binding(name, kind, false, r, rs.line)
     if rs.nvars < len(rs.vars):
         rs.vars[rs.nvars] = b
     else:
@@ -401,8 +460,9 @@ fn _qual_is_pkg(rs: inout R, q: string) -> bool:
     return true
 
 fn _expr(rs: inout R, bi: [string: bool], ctors: [string: bool], e: ast.Expr):
+    rs.line = ast.line_of(e)
     match e:
-        ast.Name(n):
+        ast.Name(l, n):
             if _lookup(&rs, n) >= 0:
                 _note(&rs, "local")
                 return
@@ -430,7 +490,7 @@ fn _expr(rs: inout R, bi: [string: bool], ctors: [string: bool], e: ast.Expr):
                 _note(&rs, "fnval:" + n)
                 return
             _err(&rs, "unknown variable '" + n + "'")
-        ast.Call(q, n, ts, args):
+        ast.Call(l, q, n, ts, args):
             _tys(&rs, ts)
             if len(q) == 0:
                 _call_bare(&rs, bi, ctors, n)
@@ -447,9 +507,9 @@ fn _expr(rs: inout R, bi: [string: bool], ctors: [string: bool], e: ast.Expr):
             else:
                 _note(&rs, "method:" + n)
             _exprs(&rs, bi, ctors, args)
-        ast.Field(k, f):
+        ast.Field(l, k, f):
             match k[0]:
-                ast.Name(q):
+                ast.Name(l2, q):
                     if _qual_is_pkg(&rs, q):
                         m := _pkg_sym(&rs, q, f)
                         kk := _kindof(&rs, m)
@@ -463,13 +523,13 @@ fn _expr(rs: inout R, bi: [string: bool], ctors: [string: bool], e: ast.Expr):
                 _:
                     _note(&rs, "field")
             _exprs(&rs, bi, ctors, k)
-        ast.IsVar(k, q, v):
+        ast.IsVar(l, k, q, v):
             _exprs(&rs, bi, ctors, k)
             if len(q) > 0 and _qual_is_pkg(&rs, q):
                 _note(&rs, "isvar:" + _pkg_sym(&rs, q, v))
             else:
                 _note(&rs, "isvar:" + v)
-        ast.Lambda(ps, rt, body):
+        ast.Lambda(l, ps, rt, body):
             _tys(&rs, rt)
             m := _mark(&rs)
             for p in ps:
@@ -477,30 +537,30 @@ fn _expr(rs: inout R, bi: [string: bool], ctors: [string: bool], e: ast.Expr):
                 _push(&rs, p.name, "param", false)
             _exprs(&rs, bi, ctors, body)
             _restore(&rs, m)
-        ast.TupIdx(k, i): _exprs(&rs, bi, ctors, k)
-        ast.Index(k): _exprs(&rs, bi, ctors, k)
-        ast.Slice(a, b, k): _exprs(&rs, bi, ctors, k)
-        ast.CallVal(k): _exprs(&rs, bi, ctors, k)
-        ast.Named(nm, k): _exprs(&rs, bi, ctors, k)
-        ast.Binop(o, k): _exprs(&rs, bi, ctors, k)
-        ast.Unop(o, k): _exprs(&rs, bi, ctors, k)
-        ast.ArrLit(k): _exprs(&rs, bi, ctors, k)
-        ast.MapLit(k): _exprs(&rs, bi, ctors, k)
-        ast.Tuple(k): _exprs(&rs, bi, ctors, k)
-        ast.SomeE(k): _exprs(&rs, bi, ctors, k)
-        ast.OkE(k): _exprs(&rs, bi, ctors, k)
-        ast.ErrE(k): _exprs(&rs, bi, ctors, k)
-        ast.SpawnE(k): _exprs(&rs, bi, ctors, k)
-        ast.OrRet(k): _exprs(&rs, bi, ctors, k)
-        ast.Spread(k): _exprs(&rs, bi, ctors, k)
-        ast.Addr(k): _exprs(&rs, bi, ctors, k)
-        ast.ChanE(t, k):
+        ast.TupIdx(l, k, i): _exprs(&rs, bi, ctors, k)
+        ast.Index(l, k): _exprs(&rs, bi, ctors, k)
+        ast.Slice(l, a, b, k): _exprs(&rs, bi, ctors, k)
+        ast.CallVal(l, k): _exprs(&rs, bi, ctors, k)
+        ast.Named(l, nm, k): _exprs(&rs, bi, ctors, k)
+        ast.Binop(l, o, k): _exprs(&rs, bi, ctors, k)
+        ast.Unop(l, o, k): _exprs(&rs, bi, ctors, k)
+        ast.ArrLit(l, k): _exprs(&rs, bi, ctors, k)
+        ast.MapLit(l, k): _exprs(&rs, bi, ctors, k)
+        ast.Tuple(l, k): _exprs(&rs, bi, ctors, k)
+        ast.SomeE(l, k): _exprs(&rs, bi, ctors, k)
+        ast.OkE(l, k): _exprs(&rs, bi, ctors, k)
+        ast.ErrE(l, k): _exprs(&rs, bi, ctors, k)
+        ast.SpawnE(l, k): _exprs(&rs, bi, ctors, k)
+        ast.OrRet(l, k): _exprs(&rs, bi, ctors, k)
+        ast.Spread(l, k): _exprs(&rs, bi, ctors, k)
+        ast.Addr(l, k): _exprs(&rs, bi, ctors, k)
+        ast.ChanE(l, t, k):
             _tys(&rs, t)
             _exprs(&rs, bi, ctors, k)
-        ast.FStrLit(body): _fstring_uses(&rs, body)
-        ast.EmptyArr(t): _tys(&rs, t)
-        ast.EmptyMap(t): _tys(&rs, t)
-        ast.SoaLit(t): _tys(&rs, t)
+        ast.FStrLit(l, body): _fstring_uses(&rs, body)
+        ast.EmptyArr(l, t): _tys(&rs, t)
+        ast.EmptyMap(l, t): _tys(&rs, t)
+        ast.SoaLit(l, t): _tys(&rs, t)
         _: pass
 
 # An unqualified call. src/tychoc.c:6565-6572 tries the OWN package first and
@@ -550,15 +610,18 @@ fn _block(rs: inout R, bi: [string: bool], ctors: [string: bool], body: [ast.Stm
     _restore(&rs, m)
 
 fn _stmt(rs: inout R, bi: [string: bool], ctors: [string: bool], s: ast.Stmt):
+    rs.line = ast.sline_of(s)
     match s:
-        ast.ExprStmt(k): _exprs(&rs, bi, ctors, k)
-        ast.Decl(name, ty, rhs, vb):
+        ast.ExprStmt(l, k): _exprs(&rs, bi, ctors, k)
+        ast.Decl(l, name, ty, rhs, vb):
             _tys(&rs, ty)
             _exprs(&rs, bi, ctors, rhs)
             _block(&rs, bi, ctors, vb)
+            rs.line = l
             _push(&rs, name, "local", true)
-        ast.MDecl(isdecl, names, rhs):
+        ast.MDecl(l, isdecl, names, rhs):
             _exprs(&rs, bi, ctors, rhs)
+            rs.line = l
             if isdecl:
                 seen := []string: bool
                 for nm in names:
@@ -569,49 +632,53 @@ fn _stmt(rs: inout R, bi: [string: bool], ctors: [string: bool], s: ast.Stmt):
             else:
                 for nm in names:
                     _assign_to(&rs, nm)
-        ast.Assign(name, rhs):
+        ast.Assign(l, name, rhs):
             _exprs(&rs, bi, ctors, rhs)
+            rs.line = l
             _assign_to(&rs, name)
-        ast.PlaceSet(k): _exprs(&rs, bi, ctors, k)
-        ast.ConstS(name, v):
+        ast.PlaceSet(l, k): _exprs(&rs, bi, ctors, k)
+        ast.ConstS(l, name, v):
             _exprs(&rs, bi, ctors, v)
+            rs.line = l
             _push(&rs, name, "lconst", false)
-        ast.ReturnS(k): _exprs(&rs, bi, ctors, k)
-        ast.DeleteS(k): _exprs(&rs, bi, ctors, k)
-        ast.IfS(c, b, e):
+        ast.ReturnS(l, k): _exprs(&rs, bi, ctors, k)
+        ast.DeleteS(l, k): _exprs(&rs, bi, ctors, k)
+        ast.IfS(l, c, b, e):
             _exprs(&rs, bi, ctors, c)
             _block(&rs, bi, ctors, b)
             _block(&rs, bi, ctors, e)
-        ast.WhileS(c, b):
+        ast.WhileS(l, c, b):
             _exprs(&rs, bi, ctors, c)
             _block(&rs, bi, ctors, b)
-        ast.For3(init, c, b):
+        ast.For3(l, init, c, b):
             m := _mark(&rs)
             for st in init:
                 _stmt(&rs, bi, ctors, st)
             _exprs(&rs, bi, ctors, c)
             _block(&rs, bi, ctors, b)
             _restore(&rs, m)
-        ast.ForIn(v, coll, b):
+        ast.ForIn(l, v, coll, b):
             _exprs(&rs, bi, ctors, coll)
             m := _mark(&rs)
+            rs.line = l
             _push(&rs, v, "loopvar", false)
             _block(&rs, bi, ctors, b)
             _restore(&rs, m)
-        ast.ForRange(v, bounds, b):
+        ast.ForRange(l, v, bounds, b):
             _exprs(&rs, bi, ctors, bounds)
             m := _mark(&rs)
+            rs.line = l
             _push(&rs, v, "loopvar", false)
             _block(&rs, bi, ctors, b)
             _restore(&rs, m)
-        ast.ParallelS(w, b):
+        ast.ParallelS(l, w, b):
             _exprs(&rs, bi, ctors, w)
             for st in b:
                 _stmt(&rs, bi, ctors, st)
-        ast.MatchS(subj, arms):
+        ast.MatchS(l, subj, arms):
             _exprs(&rs, bi, ctors, subj)
             _arms(&rs, bi, ctors, arms)
-        ast.SelectS(arms):
+        ast.SelectS(l, arms):
             _arms(&rs, bi, ctors, arms)
         _: pass
 
@@ -649,6 +716,7 @@ fn _arms(rs: inout R, bi: [string: bool], ctors: [string: bool], arms: [ast.Arm]
     for a in arms:
         _exprs(&rs, bi, ctors, a.ch)
         m := _mark(&rs)
+        rs.line = a.line
         if a.kind == "variant":
             if len(a.qual) > 0 and _qual_is_pkg(&rs, a.qual):
                 _note(&rs, "armvariant:" + _pkg_sym(&rs, a.qual, a.name))
@@ -661,6 +729,7 @@ fn _arms(rs: inout R, bi: [string: bool], ctors: [string: bool], arms: [ast.Arm]
                     _note(&rs, "armvariant.deferred")
             else:
                 _note(&rs, "armvariant:" + a.name)
+        rs.line = a.line
         for b in a.binds:
             _bind(&rs, ctors, b)
         for b in a.subbinds:
@@ -673,6 +742,7 @@ fn _arms(rs: inout R, bi: [string: bool], ctors: [string: bool], arms: [ast.Arm]
 fn _params(rs: inout R, ps: [ast.Param]):
     seen := []string: bool
     for p in ps:
+        rs.line = p.line
         _tys(&rs, p.ty)
         if p.name in seen:
             _err(&rs, "duplicate parameter '" + p.name + "'")
@@ -700,6 +770,7 @@ fn resolve(p: Program) -> R:
         for fd in f.unit.fns:
             if fd.is_extern:
                 continue
+            rs.line = fd.line
             m := _mark(&rs)
             rs.in_generic = len(fd.typarams) > 0
             for t in fd.typarams:
@@ -713,18 +784,23 @@ fn resolve(p: Program) -> R:
             rs.in_generic = false
         for sd in f.unit.structs:
             for fld in sd.fields:
+                rs.line = fld.line
                 _ty(&rs, fld.ty)
         for ed in f.unit.enums:
             for v in ed.variants:
+                rs.line = v.line
                 _tys(&rs, v.payload)
         for nd in f.unit.newtypes:
+            rs.line = nd.line
             _ty(&rs, nd.under)
         for fd in f.unit.fns:
             if fd.is_extern:
+                rs.line = fd.line
                 _tys(&rs, fd.ret)
                 for p in fd.params:
                     _tys(&rs, p.ty)
         for sb in f.unit.subscripts:
+            rs.line = sb.line
             m := _mark(&rs)
             _ty(&rs, sb.ret)
             _params(&rs, sb.params)
@@ -741,7 +817,8 @@ fn resolve(p: Program) -> R:
             continue
         if not rs.entry_in_corelib and under_corelib(p.root, dir_of(rs.all_imp_file[i])):
             continue
-        push(rs.late, rs.all_imp_file[i] + ": error: `" + im.path + "` imported and not used in this file")
+        push(rs.late, rs.all_imp_file[i] + ":" + str(im.line) +
+             ": error: `" + im.path + "` imported and not used in this file")
     return rs
 
 fn late_lines(rs: R) -> [string]:
