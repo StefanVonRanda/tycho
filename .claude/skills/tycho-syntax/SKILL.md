@@ -46,6 +46,11 @@ Each row was compiled. The third column is the diagnostic you will actually see.
 | `True` / `False` | `true` / `false` | `unknown variable 'True'` |
 | `"val %d" % x` | `f"val {x}"` | `modulo … require two matching integers` |
 | `bytes := 3` | any other name | `'bytes' is a reserved keyword` |
+| `for a, b in pairs:` | `for p in pairs:` then `a, b := p` | ``for` binds one name` |
+| `t[0]` on a tuple | `t.0`, `t.1` | `a tuple element is named `.0`, `.1`, … not `[i]`` |
+| `struct S:` with field `bytes` | any non-keyword name | `'bytes' is a reserved keyword … as a field name` |
+| `fn get(i: Item($A))` | reuse the struct's own parameter: `Item($T)` | `its type arguments must be EITHER exactly its own parameters, in order` |
+| `_, b = f()` (never declared) | `_, b := f()` | ``_` is not a discard — it is an ordinary variable` |
 
 An unused import is an **error**, not a warning: `` `core:strings` imported and
 not used in this file ``.
@@ -121,14 +126,23 @@ unwrap a newtype.
 
 ## Affine types: task, typed handle, channel
 
-One owner, destructor at scope exit. All three refuse the same shapes at
-compile time: no copy (`g := f` and `g = f` both refused), no storing in an
-array, map, struct field, tuple, `Option` or `Result`, no capture by a closure
-or a `parallel for`, no returning one from a Tycho function, and no `sink` or
-`inout` — passing one plainly is already a borrow. `close(h)` needs a handle
-variable, not a call result.
+One owner, destructor at scope exit. The refusals are compile errors and each
+names the fix — these were compiled, not recalled:
 
-Every one of those refusals holds through a generic too.
+| You write | The compiler says |
+|---|---|
+| `d := c` (a second name) | `a channel cannot be copied — it is freed once, when its creating scope exits` |
+| a channel as a struct field | `a struct field cannot be a channel` |
+| `xs := [c]`, or `Some(c)` | `cannot be stored in a container or aggregate — pass it as an argument instead` |
+| a closure that uses `c` | `a closure cannot capture a channel handle — take it as a parameter instead` |
+
+Also refused: returning one from a Tycho function, `sink` or `inout` on one
+(passing it plainly is already a borrow), and `close(h)` on a call result rather
+than a variable. Every refusal holds through a generic too.
+
+`sink` consumes: a `sink` argument may be mentioned **once** in the calling
+function, and the diagnostic counts the mentions for you — `'b' is consumed by a
+`sink` parameter but is mentioned 2 times in this function`.
 
 ## Two mechanical traps when probing
 
