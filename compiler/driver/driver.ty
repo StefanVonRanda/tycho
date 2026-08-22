@@ -1,6 +1,7 @@
 package driver
 
 import "core:io"
+import "core:sort"
 import "../ast"
 import "../emit"
 import "../lex"
@@ -82,3 +83,30 @@ fn roundtrip(src_path: string):
     print("RT-FAIL " + src_path + " src=" + str(len(a)) + " toks=" + str(len(b)) +
         " first-diff-at=" + str(d) + " src<<" + a[d:d + 30] + ">> toks<<" + b[d:d + 30] + ">>\n")
     die("round trip failed")
+
+# --- --parse / --parse-census -----------------------------------------------
+# The parser's own gate. `--parse` is the accept/reject verdict; `--parse-census`
+# is the leg that verdict cannot carry, because a wrong tree still parses.
+
+fn _read(src_path: string) -> string:
+    match io.read_text(src_path):
+        Ok(s): return s
+        Err(e): die("tychoc1: cannot read '" + src_path + "'")
+    return ""
+
+fn parse_only(src_path: string):
+    u := parse.unit(lex.tokenize(_read(src_path)))
+    print("PARSE-OK " + str(len(u.fns)) + "\n")
+
+fn parse_census(src_path: string):
+    u := parse.unit(lex.tokenize(_read(src_path)))
+    ks := ast.census(u)
+    counts := []string: int
+    for k in ks:
+        counts[k] = counts.get(k, 0) + 1
+    names := keys(counts)
+    sort.asc(names)
+    out := ""
+    for n in names:
+        out = out + n + " " + str(counts[n]) + "\n"
+    print(out)

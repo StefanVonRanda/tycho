@@ -4,7 +4,7 @@ import "core:strings"
 import "driver"
 
 fn usage():
-    die("usage: tychoc1 <file.ty> (--emit-c -o <name> [--runtime P] | --dump-tokens | --round-trip)")
+    die("usage: tychoc1 <file.ty> (--emit-c -o <name> [--runtime P] | --dump-tokens | --round-trip | --parse | --parse-census)")
 
 fn main():
     av := args()
@@ -22,6 +22,10 @@ fn main():
             mode = "dump"
         elif a == "--round-trip":
             mode = "rt"
+        elif a == "--parse":
+            mode = "parse"
+        elif a == "--parse-census":
+            mode = "census"
         elif a == "-o":
             i += 1
             if i >= len(av):
@@ -44,6 +48,12 @@ fn main():
         return
     if mode == "rt":
         driver.roundtrip(src)
+        return
+    if mode == "parse":
+        driver.parse_only(src)
+        return
+    if mode == "census":
+        driver.parse_census(src)
         return
     if len(out) == 0 or not emit_c:
         usage()

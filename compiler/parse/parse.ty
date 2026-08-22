@@ -6,15 +6,47 @@ import "../lex"
 # Tokens -> ast. The cursor is carried as an int and handed back with every
 # node rather than living in a mutable parser struct, because a Tycho struct is
 # a value and a `p.i += 1` inside a callee would not be seen by its caller.
+#
+# The grammar is src/tychoc.c's parser (src/tychoc.c:2040-4871), read rather
+# than inferred from fixtures. Precedence, tightest first:
+#   postfix > unary(- & ~) > * / % << >> & > + - | ^ > is > == != < > <= >= in
+#          > not > and > or
+# Everything src resolves as it parses -- a type name, a const's value, whether
+# a struct is generic -- is left syntactic here; Phase 5 owns resolution.
+
+# --- token helpers ----------------------------------------------------------
 
 fn _at(toks: [lex.Tok], i: int) -> lex.Tok:
     if i >= len(toks):
         return toks[len(toks) - 1]
+    if i < 0:
+        return toks[0]
     return toks[i]
+
+fn _k(toks: [lex.Tok], i: int) -> string:
+    return _at(toks, i).kind
+
+fn _x(toks: [lex.Tok], i: int) -> string:
+    return _at(toks, i).text
+
+fn _isop(toks: [lex.Tok], i: int, s: string) -> bool:
+    t := _at(toks, i)
+    return t.kind == "op" and t.text == s
+
+fn _iskw(toks: [lex.Tok], i: int, s: string) -> bool:
+    t := _at(toks, i)
+    return t.kind == "kw" and t.text == s
+
+fn _isid(toks: [lex.Tok], i: int, s: string) -> bool:
+    t := _at(toks, i)
+    return t.kind == "ident" and t.text == s
 
 fn _fail(t: lex.Tok, want: string):
     die("tychoc1: line " + str(t.line) + ": expected " + want + ", found " +
         t.kind + " '" + t.text + "'")
+
+fn _die(t: lex.Tok, msg: string):
+    die("tychoc1: line " + str(t.line) + ": " + msg)
 
 fn _expect(toks: [lex.Tok], i: int, kind: string, text: string) -> int:
     t := _at(toks, i)
@@ -24,68 +56,1538 @@ fn _expect(toks: [lex.Tok], i: int, kind: string, text: string) -> int:
         _fail(t, kind)
     return i + 1
 
-fn expr(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
-    t := _at(toks, i0)
-    if t.kind == "int":
-        return (ast.IntLit(strings_to_int(t.text)), i0 + 1)
-    if t.kind == "str":
-        return (ast.StrLit(t.text), i0 + 1)
+fn _op(toks: [lex.Tok], i: int, s: string) -> int:
+    return _expect(toks, i, "op", s)
+
+fn _ident(toks: [lex.Tok], i: int, what: string) -> (string, int):
+    t := _at(toks, i)
+    if t.kind != "ident":
+        _fail(t, what)
+    return (t.text, i + 1)
+
+# src/tychoc.c@reserved_kw: a keyword where a name was written.
+fn _kwname(t: lex.Tok) -> string:
+    if t.kind == "kw":
+        return t.text
+    return ""
+
+# --- types ------------------------------------------------------------------
+
+fn _is_prim(s: string) -> bool:
+    if s == "int" or s == "float" or s == "bool" or s == "string":
+        return true
+    if s == "ptr" or s == "bytes" or s == "u32" or s == "u64" or s == "f32":
+        return true
+    return s == "u8" or s == "u16" or s == "i8" or s == "i16" or s == "i32" or s == "i64"
+
+# src/tychoc.c@tok_starts_type. Deliberately excludes `fn`, as it does there.
+# The empty-ARRAY-literal path in parse_primary has its own list that DOES
+# include `fn` (`[]fn(int) -> int`), which is what _starts_type_lit is.
+fn _starts_type(toks: [lex.Tok], i: int) -> bool:
+    t := _at(toks, i)
     if t.kind == "ident":
-        i := i0 + 1
-        nx := _at(toks, i)
-        if nx.kind == "op" and nx.text == "(":
+        return true
+    if t.kind == "op":
+        return t.text == "[" or t.text == "$" or t.text == "("
+    if t.kind == "kw":
+        return _is_prim(t.text)
+    return false
+
+fn _starts_type_lit(toks: [lex.Tok], i: int) -> bool:
+    if _iskw(toks, i, "fn"):
+        return true
+    return _starts_type(toks, i)
+
+fn ty(toks: [lex.Tok], i0: int) -> (ast.Ty, int):
+    t := _at(toks, i0)
+    i := i0
+
+    if t.kind == "op" and t.text == "$":
+        nm, j := _ident(toks, i + 1, "a type-parameter name after '$'")
+        return (ast.TParam(nm), j)
+
+    if t.kind == "ident" and t.text == "soa":
+        i = _op(toks, i + 1, "[")
+        el, j := ty(toks, i)
+        i = _op(toks, j, "]")
+        return (ast.TSoa([el]), i)
+
+    if t.kind == "ident" and t.text == "bounded":
+        i = _op(toks, i + 1, "[")
+        cap := _at(toks, i)
+        if cap.kind != "int" and cap.kind != "ident":
+            _die(cap, "bounded needs a capacity: bounded[N]T")
+        i = _op(toks, i + 1, "]")
+        el, j := ty(toks, i)
+        return (ast.TBnd(cap.text, [el]), j)
+
+    if t.kind == "kw" and t.text == "fn":
+        i = _op(toks, i + 1, "(")
+        ps := []ast.Ty
+        for not _isop(toks, i, ")"):
+            a, j := ty(toks, i)
+            push(ps, a)
+            i = j
+            if not _isop(toks, i, ","):
+                break
             i += 1
-            xs := []ast.Expr
-            for _at(toks, i).text != ")":
-                a, j := expr(toks, i)
-                push(xs, a)
+        i = _op(toks, i, ")")
+        if len(ps) > 8:
+            _die(t, "a function type has at most 8 parameters")
+        if _isop(toks, i, "->"):
+            r, j := ty(toks, i + 1)
+            push(ps, r)
+            return (ast.TFn(true, ps), j)
+        return (ast.TFn(false, ps), i)
+
+    if t.kind == "op" and t.text == "(":
+        i += 1
+        es := []ast.Ty
+        a, j := ty(toks, i)
+        push(es, a)
+        i = j
+        for _isop(toks, i, ","):
+            b, k := ty(toks, i + 1)
+            push(es, b)
+            i = k
+        i = _op(toks, i, ")")
+        if len(es) < 2:
+            _die(t, "a tuple type needs at least two elements")
+        if len(es) > 8:
+            _die(t, "a tuple has at most 8 elements")
+        return (ast.TTup(es), i)
+
+    if t.kind == "op" and t.text == "[":
+        i += 1
+        # [$N]T -- a size parameter. `where` is excluded so a `[$T]` return type
+        # followed by a where-clause is not read as a fixed-size array.
+        if _isop(toks, i, "$") and _k(toks, i + 1) == "ident" and _isop(toks, i + 2, "]") and
+                _starts_type(toks, i + 3) and not _isid(toks, i + 3, "where"):
+            nm := _x(toks, i + 1)
+            el, j := ty(toks, i + 3)
+            return (ast.TFix("$" + nm, [el]), j)
+        # [N]T with a literal size, or [W]T naming an int const. The const form
+        # is told from a dynamic [Foo] only by a type FOLLOWING the ']'.
+        fixed := false
+        sz := ""
+        if _k(toks, i) == "int" and _isop(toks, i + 1, "]"):
+            fixed = true
+            sz = _x(toks, i)
+        elif _k(toks, i) == "ident" and _isop(toks, i + 1, "]") and
+                _starts_type(toks, i + 2) and not _isid(toks, i + 2, "where"):
+            fixed = true
+            sz = _x(toks, i)
+        if fixed:
+            if _k(toks, i) == "int" and _at(toks, i).ival <= 0:
+                _die(t, "a fixed-size array length must be positive")
+            el, j := ty(toks, i + 2)
+            return (ast.TFix(sz, [el]), j)
+        el, j := ty(toks, i)
+        i = j
+        if _isop(toks, i, ":"):
+            v, k := ty(toks, i + 1)
+            i = _op(toks, k, "]")
+            return (ast.TMap([el, v]), i)
+        i = _op(toks, i, "]")
+        return (ast.TArr([el]), i)
+
+    if t.kind == "ident":
+        nm := t.text
+        qual := ""
+        i += 1
+        if _isop(toks, i, ".") and _k(toks, i + 1) == "ident":
+            qual = nm
+            nm = _x(toks, i + 1)
+            i += 2
+        args := []ast.Ty
+        if len(qual) == 0 and (nm == "Option" or nm == "Channel"):
+            i = _op(toks, i, "(")
+            a, j := ty(toks, i)
+            push(args, a)
+            i = _op(toks, j, ")")
+            return (ast.TName("", nm, args), i)
+        if len(qual) == 0 and nm == "Result":
+            i = _op(toks, i, "(")
+            a, j := ty(toks, i)
+            push(args, a)
+            i = _op(toks, j, ",")
+            b, k := ty(toks, i)
+            push(args, b)
+            i = _op(toks, k, ")")
+            return (ast.TName("", nm, args), i)
+        # a generic instance `Box(int)`. Nothing else can follow a complete type
+        # name with a '(' in a type position.
+        if _isop(toks, i, "("):
+            i += 1
+            for not _isop(toks, i, ")"):
+                a, j := ty(toks, i)
+                push(args, a)
                 i = j
-                if _at(toks, i).text == ",":
-                    i += 1
-            i = _expect(toks, i, "op", ")")
-            return (ast.Call(t.text, xs), i)
-        return (ast.Name(t.text), i)
-    _fail(t, "an expression")
+                if not _isop(toks, i, ","):
+                    break
+                i += 1
+            i = _op(toks, i, ")")
+        return (ast.TName(qual, nm, args), i)
+
+    if t.kind == "kw" and _is_prim(t.text):
+        return (ast.TPrim(t.text), i + 1)
+
+    _fail(t, "a type")
+    return (ast.TPrim("int"), i0)
+
+# --- expressions ------------------------------------------------------------
+
+fn _args(toks: [lex.Tok], i0: int) -> ([ast.Expr], int):
+    # a call's value-argument list, the '(' already consumed
+    i := i0
+    out := []ast.Expr
+    for not _isop(toks, i, ")"):
+        if _k(toks, i) == "ident" and _isop(toks, i + 1, ":"):
+            nm := _x(toks, i)
+            a, j := expr(toks, i + 2)
+            push(out, ast.Named(nm, [a]))
+            i = j
+        else:
+            a, j := expr(toks, i)
+            push(out, a)
+            i = j
+        if not _isop(toks, i, ","):
+            break
+        i += 1
+    i = _op(toks, i, ")")
+    return (out, i)
+
+fn _typeargs(toks: [lex.Tok], i0: int) -> ([ast.Ty], int):
+    # `$(T1, ...)`, the '$' already consumed
+    i := _op(toks, i0, "(")
+    out := []ast.Ty
+    for not _isop(toks, i, ")"):
+        a, j := ty(toks, i)
+        push(out, a)
+        i = j
+        if not _isop(toks, i, ","):
+            break
+        i += 1
+    i = _op(toks, i, ")")
+    if len(out) == 0:
+        _die(_at(toks, i0), "explicit type arguments need at least one type")
+    return (out, i)
+
+fn _lambda(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
+    # `fn` already consumed
+    t := _at(toks, i0)
+    if t.kind == "ident":
+        _die(t, "a named function cannot be declared inside another")
+    i := _op(toks, i0, "(")
+    ps := []ast.Param
+    for not _isop(toks, i, ")"):
+        nm, j := _ident(toks, i, "a lambda parameter name")
+        i = j
+        pt := []ast.Ty
+        if _isop(toks, i, ":"):
+            a, k := ty(toks, i + 1)
+            push(pt, a)
+            i = k
+        push(ps, ast.Param(nm, pt, false, false, false))
+        if not _isop(toks, i, ","):
+            break
+        i += 1
+    i = _op(toks, i, ")")
+    ret := []ast.Ty
+    if _isop(toks, i, "->"):
+        r, j := ty(toks, i + 1)
+        push(ret, r)
+        i = j
+    i = _op(toks, i, ":")
+    b, j := expr(toks, i)
+    return (ast.Lambda(ps, ret, [b]), j)
+
+fn primary(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
+    t := _at(toks, i0)
+    i := i0
+
+    if t.kind == "kw" and t.text == "fn":
+        return _lambda(toks, i + 1)
+    if t.kind == "int":
+        return (ast.IntLit(t.ival), i + 1)
+    if t.kind == "char":
+        return (ast.CharLit(t.ival), i + 1)
+    if t.kind == "float":
+        return (ast.FloatLit(t.fval), i + 1)
+    if t.kind == "str":
+        if t.ival == 1:
+            return (ast.FStrLit(t.text), i + 1)
+        s := t.text
+        i += 1
+        for _k(toks, i) == "str" and _at(toks, i).ival != 1:
+            s = s + _x(toks, i)
+            i += 1
+        return (ast.StrLit(s), i)
+    if t.kind == "kw" and t.text == "true":
+        return (ast.BoolLit(true), i + 1)
+    if t.kind == "kw" and t.text == "false":
+        return (ast.BoolLit(false), i + 1)
+    if t.kind == "kw" and t.text == "null":
+        return (ast.NullLit(t.line), i + 1)
+
+    if t.kind == "op" and t.text == "(":
+        first, j := expr(toks, i + 1)
+        i = j
+        if not _isop(toks, i, ","):
+            i = _op(toks, i, ")")
+            return (first, i)
+        xs := []ast.Expr
+        push(xs, first)
+        for _isop(toks, i, ","):
+            i += 1
+            if _isop(toks, i, ")"):
+                break
+            a, k := expr(toks, i)
+            push(xs, a)
+            i = k
+        i = _op(toks, i, ")")
+        if len(xs) > 8:
+            _die(t, "a tuple has at most 8 elements")
+        return (ast.Tuple(xs), i)
+
+    if t.kind == "op" and t.text == "[":
+        i += 1
+        if _isop(toks, i, "]"):
+            i += 1
+            if not _starts_type_lit(toks, i):
+                return (ast.EmptyArr([]ast.Ty), i)
+            el, j := ty(toks, i)
+            i = j
+            if _isop(toks, i, ":"):
+                v, k := ty(toks, i + 1)
+                return (ast.EmptyMap([el, v]), k)
+            return (ast.EmptyArr([el]), i)
+        first, j := expr(toks, i)
+        i = j
+        if _isop(toks, i, ":"):
+            kv := []ast.Expr
+            push(kv, first)
+            v, k := expr(toks, i + 1)
+            push(kv, v)
+            i = k
+            for _isop(toks, i, ","):
+                i += 1
+                if _isop(toks, i, "]"):
+                    break
+                a, k2 := expr(toks, i)
+                push(kv, a)
+                i = _op(toks, k2, ":")
+                b, k3 := expr(toks, i)
+                push(kv, b)
+                i = k3
+            i = _op(toks, i, "]")
+            return (ast.MapLit(kv), i)
+        xs := []ast.Expr
+        push(xs, first)
+        for _isop(toks, i, ","):
+            i += 1
+            if _isop(toks, i, "]"):
+                break
+            a, k := expr(toks, i)
+            push(xs, a)
+            i = k
+        i = _op(toks, i, "]")
+        return (ast.ArrLit(xs), i)
+
+    if t.kind == "kw" and t.text == "spawn":
+        c, j := postfix(toks, i + 1)
+        if not (c is ast.Call) and not (c is ast.CallVal):
+            _die(t, "spawn requires a direct call: spawn f(args)")
+        return (ast.SpawnE([c]), j)
+
+    if t.kind == "ident":
+        nm := t.text
+        i += 1
+        if nm == "soa":
+            i = _op(toks, i, "[")
+            i = _op(toks, i, "]")
+            el, j := ty(toks, i)
+            return (ast.SoaLit([el]), j)
+        if nm == "channel" and _isop(toks, i, "("):
+            el, j := ty(toks, i + 1)
+            i = _op(toks, j, ",")
+            c, k := expr(toks, i)
+            i = _op(toks, k, ")")
+            return (ast.ChanE([el], [c]), i)
+        if nm == "None":
+            return (ast.NoneE(t.line), i)
+        if not _isop(toks, i, "(") and (nm == "Some" or nm == "Ok" or nm == "Err"):
+            _die(t, "'" + nm + "' cannot name a binding -- as a value it is a constructor: " + nm + "(x)")
+        if nm == "Some":
+            i = _op(toks, i, "(")
+            a, j := expr(toks, i)
+            i = _op(toks, j, ")")
+            return (ast.SomeE([a]), i)
+        if nm == "Ok" or nm == "Err":
+            i = _op(toks, i, "(")
+            if _isop(toks, i, ")"):
+                if nm == "Err":
+                    _die(t, "Err() carries no value -- a Result's error type cannot be void")
+                return (ast.OkE([]ast.Expr), i + 1)
+            a, j := expr(toks, i)
+            i = _op(toks, j, ")")
+            if nm == "Ok":
+                return (ast.OkE([a]), i)
+            return (ast.ErrE([a]), i)
+        if _isop(toks, i, "$"):
+            tas, j := _typeargs(toks, i + 1)
+            i = j
+            vargs := []ast.Expr
+            if _isop(toks, i, "("):
+                a, k := _args(toks, i + 1)
+                vargs = a
+                i = k
+            return (ast.Call("", nm, tas, vargs), i)
+        if _isop(toks, i, "("):
+            if nm == "map_set":
+                _die(t, "map_set was removed; use `m[k] = v`")
+            if nm == "map_has":
+                _die(t, "map_has was removed; use `k in m`")
+            if nm == "map_del":
+                _die(t, "map_del was removed; use `delete m[k]`")
+            if nm == "map_get":
+                _die(t, "map_get was removed; use `m.get(k, default)`")
+            a, j := _args(toks, i + 1)
+            return (ast.Call("", nm, []ast.Ty, a), j)
+        return (ast.Name(nm), i)
+
+    if t.kind == "indent":
+        _die(t, "unexpected indentation: this line is indented further than the block it belongs to")
+    _die(t, "expected an expression")
     return (ast.IntLit(0), i0)
 
-# The lexer already guaranteed every byte is a digit, so there is nothing for a
-# checked parse to reject -- strings.parse_int's fail-open behaviour cannot
-# reach us here.
-fn strings_to_int(s: string) -> int:
-    v := 0
-    for k := 0; k < len(s); k += 1:
-        v = v * 10 + (s[k] - 48)
-    return v
+fn postfix(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
+    e, i := primary(toks, i0)
+    for true:
+        if _isop(toks, i, "["):
+            i += 1
+            lo := []ast.Expr
+            hi := []ast.Expr
+            slice := false
+            if _isop(toks, i, ":"):
+                slice = true
+                i += 1
+                if not _isop(toks, i, "]"):
+                    a, j := expr(toks, i)
+                    push(hi, a)
+                    i = j
+            else:
+                a, j := expr(toks, i)
+                push(lo, a)
+                i = j
+                if _isop(toks, i, ":"):
+                    slice = true
+                    i += 1
+                    if not _isop(toks, i, "]"):
+                        b, k := expr(toks, i)
+                        push(hi, b)
+                        i = k
+            i = _op(toks, i, "]")
+            if slice:
+                kids := []ast.Expr
+                push(kids, e)
+                for x in lo:
+                    push(kids, x)
+                for x in hi:
+                    push(kids, x)
+                e = ast.Slice(len(lo) == 1, len(hi) == 1, kids)
+            else:
+                e = ast.Index([e, lo[0]])
+            continue
+        if _isop(toks, i, "."):
+            i += 1
+            if _k(toks, i) == "int":
+                e = ast.TupIdx([e], _at(toks, i).ival)
+                i += 1
+                continue
+            fname, j := _ident(toks, i, "a field name or tuple index after '.'")
+            i = j
+            if (_isop(toks, i, "(") or _isop(toks, i, "$")) and (e is ast.Name):
+                q := ""
+                match e:
+                    ast.Name(n): q = n
+                    _: q = ""
+                tas := []ast.Ty
+                if _isop(toks, i, "$"):
+                    a, k := _typeargs(toks, i + 1)
+                    tas = a
+                    i = k
+                vargs := []ast.Expr
+                if _isop(toks, i, "("):
+                    a, k := _args(toks, i + 1)
+                    vargs = a
+                    i = k
+                e = ast.Call(q, fname, tas, vargs)
+                continue
+            e = ast.Field([e], fname)
+            continue
+        if _isop(toks, i, "("):
+            a, j := _args(toks, i + 1)
+            kids := []ast.Expr
+            push(kids, e)
+            for x in a:
+                push(kids, x)
+            e = ast.CallVal(kids)
+            i = j
+            continue
+        break
+    if _iskw(toks, i, "or_return"):
+        e = ast.OrRet([e])
+        i += 1
+    if _isop(toks, i, "..."):
+        e = ast.Spread([e])
+        i += 1
+    return (e, i)
+
+fn unary(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
+    if _isop(toks, i0, "-"):
+        a, j := unary(toks, i0 + 1)
+        return (ast.Unop("-", [a]), j)
+    if _isop(toks, i0, "&"):
+        a, j := unary(toks, i0 + 1)
+        return (ast.Addr([a]), j)
+    if _isop(toks, i0, "~"):
+        a, j := unary(toks, i0 + 1)
+        return (ast.Unop("~", [a]), j)
+    return postfix(toks, i0)
+
+fn _mul_op(toks: [lex.Tok], i: int) -> bool:
+    s := _x(toks, i)
+    if _k(toks, i) != "op":
+        return false
+    return s == "*" or s == "/" or s == "%" or s == "<<" or s == ">>" or s == "&"
+
+fn mul(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
+    l, i := unary(toks, i0)
+    for _mul_op(toks, i):
+        o := _x(toks, i)
+        r, j := unary(toks, i + 1)
+        l = ast.Binop(o, [l, r])
+        i = j
+    return (l, i)
+
+fn _add_op(toks: [lex.Tok], i: int) -> bool:
+    s := _x(toks, i)
+    if _k(toks, i) != "op":
+        return false
+    return s == "+" or s == "-" or s == "|" or s == "^"
+
+fn add(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
+    l, i := mul(toks, i0)
+    for _add_op(toks, i):
+        o := _x(toks, i)
+        r, j := mul(toks, i + 1)
+        l = ast.Binop(o, [l, r])
+        i = j
+    return (l, i)
+
+fn isexp(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
+    l, i := add(toks, i0)
+    if _iskw(toks, i, "is"):
+        nm, j := _ident(toks, i + 1, "a variant name after `is`")
+        i = j
+        q := ""
+        if _isop(toks, i, "."):
+            q = nm
+            n2, k := _ident(toks, i + 1, "a variant name after the package qualifier")
+            nm = n2
+            i = k
+        if _iskw(toks, i, "is"):
+            _die(_at(toks, i), "`is` does not chain -- write `a is X and a is Y`")
+        return (ast.IsVar([l], q, nm), i)
+    return (l, i)
+
+fn _cmp_op(toks: [lex.Tok], i: int) -> bool:
+    if _iskw(toks, i, "in"):
+        return true
+    if _k(toks, i) != "op":
+        return false
+    s := _x(toks, i)
+    return s == "==" or s == "!=" or s == "<" or s == ">" or s == "<=" or s == ">="
+
+fn cmp(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
+    l, i := isexp(toks, i0)
+    for _cmp_op(toks, i):
+        o := _x(toks, i)
+        r, j := isexp(toks, i + 1)
+        l = ast.Binop(o, [l, r])
+        i = j
+    return (l, i)
+
+fn notexp(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
+    if _iskw(toks, i0, "not"):
+        a, j := notexp(toks, i0 + 1)
+        return (ast.Unop("not", [a]), j)
+    return cmp(toks, i0)
+
+fn andexp(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
+    l, i := notexp(toks, i0)
+    for _iskw(toks, i, "and"):
+        r, j := notexp(toks, i + 1)
+        l = ast.Binop("and", [l, r])
+        i = j
+    return (l, i)
+
+fn expr(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
+    l, i := andexp(toks, i0)
+    for _iskw(toks, i, "or"):
+        r, j := andexp(toks, i + 1)
+        l = ast.Binop("or", [l, r])
+        i = j
+    return (l, i)
+
+# --- value blocks (expression-valued if / match) ----------------------------
+
+# src/tychoc.c@value_block_at_tail: the branch's value is a bare expression on
+# the LAST logical line; a line that opens its own block is never the tail.
+fn _at_tail(toks: [lex.Tok], i0: int) -> bool:
+    i := i0
+    for _k(toks, i) != "newline" and _k(toks, i) != "eof" and _k(toks, i) != "dedent":
+        i += 1
+    if _k(toks, i) != "newline":
+        return true
+    j := i + 1
+    for _k(toks, j) == "newline":
+        j += 1
+    if _k(toks, j) == "indent":
+        return false
+    return _k(toks, j) == "dedent"
+
+fn value_block(toks: [lex.Tok], i0: int) -> ([ast.Stmt], int):
+    i := _expect(toks, i0, "indent", "")
+    out := []ast.Stmt
+    for _k(toks, i) != "dedent" and _k(toks, i) != "eof":
+        if _k(toks, i) == "newline":
+            i += 1
+            continue
+        if _at_tail(toks, i):
+            e, j := expr(toks, i)
+            i = _expect(toks, j, "newline", "")
+            push(out, ast.ExprStmt([e]))
+            continue
+        s, j := stmt(toks, i)
+        push(out, s)
+        i = j
+    i = _expect(toks, i, "dedent", "")
+    if len(out) == 0:
+        _die(_at(toks, i0), "a value branch must end in a value expression")
+    if not (out[len(out) - 1] is ast.ExprStmt):
+        _die(_at(toks, i0), "a value branch must end in a value expression")
+    return (out, i)
+
+fn value_if(toks: [lex.Tok], i0: int) -> (ast.Stmt, int):
+    c, i := expr(toks, i0)
+    i = _op(toks, i, ":")
+    i = _expect(toks, i, "newline", "")
+    body, j := value_block(toks, i)
+    i = j
+    els := []ast.Stmt
+    if _iskw(toks, i, "elif"):
+        e, k := value_if(toks, i + 1)
+        push(els, e)
+        i = k
+    elif _iskw(toks, i, "else"):
+        i = _op(toks, i + 1, ":")
+        i = _expect(toks, i, "newline", "")
+        e, k := value_block(toks, i)
+        els = e
+        i = k
+    else:
+        _die(_at(toks, i0), "an `if` used as a value must have an `else`")
+    return (ast.IfS([c], body, els), i)
+
+fn value_ctrl(toks: [lex.Tok], i0: int) -> (ast.Stmt, int):
+    if _iskw(toks, i0, "if"):
+        return value_if(toks, i0 + 1)
+    if _iskw(toks, i0, "match"):
+        return matchs(toks, i0 + 1, true)
+    _die(_at(toks, i0), "expected `if` or `match`")
+    return (ast.PassS(0), i0)
+
+# src/tychoc.c@expr_diverges: `die(...)`/`exit(...)` produce no value by
+# definition, so a branch ending in one is left as the statement it already is.
+fn _diverges(e: ast.Expr) -> bool:
+    match e:
+        ast.Call(q, n, tas, args): return len(q) == 0 and (n == "die" or n == "exit")
+        _: return false
+    return false
+
+fn _rewrite_tail(s: ast.Stmt, kind: string, name: string, target: [ast.Expr]) -> ast.Stmt:
+    match s:
+        ast.ExprStmt(es):
+            if len(es) != 1 or _diverges(es[0]):
+                return s
+            if kind == "return":
+                return ast.ReturnS([es[0]])
+            if kind == "assign":
+                return ast.Assign(name, [es[0]])
+            return ast.PlaceSet([target[0], es[0]])
+        _: return s
+    return s
+
+fn _rewrite_block(b: [ast.Stmt], kind: string, name: string, target: [ast.Expr]) -> [ast.Stmt]:
+    if len(b) == 0:
+        return b
+    out := []ast.Stmt
+    for k := 0; k < len(b) - 1; k += 1:
+        push(out, b[k])
+    push(out, rewrite_tails(b[len(b) - 1], kind, name, target))
+    return out
+
+fn rewrite_tails(s: ast.Stmt, kind: string, name: string, target: [ast.Expr]) -> ast.Stmt:
+    match s:
+        ast.IfS(c, body, els):
+            return ast.IfS(c, _rewrite_block(body, kind, name, target),
+                           _rewrite_block(els, kind, name, target))
+        ast.MatchS(subj, arms):
+            out := []ast.Arm
+            for a in arms:
+                push(out, ast.Arm(a.kind, a.qual, a.name, a.binds, a.subqual, a.sub,
+                                  a.subbinds, a.pats, a.ch,
+                                  _rewrite_block(a.body, kind, name, target)))
+            return ast.MatchS(subj, out)
+        ast.ExprStmt(es): return _rewrite_tail(s, kind, name, target)
+        _: return s
+    return s
+
+# --- match / select ---------------------------------------------------------
+
+fn _scalar_arm_ahead(toks: [lex.Tok], i: int) -> bool:
+    k := _k(toks, i)
+    if k == "int" or k == "char":
+        return true
+    if _iskw(toks, i, "true") or _iskw(toks, i, "false"):
+        return true
+    if _isop(toks, i, "-") and _k(toks, i + 1) == "int":
+        return true
+    return k == "ident" and (_isop(toks, i + 1, "..") or _isop(toks, i + 1, "|"))
+
+fn _pat_end(toks: [lex.Tok], i0: int) -> (ast.Pat, int, bool):
+    # one end of a scalar pattern: an int/char/bool literal or a const NAME
+    i := i0
+    neg := false
+    if _isop(toks, i, "-"):
+        neg = true
+        i += 1
+    t := _at(toks, i)
+    if t.kind == "int":
+        v := t.ival
+        if neg:
+            v = -v
+        return (ast.Pat("int", v, v, "", "", false), i + 1, true)
+    if t.kind == "char":
+        if neg:
+            _die(t, "'-' is only valid before an int literal in a match arm")
+        return (ast.Pat("char", t.ival, t.ival, "", "", false), i + 1, true)
+    if t.kind == "kw" and (t.text == "true" or t.text == "false"):
+        if neg:
+            _die(t, "'-' is only valid before an int literal in a match arm")
+        v := 0
+        if t.text == "true":
+            v = 1
+        return (ast.Pat("bool", v, v, "", "", false), i + 1, true)
+    if t.kind == "ident":
+        if neg:
+            _die(t, "'-' is only valid before an int literal in a match arm")
+        return (ast.Pat("name", 0, 0, t.text, "", false), i + 1, true)
+    _die(t, "a match arm must be a variant name, a scalar literal, a range, or `_`")
+    return (ast.Pat("int", 0, 0, "", "", false), i0, false)
+
+fn _scalar_arm(toks: [lex.Tok], i0: int) -> ([ast.Pat], int):
+    i := i0
+    pats := []ast.Pat
+    for true:
+        p, j, ok := _pat_end(toks, i)
+        i = j
+        if _isop(toks, i, ".."):
+            h, k, ok2 := _pat_end(toks, i + 1)
+            i = k
+            if h.kind != p.kind:
+                _die(_at(toks, i0), "a range's two ends must be the same kind of value")
+            p = ast.Pat(p.kind, p.lo, h.hi, p.loname, h.loname, true)
+        push(pats, p)
+        if not _isop(toks, i, "|"):
+            break
+        i += 1
+    return (pats, i)
+
+fn _arm_body(toks: [lex.Tok], i0: int, value: bool) -> ([ast.Stmt], int):
+    if _k(toks, i0) == "newline":
+        i := i0 + 1
+        if value:
+            return value_block(toks, i)
+        return block(toks, i)
+    # F7: a one-line arm body
+    if value:
+        e, j := expr(toks, i0)
+        return ([ast.ExprStmt([e])], j)
+    s, j := stmt(toks, i0)
+    return ([s], j)
+
+fn matchs(toks: [lex.Tok], i0: int, value: bool) -> (ast.Stmt, int):
+    subj, i := expr(toks, i0)
+    i = _op(toks, i, ":")
+    i = _expect(toks, i, "newline", "")
+    i = _expect(toks, i, "indent", "")
+    arms := []ast.Arm
+    for _k(toks, i) != "dedent" and _k(toks, i) != "eof":
+        if _k(toks, i) == "newline":
+            i += 1
+            continue
+        pats := []ast.Pat
+        binds := []string
+        subbinds := []string
+        chs := []ast.Expr
+        kind := "variant"
+        qual := ""
+        nm := ""
+        subq := ""
+        sub := ""
+        if _scalar_arm_ahead(toks, i):
+            kind = "scalar"
+            p, j := _scalar_arm(toks, i)
+            pats = p
+            i = j
+        else:
+            if _k(toks, i) == "str":
+                _die(_at(toks, i), "`match` does not take a string arm")
+            v, j := _ident(toks, i, "a match arm `Variant(bindings):` or `Variant:`")
+            nm = v
+            i = j
+            if _isop(toks, i, "."):
+                qual = nm
+                v2, k := _ident(toks, i + 1, "a variant name after the package qualifier")
+                nm = v2
+                i = k
+            if _isop(toks, i, "("):
+                i += 1
+                if _k(toks, i) == "ident" and (_isop(toks, i + 1, ".") or _isop(toks, i + 1, "(")):
+                    s1, j2 := _ident(toks, i, "a nested variant name")
+                    sub = s1
+                    i = j2
+                    if _isop(toks, i, "."):
+                        subq = sub
+                        s2, k2 := _ident(toks, i + 1, "a variant name after the package qualifier")
+                        sub = s2
+                        i = k2
+                    if _isop(toks, i, "("):
+                        i += 1
+                        for not _isop(toks, i, ")"):
+                            b, k3 := _ident(toks, i, "a binding name")
+                            push(subbinds, b)
+                            i = k3
+                            if not _isop(toks, i, ","):
+                                break
+                            i += 1
+                        i = _op(toks, i, ")")
+                else:
+                    for not _isop(toks, i, ")"):
+                        b, k3 := _ident(toks, i, "a binding name")
+                        push(binds, b)
+                        i = k3
+                        if not _isop(toks, i, ","):
+                            break
+                        i += 1
+                i = _op(toks, i, ")")
+        i = _op(toks, i, ":")
+        body, j := _arm_body(toks, i, value)
+        i = j
+        push(arms, ast.Arm(kind, qual, nm, binds, subq, sub, subbinds, pats, chs, body))
+    i = _expect(toks, i, "dedent", "")
+    if len(arms) == 0:
+        _die(_at(toks, i0), "match needs at least one arm")
+    return (ast.MatchS([subj], arms), i)
+
+fn selects(toks: [lex.Tok], i0: int) -> (ast.Stmt, int):
+    i := _op(toks, i0, ":")
+    i = _expect(toks, i, "newline", "")
+    i = _expect(toks, i, "indent", "")
+    arms := []ast.Arm
+    for _k(toks, i) != "dedent" and _k(toks, i) != "eof":
+        if _k(toks, i) == "newline":
+            i += 1
+            continue
+        an, j := _ident(toks, i, "a select arm: `recv(ch, x):`, `default:`, or `closed:`")
+        i = j
+        binds := []string
+        chs := []ast.Expr
+        if an == "recv":
+            i = _op(toks, i, "(")
+            c, k := expr(toks, i)
+            push(chs, c)
+            i = _op(toks, k, ",")
+            b, k2 := _ident(toks, i, "a binding name")
+            push(binds, b)
+            i = _op(toks, k2, ")")
+        elif an != "default" and an != "closed":
+            _die(_at(toks, i0), "a select arm is `recv(ch, x):`, `default:`, or `closed:`")
+        i = _op(toks, i, ":")
+        i = _expect(toks, i, "newline", "")
+        body, k3 := block(toks, i)
+        i = k3
+        push(arms, ast.Arm(an, "", an, binds, "", "", []string, []ast.Pat, chs, body))
+    i = _expect(toks, i, "dedent", "")
+    if len(arms) == 0:
+        _die(_at(toks, i0), "select needs at least one arm")
+    return (ast.SelectS(arms), i)
+
+# --- statements -------------------------------------------------------------
+
+fn _is_compound(toks: [lex.Tok], i: int) -> bool:
+    if _k(toks, i) != "op":
+        return false
+    s := _x(toks, i)
+    if s == "+" or s == "-" or s == "*" or s == "/" or s == "%":
+        return true
+    return s == "&" or s == "|" or s == "^" or s == "<<" or s == ">>"
+
+# A declaration, assignment, place-set or bare-call statement, WITHOUT its
+# terminating newline -- the three-clause `for` reuses it for its init and post
+# clauses, which is what keeps one copy of the assignment grammar.
+fn simple(toks: [lex.Tok], i0: int) -> (ast.Stmt, int, bool):
+    t := _at(toks, i0)
+    i := i0
+
+    if t.kind == "ident" and _isop(toks, i + 1, ","):
+        names := []string
+        n0, j := _ident(toks, i, "a name")
+        push(names, n0)
+        i = j
+        for _isop(toks, i, ","):
+            n, k := _ident(toks, i + 1, "a name in the destructuring list")
+            push(names, n)
+            i = k
+        if len(names) > 8:
+            _die(t, "at most 8 destructuring targets")
+        isdecl := true
+        if _isop(toks, i, ":="):
+            i += 1
+        else:
+            i = _op(toks, i, "=")
+            isdecl = false
+        e, k2 := expr(toks, i)
+        return (ast.MDecl(isdecl, names, [e]), k2, true)
+
+    if t.kind == "ident" and (_isop(toks, i + 1, ":=") or _isop(toks, i + 1, ":") or
+                              _isop(toks, i + 1, "=")):
+        name := t.text
+        i += 1
+        if _isop(toks, i, ":="):
+            i += 1
+            if _iskw(toks, i, "if") or _iskw(toks, i, "match"):
+                c, j := value_ctrl(toks, i)
+                return (ast.Decl(name, []ast.Ty, []ast.Expr, [c]), j, false)
+            e, j := expr(toks, i)
+            return (ast.Decl(name, []ast.Ty, [e], []ast.Stmt), j, true)
+        if _isop(toks, i, ":"):
+            a, j := ty(toks, i + 1)
+            i = _op(toks, j, "=")
+            if _iskw(toks, i, "if") or _iskw(toks, i, "match"):
+                c, k := value_ctrl(toks, i)
+                return (ast.Decl(name, [a], []ast.Expr, [c]), k, false)
+            e, k := expr(toks, i)
+            return (ast.Decl(name, [a], [e], []ast.Stmt), k, true)
+        i = _op(toks, i, "=")
+        if _iskw(toks, i, "if") or _iskw(toks, i, "match"):
+            c, j := value_ctrl(toks, i)
+            return (rewrite_tails(c, "assign", name, []ast.Expr), j, false)
+        e, j := expr(toks, i)
+        return (ast.Assign(name, [e]), j, true)
+
+    e, i2 := postfix(toks, i0)
+    i = i2
+    if _isop(toks, i, "="):
+        i += 1
+        if not (e is ast.Index) and not (e is ast.Field) and not (e is ast.TupIdx) and not (e is ast.Call):
+            _die(t, "cannot assign to this expression")
+        if _iskw(toks, i, "if") or _iskw(toks, i, "match"):
+            c, j := value_ctrl(toks, i)
+            return (rewrite_tails(c, "place", "", [e]), j, false)
+        v, j := expr(toks, i)
+        return (ast.PlaceSet([e, v]), j, true)
+    if _is_compound(toks, i) and _isop(toks, i + 1, "="):
+        o := _x(toks, i)
+        v, j := expr(toks, i + 2)
+        b := ast.Binop(o, [e, v])
+        match e:
+            ast.Name(n): return (ast.Assign(n, [b]), j, true)
+            _: return (ast.PlaceSet([e, b]), j, true)
+    match e:
+        ast.Name(n):
+            if n == "while":
+                _die(t, "Tycho has no `while` -- use `for cond:` for a conditional loop")
+        _: pass
+    if e is ast.SpawnE:
+        _die(t, "a `spawn` must be bound to a task handle -- write `t := spawn f(args)`")
+    ok := e is ast.Call
+    if e is ast.CallVal:
+        ok = true
+    match e:
+        ast.OrRet(k):
+            if len(k) == 1 and ((k[0] is ast.Call) or (k[0] is ast.CallVal)):
+                ok = true
+        _: pass
+    if not ok:
+        _die(t, "a statement must be a declaration, assignment, or call -- a bare expression has no effect")
+    return (ast.ExprStmt([e]), i, true)
+
+fn _for3_semi(toks: [lex.Tok], i0: int) -> int:
+    depth := 0
+    for k := i0; true; k += 1:
+        kk := _k(toks, k)
+        if kk == "newline" or kk == "eof":
+            return -1
+        if kk == "op":
+            s := _x(toks, k)
+            if s == "(" or s == "[":
+                depth += 1
+            elif s == ")" or s == "]":
+                depth -= 1
+            elif depth == 0 and s == ";":
+                return k
+    return -1
+
+fn _dotlt_ahead(toks: [lex.Tok], i0: int) -> bool:
+    depth := 0
+    for k := i0; true; k += 1:
+        kk := _k(toks, k)
+        if kk == "newline" or kk == "eof":
+            return false
+        if kk == "op":
+            s := _x(toks, k)
+            if s == "(" or s == "[":
+                depth += 1
+            elif s == ")" or s == "]":
+                depth -= 1
+            elif depth == 0 and s == "..<":
+                return true
+    return false
+
+fn forstmt(toks: [lex.Tok], i0: int, par: bool) -> (ast.Stmt, int):
+    t := _at(toks, i0 - 1)
+    i := i0
+    # bare `for:` -- an infinite loop, the condition form with a literal true
+    if _isop(toks, i, ":"):
+        i = _expect(toks, i + 1, "newline", "")
+        b, j := block(toks, i)
+        return (ast.WhileS([ast.BoolLit(true)], b), j)
+    if _for3_semi(toks, i) >= 0:
+        init, j, nl1 := simple(toks, i)
+        i = _op(toks, j, ";")
+        cond, k := expr(toks, i)
+        i = _op(toks, k, ";")
+        post, m, nl2 := simple(toks, i)
+        i = _op(toks, m, ":")
+        i = _expect(toks, i, "newline", "")
+        if not (init is ast.Decl) and not (init is ast.Assign) and not (init is ast.MDecl):
+            _die(t, "the init clause of a three-clause `for` is a declaration or an assignment")
+        if not (post is ast.Assign) and not (post is ast.PlaceSet):
+            _die(t, "the post clause of a three-clause `for` is an assignment")
+        b, n := block(toks, i)
+        return (ast.For3([init, post], [cond], b), n)
+    if _k(toks, i) == "ident" and _iskw(toks, i + 1, "in"):
+        v := _x(toks, i)
+        i += 2
+        if _dotlt_ahead(toks, i):
+            if not par:
+                _die(t, "`0..<N` counts only in a `parallel for`")
+            if not (_k(toks, i) == "int" and _at(toks, i).ival == 0 and _isop(toks, i + 1, "..<")):
+                _die(t, "`parallel for` counts from zero: write `0..<N`")
+            hi, j := expr(toks, i + 2)
+            i = _op(toks, j, ":")
+            i = _expect(toks, i, "newline", "")
+            b, k := block(toks, i)
+            return (ast.ForRange(v, [ast.IntLit(0), hi], b), k)
+        if _isid(toks, i, "range") and _isop(toks, i + 1, "("):
+            _die(t, "`range()` was removed: write `for i := 0; i < N; i += 1:` to count")
+        coll, j := expr(toks, i)
+        i = _op(toks, j, ":")
+        i = _expect(toks, i, "newline", "")
+        b, k := block(toks, i)
+        return (ast.ForIn(v, [coll], b), k)
+    # condition form `for cond:`
+    c, j := expr(toks, i)
+    i = _op(toks, j, ":")
+    i = _expect(toks, i, "newline", "")
+    b, k := block(toks, i)
+    return (ast.WhileS([c], b), k)
+
+fn ifstmt(toks: [lex.Tok], i0: int) -> (ast.Stmt, int):
+    c, i := expr(toks, i0)
+    i = _op(toks, i, ":")
+    i = _expect(toks, i, "newline", "")
+    body, j := block(toks, i)
+    i = j
+    els := []ast.Stmt
+    if _iskw(toks, i, "elif"):
+        e, k := ifstmt(toks, i + 1)
+        push(els, e)
+        i = k
+    elif _iskw(toks, i, "else"):
+        i = _op(toks, i + 1, ":")
+        i = _expect(toks, i, "newline", "")
+        e, k := block(toks, i)
+        els = e
+        i = k
+    return (ast.IfS([c], body, els), i)
 
 fn stmt(toks: [lex.Tok], i0: int) -> (ast.Stmt, int):
-    e, i := expr(toks, i0)
-    i = _expect(toks, i, "newline", "")
-    return (ast.ExprStmt(e), i)
+    t := _at(toks, i0)
+    i := i0
+
+    # src/tychoc.c: a reserved word where a binding name was written
+    kw := _kwname(t)
+    if len(kw) > 0:
+        n := _at(toks, i + 1)
+        bad := false
+        if n.kind == "op" and (n.text == ":=" or n.text == "=" or n.text == ","):
+            bad = true
+        if n.kind == "op" and n.text == ":" and _k(toks, i + 2) != "newline":
+            bad = true
+        if bad:
+            _die(t, "'" + kw + "' is a reserved keyword and cannot be used as a variable name")
+
+    if t.kind == "ident" and t.text == "const" and _k(toks, i + 1) == "ident":
+        nm, j := _ident(toks, i + 1, "a constant name after 'const'")
+        i = _op(toks, j, "=")
+        e, k := expr(toks, i)
+        i = _expect(toks, k, "newline", "")
+        return (ast.ConstS(nm, [e]), i)
+
+    if t.kind == "ident" and t.text == "pass" and
+            (_k(toks, i + 1) == "newline" or _k(toks, i + 1) == "dedent" or _k(toks, i + 1) == "eof"):
+        i += 1
+        if _k(toks, i) == "newline":
+            i += 1
+        return (ast.PassS(t.line), i)
+
+    if t.kind == "ident" and t.text == "delete" and _k(toks, i + 1) == "ident":
+        e, j := postfix(toks, i + 1)
+        if not (e is ast.Index):
+            _die(t, "`delete` removes a map element: `delete m[k]`")
+        i = _expect(toks, j, "newline", "")
+        return (ast.DeleteS([e]), i)
+
+    if t.kind == "kw" and t.text == "return":
+        i += 1
+        if _iskw(toks, i, "if") or _iskw(toks, i, "match"):
+            c, j := value_ctrl(toks, i)
+            return (rewrite_tails(c, "return", "", []ast.Expr), j)
+        if _k(toks, i) == "newline":
+            return (ast.ReturnS([]ast.Expr), i + 1)
+        first, j := expr(toks, i)
+        i = j
+        if _isop(toks, i, ","):
+            xs := []ast.Expr
+            push(xs, first)
+            for _isop(toks, i, ","):
+                a, k := expr(toks, i + 1)
+                push(xs, a)
+                i = k
+            i = _expect(toks, i, "newline", "")
+            if len(xs) > 8:
+                _die(t, "a tuple has at most 8 elements")
+            return (ast.ReturnS([ast.Tuple(xs)]), i)
+        i = _expect(toks, i, "newline", "")
+        return (ast.ReturnS([first]), i)
+
+    if t.kind == "kw" and t.text == "break":
+        i = _expect(toks, i + 1, "newline", "")
+        return (ast.BreakS(t.line), i)
+    if t.kind == "kw" and t.text == "continue":
+        i = _expect(toks, i + 1, "newline", "")
+        return (ast.ContinueS(t.line), i)
+
+    if t.kind == "kw" and t.text == "select":
+        return selects(toks, i + 1)
+    if t.kind == "kw" and t.text == "match":
+        return matchs(toks, i + 1, false)
+    if t.kind == "kw" and t.text == "if":
+        return ifstmt(toks, i + 1)
+
+    if t.kind == "kw" and t.text == "parallel":
+        i += 1
+        w := []ast.Expr
+        if _isop(toks, i, "("):
+            a, j := expr(toks, i + 1)
+            push(w, a)
+            i = _op(toks, j, ")")
+        if not _iskw(toks, i, "for"):
+            _die(t, "expected 'for' after 'parallel'")
+        s, j := forstmt(toks, i + 1, true)
+        if not (s is ast.ForRange) and not (s is ast.ForIn):
+            _die(t, "parallel supports `for i in 0..<N` and `for x in collection` loops only")
+        return (ast.ParallelS(w, [s]), j)
+
+    if t.kind == "kw" and t.text == "for":
+        return forstmt(toks, i + 1, false)
+
+    s, j, need_nl := simple(toks, i)
+    if need_nl:
+        j = _expect(toks, j, "newline", "")
+    return (s, j)
+
+fn block(toks: [lex.Tok], i0: int) -> ([ast.Stmt], int):
+    i := _expect(toks, i0, "indent", "")
+    out := []ast.Stmt
+    for _k(toks, i) != "dedent" and _k(toks, i) != "eof":
+        if _k(toks, i) == "newline":
+            i += 1
+            continue
+        s, j := stmt(toks, i)
+        push(out, s)
+        i = j
+    i = _expect(toks, i, "dedent", "")
+    return (out, i)
+
+# --- declarations -----------------------------------------------------------
+
+fn _params(toks: [lex.Tok], i0: int, extern_fn: bool) -> ([ast.Param], int):
+    i := i0
+    out := []ast.Param
+    for not _isop(toks, i, ")"):
+        nm, j := _ident(toks, i, "a parameter name")
+        i = _op(toks, j, ":")
+        is_inout := false
+        is_sink := false
+        is_variadic := false
+        if _iskw(toks, i, "inout"):
+            is_inout = true
+            i += 1
+        elif _isid(toks, i, "sink"):
+            is_sink = true
+            i += 1
+        if _isop(toks, i, "..."):
+            is_variadic = true
+            i += 1
+        a, k := ty(toks, i)
+        i = k
+        push(out, ast.Param(nm, [a], is_inout, is_sink, is_variadic))
+        if not _isop(toks, i, ","):
+            break
+        i += 1
+    i = _op(toks, i, ")")
+    for k := 0; k + 1 < len(out); k += 1:
+        if out[k].is_variadic:
+            _die(_at(toks, i0), "a variadic parameter must be the last parameter")
+    return (out, i)
+
+fn _wheres(toks: [lex.Tok], i0: int) -> ([string], int):
+    i := i0 + 1
+    out := []string
+    for true:
+        p, j := _ident(toks, i, "a `where` predicate or a type parameter")
+        i = j
+        if _isop(toks, i, ":"):
+            # type-set form `T: int | float`
+            a, k := ty(toks, i + 1)
+            i = k
+            nset := 1
+            for _isop(toks, i, "|"):
+                b, m := ty(toks, i + 1)
+                i = m
+                nset += 1
+            if nset > 16:
+                _die(_at(toks, i0), "at most 16 types in a `where` type set")
+            push(out, p)
+        else:
+            i = _op(toks, i, "(")
+            tn, k := _ident(toks, i, "a type-parameter name")
+            i = _op(toks, k, ")")
+            push(out, p + "(" + tn + ")")
+        if not _isop(toks, i, ","):
+            break
+        i += 1
+    if len(out) > 8:
+        _die(_at(toks, i0), "at most 8 `where` constraints per function")
+    return (out, i)
+
+fn _collect_typarams_ty(t: ast.Ty, acc: [string]) -> [string]:
+    out := acc
+    match t:
+        ast.TParam(n):
+            push(out, n)
+            return out
+        ast.TName(q, n, args):
+            for a in args:
+                out = _collect_typarams_ty(a, out)
+            return out
+        ast.TArr(k): return _collect_typarams_ty(k[0], out)
+        ast.TSoa(k): return _collect_typarams_ty(k[0], out)
+        ast.TFix(s, k): return _collect_typarams_ty(k[0], out)
+        ast.TBnd(s, k): return _collect_typarams_ty(k[0], out)
+        ast.TMap(ks):
+            for a in ks:
+                out = _collect_typarams_ty(a, out)
+            return out
+        ast.TTup(ks):
+            for a in ks:
+                out = _collect_typarams_ty(a, out)
+            return out
+        ast.TFn(hr, ks):
+            for a in ks:
+                out = _collect_typarams_ty(a, out)
+            return out
+        _: return out
+    return out
 
 fn func(toks: [lex.Tok], i0: int) -> (ast.Fn, int):
     i := _expect(toks, i0, "kw", "fn")
-    nm := _at(toks, i)
-    if nm.kind != "ident":
-        _fail(nm, "a function name")
-    i += 1
-    i = _expect(toks, i, "op", "(")
-    i = _expect(toks, i, "op", ")")
-    i = _expect(toks, i, "op", ":")
+    nm, j := _ident(toks, i, "a procedure name")
+    i = _op(toks, j, "(")
+    ps, k := _params(toks, i, false)
+    i = k
+    ret := []ast.Ty
+    if _isop(toks, i, "->"):
+        r, m := ty(toks, i + 1)
+        push(ret, r)
+        i = m
+    tps := []string
+    for p in ps:
+        for a in p.ty:
+            tps = _collect_typarams_ty(a, tps)
+    for r in ret:
+        tps = _collect_typarams_ty(r, tps)
+    wh := []string
+    if _isid(toks, i, "where"):
+        w, m := _wheres(toks, i)
+        wh = w
+        i = m
+    i = _op(toks, i, ":")
+    i = _expect(toks, i, "newline", "")
+    body, m2 := block(toks, i)
+    return (ast.Fn(nm, ps, ret, tps, wh, body, false, ""), m2)
+
+fn externfn(toks: [lex.Tok], i0: int) -> (ast.Fn, int):
+    i := i0 + 1
+    lib := ""
+    if _k(toks, i) == "str":
+        lib = _x(toks, i)
+        i += 1
+    i = _expect(toks, i, "kw", "fn")
+    nm, j := _ident(toks, i, "a C function name")
+    i = _op(toks, j, "(")
+    ps, k := _params(toks, i, true)
+    i = k
+    ret := []ast.Ty
+    if _isop(toks, i, "->"):
+        r, m := ty(toks, i + 1)
+        push(ret, r)
+        i = m
+    i = _expect(toks, i, "newline", "")
+    return (ast.Fn(nm, ps, ret, []string, []string, []ast.Stmt, true, lib), i)
+
+fn structd(toks: [lex.Tok], i0: int) -> (ast.StructD, int):
+    i := _expect(toks, i0, "kw", "struct")
+    nm, j := _ident(toks, i, "a struct name")
+    i = j
+    tps := []string
+    if _isop(toks, i, "("):
+        i += 1
+        for not _isop(toks, i, ")"):
+            a, k := ty(toks, i)
+            i = k
+            tps = _collect_typarams_ty(a, tps)
+            if not _isop(toks, i, ","):
+                break
+            i += 1
+        i = _op(toks, i, ")")
+        if len(tps) > 16:
+            _die(_at(toks, i0), "too many struct type parameters (max 16)")
+    i = _op(toks, i, ":")
     i = _expect(toks, i, "newline", "")
     i = _expect(toks, i, "indent", "")
-    body := []ast.Stmt
-    for _at(toks, i).kind != "dedent" and _at(toks, i).kind != "eof":
-        s, j := stmt(toks, i)
-        push(body, s)
-        i = j
+    fs := []ast.FieldD
+    for _k(toks, i) != "dedent" and _k(toks, i) != "eof":
+        if _k(toks, i) == "newline":
+            i += 1
+            continue
+        fn0, k := _ident(toks, i, "a field name")
+        for g in fs:
+            if g.name == fn0:
+                _die(_at(toks, i), "duplicate field '" + fn0 + "'")
+        i = _op(toks, k, ":")
+        ft, m := ty(toks, i)
+        i = _expect(toks, m, "newline", "")
+        push(fs, ast.FieldD(fn0, ft))
     i = _expect(toks, i, "dedent", "")
-    return (ast.Fn(nm.text, body), i)
+    if len(fs) == 0:
+        _die(_at(toks, i0), "a struct needs at least one field")
+    return (ast.StructD(nm, tps, fs), i)
+
+fn enumd(toks: [lex.Tok], i0: int) -> (ast.EnumD, int):
+    i := _expect(toks, i0, "kw", "enum")
+    nm, j := _ident(toks, i, "an enum name")
+    i = j
+    tps := []string
+    if _isop(toks, i, "("):
+        i += 1
+        for not _isop(toks, i, ")"):
+            a, k := ty(toks, i)
+            i = k
+            tps = _collect_typarams_ty(a, tps)
+            if not _isop(toks, i, ","):
+                break
+            i += 1
+        i = _op(toks, i, ")")
+        if len(tps) > 16:
+            _die(_at(toks, i0), "too many enum type parameters (max 16)")
+    i = _op(toks, i, ":")
+    i = _expect(toks, i, "newline", "")
+    i = _expect(toks, i, "indent", "")
+    vs := []ast.Variant
+    for _k(toks, i) != "dedent" and _k(toks, i) != "eof":
+        if _k(toks, i) == "newline":
+            i += 1
+            continue
+        vn, k := _ident(toks, i, "a variant name")
+        i = k
+        pl := []ast.Ty
+        if _isop(toks, i, "("):
+            i += 1
+            for not _isop(toks, i, ")"):
+                a, m := ty(toks, i)
+                push(pl, a)
+                i = m
+                if not _isop(toks, i, ","):
+                    break
+                i += 1
+            i = _op(toks, i, ")")
+            if len(pl) > 8:
+                _die(_at(toks, i), "too many payload fields (max 8)")
+        i = _expect(toks, i, "newline", "")
+        push(vs, ast.Variant(vn, pl))
+    i = _expect(toks, i, "dedent", "")
+    if len(vs) == 0:
+        _die(_at(toks, i0), "an enum needs at least one variant")
+    return (ast.EnumD(nm, tps, vs), i)
+
+fn handled(toks: [lex.Tok], i0: int) -> (ast.HandleD, int):
+    i := _expect(toks, i0, "kw", "handle")
+    nm, j := _ident(toks, i, "a handle name")
+    i = _op(toks, j, ":")
+    i = _expect(toks, i, "newline", "")
+    i = _expect(toks, i, "indent", "")
+    kwf, k := _ident(toks, i, "'free'")
+    if kwf != "free":
+        _die(_at(toks, i), "a handle body is exactly 'free: <c_free_fn>'")
+    i = _op(toks, k, ":")
+    fnm, m := _ident(toks, i, "the C destructor function name")
+    i = _expect(toks, m, "newline", "")
+    i = _expect(toks, i, "dedent", "")
+    return (ast.HandleD(nm, fnm), i)
+
+fn newtyped(toks: [lex.Tok], i0: int) -> (ast.NewtypeD, int):
+    i := _expect(toks, i0, "kw", "type")
+    nm, j := _ident(toks, i, "a type name")
+    i = _op(toks, j, "=")
+    u, k := ty(toks, i)
+    i = _expect(toks, k, "newline", "")
+    return (ast.NewtypeD(nm, u), i)
+
+fn subscriptd(toks: [lex.Tok], i0: int) -> (ast.SubscriptD, int):
+    i := i0 + 1
+    nm, j := _ident(toks, i, "a subscript name")
+    i = _op(toks, j, "(")
+    ps, k := _params(toks, i, false)
+    i = _op(toks, k, "->")
+    if not _iskw(toks, i, "inout"):
+        _die(_at(toks, i), "a subscript must yield an inout projection: `-> inout <type>`")
+    r, m := ty(toks, i + 1)
+    i = _op(toks, m, ":")
+    i = _expect(toks, i, "newline", "")
+    i = _expect(toks, i, "indent", "")
+    for _k(toks, i) == "newline":
+        i += 1
+    if not _isid(toks, i, "yield"):
+        _die(_at(toks, i), "a subscript body must be a single `yield &<place>`")
+    y, n := expr(toks, i + 1)
+    i = n
+    if not (y is ast.Addr):
+        _die(_at(toks, i0), "a subscript must yield a place: `yield &<place>`")
+    for _k(toks, i) == "newline":
+        i += 1
+    i = _expect(toks, i, "dedent", "")
+    return (ast.SubscriptD(nm, ps, r, y), i)
 
 fn unit(toks: [lex.Tok]) -> ast.Unit:
+    pkg := ""
+    imports := []ast.ImportD
     fns := []ast.Fn
+    sts := []ast.StructD
+    ens := []ast.EnumD
+    nts := []ast.NewtypeD
+    hds := []ast.HandleD
+    cts := []ast.ConstD
+    sbs := []ast.SubscriptD
     i := 0
-    for _at(toks, i).kind != "eof":
+    for _k(toks, i) != "eof":
+        if _k(toks, i) == "newline":
+            i += 1
+            continue
+        if _isid(toks, i, "package"):
+            p, j := _ident(toks, i + 1, "a package name after `package`")
+            pkg = p
+            i = j
+            if _k(toks, i) == "newline":
+                i += 1
+            continue
+        if _isid(toks, i, "import"):
+            i += 1
+            alias := ""
+            if _k(toks, i) == "ident":
+                alias = _x(toks, i)
+                i += 1
+            if _k(toks, i) != "str":
+                _fail(_at(toks, i), "an import path string")
+            push(imports, ast.ImportD(alias, _x(toks, i)))
+            i += 1
+            if _k(toks, i) == "newline":
+                i += 1
+            continue
+        if _isid(toks, i, "extern") and not _isop(toks, i + 1, "("):
+            f, j := externfn(toks, i)
+            push(fns, f)
+            i = j
+            continue
+        if _isid(toks, i, "const"):
+            nm, j := _ident(toks, i + 1, "a constant name after 'const'")
+            i = _op(toks, j, "=")
+            e, k := expr(toks, i)
+            i = _expect(toks, k, "newline", "")
+            push(cts, ast.ConstD(nm, e))
+            continue
+        if _isid(toks, i, "subscript"):
+            s, j := subscriptd(toks, i)
+            push(sbs, s)
+            i = j
+            continue
+        if _iskw(toks, i, "struct"):
+            s, j := structd(toks, i)
+            push(sts, s)
+            i = j
+            continue
+        if _iskw(toks, i, "enum"):
+            e, j := enumd(toks, i)
+            push(ens, e)
+            i = j
+            continue
+        if _iskw(toks, i, "handle"):
+            h, j := handled(toks, i)
+            push(hds, h)
+            i = j
+            continue
+        if _iskw(toks, i, "type"):
+            n, j := newtyped(toks, i)
+            push(nts, n)
+            i = j
+            continue
         f, j := func(toks, i)
         push(fns, f)
         i = j
-    return ast.Unit(fns)
+    return ast.Unit(pkg, imports, fns, sts, ens, nts, hds, cts, sbs)

@@ -11,20 +11,22 @@ fn _expr(e: ast.Expr) -> string:
         ast.IntLit(v): return str(v) + "LL"
         ast.StrLit(s): return "\"" + s + "\""
         ast.Name(n): return n
-        ast.Call(name, args):
-            if name == "str" and len(args) == 1:
+        ast.Call(q, name, tas, args):
+            if len(q) == 0 and name == "str" and len(args) == 1:
                 return "tycho_int_to_str(&_t, " + _expr(args[0]) + ")"
-            if name == "print" and len(args) == 1:
+            if len(q) == 0 and name == "print" and len(args) == 1:
                 return "tycho_print_s(" + _expr(args[0]) + ")"
             die("tychoc1: unsupported call '" + name + "' with " +
                 str(len(args)) + " argument(s)")
+        _: die("tychoc1: unsupported expression -- codegen lands in Phase 7")
     return ""
 
 fn _stmt(s: ast.Stmt) -> string:
     match s:
-        ast.ExprStmt(e):
-            return "    { Arena _t = arena_new(0); " + _expr(e) +
+        ast.ExprStmt(es):
+            return "    { Arena _t = arena_new(0); " + _expr(es[0]) +
                    "; arena_free(&_t); }\n"
+        _: die("tychoc1: unsupported statement -- codegen lands in Phase 7")
     return ""
 
 fn _proto(f: ast.Fn) -> string:

@@ -1,20 +1,177 @@
 package ast
 
-# The tree tychoc1 builds. Phase 1 covers exactly what `fn main(): print(str(1))`
-# needs; every later phase widens these three enums rather than replacing them.
+# The tree tychoc1 builds. Phase 3 covers the whole expression and statement
+# grammar of src/tychoc.c's parser; nothing here is RESOLVED -- a type is the
+# syntax that was written, a name is a name, and every table lookup src/tychoc.c
+# does inside parse_type is deferred to Phase 5.
+#
+# Every child list is an ARRAY. A Tycho enum payload cannot hold its own enum by
+# value (recursive-by-value is refused), and an array breaks the cycle at no cost
+# in expressiveness: an "optional" child is a 0-or-1 element list.
+
+# --- types (syntactic) ------------------------------------------------------
+
+enum Ty:
+    TPrim(string)                     # int float bool string ptr bytes u8..i64 f32 void
+    TParam(string)                     # $T
+    TName(string, string, [Ty])        # qualifier ("" if none), name, type arguments
+    TArr([Ty])                         # [T]
+    TFix(string, [Ty])                 # [N]T / [W]T / [$N]T -- the size exactly as written
+    TMap([Ty])                         # [K: V] -- exactly two elements
+    TTup([Ty])                         # (T1, ..., Tn)
+    TFn(bool, [Ty])                    # has_ret; params in order, the return type last
+    TSoa([Ty])                         # soa [S]
+    TBnd(string, [Ty])                 # bounded[N]T
+
+struct Param:
+    name: string
+    ty: [Ty]                           # empty for an untyped lambda parameter
+    is_inout: bool
+    is_sink: bool
+    is_variadic: bool
+
+# --- expressions ------------------------------------------------------------
 
 enum Expr:
     IntLit(int)
+    FloatLit(float)
     StrLit(string)
+    FStrLit(string)                    # f"..." -- the body, interpolation deferred
+    CharLit(int)
+    BoolLit(bool)
+    NullLit(int)                       # payload: line
     Name(string)
-    Call(string, [Expr])
+    Field([Expr], string)              # recv, field name
+    TupIdx([Expr], int)                # recv, .0 / .1
+    Index([Expr])                      # recv, index
+    Slice(bool, bool, [Expr])          # has_lo, has_hi; recv, then lo, then hi
+    Call(string, string, [Ty], [Expr]) # qualifier, name, explicit type args, args
+    CallVal([Expr])                    # indirect: callee, then args
+    Named(string, [Expr])              # a `name: value` call argument
+    Binop(string, [Expr])              # operator spelling, two operands
+    Unop(string, [Expr])               # - ~ not, one operand
+    IsVar([Expr], string, string)      # subject, qualifier, variant name
+    ArrLit([Expr])
+    MapLit([Expr])                     # k0, v0, k1, v1, ...
+    EmptyArr([Ty])                     # []T, or empty for a bare untyped []
+    EmptyMap([Ty])                     # []K: V
+    SoaLit([Ty])                       # soa []S
+    Tuple([Expr])
+    SomeE([Expr])
+    OkE([Expr])                        # empty for `Ok()`
+    ErrE([Expr])
+    NoneE(int)                         # payload: line
+    SpawnE([Expr])
+    OrRet([Expr])
+    Spread([Expr])                     # x...
+    Addr([Expr])                       # &place
+    ChanE([Ty], [Expr])                # channel(T, cap)
+    Lambda([Param], [Ty], [Expr])      # params, return type (0 or 1), body expression
+
+# --- match / select arms ----------------------------------------------------
+
+struct Pat:
+    kind: string                       # int char bool name
+    lo: int
+    hi: int
+    loname: string
+    hiname: string
+    ranged: bool
+
+struct Arm:
+    kind: string                       # variant scalar recv default closed
+    qual: string
+    name: string
+    binds: [string]
+    subqual: string
+    sub: string
+    subbinds: [string]
+    pats: [Pat]
+    ch: [Expr]                         # the select `recv(ch, x)` channel
+    body: [Stmt]
+
+# --- statements -------------------------------------------------------------
 
 enum Stmt:
-    ExprStmt(Expr)
+    ExprStmt([Expr])
+    Decl(string, [Ty], [Expr], [Stmt]) # name, annotation, rhs, value if/match
+    MDecl(bool, [string], [Expr])      # true for `:=`, false for `=`
+    Assign(string, [Expr])
+    PlaceSet([Expr])                   # target place, value
+    ConstS(string, [Expr])
+    PassS(int)
+    ReturnS([Expr])                    # empty for a bare `return`
+    BreakS(int)
+    ContinueS(int)
+    IfS([Expr], [Stmt], [Stmt])        # condition, body, else branch
+    WhileS([Expr], [Stmt])             # `for cond:` and bare `for:`
+    For3([Stmt], [Expr], [Stmt])       # exactly [init, post], condition, body
+    ForIn(string, [Expr], [Stmt])      # `for x in COLL:`
+    ForRange(string, [Expr], [Stmt])   # `parallel for i in 0..<N:`
+    ParallelS([Expr], [Stmt])          # width (0 or 1), the single loop statement
+    MatchS([Expr], [Arm])
+    SelectS([Arm])
+    DeleteS([Expr])                    # `delete m[k]` -- the index place
+
+# --- declarations -----------------------------------------------------------
 
 struct Fn:
     name: string
+    params: [Param]
+    ret: [Ty]
+    typarams: [string]
+    wheres: [string]                   # each constraint as written, for Phase 6
     body: [Stmt]
+    is_extern: bool
+    lib: string
+
+struct FieldD:
+    name: string
+    ty: Ty
+
+struct StructD:
+    name: string
+    typarams: [string]
+    fields: [FieldD]
+
+struct Variant:
+    name: string
+    payload: [Ty]
+
+struct EnumD:
+    name: string
+    typarams: [string]
+    variants: [Variant]
+
+struct NewtypeD:
+    name: string
+    under: Ty
+
+struct HandleD:
+    name: string
+    free_fn: string
+
+struct ConstD:
+    name: string
+    value: Expr
+
+struct SubscriptD:
+    name: string
+    params: [Param]
+    ret: Ty
+    place: Expr
+
+struct ImportD:
+    alias: string
+    path: string
 
 struct Unit:
+    pkg: string
+    imports: [ImportD]
     fns: [Fn]
+    structs: [StructD]
+    enums: [EnumD]
+    newtypes: [NewtypeD]
+    handles: [HandleD]
+    consts: [ConstD]
+    subscripts: [SubscriptD]

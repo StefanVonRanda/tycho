@@ -157,7 +157,13 @@ self-built twice, the two emitted `.c` identical.
     1. **No integer-literal overflow check.** `src/tychoc.c` dies with
        `integer literal out of range`; `compiler/lex/` accumulates the value and
        wraps under `-fwrapv`, so an over-wide literal lexes to a wrong number in
-       silence.
+       silence. **The same hole exists for a FLOAT literal** (found in Phase 3):
+       `strings.parse_float` fails to `Err` and `compiler/lex/` substitutes
+       `0.0`, where `src/tychoc.c` dies `float literal out of range`. Three
+       reject fixtures ride on this — `tests/reject/int_hex_overflow.ty`,
+       `tests/reject/int_literal_overflow.ty`,
+       `tests/reject/float_lit_overflow_neg.ty` — and they are the only three
+       syntax rejections Phase 3 does not make.
     2. **`# deprecated:` doc notes are dropped.** `src/tychoc.c@dnote_scan` runs
        during lexing and attaches the note to the fn below it. Comments are
        trivia here, so the deprecation warning `make grid-check` gates has no
@@ -172,7 +178,7 @@ self-built twice, the two emitted `.c` identical.
     unmoved over the 365-file corpus.
   - Do NOT run: any test lane. Nothing outside `compiler/` is touched.
 
-- [ ] **Phase 3 — parser: expressions and statements**
+- [x] **Phase 3 — parser: expressions and statements**
   - Scope: `compiler/parse/`, `compiler/ast/`. Full expression grammar with
     precedence, `if`/`elif`/`else`, `for`/`in`, `for <cond>:` (Tycho has no
     `while` — the conditional loop is `for` and the compiler says so by name,
@@ -184,6 +190,97 @@ self-built twice, the two emitted `.c` identical.
   - Verify: the parse sweep over both corpora, with the accept and reject counts
     printed separately; a reject leg that cannot fail is decoration, so show one
     deliberate break reddening it.
+  - **Done 2026-08-22.** `compiler/ast/ast.ty` (10 `Ty`, 35 `Expr`, 19 `Stmt`
+    forms), `compiler/ast/census.ty`, `compiler/parse/parse.ty`. The grammar is
+    read out of `src/tychoc.c`'s parser, not inferred: precedence is
+    postfix > unary > `* / % << >> &` > `+ - | ^` > `is` > comparisons+`in` >
+    `not` > `and` > `or`, matching `src/tychoc.c@parse_mul` through
+    `src/tychoc.c@parse_expr`. Nothing is RESOLVED — `src/tychoc.c`'s
+    `parse_type` consults the struct/enum/const tables as it parses and this one
+    cannot, which is what the reject split below is about. `--parse` and
+    `--parse-census` are at `compiler/main.ty@mode`.
+
+    **Leg 1 — the accept corpus.** `./tychoc` accepts all 274, measured first,
+    so the leg is not comparing against an empty set:
+
+    ```
+    tychoc accepts 274 of 274
+    leg1 tests/*.ty: files=274 parse-ok=274 fail=0
+    leg1b corelib/**.ty: files=91 parse-ok=91 fail=0
+    ```
+
+    **Leg 2 — the reject corpus, split.** *"Everything in `tests/reject/` was
+    rejected"* is the failure mode this leg exists to catch: most of those
+    fixtures are TYPE or SEMANTIC rejections that a parser must ACCEPT. The
+    split is grounded in `src/tychoc.c` rather than in tychoc1's own behaviour:
+    every `die_at`/`die` format string in that file is extracted with its line
+    number, each fixture's real `./tychoc` message is matched back to the most
+    specific format that produced it, and the SITE decides the class —
+    **SYNTAX** if it sits in the lexer or inside `parse_program`'s reach and
+    needs no symbol table, **SEMANTIC** otherwise, including the parse-region
+    sites that DO need one (`unknown type`, `is already defined`, a `where`
+    predicate checked against the typaram list, an affine container rule). Six
+    messages are assembled by a helper or carry a backslash the extractor cannot
+    reproduce and are classified by hand with the reason recorded.
+
+    ```
+    leg2 tests/reject/*.ty: SYNTAX=47 rejected=44 missed=3 | SEMANTIC=290 accepted=290 wrongly-rejected=0
+    ```
+
+    The three misses are **one gap, already an open phase**: `int_hex_overflow`,
+    `int_literal_overflow` and `float_lit_overflow_neg`, all the literal-range
+    check Phase 2b item 1 records as deferred. Nothing else in the 47 is missed
+    and nothing in the 290 is wrongly rejected.
+
+    **Leg 3 — an AST node-kind census**, because an accept/reject count is blind
+    to a parse that SUCCEEDS with the wrong tree. 120 kinds, 83,576 nodes over
+    the same 365-file corpus; the full table is reproducible with
+    `./tychoc1 <file> --parse-census`. Spot values:
+
+    ```
+    e.Call=12749 e.CallQual=1928 e.Name=13673 e.IntLit=8564 e.StrLit=5464
+    e.Binop:+=5324 e.Binop:===817 e.Named=9  s.Decl=3535 s.ExprStmt=3771
+    s.ReturnS=2096 s.IfS=1218 s.For3=310 s.WhileS=204 s.MatchS=255 s.SelectS=5
+    t.TPrim=3943 t.TName=935 t.TParam=672 t.TArr=393 t.TFix=354 t.TSoa=11
+    d.fn=1506 d.struct=198 d.enum=57 d.subscript=4 d.variadic=4
+    ```
+
+    **Leg 4 — three negative controls, each observed, each reverted** (the
+    census returns byte-identical to the baseline afterwards):
+
+    | break | effect |
+    |---|---|
+    | drop the `elif` chain from `ifstmt` | leg1 **272/274**, leg1b **73/91**, and one SEMANTIC fixture wrongly rejected |
+    | drop the four removed-`map_*` refusals from `primary` | legs 1 and 3 stay **green**; leg2 SYNTAX rejected **44 -> 40**, naming all four `map_*_removed` fixtures |
+    | drop the `ast.Named` wrapper from a `name: value` call argument | legs 1 and 2 stay **fully green**; the census loses `e.Named=9` |
+
+    The third is the one that matters: the same tokens are consumed, the
+    accept/reject verdict is identical on all 611 files, and the argument NAME is
+    silently gone — exactly what the two legs the brief named cannot see.
+
+    **A control that did NOT redden, recorded rather than hidden:** disabling the
+    reserved-keyword check in `stmt` (`'for' cannot be used as a variable name`)
+    moved no leg. Those fixtures die a second way — the following `_ident` call
+    refuses the keyword — so that guard is redundant on this corpus. It is kept
+    because `src/tychoc.c` has it and Phase 9 pins message text.
+
+    **Phase 1 and Phase 2 are unmoved**: `./tychoc1` on `fn main(): print(str(1))`
+    still differs from `./tychoc`'s C by the same five blank lines, and
+    `--dump-tokens` / `--round-trip` are still 365/365 with 0 failures.
+    `compiler/emit/emit.ty` was adapted to the widened AST (it now carries a `_`
+    arm that dies "codegen lands in Phase 7"); `compiler/driver/` and
+    `compiler/main.ty` gained the two modes and nothing else.
+
+- [ ] **Phase 3b — the parse sweep is not a runnable lane**
+  - Scope: a `run.sh` (or a `scripts/` entry) for the Phase 3 legs. The sweep and
+    the SYNTAX-vs-SEMANTIC classifier that produced the evidence above live in a
+    scratch directory, so nothing in the tree can redden when the parser
+    regresses — and the classification is the expensive half to rebuild.
+  - Done when: the three legs run from the repo, with the classifier's table
+    committed so the split is auditable rather than recomputed.
+  - Verify: the lane green at 274/91/47/290, plus one of Phase 3's three
+    controls reddening it.
+  - Do NOT run: any test lane. Nothing outside the new script is touched.
 
 - [ ] **Phase 4 — parser: declarations**
   - Scope: `compiler/parse/`. `fn`, `struct`, `enum`, `newtype`, `handle`,

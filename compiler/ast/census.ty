@@ -1,0 +1,308 @@
+package ast
+
+# A node-kind census of a parsed unit. It exists because an accept/reject count
+# is blind to a parse that SUCCEEDS with the wrong tree: drop a precedence level
+# or a postfix form and every file still parses, with a different shape. The
+# census is what moves when that happens.
+
+fn _ct(t: Ty, acc: [string]) -> [string]:
+    out := acc
+    match t:
+        TPrim(n): push(out, "t.TPrim")
+        TParam(n): push(out, "t.TParam")
+        TName(q, n, args):
+            push(out, "t.TName")
+            for a in args:
+                out = _ct(a, out)
+        TArr(k):
+            push(out, "t.TArr")
+            out = _ct(k[0], out)
+        TFix(sz, k):
+            push(out, "t.TFix")
+            out = _ct(k[0], out)
+        TMap(ks):
+            push(out, "t.TMap")
+            for a in ks:
+                out = _ct(a, out)
+        TTup(ks):
+            push(out, "t.TTup")
+            for a in ks:
+                out = _ct(a, out)
+        TFn(hr, ks):
+            push(out, "t.TFn")
+            for a in ks:
+                out = _ct(a, out)
+        TSoa(k):
+            push(out, "t.TSoa")
+            out = _ct(k[0], out)
+        TBnd(sz, k):
+            push(out, "t.TBnd")
+            out = _ct(k[0], out)
+    return out
+
+fn _cts(ts: [Ty], acc: [string]) -> [string]:
+    out := acc
+    for a in ts:
+        out = _ct(a, out)
+    return out
+
+fn _cps(ps: [Param], acc: [string]) -> [string]:
+    out := acc
+    for p in ps:
+        push(out, "d.Param")
+        if p.is_inout:
+            push(out, "d.inout")
+        if p.is_sink:
+            push(out, "d.sink")
+        if p.is_variadic:
+            push(out, "d.variadic")
+        out = _cts(p.ty, out)
+    return out
+
+fn _ces(es: [Expr], acc: [string]) -> [string]:
+    out := acc
+    for a in es:
+        out = _ce(a, out)
+    return out
+
+fn _ce(e: Expr, acc: [string]) -> [string]:
+    out := acc
+    match e:
+        IntLit(v): push(out, "e.IntLit")
+        FloatLit(v): push(out, "e.FloatLit")
+        StrLit(v): push(out, "e.StrLit")
+        FStrLit(v): push(out, "e.FStrLit")
+        CharLit(v): push(out, "e.CharLit")
+        BoolLit(v): push(out, "e.BoolLit")
+        NullLit(v): push(out, "e.NullLit")
+        Name(v): push(out, "e.Name")
+        Field(k, f):
+            push(out, "e.Field")
+            out = _ces(k, out)
+        TupIdx(k, n):
+            push(out, "e.TupIdx")
+            out = _ces(k, out)
+        Index(k):
+            push(out, "e.Index")
+            out = _ces(k, out)
+        Slice(hl, hh, k):
+            push(out, "e.Slice")
+            out = _ces(k, out)
+        Call(q, n, tas, args):
+            push(out, "e.Call")
+            if len(q) > 0:
+                push(out, "e.CallQual")
+            if len(tas) > 0:
+                push(out, "e.CallTypeArgs")
+            out = _cts(tas, out)
+            out = _ces(args, out)
+        CallVal(k):
+            push(out, "e.CallVal")
+            out = _ces(k, out)
+        Named(n, k):
+            push(out, "e.Named")
+            out = _ces(k, out)
+        Binop(o, k):
+            push(out, "e.Binop:" + o)
+            out = _ces(k, out)
+        Unop(o, k):
+            push(out, "e.Unop:" + o)
+            out = _ces(k, out)
+        IsVar(k, q, n):
+            push(out, "e.IsVar")
+            out = _ces(k, out)
+        ArrLit(k):
+            push(out, "e.ArrLit")
+            out = _ces(k, out)
+        MapLit(k):
+            push(out, "e.MapLit")
+            out = _ces(k, out)
+        EmptyArr(ts):
+            push(out, "e.EmptyArr")
+            out = _cts(ts, out)
+        EmptyMap(ts):
+            push(out, "e.EmptyMap")
+            out = _cts(ts, out)
+        SoaLit(ts):
+            push(out, "e.SoaLit")
+            out = _cts(ts, out)
+        Tuple(k):
+            push(out, "e.Tuple")
+            out = _ces(k, out)
+        SomeE(k):
+            push(out, "e.SomeE")
+            out = _ces(k, out)
+        OkE(k):
+            push(out, "e.OkE")
+            out = _ces(k, out)
+        ErrE(k):
+            push(out, "e.ErrE")
+            out = _ces(k, out)
+        NoneE(v): push(out, "e.NoneE")
+        SpawnE(k):
+            push(out, "e.SpawnE")
+            out = _ces(k, out)
+        OrRet(k):
+            push(out, "e.OrRet")
+            out = _ces(k, out)
+        Spread(k):
+            push(out, "e.Spread")
+            out = _ces(k, out)
+        Addr(k):
+            push(out, "e.Addr")
+            out = _ces(k, out)
+        ChanE(ts, k):
+            push(out, "e.ChanE")
+            out = _cts(ts, out)
+            out = _ces(k, out)
+        Lambda(ps, r, b):
+            push(out, "e.Lambda")
+            out = _cps(ps, out)
+            out = _cts(r, out)
+            out = _ces(b, out)
+    return out
+
+fn _carms(arms: [Arm], acc: [string]) -> [string]:
+    out := acc
+    for a in arms:
+        push(out, "a." + a.kind)
+        if len(a.qual) > 0:
+            push(out, "a.qual")
+        if len(a.sub) > 0:
+            push(out, "a.nested")
+        for b in a.binds:
+            push(out, "a.bind")
+        for b in a.subbinds:
+            push(out, "a.subbind")
+        for p in a.pats:
+            push(out, "a.pat." + p.kind)
+            if p.ranged:
+                push(out, "a.range")
+        out = _ces(a.ch, out)
+        out = _cb(a.body, out)
+    return out
+
+fn _cb(b: [Stmt], acc: [string]) -> [string]:
+    out := acc
+    for s in b:
+        out = _cs(s, out)
+    return out
+
+fn _cs(s: Stmt, acc: [string]) -> [string]:
+    out := acc
+    match s:
+        ExprStmt(k):
+            push(out, "s.ExprStmt")
+            out = _ces(k, out)
+        Decl(n, an, rhs, ctrl):
+            push(out, "s.Decl")
+            if len(an) > 0:
+                push(out, "s.DeclTyped")
+            if len(ctrl) > 0:
+                push(out, "s.DeclCtrl")
+            out = _cts(an, out)
+            out = _ces(rhs, out)
+            out = _cb(ctrl, out)
+        MDecl(isd, ns, rhs):
+            if isd:
+                push(out, "s.MDecl")
+            else:
+                push(out, "s.MAssign")
+            out = _ces(rhs, out)
+        Assign(n, k):
+            push(out, "s.Assign")
+            out = _ces(k, out)
+        PlaceSet(k):
+            push(out, "s.PlaceSet")
+            out = _ces(k, out)
+        ConstS(n, k):
+            push(out, "s.ConstS")
+            out = _ces(k, out)
+        PassS(v): push(out, "s.PassS")
+        ReturnS(k):
+            push(out, "s.ReturnS")
+            out = _ces(k, out)
+        BreakS(v): push(out, "s.BreakS")
+        ContinueS(v): push(out, "s.ContinueS")
+        IfS(c, b, e):
+            push(out, "s.IfS")
+            if len(e) > 0:
+                push(out, "s.Else")
+            out = _ces(c, out)
+            out = _cb(b, out)
+            out = _cb(e, out)
+        WhileS(c, b):
+            push(out, "s.WhileS")
+            out = _ces(c, out)
+            out = _cb(b, out)
+        For3(ip, c, b):
+            push(out, "s.For3")
+            out = _cb(ip, out)
+            out = _ces(c, out)
+            out = _cb(b, out)
+        ForIn(n, c, b):
+            push(out, "s.ForIn")
+            out = _ces(c, out)
+            out = _cb(b, out)
+        ForRange(n, c, b):
+            push(out, "s.ForRange")
+            out = _ces(c, out)
+            out = _cb(b, out)
+        ParallelS(w, b):
+            push(out, "s.ParallelS")
+            out = _ces(w, out)
+            out = _cb(b, out)
+        MatchS(c, arms):
+            push(out, "s.MatchS")
+            out = _ces(c, out)
+            out = _carms(arms, out)
+        SelectS(arms):
+            push(out, "s.SelectS")
+            out = _carms(arms, out)
+        DeleteS(k):
+            push(out, "s.DeleteS")
+            out = _ces(k, out)
+    return out
+
+fn census(u: Unit) -> [string]:
+    out := []string
+    if len(u.pkg) > 0:
+        push(out, "d.package")
+    for im in u.imports:
+        push(out, "d.import")
+    for f in u.fns:
+        if f.is_extern:
+            push(out, "d.extern")
+        else:
+            push(out, "d.fn")
+        if len(f.typarams) > 0:
+            push(out, "d.generic")
+        for w in f.wheres:
+            push(out, "d.where")
+        out = _cps(f.params, out)
+        out = _cts(f.ret, out)
+        out = _cb(f.body, out)
+    for st in u.structs:
+        push(out, "d.struct")
+        for fl in st.fields:
+            push(out, "d.field")
+            out = _ct(fl.ty, out)
+    for en in u.enums:
+        push(out, "d.enum")
+        for v in en.variants:
+            push(out, "d.variant")
+            out = _cts(v.payload, out)
+    for nt in u.newtypes:
+        push(out, "d.newtype")
+        out = _ct(nt.under, out)
+    for h in u.handles:
+        push(out, "d.handle")
+    for c in u.consts:
+        push(out, "d.const")
+        out = _ce(c.value, out)
+    for sb in u.subscripts:
+        push(out, "d.subscript")
+        out = _cps(sb.params, out)
+        out = _ct(sb.ret, out)
+        out = _ce(sb.place, out)
+    return out
