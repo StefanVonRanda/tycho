@@ -102,7 +102,9 @@ self-built twice, the two emitted `.c` identical.
 
 - [ ] **Phase 3 — parser: expressions and statements**
   - Scope: `compiler/parse/`, `compiler/ast/`. Full expression grammar with
-    precedence, `if`/`elif`/`else`, `for`/`in`, `while`, `match`, `select`,
+    precedence, `if`/`elif`/`else`, `for`/`in`, `for <cond>:` (Tycho has no
+    `while` — the conditional loop is `for` and the compiler says so by name,
+    found in Phase 1), `match`, `select`,
     `spawn`, `return`/`break`/`continue`, destructuring, expression-valued
     `if`/`match`.
   - Done when: every `tests/*.ty` that `./tychoc` accepts parses without error,
