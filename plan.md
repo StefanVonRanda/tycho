@@ -673,15 +673,39 @@ self-built twice, the two emitted `.c` identical.
   `.gitignore:120` already un-ignores it), `make script-check` ok (26 .py,
   96 .sh), `python3 scripts/check_citations.py` ok.
 
-- [ ] **Phase 6 — `types/`: checking and inference**
-  - Scope: `compiler/types/`. Type resolve, inference, generics
-    monomorphisation, newtype distinctness, affine (handle/task/channel) rules,
-    `where` predicates, `bounded` capacity.
+> **Phase 6 was split on 2026-08-23, before dispatch.** As written it covered
+> `src/tychoc.c:5716-9350` — resolve, inference, generics, newtypes, affine,
+> `where`, `bounded` — in one brief. That is not independently completable or
+> verifiable in one pass, and a phase that stalls halfway commits nothing. The
+> split is by what the verdict differential can score separately.
+
+- [ ] **Phase 6a — `types/`: the monomorphic type checker**
+  - Scope: `compiler/types/`. Type resolve and inference over the non-generic
+    language: scalars, `string`/`bytes`, arrays, maps, structs, enums, tuples,
+    `Option`/`Result`, function signatures, operators, indexing, field access,
+    `match` exhaustiveness, assignment and return compatibility.
+  - Done when: every file in the tree that uses no generic, newtype, handle or
+    `bounded` gets the same accept-vs-reject verdict as `./tychoc`, and the
+    SEMANTIC fixtures whose refusal is a monomorphic type error are refused.
+  - Verify: the lane's verdict differential with a TYPE class added to
+    `compiler/reject_class.tsv` the way Phase 5 added NAME — decided by the
+    `die_at` site in `src/tychoc.c`, never by tychoc1's behaviour. `leg2b
+    wrongly-rejected=0` is the leg that matters more than the new refusals.
+    State the new SYNTAX/NAME/TYPE/SEMANTIC split.
+
+- [ ] **Phase 6b — `types/`: generics, newtypes, affine, `where`, `bounded`**
+  - Scope: `compiler/types/`. Generic inference and monomorphisation, explicit
+    type arguments, the five closed `where` predicates, newtype distinctness
+    across a package boundary, the affine rules for handle/task/channel, and
+    `bounded[N]` capacity.
   - Done when: `tychoc1` agrees with `./tychoc` on accept-vs-reject for every
-    file in `tests/`, `tests/reject/` and `corelib/`.
-  - Verify: the verdict differential, counts printed; and the affine refusals
-    checked individually, since a checker that refuses everything scores the
-    same as a correct one on a reject corpus.
+    file in `tests/`, `tests/reject/` and `corelib/` — the whole Phase 6
+    condition, now reachable.
+  - Verify: the verdict differential, counts printed; **and the affine refusals
+    checked individually**, since a checker that refuses everything scores the
+    same as a correct one on a reject corpus. `tools/tycho-ledger/run.sh` and
+    `tools/tycho-fh/run.sh` are the two lanes in this tree whose subject is
+    exactly this — read what they assert before writing the legs.
 
 - [ ] **Phase 7 — `lower/` + `emit/`: core codegen**
   - Scope: `compiler/lower/`, `compiler/emit/`. Arena scoping, structs, enums,
