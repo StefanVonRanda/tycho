@@ -16,6 +16,15 @@ it, not imagined about it.
 > you write a NEW citation here, anchor it**: `path@SYMBOL` for a definition, or
 > `path:N@token`. Both survive an insertion; a bare line number does not.
 
+> **An entry that claims to be closed carries `> Pinned-by:`, since 2026-08-22.**
+> The line is a shell command; `make friction-check` runs every one of them,
+> deduped and in parallel, and names the entry whose fix stopped holding. Write
+> `> Pinned-by: none -- <reason>` when nothing can assert it (#86 is a timing
+> claim). An entry with no pin at all is REPORTED, never a failure: 62 of 85 had
+> none the day the gate landed. Scoring these by hand took most of a session and
+> the mapping from entry to lane was inference; this makes it the author's claim
+> instead, and runs it.
+
 > **Plan references, removed 2026-08.** This file used to point every closure at
 > the plan that closed it (`docs/internals/plan-*-DONE.md`). Those archives were
 > pruned; the pointers now say "the X plan" with no phase numbers. The full
@@ -4561,6 +4570,8 @@ combined `bounded[N]T` with a generic.
 
 ### 51. A generic struct with a `[K: fn($T)->$T]` field emitted an undefined `FnC0` — **FIXED**
 
+> Pinned-by: make test
+
 The map sibling of the array bug `tools/tycho-flow/graph/graph.ty` records as
 fixed. The array body loop skips a typaram'd composite; the map body loop never
 had that skip, so the dead template map named an `FnC<id>` that was deliberately
@@ -4568,6 +4579,8 @@ not emitted and cc rejected the program. Every other map loop already had the
 guard. `tests/generic_fn_map_field.ty`.
 
 ### 52. `bounded[N]T` in a generic struct silently became `[N]T` — **FIXED**
+
+> Pinned-by: make test
 
 `subst_type` rebuilt every instantiated array through `fixarr_of`, which hardcodes
 `bnd=0`, so the SIZE survived and the capacity RULE did not. The declaration said
@@ -4582,6 +4595,8 @@ fail loudly and cannot catch it.
 
 ### 53. A generic field or payload bound at an affine type escaped the ban — **FIXED**
 
+> Pinned-by: make test
+
 `struct Box($T): c: $T` instantiated at `Channel(int)` compiled and ran: CC-4's
 scan runs over the aggregates that exist when `resolve_program` runs, and an
 instance is stamped out later. Then `b2 := b` copied the struct and gave two
@@ -4595,6 +4610,8 @@ fn returning `Option($T)`) was already refused by a separate value-level guard.
 
 ### 54. `sink $T` bound to an affine type escaped the rule the parse site names — **FIXED**
 
+> Pinned-by: make test
+
 Not a memory-safety bug **today**: measured against the counting
 shim in `tools/tycho-fh/fh.c`, `sink $T` at a handle gives `opens=1 closes=1
 live=0`, identical to a plain borrow — `sink` on such a type currently enforces
@@ -4605,6 +4622,8 @@ closed at the instance signature rather than left to that day.
 `tests/reject/generic_sink_affine.ty`.
 
 ### 55. A generic returning `$T` at a handle DOUBLE FREED — **FIXED**
+
+> Pinned-by: make test
 
 Found by finishing the sweep of #51-54 rather than stopping at four: every
 declaration-time type rule, re-probed through `$T`. `fn ident(x: $T) -> $T` at a
@@ -4665,6 +4684,8 @@ in either direction moves that line. Arbitrary precision survives the check: a
 20-digit coefficient round-trips exactly.
 
 ### 57. `core:http` cannot be pointed at a private CA — **FIXED 2026-08-15**
+
+> Pinned-by: make http-verify
 
 Found 2026-08-15 while building `scripts/tls_verify.sh`, which proves `core:tls`
 verifies certificates. The same three-way check was written for `core:http` and
@@ -4740,6 +4761,8 @@ copy of the working-tree file, and asserting the backup contains the fix before
 scoring anything, is what the script does now.
 
 ### 58. `uuid.v4` looks like 122 random bits and carries at most 32 — **documented 2026-08-15**
+
+> Pinned-by: grep -q 'NOT unguessable' corelib/uuid/uuid.ty && grep -q 'not unguessable' docs/guides/corelib.md
 
 `core:uuid` produces RFC 4122 version-4 UUIDs, and the whole point of v4 is that
 it is the random one. The source is `core:rand`'s xorshift32, whose state is
@@ -4848,6 +4871,8 @@ real content rather than merely re-blessed. The new cases assert both directions
 true` reddens the golden.
 
 ### 61. `parse(stringify(rows)) == rows` was false for one shape — **FIXED 2026-08-15**
+
+> Pinned-by: make format-diff
 
 `corelib/csv/csv.ty@stringify` states that identity in its own doc comment. It
 held for 413 of 414 differentialed row-sets and failed for exactly one: a row
@@ -4973,6 +4998,8 @@ as an XSS test passing would inflate the result.
 
 ### 71. `core:zip` told the caller there was no traversal hazard — **FIXED 2026-08-15**
 
+> Pinned-by: make ar-check
+
 Probed because `docs/internals/audit-brief.md` names archive parsing as the first
 place an external reviewer should look, and reading the code is what missed
 `gcd` and `sign` for months.
@@ -5050,6 +5077,8 @@ encoded-traversal legs in #57's neighbourhood.
 
 ### 64. `gcd` returned a NEGATIVE gcd where the answer fits — **FIXED 2026-08-15**
 
+> Pinned-by: make math-diff
+
 `corelib/math/math.ty@gcd` documented itself "non-negative". It was not, for four
 input pairs, and only three of those are excusable.
 
@@ -5081,6 +5110,8 @@ future change that "fixes" the limits by wrapping cannot pass by moving the wron
 line. Reverting `abs(x)` to `x` reddens the golden.
 
 ### 65. `sign()` returned 0 for both infinities — **FIXED 2026-08-15**
+
+> Pinned-by: make math-diff
 
 Same package as #64 and the same shape as the nine before it: *a comment claims a
 property, the code delivers it in one respect and not the one that matters.*
@@ -5150,6 +5181,8 @@ know about?"**
 
 ### 66. `fmath.round` was `floor(x + 0.5)`, which is not rounding — **FIXED 2026-08-15**
 
+> Pinned-by: make math-diff
+
 Found by pointing #65's new lane at the next package. `round` documents itself
 *"round half away from zero"* and implemented it as `floor(x + 0.5)`. That
 addition **rounds before `floor` ever runs**, and it was wrong two different ways:
@@ -5175,6 +5208,8 @@ every finite x, and `t + 1.0` is only reached when x is *not* an integer, so
 NaN, fail both tests, and return trunc's answer, which is themselves.
 
 ### 67. `fmath.lerp` did not return its endpoints — **FIXED 2026-08-15**
+
+> Pinned-by: make math-diff
 
 Found in the same run, and it is the one defect in this batch that **no comment
 claimed**. `lerp`'s only documentation is "linear interpolation, t in [0,1]" —
@@ -5240,6 +5275,8 @@ seen it — the same reason `ed-check` asserts byte counts and `sheet-check`
 asserts float text. Reverting the two loops reddens `strings` and only `strings`.
 
 ### 69. `core:sqlite`'s two halves disagree about a multi-statement string — **exec FIXED, `_params` PINNED, 2026-08-15**
+
+> Pinned-by: make corelib
 
 The package is **sound where it matters**, and that is worth stating first because
 it is the thing a reviewer should check: `run_stmt` uses real
@@ -5330,6 +5367,8 @@ question actually meant. The golden written from the intended answer was correct
 both times; only the query was not.
 
 ### 72. The server's traversal defence is two layers and nothing could tell — **GATED 2026-08-15**
+
+> Pinned-by: make traversal-check
 
 **No defect.** A structural gap, found while probing the server for
 `docs/internals/audit-brief.md`, and the more interesting kind: everything is
@@ -5431,6 +5470,8 @@ knew.
 
 ### 75. A password was truncated at its first NUL, so two credentials derived one key — **FIXED 2026-08-15**
 
+> Pinned-by: sh scripts/crypto_hygiene.sh
+
 Found by the sweep #74 argued for: *any Tycho `string` reaching C as a `char*`
 without an explicit length has this shape.* 46 corelib externs take a string.
 Most are safe by construction — all six `core:regex` entries pass an explicit
@@ -5476,6 +5517,8 @@ caller, which is why they are lower priority and not why they are safe.
 
 ### 76. `ct_equal` compared two hex strings by their prefixes — **FIXED 2026-08-15**
 
+> Pinned-by: sh scripts/crypto_hygiene.sh
+
 The second of the four #75 left named as unswept, and the answer is the one worth
 writing down carefully: **a real collision, and not the vulnerability it looks
 like.**
@@ -5510,6 +5553,8 @@ say so is how #62's "deliberately deferred" list ended up containing an entry
 that was really data loss (#69).
 
 ### 77. The interior-NUL rule was normative, swept once, and still missed the two worst sites — 2026-08-15
+
+> Pinned-by: make corelib
 
 **Not a defect. The most useful thing this session found**, and it is about
 process rather than code.
@@ -5580,6 +5625,8 @@ each hit is a judgement about whether the input can carry a NUL.
 
 ### 79. `json.parse_checked`'s error channel had a hole where the attacker is — **FIXED 2026-08-15**
 
+> Pinned-by: make format-diff
+
 `core:json`'s header is unusually clear about which entry point to reach for:
 `parse_checked` is *"the only one that can tell you the document you got back is
 the document you handed in."* It cannot, for one input class, and it is the class
@@ -5645,6 +5692,8 @@ that and this, the package's stated surface is measured rather than assumed.
 
 ### 81. `csv.stringify` writes a spreadsheet formula verbatim — **DOCUMENTED, not "fixed", 2026-08-15**
 
+> Pinned-by: make format-diff
+
 A field beginning `=`, `+`, `-` or `@` is EXECUTED as a formula when Excel or
 Google Sheets opens the file. `=cmd|' /c calc'!A1` is the classic. Measured:
 `stringify` writes all four verbatim, and the quoting that does happen is
@@ -5679,6 +5728,8 @@ is where the injection classes live — this, and #60's `javascript:` href, and
 
 ### 82. `decimal`'s scale is a size SQUARED, and nothing said so — **DOCUMENTED 2026-08-15**
 
+> Pinned-by: sh scripts/bignum_diff.sh
+
 No wrong answer. A cost, measured because `core:decimal` is the money type and
 `rescale(d, scale)` takes its scale from the caller.
 
@@ -5706,6 +5757,8 @@ belongs to whoever knows where the scale came from — the same division of labo
 as `csv`'s formula escaping (#81) and `zip`'s traversal names (#71).
 
 ### 83. `bignum`'s division identity holds on every sign combination — 2026-08-15
+
+> Pinned-by: sh scripts/bignum_diff.sh
 
 **No defect**, and the last package on the sweep. Recorded because `core:decimal`
 — money — is built directly on this, and because the identity is the one property
@@ -5807,6 +5860,8 @@ will be green for the author forever. The only way to see it was to run it
 somewhere else — and "somewhere else" is exactly what §1 and §7 are asking for.
 
 ### 86. A gated timer nobody ran cost 1.7x, and the gate that caught it went unread — **FIXED 2026-08-18**
+
+> Pinned-by: none -- a timing claim, and a gate asserting a timing is a coin toss (the entry says so itself)
 
 `3a94b652` added `TYCHO_ARENA_STATS` timing. Its own header says the bump path
 is deliberately not timed "because clock_gettime is an order of magnitude more
