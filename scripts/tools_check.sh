@@ -130,7 +130,8 @@ echo "    tychoc: bad=$cbw good=$cgw"
 { [ "$cbw" -ge 1 ] && [ "$cgw" -eq 0 ]; } || { echo "  LOOP-WARN FAIL"; fail=1; }
 
 echo ">>> pure-result: tychoc warns on a discarded pure-builtin result"
-# Same rationale as the loop-warning guard (stderr-only, fixpoint can't see it).
+# Same rationale as the loop-warning guard (stderr-only, so no output-comparing
+# gate can see it).
 # A bare `m.get(k,d)` discards the value it returns -> must warn; `m[k]=v` must not.
 printf 'fn main():\n    m := []string: int\n    m["a"] = 1\n    m.get("a", 0)\n' > "$TMP/pure.ty"
 printf 'fn main():\n    m := []string: int\n    m["a"] = 1\n    print(str("a" in m))\n' > "$TMP/nopure.ty"
@@ -140,7 +141,8 @@ echo "    tychoc: bad=$cpw good=$cpn"
 { [ "$cpw" -ge 1 ] && [ "$cpn" -eq 0 ]; } || { echo "  PURE-RESULT FAIL"; fail=1; }
 
 echo ">>> fall-off-the-end: tychoc warns on a non-void proc that can reach its end without returning"
-# Same rationale as the loop-warning guard (stderr-only, fixpoint can't see it).
+# Same rationale as the loop-warning guard (stderr-only, so no output-comparing
+# gate can see it).
 # A `-> int` proc whose `if` has no else + no trailing return can fall off the
 # end (codegen zero-fills) -> must warn; a trailing return must not.
 printf 'fn f(n: int) -> int:\n    if n > 0:\n        return 1\n\nfn main():\n    print(str(f(1)))\n' > "$TMP/falloff.ty"
@@ -152,7 +154,7 @@ echo "    tychoc: bad=$cfo good=$cfn"
 
 echo ">>> line-info: -g emits #line mapping + compiles; default stays clean"
 # Guards B1 (tychoc-only feature). Default output must carry NO #line so the
-# byte-identical fixpoint/corelib gates are untouched; `-g` must emit #line
+# byte-identical corelib gates are untouched; `-g` must emit #line
 # directives naming the .ty source and still build+run.
 printf 'fn main():\n    x := 41\n    println(str(x + 1))\n' > "$TMP/dbg.ty"
 "$TYCHOC" "$TMP/dbg.ty"    --emit-c -o "$TMP/dbg_off" >/dev/null 2>&1; off=$(grep -c '#line' "$TMP/dbg_off.c")

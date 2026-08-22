@@ -1990,7 +1990,7 @@ static int tycho_map_live(const char *p) { return p != NULL && p != TYCHO_MAP_TO
  * in the order they were first inserted, so keys()/`for k in m` iterate
  * deterministically in insertion order — independent of bucket layout or hash
  * seed. This is what lets a random per-process hash seed not change observable
- * output (fixpoint cA==cB and parity stay byte-identical). The order is an
+ * output (a rebuild's output stays byte-identical). The order is an
  * intrusive doubly-linked list over the table SLOTS: nxt[s]/prv[s] index sibling
  * slots (-1 = end) and head/tail are slot indices, so insert is an O(1) append
  * and delete is an O(1) unlink — a delete-heavy map (e.g. an LRU) stays O(1) per

@@ -1,8 +1,7 @@
 # First-class function VALUES: a reference to a top-level function (no capture).
 # A value is a C function pointer — immortal, not heap. Type is `fn(P...) -> R`.
 # Covers: reference into a var, pass as an argument, indirect call, multi-arg,
-# void return, heap (string) param/return, and higher-order composition. Both
-# compilers must agree (differential + fixpoint).
+# void return, heap (string) param/return, and higher-order composition.
 
 fn add_one(x: int) -> int:
     return x + 1

@@ -1,5 +1,6 @@
-# Condition-form `for <cond>:` is Tycho's while loop — load-bearing for the
-# bootstrap (a lexer/parser scans with it). Locked here so it stays working.
+# Condition-form `for <cond>:` is Tycho's while loop — load-bearing for
+# any hand-written lexer or parser, which scans with it. Locked here so it
+# stays working.
 fn main():
     i := 0
     sum := 0
