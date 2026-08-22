@@ -108,8 +108,8 @@ fn main():
 
 | You want | Look in |
 | --- | --- |
-| case, trim, split, find, replace, padding, parsing | [`core:strings`](../guides/corelib.md) |
-| character counts, decoding, validation, encoding | [`core:utf8`](../guides/corelib.md) |
+| case, trim, split, find, replace, padding, parsing | [`core:strings`](../reference/corelib.md) |
+| character counts, decoding, validation, encoding | [`core:utf8`](../reference/corelib.md) |
 | the byte-level type with no text semantics at all | [`bytes`](types.md) |
 | `len`, `chr`, `char_at`, `find` and the other builtins | [Builtins](builtins.md) |
 

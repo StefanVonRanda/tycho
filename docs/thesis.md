@@ -2,7 +2,7 @@
 
 This is the core idea behind Tycho — the *why*. The
 [language reference](reference/index.md) describes *what* the language does;
-the [aggregates design note](guides/arrays-structs.md) pushes this argument harder. Here
+the [aggregates design note](reference/arrays-slices.md) pushes this argument harder. Here
 I make the case for it, backed by running, measured code.
 
 Tycho is a small, experimental, ahead-of-time language: Python-looking syntax,
@@ -243,7 +243,7 @@ Written down here rather than filed as a defect, because it is not one: it is a
 measured instance of a limit this project already concedes. The memory-model
 guide says the same thing in general terms — allocation-churn workloads are
 where the arena is at its weakest, and the honest loss
-([`docs/guides/memory-model.md:109-111`](guides/memory-model.md)). What the
+([`docs/memory-model.md:109-111`](memory-model.md)). What the
 controls add is the reason to believe the diagnosis: without them, "1 M edits
 got 7× slower" is equally well explained by the arena, by string
 concatenation, or by `inout`, and the fix would be aimed at the wrong one.
@@ -349,7 +349,7 @@ Three further things back the thesis up, written up separately.
 
 **Head-to-head performance.** The cross-language benchmark suite under `bench/`
 (Tycho vs C, Go, Rust, and Koka's Perceus reference-counting) and the
-the compiler and codegen numbers are in [docs/guides/perf.md](guides/perf.md).
+the compiler and codegen numbers are in [docs/perf.md](perf.md).
 
 **Concurrency falls out for free.** The same call convention — deep-copy in, copy
 out, a private arena per call — is already a sound thread boundary, so
@@ -359,4 +359,4 @@ in the language. Measured: `parallel for` at C-pthreads parity on a
 compute-bound reduction; and a lock-free-channel pipeline that runs ~9× faster than a
 hand-written C *mutex-ring* baseline (73 ms vs 654 ms) — a design-expressiveness result
 (lock-free vs mutex), not a throughput claim over optimal C, and still paying the
-value-semantic copies C doesn't ([docs/concurrency.md](guides/concurrency.md), `bench/conc/`).
+value-semantic copies C doesn't ([docs/concurrency.md](reference/concurrency.md), `bench/conc/`).

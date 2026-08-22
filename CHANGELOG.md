@@ -681,7 +681,7 @@ on 2026-08-11; a `v0.5.0` tarball does not contain them.
   `sort_by(xs, fn(a, b) -> int: k(a) - k(b))`. It keeps working for all of 0.x
   and is **removed in 1.0**. Calling it warns.
 
-  This is the deprecation policy in `docs/guides/corelib.md` run end to end for
+  This is the deprecation policy in `docs/reference/corelib.md` run end to end for
   the first time, which is the point — a policy that has never been executed is
   prose. Step (3), the compiler warning, is now a general mechanism rather than
   a one-off: a `# deprecated: <text>` comment line **directly above** a `fn`
@@ -756,7 +756,7 @@ on 2026-08-11; a `v0.5.0` tarball does not contain them.
   and that had never been tested — `git tag` showed only `v0.1.0`, the
   `[1.0.0]` entry below describes a release that was never cut, and no one
   outside this repo has written a line of Tycho. Withdrawn with the number: the
-  corelib API freeze (`docs/guides/corelib.md`) and the spec's "first frozen
+  corelib API freeze (`docs/reference/corelib.md`) and the spec's "first frozen
   version" (`docs/spec/00-conventions.md` §1.5). The spec stays normative and
   the implementation stays gated against it. `ROADMAP.md` gains "What 1.0
   requires" — the conditions, so the number is earned next time rather than
@@ -793,7 +793,7 @@ that landed before the version number was corrected.
   performance tuning and benches); a security review of the FFI shims
   (string/bytes ownership, the core:os shell-out paths, the TLS wrapper)
   with findings recorded in `SECURITY.md`; and the corelib 1.0 API-freeze
-  decision with its deprecation path, recorded in `docs/guides/corelib.md`.
+  decision with its deprecation path, recorded in `docs/reference/corelib.md`.
 
 ## [0.1.0] — earlier
 

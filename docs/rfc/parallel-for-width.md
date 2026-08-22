@@ -93,7 +93,7 @@ them, carried on the statement beside `s->parallel`.
 - `src/tychoc.c`: the `TK_PARALLEL` arm, the `IS_CHAN` lowering's `ncpu()` node,
   and `gen_parfor`'s chunk count. Small and local — three sites.
 - `docs/spec/02-grammar.md` (the two productions plus `Width`),
-  `docs/spec/13-concurrency.md` §22, `docs/guides/concurrency.md`.
+  `docs/spec/13-concurrency.md` §22, `docs/reference/concurrency.md`.
 - Fixtures: a width of 1 must serialise, a width of 2 must still drain the whole
   channel, `parallel(0)` must be refused, and the *answer* must not depend on the
   width — the property `tools/tycho-flow`'s lane already asserts for its pipeline.

@@ -34,7 +34,7 @@ fundamental one, and the risk it poses to the value-semantic invariant.
 ## Summary
 
 **FFI.** The boundary is deliberately tiny: only scalars, NUL-terminated
-`string`, and an opaque `ptr` cross it (`docs/guides/ffi.md:62-87`,
+`string`, and an opaque `ptr` cross it (`docs/reference/ffi.md:62-87`,
 `src/tychoc.c:2710-2754`). That keeps the *language* sound — no foreign
 pointer enters Tycho's owned world — but it pushes real cost onto users:
 
@@ -45,23 +45,23 @@ pointer enters Tycho's owned world — but it pushes real cost onto users:
    string (`corelib/crypto/crypto.ty:11-18`, `corelib/crypto/crypto_shim.c:1-25`).
 3. `ptr` is fully opaque and unsafe: no type tag, no compiler-known
    destructor, so handles leak and nothing prevents use-after-free or
-   passing the wrong handle type (`docs/guides/ffi.md:108-110`; no destructor exists
+   passing the wrong handle type (`docs/reference/ffi.md:108-110`; no destructor exists
    — verified by searching `src/tychoc.c` for destructor/drop/dealloc/free).
 4. String lifetime rules have a subtle read-once-borrow footgun
    (`src/tychoc.c`).
 5. Every out-param / callback API needs a hand-written C shim
-   (`docs/guides/ffi.md:131-142`, `examples/sqlite/`, `corelib/crypto/crypto_shim.c`).
-6. No variadics, no callbacks into Tycho (`docs/guides/ffi.md`).
+   (`docs/reference/ffi.md:131-142`, `examples/sqlite/`, `corelib/crypto/crypto_shim.c`).
+6. No variadics, no callbacks into Tycho (`docs/reference/ffi.md`).
 
 **Threading.** "Race-free by construction" (`README.md:35-37`,
-`docs/guides/concurrency.md:5-9`) is *true for pure Tycho values* and **false the
+`docs/reference/concurrency.md:5-9`) is *true for pure Tycho values* and **false the
 moment FFI, process-global C state, or a panic is involved**. It is also
 heavy: every `spawn` is one OS thread via `pthread_create`
 (`runtime/tycho_rt.c:236-238`), `parallel for` fans out `ncpu` threads with a
 full deep-copy of captures per chunk (`src/tychoc.c:4375-4388`), there is no
-thread pool or work-stealing (`docs/guides/concurrency.md:137-139`), spawning is
+thread pool or work-stealing (`docs/reference/concurrency.md:137-139`), spawning is
 unbounded, and a panic/abort in any task `exit(1)`s the whole process
-(`docs/guides/concurrency.md:141`, `runtime/tycho_rt.c:908-921`).
+(`docs/reference/concurrency.md:141`, `runtime/tycho_rt.c:908-921`).
 
 **Top recommendations (ranked, both areas):**
 
@@ -90,7 +90,7 @@ rejects anything outside the scalar/string/`ptr` table, failing closed:
 - Parse + type gate: `src/tychoc.c:2818` (`ffi_scalar_type`), `:2824`
   (`parse_extern_fn`), `:2843` (rejects `inout`/`inout` params), `:2845`
   (rejects composite params), `:2857` (rejects composite return).
-- Type table: `docs/guides/ffi.md:62-71`. `int/char/float/bool` → scalar long/double;
+- Type table: `docs/reference/ffi.md:62-71`. `int/char/float/bool` → scalar long/double;
   `string` → `char *`; `ptr` → `void *`; void return allowed.
 - Link line assembled in one `cc` call: `src/tychoc.c:9376-9403`. Each
   `extern "Lib"` adds `-lLib` (`:5802` `add_link`). `--link/--shim/--pkg`
@@ -102,14 +102,14 @@ rejects anything outside the scalar/string/`ptr` table, failing closed:
 ### Pain point 1 — no composite types cross
 
 Arrays, maps, structs, `Option`/`Result`, tuples are all rejected
-(`src/tychoc.c`; `docs/guides/ffi.md:78-87`). Rationale is sound: those
+(`src/tychoc.c`; `docs/reference/ffi.md:78-87`). Rationale is sound: those
 have Tycho-internal C layouts, not a stable ABI. But it means any aggregate
 must be flattened into scalars/strings/`ptr` or carried through a hand-written
 shim. For a struct-heavy C API this is a lot of boilerplate.
 
 ### Pain point 2 — no byte buffer; binary marshaled as hex (the biggest one)
 
-A Tycho `string` is a NUL-terminated `char *` (`docs/guides/ffi.md:74`), so it cannot
+A Tycho `string` is a NUL-terminated `char *` (`docs/reference/ffi.md:74`), so it cannot
 carry an interior `0x00`. `corelib/hex/hex.ty:7-11` documents this directly:
 `decode("00")` is `""` — a NUL byte is dropped. Consequence: the entire crypto
 package marshals **all** binary data as lowercase hex
@@ -126,7 +126,7 @@ package marshals **all** binary data as lowercase hex
 ### Pain point 3 — `ptr` is opaque and unsafe
 
 `ptr` is `void *` with only three operations: pass back to C, compare
-(`==`/`!=` vs another `ptr` or `null`), and `is_null` (`docs/guides/ffi.md:108-110`;
+(`==`/`!=` vs another `ptr` or `null`), and `is_null` (`docs/reference/ffi.md:108-110`;
 `E_NULL` → `T_PTR` at `src/tychoc.c:3690`; literal at `:1809`). Three distinct
 hazards, none mitigated:
 
@@ -137,12 +137,12 @@ hazards, none mitigated:
   only task/channel finalizers exist, `:6380-6390`). A handle from
   `sqlite3_open` leaks unless the user remembers to call `sqlite3_close`.
 - **Dangling / double-free.** Tycho copies a `ptr` by value freely (it rides
-  scalar paths, `docs/guides/ffi.md:110`), so the same handle can be live in several
+  scalar paths, `docs/reference/ffi.md:110`), so the same handle can be live in several
   places; use-after-free and double-free are entirely on the user.
 
 ### Pain point 4 — string-lifetime footguns
 
-The rule (`docs/guides/ffi.md:89-106`): a returned `string` is copied into the
+The rule (`docs/reference/ffi.md:89-106`): a returned `string` is copied into the
 caller's arena; `NULL` becomes `""`. An optimization — the **read-once
 borrow** — skips the copy when the result is the *direct* argument of
 `len()`/`print()`/`println()` (`src/tychoc.c@is_extern_str_call`, applied at
@@ -164,16 +164,16 @@ borrow** — skips the copy when the result is the *direct* argument of
 
 Out-parameter constructors (the dominant C idiom, e.g.
 `sqlite3_open(path, &db)`) cannot be expressed; the user writes a C wrapper
-that returns the handle and passes it with `--shim` (`docs/guides/ffi.md:131-142`,
+that returns the handle and passes it with `--shim` (`docs/reference/ffi.md:131-142`,
 `examples/sqlite/`). Same for any function whose result comes back through a
 pointer argument. The crypto package is essentially one large shim
 (`corelib/crypto/crypto_shim.c`).
 
 ### Pain point 6 — no variadics, no callbacks into Tycho
 
-`printf`-style variadics need a fixed-arity C wrapper (`docs/guides/ffi.md`).
+`printf`-style variadics need a fixed-arity C wrapper (`docs/reference/ffi.md`).
 A Tycho function value is a non-C-ABI fat pointer, so C cannot call back into
-Tycho (`docs/guides/ffi.md`) — qsort-comparator / event-callback APIs
+Tycho (`docs/reference/ffi.md`) — qsort-comparator / event-callback APIs
 are unreachable without a C trampoline. These are documented as by-design
 non-goals; listed here for completeness, not necessarily to fix.
 
@@ -215,7 +215,7 @@ Ranked by value / effort.
   the handle type is a tagged newtype over it plus a finalizer registration.
 - *Risk to value semantics.* Medium. Ownership of a foreign resource is *not*
   value-semantic (you cannot deep-copy a live `sqlite3 *`). Must define handles
-  as **affine like tasks** (`docs/guides/concurrency.md:37-48`): no copying, single
+  as **affine like tasks** (`docs/reference/concurrency.md:37-48`): no copying, single
   owner, freed once at scope exit. This is the same affine machinery tasks
   already use, so it is consistent with the model rather than a violation of it.
   Decide explicitly whether handles are movable (`inout`) or strictly local.
@@ -244,7 +244,7 @@ opt-out.**
   is anything non-trivial.
 
 **R5 (lowest priority). Variadics / callbacks-into-Tycho.**
-- These are documented non-goals (`docs/guides/ffi.md`). A callback
+- These are documented non-goals (`docs/reference/ffi.md`). A callback
   story would require emitting a C-ABI trampoline that re-enters Tycho with a
   fresh arena — large, and it punctures the "no foreign control flow into
   Tycho" stance. Recommend leaving as-is unless a concrete library forces it.
@@ -263,25 +263,25 @@ opt-out.**
   `tycho_ncpu()` chunk tasks (`src/tychoc.c:4476-4489`; runtime `:853-860`,
   `TYCHO_THREADS` overrides). Every captured variable is deep-copied into each
   chunk's root arena — the honest per-chunk cost, documented at
-  `docs/guides/concurrency.md:59`. For large captures this is real memory and time.
+  `docs/reference/concurrency.md:59`. For large captures this is real memory and time.
 - **No thread pool, no work-stealing.** Explicitly: "no work-stealing runtime:
-  a blocked waiter is a parked OS thread" (`docs/guides/concurrency.md:137-139`).
+  a blocked waiter is a parked OS thread" (`docs/reference/concurrency.md:137-139`).
   Fine for the benchmark shape (a fixed fan-out of long tasks), painful for
   many short tasks (each pays full thread create/destroy).
 - **Blocking is a parked OS thread.** A `recv`/`wait`/select waits on a
   spin → `sched_yield` → 1ms timed-park ladder (`runtime/tycho_rt.c:372-392`,
-  `docs/guides/concurrency.md:114-117`). Mostly cheap on the fast path, but a blocked
+  `docs/reference/concurrency.md:114-117`). Mostly cheap on the fast path, but a blocked
   task holds a whole OS thread.
 
 The measured numbers are good for the *intended* shape (parreduce at C parity,
-pipeline beating Go — `docs/guides/concurrency.md:122-132`), which is why this is a
+pipeline beating Go — `docs/reference/concurrency.md:122-132`), which is why this is a
 cost-model issue, not a correctness one. The heaviness bites a workload of many
 small or short-lived tasks.
 
 ### Where it is actually unsafe (despite copy-in/copy-out)
 
 The claim "race-free by construction" (`README.md:35-37`,
-`docs/guides/concurrency.md:5-9`) holds for **pure Tycho values** — after copy-in a
+`docs/reference/concurrency.md:5-9`) holds for **pure Tycho values** — after copy-in a
 task shares zero bytes (`runtime/tycho_rt.c:257-266`). It does **not** hold in
 these cases, and the docs only partially flag them:
 
@@ -316,9 +316,9 @@ these cases, and the docs only partially flag them:
 4. **Panic/abort in a task kills the whole process.** Any runtime error in a
    task — bounds check, `pop` from empty, OOM, divide, `exit(1)` paths
    throughout `runtime/tycho_rt.c` (e.g. `:898-913`, `:87`, `:904-905`) — takes
-   down every other task with it. Documented (`docs/guides/concurrency.md:141`) but
+   down every other task with it. Documented (`docs/reference/concurrency.md:141`) but
    worth elevating: there is no task-level isolation of failure, unlike Erlang
-   processes, which the intro compares Tycho to (`docs/guides/concurrency.md:8-9`).
+   processes, which the intro compares Tycho to (`docs/reference/concurrency.md:8-9`).
 5. **Affine/implicit-join edge cases.** The affine rules are enforced and look
    sound (double-wait dies loudly, `runtime/tycho_rt.c:247-250`; implicit join
    at every scope exit, `:260-265`; `parallel for` rejects captured tasks /
@@ -328,7 +328,7 @@ these cases, and the docs only partially flag them:
 ### Threading — ranked recommendations
 
 **R1 (highest value, lowest risk). Make the safety claim honest in the docs.**
-- *Action.* Reword `README.md:35-37` and `docs/guides/concurrency.md:5-9` from
+- *Action.* Reword `README.md:35-37` and `docs/reference/concurrency.md:5-9` from
   "race-free by construction" (unqualified) to scope it explicitly:
   > Pure Tycho values crossing a thread boundary are race-free by construction
   > (deep copy = zero sharing). This does **not** extend to: FFI calls into C

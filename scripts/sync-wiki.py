@@ -5,7 +5,7 @@ The repo's /docs is the canonical source; the wiki is a *generated mirror* of
 the outward-facing reader documentation, so nothing has to be maintained twice.
 
 Ported:      docs/tutorial, thesis, architecture, from-c-to-arenas,
-             docs/reference/*, docs/guides/*
+             docs/reference/*, the docs/ essays
 Not ported:  docs/spec/ (formal, large), docs/internals/, docs/rfc/  — these are
              left as links into the repo.
 
@@ -45,8 +45,10 @@ add("docs/architecture.md", "Architecture")
 add("docs/from-c-to-arenas.md", "From-C-to-Arenas")
 for p in sorted(glob.glob(os.path.join(REPO, "docs/reference/*.md"))):
     add("docs/reference/" + os.path.basename(p), "Reference-" + os.path.splitext(os.path.basename(p))[0])
-for p in sorted(glob.glob(os.path.join(REPO, "docs/guides/*.md"))):
-    add("docs/guides/" + os.path.basename(p), "Guide-" + os.path.splitext(os.path.basename(p))[0])
+# The guides/ layer was folded into reference/ on 2026-08-22; the three topic
+# essays that were not about one feature sit at docs/ top level now.
+for f in ("memory-model", "perf", "debugging"):
+    add("docs/%s.md" % f, f.replace("-", "-").title().replace("Perf", "Performance-Notes"))
 
 def h1_of(path):
     with open(path) as f:

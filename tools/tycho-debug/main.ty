@@ -549,7 +549,7 @@ fn main():
     if is_package_file(src_text):
         die("tycho-debug: " + prog + " is a package build -- the -g line info is " +
             "single-file only, so source breakpoints would not work. Reduce the " +
-            "failing path to a single file (see docs/guides/debugging.md).")
+            "failing path to a single file (see docs/debugging.md).")
     src_lines := split(src_text, "\n")
     # compile with -g: #line directives + -O0 -g (stderr passes through so a
     # compile error is visible; the "built ..." line is suppressed)

@@ -3,8 +3,8 @@
 Tycho's memory model is value semantics over implicit per-scope arenas: every
 binding is a value, every value belongs to the scope that created it, and that
 scope's arena is released whole when it exits. There is no reference type and no
-garbage collector. Why it is designed this way is [thesis.md](../thesis.md); what
-it looks like in code is [arrays-structs.md](arrays-structs.md).
+garbage collector. Why it is designed this way is [thesis.md](thesis.md); what
+it looks like in code is [arrays-structs.md](reference/arrays-slices.md).
 
 The memory model is the central idea this language exists to demonstrate, and the cross-language benchmarks below are encouraging. The
 stability contract is in the README's status banner; implementation details
@@ -97,7 +97,7 @@ reference counts anywhere.
   loop is the one place the move-vs-copy cost is invisible and unbounded. So a
   consuming chain is written point-free — each call's result handed straight to
   the next — rather than accumulated into a named variable.
-  ([reference](../reference/functions.md), and `tools/tycho-tmpl/` as a worked
+  ([reference](reference/functions.md), and `tools/tycho-tmpl/` as a worked
   example.)
 
 - **Liveness-driven in-place reuse.** A loop-carried value reassigned each step
@@ -124,8 +124,8 @@ and sliding-window eviction), matching C and landing ahead of Go (GC) and Koka
 (reference counting) on these allocation-churn workloads. (The model's honest loss
 is elsewhere — pointer-shaped, structurally-shared data like tries runs ~1.55× C
 in RAM after the compact indexed-dict map layout, down from ~3×; I cover that
-residue in [the thesis](../thesis.md) and the
-[value-semantics limits note](../internals/value-semantics-limits.md).)
+residue in [the thesis](thesis.md) and the
+[value-semantics limits note](internals/value-semantics-limits.md).)
 
 ## Verification
 
@@ -150,7 +150,7 @@ ways an over-aggressive move or recycle could go wrong:
 ## Across threads
 
 The model extends to concurrency without new rules (see
-[concurrency.md](concurrency.md)): a spawned task is an ordinary call whose
+[concurrency.md](reference/concurrency.md)): a spawned task is an ordinary call whose
 `_parent` is a private root arena (arguments deep-copy in before the thread
 starts; the result copies out at `wait`, then the whole tree frees), the block
 pool is thread-local so allocation never contends, and channel payloads live in

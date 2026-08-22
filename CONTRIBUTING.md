@@ -128,7 +128,7 @@ reach for first.
 
 | You changed | Run | Notes |
 |---|---|---|
-| Markdown, comments, a `path:line` citation, a commit hash in prose | `make check-links` | ~2.7s. Also fails a NEW document under `docs/` that no index links to, and any backticked path like `docs/guides/ffi.md` that is not a tracked file — from the repo root or from the citing document's own directory. Nothing else can tell you more — none of it reaches a compiled artifact |
+| Markdown, comments, a `path:line` citation, a commit hash in prose | `make check-links` | ~2.7s. Also fails a NEW document under `docs/` that no index links to, and any backticked path like `docs/reference/ffi.md` that is not a tracked file — from the repo root or from the citing document's own directory. Nothing else can tell you more — none of it reaches a compiled artifact |
 | an entry in `docs/internals/FRICTION.md` that claims to be closed | `make friction-check` | ~2 min. Runs each entry's `> Pinned-by:` command, deduped and in parallel, so a fix that quietly stopped holding is named with its entry. A pin that fails is a red; an entry with **no** pin is reported and counted, never a failure. **All 87 closed entries carry one now** (86 pinned, 1 excused), so an unpinned entry means a NEW entry landed without saying what asserts it. An entry may carry several pins -- typically a cheap `test -f`/`grep` that discriminates plus the lane that runs the behaviour -- and each is deduped separately across the file, which is what keeps `make test` to one run. Lanes run 2-way and the cheap pins 8-way: a lane already saturates the box, and 8-way over everything measured 9m29 against 2m35. `none -- <reason>` excuses an entry nothing can assert, such as a timing claim. Six legs under `--selfcheck`. |
 | a keyword, a builtin, or a corelib signature | `make surface-check` | ~1s. **The language surface is frozen.** Keywords and builtins are locked hard: an addition or a removal fails. Corelib may GAIN functions; a removal or a changed signature fails, because that is what breaks a program somebody already wrote. `--record` re-locks deliberately and shows up as a `surface.lock` diff a reviewer can refuse. Ten legs under `--selfcheck`, one of which checks the extractors still reach every hand-measured construct -- three accessor spellings and a `strncmp` marker mean "grep the lexer" is not one pattern, and the first two versions of this gate left `soa`, `sink`, `where`, `subscript` and `yield` outside the freeze. |
 | any `.py` or `.sh` in the tree | `make script-check` | ~0.24s. Everything parses, **and** no statement is unreachable because it follows a `return`/`break`/`continue` in the same block. The second leg exists because deleting an `if`/`elif` header leaves its body after the previous branch's `return`, which Python runs silently — a sweep did exactly that on 2026-08-17 and a whole fuzz class stopped being generated with every gate still green. |
@@ -189,7 +189,7 @@ in this repo can break; when the two disagree, it is right by definition.
    ([docs/thesis.md](docs/thesis.md)). Changes that quietly break the in-place
    optimizations (string append, the map accumulator, move-on-last-use) turn an
    O(n) idiom into O(n²), and `make bench` / `bench/` guard against that. When in
-   doubt, read [docs/guides/memory-model.md](docs/guides/memory-model.md).
+   doubt, read [docs/memory-model.md](docs/memory-model.md).
 
 ## Where feature work is useful
 
@@ -216,7 +216,7 @@ graph-shaped data as an index pool (see
 [docs/rfc/limited-references-spike.md](docs/rfc/limited-references-spike.md) and
 [docs/internals/value-semantics-limits.md](docs/internals/value-semantics-limits.md)).
 Generics, on the other hand, *are* supported — `$T`, see
-[docs/guides/generics.md](docs/guides/generics.md).
+[docs/reference/generics.md](docs/reference/generics.md).
 
 ## Code style
 

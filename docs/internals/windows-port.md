@@ -253,7 +253,7 @@ MSYS2.
   hide.
 - **`core:regex` and `core:signal` are contract decisions**, not porting
   chores: if their Windows ports are deferred, the 1.0 surface statement in
-  `docs/guides/corelib.md` must name the gap.
+  `docs/reference/corelib.md` must name the gap.
 - **The stack-overflow guard must be ported, not skipped**: `tests/recursion`
   would redden, and deep recursion failing with a clean error is a stated
   security posture (no stack-overflow DoS).

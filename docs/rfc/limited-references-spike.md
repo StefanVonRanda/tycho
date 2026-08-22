@@ -37,7 +37,7 @@ Three distinct mechanisms, not one. They are easy to conflate.
    > inaccessible for the duration of `p`'s lifetime."
    A projection is **scoped and transient** — it lives for an expression/binding, never
    escapes. **Tycho already has the built-in case**: `&m[k]` / array-element places yield a
-   slot lvalue, not a copy (`docs/guides/map-mutation.md`). What Tycho lacks is letting *users*
+   slot lvalue, not a copy (`docs/reference/maps.md`). What Tycho lacks is letting *users*
    define their own projecting subscripts.
 
 3. **Remote parts = *stored projection types*.** This is the only new idea for the graph
@@ -63,11 +63,11 @@ incidental implementation choices:
 
 - **I1 — implicit scope arenas.** A value's lifetime = its lexical scope; reclamation is one
   O(1) arena reset. The model deliberately has **no escape analysis** beyond move-on-last-use
-  and the per-scope arena (`docs/guides/memory-model.md`). It works precisely because no value
+  and the per-scope arena (`docs/memory-model.md`). It works precisely because no value
   outlives its arena except by an explicit copy to a longer-lived one (`_parent`).
 - **I2 — deep-copy *is* the thread boundary.** `spawn` / `parallel for` / channel send copy
   the value across the boundary; that copy is *why* concurrency is race-free with no locks
-  and no lifetime rules (`docs/guides/concurrency.md`, `[[hier-concurrency-design]]`: "the deep-copy
+  and no lifetime rules (`docs/reference/concurrency.md`, `[[hier-concurrency-design]]`: "the deep-copy
   call convention IS a sound thread boundary").
 - **I3 — no reference counting.** COW/RC is explicitly rejected: atomic refcount traffic on
   shared values is exactly the cost the arena + lock-free design exists to avoid

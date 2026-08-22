@@ -485,7 +485,7 @@ pick-up order is written out in full under "What moved this pass" below.
    The first program in this tree to actually run a worker pool started **16 workers in one
    line and stored no handle**: `parallel for` is a direct spelling for N workers, and
    `parallel for x in ch:` — specified at `docs/spec/13-concurrency.md:99-100`, worked at
-   `docs/guides/concurrency.md:86-112`, fixtured at `tests/conc/parfor_chan.ty:11` — is a
+   `docs/reference/concurrency.md:86-112`, fixtured at `tests/conc/parfor_chan.ty:11` — is a
    direct spelling for a *bounded pool over a queue*, the exact shape this item says has
    none. So the premise "it is either N hand-written `spawn` lines or a recursive fan-out"
    is **false for N = ncpu**, which is the N most programs want, and an array of task
@@ -700,7 +700,7 @@ re-scored in place above. What is new is below.
   compiler does and of what 560 jobs crossing one channel proves. The rule is written
   down, but only in the **non-normative** guide: "the chunk tasks share the captured
   channels (a channel is a scalar handle, passed by value — not deep-copied per chunk)"
-  (`docs/guides/concurrency.md` "the chunk tasks share the captured channels").
+  (`docs/reference/concurrency.md` "the chunk tasks share the captured channels").
   **A conformance gap, not a language defect** — the implementation is right and the
   normative document is silent where a second implementation would have to guess.
   ~3 sentences in §22 plus a carve-out beside the write rule. Filed as a carried-forward
@@ -746,18 +746,18 @@ re-scored in place above. What is new is below.
   `tests/multiline_literals.ty` (see the phase-7 multi-line-string entry below). The
   language has the feature; the author did not reach for it.
 - ~~**NEW, one line — the guide's bounded-fan-out section points its reader at the
-  desugaring.**~~ **CLOSED 2026-07-31, verified at `3ddc8fd`:** `docs/guides/concurrency.md`
+  desugaring.**~~ **CLOSED 2026-07-31, verified at `3ddc8fd`:** `docs/reference/concurrency.md`
   now closes the section by naming both fixtures with the right framing —
   "Worked example of the sugar: `tests/conc/parfor_chan.ty` … `tests/conc/workers.ty` is
   the *manual* form the sugar replaces … read it to see what the sugar saves, not as the
-  way to write this" (`docs/guides/concurrency.md:108-112`). The section also absorbed
+  way to write this" (`docs/reference/concurrency.md:108-112`). The section also absorbed
   item 7's spec fix a few lines above, stating that the chunk count is `min(ncpu(), N)` and
-  capped at 64 (`docs/guides/concurrency.md:104-106`).
+  capped at 64 (`docs/reference/concurrency.md:104-106`).
   **One wrong pointer cost a plan its recon; naming both fixtures is what fixed it.**
   The entry as it stood:
-  `docs/guides/concurrency.md:86-104` introduces `parallel for x in ch:`,
+  `docs/reference/concurrency.md:86-104` introduces `parallel for x in ch:`,
   explains that it "desugars to a `parallel for` over `0..<ncpu()`" and then closes with
-  "Worked example: `tests/conc/workers.ty`" (`docs/guides/concurrency.md:104`) — and
+  "Worked example: `tests/conc/workers.ty`" (`docs/reference/concurrency.md:104`) — and
   `tests/conc/workers.ty:2-3` says of itself that it is "the pattern `parallel for x in
   ch:` sugars over; written here with today's primitives". The fixture that demonstrates
   the sugar is `tests/conc/parfor_chan.ty:11` and the guide does not name it. **This is
@@ -768,7 +768,7 @@ re-scored in place above. What is new is below.
   sent, 200 received — so it would have removed the `0..<n` sizing, the `select`
   scaffolding and the `sent != n` invariant. **Nothing in the language was in the way;
   one wrong pointer in a guide was.** Fix: name both fixtures at
-  `docs/guides/concurrency.md:104`.
+  `docs/reference/concurrency.md:104`.
 - **The work-queue refusal below is confirmed a second time, and at the same time shown to
   be workload-shaped.** That entry (phase 7, refused with a number) established that an
   MPMC work queue is writable today with no compiler change; this program is an
@@ -998,7 +998,7 @@ swept. Recorded so the next reader knows they exist and why nobody fixed them:
 
 - **20 citations across four spec/guide files**, shifted by the batch that added
   §22.1 and the `ncpu()` correction. The shift bands are mechanical and were
-  written down at the time (`docs/guides/concurrency.md` old ≥105 → +13;
+  written down at the time (`docs/reference/concurrency.md` old ≥105 → +13;
   `docs/spec/13-concurrency.md` old 83..112 → +8, and so on).
 - **`src/tychoc.c:3633`** points at `gen_parfor` 98 lines short of where it is.
 - **The package-mode comment above `dup_other_file`** cites two sites and both
@@ -1535,7 +1535,7 @@ fix is purely making an existing truth binding.
 now stated in three places a caller actually reads: the spec entry
 `docs/spec/18-library.md` §33.3 (binding on any implementation, so a second one
 that filled MTIME no longer conforms), the package header
-`corelib/compress/compress.ty`, and `docs/guides/corelib.md`'s `compress` bullet.
+`corelib/compress/compress.ty`, and `docs/reference/corelib.md`'s `compress` bullet.
 
 **The probe.** A program that gzips a fixed 2,400-byte payload and writes the
 result to a file, run twice three seconds apart in different time zones:
@@ -1634,7 +1634,7 @@ shrank them. Padding this list would make the eight above harder to act on.
 - ~~**No `mkdir -p`.**~~ — **CLOSED 2026-08-21: `corelib/io/io.ty@make_dir_all`.**
   Pure Tycho over `make_dir`, no shim; `tools/tycho-ar/main.ty@mkdir_p` is the
   wrapper that names the error and is now 6 lines. **The entry was half wrong and
-  the correction is the interesting part:** `docs/guides/corelib.md` already
+  the correction is the interesting part:** `docs/reference/corelib.md` already
   refused this in writing — *"one entry, never recursive, no `mkdir -p` and no
   `rm -rf` behind a corelib name"* — so the bullet was asking for something the
   tree had decided against, and neither document knew about the other. The rule
@@ -1816,7 +1816,7 @@ rather than padded.
 > returns JNull for both a null member and an absent one, so membership is a
 > `keys` walk. Both are now in the corelib header under OBJECTS, both are asserted
 > by `corelib/test/json/main.ty`, and the stale `core:json` bullet in
-> `docs/guides/corelib.md` — which still said "integers (no floats)" and never
+> `docs/reference/corelib.md` — which still said "integers (no floats)" and never
 > mentioned `parse_checked` — was corrected against the source.
 >
 > **Re-probed again 2026-08-13 — all three sightings, SEPARATELY, and none of
@@ -2770,7 +2770,7 @@ That is house style, seven lines each (three comment, four code), chosen so they
 read like the spec's prototypes; `int64_t` throughout would compile identically.
 So the toll on a first-time author is **zero lines**, not the four claimed here.
 
-**What was really wrong is one row of a table.** `docs/guides/ffi.md` mapped
+**What was really wrong is one row of a table.** `docs/reference/ffi.md` mapped
 Tycho `int` to C `long` — right on LP64, 32-bit on Windows and ILP32. An author
 following it writes a truncating shim that no gate can see, because the shim and
 the generated prototype are separate translation units and C never compares
@@ -3030,7 +3030,7 @@ Six packages, ~3k lines, a WAL, an index and a TCP server. It found one real
 corelib gap (no `fsync`, closed by `io.sync` in `4a0a6116`) and two papercuts.
 It also produced two *false* findings — the package-import rule and the
 cross-package match-arm rule were both already documented, and were reported
-as discoveries by people who had not read `docs/guides/packages.md:118` and
+as discoveries by people who had not read `docs/reference/packages.md:118` and
 `docs/spec/12-aggregates.md:831`. That is the same failure as a stale
 document, pointed the other way, and it is why both are named here.
 
@@ -4914,7 +4914,7 @@ scoring anything, is what the script does now.
 
 ### 58. `uuid.v4` looks like 122 random bits and carries at most 32 — **documented 2026-08-15**
 
-> Pinned-by: grep -q 'NOT unguessable' corelib/uuid/uuid.ty && grep -q 'not unguessable' docs/guides/corelib.md
+> Pinned-by: grep -q 'NOT unguessable' corelib/uuid/uuid.ty && grep -q 'not unguessable' docs/reference/corelib.md
 
 `core:uuid` produces RFC 4122 version-4 UUIDs, and the whole point of v4 is that
 it is the random one. The source is `core:rand`'s xorshift32, whose state is
@@ -4931,7 +4931,7 @@ means will assume unguessable, and the API gives them no reason not to.
 Both now say so and point at `crypto.random_hex`, which is `RAND_bytes`-backed.
 
 > **Half of that was false until 2026-08-22, re-scored by reading.** The
-> catalogue said it (`docs/guides/corelib.md:243`); the PACKAGE did not —
+> catalogue said it (`docs/reference/corelib.md:243`); the PACKAGE did not —
 > `corelib/uuid/uuid.ty@v4`'s own comment read "A random version-4 UUID,
 > threading the core:rand state via inout", with no warning and no pointer, and
 > that is the line a caller lands on when they jump to the definition. Carrying

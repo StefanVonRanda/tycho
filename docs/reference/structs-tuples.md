@@ -82,4 +82,4 @@ beforehand is unaffected.
 
 *Design background:* if you want the why — why deep-copied aggregates stay sound, and why a
 struct that would contain itself by value is rejected (use indirection through an array) — see
-[the aggregates design note](../guides/arrays-structs.md).
+[the aggregates design note](../reference/arrays-slices.md).

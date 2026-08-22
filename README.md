@@ -275,9 +275,8 @@ language tick. [`docs/`](docs/README.md) is the full index; the map:
 - **[The thesis](docs/thesis.md)** — why value semantics makes implicit arenas
   work, and where it doesn't, with measured numbers.
 - **[Performance](docs/performance.md)** — the measurements behind the claims.
-- **Design notes** ([`docs/guides/`](docs/guides)) — the rationale behind each
-  subsystem (memory model, concurrency, FFI, generics, maps). The reference says
-  *what*; these say *why*.
+- **[The memory model](docs/memory-model.md)** — why value semantics makes
+  implicit arenas work in practice, and what it costs.
 - **[Architecture & status](docs/architecture.md)** — how it's built, what each
   verification gate proves, what's shipped, and the decided non-goals.
 

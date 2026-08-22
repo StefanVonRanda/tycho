@@ -777,7 +777,7 @@ def main():
     # one entry left is a PLATFORM fact rather than a judgement, and on the
     # platform it documents it must run: on Darwin an empty list is required.
     ALLOWED_SKIPS = {
-        ('docs/guides/debugging.md', 'lldb'):
+        ('docs/debugging.md', 'lldb'):
             'macOS toolchain: `dsymutil` is Xcode\'s and writes a Mach-O .dSYM, '
             'so no Linux host can run it. Runs on Darwin.',
     }

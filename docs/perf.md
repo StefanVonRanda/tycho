@@ -2,8 +2,8 @@
 
 > This page is about `src/tychoc.c`, `runtime/tycho_rt.c` and the C they emit —
 > how the arena model is kept cheap, and what each mechanism does. For the
-> language's performance story, read [performance.md](../performance.md) and
-> [the thesis](../thesis.md).
+> language's performance story, read [performance.md](performance.md) and
+> [the thesis](thesis.md).
 >
 > **It carries one reproducible number**, the transpile time below. Everything
 > else describes a mechanism rather than timing one. For figures you can

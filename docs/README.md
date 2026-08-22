@@ -13,19 +13,20 @@
 | You want | Go to |
 |---|---|
 | What a feature does, precisely | **[`reference/`](reference/)** — one terse page per topic |
-| Why a feature works that way | **[`guides/`](guides/)** — the design reasoning |
+| Why a feature works that way | **[`reference/`](reference/)** — each page ends with a "Working with it" section |
 | The exact rule for an edge case | **[`spec/`](spec/)** — grammar and normative semantics |
-| A program is misbehaving | **[`guides/debugging.md`](guides/debugging.md)** |
+| A program is misbehaving | **[`debugging.md`](debugging.md)** |
 | The numbers behind the claims | **[`performance.md`](performance.md)** |
 | The idea the language argues for | **[`thesis.md`](thesis.md)** |
 
-**[`reference/`](reference/)** covers basics, types, functions, arrays and slices,
-structs and tuples, maps, enums and options, generics, subscripts, packages,
-concurrency, FFI, and builtins.
+**[`reference/`](reference/)** is the single answer layer: basics, types,
+functions, arrays and slices, structs and tuples, maps, enums and options,
+generics, subscripts, packages, strings, concurrency, FFI, the corelib catalogue,
+and builtins. Each page states the rule first and then how to work with it.
 
-**[`guides/`](guides/)** covers the memory model, arrays and structs, map values
-and mutation, generics, packages, concurrency, FFI, the corelib, performance, and
-debugging.
+**[`memory-model.md`](memory-model.md)**, **[`perf.md`](perf.md)** and
+**[`debugging.md`](debugging.md)** are the three topic essays that are not about
+one feature.
 
 ## Also here
 

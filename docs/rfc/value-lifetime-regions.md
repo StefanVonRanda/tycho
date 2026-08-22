@@ -40,7 +40,7 @@ every proc, every `if`/`else` block, every loop gets an arena, and a child is fr
 when its scope ends (`runtime/tycho_rt.c:5-13`). The emitted shape is four rules —
 `main` opens `_root`, every function opens `Arena _scope = arena_child(_parent)`,
 every allocation takes an arena argument, and a return builds into `_parent`
-(`docs/guides/memory-model.md:30-38`), realised in codegen by a single "current
+(`docs/memory-model.md:30-38`), realised in codegen by a single "current
 arena" string that defaults to `&_scope` (`src/tychoc.c:9563@g_cur_scope`) and a
 per-proc stack of enclosing block arenas (`src/tychoc.c:11265@g_ascope`) freed
 innermost-first at any exit (`src/tychoc.c:11324@g_nascope`).
@@ -64,13 +64,13 @@ emits their finaliser at every exit of the scope that declared them.
 
 Data moves between arenas in exactly two directions — **down** as a call argument (a
 pointer into a parent arena, valid for the call, no copy) and **up** as a return or
-an outer assignment (`runtime/tycho_rt.c:15-24`, `docs/guides/memory-model.md:40-44`,
+an outer assignment (`runtime/tycho_rt.c:15-24`, `docs/memory-model.md:40-44`,
 normatively `docs/spec/07-memory-model.md:101-118`). There is no third direction. A
 value in one scope's arena is never reachable from a sibling scope's arena, because
 neither arena outlives the other in a way the other can observe. That absence is what
 makes the escape decision *local*: the destination of every write is known at the
 write site from the enclosing scopes and the signatures alone
-(`docs/guides/memory-model.md:50-59`), which is the whole claim of the project
+(`docs/memory-model.md:50-59`), which is the whole claim of the project
 (`docs/thesis.md:14-17`, `:39-53`).
 
 Throughout this document, **sideways** means a pointer from one value's storage into
@@ -84,10 +84,10 @@ scope is "to be copied up into the parent's arena". That overstates the cost.
 Up-escape is **destination-passing first, copy second**: the value is *produced
 directly in the destination's storage* (`docs/spec/07-memory-model.md:109-112`), and
 the emitted return is `{ T _ret = <built in _parent>; arena_free(&_scope); return
-_ret; }` (`docs/guides/memory-model.md:36-38`, `:24-27`). A copy is paid only when
+_ret; }` (`docs/memory-model.md:36-38`, `:24-27`). A copy is paid only when
 the value already exists somewhere else and must be duplicated to be independent — and
 even then the tree carries four static mechanisms that remove copies rather than add
-them (`docs/guides/memory-model.md:71-106`). So "repeated copy-up" is not the
+them (`docs/memory-model.md:71-106`). So "repeated copy-up" is not the
 standing tax on long-lived structures. The standing tax is the one in §3: storage that
 is dead but not reclaimable until the owning scope exits.
 
@@ -108,7 +108,7 @@ naive long-lived structure gets — is **~1.55× C peak RSS**, from a prefix tre
 each node owns an `int -> child` map: tycho 58.7 MB vs C 37.8 MB vs Go 33.8 MB
 (`docs/internals/value-semantics-limits.md:41-45`). I re-opened every place that
 figure appears rather than trusting the number I was handed: it is stated identically
-at `docs/internals/value-semantics-limits.md:45`, `docs/guides/memory-model.md:111`,
+at `docs/internals/value-semantics-limits.md:45`, `docs/memory-model.md:111`,
 `docs/architecture.md:64`, `README.md:128`, `bench/README.md:26` and
 `bench/trie/RESULTS.md:28`, all of them attributing the halving from ~3.2× (119 MB) to
 the compact indexed-dict map layout. The figure is current.
@@ -140,7 +140,7 @@ list (`corelib/pool/pool.ty:57-65`). It does **not** clear `val`. So the removed
 value's heap bytes stay owned by the pool's arena until the slot is *reused*: `add`
 reaches `p.slots[idx].val = v` (`corelib/pool/pool.ty:24-32`), which is an
 element-overwrite, and element-overwrite recycling hands the evicted element's buffer
-back to the array's arena free list (`docs/guides/memory-model.md:101-106`), backed by
+back to the array's arena free list (`docs/memory-model.md:101-106`), backed by
 `arena_recycle` and its segregated per-size-class lists
 (`runtime/tycho_rt.c@arena_recycle`, reused on the next allocation at
 `runtime/tycho_rt.c@arena_alloc`).
@@ -173,7 +173,7 @@ per-connection state across iterations (`examples/webserver/main.ty:186-196`); t
 supplies only per-request plumbing (`corelib/httpd/httpd.ty:5-14`). A connection is an
 `int` fd, not a Tycho value with storage. Under the current model each iteration's
 arena is reset per iteration, so the loop runs in bounded memory
-(`runtime/tycho_rt.c:10-13`, `docs/guides/memory-model.md:46-48`).
+(`runtime/tycho_rt.c:10-13`, `docs/memory-model.md:46-48`).
 
 That is not proof that the gap is imaginary — it is proof that **no call site in this
 repository currently pays for it.** A design study should say so.
@@ -206,7 +206,7 @@ make *implicit* (`docs/thesis.md:26-32`).
 the feature. `n` in scope S1 and `m` in sibling scope S2 both point into `r`, which
 outlives both. That is precisely the third direction §2.2 says does not exist, and it
 is what destroys locality: the destination of a write is no longer decidable from
-enclosing scopes and signatures (`docs/guides/memory-model.md:50-59`) — it needs the
+enclosing scopes and signatures (`docs/memory-model.md:50-59`) — it needs the
 region variable, which is an annotation on every signature in the transitive closure.
 
 **`spawn` / channels.** A spawn site allocates its argument struct in the task root
@@ -225,7 +225,7 @@ system that the spec's opening paragraph specifically claims the model does not 
 
 **C lowering.** The cheapest part. One extra `Arena *` parameter per region variable
 per function — structurally identical to the `_parent` parameter every function already
-takes (`docs/guides/memory-model.md:33-34`). The lowering is nearly free; the entire
+takes (`docs/memory-model.md:33-34`). The lowering is nearly free; the entire
 cost is in the source language and the checker.
 
 **Verdict.** This is a lifetime-annotation system with a different keyword. It
@@ -262,7 +262,7 @@ semantics like any other value — it moves down as an argument and up as a retu
 its arena travels with it. The two-direction rule of §2.2 is untouched, because a
 region introduces no new direction; it changes only *which* arena an allocation lands
 in, and the compiler already picks that per write site (`src/tychoc.c:9563@g_cur_scope`,
-`docs/guides/memory-model.md:50-59`).
+`docs/memory-model.md:50-59`).
 
 **`spawn` / channels.** This design survives the boundary, which is the reason it is
 worth writing down at all. Because a region is owned and pointer-free from outside,
@@ -347,8 +347,8 @@ because it is consumed.
 **C lowering.** `drop(x)` emits a recursive walk over `x`'s heap-bearing fields calling
 `arena_recycle` on each against `x`'s home arena. The one-level version of exactly this
 walk already ships as element-overwrite recycling
-(`docs/guides/memory-model.md:101-106`), and the recursive shape already ships as the
-deep-copy walk emitted at every escape point (`docs/guides/memory-model.md:173-178`).
+(`docs/memory-model.md:101-106`), and the recursive shape already ships as the
+deep-copy walk emitted at every escape point (`docs/memory-model.md:173-178`).
 
 **The objection that sinks it.** Correctness in this model rests on a single asymmetry,
 stated normatively: *under value semantics, a wrong escape decision can change only
@@ -428,7 +428,7 @@ tree; §4.2 shows a per-node region is *worse* than the pool it would replace be
 > but unreclaimable before scope exit, and which none of the three shipped mechanisms
 > recovers: the inner-function transient scope
 > (`docs/internals/value-semantics-limits.md:126-135`), element-overwrite recycling
-> (`docs/guides/memory-model.md:101-106`), or slot reuse in an index pool
+> (`docs/memory-model.md:101-106`), or slot reuse in an index pool
 > (`corelib/pool/pool.ty:24-32`). The workload's live values must have payloads
 > comparable to or larger than one 64 KiB block
 > (`runtime/tycho_rt.c:72@TYCHO_BLOCK_DEFAULT`), and its live

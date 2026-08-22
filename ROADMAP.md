@@ -350,7 +350,7 @@ Three things that must be decided with it, not after:
 
 **Writing the refusal down is cheaper and buys less.** The shape is §4 and §5
 above, both closed on 2026-08-10 as stated limits: a paragraph in
-`docs/spec/14-ffi.md` and the `os` entry in `docs/guides/corelib.md`, naming the
+`docs/spec/14-ffi.md` and the `os` entry in `docs/reference/corelib.md`, naming the
 permitted set and the reason, plus a pointer to the builder-handle pattern that
 already works — `core:os` then declared `osx_argv_new` / `osx_argv_push` /
 `osx_argv_free` / `osx_exec`, four shims and a push loop (retired 2026-08-11
@@ -370,7 +370,7 @@ not.
 or `O_NONBLOCK`, so a server's worker count is a hard ceiling on concurrent
 connections. That refusal was defensible and stands; what was not defensible
 was leaving it implicit. It is now written where someone reaches for the
-package — `docs/guides/corelib.md`'s `net` entry says N workers serve N
+package — `docs/reference/corelib.md`'s `net` entry says N workers serve N
 connections and one slow client occupies one worker for its whole request.
 
 Readiness polling stays un-built: ~283 lines across 4 files plus a redesign of

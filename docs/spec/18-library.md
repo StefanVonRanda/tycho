@@ -13,7 +13,7 @@ values) are **deferred**; until they are written, the
 [reference pages](../reference/index.md) and each package's source and golden
 tests are the authoritative description of a function's exact behavior.
 
-> Provenance: `docs/guides/corelib.md`; package sources under `corelib/`; tiers
+> Provenance: `docs/reference/corelib.md`; package sources under `corelib/`; tiers
 > [§1.3](00-conventions.md#13-conformance); shim/`deps` mechanics
 > `src/tychoc.c` (`add_pkg_deps`), `corelib/run.sh`.
 
@@ -31,7 +31,7 @@ arena. Where a package threads mutable state (for example a PRNG seed), it does
 so through an explicit `inout` parameter at the call site, not through a global
 ([§11](07-memory-model.md#11-inout)).
 
-> Provenance: `docs/guides/corelib.md:3-9`.
+> Provenance: `docs/reference/corelib.md:3-9`.
 
 The one deliberate exception is a **C-owned opaque handle** returned as `ptr`
 (§31.3): such a handle is *not* arena-managed and MUST be released by the
@@ -94,20 +94,20 @@ returns a fresh value (value semantics; §31.1).
 Scalar math (pure Tycho). Generic `min`/`max`/`clamp(x, lo, hi)` over any
 comparable type, `sign(x)` over any numeric (returns int −1/0/1); integer-specific
 `abs`, `gcd`, `ipow(base, exp)`. (`sqrt`/`pow`/`floor`/`fabs` are float builtins,
-not here.) `docs/guides/corelib.md:55-58`.
+not here.) `docs/reference/corelib.md:55-58`.
 
 ### 32.2 `fmath`
 
 Float-only helpers (pure Tycho): constant-valued nullary functions `pi()`, `e()`; `round` (half away from
 zero), `trunc`, `lerp(a, b, t)`, `approx_eq(a, b, eps)`. No trig (no libm sin/cos
-builtin). `docs/guides/corelib.md:59-61`.
+builtin). `docs/reference/corelib.md:59-61`.
 
 ### 32.3 `char`
 
 Byte/char classification and conversion over the int byte values `s[i]`/`chr`
 produce (pure Tycho): `is_digit`, `is_alpha`, `is_alnum`, `is_upper`, `is_lower`,
 `is_space`, `is_hex`; `to_upper`/`to_lower` (one byte); `digit_val` (−1 if not a
-digit), `hex_val` (0..15 or −1). The lexer/parser workhorse. `docs/guides/corelib.md:62-65`.
+digit), `hex_val` (0..15 or −1). The lexer/parser workhorse. `docs/reference/corelib.md:62-65`.
 
 ### 32.4 `strings`
 
@@ -120,13 +120,13 @@ String utilities (pure Tycho): `to_upper`, `to_lower`, `starts_with`,
 `-> Result(_, SliceErr)`, for callers that need the bounds checked rather than
 clamped ([§5.2.6](03-types.md#526-bytes)).
 (`split`/`find`/`substr`/`len`/`chr` are
-builtins.) `docs/guides/corelib.md:66-72`.
+builtins.) `docs/reference/corelib.md:66-72`.
 
 ### 32.5 `path`
 
 POSIX path string math, no filesystem access (pure Tycho): `base`, `dir`, `ext`,
 `stem`, `join(a, b)`, `is_abs`, `split_path(p) -> (dir, base)` (inverse of
-`join`), and `clean` (lexical normalize). `docs/guides/corelib.md:73-80`.
+`join`), and `clean` (lexical normalize). `docs/reference/corelib.md:73-80`.
 
 ### 32.6 `arrays`
 
@@ -134,7 +134,7 @@ Generic utilities over any element type `[T]` (pure Tycho), all returning a new
 array: `contains`, `index_of`, `count`, `reverse`, `take`, `drop`, `concat`,
 `fill(n, v)`, `dedup`; `sort`, `is_sorted`, `min`, `max` (`where comparable`);
 `sum`, `product` (`where numeric`); `join(xs, sep)` (element convertible to
-string). (`push`/`pop`/`len`/`range` are builtins.) `docs/guides/corelib.md:81-88`.
+string). (`push`/`pop`/`len`/`range` are builtins.) `docs/reference/corelib.md:81-88`.
 
 ### 32.7 `iter`
 
@@ -142,7 +142,7 @@ Generic higher-order helpers over any `[T]`, each taking a `fn`/closure (pure
 Tycho): `map`, `filter`, `reduce`, `count`, `any`. `map` is the one that may
 change the element type — `map(xs: [$T], f: fn($T) -> $U) -> [$U]`, so
 `map(ints, to_str)` is a `[string]`; the rest are type-preserving.
-`docs/guides/corelib.md:89-90`.
+`docs/reference/corelib.md:89-90`.
 
 ### 32.8 `sort`
 
@@ -150,19 +150,19 @@ Stable index-permutation sorting (pure Tycho): `argsort(keys)` /
 `argsort_desc(keys)` return the permutation ordering any comparable key type;
 `by_key(xs, key)` sorts by a derived int key (a `fn`/closure); **deprecated since
 0.5.0**, it is `sort_by(xs, fn(a, b) -> int: key(a) - key(b))`.
-`docs/guides/corelib.md:91-95`.
+`docs/reference/corelib.md:91-95`.
 
 ### 32.9 `rand`
 
 Deterministic (non-cryptographic) xorshift32 (pure Tycho); state is an explicit
 int threaded via `inout`: `seed(n)`, `next(&st)` (`[1, 2^32)`), `below(&st, n)`
-(`[0, n)`), `shuffle(&st, xs)` (Fisher-Yates, new array). `docs/guides/corelib.md:108-113`.
+(`[0, n)`), `shuffle(&st, xs)` (Fisher-Yates, new array). `docs/reference/corelib.md:108-113`.
 
 ### 32.10 `time`
 
 Wraps the `clock()` (monotonic ns) and `now()` (UNIX seconds) builtins: stopwatch
 `start()`, `elapsed_ns`/`elapsed_us`/`elapsed_ms`; conversions
-`ns_to_us`/`ns_to_ms`/`ns_to_s`; wall clock `unix_secs()`. `docs/guides/corelib.md:114-123`.
+`ns_to_us`/`ns_to_ms`/`ns_to_s`; wall clock `unix_secs()`. `docs/reference/corelib.md:114-123`.
 The clock surface is pure Tycho, but the package carries a **libc-only shim**
 (`time_shim.c`) for blocking sleep: `sleep_ms(ms)` and `sleep_ns(ns)` over POSIX
 `nanosleep`. Core tier. Three semantics are normative for the package: a
@@ -181,7 +181,7 @@ Civil (proleptic Gregorian) calendar math over UNIX timestamps (Howard Hinnant's
 `now_utc()`; formatting `format_iso`, `weekday_name`, `month_name`, `pad2`/`pad4`.
 The calendar core is pure Tycho, but the package now carries a **libc-only shim**
 (`datetime_shim.c`) exposing DST-aware timezone offsets: `dtx_local_offset(secs)`
-and `dtx_offset_at(tz, secs)`. Core tier. `docs/guides/corelib.md:124-139`; shim
+and `dtx_offset_at(tz, secs)`. Core tier. `docs/reference/corelib.md:124-139`; shim
 `corelib/datetime/datetime_shim.c`.
 
 ### 32.12 `json`
@@ -191,7 +191,7 @@ enum (`JNull`/`JBool`/`JNum`/`JStr`/`JArr`/`JObj`). `parse(s) -> Json` (fails
 closed to `JNull`), `stringify(j) -> string` (compact); typed queries `kind`,
 `get(j, key)`, `at(j, i)`, `keys`, `len_of`, `as_num`/`as_str`/`as_bool`.
 Variants are constructible cross-package (`json.JNum(1)`). Scope: integers only,
-four common escapes. `docs/guides/corelib.md:155-164`.
+four common escapes. `docs/reference/corelib.md:155-164`.
 
 ### 32.13 `csv`
 
@@ -199,52 +199,52 @@ RFC 4180 CSV parser + serializer (pure Tycho); a document is `[[string]]`.
 `parse(s) -> [[string]]` (small state machine; quoted fields, `""` escape,
 LF/CRLF/lone-CR; fails closed), `stringify(rows) -> string` (round-trips
 `parse`); `parse_delim`/`stringify_delim` for an arbitrary single-byte delimiter
-(TSV = `parse_delim(s, 9)`); `get(rows, r, c)` (bounds-safe). `docs/guides/corelib.md:165-173`.
+(TSV = `parse_delim(s, 9)`); `get(rows, r, c)` (bounds-safe). `docs/reference/corelib.md:165-173`.
 
 ### 32.14 `base64`
 
 Base64 (RFC 4648) `encode`/`decode`, plus `encode_url` (URL-safe alphabet, no
 padding) (pure Tycho, no bit-operators). `decode` is lenient (skips non-alphabet
 bytes). Byte-safety caveat: `decode` silently drops interior `0x00`.
-`docs/guides/corelib.md:181-189`.
+`docs/reference/corelib.md:181-189`.
 
 ### 32.15 `hex`
 
 Hexadecimal `encode` (lowercase) / `encode_upper` / `decode`, plus `is_valid`
 (strict) (pure Tycho). `decode` is lenient (skips non-hex bytes), reuses
-`char.hex_val`. Same `0x00` decode caveat as `base64`. `docs/guides/corelib.md:190-193`.
+`char.hex_val`. Same `0x00` decode caveat as `base64`. `docs/reference/corelib.md:190-193`.
 
 ### 32.16 `url`
 
 URL percent-encoding (RFC 3986) (pure Tycho): component-style `encode` (like
 `encodeURIComponent`), `encode_form`/`decode_form` (`x-www-form-urlencoded`,
 space ↔ `+`), and `decode` (`%XX`, leaving `+`; lenient). Reuses `char.hex_val`.
-Same `0x00` decode caveat. `docs/guides/corelib.md:194-199`.
+Same `0x00` decode caveat. `docs/reference/corelib.md:194-199`.
 
 ### 32.17 `uuid`
 
 Random version-4 UUIDs (RFC 4122) (pure Tycho): `v4(&st)` (draws 16 bytes from
 `core:rand`, state via `inout`), `nil()`, `parse(s) -> [int]` (16 bytes, lenient),
 `format(bytes) -> string` (canonical 8-4-4-4-12), `is_valid` (strict), `version`.
-`docs/guides/corelib.md:200-206`.
+`docs/reference/corelib.md:200-206`.
 
 ### 32.18 `hash`
 
 Non-cryptographic 32-bit hashes — for hash tables / checksums / dedup, **not
 security** (pure Tycho): `fnv1a_32`, `djb2`, `sdbm`, `crc32` (IEEE/zlib), plus
-`to_hex`. All return a non-negative int in `[0, 2^32)`. `docs/guides/corelib.md:207-213`.
+`to_hex`. All return a non-negative int in `[0, 2^32)`. `docs/reference/corelib.md:207-213`.
 
 ### 32.19 `md5`
 
 MD5 message-digest (RFC 1321) (pure 32-bit-arithmetic Tycho): `hex(s)` (32-char)
 and `digest(s)` (16 raw bytes). **Broken for security** — checksums/interop only.
-Bit-exact against RFC 1321 vectors. `docs/guides/corelib.md:214-219`.
+Bit-exact against RFC 1321 vectors. `docs/reference/corelib.md:214-219`.
 
 ### 32.20 `sha256`
 
 SHA-256 (FIPS 180-4) (pure 32-bit-arithmetic Tycho): `hex(s)` (64-char) and
 `digest(s)` (32 raw bytes). A real cryptographic digest (not a standalone
-password hash — use a KDF). Bit-exact against NIST vectors. `docs/guides/corelib.md:220-224`.
+password hash — use a KDF). Bit-exact against NIST vectors. `docs/reference/corelib.md:220-224`.
 
 ### 32.21 `io`
 
@@ -263,7 +263,7 @@ component was created, `Ok(false)` if every one already existed, `Err` at the
 first component that failed. A bare Windows drive letter (`C:`) is a root and is
 skipped rather than created; a UNC root (`//host/share`) is not handled. Core tier. Nothing aborts; a call returns
 `Result(T, IoErr)` wherever a sentinel would be ambiguous and mirrors the
-builtins' sentinels elsewhere. `docs/guides/corelib.md:267-298`; shim
+builtins' sentinels elsewhere. `docs/reference/corelib.md:267-298`; shim
 `corelib/io/io_shim.c`.
 
 `mtime(p) -> Result(int, IoErr)` is when `p` was last modified, in whole seconds
@@ -308,7 +308,7 @@ Run external commands via a **libc-only shim** (`os_shim.c`, `popen`/`system`/
 (`posix_spawnp`; `CreateProcess` on Windows, where the vector is joined by the
 `CommandLineToArgvW` quoting rules), so arguments are never re-interpreted by a
 shell; they fail closed with `-1` on an empty argv, a build failure, or an
-unspawnable program. `docs/guides/corelib.md:298-304`.
+unspawnable program. `docs/reference/corelib.md:298-304`.
 
 ### 32.23 `regex`
 
@@ -316,7 +316,7 @@ POSIX extended regular expressions (ERE) via a **libc-only shim** (`regex_shim.c
 over `<regex.h>`; no `deps`). Core tier. `compile(pat) -> ptr` (opaque handle;
 `ok`/`is_null`), `is_match`, `find`/`find_end` (offset or −1), `matched` (first
 match), `release` (the pattern is C-malloc'd, **not** arena-managed — release when
-done; §31.1). `docs/guides/corelib.md:140-146`.
+done; §31.1). `docs/reference/corelib.md:140-146`.
 
 ### 32.24 `net`
 
@@ -444,7 +444,7 @@ An HTTP(S) client over **libcurl** (`deps` → `libcurl`). `get(url) -> ptr` /
 handle (or null on transport failure; `ok`/`is_null`); `status(r)`, `body(r)`
 (arena-copied), `release(r)`. Convenience `get_body(url)` / `get_status(url)` do
 the request and free the handle. The arena-copied body truncates at an interior
-`0x00` (text APIs). `docs/guides/corelib.md:147-154`.
+`0x00` (text APIs). `docs/reference/corelib.md:147-154`.
 
 ### 33.2 `crypto` — libcrypto (OpenSSL)
 
@@ -457,7 +457,7 @@ auth failure), Ed25519 (`ed25519_pubkey`/`sign`/`verify`), X25519
 (`x25519_pubkey`/`shared`). Every value crosses as lowercase hex (a Tycho string
 can't hold `0x00`; use `core:hex` to convert text). Bound to OpenSSL rather than
 reimplemented because real crypto must be constant-time and audited.
-`docs/guides/corelib.md:232-243`.
+`docs/reference/corelib.md:232-243`.
 
 ### 33.3 `compress` — zlib
 
