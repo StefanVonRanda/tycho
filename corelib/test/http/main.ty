@@ -1,5 +1,6 @@
 package main
 import "core:http"
+import "core:io"
 
 fn b2i(b: bool) -> int:
     if b:
@@ -19,3 +20,19 @@ fn main():
     gb := http.get_body(dead)
     gs := http.get_status(dead)
     println(f"get_body=[{gb}] get_status={gs}")                 # get_body=[] get_status=0
+
+    # Interior NUL in the URL (FRICTION #78). The dead-port legs above cannot
+    # score this: a NUL'd URL and a refused connection both answer null/0, so a
+    # leg without a POSITIVE control would pass against a curl that never ran.
+    # file:// is the control -- it fetches for real, with no network.
+    p := "/tmp/tycho_corelib_http_nul.txt"
+    wrote := io.write(p, "eighteen bytes ok\n")
+    base := "file://" + p
+    ctl := http.get(base)
+    println(f"url_ctl_null={b2i(is_null(ctl))} url_ctl_len={len(http.body(ctl))}")
+    http.release(ctl)
+    nulz := to_str(to_bytes([0]))
+    bad := http.get(base + nulz + "/ignored")
+    println(f"url_nul_null={b2i(is_null(bad))} url_nul_len={len(http.body(bad))}")
+    http.release(bad)
+    println("wrote=" + str(b2i(wrote)))

@@ -5596,6 +5596,8 @@ is why it is there.
 
 ### 78. The last two of the NUL sweep: a URL and a TZ string — **FIXED 2026-08-15**
 
+> Pinned-by: make corelib
+
 #75 and #76 named four externs as unswept and #77 explained why leaving them
 named mattered. These are the last two, and both truncated.
 
