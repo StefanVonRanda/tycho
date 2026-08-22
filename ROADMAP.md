@@ -29,6 +29,24 @@ matching the wrong rows), and the money type's only text constructor returning
 `0.15` for `"1.5x"`. All three are fixed and gated; the pattern and the
 `_checked` convention are written up at FRICTION #4 and #56.
 
+## The language surface is frozen
+
+As of 2026-08-22 the keyword set, the builtin set and every corelib signature are
+locked by `surface.lock` and gated by `make surface-check`. **No new language
+features before 1.0.**
+
+The reason is measured, not stylistic: in the ten days to 2026-08-22, 91 commits
+touched `docs/spec/` and 69 touched `src/tychoc.c`, 11 of them adding compiler
+features. A surface moving that fast cannot be learned, documented, or depended
+on, and the thing 1.0 is actually waiting for is programs written by people who
+are not the author.
+
+Corelib may still GAIN functions — a gap like a missing `mkdir -p` is worth
+filling. It may not lose one or change a signature.
+
+Lifting the freeze is deliberate: `python3 scripts/surface_lock.py --record`, and
+the diff says exactly what grew.
+
 ## Near-term
 
 Foundation before feature breadth. In rough priority:
