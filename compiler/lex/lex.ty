@@ -1,105 +1,511 @@
 package lex
 
-# Bytes -> tokens, including the INDENT/DEDENT pair that significant
-# indentation needs. Phase 1 lexes the subset `fn main(): print(str(1))` uses;
-# the token STRUCTURE is the part later phases build on, not the character set.
+import "core:strings"
+
+# Bytes -> tokens. The token set is src/tychoc.c's own, read out of its
+# `keyword()` table and its operator chain rather than inferred from fixtures:
+# `soa` is deliberately absent below because it is absent there too -- it lexes
+# as an identifier and the parser treats it contextually.
 
 struct Tok:
-    kind: string      # ident int str punct newline indent dedent eof
-    text: string
+    kind: string      # kw ident int float str char op newline indent dedent eof comment
+    text: string      # name, operator spelling, or the ESCAPED string body
     line: int
+    col: int          # 1-based, for the error caret
+    ival: int         # int literal value, char literal byte, or 1 on an f-string
+    fval: float       # float literal value
+    raw: string       # the exact source slice, for the round-trip control
+
+fn _t(kind: string, text: string, line: int, col: int, raw: string) -> Tok:
+    return Tok(kind, text, line, col, 0, 0.0, raw)
 
 fn is_digit(c: int) -> bool:
     return c >= 48 and c <= 57
 
+fn is_hex(c: int) -> bool:
+    return is_digit(c) or (c >= 97 and c <= 102) or (c >= 65 and c <= 70)
+
+fn hex_val(c: int) -> int:
+    if is_digit(c):
+        return c - 48
+    if c >= 97:
+        return c - 97 + 10
+    return c - 65 + 10
+
+fn is_alpha(c: int) -> bool:
+    return (c >= 97 and c <= 122) or (c >= 65 and c <= 90)
+
 fn is_ident_start(c: int) -> bool:
-    return (c >= 97 and c <= 122) or (c >= 65 and c <= 90) or c == 95
+    return is_alpha(c) or c == 95
 
 fn is_ident(c: int) -> bool:
     return is_ident_start(c) or is_digit(c)
 
-# A line whose first non-space byte is '\n' or '#' carries no indentation
-# information at all -- measuring it would emit a DEDENT the source never
-# asked for, which is the classic blank-line-in-a-block bug.
-fn _blank_at(src: string, j: int) -> bool:
+# src/tychoc.c@keyword, verbatim. Every name here becomes kind "kw"; everything
+# else -- `soa`, `count`, `print`, `where`, `const`, `import`, `package`,
+# `extern`, `sink`, `subscript`, `yield`, `zero` -- stays an identifier.
+fn is_keyword(s: string) -> bool:
+    if s == "fn" or s == "return" or s == "if" or s == "elif" or s == "else":
+        return true
+    if s == "and" or s == "or_return" or s == "or" or s == "not" or s == "match":
+        return true
+    if s == "break" or s == "continue" or s == "spawn" or s == "parallel" or s == "select":
+        return true
+    if s == "for" or s == "in" or s == "is" or s == "struct" or s == "enum":
+        return true
+    if s == "handle" or s == "type" or s == "inout":
+        return true
+    if s == "true" or s == "false" or s == "null":
+        return true
+    if s == "int" or s == "bool" or s == "string" or s == "float" or s == "ptr" or s == "bytes":
+        return true
+    if s == "u32" or s == "u64" or s == "f32":
+        return true
+    if s == "u8" or s == "u16" or s == "i8" or s == "i16" or s == "i32" or s == "i64":
+        return true
+    return false
+
+# src/tychoc.c@tok_continues_line. A line ending on one of these cannot be a
+# complete statement, so the next physical line joins it.
+fn continues_line(kind: string, text: string) -> bool:
+    if kind == "kw":
+        return text == "and" or text == "or" or text == "is"
+    if kind != "op":
+        return false
+    if text == "+" or text == "-" or text == "*" or text == "/" or text == "%":
+        return true
+    if text == "|" or text == "^" or text == "<<" or text == ">>":
+        return true
+    if text == "=" or text == "==" or text == "!=":
+        return true
+    if text == "<" or text == ">" or text == "<=" or text == ">=":
+        return true
+    return text == "," or text == ":="
+
+# src/tychoc.c@tok_postfixable. After a value-producing token a '.' is field or
+# tuple access, so `t.0` is DOT + INT and never a leading-dot float.
+fn postfixable(kind: string, text: string) -> bool:
+    if kind == "ident" or kind == "int" or kind == "float" or kind == "str" or kind == "char":
+        return true
+    return kind == "op" and (text == ")" or text == "]")
+
+fn _die(line: int, msg: string):
+    die("tychoc1: line " + str(line) + ": " + msg)
+
+# --- literal scanners -------------------------------------------------------
+# Each takes the index of the opening delimiter and returns the index just past
+# the closing one.
+
+fn scan_str(src: string, i0: int, line: int, interp: bool) -> int:
     n := len(src)
-    return j >= n or src[j] == 10 or src[j] == 35
+    i := i0 + 1
+    depth := 0
+    for i < n:
+        c := src[i]
+        if c == 34 and depth == 0:
+            return i + 1
+        if c == 10:
+            _die(line, "unterminated string literal")
+        if interp and depth == 0 and c == 123 and i + 1 < n and src[i + 1] == 123:
+            i += 2
+            continue
+        if interp and depth == 0 and c == 125 and i + 1 < n and src[i + 1] == 125:
+            i += 2
+            continue
+        if interp and c == 123:
+            depth += 1
+            i += 1
+            continue
+        if interp and depth > 0 and c == 125:
+            depth -= 1
+            i += 1
+            continue
+        if interp and depth > 0 and c == 34:
+            # a nested literal inside a hole: copied verbatim, escapes unchecked
+            # here because the hole's code is re-lexed later.
+            i += 1
+            for i < n and src[i] != 34:
+                if src[i] == 10:
+                    _die(line, "unterminated string literal")
+                if src[i] == 92:
+                    i += 1
+                    if i >= n:
+                        _die(line, "unterminated string literal")
+                i += 1
+            if i >= n:
+                _die(line, "unterminated string literal")
+            i += 1
+            continue
+        if c == 92:
+            i += 1
+            if i >= n:
+                _die(line, "unterminated string literal")
+            e := src[i]
+            if e != 110 and e != 116 and e != 114 and e != 92 and e != 34:
+                _die(line, "unsupported escape (use \\n \\t \\r \\\\ \\\")")
+            i += 1
+            continue
+        if depth == 0 and c < 32 and c != 9:
+            _die(line, "raw control byte in string literal (use an escape such as \\n or \\t)")
+        i += 1
+    _die(line, "unterminated string literal")
+    return i
+
+# `...` interprets no escape at all, so its body is re-escaped here into the
+# four two-character escapes the language has -- exactly what src/tychoc.c does,
+# and for the same reason: the text is pasted into a C string literal later.
+# Returns (end index, escaped body, lines consumed).
+fn scan_raw(src: string, i0: int, line: int) -> (int, string, int):
+    n := len(src)
+    i := i0 + 1
+    out := ""
+    seg := i
+    nl := 0
+    for i < n and src[i] != 96:
+        c := src[i]
+        esc := ""
+        if c == 10:
+            esc = "\\n"
+            nl += 1
+        elif c == 9:
+            esc = "\\t"
+        elif c == 92:
+            esc = "\\\\"
+        elif c == 34:
+            esc = "\\\""
+        elif c < 32:
+            _die(line + nl, "raw control byte in string literal (use an escape such as \\n or \\t)")
+        if len(esc) > 0:
+            out = out + src[seg:i] + esc
+            i += 1
+            seg = i
+        else:
+            i += 1
+    if i >= n:
+        _die(line, "unterminated raw string literal")
+    out = out + src[seg:i]
+    return (i + 1, out, nl)
+
+# 'x' or one escape -> one byte. Returns (end index, byte value).
+fn scan_char(src: string, i0: int, line: int) -> (int, int):
+    n := len(src)
+    i := i0 + 1
+    cv := 0
+    if i < n and src[i] == 92:
+        i += 1
+        if i >= n:
+            _die(line, "empty or unterminated char literal")
+        e := src[i]
+        if e == 110:
+            cv = 10
+        elif e == 116:
+            cv = 9
+        elif e == 114:
+            cv = 13
+        elif e == 48:
+            cv = 0
+        elif e == 92:
+            cv = 92
+        elif e == 39:
+            cv = 39
+        elif e == 120:
+            # \xNN takes EXACTLY two hex digits -- fixed width, never C's greedy form.
+            if i + 2 >= n or not is_hex(src[i + 1]) or not is_hex(src[i + 2]):
+                _die(line, "\\x takes exactly two hex digits (e.g. '\\x41')")
+            cv = 16 * hex_val(src[i + 1]) + hex_val(src[i + 2])
+            i += 2
+        else:
+            _die(line, "unsupported char escape (use \\n \\t \\r \\0 \\xNN \\\\ \\')")
+        i += 1
+    elif i < n and src[i] != 39 and src[i] != 10:
+        cv = src[i]
+        i += 1
+    else:
+        _die(line, "empty or unterminated char literal")
+    if i >= n or src[i] != 39:
+        _die(line, "char literal must be exactly one character")
+    return (i + 1, cv)
+
+# --- operators --------------------------------------------------------------
+
+fn op_len(src: string, i: int) -> int:
+    n := len(src)
+    c := src[i]
+    c2 := 0
+    c3 := 0
+    if i + 1 < n:
+        c2 = src[i + 1]
+    if i + 2 < n:
+        c3 = src[i + 2]
+    if c == 46 and c2 == 46 and c3 == 46:
+        return 3
+    if c == 46 and c2 == 46 and c3 == 60:
+        return 3
+    if c == 46 and c2 == 46:
+        return 2
+    if c == 58 and (c2 == 58 or c2 == 61):
+        return 2
+    if c == 61 and c2 == 61:
+        return 2
+    if c == 33 and c2 == 61:
+        return 2
+    if c == 60 and (c2 == 61 or c2 == 60):
+        return 2
+    if c == 62 and (c2 == 61 or c2 == 62):
+        return 2
+    if c == 45 and c2 == 62:
+        return 2
+    return 1
+
+fn is_op_start(c: int) -> bool:
+    if c == 58 or c == 61 or c == 60 or c == 62 or c == 43 or c == 45:
+        return true
+    if c == 42 or c == 47 or c == 40 or c == 41 or c == 91 or c == 93:
+        return true
+    if c == 46 or c == 44 or c == 59 or c == 38 or c == 37 or c == 124:
+        return true
+    return c == 94 or c == 126 or c == 36
+
+# --- the lexer --------------------------------------------------------------
 
 fn tokenize(src: string) -> [Tok]:
+    return tokenize_ex(src, false)
+
+# `keep_trivia` adds a "comment" token carrying its own source slice. Nothing in
+# the pipeline reads them; they exist so the round-trip control can assert that
+# every non-whitespace byte of the source is covered by exactly one token.
+fn tokenize_ex(src: string, keep_trivia: bool) -> [Tok]:
     toks := []Tok
     stack := []int
     push(stack, 0)
     n := len(src)
-    i := 0
-    line := 1
-    at_start := true
-    for i < n:
-        if at_start:
-            col := 0
-            j := i
-            for j < n and src[j] == 32:
-                col += 1
-                j += 1
-            if _blank_at(src, j):
-                for j < n and src[j] != 10:
-                    j += 1
-                if j < n:
-                    j += 1
-                    line += 1
-                i = j
-                continue
-            i = j
-            at_start = false
+    p := 0
+    line := 0
+    bracket_depth := 0
+    bracket_line := 0
+    pend := false
+    pend_col := 0
+    cont := false
+    last_kind := ""
+    last_text := ""
+
+    for p < n:
+        line += 1
+        ls := p
+        col := 0
+        ws_sp := false
+        ws_tab := false
+        for p < n and (src[p] == 32 or src[p] == 9):
+            if src[p] == 32:
+                ws_sp = true
+            else:
+                ws_tab = true
+            col += 1
+            p += 1
+
+        cont = false
+        if pend:
+            blank := p >= n or src[p] == 10 or src[p] == 35
+            if col > pend_col and not blank:
+                if len(toks) > 0 and toks[len(toks) - 1].kind == "newline":
+                    pop(toks)
+                cont = true
+            pend = false
+        if ws_sp and ws_tab and bracket_depth == 0 and not cont:
+            _die(line, "mixed tabs and spaces in indentation; use one consistently")
+
+        # A blank or comment-only line carries no indentation information;
+        # measuring it would emit a DEDENT the source never asked for.
+        if p >= n or src[p] == 10 or src[p] == 35:
+            cs := p
+            for p < n and src[p] != 10:
+                p += 1
+            if keep_trivia and p > cs:
+                push(toks, _t("comment", src[cs:p], line, cs - ls + 1, src[cs:p]))
+            if p < n:
+                p += 1
+            continue
+
+        # An unclosed bracket otherwise swallows the rest of the file as one
+        # continuation line. A reserved declaration keyword in column 1 cannot
+        # be a continuation in any valid program, so it proves the bracket open.
+        if bracket_depth > 0 and col == 0:
+            k := p
+            for k < n and is_ident(src[k]):
+                k += 1
+            w := src[p:k]
+            if w == "fn" or w == "struct" or w == "enum" or w == "handle" or w == "type":
+                _die(bracket_line, "unclosed '(' or '[' opened on line " + str(bracket_line) +
+                    " -- `" + w + "` here can only start a declaration, so the bracket was never closed")
+
+        if bracket_depth == 0 and not cont:
             if col > stack[len(stack) - 1]:
                 push(stack, col)
-                push(toks, Tok("indent", "", line))
+                push(toks, _t("indent", "", line, col + 1, ""))
             else:
                 for col < stack[len(stack) - 1]:
                     pop(stack)
-                    push(toks, Tok("dedent", "", line))
-            continue
-        c := src[i]
-        if c == 32 or c == 9 or c == 13:
-            i += 1
-            continue
-        if c == 35:
-            for i < n and src[i] != 10:
-                i += 1
-            continue
-        if c == 10:
-            push(toks, Tok("newline", "", line))
-            line += 1
-            i += 1
-            at_start = true
-            continue
-        if is_ident_start(c):
-            s := i
-            for i < n and is_ident(src[i]):
-                i += 1
-            push(toks, Tok("ident", src[s:i], line))
-            continue
-        if is_digit(c):
-            s := i
-            for i < n and is_digit(src[i]):
-                i += 1
-            push(toks, Tok("int", src[s:i], line))
-            continue
-        if c == 34:
-            i += 1
-            s := i
-            for i < n and src[i] != 34:
-                i += 1
-            body := src[s:i]
-            if i < n:
-                i += 1
-            push(toks, Tok("str", body, line))
-            continue
-        push(toks, Tok("punct", src[i:i + 1], line))
-        i += 1
-    if not at_start:
-        push(toks, Tok("newline", "", line))
+                    push(toks, _t("dedent", "", line, col + 1, ""))
+                if col != stack[len(stack) - 1]:
+                    _die(line, "inconsistent indentation")
+
+        for p < n and src[p] != 10 and src[p] != 35:
+            c := src[p]
+            if c == 32 or c == 9 or c == 13:
+                p += 1
+                continue
+            s := p
+            tcol := p - ls + 1
+
+            lead_dot := c == 46 and p + 1 < n and is_digit(src[p + 1]) and
+                (len(toks) == 0 or not postfixable(last_kind, last_text))
+            if is_digit(c) or lead_dot:
+                for p < n and is_digit(src[p]):
+                    p += 1
+                litbase := 10
+                digits := s
+                prefixed := false
+                if p - s == 1 and src[s] == 48 and p < n and
+                        (src[p] == 120 or src[p] == 88 or src[p] == 98 or src[p] == 66):
+                    hexed := src[p] == 120 or src[p] == 88
+                    prefixed = true
+                    if hexed:
+                        litbase = 16
+                    else:
+                        litbase = 2
+                    p += 1
+                    digits = p
+                    for p < n and ((hexed and is_hex(src[p])) or
+                            (not hexed and (src[p] == 48 or src[p] == 49))):
+                        p += 1
+                    if p == digits:
+                        if hexed:
+                            _die(line, "a hex literal needs at least one digit after `0x`")
+                        _die(line, "a binary literal needs digits 0 or 1 after `0b`")
+                is_float := false
+                if not prefixed and p + 1 < n and src[p] == 46 and is_digit(src[p + 1]):
+                    is_float = true
+                    p += 1
+                    for p < n and is_digit(src[p]):
+                        p += 1
+                if not prefixed and p < n and (src[p] == 101 or src[p] == 69):
+                    eq := p + 1
+                    if eq < n and (src[eq] == 43 or src[eq] == 45):
+                        eq += 1
+                    if eq < n and is_digit(src[eq]):
+                        is_float = true
+                        p = eq
+                        for p < n and is_digit(src[p]):
+                            p += 1
+                raw := src[s:p]
+                if is_float:
+                    fv := 0.0
+                    match strings.parse_float(raw):
+                        Ok(v): fv = v
+                        Err(e): fv = 0.0
+                    push(toks, Tok("float", raw, line, tcol, 0, fv, raw))
+                    last_kind = "float"
+                    last_text = raw
+                else:
+                    v := 0
+                    for q := digits; q < p; q += 1:
+                        d := hex_val(src[q])
+                        v = v * litbase + d
+                    push(toks, Tok("int", raw, line, tcol, v, 0.0, raw))
+                    last_kind = "int"
+                    last_text = raw
+                continue
+
+            # f"..." is an interpolated string, not an identifier named f.
+            fstr := c == 102 and p + 1 < n and src[p + 1] == 34
+            if is_ident_start(c) and not fstr:
+                for p < n and is_ident(src[p]):
+                    p += 1
+                name := src[s:p]
+                kind := "ident"
+                if is_keyword(name):
+                    kind = "kw"
+                push(toks, _t(kind, name, line, tcol, name))
+                last_kind = kind
+                last_text = name
+                continue
+
+            if c == 34 or fstr:
+                q0 := p
+                if fstr:
+                    q0 += 1
+                e := scan_str(src, q0, line, fstr)
+                body := src[q0 + 1:e - 1]
+                flag := 0
+                if fstr:
+                    flag = 1
+                push(toks, Tok("str", body, line, tcol, flag, 0.0, src[s:e]))
+                p = e
+                last_kind = "str"
+                last_text = body
+                continue
+
+            if c == 96:
+                e, body, nl := scan_raw(src, p, line)
+                push(toks, Tok("str", body, line, tcol, 0, 0.0, src[s:e]))
+                p = e
+                line += nl
+                last_kind = "str"
+                last_text = body
+                continue
+
+            if c == 39:
+                e, cv := scan_char(src, p, line)
+                push(toks, Tok("char", src[s:e], line, tcol, cv, 0.0, src[s:e]))
+                p = e
+                last_kind = "char"
+                last_text = src[s:e]
+                continue
+
+            if c == 47 and p + 1 < n and src[p + 1] == 47:
+                _die(line, "'//' is not valid in Tycho -- use '#' for comments, or '/' for division")
+            l := op_len(src, p)
+            # `!` exists only as `!=`; a lone one is an unexpected character,
+            # exactly as in src/tychoc.c's operator chain.
+            if not is_op_start(c) and not (c == 33 and l == 2):
+                _die(line, "unexpected character '" + src[p:p + 1] + "'")
+            text := src[p:p + l]
+            if text == "(" or text == "[":
+                if bracket_depth == 0:
+                    bracket_line = line
+                bracket_depth += 1
+            elif (text == ")" or text == "]") and bracket_depth > 0:
+                bracket_depth -= 1
+            push(toks, _t("op", text, line, tcol, text))
+            p += l
+            last_kind = "op"
+            last_text = text
+
+        nlcol := p - ls + 1
+        if p < n and src[p] == 35:
+            cs := p
+            for p < n and src[p] != 10:
+                p += 1
+            if keep_trivia:
+                push(toks, _t("comment", src[cs:p], line, cs - ls + 1, src[cs:p]))
+        # A comment tail is not a token, so it must not defeat the trailing-
+        # operator join: the candidate is recorded from the last REAL token.
+        if bracket_depth == 0:
+            push(toks, _t("newline", "", line, nlcol, ""))
+            pend = continues_line(last_kind, last_text)
+        else:
+            pend = false
+        # The anchor is the indent of the LOGICAL line and stays put while the
+        # statement continues, so a chain does not have to descend a staircase.
+        if not cont:
+            pend_col = col
+        if p < n and src[p] == 10:
+            p += 1
+
+    if bracket_depth > 0:
+        _die(bracket_line, "unclosed '(' or '[' opened on line " + str(bracket_line))
     for len(stack) > 1:
         pop(stack)
-        push(toks, Tok("dedent", "", line))
-    push(toks, Tok("eof", "", line))
+        push(toks, _t("dedent", "", line, 1, ""))
+    push(toks, _t("eof", "", line, 1, ""))
     return toks

@@ -33,7 +33,7 @@ fn expr(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
     if t.kind == "ident":
         i := i0 + 1
         nx := _at(toks, i)
-        if nx.kind == "punct" and nx.text == "(":
+        if nx.kind == "op" and nx.text == "(":
             i += 1
             xs := []ast.Expr
             for _at(toks, i).text != ")":
@@ -42,7 +42,7 @@ fn expr(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
                 i = j
                 if _at(toks, i).text == ",":
                     i += 1
-            i = _expect(toks, i, "punct", ")")
+            i = _expect(toks, i, "op", ")")
             return (ast.Call(t.text, xs), i)
         return (ast.Name(t.text), i)
     _fail(t, "an expression")
@@ -63,14 +63,14 @@ fn stmt(toks: [lex.Tok], i0: int) -> (ast.Stmt, int):
     return (ast.ExprStmt(e), i)
 
 fn func(toks: [lex.Tok], i0: int) -> (ast.Fn, int):
-    i := _expect(toks, i0, "ident", "fn")
+    i := _expect(toks, i0, "kw", "fn")
     nm := _at(toks, i)
     if nm.kind != "ident":
         _fail(nm, "a function name")
     i += 1
-    i = _expect(toks, i, "punct", "(")
-    i = _expect(toks, i, "punct", ")")
-    i = _expect(toks, i, "punct", ":")
+    i = _expect(toks, i, "op", "(")
+    i = _expect(toks, i, "op", ")")
+    i = _expect(toks, i, "op", ":")
     i = _expect(toks, i, "newline", "")
     i = _expect(toks, i, "indent", "")
     body := []ast.Stmt

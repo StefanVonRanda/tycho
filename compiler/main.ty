@@ -4,7 +4,7 @@ import "core:strings"
 import "driver"
 
 fn usage():
-    die("usage: tychoc1 <file.ty> --emit-c -o <name> [--runtime runtime/tycho_rt.c]")
+    die("usage: tychoc1 <file.ty> (--emit-c -o <name> [--runtime P] | --dump-tokens | --round-trip)")
 
 fn main():
     av := args()
@@ -12,11 +12,16 @@ fn main():
     out := ""
     rt := "runtime/tycho_rt.c"
     emit_c := false
+    mode := "compile"
     i := 1
     for i < len(av):
         a := av[i]
         if a == "--emit-c":
             emit_c = true
+        elif a == "--dump-tokens":
+            mode = "dump"
+        elif a == "--round-trip":
+            mode = "rt"
         elif a == "-o":
             i += 1
             if i >= len(av):
@@ -32,7 +37,15 @@ fn main():
         else:
             src = a
         i += 1
-    if len(src) == 0 or len(out) == 0 or not emit_c:
+    if len(src) == 0:
+        usage()
+    if mode == "dump":
+        driver.dump_tokens(src)
+        return
+    if mode == "rt":
+        driver.roundtrip(src)
+        return
+    if len(out) == 0 or not emit_c:
         usage()
     driver.compile(src, rt, out + ".c")
     print("wrote " + out + ".c")

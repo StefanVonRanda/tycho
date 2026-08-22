@@ -31,3 +31,54 @@ fn compile(src_path: string, runtime_path: string, out_c: string):
     c := compile_str(src, read_runtime(runtime_path))
     if not io.write(out_c, c):
         die("tychoc1: cannot write '" + out_c + "'")
+
+# --- --dump-tokens ----------------------------------------------------------
+# The lexer's own gate. One line per token so a disagreement names a position
+# rather than a file.
+
+fn dump_tokens(src_path: string):
+    src := ""
+    match io.read_text(src_path):
+        Ok(s): src = s
+        Err(e): die("tychoc1: cannot read '" + src_path + "'")
+    toks := lex.tokenize(src)
+    out := ""
+    for k := 0; k < len(toks); k += 1:
+        t := toks[k]
+        out = out + str(t.line) + ":" + str(t.col) + " " + t.kind + " " + t.text + "\n"
+    print(out)
+
+# Whitespace is the only thing a token stream is allowed to lose, so it is
+# removed from BOTH sides -- including from inside string literals, since the
+# same removal is applied to each. What survives is the real property: every
+# non-whitespace byte of the source is covered by exactly one token, in order.
+fn strip_ws(s: string) -> string:
+    out := ""
+    seg := 0
+    for k := 0; k < len(s); k += 1:
+        c := s[k]
+        if c == 32 or c == 9 or c == 13 or c == 10:
+            out = out + s[seg:k]
+            seg = k + 1
+    return out + s[seg:]
+
+fn roundtrip(src_path: string):
+    src := ""
+    match io.read_text(src_path):
+        Ok(s): src = s
+        Err(e): die("tychoc1: cannot read '" + src_path + "'")
+    toks := lex.tokenize_ex(src, true)
+    joined := ""
+    for k := 0; k < len(toks); k += 1:
+        joined = joined + toks[k].raw
+    a := strip_ws(src)
+    b := strip_ws(joined)
+    if a == b:
+        print("RT-OK " + str(len(a)) + "\n")
+        return
+    d := 0
+    for d < len(a) and d < len(b) and a[d] == b[d]:
+        d += 1
+    print("RT-FAIL " + src_path + " src=" + str(len(a)) + " toks=" + str(len(b)) +
+        " first-diff-at=" + str(d) + " src<<" + a[d:d + 30] + ">> toks<<" + b[d:d + 30] + ">>\n")
+    die("round trip failed")

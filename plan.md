@@ -90,7 +90,7 @@ self-built twice, the two emitted `.c` identical.
     `--runtime <path>` as the override. The cost is real and unchanged: run
     from anywhere but the repo root and `--runtime` is mandatory.
 
-- [ ] **Phase 2 — lexer complete**
+- [x] **Phase 2 — lexer complete**
   - Scope: `compiler/lex/`. Every token of the locked language: the 30 reserved
     words, `$T` type params, `bounded[N]`, string/char/byte/number literals with
     escapes, comments, and the significant-indentation INDENT/DEDENT rules.
@@ -99,6 +99,78 @@ self-built twice, the two emitted `.c` identical.
   - Verify: the dump over that corpus, plus a round-trip control — tokens
     re-joined must reproduce the source modulo whitespace on at least 50 files,
     and a deliberately corrupted token table must redden it.
+  - **Done 2026-08-22.** `compiler/lex/lex.ty` is the whole token set read out of
+    `src/tychoc.c@keyword` and its operator chain — not inferred from fixtures.
+    `soa` is deliberately NOT a keyword, because it is not one there either: it
+    lexes as an identifier and the parser will treat it contextually.
+    `--dump-tokens` and `--round-trip` are at `compiler/main.ty@mode`.
+
+    **Leg 1 — the dump over the corpus** (274 `tests/*.ty` + 91 `.ty` under
+    `corelib/`):
+
+    ```
+    leg1: files=365 failures=0
+    ```
+
+    **Leg 2 — round trip**, run over the whole corpus rather than the 50 asked
+    for. Normalisation, stated plainly: every token carries its exact source
+    slice, comment trivia included; the slices are concatenated and compared
+    against the source with **whitespace removed from both sides** — inside
+    string literals too, since the same removal is applied to each. The property
+    that survives is real (every non-whitespace byte is covered by exactly one
+    token, in order) but it is a COVERAGE property and **cannot see a token
+    split**: drop `..<` and `..` + `<` re-joins to the same bytes.
+
+    ```
+    leg2: files=365 round-trip-ok=365 failed=0
+    ```
+
+    So a third assertion carries that class — a **token-kind census** over the
+    same dump, which is what the two controls below move:
+
+    ```
+    char=73 dedent=4439 eof=365 float=394 ident=43309 indent=4439
+    int=8736 kw=11537 newline=16045 op=74757 str=5791
+    ```
+
+    **Leg 3 — three negative controls, each reddening a different leg**, each
+    observed, each reverted (the census returns to the block above):
+
+    | break | effect |
+    |---|---|
+    | drop `"for"` from `is_keyword` | leg 1 stays **green** (an identifier is not an error); census moves `kw=11537 -> 10950`, `ident=43309 -> 43896` |
+    | drop `\r` from the string escape set | leg 1 **fails 6 files** with `unsupported escape`; census loses 6 files' worth of every kind |
+    | drop the 3-char `..<` case from `op_len` | leg 1 and leg 2 both stay **green**; census moves `op=74757 -> 74758`, and the corpus contains exactly one `..<` |
+
+    The first and third are the ones that matter: they are the corruptions the
+    two legs the brief named cannot see, and without the census this phase would
+    have shipped two legs that pass against a broken keyword table.
+
+    **Phase 1's milestone is unmoved**: `./tychoc1` on `fn main(): print(str(1))`
+    still emits C differing from `./tychoc`'s by the same five blank lines.
+    `compiler/parse/parse.ty` was retargeted from the Phase 1 kind names
+    (`ident`/`punct`) to `kw`/`op`; nothing else outside `compiler/lex/` moved.
+
+- [ ] **Phase 2b — three lexer parity gaps deferred out of Phase 2**
+  - Scope: `compiler/lex/lex.ty`. Each is a place where `src/tychoc.c` does more
+    than lexing and Phase 2 stopped at the token boundary.
+    1. **No integer-literal overflow check.** `src/tychoc.c` dies with
+       `integer literal out of range`; `compiler/lex/` accumulates the value and
+       wraps under `-fwrapv`, so an over-wide literal lexes to a wrong number in
+       silence.
+    2. **`# deprecated:` doc notes are dropped.** `src/tychoc.c@dnote_scan` runs
+       during lexing and attaches the note to the fn below it. Comments are
+       trivia here, so the deprecation warning `make grid-check` gates has no
+       source yet.
+    3. **The unclosed-bracket recovery dies instead of batching.** `src/tychoc.c`
+       pushes the diagnostic and resumes real layout so the rest of the file
+       still lexes; `compiler/lex/` dies at the first one, which loses error
+       batching. Belongs with Phase 9's diagnostics work if not done sooner.
+  - Done when: (1) an over-wide literal is refused, (2) a `# deprecated:` note is
+    reachable from the token stream, (3) the recovery resumes rather than dying.
+  - Verify: a probe per item, plus the Phase 2 dump/round-trip/census legs
+    unmoved over the 365-file corpus.
+  - Do NOT run: any test lane. Nothing outside `compiler/` is touched.
 
 - [ ] **Phase 3 — parser: expressions and statements**
   - Scope: `compiler/parse/`, `compiler/ast/`. Full expression grammar with
