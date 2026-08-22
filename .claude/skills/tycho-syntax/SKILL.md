@@ -144,6 +144,29 @@ than a variable. Every refusal holds through a generic too.
 function, and the diagnostic counts the mentions for you — `'b' is consumed by a
 `sink` parameter but is mentioned 2 times in this function`.
 
+## Rules a model breaks by habit
+
+Mined from `tests/reject/` — 337 fixtures, each pinning a form that must not
+compile. One row per rule, not per fixture.
+
+| Habit | The compiler says |
+|---|---|
+| passing a newtype where its underlying type is wanted | `argument 1 of 'takes_raw' is Ids, expected [int]` |
+| comparing a newtype to its underlying | `cannot compare A with [int]` |
+| a `string` key into a map keyed by a newtype | `map key must be UserId, got string` |
+| a `match` that handles only the variants you care about | `non-exhaustive match: missing variant B of E` |
+| a `match` on an int with no `_` arm | `a match on int must carry a `_` arm (the domain is unbounded)` |
+| `_` written before the other arms | `a `_` wildcard must be the last match arm` |
+| `const XS = [1, 2]` | `a `const` must be a single scalar literal — an int, float, string, bool or char` |
+| assigning to a `const` | `cannot assign to constant 'X'` |
+| re-declaring a name in the same scope | `'a' is already declared in this scope` |
+| a variadic parameter that is not last | `a variadic parameter must be the last parameter of 'f'` |
+| `void` as an ordinary type | `'void' is a type only as a Result's ok payload, as in Result(void, string)` |
+| passing `[3]int` to a `[int]` parameter | `argument 1 of 'take' is [3]int, expected [int]` |
+
+A newtype is distinct **everywhere** — argument position, comparison, map key —
+and it is erased at runtime, so nothing catches it later. `to_under(x)` unwraps.
+
 ## Two mechanical traps when probing
 
 **Sibling `.ty` files share a package.** `tychoc` compiles every `.ty` beside
