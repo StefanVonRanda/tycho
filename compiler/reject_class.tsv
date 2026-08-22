@@ -93,7 +93,7 @@ tests/reject/dup_field.ty	SYNTAX	4694	duplicate field 'x'
 tests/reject/dup_fn.ty	NAME	4275	'foo' is already defined
 tests/reject/dup_fn_variant.ty	NAME	4275	'Alpha' is already defined
 tests/reject/dup_fn_variant_fn_first.ty	NAME	4275	'Alpha' is already defined
-tests/reject/dup_local.ty	SEMANTIC	8813	'a' is already declared in this scope
+tests/reject/dup_local.ty	NAME	8813	'a' is already declared in this scope
 tests/reject/dup_param.ty	NAME	9301	duplicate parameter 'x'
 tests/reject/dup_struct_enum.ty	NAME	4275	'X' is already defined
 tests/reject/dup_variant.ty	NAME	0	variant name 'W' is already used in this package
@@ -233,13 +233,13 @@ tests/reject/newtype_under_result.ty	SEMANTIC	4790	a newtype's underlying type m
 tests/reject/newtype_under_soa.ty	SEMANTIC	4790	a newtype's underlying type must be int, float, string, bool, an array, a map, or a struct (got soa [P])
 tests/reject/newtype_under_tuple.ty	SEMANTIC	4790	a newtype's underlying type must be int, float, string, bool, an array, a map, or a struct (got (int, int))
 tests/reject/newtype_under_u8.ty	SEMANTIC	4790	a newtype's underlying type must be int, float, string, bool, an array, a map, or a struct (got u8)
-tests/reject/no_main.ty	SEMANTIC	0	no 'main' procedure
+tests/reject/no_main.ty	NAME	0	no 'main' procedure
 tests/reject/ok_empty_nonvoid.ty	SEMANTIC	7569	declared type Result(int, string) but value is Ok(); Ok() is only a Result(void, E)
 tests/reject/option_void.ty	SEMANTIC	2516	'void' is a type only as a Result's ok payload, as in Result(void, string)
 tests/reject/optres_is_wrong_family.ty	SEMANTIC	7210	'Some' is not a variant of Result(int, string); write `Ok` or `Err`
 tests/reject/orreturn_stmt_value.ty	SEMANTIC	8784	`or_return` here produces int, which this statement discards -- bind it (x := ... or_return)
 tests/reject/over_indent.ty	SYNTAX	3041	unexpected indentation: this line is indented further than the block it belongs to, and nothing above it opens a new block
-tests/reject/param_shadow.ty	SEMANTIC	8813	'x' is already declared in this scope
+tests/reject/param_shadow.ty	NAME	8813	'x' is already declared in this scope
 tests/reject/params_17.ty	SEMANTIC	9231	too many parameters (max 16)
 tests/reject/pass_as_value.ty	NAME	6092	`pass` is a statement and produces no value -- a value if/match needs one in every branch, so write this as a plain statement
 tests/reject/place_call_receiver.ty	SEMANTIC	8715	can only index-assign an array or map variable or field

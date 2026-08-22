@@ -55,6 +55,7 @@ NAME_SITES = [
     "has no symbol",
     "this file does not `import` it",
     "has no variant, const or function",
+    "is already declared in this scope",
     "is a variant of enum %s, not a package member",
     "is a builtin, not a member of package",
     "imported and not used",
@@ -107,7 +108,7 @@ FALLBACK = [
     ("is already used in this package", "NAME"),       # variant table
     ("unsupported escape", "SYNTAX"),                  # the lexer's escape set
     ("literal needs", "SYNTAX"),                       # the lexer's 0x / 0b scanners
-    ("no 'main' procedure", "SEMANTIC"),               # whole-program, after parsing
+    ("no 'main' procedure", "NAME"),                   # whole-program, but the Sig table alone decides it
     ("unclosed '(' or '['", "SYNTAX"),                 # the lexer, message built by snprintf
     ("must declare its own package first", "NAME"),    # the package header, an fprintf after parsing
 ]

@@ -25,14 +25,18 @@
 #   [6]  the same 1078 files scored a SECOND time, against `--resolve`: the
 #        SYNTAX and NAME files must be refused, everything else accepted, and a
 #        file ./tychoc accepts must resolve with no unused local and no unused
-#        import. Phase 5 split NAME out of SEMANTIC (27 of the 337 fixtures,
-#        49 of the 1078 files) -- printed by compiler/verdict_diff.py.
+#        import. Phase 5 split NAME out of SEMANTIC; Phase 5c added the three
+#        rules it had left behind (30 of the 337 fixtures now) -- printed by
+#        compiler/verdict_diff.py.
 #   [2b] the reject corpus again, under `--resolve` rather than `--parse`.
 #   [7]  the RESOLUTION census, the leg the two verdicts cannot carry: a name
 #        that resolves to the WRONG declaration is accepted either way. Every
 #        use is printed as the package-mangled name it resolved to, so
 #        preferring a top-level const over a local -- which leaves legs 1..6
 #        fully green -- moves a counted line.
+#   [4b] the two package-member message FORMATS, which no verdict leg can see:
+#        `pkg.Name` (no call) and `pkg.name(...)` are separate formats in
+#        src/tychoc.c and tychoc1 answered both with the second one.
 #   [8]  every NAME file's `file:line` compared against ./tychoc's for the same
 #        input. Phase 5b put a line on every AST node, and a line that is
 #        PRESENT BUT WRONG passes every leg above: the file is refused either
@@ -113,7 +117,7 @@ while IFS='	' read -r f cls line msg; do
 done < "$TSV"
 echo "leg2  tests/reject/*.ty --parse: SYNTAX=$((sr+sa)) rejected=$sr missed=$sa | NAME+SEMANTIC=$((ma+mr)) accepted=$ma wrongly-rejected=$mr"
 echo "leg2b tests/reject/*.ty --resolve: SYNTAX+NAME=$((rr+rm_)) rejected=$rr missed=$rm_ | SEMANTIC=$((ra+rw)) accepted=$ra wrongly-rejected=$rw"
-[ "$nsyn" = 57 ] && [ "$nname" = 27 ] && [ "$nsem" = 253 ] || { echo "parse-check: the split moved -- expected SYNTAX=57 NAME=27 SEMANTIC=253"; rc=1; }
+[ "$nsyn" = 57 ] && [ "$nname" = 30 ] && [ "$nsem" = 250 ] || { echo "parse-check: the split moved -- expected SYNTAX=57 NAME=30 SEMANTIC=250"; rc=1; }
 [ "$mr" = 0 ] || { echo "parse-check: a NAME or SEMANTIC fixture was rejected by --parse; a parser has no symbol table"; rc=1; }
 [ "$sa" = 0 ] || { echo "parse-check: a SYNTAX fixture was accepted; the parser must refuse it"; rc=1; }
 [ "$rm_" = 0 ] || { echo "parse-check: a NAME fixture resolved; the resolver must refuse it"; rc=1; }
@@ -254,6 +258,43 @@ for d in ok_variadic ok_sink ok_inout ok_extern_inout ok_subscript; do
 done
 echo "leg4  declaration rules: refused=$nref/5 accepted=$nacc/5"
 [ "$l4" = 0 ] || { echo "parse-check: a declaration rule moved"; rc=1; }
+
+# [4b] -- the two package-member formats, which NO verdict leg can see: both
+# spellings are a refusal, so leg2b/5/6/8 are green either way and the wording
+# is decoration until Phase 9 pins message text. src/tychoc.c:6252 answers
+# `pkg.Name` written with NO call; src/tychoc.c:6563 answers `pkg.name(...)`.
+# Both measured against ./tychoc 2026-08-23. The accepting twin is required for
+# the usual reason: two refusals alone are satisfied by refusing everything.
+pr r3_field <<'EOF'
+package main
+import "core:strings"
+fn main():
+    v := strings.NoSuchThingHere
+    print(str(v))
+EOF
+pr r3_call <<'EOF'
+package main
+import "core:strings"
+fn main():
+    print(strings.no_such_thing_here("x"))
+EOF
+pr r3_ok <<'EOF'
+package main
+import "core:strings"
+fn main():
+    print(strings.trim(" x "))
+EOF
+l4b=0; n4b=0
+mf=$("$TYCHOC1" "$T/p/r3_field/main.ty" --resolve 2>&1 | head -1)
+mc=$("$TYCHOC1" "$T/p/r3_call/main.ty" --resolve 2>&1 | head -1)
+case "$mf" in *"has no variant, const or function 'NoSuchThingHere'"*) n4b=$((n4b+1)) ;;
+    *) echo "  R3-FIELD-WRONG :: $mf"; l4b=1 ;; esac
+case "$mc" in *"has no symbol 'no_such_thing_here'"*) n4b=$((n4b+1)) ;;
+    *) echo "  R3-CALL-WRONG :: $mc"; l4b=1 ;; esac
+if "$TYCHOC1" "$T/p/r3_ok/main.ty" --resolve >/dev/null 2>&1; then n4b=$((n4b+1))
+else echo "  R3-OK-REFUSED :: $("$TYCHOC1" "$T/p/r3_ok/main.ty" --resolve 2>&1 | head -1)"; l4b=1; fi
+echo "leg4b package-member wording: passed=$n4b/3 (field format, call format, accepting twin)"
+[ "$l4b" = 0 ] || { echo "parse-check: the two package-member formats collapsed into one"; rc=1; }
 
 # [5] -- the whole tree, both verdicts, split by the same site table. See the
 # header of compiler/verdict_diff.py; it is the only leg that reaches

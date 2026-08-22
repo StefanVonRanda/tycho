@@ -866,7 +866,7 @@ self-built twice, the two emitted `.c` identical.
     the NAME class, not only `file:line`. State the new agree count.
   - Do NOT run: `make test`.
 
-- [ ] **Phase 5c — three name rules `compiler/types/` does not implement**
+- [x] **Phase 5c — three name rules `compiler/types/` does not implement**
   (found in Phase 5). Each is a rule the symbol table alone decides, each still
   classified SEMANTIC because tychoc1 accepts it, and each is one fixture:
   - `'a' is already declared in this scope` — `src/tychoc.c@g_dup_base`, a
@@ -879,3 +879,61 @@ self-built twice, the two emitted `.c` identical.
   - Verify: `python3 scripts/classify_rejects.py compiler/reject_class.tsv`
     then `make parse-check`. State the new NAME/SEMANTIC split.
 
+  **Verified 2026-08-23.** Split rebuilt: `python3 scripts/classify_rejects.py
+  compiler/reject_class.tsv` -> `classified 337 {'SEMANTIC': 250, 'SYNTAX': 57,
+  'NAME': 30}`, from 57/27/253. `make parse-check` (15.6 s) all green:
+
+  ```
+  leg2b tests/reject/*.ty --resolve: SYNTAX+NAME=87 rejected=87 missed=0 | SEMANTIC=250 accepted=250 wrongly-rejected=0
+  leg4b package-member wording: passed=3/3 (field format, call format, accepting twin)
+  leg5  whole-tree verdicts: files=1078 tychoc(accept=552 semantic=301 name=151 syntax=74) disagreements=0
+  leg6  whole-tree resolution: disagreements=0 unused-local/import on an accepted file=0
+  leg8  NAME diagnostic file:line vs ./tychoc: scored=151 agree=151 disagree=0 unlocated=0
+  ```
+
+  NAME went 49 -> 151 files, all 100 of the tree's `no 'main'` refusals included.
+  Two defects the named legs found, both of the Phase 5b class (a diagnostic
+  that is present but WRONG, with every verdict leg green):
+
+  - `no 'main'` carries **g_srcname as PARSING left it** — the last file of the
+    merge order, not the entry. Measured over all 100: 99 name their package's
+    alphabetically-last sibling, the 100th is a package-less single-file build.
+  - the import leak on a DECLARED TYPE is emitted by `parse_type`
+    (`src/tychoc.c:2557`), so it OUTRANKS the whole-program check; the same
+    message from an expression qualifier (`src/tychoc.c:6532`) does not. tychoc1
+    banks the first in `perrs` and splices it in front.
+
+  Six negative controls, each observed reddening the lane and naming its own leg:
+
+  | control | leg that reddened |
+  |---|---|
+  | the duplicate scan is skipped | leg2b missed=2 (`dup_local`, `param_shadow`) |
+  | the fn top body stops reaching over the params | leg2b missed=1 (`param_shadow` only) |
+  | the `no 'main'` check is removed | leg2b missed=1, leg8 unlocated=100 |
+  | `no 'main'` names the ENTRY file | leg8 disagree=3 (`tools/tycho-sheet/cell/`) |
+  | the field format collapses onto the call one | leg4b `R3-FIELD-WRONG` |
+  | the type leak stops being a parse-phase error | leg8 disagree=2 (`import_leak_type`) |
+
+  leg4b is new and is the only thing that can see rule 3: BOTH spellings are a
+  refusal, so leg2b/5/6/8 are green either way. Rule 1's scope was measured
+  against ./tychoc rather than guessed — a nested block shadowing an outer local
+  is LEGAL, a `for x in` body colliding with its own loop variable is not
+  (`src/tychoc.c:4037` makes `x := COLL[i]` the body's first statement), and
+  For3, `parallel for` and match-arm bindings do not participate.
+  `python3 scripts/check_citations.py` ok.
+
+
+- [ ] **`no 'main' procedure` names the wrong file, in `src/tychoc.c`**
+  (found in Phase 5c, out of its scope). The check is
+  `src/tychoc.c:9267`, an `fprintf` of `g_srcname` — which parsing left pointing
+  at the LAST file of the merge order, not the entry the user named. Measured
+  over all 100 files in the tree tychoc refuses this way, 2026-08-23: 99 name
+  their package's alphabetically-last sibling. `tools/tycho-sheet/cell/cell.ty`
+  is reported as `tools/tycho-sheet/cell/fold.ty`, a file the reader never
+  mentioned and which is not missing anything.
+  - Done when: the message names the entry file, and `compiler/types/resolve.ty`
+    is changed back to `p.entry_path` in the same commit — tychoc1 reproduces the
+    wart today, deliberately, because leg8 compares the two.
+  - Verify: `make parse-check` (leg8 must stay at 151/151), plus `make test`,
+    which owns `tests/reject/no_main.ty`'s golden.
+  - Do NOT run: `make ci`.

@@ -99,7 +99,7 @@ def main():
                   % (f, cls, "accept" if resolved else "reject",
                      (msg or q.stderr.split("\n")[0]).strip()[:90]))
         if cls == "NAME":
-            m = re.search(r"^(\S+:\d+): error: ", q.stderr, re.M)
+            m = re.search(r"^(\S+?(?::\d+)?): error: ", q.stderr, re.M)
             mine = m.group(1) if m else ""
             if not loc or not mine:
                 lskip += 1

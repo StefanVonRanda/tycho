@@ -65,7 +65,9 @@ struct R:
     entry_in_corelib: bool
     file_in_corelib: bool
     in_generic: bool
+    dup_base: int                      # src/tychoc.c@g_dup_base: -1 outside a fn top body
     bsigs: [string: bool]
+    perrs: [string]                    # parse-phase diagnostics; see _perr
     errs: [string]
     late: [string]
 
@@ -123,6 +125,14 @@ fn _err(rs: inout R, msg: string):
 # tests/reject fixtures whose real refusal is a type error, which is a rejection
 # for the wrong reason. They are kept, printed and gated -- over the ACCEPT
 # corpus, where src/tychoc.c does reach the end and the count must be zero.
+# src/tychoc.c:2557 -- the leak on a DECLARED TYPE is emitted by parse_type,
+# so it precedes every resolve-time diagnostic including the whole-program
+# `no 'main'` check. tychoc1 finds it during the walk instead, so it is banked
+# here and spliced in front at the end of resolve(). The same message from an
+# expression qualifier (src/tychoc.c:6532) IS resolve-time and stays in errs.
+fn _perr(rs: inout R, msg: string):
+    push(rs.perrs, rs.file + ":" + str(rs.line) + ": error: " + msg)
+
 fn _late(rs: inout R, msg: string):
     push(rs.late, rs.file + ":" + str(rs.line) + ": error: " + msg)
 
@@ -144,7 +154,7 @@ fn _add(rs: inout R, name: string, kind: string, file: string, pkg: string):
 
 fn build_table(p: Program) -> R:
     rs := R([]Sym, []string: int, []Binding, 0, []string: int, []ast.ImportD, []string,
-            []ast.ImportD, []string: bool, "", 0, "", p.root, false, false, false, []string: bool, []string, []string)
+            []ast.ImportD, []string: bool, "", 0, "", p.root, false, false, false, -1, []string: bool, []string, []string, []string)
     rs.bsigs = _builtin_sigs()
     rs.entry_in_corelib = under_corelib(p.root, p.entry_dir)
     ctors := _builtin_ctors()
@@ -368,7 +378,7 @@ fn _ty(rs: inout R, t: ast.Ty):
                 if _imported_here(&rs, q):
                     rs.pkg_used[q] = true
                 elif _imported_anywhere(&rs, q):
-                    _err(&rs, "package '" + q + "' is used here but this file does not `import` it (another file in the build does; imports are per-file)")
+                    _perr(&rs, "package '" + q + "' is used here but this file does not `import` it (another file in the build does; imports are per-file)")
             for a in targs:
                 _ty(&rs, a)
         ast.TArr(k): _tys(&rs, k)
@@ -516,7 +526,7 @@ fn _expr(rs: inout R, bi: [string: bool], ctors: [string: bool], e: ast.Expr):
                         if len(kk) > 0:
                             _note(&rs, "pkgmember:" + m)
                         else:
-                            _err(&rs, "package '" + q + "' has no symbol '" + f + "'")
+                            _err(&rs, "package '" + q + "' has no variant, const or function '" + f + "'")
                         return
                     _note(&rs, "field")
                     return
@@ -603,9 +613,27 @@ fn _assign_to(rs: inout R, name: string):
         return
     _err(&rs, "assignment to unknown variable '" + name + "'")
 
+# src/tychoc.c@resolve_block: a `:=` may not re-declare a name already live in
+# THIS block's duplicate scope. That scope is the block's own start, except in a
+# function's top body, where g_dup_base reaches back over the parameters (the
+# body shares their C scope) -- so a nested block shadowing an outer local is
+# legal and `x := 5` beside a parameter `x` is not. Both measured 2026-08-23.
 fn _block(rs: inout R, bi: [string: bool], ctors: [string: bool], body: [ast.Stmt]):
     m := _mark(&rs)
+    dbase := m
+    if rs.dup_base >= 0:
+        dbase = rs.dup_base
+    rs.dup_base = -1
     for s in body:
+        match s:
+            ast.Decl(dl, dn, dt, dr, dvb):
+                for i := dbase; i < rs.nvars; i += 1:
+                    if rs.vars[i].name == dn:
+                        keep := rs.line
+                        rs.line = dl
+                        _err(&rs, "'" + dn + "' is already declared in this scope")
+                        rs.line = keep
+            _: pass
         _stmt(&rs, bi, ctors, s)
     _restore(&rs, m)
 
@@ -662,6 +690,7 @@ fn _stmt(rs: inout R, bi: [string: bool], ctors: [string: bool], s: ast.Stmt):
             m := _mark(&rs)
             rs.line = l
             _push(&rs, v, "loopvar", false)
+            rs.dup_base = m        # src/tychoc.c:4037: `x := COLL[i]` IS the body's first stmt
             _block(&rs, bi, ctors, b)
             _restore(&rs, m)
         ast.ForRange(l, v, bounds, b):
@@ -760,6 +789,18 @@ fn _sig_sizeparams(ps: [ast.Param], ret: [ast.Ty]) -> [string]:
 
 fn resolve(p: Program) -> R:
     rs := build_table(p)
+    # src/tychoc.c:9267 -- a whole-PROGRAM rule, checked once the Sig table is
+    # full and BEFORE any body is resolved, which is the order measured on
+    # 2026-08-23: a table collision outranks it, a body error does not. It
+    # carries the entry FILE and no line, exactly as `no 'main'` has none.
+    # It carries no line, and the FILE is g_srcname as parsing left it -- the
+    # last file of the merge order, not the entry. Measured over all 100 files
+    # in the tree that tychoc refuses this way, 2026-08-23: 99 name their
+    # package's alphabetically-last sibling, and the 100th is a package-less
+    # single-file build, which is the same rule with one file.
+    mk := _kindof(&rs, "main")
+    if mk != "fn" and mk != "extern":
+        push(rs.errs, p.files[len(p.files) - 1].path + ": error: no 'main' procedure")
     bi := _builtins()
     ctors := _builtin_ctors()
     for f in p.files:
@@ -778,7 +819,9 @@ fn resolve(p: Program) -> R:
             for t in _sig_sizeparams(fd.params, fd.ret):
                 _push(&rs, t, "typaram", false)
             _tys(&rs, fd.ret)
+            pbase := _mark(&rs)
             _params(&rs, fd.params)
+            rs.dup_base = pbase
             _block(&rs, bi, ctors, fd.body)
             _restore(&rs, m)
             rs.in_generic = false
@@ -819,6 +862,10 @@ fn resolve(p: Program) -> R:
             continue
         push(rs.late, rs.all_imp_file[i] + ":" + str(im.line) +
              ": error: `" + im.path + "` imported and not used in this file")
+    # Parse-phase diagnostics come first, whenever the walk happened to find them.
+    for e in rs.errs:
+        push(rs.perrs, e)
+    rs.errs = rs.perrs
     return rs
 
 fn late_lines(rs: R) -> [string]:
