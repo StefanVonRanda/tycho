@@ -4,3 +4,8 @@ get_body=[] get_status=0
 url_ctl_null=0 url_ctl_len=18
 url_nul_null=1 url_nul_len=0
 wrote=1
+post_ctl_null=0 post_ctl_len=18
+post_url_null=1
+post_ct_null=1
+gb_ctl=18
+gb_nul=0
