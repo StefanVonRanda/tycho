@@ -23,7 +23,9 @@ fn format(buf: [int]) -> string:
             out = out + "-"
     return out
 
-# A random version-4 UUID, threading the core:rand state via inout.
+# A version-4-SHAPED UUID. The randomness is core:rand's 32-bit xorshift, so the
+# reachable set is 2^32 streams, not 2^122 -- NOT unguessable. Use
+# crypto.random_hex for a token. State threaded via inout.
 fn v4(st: inout int) -> string:
     buf := []int
     for i := 0; i < 16; i += 1:

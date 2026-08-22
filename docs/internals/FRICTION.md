@@ -4754,6 +4754,15 @@ which described them as "random version-4 UUIDs". A reader who knows what v4
 means will assume unguessable, and the API gives them no reason not to.
 
 Both now say so and point at `crypto.random_hex`, which is `RAND_bytes`-backed.
+
+> **Half of that was false until 2026-08-22, re-scored by reading.** The
+> catalogue said it (`docs/guides/corelib.md:243`); the PACKAGE did not —
+> `corelib/uuid/uuid.ty@v4`'s own comment read "A random version-4 UUID,
+> threading the core:rand state via inout", with no warning and no pointer, and
+> that is the line a caller lands on when they jump to the definition. Carrying
+> the warning on one surface and not the other is the same failure this entry is
+> about, one level up. Now on both.
+
 `tools/tycho-rsa` was checked and is fine -- it seeds from a fixed constant on
 purpose and says so in its header, being a teaching implementation.
 
