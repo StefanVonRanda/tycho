@@ -14,6 +14,7 @@ every page compiles and produces the shown output.
 | --- | --- |
 | [Basics](basics.md) | procedures, parameters (`inout`), declarations and assignment, expressions and operators, control flow |
 | [Types](types.md) | the scalar types, `bytes`, string interpolation, distinct `type` newtypes, bidirectional type inference |
+| [Strings](strings.md) | a `string` is BYTES: `len`, `s[i]` as a byte value, byte slicing; `utf8.count` vs `len`, stepping by codepoint with the mandatory `nb <= 0` guard, validating before you trust, and where `core:strings` and `core:utf8` divide |
 | [Arrays and slices](arrays-slices.md) | `[T]`, nested arrays, element places, slices `xs[a:b]`, fixed-capacity `bounded[N]T` |
 | [Structs and tuples](structs-tuples.md) | `struct`, nested and recursive fields, tuples and multiple return values |
 | [Maps](maps.md) | `[K: V]` for scalar and composite keys, any value type, `m[k]` as a place |
