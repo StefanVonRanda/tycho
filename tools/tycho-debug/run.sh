@@ -12,6 +12,7 @@ command -v gdb >/dev/null 2>&1 || { echo "SKIP: gdb not on PATH -- tycho-debug l
 "$TYCHOC" "$D/main.ty" --shim "$D/debug_shim.c" -o "$T/td" >"$T/build.log" 2>&1 \
     || { echo "FAIL (tool build)"; cat "$T/build.log"; exit 2; }
 TD="$T/td"
+PWD_ROOT="$PWD"
 
 # the fixture: assignments with known values, then a loop, then output
 FIX="$T/fix"
@@ -119,7 +120,31 @@ if echo "$out" | grep -q 'breakpoint 1 at prog.ty:4' && echo "$out" | grep -q '\
     echo "  [6] tycho debug wrapper ok"
 else echo "FAIL [6] tycho debug wrapper"; echo "$out" | sed 's/^/    /' | head -15; fail=1; fi
 
+# [7] which tychoc it runs. Every leg above pins TYCHOC explicitly, so all six
+# exercise rung 1 and NONE can see the other two -- `./tycho-debug f.ty` in a
+# checkout died with `sh: 1: tychoc: not found` while ./tychoc sat beside it,
+# and this lane was green throughout. The rule is TYCHOC, then a tychoc beside
+# this binary, then PATH; each rung gets a leg, and [7b] is the one that matters
+# because a fallback outranking an explicit override is worse than the bug.
+mkdir -p "$T/beside" "$T/elsewhere"
+cp "$TD" "$T/beside/tycho-debug"; cp "$PWD/tychoc" "$T/beside/tychoc"
+cp "$TD" "$T/elsewhere/tycho-debug"
+export TYCHO_CORELIB="$PWD/corelib"
+a=$(printf 'b 4\nr\nq\n' | (cd "$T/beside" && env -u TYCHOC PATH=/usr/bin:/bin ./tycho-debug "$FIX/prog.ty") 2>&1)
+b=$(printf 'q\n' | env TYCHOC=/nonexistent/tychoc "$TD" "$FIX/prog.ty" 2>&1)
+c=$(printf 'b 4\nr\nq\n' | (cd "$T/elsewhere" && env -u TYCHOC PATH="$PWD_ROOT:/usr/bin:/bin" ./tycho-debug "$FIX/prog.ty") 2>&1)
+if echo "$a" | grep -q '\[breakpoint 1 hit\]' \
+   && echo "$b" | grep -q 'compile failed' \
+   && echo "$c" | grep -q '\[breakpoint 1 hit\]'; then
+    echo "  [7] tychoc lookup: beside-the-binary, TYCHOC override, PATH -- all three"
+else
+    echo "FAIL [7] tychoc lookup"
+    echo "$a" | sed 's/^/    a /' | head -4; echo "$b" | sed 's/^/    b /' | head -3
+    echo "$c" | sed 's/^/    c /' | head -4; fail=1
+fi
+unset TYCHO_CORELIB
+
 [ "$fail" -ne 0 ] && { echo "tycho-debug: FAIL"; exit 1; }
-[ "$skipped" -eq 0 ] && echo "tycho-debug: all green (6 legs)" \
-                     || echo "tycho-debug: green ($((6 - skipped)) legs, $skipped skipped -- see the SKIP line above)"
+[ "$skipped" -eq 0 ] && echo "tycho-debug: all green (7 legs)" \
+                     || echo "tycho-debug: green ($((7 - skipped)) legs, $skipped skipped -- see the SKIP line above)"
 exit 0
