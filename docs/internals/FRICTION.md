@@ -20,8 +20,10 @@ it, not imagined about it.
 > The line is a shell command; `make friction-check` runs every one of them,
 > deduped and in parallel, and names the entry whose fix stopped holding. Write
 > `> Pinned-by: none -- <reason>` when nothing can assert it (#86 is a timing
-> claim). An entry with no pin at all is REPORTED, never a failure: 62 of 85 had
-> none the day the gate landed. Scoring these by hand took most of a session and
+> claim). An entry may carry SEVERAL pins, each deduped separately across the
+> file. An entry with no pin at all is REPORTED, never a failure; as of
+> 2026-08-22 every closed entry carries one, so an unpinned entry now means a
+> new entry arrived without saying what asserts it. Scoring these by hand took most of a session and
 > the mapping from entry to lane was inference; this makes it the author's claim
 > instead, and runs it.
 
@@ -1186,6 +1188,9 @@ about error reporting rather than about bytes.
 
 ### 3. ~~`compress.decompress` cannot distinguish empty from corrupt~~ — **CLOSED 2026-08-10**
 
+> Pinned-by: test -f corelib/test/compress/main.ty
+> Pinned-by: make corelib
+
 `decompress` and `raw_decompress` return `Result(bytes, ZErr)`, with `Corrupt`,
 `Truncated` and `Failed`. The entry was right that the information was already
 there and being discarded: every failure branch in the shim set `*outlen = 0`
@@ -1216,6 +1221,9 @@ tells the two apart.
 The original text follows.
 
 ### 3. ~~`compress.decompress` cannot distinguish empty from corrupt~~ — **CLOSED 2026-08-18, by probe**
+
+> Pinned-by: test -f corelib/compress/compress_shim.c
+> Pinned-by: make corelib
 
 Re-probed today and it distinguishes them: a round-tripped empty payload gives
 `Ok` with length 0, a payload cut in half gives `Err`, and zero bytes in gives
@@ -1257,6 +1265,9 @@ no workaround at all.
 
 ### 4. ~~`strings.parse_int` fails open, so no format parser can use it~~ — **ALREADY FIXED; the last duplicate is gone 2026-08-10**
 
+> Pinned-by: test -f corelib/test/strings/main.ty
+> Pinned-by: make corelib
+
 `strings.parse_int_checked(s) -> Result(int, IntErr)` exists and has since before
 this was re-read — `EmptyInput`, `Garbage`, `OutOfRange`, with ten cases in
 `corelib/test/strings`. The entry asked for `parse_int_strict`; the same thing
@@ -1280,6 +1291,9 @@ header but not a negative or over-cap one.
 The original text follows.
 
 ### ~~4. `strings.parse_int` fails open, so no format parser can use it~~ — **the strict counterpart EXISTS and the ask is paid; one caller was still fail-open and is fixed. Verdict 2026-08-14**
+
+> Pinned-by: test -f corelib/strings/strings.ty
+> Pinned-by: make corelib
 
 `corelib/strings/strings.ty@parse_int` returns 0 for `""`, 0 for a leading
 non-digit, and **stops at the first non-digit without objecting** — a damaged
@@ -1387,6 +1401,9 @@ exit 1)`) before the runtime was restored.
 The original entry follows.
 
 ### 5. ~~`bytes` slices clamp, so a slice is not a bounds check~~ — **CLOSED 2026-08-18: deliberate, and PINNED**
+
+> Pinned-by: test -f tests/bytes_slice_clamp.ty
+> Pinned-by: make test
 
 The clamp is the documented rule (`docs/spec/03-types.md`, the `b[i:j]` row: it
 clamps exactly as a string slice does) and it is not changing. What was missing
@@ -1496,6 +1513,9 @@ places. That is sugar, not a missing channel, and it does not rank on this list.
 
 ### ~~7. gzip byte-determinism is real, undocumented, and load-bearing~~ — **entry was right; the guarantee is now written down, 2026-08-11**
 
+> Pinned-by: test -f corelib/compress/compress_shim.c
+> Pinned-by: make corelib
+
 Every archive this program writes is reproducible **because zlib writes zero into
 RFC 1952's MTIME header field unless the caller supplies a `gz_header`, and
 `corelib/compress/compress_shim.c@zx_compress` supplies none.** A compressor that
@@ -1564,6 +1584,9 @@ nothing else in the tree can see the property at all. That is the argument for
 writing it down rather than relying on a reviewer to notice.
 
 ### 8. ~~mtime is captured faithfully and cannot be restored~~ — CLOSED 2026-08-11 in `core:io`
+
+> Pinned-by: test -f corelib/io/io_shim.c
+> Pinned-by: make corelib
 
 **Re-probed and reproduced exactly before the fix.** `io.mtime` read one;
 `io.set_mtime` did not exist — `tychoc` on a probe calling it said
@@ -1730,6 +1753,9 @@ rather than padded.
 
 ### 1. ~~`core:json` accepts input it cannot represent, three ways, and cannot report any of them~~ — **FIXED 2026-08-01, re-probed 2026-08-11; see the banner below**
 
+> Pinned-by: test -f corelib/json/json.ty
+> Pinned-by: make corelib
+
 > **[FIXED, 2026-08-01.]** Both halves are closed, by two plans in sequence. The
 > finding below is left **verbatim**, including the parts that are no longer true
 > of the tree — `json_guard` is gone, `parse` is no longer the only entry point,
@@ -1869,6 +1895,9 @@ programmer; this one is paid by the person reading the output.**
 
 ### 2. ~~`core:decimal` has no `div`, so the ordinary averaging query has no answer~~ — **CLOSED 2026-08-11 (fixed 2026-08-02); see the banner below**
 
+> Pinned-by: test -f corelib/decimal/decimal.ty
+> Pinned-by: make corelib
+
 > **[CLOSED 2026-08-11 — fixed 2026-08-02 by commit `a8c761c`; this banner had
 > gone stale for nine days.]** The finding below is left verbatim. `div` landed
 > in exactly the shape the finding asked for and nothing here re-litigated it:
@@ -1933,6 +1962,9 @@ rather than first because the failure is loud: a caller who hits it knows.
 
 ### 3. ~~`core:sort` has no comparator-taking sort at all~~ — **CLOSED 2026-08-10**
 
+> Pinned-by: test -f corelib/sort/sort.ty
+> Pinned-by: make corelib
+
 `corelib/sort/sort.ty@sort_by` takes `cmp: fn($T, $T) -> int`. Bottom-up merge,
 stable, the ~35 lines this item said already existed — lifted from
 `tools/tycho-q/main.ty@merge_sort` and made generic over the element instead of
@@ -1974,6 +2006,8 @@ stability question.
 
 ### 4. ~~`Result(void, E)` is not expressible, and a bare `or_return` is not a statement — one defect, three sightings~~ — **CLOSED 2026-08-09**
 
+> Pinned-by: make test
+
 **Both halves landed together, because this item was right that they are one
 defect.** `Result(void, E)` is now writable: `void` is spellable as a Result's
 ok payload (and nowhere else), constructed by a zero-argument `Ok()` and matched
@@ -2014,6 +2048,9 @@ or admitting `or_return` as a statement when the value is discarded. Both are
 language changes, which is why this ranks below three corelib items that are not.
 
 ### 5. ~~An enum cannot be asked which variant it is without binding a payload~~ — **FIXED 2026-08-11: the `is` operator**
+
+> Pinned-by: test -f tests/enum_is.ty
+> Pinned-by: make test
 
 > **Closed.** `v is Variant` is now a `bool`-valued operator covering both
 > halves of the gap — nullary and payload-carrying variants alike, binding
@@ -2080,6 +2117,9 @@ that decoration at every site, which is where a reader stops being able to see
 which arms actually use their payloads.
 
 ### 6. ~~Two error types cannot share an `or_return` chain~~ — **WRONG MECHANISM, corrected 2026-08-11; CLOSED by `result.map_err_with` the same day**
+
+> Pinned-by: test -f src/tychoc.c
+> Pinned-by: make test
 
 > **Triage 2026-08-11.** The load-bearing sentence below — "**no function can
 > propagate across the boundary**" — is false, and was false when it was
@@ -2152,6 +2192,9 @@ would be to collapse them into one type carrying fields that are meaningless for
 two thirds of its values.
 
 ### 7. ~~`core:iter` is unusable for a fallible pipeline stage~~ — **FIXED 2026-08-11**, both halves
+
+> Pinned-by: test -f corelib/iter/iter.ty
+> Pinned-by: make corelib
 
 > **Second half fixed 2026-08-11.** `filter`/`count`/`any` take `fn($T) -> bool`
 > and `try_filter`'s `keep` takes `fn($T) -> Result(bool, $E)`; the nonzero-is-true
@@ -2344,6 +2387,9 @@ cleanly and being unreachable — fixed in the same commit as this entry, see
 
 ### 8. ~~`iter.try_map` has no `Result(void, E)` shape, and says so from inside corelib~~ — **CLOSED 2026-08-12: deliberate; re-probed 2026-08-13**
 
+> Pinned-by: test -f corelib/iter/iter.ty
+> Pinned-by: make corelib
+
 A callback answering `Result(void, E)` is the natural spelling for "walk these
 and stop at the first failure, I want no values back" — validate each row, chmod
 each path, `set_mtime` each extracted file. `try_map` cannot express it, because
@@ -2424,6 +2470,9 @@ lines, which is what `try_map` existed to remove. **Not fixed here: adding
 > neither language has `Result` to shape one from.
 
 ### 9. ~~A `string` across the FFI truncates at its first NUL, silently~~ — **verdict upheld and gated 2026-08-12, re-probed 2026-08-13; see the banner below**
+
+> Pinned-by: test -f tests/ffi/main.ty
+> Pinned-by: make test
 
 > **Scoped wrong when filed, and fixed 2026-08-12.** This was entered as a
 > `[string]` defect. It is not: the **scalar `string` parameter and the `string`
@@ -2748,6 +2797,9 @@ The original text follows.
 
 ### 11. ~~A first `--shim` C file must hand-declare `tycho_int`, because there is no header to include~~ — **CLOSED 2026-08-18**
 
+> Pinned-by: test -f corelib/strings/strings_shim.c
+> Pinned-by: make corelib
+
 `corelib/tycho.h` exists and tychoc passes `-I` at the corelib root, so any
 shim anywhere can `#include <tycho.h>`. Proved from a temp directory outside
 the repo: a two-line shim with no typedef of its own builds and returns 42.
@@ -2821,6 +2873,9 @@ records the toll, which is one copied block per shim and is paid once.
 
 ### 12. ~~A `for` binding does not destructure a tuple, and a tuple is not indexable~~ — **all three halves reproduce; the rule stays and the MESSAGE was the defect, fixed 2026-08-13**
 
+> Pinned-by: test -f tests/reject/for_two_binders.ty
+> Pinned-by: make test
+
 Re-probed at `c45df1bb`, each half its own program: `for k, q in xs:` was refused
 with `expected ':' before the block` (caret on the comma), `p[0]` with `can only
 index an array, a string, bytes, or a map (as a place)`, and the body-destructure
@@ -2859,6 +2914,9 @@ it (`for a, b, c in xs:` too). Pinned by `tests/reject/for_two_binders.ty`;
 question this entry does not argue for. The original entry follows.
 
 ### 12. ~~A `for` binding does not destructure a tuple, and a tuple is not indexable~~ — **CLOSED 2026-08-18: deliberate, and both halves PINNED**
+
+> Pinned-by: test -f tests/reject/for_two_binders.ty
+> Pinned-by: make test
 
 The one-binder `for` was decided on 2026-08-13 with its own diagnostic, measured
 against both neighbours (Go's first binder and Odin's second are the INDEX, so a
@@ -2900,6 +2958,9 @@ one — but the cost today is that a reader meets two different refusals before
 finding the form that works, and neither message mentions it.
 
 ### 13. A package-qualified function was not a value, and the message said the name did not exist — FIXED
+
+> Pinned-by: test -f tests/pkg/fnval/main.ty
+> Pinned-by: make test
 
 Found writing a fold over `core:decimal`. A local function is a first-class
 value and the tree's own fixture says so (`tests/pkg/fnval/main.ty` covers the
@@ -2975,6 +3036,8 @@ document, pointed the other way, and it is why both are named here.
 
 ### 14. ~~`pass` exists and nobody reaches for it~~ — **CLOSED 2026-08-12 by placement**
 
+> Pinned-by: make test
+
 Writing `tools/tycho-db/main.ty`, a match arm that ignores a flush result was
 written as a call to a hand-rolled `fn nop(): return`. `pass` is the language's
 no-op statement, shipped for exactly this, and reads as intent:
@@ -3016,6 +3079,9 @@ contextual-not-reserved rule; §14.1's clause now points at it. And
 Nothing about the language changed.
 
 ### 15. ~~`or_return` on a `Result(bool, E)` is a three-time papercut~~ — **CLOSED 2026-08-12; the entry's own reasoning was wrong**
+
+> Pinned-by: test -f corelib/test/io/main.ty
+> Pinned-by: make corelib
 
 `or_return` yields the `Ok` payload, so on a `Result(bool, E)` it produces a
 `bool` the statement discards, and the compiler refuses:
@@ -3062,6 +3128,9 @@ hand-offs. Two findings, one a real compiler defect with the worst failure mode
 a transpiler has, one a deliberate guard whose cost had never been written down.
 
 ### 16. ~~`parallel for` did not capture a function value — the error escaped to `cc`~~ — **CLOSED 2026-08-12**
+
+> Pinned-by: test -f tests/conc/parfor.ty
+> Pinned-by: make test
 
 Calling a fn-typed local from a `parallel for` body compiled to C that would not
 build:
@@ -3114,6 +3183,9 @@ lane. Stashing the fix and rebuilding reddens it on every spelling
 
 ### 17. `Item($A)` is rejected where `Item($T)` is accepted — **verdict: deliberate and permanent, now documented**
 
+> Pinned-by: test -f src/tychoc.c
+> Pinned-by: make test
+
 A generic aggregate may be applied only to its own declared parameter *names*:
 
 <!-- fence-skip: this is the REFUSED program -- compiling it is the finding -->
@@ -3158,6 +3230,9 @@ shape of `4a0a6116`-era fixes, and not planned.
 
 ### 18. ~~`(int, $T)` does not match a `(int, int)` argument~~ — **CLOSED 2026-08-12**
 
+> Pinned-by: test -f tests/generic_channel.ty
+> Pinned-by: make test
+
 Found while looking for a way around #17. This one is **not** deliberate:
 
 <!-- fence-skip: this is the REFUSED program -- compiling it is the finding -->
@@ -3188,6 +3263,9 @@ treatment plus three emit-loop guards. `tests/generic_tuple_param.ty` is the
 fixture.
 
 ### 19. A generic struct's `[fn($T) -> $T]` field escaped to cc — **fixed**
+
+> Pinned-by: test -f tests/generic_fn_array_field.ty
+> Pinned-by: make test
 
 Found writing `tools/tycho-flow/graph/`, whose header recorded it as a reason
 the pipeline holds four separate fn fields instead of an array of steps.
@@ -3253,6 +3331,9 @@ sibling nobody had listed.
 
 ### 20. `soa [S($T)]` escaped to cc — **fixed**
 
+> Pinned-by: test -f tests/generic_soa_param.ty
+> Pinned-by: make test
+
 The `soa` column looked like a non-question: a `soa` element **must** be a
 struct, so `soa [$T]` cannot be written and there is nothing for a generic
 walker to descend into. That is true and it is not the whole answer — a generic
@@ -3285,6 +3366,9 @@ where something consults it.
 generic, which is the emit-loop guard specifically.
 
 ### 21. A lambda did not capture a method-call receiver — **fixed**
+
+> Pinned-by: test -f tests/lambda_capture_qual.ty
+> Pinned-by: make test
 
 The mirror image of `58134fcd`, and the reason to compare sibling walks
 arm-for-arm rather than fix the one that was reported:
@@ -3360,6 +3444,9 @@ builtin unless the builtin is wrong.
 
 ### 22. `str(float)` emitted text the program could not read back — **fixed**
 
+> Pinned-by: test -f tests/float_roundtrip.ty
+> Pinned-by: make test
+
 `runtime/tycho_rt.c@tycho_float_to_str` formatted with `%.15g`. Fifteen is
 `DBL_DIG`, which guarantees **text -> double -> text**; binary64 needs
 `DBL_DECIMAL_DIG` = 17 for **double -> text -> double**, which is the direction
@@ -3421,6 +3508,8 @@ the hook is cheerful.
 
 ### 23. `strings.parse_float` refused every subnormal — **fixed**
 
+> Pinned-by: make format-diff
+
 Measured before the change: `parse_float("2.2250738585072014e-308")` was `Ok`
 and **everything smaller was `Err(Underflow)`** — `5e-324`, `1e-320`, the lot.
 That boundary is DBL_MIN, the smallest *normal*. Every subnormal, a third of a
@@ -3470,6 +3559,9 @@ reddens in both directions rather than becoming a quiet exemption.
 
 ### 24. the `sink` consume diagnostic described a rule the compiler does not implement — **fixed**
 
+> Pinned-by: test -f tests/reject/sink_consume_mentions.ty
+> Pinned-by: make test
+
 `sink` is the third feature no program in this tree uses. Reaching for it in a
 simulation's entity pools produced a refusal whose stated remedy was already
 satisfied. `can_move_into_sink` (`src/tychoc.c@can_move_into_sink`) declines
@@ -3509,6 +3601,9 @@ Relaxing it needs a real last-use analysis; that is a language change, out of
 this scope.
 
 ### 25. ~~a keyword used as a field or a variable does not say it is a keyword~~ — **CLOSED 2026-08-13**
+
+> Pinned-by: test -f tests/reject/kw_as_field_name.ty
+> Pinned-by: make test
 
 Writing the systems in `tools/tycho-sim/sys/` wanted a struct of flags saying
 which systems run, one per system. The obvious spelling does not compile, and
@@ -3569,6 +3664,9 @@ spawning, so the cost here was the minutes spent learning why, not the rename.
 ## Found by `tools/tycho-make`, 2026-08-13 (head `77bd826`)
 
 ### 26. ~~a foreign enum's variant in a `match` arm is refused as if it did not exist~~ — **FIXED 2026-08-13**
+
+> Pinned-by: test -f tests/enum_bare_variant_local.ty
+> Pinned-by: make test
 
 Matching a corelib enum by its bare variant name is refused, and the message
 said the variant is not a variant of the type — untrue, and it sends you
@@ -3683,6 +3781,9 @@ queue, not less — more subprocesses are now in flight at once.
 
 ### 28. ~~a struct field cannot name a type declared later in the same file~~ — **FIXED 2026-08-13**
 
+> Pinned-by: test -f tests/reject/struct_mutual_by_value.ty
+> Pinned-by: make test
+
 Functions in a package are order-free — `tools/tycho-make/graph/graph.ty@order`
 calls `find_cycle`, declared 30 lines below it. Types are not, and nothing in
 `docs/spec/03-types.md` says so:
@@ -3756,6 +3857,9 @@ in. Every finding below was hit while writing it, in order.
 
 ### 29. ~~`cli.parse_spec`'s schema names must be UNDASHED, and getting it wrong is silent~~ — **FIXED 2026-08-13 (`c46952de`); see the banner below. The residue — `unknown()` is advisory — is not fixed.**
 
+> Pinned-by: test -f corelib/cli/cli.ty
+> Pinned-by: make corelib
+
 The schema lists and `cli.get`'s key take the option name **without** its
 leading `--`; the parser strips the dashes before matching
 (`corelib/cli/cli.ty@parse_into`). Writing them the way you type them at a shell
@@ -3800,6 +3904,9 @@ started the server on the default port with nothing said. It now reports
 `--port needs a value`.**
 
 ### 30. ~~`[string] + [string]` is refused with a reason that is false~~ — **FIXED 2026-08-13 (`c46952de`), both sites; see the banner below**
+
+> Pinned-by: test -f src/tychoc.c
+> Pinned-by: make test
 
 `out = out + [s]` on a `[string]` — the append every Go and Python habit reaches
 for — gives:
@@ -3885,6 +3992,9 @@ good — the first even names the fix. Purely cosmetic, and worth one pass over
 
 ### 33. ~~`_` is an ordinary variable, not a discard — and it reads like one~~ — **the DIAGNOSTIC is fixed 2026-08-13; the language is unchanged and deliberately so**
 
+> Pinned-by: test -f tests/reject/underscore_not_discard.ty
+> Pinned-by: make test
+
 Found writing `tools/tycho-snap/run.sh`'s fixture, where a call's result was
 genuinely not wanted. Every spelling below was run at `bf18a560`:
 
@@ -3950,6 +4060,9 @@ SQLite file — a test framework nothing tests being the sharper of the two
 subjects.
 
 ### 34. ~~The obvious `parse_int` is the fail-open one, and the safe one is longer~~ — **the NAME stands (a rename is a 40-caller flag day); the two callers it was actually hurting are fixed, 2026-08-14**
+
+> Pinned-by: test -f corelib/test/strings/main.ty
+> Pinned-by: make corelib
 
 `strings.parse_int` stops at the first non-digit and answers with what it got.
 Measured at `b188feb2`, beside its checked sibling:
@@ -4036,6 +4149,9 @@ boundary at its own `Row` type.
 
 ### 35. ~~A `where hashable(K)` constraint does not admit `K` as a map key~~ — **FIXED 2026-08-13: it does now, and the constraint is enforced at instantiation instead**
 
+> Pinned-by: test -f tests/generic_map_key.ty
+> Pinned-by: make test
+
 Six lines, run at `097f7e16`:
 
 <!-- fence-skip: this fence is the REPRO -- it must not compile, and the error it produces is quoted directly below it -->
@@ -4071,6 +4187,9 @@ Pinned by `tests/generic_map_key.ty` (string, int and a struct key) and
 `tests/reject/generic_map_key_unhashable.ty`; `make test` went 685 -> 687.
 
 ### 36. ~~Two spellings a generic cannot use, and one it cannot infer~~ — **all three resolved 2026-08-13: two spellings fixed, and the third was a FALSE CLAIM — the explicit type-argument form always existed; its diagnostic is what was missing**
+
+> Pinned-by: test -f tests/generic_explicit_typearg.ty
+> Pinned-by: make test
 
 Hit in order while writing `pipe/`:
 
@@ -4142,6 +4261,9 @@ does `corelib/`. A parameter mode exercised only by its own fixtures.
 (`tools/tycho-tmpl/doc/`) consumes at every step.
 
 ### 37. ~~`sink` cannot express a builder~~ — **CLOSED 2026-08-18: deliberate, and PINNED**
+
+> Pinned-by: test -f tests/reject/sink_builder_two_mentions.ty
+> Pinned-by: make test
 
 The rule and its reasoning are in the source (`src/tychoc.c@sink_arg_into`):
 rather than silently copy, require the move-vs-copy to be visible. The cost is
@@ -4216,6 +4338,8 @@ reject siblings and `tests/reject/variadic_empty_untyped.ty` pin the refusals.
 
 ### 38. ~~A variadic called through a package qualifier did not pack~~ — **FIXED 2026-08-14**
 
+> Pinned-by: make test
+
 <!-- fence-skip: quoted from the program that hit this friction; `vp` belongs to that program, not to this document -->
 ```tycho
 vp.sum(1, 2, 3)     # error: 'vp__sum' takes 1 argument(s), got 3
@@ -4235,6 +4359,8 @@ saw it: every variadic call in the tree was same-package.
 
 ### 39. ~~Explicit type arguments did not parse on a qualified name~~ — **FIXED 2026-08-14**
 
+> Pinned-by: make test
+
 <!-- fence-skip: quoted from the program that hit this friction; `vp` belongs to that program, not to this document -->
 ```tycho
 vp.ident$(int)(5)   # error: expected ')'   <-- pointing at the '$'
@@ -4249,6 +4375,8 @@ therefore *accurate*; fixing the parser is a language change, and §3/§4,
 Appendix A, §7.5 and §15.3 all moved with it.
 
 ### 40. ~~An empty generic variadic refused the type it was handed~~ — **FIXED 2026-08-14**
+
+> Pinned-by: make stat-check
 
 <!-- fence-skip: quoted from the program that hit this friction; `names from its own program` belongs to that program, not to this document -->
 ```tycho
@@ -4292,6 +4420,8 @@ It held. What broke was how the compiler TALKS about it, twice. Both are
 
 ### 41. ~~Every imported type and callee printed its MANGLED name~~ — **FIXED 2026-08-14**
 
+> Pinned-by: make test
+
 ```
 declared type int but value is pool__Handle        # the user wrote pool.Handle
 argument 2 of 'money__add' is int, expected money__Cents
@@ -4311,6 +4441,8 @@ and zero goldens pinned a mangled name (measured before the change), and
 `make test` was 693/0 after it.
 
 ### 42. ~~`for k in m` reported an index the user never wrote~~ — **FIXED 2026-08-14**
+
+> Pinned-by: make test
 
 <!-- fence-skip: quoted from the program that hit this friction; `names from its own program` belongs to that program, not to this document -->
 ```tycho
@@ -4363,6 +4495,8 @@ blast radius nil, since no program outside `tests/` declares a handle.
 
 ### 43. ~~A handle could be COPIED, and the copy double-freed~~ — **FIXED 2026-08-14**
 
+> Pinned-by: make fh-check
+
 ```tycho
 f := fh_open("/etc/hostname", "r")
 g := f                              # accepted
@@ -4383,6 +4517,9 @@ task rule — a handle-typed declaration is legal only when its RHS is a call,
 which is the one thing that can produce a handle (an `extern` opener).
 
 ### 44. ~~A BARE handle as a struct field was accepted~~ — **FIXED 2026-08-14**
+
+> Pinned-by: test -f tests/reject/affine_handle_container_type.ty
+> Pinned-by: make test
 
 <!-- fence-skip: quoted from the program that hit this friction; `File` belongs to that program, not to this document -->
 ```tycho
@@ -4413,6 +4550,9 @@ affine rule is added.
 
 ### 45. ~~A channel can be copied too, and it makes the compiler's own warning lie~~ — **FIXED 2026-08-14**
 
+> Pinned-by: test -f tests/reject/affine_chan_copy.ty
+> Pinned-by: make test
+
 ```tycho
 c := channel(int, 2)
 e := c                  # accepted
@@ -4440,6 +4580,8 @@ path while reassignment was already guarded. That is the pattern worth
 remembering rather than the three fixes.
 
 ### 49. ~~`sink` and `inout` on an affine type were accepted and silently ignored~~ — **FIXED 2026-08-14**
+
+> Pinned-by: make test
 
 Carried for a day as an open question — the spec said passing a handle BORROWS
 but said nothing about `sink`, so "intended" and "unguarded" looked alike.
@@ -4499,6 +4641,9 @@ rules. The deprecation MARKER had a defect in each direction.
 
 ### 46. ~~Prose that merely mentioned the marker deprecated the function below it~~ — **FIXED 2026-08-14**
 
+> Pinned-by: test -f tests/warn/deprecated.ty
+> Pinned-by: make test
+
 <!-- fence-skip: the fn header alone is the point -- the marker's placement above it is what mattered, and a body would only obscure it -->
 ```tycho
 # this replaces the old deprecated: thing we removed
@@ -4520,6 +4665,8 @@ both real users already use.
 
 ### 47. ~~A deprecated function taken as a VALUE warned nowhere~~ — **FIXED 2026-08-14**
 
+> Pinned-by: make grid-check
+
 <!-- fence-skip: quoted from the program that hit this friction; `stale` belongs to that program, not to this document -->
 ```tycho
 f := stale        # no warning
@@ -4533,6 +4680,8 @@ name is visible. Locked by `tests/warn/deprecated_edges.err`, which carries
 exactly one warning — on the binding line — and none for the prose case above it.
 
 ### 48. A subscript cannot read two fields of its receiver, so 2-D indexing on a flat array is inexpressible — **RECORDED, not open**
+
+> Pinned-by: make grid-check
 
 **Not fixed — recorded**, because the fix is a judgement call about double
 evaluation rather than a defect.
@@ -4643,6 +4792,9 @@ arrives through `$T`. `[$N]T` in a struct field stays unreachable that way --
 the type cannot be named at a call site to infer it.
 
 ### 56. ~~`decimal.from_str` fails open to a WRONG NUMBER, not to zero~~ — **CLOSED 2026-08-18: the lax name is deprecated**
+
+> Pinned-by: test -f corelib/test/decimal/main.ty
+> Pinned-by: make corelib
 
 `from_str` is marked `# deprecated:` and every call site now warns at compile
 time, naming `from_str_checked` and quoting the failure (`"12.5x"` returns
@@ -4797,6 +4949,9 @@ limit is the honest interim; the decision is still open.
 
 ### 59. A strict check downstream of a lenient parse never runs — **FIXED 2026-08-15**
 
+> Pinned-by: test -f corelib/httpd/httpd.ty
+> Pinned-by: make corelib
+
 `server/main.ty@bad_len` already refused a Content-Length that is not a plain
 decimal, and its comment already named request smuggling as the reason. It
 answered 400 for `-1`. It did nothing at all for `4x`.
@@ -4838,6 +4993,9 @@ refuses a non-numeric field by name, `tycho-tally` records the measured
 sites take CLI arguments, not untrusted input.
 
 ### 60. `markdown.render` escaped the text and not the SCHEME — **FIXED 2026-08-15**
+
+> Pinned-by: test -f corelib/test/markdown/main.ty
+> Pinned-by: make corelib
 
 `core:markdown`'s header said "all text is HTML-escaped; only the constructs above
 emit tags", which reads as a promise that the output is safe to serve. It escapes
@@ -4898,6 +5056,9 @@ agg-check are green either way, which is what makes this a silent data loss
 rather than a visible one.
 
 ### 62. `core:toml` guessed, in both directions — **FIXED 2026-08-15**
+
+> Pinned-by: test -f corelib/test/toml/main.ty
+> Pinned-by: make corelib
 
 The package header says `parse` "returns Err(what-was-wrong) on any malformed
 input (fail-closed; nothing is guessed)". Differentialled against Python's
@@ -4963,6 +5124,9 @@ and the header now says which of the two this is.
 Control: dropping the duplicate-header check reddens `toml` and only `toml`.
 
 ### `core:markdown` attribute break-out: probed, clean, and now pinned — 2026-08-15
+
+> Pinned-by: test -f corelib/test/markdown/main.ty
+> Pinned-by: make corelib
 
 **Not a defect entry.** A negative result, recorded because the surface is one
 this file has already caught once (#60, `javascript:` and `data:` hrefs emitted
@@ -5042,6 +5206,8 @@ Controls: restoring the naive split reddens the golden, and so does dropping the
 array terminator check, independently.
 
 ### 63. A test lane that leaks a server degrades every other lane — **FIXED 2026-08-15**
+
+> Pinned-by: grep -q 'kill -KILL' tools/tycho-kvsrv/run.sh
 
 `make ci` reddened at `hash-check` while `hash-check` passed on its own. The
 cause was not in either lane's subject.
@@ -5237,6 +5403,9 @@ a re-reading, since a re-reading can only ever check what somebody wrote down.
 
 ### 68. `pad_left`/`pad_right` overshot on any pad wider than a byte — **FIXED 2026-08-15**
 
+> Pinned-by: test -f corelib/test/strings/main.ty
+> Pinned-by: make corelib
+
 `pad_left`'s comment reads *"left-pad to width with `pad` (one byte)"*. The
 parenthesis is the whole specification of the precondition, and nothing enforced
 it: the loop counted the deficit in **bytes** (`n := width - len(s)`) and
@@ -5330,6 +5499,9 @@ write anything. It is also invisible to every gate here — no lane compiles a d
 comment.
 
 ### 70. A bound parameter was truncated at its first NUL — **FIXED 2026-08-15**
+
+> Pinned-by: test -f corelib/test/sqlite/main.ty
+> Pinned-by: make corelib
 
 Chased because #69 left it as an unprobed note, and it is the sharpest defect in
 this batch. `sqlite3_bind_text` was given `-1` for the length, which tells SQLite
@@ -5787,6 +5959,8 @@ stay green, which is the point — neither of them was asking this question.
 
 ### 84. `make ci N=0` silently cut a differential to 4.8% of its corpus — **FIXED 2026-08-15**
 
+> Pinned-by: sh scripts/format_diff.sh
+
 Found by re-measuring `make ci N=0` for the gate table, which is not a place
 anyone expects to find a defect.
 
@@ -5825,6 +5999,8 @@ code — a checked-probe helper that stays because it closes a genuine hole in t
 same file, ten `subprocess.run` calls whose exit status nobody checked.
 
 ### 85. Two things a third party would have hit first — **FIXED 2026-08-15**
+
+> Pinned-by: grep -q 'no private reporting channel configured' SECURITY.md
 
 Both found by *being* the third party rather than reasoning about one: install
 from the published tarball, clone the repo, run the first command each document

@@ -51,12 +51,12 @@ def entries(text):
         out.append((title, body))
     scored = []
     for title, body in out:
-        pin = None
-        for line in body:
-            p = PIN.match(line)
-            if p:
-                pin = p.group(1)
-                break
+        # ALL of them, not the first: an entry is pinned by a cheap discriminating
+        # assertion AND the lane that runs the behaviour, and folding them into
+        # one string would defeat the dedup -- 26 entries each spelling
+        # "... && make test" ran make test 26 times, 8-way parallel, and blew
+        # past ten minutes. Separate lines share one run.
+        pin = [m.group(1) for m in (PIN.match(l) for l in body) if m]
         # A pin makes an entry scoreable whatever its title says: the author
         # wrote a claim they want run, and a title-matching heuristic must not
         # be what decides to ignore it.
@@ -97,12 +97,12 @@ def selfcheck():
             ok = False
         print("  %-46s %s (got %r)" % (name, "ok" if got == want else "FAILED", got))
 
-    leg("[1] a holding pin is scored", closed[0][1], "true")
+    leg("[1] a holding pin is scored", closed[0][1], ["true"])
     leg("[2] a LOWER-CASE closure is still scored", len(closed), 4)
     leg("[3] a failing pin exits non-zero", run("false")[0] != 0, True)
     leg("[4] a holding pin exits zero", run("true")[0], 0)
-    leg("[5] an unpinned entry has no pin", closed[2][1], None)
-    leg("[6] an excused entry is never run", closed[3][1].startswith("none"), True)
+    leg("[5] an unpinned entry has no pin", closed[2][1], [])
+    leg("[6] an excused entry is never run", closed[3][1][0].startswith("none"), True)
     print("friction selfcheck: %s" % ("ok" if ok else "FAILED"))
     return 0 if ok else 1
 
@@ -113,25 +113,35 @@ def main():
     text = open(DOC).read()
     rows = entries(text)
     closed = [(t, p) for t, p, c in rows if c]
-    pinned = [(t, p) for t, p in closed if p and not p.startswith("none")]
-    excused = [(t, p) for t, p in closed if p and p.startswith("none")]
+    pinned = [(t, [x for x in p if not x.startswith("none")]) for t, p in closed]
+    pinned = [(t, p) for t, p in pinned if p]
+    excused = [(t, p) for t, p in closed if p and all(x.startswith("none") for x in p)]
     unpinned = [t for t, p in closed if not p]
 
-    cmds = sorted({p for _, p in pinned})
+    cmds = sorted({c for _, ps in pinned for c in ps})
+    # A lane already saturates the box (tests/run.sh is xargs -P nproc), so
+    # running eight of them at once is oversubscription, not parallelism: 46
+    # commands 8-way took 9m29 against 2m07 for the same lanes 2-way. The cheap
+    # `test -f`/`grep` pins are IO and stay 8-way.
+    heavy = [c for c in cmds if c.startswith("make ") or c.startswith("sh scripts/")]
+    light = [c for c in cmds if c not in heavy]
     results = {}
-    if cmds:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
-            for cmd, res in zip(cmds, ex.map(run, cmds)):
+    for group, width in ((light, 8), (heavy, 2)):
+        if not group:
+            continue
+        with concurrent.futures.ThreadPoolExecutor(max_workers=width) as ex:
+            for cmd, res in zip(group, ex.map(run, group)):
                 results[cmd] = res
 
     bad = 0
-    for title, pin in pinned:
-        rc, tail = results[pin]
-        if rc:
-            bad += 1
-            print("STALE  %s\n         pin `%s` exited %d: %s" % (title[:90], pin, rc, tail))
-    for title, pin in excused:
-        print("EXCUSED %s\n         %s" % (title[:90], pin))
+    for title, ps in pinned:
+        for pin in ps:
+            rc, tail = results[pin]
+            if rc:
+                bad += 1
+                print("STALE  %s\n         pin `%s` exited %d: %s" % (title[:90], pin, rc, tail))
+    for title, ps in excused:
+        print("EXCUSED %s\n         %s" % (title[:90], ps[0]))
     for title in unpinned:
         print("UNPINNED %s" % title[:100])
 
