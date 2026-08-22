@@ -1,0 +1,763 @@
+package types
+
+import "core:sort"
+import "../ast"
+
+# Names, packages and scopes -- the pass src/tychoc.c spreads across
+# parse_package_decl/parse_import_decl (headers), parse_const (top-level
+# constants), the Sig table, and the g_vars stack inside resolve_expr.
+#
+# What this pass decides, and what it deliberately does not:
+#
+#   DECIDED   which declaration every identifier USE names -- a local, a
+#             parameter, a pattern binding, a top-level const (folded), an enum
+#             variant, a function, a generic template, a builtin, or an exported
+#             symbol of an imported package. Plus the rules that are pure name
+#             rules: a duplicate top-level name, a binding that starts
+#             uppercase, a local declared and not used, an import not used in
+#             its file, and a leading-underscore name reached from another
+#             package.
+#
+#   DEFERRED  everything that needs a TYPE. A method call `x.f()` on a value
+#             resolves its receiver and stops -- which function `f` names
+#             depends on the receiver's type (UFCS), and that is Phase 6. Type
+#             NAMES are deferred with it: `unknown type` is a Phase 6 message,
+#             and the reject corpus still classes it SEMANTIC.
+#
+# The deferral is the reason this pass can only ever ACCEPT more than
+# src/tychoc.c does, never less -- which is the property the accept corpora in
+# compiler/run.sh measure.
+
+struct Sym:
+    name: string                       # mangled: `<pkg>__<name>`, bare in the entry package
+    kind: string                       # fn generic extern struct enum variant newtype handle const subscript
+    file: string
+    pkg: string
+
+struct Binding:
+    name: string
+    kind: string                       # local param bind loopvar typaram lconst
+    used: bool
+    report: bool                       # a plain `x := ...`, the only form Go's rule reports
+
+struct R:
+    syms: [Sym]
+    index: [string: int]
+    vars: [Binding]
+    nvars: int
+    counts: [string: int]
+    all_imports: [ast.ImportD]
+    all_imp_file: [string]
+    file_imports: [ast.ImportD]
+    pkg_used: [string: bool]
+    file: string
+    prefix: string
+    root: string
+    entry_in_corelib: bool
+    file_in_corelib: bool
+    in_generic: bool
+    bsigs: [string: bool]
+    errs: [string]
+    late: [string]
+
+# src/tychoc.c@register_builtins plus the shape-directed builtins resolve_expr
+# handles by name (len/push/keys/get/pop/reserve/hash/zero/to_*). Written out
+# rather than derived: a name added to that table is a language change, and a
+# list that quietly grew would hide it.
+fn _builtins() -> [string: bool]:
+    m := []string: bool
+    for n in ["args", "channel", "char_at", "chr", "clock", "close", "die", "eprint",
+              "exit", "fabs", "find", "floor", "get", "getenv", "hash", "input",
+              "is_null", "keys", "len", "list_dir", "ncpu", "now", "pop", "pow",
+              "print", "println", "push", "read_all", "read_file", "recv", "reserve",
+              "send", "split", "sqrt", "str", "substr", "to_bool", "to_bytes",
+              "to_char", "to_float", "to_int", "to_ptr", "to_str", "to_under",
+              "to_i8", "to_i16", "to_i32", "to_i64", "to_u8", "to_u16", "to_u32",
+              "to_u64", "to_f32",
+              "wait", "write_file", "zero"]:
+        m[n] = true
+    return m
+
+# The Sig table src/tychoc.c@register_builtins fills -- and ONLY that table. A
+# top-level name that lands on one of these is `'%s' is already defined`, which
+# is why `corelib/bignum/bignum.ty` compiled as an ENTRY file is refused (its
+# `fn pow` is unprefixed there) and the same file compiled as a dependency is
+# not (`bignum__pow` collides with nothing). The shape-directed builtins above
+# are not in that table and do not collide.
+fn _builtin_sigs() -> [string: bool]:
+    m := []string: bool
+    for n in ["args", "char_at", "chr", "clock", "die", "eprint", "exit", "fabs",
+              "find", "floor", "getenv", "input", "is_null", "list_dir", "ncpu",
+              "now", "pow", "print", "println", "read_all", "read_file", "split",
+              "sqrt", "str", "substr", "to_char", "to_ptr", "write_file"]:
+        m[n] = true
+    return m
+
+fn _builtin_ctors() -> [string: bool]:
+    m := []string: bool
+    for n in ["Some", "None", "Ok", "Err"]:
+        m[n] = true
+    return m
+
+fn _err(rs: inout R, msg: string):
+    push(rs.errs, rs.file + ": error: " + msg)
+
+# src/tychoc.c drains `declared and not used` and `imported and not used` only
+# AFTER resolve has finished without dying (report_unused_locals /
+# report_unused_imports, and the collected-not-printed comment above g_ul says
+# why). tychoc1 does no type checking, so it reaches that end on programs
+# src/tychoc.c never does: making these part of the VERDICT rejected 20
+# tests/reject fixtures whose real refusal is a type error, which is a rejection
+# for the wrong reason. They are kept, printed and gated -- over the ACCEPT
+# corpus, where src/tychoc.c does reach the end and the count must be zero.
+fn _late(rs: inout R, msg: string):
+    push(rs.late, rs.file + ": error: " + msg)
+
+fn _note(rs: inout R, key: string):
+    rs.counts[key] = rs.counts.get(key, 0) + 1
+
+# --- the global table -------------------------------------------------------
+
+fn _add(rs: inout R, name: string, kind: string, file: string, pkg: string):
+    if name in rs.bsigs:
+        _err(&rs, "'" + name + "' is already defined")
+        return
+    if name in rs.index:
+        prev := rs.syms[rs.index[name]]
+        _err(&rs, "'" + name + "' is already defined (" + prev.kind + " in " + prev.file + ")")
+        return
+    rs.index[name] = len(rs.syms)
+    push(rs.syms, Sym(name, kind, file, pkg))
+
+fn build_table(p: Program) -> R:
+    rs := R([]Sym, []string: int, []Binding, 0, []string: int, []ast.ImportD, []string,
+            []ast.ImportD, []string: bool, "", "", p.root, false, false, false, []string: bool, []string, []string)
+    rs.bsigs = _builtin_sigs()
+    rs.entry_in_corelib = under_corelib(p.root, p.entry_dir)
+    ctors := _builtin_ctors()
+    for f in p.files:
+        rs.file = f.path
+        for im in f.unit.imports:
+            push(rs.all_imports, im)
+            push(rs.all_imp_file, f.path)
+        for fd in f.unit.fns:
+            if fd.name in ctors:
+                _err(&rs, "'" + fd.name + "' is already defined")
+            if fd.is_extern:
+                # A C symbol is global: src/tychoc.c does not mangle it.
+                _add(&rs, fd.name, "extern", f.path, f.pkg)
+            elif len(fd.typarams) > 0:
+                _add(&rs, f.prefix + fd.name, "generic", f.path, f.pkg)
+            else:
+                _add(&rs, f.prefix + fd.name, "fn", f.path, f.pkg)
+        for sd in f.unit.structs:
+            if sd.name in ctors:
+                _err(&rs, "'" + sd.name + "' collides with the builtin constructor")
+            _add(&rs, f.prefix + sd.name, "struct", f.path, f.pkg)
+        for ed in f.unit.enums:
+            if ed.name in ctors:
+                _err(&rs, "'" + ed.name + "' collides with the builtin constructor")
+            _add(&rs, f.prefix + ed.name, "enum", f.path, f.pkg)
+            for v in ed.variants:
+                if v.name in ctors:
+                    _err(&rs, "'" + v.name + "' is already defined")
+                _add(&rs, f.prefix + v.name, "variant", f.path, f.pkg)
+        for nd in f.unit.newtypes:
+            if nd.name in ctors:
+                _err(&rs, "'" + nd.name + "' collides with the builtin constructor")
+            _add(&rs, f.prefix + nd.name, "newtype", f.path, f.pkg)
+        for hd in f.unit.handles:
+            if hd.name in ctors:
+                _err(&rs, "'" + hd.name + "' is already defined")
+            _add(&rs, f.prefix + hd.name, "handle", f.path, f.pkg)
+        for cd in f.unit.consts:
+            if cd.name in ctors:
+                _err(&rs, "'" + cd.name + "' is already defined")
+            _add(&rs, f.prefix + cd.name, "const", f.path, f.pkg)
+        for sb in f.unit.subscripts:
+            _add(&rs, f.prefix + "subscript$" + sb.name, "subscript", f.path, f.pkg)
+    return rs
+
+# --- scopes -----------------------------------------------------------------
+
+fn _mark(rs: inout R) -> int:
+    return rs.nvars
+
+fn _restore(rs: inout R, m: int):
+    for i := m; i < rs.nvars; i += 1:
+        if rs.vars[i].report and not rs.vars[i].used:
+            _late(&rs, "'" + rs.vars[i].name + "' declared and not used")
+    rs.nvars = m
+
+fn _push(rs: inout R, name: string, kind: string, report: bool):
+    # A type/size parameter is not a runtime binding: `$T`/`$N` are uppercase by
+    # convention and src/tychoc.c keeps them in their own table. Everything else
+    # goes through vars_push and its uppercase-namespace rule (src/tychoc.c:5537).
+    if kind != "typaram" and kind != "lconst" and len(name) > 0 and name[0] >= 65 and name[0] <= 90:
+        _err(&rs, "'" + name + "' cannot name a binding -- a local, parameter or pattern binding must start with a lowercase letter or '_'")
+    r := report
+    if len(name) > 0 and name[0] == 95:
+        r = false
+    if rs.file_in_corelib:
+        r = false
+    # Measured 2026-08-23, two probes: an unused local in a plain fn is refused
+    # by ./tychoc, the same local in a `$T` fn is accepted -- a generic TEMPLATE
+    # body is never resolved as written, only its instances are. Without this
+    # tests/generic_sig_realloc.ty (28 unused locals, deliberately) was the one
+    # accept-corpus file this pass refused.
+    if rs.in_generic:
+        r = false
+    b := Binding(name, kind, false, r)
+    if rs.nvars < len(rs.vars):
+        rs.vars[rs.nvars] = b
+    else:
+        push(rs.vars, b)
+    rs.nvars += 1
+
+fn _lookup(rs: inout R, name: string) -> int:
+    for i := rs.nvars - 1; i >= 0; i -= 1:
+        if rs.vars[i].name == name:
+            rs.vars[i].used = true
+            return i
+    return -1
+
+fn _sym(rs: inout R, name: string) -> int:
+    if name in rs.index:
+        return rs.index[name]
+    return -1
+
+# --- imports ----------------------------------------------------------------
+
+fn _imported_here(rs: inout R, q: string) -> bool:
+    for im in rs.file_imports:
+        if (len(im.alias) > 0 and im.alias == q) or pkg_basename(im.path) == q:
+            return true
+    return false
+
+fn _imported_anywhere(rs: inout R, q: string) -> bool:
+    for im in rs.all_imports:
+        if (len(im.alias) > 0 and im.alias == q) or pkg_basename(im.path) == q:
+            return true
+    return false
+
+# src/tychoc.c@pkg_prefix_for: an alias binds to the path's last component, and
+# marking runs over EVERY import naming the qualifier (its own comment records
+# that the marking is not file-scoped, deliberately).
+fn _prefix_for(rs: inout R, q: string) -> string:
+    rs.pkg_used[q] = true
+    for im in rs.all_imports:
+        if len(im.alias) > 0 and im.alias == q:
+            return pkg_basename(im.path) + "__"
+    return q + "__"
+
+fn _pkg_sym(rs: inout R, q: string, n: string) -> string:
+    if len(n) > 0 and n[0] == 95:
+        _err(&rs, "'" + q + "." + n + "' is package-private: a leading-underscore name is not accessible from another package")
+    return _prefix_for(&rs, q) + n
+
+# --- f-strings and types: USE marking without resolution --------------------
+
+# Phase 3 kept an f-string's body as raw text (ast.FStrLit) -- src/tychoc.c
+# parses the interpolations into real expressions at line 2712. Every name in
+# one is a genuine use, and reading them as nothing at all reported `ys` in
+# tests/closures.ty as an unused local, which src/tychoc.c accepts. So the
+# braces are scanned for identifiers and each is MARKED used. Nothing here
+# resolves or refuses: an f-string cannot make this pass reject.
+fn _fstring_uses(rs: inout R, body: string):
+    depth := 0
+    i := 0
+    for i < len(body):
+        c := body[i]
+        if c == 123:
+            depth += 1
+            i += 1
+            continue
+        if c == 125:
+            if depth > 0:
+                depth -= 1
+            i += 1
+            continue
+        if depth > 0 and ((c >= 97 and c <= 122) or (c >= 65 and c <= 90) or c == 95):
+            j := i
+            for j < len(body):
+                d := body[j]
+                if (d >= 97 and d <= 122) or (d >= 65 and d <= 90) or (d >= 48 and d <= 57) or d == 95:
+                    j += 1
+                else:
+                    break
+            w := body[i:j]
+            if _lookup(&rs, w) >= 0:
+                _note(&rs, "fstring.local")
+            elif _imported_here(&rs, w):
+                rs.pkg_used[w] = true
+                _note(&rs, "fstring.pkg")
+            else:
+                _note(&rs, "fstring.name")
+            i = j
+            continue
+        i += 1
+
+# A type is not RESOLVED here -- `unknown type` is Phase 6 (the reject corpus
+# still classes it SEMANTIC). Two things a type does decide at this layer: a
+# qualified type is what makes its import used (corelib/test/fmath was reported
+# as importing core:fmath unused until this walked), and a `[$N]T` size
+# parameter is a value inside the body, which parse.ty computes and discards.
+fn _ty(rs: inout R, t: ast.Ty):
+    match t:
+        ast.TName(q, n, targs):
+            if len(q) > 0:
+                if _imported_here(&rs, q):
+                    rs.pkg_used[q] = true
+                elif _imported_anywhere(&rs, q):
+                    _err(&rs, "package '" + q + "' is used here but this file does not `import` it (another file in the build does; imports are per-file)")
+            for a in targs:
+                _ty(&rs, a)
+        ast.TArr(k): _tys(&rs, k)
+        ast.TFix(sz, k): _tys(&rs, k)
+        ast.TMap(k): _tys(&rs, k)
+        ast.TTup(k): _tys(&rs, k)
+        ast.TFn(hr, k): _tys(&rs, k)
+        ast.TSoa(k): _tys(&rs, k)
+        ast.TBnd(sz, k): _tys(&rs, k)
+        _: pass
+
+fn _tys(rs: inout R, ts: [ast.Ty]):
+    for t in ts:
+        _ty(&rs, t)
+
+fn _sizeparams_ty(t: ast.Ty, acc: [string]) -> [string]:
+    out := acc
+    match t:
+        ast.TFix(sz, k):
+            if len(sz) > 1 and sz[0] == 36:
+                push(out, sz[1:])
+            return _sizeparams_ty(k[0], out)
+        ast.TBnd(sz, k):
+            if len(sz) > 1 and sz[0] == 36:
+                push(out, sz[1:])
+            return _sizeparams_ty(k[0], out)
+        ast.TArr(k): return _sizeparams_ty(k[0], out)
+        ast.TSoa(k): return _sizeparams_ty(k[0], out)
+        ast.TName(q, n, ta):
+            for a in ta:
+                out = _sizeparams_ty(a, out)
+            return out
+        ast.TMap(k):
+            for a in k:
+                out = _sizeparams_ty(a, out)
+            return out
+        ast.TTup(k):
+            for a in k:
+                out = _sizeparams_ty(a, out)
+            return out
+        ast.TFn(hr, k):
+            for a in k:
+                out = _sizeparams_ty(a, out)
+            return out
+        _: return out
+    return out
+
+# --- expressions ------------------------------------------------------------
+
+fn _kindof(rs: inout R, name: string) -> string:
+    i := _sym(&rs, name)
+    if i < 0:
+        return ""
+    return rs.syms[i].kind
+
+fn _callable(k: string) -> bool:
+    return k == "fn" or k == "extern" or k == "generic" or k == "struct" or k == "newtype" or k == "variant"
+
+fn _exprs(rs: inout R, bi: [string: bool], ctors: [string: bool], es: [ast.Expr]):
+    for e in es:
+        _expr(&rs, bi, ctors, e)
+
+# The receiver of `q.name(...)` / `q.field` when `q` is a bare identifier. Returns
+# true when `q` named a package (src/tychoc.c resolves the member); false when it
+# named a value, in which case the member is a field or a UFCS method and its
+# resolution needs the receiver's TYPE -- Phase 6.
+# `Shape.Circle(1.0)`: the qualifier is an ENUM in scope, not a package. Variant
+# names are global in Tycho, so this is its own diagnostic in src/tychoc.c and
+# not a "package has no symbol" -- and it is decided by the symbol table alone.
+fn _enum_qual(rs: inout R, q: string, n: string) -> bool:
+    if _lookup(&rs, q) >= 0:
+        return false
+    if _kindof(&rs, rs.prefix + q) != "enum" and _kindof(&rs, q) != "enum":
+        return false
+    if _kindof(&rs, rs.prefix + n) != "variant" and _kindof(&rs, n) != "variant":
+        return false
+    _err(&rs, "'" + n + "' is a variant of enum " + q + ", not a package member -- variant names are global, write " + n + "(...)")
+    return true
+
+fn _qual_is_pkg(rs: inout R, q: string) -> bool:
+    if _lookup(&rs, q) >= 0:
+        return false
+    if _imported_here(&rs, q):
+        return true
+    if _imported_anywhere(&rs, q):
+        _err(&rs, "package '" + q + "' is used here but this file does not `import` it (another file in the build does; imports are per-file)")
+        return true
+    _err(&rs, "unknown variable '" + q + "'")
+    return true
+
+fn _expr(rs: inout R, bi: [string: bool], ctors: [string: bool], e: ast.Expr):
+    match e:
+        ast.Name(n):
+            if _lookup(&rs, n) >= 0:
+                _note(&rs, "local")
+                return
+            # src/tychoc.c:6045-6086: const (package-qualified) -> variant (own
+            # package, then bare) -> fn (bare, then own package) -> generic.
+            if _kindof(&rs, rs.prefix + n) == "const":
+                _note(&rs, "const:" + rs.prefix + n)
+                return
+            if len(rs.prefix) > 0 and _kindof(&rs, rs.prefix + n) == "variant":
+                _note(&rs, "variant:" + rs.prefix + n)
+                return
+            if _kindof(&rs, n) == "variant":
+                _note(&rs, "variant:" + n)
+                return
+            k := _kindof(&rs, n)
+            if k == "fn" or k == "extern":
+                _note(&rs, "fnval:" + n)
+                return
+            if len(rs.prefix) > 0:
+                k2 := _kindof(&rs, rs.prefix + n)
+                if k2 == "fn" or k2 == "generic":
+                    _note(&rs, "fnval:" + rs.prefix + n)
+                    return
+            if k == "generic":
+                _note(&rs, "fnval:" + n)
+                return
+            _err(&rs, "unknown variable '" + n + "'")
+        ast.Call(q, n, ts, args):
+            _tys(&rs, ts)
+            if len(q) == 0:
+                _call_bare(&rs, bi, ctors, n)
+            elif _enum_qual(&rs, q, n):
+                _note(&rs, "enumqual")
+            elif _qual_is_pkg(&rs, q):
+                m := _pkg_sym(&rs, q, n)
+                if _callable(_kindof(&rs, m)) or _kindof(&rs, m) == "const":
+                    _note(&rs, "pkgcall:" + m)
+                elif n in bi:
+                    _err(&rs, "'" + n + "' is a builtin, not a member of package '" + q + "' -- call it directly: " + n + "(...)")
+                else:
+                    _err(&rs, "package '" + q + "' has no symbol '" + n + "'")
+            else:
+                _note(&rs, "method:" + n)
+            _exprs(&rs, bi, ctors, args)
+        ast.Field(k, f):
+            match k[0]:
+                ast.Name(q):
+                    if _qual_is_pkg(&rs, q):
+                        m := _pkg_sym(&rs, q, f)
+                        kk := _kindof(&rs, m)
+                        if len(kk) > 0:
+                            _note(&rs, "pkgmember:" + m)
+                        else:
+                            _err(&rs, "package '" + q + "' has no symbol '" + f + "'")
+                        return
+                    _note(&rs, "field")
+                    return
+                _:
+                    _note(&rs, "field")
+            _exprs(&rs, bi, ctors, k)
+        ast.IsVar(k, q, v):
+            _exprs(&rs, bi, ctors, k)
+            if len(q) > 0 and _qual_is_pkg(&rs, q):
+                _note(&rs, "isvar:" + _pkg_sym(&rs, q, v))
+            else:
+                _note(&rs, "isvar:" + v)
+        ast.Lambda(ps, rt, body):
+            _tys(&rs, rt)
+            m := _mark(&rs)
+            for p in ps:
+                _tys(&rs, p.ty)
+                _push(&rs, p.name, "param", false)
+            _exprs(&rs, bi, ctors, body)
+            _restore(&rs, m)
+        ast.TupIdx(k, i): _exprs(&rs, bi, ctors, k)
+        ast.Index(k): _exprs(&rs, bi, ctors, k)
+        ast.Slice(a, b, k): _exprs(&rs, bi, ctors, k)
+        ast.CallVal(k): _exprs(&rs, bi, ctors, k)
+        ast.Named(nm, k): _exprs(&rs, bi, ctors, k)
+        ast.Binop(o, k): _exprs(&rs, bi, ctors, k)
+        ast.Unop(o, k): _exprs(&rs, bi, ctors, k)
+        ast.ArrLit(k): _exprs(&rs, bi, ctors, k)
+        ast.MapLit(k): _exprs(&rs, bi, ctors, k)
+        ast.Tuple(k): _exprs(&rs, bi, ctors, k)
+        ast.SomeE(k): _exprs(&rs, bi, ctors, k)
+        ast.OkE(k): _exprs(&rs, bi, ctors, k)
+        ast.ErrE(k): _exprs(&rs, bi, ctors, k)
+        ast.SpawnE(k): _exprs(&rs, bi, ctors, k)
+        ast.OrRet(k): _exprs(&rs, bi, ctors, k)
+        ast.Spread(k): _exprs(&rs, bi, ctors, k)
+        ast.Addr(k): _exprs(&rs, bi, ctors, k)
+        ast.ChanE(t, k):
+            _tys(&rs, t)
+            _exprs(&rs, bi, ctors, k)
+        ast.FStrLit(body): _fstring_uses(&rs, body)
+        ast.EmptyArr(t): _tys(&rs, t)
+        ast.EmptyMap(t): _tys(&rs, t)
+        ast.SoaLit(t): _tys(&rs, t)
+        _: pass
+
+# An unqualified call. src/tychoc.c:6565-6572 tries the OWN package first and
+# falls through to the unprefixed name, then to the builtin table. The local
+# fallback is last and is a deferral: a local by this name is only callable when
+# it is fn-typed, which is a Phase 6 question -- resolving it here would refuse
+# a legal call, and this pass may only ever accept more.
+fn _call_bare(rs: inout R, bi: [string: bool], ctors: [string: bool], n: string):
+    if len(rs.prefix) > 0 and _callable(_kindof(&rs, rs.prefix + n)):
+        _note(&rs, "call:" + rs.prefix + n)
+        return
+    if _callable(_kindof(&rs, n)):
+        _note(&rs, "call:" + n)
+        return
+    if n in bi or n in ctors:
+        _note(&rs, "builtin:" + n)
+        return
+    if _lookup(&rs, n) >= 0:
+        _note(&rs, "callval")
+        return
+    _err(&rs, "unknown procedure '" + n + "'")
+
+# --- statements -------------------------------------------------------------
+
+# The three ways `x = ...` can fail on the NAME alone: no such binding, a
+# binding that is an immutable local const, and a top-level const of this
+# package (src/tychoc.c:8385 -- a const is folded at each use, so there is
+# nothing to assign to).
+fn _assign_to(rs: inout R, name: string):
+    i := _lookup(&rs, name)
+    if i >= 0:
+        if rs.vars[i].kind == "lconst":
+            _err(&rs, "cannot assign to constant '" + name + "'")
+        return
+    if _kindof(&rs, rs.prefix + name) == "const":
+        _err(&rs, "cannot assign to constant '" + name + "'")
+        return
+    if name == "_":
+        _err(&rs, "`_` is not a discard -- it is an ordinary variable, and this one was never declared")
+        return
+    _err(&rs, "assignment to unknown variable '" + name + "'")
+
+fn _block(rs: inout R, bi: [string: bool], ctors: [string: bool], body: [ast.Stmt]):
+    m := _mark(&rs)
+    for s in body:
+        _stmt(&rs, bi, ctors, s)
+    _restore(&rs, m)
+
+fn _stmt(rs: inout R, bi: [string: bool], ctors: [string: bool], s: ast.Stmt):
+    match s:
+        ast.ExprStmt(k): _exprs(&rs, bi, ctors, k)
+        ast.Decl(name, ty, rhs, vb):
+            _tys(&rs, ty)
+            _exprs(&rs, bi, ctors, rhs)
+            _block(&rs, bi, ctors, vb)
+            _push(&rs, name, "local", true)
+        ast.MDecl(isdecl, names, rhs):
+            _exprs(&rs, bi, ctors, rhs)
+            if isdecl:
+                seen := []string: bool
+                for nm in names:
+                    if nm in seen:
+                        _err(&rs, "duplicate name `" + nm + "` in the destructuring list")
+                    seen[nm] = true
+                    _push(&rs, nm, "local", false)
+            else:
+                for nm in names:
+                    _assign_to(&rs, nm)
+        ast.Assign(name, rhs):
+            _exprs(&rs, bi, ctors, rhs)
+            _assign_to(&rs, name)
+        ast.PlaceSet(k): _exprs(&rs, bi, ctors, k)
+        ast.ConstS(name, v):
+            _exprs(&rs, bi, ctors, v)
+            _push(&rs, name, "lconst", false)
+        ast.ReturnS(k): _exprs(&rs, bi, ctors, k)
+        ast.DeleteS(k): _exprs(&rs, bi, ctors, k)
+        ast.IfS(c, b, e):
+            _exprs(&rs, bi, ctors, c)
+            _block(&rs, bi, ctors, b)
+            _block(&rs, bi, ctors, e)
+        ast.WhileS(c, b):
+            _exprs(&rs, bi, ctors, c)
+            _block(&rs, bi, ctors, b)
+        ast.For3(init, c, b):
+            m := _mark(&rs)
+            for st in init:
+                _stmt(&rs, bi, ctors, st)
+            _exprs(&rs, bi, ctors, c)
+            _block(&rs, bi, ctors, b)
+            _restore(&rs, m)
+        ast.ForIn(v, coll, b):
+            _exprs(&rs, bi, ctors, coll)
+            m := _mark(&rs)
+            _push(&rs, v, "loopvar", false)
+            _block(&rs, bi, ctors, b)
+            _restore(&rs, m)
+        ast.ForRange(v, bounds, b):
+            _exprs(&rs, bi, ctors, bounds)
+            m := _mark(&rs)
+            _push(&rs, v, "loopvar", false)
+            _block(&rs, bi, ctors, b)
+            _restore(&rs, m)
+        ast.ParallelS(w, b):
+            _exprs(&rs, bi, ctors, w)
+            for st in b:
+                _stmt(&rs, bi, ctors, st)
+        ast.MatchS(subj, arms):
+            _exprs(&rs, bi, ctors, subj)
+            _arms(&rs, bi, ctors, arms)
+        ast.SelectS(arms):
+            _arms(&rs, bi, ctors, arms)
+        _: pass
+
+# A payload slot naming a NULLARY VARIANT is a nested pattern, not a binding --
+# src/tychoc.c@vars_push says so at the site: match_arm_payload promotes it
+# before the uppercase-namespace rule is reached, which is why `Err(Timeout)`
+# does not trip that rule.
+fn _bind(rs: inout R, ctors: [string: bool], name: string):
+    # `_` in a PATTERN is a discard and binds nothing -- tests/reject/
+    # match_underscore_use.ty is the fixture, and its header says so. The `_` of
+    # a DESTRUCTURING list is the opposite: an ordinary variable that must be
+    # declared, which is why only this path drops it.
+    if name == "_":
+        _note(&rs, "armdiscard")
+        return
+    if name in ctors:
+        _note(&rs, "armpattern:" + name)
+        return
+    if len(rs.prefix) > 0 and _kindof(&rs, rs.prefix + name) == "variant":
+        _note(&rs, "armpattern:" + rs.prefix + name)
+        return
+    if _kindof(&rs, name) == "variant":
+        _note(&rs, "armpattern:" + name)
+        return
+    # Uppercase in a payload slot: src/tychoc.c promotes it against the arm's
+    # EXPECTED enum, so the variant it names may live in another package under a
+    # mangled key this pass cannot pick without the type. Deferred to Phase 6 --
+    # never a binding, because a binding may not start uppercase at all.
+    if len(name) > 0 and name[0] >= 65 and name[0] <= 90:
+        _note(&rs, "armpattern.deferred")
+        return
+    _push(&rs, name, "bind", false)
+
+fn _arms(rs: inout R, bi: [string: bool], ctors: [string: bool], arms: [ast.Arm]):
+    for a in arms:
+        _exprs(&rs, bi, ctors, a.ch)
+        m := _mark(&rs)
+        if a.kind == "variant":
+            if len(a.qual) > 0 and _qual_is_pkg(&rs, a.qual):
+                _note(&rs, "armvariant:" + _pkg_sym(&rs, a.qual, a.name))
+            elif not (a.name in ctors):
+                if len(rs.prefix) > 0 and _kindof(&rs, rs.prefix + a.name) == "variant":
+                    _note(&rs, "armvariant:" + rs.prefix + a.name)
+                elif _kindof(&rs, a.name) == "variant":
+                    _note(&rs, "armvariant:" + a.name)
+                else:
+                    _note(&rs, "armvariant.deferred")
+            else:
+                _note(&rs, "armvariant:" + a.name)
+        for b in a.binds:
+            _bind(&rs, ctors, b)
+        for b in a.subbinds:
+            _bind(&rs, ctors, b)
+        _block(&rs, bi, ctors, a.body)
+        _restore(&rs, m)
+
+# --- the pass ---------------------------------------------------------------
+
+fn _params(rs: inout R, ps: [ast.Param]):
+    seen := []string: bool
+    for p in ps:
+        _tys(&rs, p.ty)
+        if p.name in seen:
+            _err(&rs, "duplicate parameter '" + p.name + "'")
+        seen[p.name] = true
+        _push(&rs, p.name, "param", false)
+
+fn _sig_sizeparams(ps: [ast.Param], ret: [ast.Ty]) -> [string]:
+    out := []string
+    for p in ps:
+        for a in p.ty:
+            out = _sizeparams_ty(a, out)
+    for r in ret:
+        out = _sizeparams_ty(r, out)
+    return out
+
+fn resolve(p: Program) -> R:
+    rs := build_table(p)
+    bi := _builtins()
+    ctors := _builtin_ctors()
+    for f in p.files:
+        rs.file = f.path
+        rs.prefix = f.prefix
+        rs.file_imports = f.unit.imports
+        rs.file_in_corelib = under_corelib(p.root, f.dir)
+        for fd in f.unit.fns:
+            if fd.is_extern:
+                continue
+            m := _mark(&rs)
+            rs.in_generic = len(fd.typarams) > 0
+            for t in fd.typarams:
+                _push(&rs, t, "typaram", false)
+            for t in _sig_sizeparams(fd.params, fd.ret):
+                _push(&rs, t, "typaram", false)
+            _tys(&rs, fd.ret)
+            _params(&rs, fd.params)
+            _block(&rs, bi, ctors, fd.body)
+            _restore(&rs, m)
+            rs.in_generic = false
+        for sd in f.unit.structs:
+            for fld in sd.fields:
+                _ty(&rs, fld.ty)
+        for ed in f.unit.enums:
+            for v in ed.variants:
+                _tys(&rs, v.payload)
+        for nd in f.unit.newtypes:
+            _ty(&rs, nd.under)
+        for fd in f.unit.fns:
+            if fd.is_extern:
+                _tys(&rs, fd.ret)
+                for p in fd.params:
+                    _tys(&rs, p.ty)
+        for sb in f.unit.subscripts:
+            m := _mark(&rs)
+            _ty(&rs, sb.ret)
+            _params(&rs, sb.params)
+            _expr(&rs, bi, ctors, sb.place)
+            _restore(&rs, m)
+    # Go's rule: an import no file of the build named is an error. Muted for a
+    # dependency's own files -- src/tychoc.c@report_unused_imports.
+    for i := 0; i < len(rs.all_imports); i += 1:
+        im := rs.all_imports[i]
+        base := pkg_basename(im.path)
+        if base in rs.pkg_used:
+            continue
+        if len(im.alias) > 0 and im.alias in rs.pkg_used:
+            continue
+        if not rs.entry_in_corelib and under_corelib(p.root, dir_of(rs.all_imp_file[i])):
+            continue
+        push(rs.late, rs.all_imp_file[i] + ": error: `" + im.path + "` imported and not used in this file")
+    return rs
+
+fn late_lines(rs: R) -> [string]:
+    return rs.late
+
+fn census_lines(rs: R) -> [string]:
+    names := keys(rs.counts)
+    sort.asc(names)
+    out := []string
+    for n in names:
+        push(out, n + " " + str(rs.counts[n]))
+    return out
+
+fn symbol_lines(rs: R) -> [string]:
+    out := []string
+    for s in rs.syms:
+        push(out, s.kind + " " + s.name + " " + s.file)
+    sort.asc(out)
+    return out

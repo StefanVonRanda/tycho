@@ -4,7 +4,7 @@ import "core:strings"
 import "driver"
 
 fn usage():
-    die("usage: tychoc1 <file.ty> (--emit-c -o <name> [--runtime P] | --dump-tokens | --round-trip | --dump-dnotes | --parse | --parse-census)")
+    die("usage: tychoc1 <file.ty> (--emit-c -o <name> [--runtime P] | --dump-tokens | --round-trip | --dump-dnotes | --parse | --parse-census | --resolve | --resolve-census | --dump-symbols)")
 
 fn main():
     av := args()
@@ -28,6 +28,12 @@ fn main():
             mode = "parse"
         elif a == "--parse-census":
             mode = "census"
+        elif a == "--resolve":
+            mode = "resolve"
+        elif a == "--resolve-census":
+            mode = "rcensus"
+        elif a == "--dump-symbols":
+            mode = "symbols"
         elif a == "-o":
             i += 1
             if i >= len(av):
@@ -59,6 +65,15 @@ fn main():
         return
     if mode == "census":
         driver.parse_census(src)
+        return
+    if mode == "resolve":
+        driver.resolve_only(src, av[0])
+        return
+    if mode == "rcensus":
+        driver.resolve_census(src, av[0])
+        return
+    if mode == "symbols":
+        driver.dump_symbols(src, av[0])
         return
     if len(out) == 0 or not emit_c:
         usage()

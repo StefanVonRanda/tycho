@@ -1,0 +1,194 @@
+package types
+
+import "core:sort"
+import "../ast"
+import "../lex"
+import "../parse"
+
+# The package graph, as src/tychoc.c builds it. The authority is merge_pkg
+# (src/tychoc.c@merge_pkg) and its two helpers: `core:` paths resolve against a
+# corelib root found next to the binary, everything else against the IMPORTER's
+# directory, and the walk is post-order with the DFS path kept so a cycle is
+# named rather than hung on.
+#
+# One deliberate difference from src/tychoc.c: it lexes a package's files, reads
+# the import headers, loads the children, and only then parses. tychoc1's parser
+# needs no symbol table (Phase 4), so a file is parsed once, up front, and its
+# imports are read off the tree.
+
+struct File:
+    path: string
+    dir: string
+    pkg: string
+    prefix: string
+    unit: ast.Unit
+
+struct Program:
+    files: [File]
+    entry_dir: string
+    entry_pkg: string
+    entry_path: string
+    root: string
+
+struct Loader:
+    files: [File]
+    seen: [string: bool]
+    active: [string]
+    root: string
+    entry_in_corelib: bool
+
+fn dir_of(p: string) -> string:
+    cut := -1
+    for i := 0; i < len(p); i += 1:
+        if p[i] == 47:
+            cut = i
+    if cut < 0:
+        return "."
+    if cut == 0:
+        return "/"
+    return p[0:cut]
+
+# Lexical canonicalisation. src/tychoc.c@canon_dir goes through the filesystem;
+# every path in this tree is relative to one cwd, so collapsing `.` and `..`
+# textually gives the same key for the same directory. It is the KEY for the
+# cycle and already-merged checks, never a path anything is opened by.
+fn norm(path: string) -> string:
+    out := []string
+    n := 0
+    for s in split(path, "/"):
+        if len(s) == 0 or s == ".":
+            continue
+        if s == ".." and n > 0 and out[n - 1] != "..":
+            n -= 1
+            continue
+        if n < len(out):
+            out[n] = s
+        else:
+            push(out, s)
+        n += 1
+    r := ""
+    for i := 0; i < n; i += 1:
+        if i > 0:
+            r = r + "/"
+        r = r + out[i]
+    if len(path) > 0 and path[0] == 47:
+        return "/" + r
+    if len(r) == 0:
+        return "."
+    return r
+
+fn _dir_has_files(p: string) -> bool:
+    return len(list_dir(p)) > 0
+
+# TYCHO_CORELIB wins; otherwise next to the binary, then the installed layout --
+# src/tychoc.c@corelib_root. exe_dir there reads /proc/self/exe first and falls
+# back to argv[0]; args()[0] is that same fallback and the only one available
+# here. "" when nothing is found, which is only fatal if a `core:` import is
+# actually written.
+fn corelib_root(argv0: string) -> string:
+    e := getenv("TYCHO_CORELIB")
+    if len(e) > 0:
+        return e
+    d := dir_of(argv0)
+    if _dir_has_files(d + "/corelib"):
+        return d + "/corelib"
+    if _dir_has_files(d + "/../share/tycho/corelib"):
+        return d + "/../share/tycho/corelib"
+    return ""
+
+fn pkg_basename(p: string) -> string:
+    s := p
+    if len(s) > 5 and s[0:5] == "core:":
+        s = s[5:]
+    cut := -1
+    for i := 0; i < len(s); i += 1:
+        if s[i] == 47:
+            cut = i
+    if cut < 0:
+        return s
+    return s[cut + 1:]
+
+fn _resolve_pkg_dir(ld: inout Loader, importer_dir: string, path: string) -> string:
+    if len(path) > 5 and path[0:5] == "core:":
+        if len(ld.root) == 0:
+            die("tychoc1: cannot find the corelib for import \"" + path + "\"")
+        return ld.root + "/" + path[5:]
+    return importer_dir + "/" + path
+
+fn under_corelib(root: string, dir: string) -> bool:
+    if len(root) == 0:
+        return false
+    cd := norm(dir)
+    cr := norm(root)
+    if len(cd) < len(cr):
+        return false
+    if cd[0:len(cr)] != cr:
+        return false
+    return len(cd) == len(cr) or cd[len(cr)] == 47
+
+fn _pkg_files(dir: string) -> [string]:
+    out := []string
+    for nm in list_dir(dir):
+        if len(nm) > 3 and nm[len(nm) - 3:] == ".ty":
+            push(out, dir + "/" + nm)
+    sort.asc(out)
+    return out
+
+fn _merge(ld: inout Loader, dir: string, pkgname: string, prefix: string):
+    key := norm(dir)
+    for a in ld.active:
+        if a == key:
+            die("tychoc1: import cycle through package `" + pkgname + "` (" + dir + ")")
+    if key in ld.seen:
+        return
+    if len(ld.active) >= 64:
+        die("tychoc1: package nesting too deep")
+    push(ld.active, key)
+
+    files := _pkg_files(dir)
+    if len(files) == 0:
+        die("tychoc1: package directory " + dir + " has no .ty files")
+
+    units := []ast.Unit
+    for f in files:
+        toks, notes := lex.tokenize_all(read_file(f), false)
+        push(units, parse.unit(toks, notes))
+
+    # Post-order: every imported package is merged before this one, so a symbol
+    # this package names is already in the table by the time the resolver runs.
+    for i := 0; i < len(units); i += 1:
+        if units[i].pkg != pkgname:
+            if len(units[i].pkg) == 0:
+                die("tychoc1: " + files[i] + " is in package `" + pkgname + "` but has no `package` declaration")
+            die("tychoc1: " + files[i] + " declares `package " + units[i].pkg + "` but is in package `" + pkgname + "`")
+        for im in units[i].imports:
+            child := pkg_basename(im.path)
+            _merge(&ld, _resolve_pkg_dir(&ld, dir, im.path), child, child + "__")
+
+    for i := 0; i < len(units); i += 1:
+        push(ld.files, File(files[i], dir, pkgname, prefix, units[i]))
+
+    # Pop the DFS path, then mark merged.
+    na := []string
+    for j := 0; j < len(ld.active) - 1; j += 1:
+        push(na, ld.active[j])
+    ld.active = na
+    ld.seen[key] = true
+
+fn load(entry: string, argv0: string) -> Program:
+    src := read_file(entry)
+    toks, notes := lex.tokenize_all(src, false)
+    u := parse.unit(toks, notes)
+    root := corelib_root(argv0)
+    dir := dir_of(entry)
+    if len(u.pkg) == 0:
+        # src/tychoc.c: a package-less file is a single-file build, and an
+        # `import` in one is a hard error rather than a silently unloaded package.
+        if len(u.imports) > 0:
+            die("tychoc1: to `import` a package, this file must declare its own package first -- add `package main` (or another name) as the first line")
+        fs := []File
+        push(fs, File(entry, dir, "", "", u))
+        return Program(fs, dir, "", entry, root)
+    ld := Loader([]File, []string: bool, []string, root, under_corelib(root, dir))
+    _merge(&ld, dir, u.pkg, "")
+    return Program(ld.files, dir, u.pkg, entry, root)

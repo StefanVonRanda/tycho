@@ -570,13 +570,108 @@ self-built twice, the two emitted `.c` identical.
     files, all tracked), `make script-check` ok (25 .py, 96 .sh — it covers the
     new `compiler/verdict_diff.py`), `python3 scripts/check_citations.py` ok.
 
-- [ ] **Phase 5 — `types/`: names, packages, scoping**
+- [x] **Phase 5 — `types/`: names, packages, scoping**
   - Scope: `compiler/types/`. Package and import resolution, the function table,
     variable scoping, const folding, corelib discovery.
   - Done when: every name in the tree resolves to the same declaration
     `./tychoc` resolves it to, and undefined-name rejections agree.
   - Verify: a symbol-table dump differential over `corelib/` and `tools/`,
     plus the reject corpus for undefined names.
+
+  `compiler/types/load.ty` walks the package graph (corelib root, per-file
+  imports, post-order, cycle detection) and `compiler/types/resolve.ty` builds
+  the global table and resolves every use against the scope stack.
+  `--resolve` / `--resolve-census` / `--dump-symbols` expose it.
+
+  **What it is differentiated AGAINST, stated plainly.** `./tychoc` has no
+  symbol-table dump, so option (b) was taken: its own DIAGNOSTICS.
+  `scripts/classify_rejects.py` already extracts every `die_at` format string
+  from `src/tychoc.c` with its line and matches a fixture's real message back to
+  the site that emitted it; Phase 5 adds a third class, NAME, for the sites the
+  symbol table and the scope stack decide alone. **The class is decided by the
+  SITE, never by what tychoc1 does** — otherwise the leg passes by construction.
+  NAME splits SEMANTIC only, so Phase 4's SYNTAX boundary is untouched:
+  57 SYNTAX / 27 NAME / 253 SEMANTIC (was 57 / 280).
+
+  What that cannot see: it compares a VERDICT and the identifier a message
+  names, never which declaration was chosen. Leg 7 exists for exactly that
+  (below), and it is a self-recorded golden, like leg 3.
+
+  Also deferred by design, and the reason this pass can only ever accept MORE
+  than `./tychoc`: a method call `x.f()` on a value (UFCS needs the receiver's
+  type) and every type NAME (`unknown type` stays SEMANTIC, Phase 6).
+
+  ```
+  $ make parse-check            # 15.5 s, was 11.0 s at Phase 4
+  leg1  tests/*.ty: files=274 parse-ok=274 fail=0
+  leg1b corelib/**.ty: files=91 parse-ok=91 fail=0
+  leg1c tools+examples+server+bench: files=179 parse-ok=179 fail=0
+  leg2  tests/reject/*.ty --parse: SYNTAX=57 rejected=57 missed=0 | NAME+SEMANTIC=280 accepted=280 wrongly-rejected=0
+  leg2b tests/reject/*.ty --resolve: SYNTAX+NAME=84 rejected=84 missed=0 | SEMANTIC=253 accepted=253 wrongly-rejected=0
+  leg3  census: 122 kinds, 182646 nodes over 544 files
+  leg7  resolution census: 4011 distinct targets, 165333 resolved uses
+  leg4  declaration rules: refused=5/5 accepted=5/5
+  leg5  whole-tree verdicts: files=1078 tychoc(accept=552 semantic=403 name=49 syntax=74) disagreements=0
+  leg6  whole-tree resolution: disagreements=0 unused-local/import on an accepted file=0
+  parse-check: all green
+  ```
+
+  leg6 is the whole-tree half: the same 1,078 files scored a second time under
+  `--resolve`, plus the assertion that a file `./tychoc` ACCEPTS resolves with
+  no unused local and no unused import. leg7 is the resolution census — every
+  use printed as the package-mangled declaration it resolved to.
+
+  **The `late` split is not cosmetic.** `declared and not used` and
+  `imported and not used` are drained by `src/tychoc.c` only after resolve
+  succeeds, so a resolver with no type checker reaches them on programs
+  `./tychoc` never does. Making them part of the verdict rejected 21 SEMANTIC
+  fixtures whose real refusal is a type error — a rejection for the wrong
+  reason. They are kept, printed as `late:`, and gated on the accept corpus,
+  where `./tychoc` does reach the end and the count must be 0.
+
+  **Seven negative controls, each applied to `compiler/types/resolve.ty`,
+  observed, and reverted.** The first two are the class the brief asked for: a
+  name resolved to the WRONG declaration with every verdict leg green.
+
+  ```
+  N1 const looked up BEFORE the local scope
+     leg2 / leg2b / leg5 / leg6 ALL GREEN, only leg7 moved
+     parse-check: the RESOLUTION census moved -- a name resolves to a different declaration
+  N2 an unqualified call tries the BARE name before the package-local one
+     leg2 / leg2b / leg5 / leg6 ALL GREEN, only leg7 moved
+  N3 `_` in a match pattern pushed as a binding instead of a discard
+     leg2b SYNTAX+NAME rejected=83 missed=1 | leg6 disagreements=1 | leg7 moved
+  N4 the builtin-Sig collision check deleted
+     leg2b GREEN, leg7 GREEN, leg6 disagreements=3   <- leg6 alone catches it
+  N5 f-string interpolations no longer marked as uses
+     leg6 unused-local/import on an accepted file=9 | leg7 moved
+  N6 `late` made fatal again
+     leg2b SEMANTIC accepted=232 wrongly-rejected=21
+  N7 the import ALIAS dropped from pkg_prefix_for
+     leg6 disagreements=1
+  ```
+
+  N4 is the one worth reading twice: deleting a rule left both reject corpora
+  and both censuses green, and only the whole-tree leg reddened — because the
+  three files it catches (`corelib/bignum/bignum.ty` with its `fn pow`,
+  `corelib/regex/regex.ty` with `fn find`, `tests/diag/shadow_builtin_main.ty`
+  with `fn die`) are only refused when compiled as an ENTRY file, where their
+  names are unprefixed. No corpus in legs 1-4 compiles a corelib package as an
+  entry point.
+
+  Two behaviours were MEASURED against `./tychoc` rather than inferred, each
+  with its own probe, because the source did not say and a guess would have
+  refused legal code: an unused local inside a `$T` function is ACCEPTED (a
+  generic template body is never resolved as written) while the same local in a
+  plain fn is refused; and `bench/trie/trie.ty` + `trie_pool.ty` are both
+  REFUSED by `./tychoc` (`'Trie' is already defined` — two `package main`
+  programs sharing a directory), so tychoc1 refusing them is agreement, not a
+  regression.
+
+  Three gates my diff can move, all run: `make goldens-check` ok (520 golden
+  files, all tracked — `compiler/rcensus.expected.out` is the new one and
+  `.gitignore:120` already un-ignores it), `make script-check` ok (26 .py,
+  96 .sh), `python3 scripts/check_citations.py` ok.
 
 - [ ] **Phase 6 — `types/`: checking and inference**
   - Scope: `compiler/types/`. Type resolve, inference, generics
@@ -634,9 +729,9 @@ self-built twice, the two emitted `.c` identical.
 
 - [ ] **Phase 4b — `CONTRIBUTING.md`'s gate table has no `parse-check` cost**
   (found in Phase 4). Phase 3d already notes the row is missing entirely. The
-  figure has since moved: the lane is ~11.0 s, not the ~2.5 s Phase 3b measured,
-  because legs 1c, 4 and 5 were added. Whoever writes that row writes 11.0 s and
-  the five legs, not the two-leg description.
+  figure has since moved: the lane is ~15.5 s, not the ~2.5 s Phase 3b measured,
+  because legs 1c, 4, 5, 2b, 6 and 7 were added. Whoever writes that row writes
+  15.5 s and the eight legs, not the two-leg description.
   - Do NOT run: any test lane. It is a Markdown edit; the two doc gates only.
 
 - [ ] **Phase 3c — `scripts/check_goldens.py` carried a stale NO_GOLDEN entry**
@@ -656,3 +751,29 @@ self-built twice, the two emitted `.c` identical.
   - Scope: one trimmed row in `CONTRIBUTING.md`. No internal history.
   - Verify: `python3 scripts/check_citations.py` and `sh scripts/check_links.sh`.
     Nothing else — it is a Markdown edit.
+
+- [ ] **Phase 5b — the AST carries no line numbers** (found in Phase 5, out of
+  scope there)
+  - `ast.Fn`, `ast.StructD` and almost every `ast.Expr` variant have no line
+    field, so every diagnostic `compiler/types/` emits names the FILE and no
+    line — `src/tychoc.c` names `file:line` for all of them. Phase 9 pins
+    message text byte for byte and cannot be met without this.
+  - Scope: a `line` field on the declaration structs and on the expression and
+    statement nodes that can carry a diagnostic, set by `compiler/parse/`.
+  - Verify: `make parse-check`. Expect leg3's census to be UNCHANGED — a field
+    is not a node kind — and say so if it moves.
+  - Do NOT run: `make test`. Nothing here reaches `src/tychoc.c`.
+
+- [ ] **Phase 5c — three name rules `compiler/types/` does not implement**
+  (found in Phase 5). Each is a rule the symbol table alone decides, each still
+  classified SEMANTIC because tychoc1 accepts it, and each is one fixture:
+  - `'a' is already declared in this scope` — `src/tychoc.c@g_dup_base`, a
+    duplicate `:=` against a parameter or an enclosing block.
+  - `no 'main' procedure` — a whole-program check after the walk.
+  - `package '%s' has no variant, const or function` currently answers with the
+    `has no symbol` wording; the two are separate formats in `src/tychoc.c`.
+  - Done when: each is in `NAME_SITES` and `leg2b` still shows
+    `wrongly-rejected=0`.
+  - Verify: `python3 scripts/classify_rejects.py compiler/reject_class.tsv`
+    then `make parse-check`. State the new NAME/SEMANTIC split.
+

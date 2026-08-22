@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Classify tests/reject/*.ty as SYNTAX or SEMANTIC rejections.
+"""Classify tests/reject/*.ty as SYNTAX, NAME or SEMANTIC rejections.
 
 Grounded in src/tychoc.c, not in tychoc1's behaviour: every die_at/die/warn
 format string in that file is extracted with its LINE NUMBER, the fixture's
@@ -8,6 +8,16 @@ decides the class.
 
   SYNTAX   = the site sits in the lexer or in parse_program's reach
              (line < PARSE_END) and does not need a symbol table.
+  NAME     = the site is a NAME-resolution rule: it needs the symbol table and
+             the scope stack, and nothing else. A resolver without a type
+             checker must refuse these. Split out of SEMANTIC in Phase 5, the
+             same way Phase 4 moved eight rules the other way -- the class is
+             decided by the SITE, never by what tychoc1 happens to do, or the
+             leg would pass by construction. NAME splits SEMANTIC only: a rule
+             the PARSER already decides stays SYNTAX, which is why
+             `upper_bind_param_used` (src line 2942, the five builtin
+             constructor names, no table) is not NAME even though its message is
+             word-for-word a binding rule.
   SEMANTIC = anything else -- including the parse-region sites that DO need a
              symbol table (an unknown type, a duplicate name, a where-predicate
              checked against the typaram list). A parser without a resolver must
@@ -27,6 +37,30 @@ PARSE_END = 5245                   # end of parse_program
 # the signature just read, the subscript place rules are structural, and a
 # `const` is folded at parse time by src/tychoc.c@const_fold. None of the four
 # reaches a symbol table, so a parser must refuse them and they are SYNTAX.
+# Name-resolution sites: the symbol table and the scope stack decide these, and
+# no type is consulted. Matched as substrings of the FORMAT string, so each names
+# a rule rather than a line. Checked BEFORE the SYNTAX/SEMANTIC split.
+NAME_SITES = [
+    "unknown variable '%s'",
+    "assignment to unknown variable",
+    "unknown procedure '%s'",
+    "'%s' is already defined",
+    "variant name '%s' is already used in this package",
+    "cannot name a binding",
+    "is not a discard",
+    "duplicate parameter",
+    "cannot assign to constant",
+    "`pass` is a statement and produces no value",
+    "is package-private",
+    "has no symbol",
+    "this file does not `import` it",
+    "has no variant, const or function",
+    "is a variant of enum %s, not a package member",
+    "is a builtin, not a member of package",
+    "imported and not used",
+    "declared and not used",
+]
+
 NEEDS_SYMBOLS = [
     "unknown type",
     "is already defined",
@@ -70,12 +104,12 @@ NEEDS_SYMBOLS = [
 FALLBACK = [
     ("cannot be stored in a container", "SEMANTIC"),   # affine_slot_check, needs types
     ("a function value cannot", "SEMANTIC"),           # fn-type affine rule, needs types
-    ("is already used in this package", "SEMANTIC"),   # variant table
+    ("is already used in this package", "NAME"),       # variant table
     ("unsupported escape", "SYNTAX"),                  # the lexer's escape set
     ("literal needs", "SYNTAX"),                       # the lexer's 0x / 0b scanners
     ("no 'main' procedure", "SEMANTIC"),               # whole-program, after parsing
     ("unclosed '(' or '['", "SYNTAX"),                 # the lexer, message built by snprintf
-    ("must declare its own package first", "SEMANTIC"),# whole-program, an fprintf after parsing
+    ("must declare its own package first", "NAME"),    # the package header, an fprintf after parsing
 ]
 
 
@@ -170,7 +204,12 @@ def main():
         best = max(hits, key=lambda h: len(re.sub(r"%[-0-9.*]*(?:ll)?[a-zA-Z]", "", h[1])))
         line, f = best[0], best[1]
         needs = any(k in f for k in NEEDS_SYMBOLS)
-        cls = "SYNTAX" if (line < PARSE_END and not needs) else "SEMANTIC"
+        if line < PARSE_END and not needs:
+            cls = "SYNTAX"          # the SYNTAX boundary is Phase 4's, untouched
+        elif any(k in f for k in NAME_SITES):
+            cls = "NAME"
+        else:
+            cls = "SEMANTIC"
         out.append((p, cls, line, msg))
     with open(sys.argv[1], "w") as fh:
         for p, cls, line, msg in out:

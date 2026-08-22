@@ -6,6 +6,7 @@ import "../ast"
 import "../emit"
 import "../lex"
 import "../parse"
+import "../types"
 
 # The compile pipeline, and the one place that knows where the runtime source
 # lives. src/tychoc.c embeds runtime/tycho_rt.c at BUILD time via an awk-made
@@ -130,4 +131,43 @@ fn parse_census(src_path: string):
     out := ""
     for n in names:
         out = out + n + " " + str(counts[n]) + "\n"
+    print(out)
+
+# --- --resolve / --resolve-census / --dump-symbols ---------------------------
+# Phase 5's gates. `--resolve` is the accept/reject verdict for NAME resolution;
+# `--resolve-census` is the leg that verdict cannot carry, because a name that
+# resolves to the WRONG declaration is accepted either way -- it prints the
+# resolved, package-mangled name of every use, so a misresolution moves a
+# counted line. `--dump-symbols` is the table itself.
+
+fn resolve_only(src_path: string, argv0: string):
+    p := types.load(src_path, argv0)
+    rs := types.resolve(p)
+    if len(rs.errs) > 0:
+        out := ""
+        for e in rs.errs:
+            out = out + e + "\n"
+        eprint(out)
+        exit(1)
+    out2 := ""
+    for l in types.late_lines(rs):
+        out2 = out2 + "late: " + l + "\n"
+    eprint(out2)
+    print("RESOLVE-OK files=" + str(len(p.files)) + " symbols=" + str(len(rs.syms)) +
+        " late=" + str(len(types.late_lines(rs))) + "\n")
+
+fn resolve_census(src_path: string, argv0: string):
+    p := types.load(src_path, argv0)
+    rs := types.resolve(p)
+    out := ""
+    for l in types.census_lines(rs):
+        out = out + l + "\n"
+    print(out)
+
+fn dump_symbols(src_path: string, argv0: string):
+    p := types.load(src_path, argv0)
+    rs := types.resolve(p)
+    out := ""
+    for l in types.symbol_lines(rs):
+        out = out + l + "\n"
     print(out)
