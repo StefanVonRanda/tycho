@@ -25,7 +25,29 @@ fn compile_str(src: string, runtime: string) -> string:
     u := parse.unit(toks, notes)
     return runtime + emit.unit(u)
 
-fn compile(src_path: string, runtime_path: string, out_c: string):
+# Refuse what the front end refuses, before emitting anything. Until Phase 7d
+# this ran lex -> parse -> emit and never called resolve or check, so 120 of the
+# 337 reject fixtures compiled to C in silence while `--typecheck` refused them.
+fn check_or_die(src_path: string, argv0: string):
+    p := types.load(src_path, argv0)
+    rs := types.resolve(p)
+    if len(rs.errs) > 0:
+        out := ""
+        for e in rs.errs:
+            out = out + e + "\n"
+        eprint(out)
+        exit(1)
+    cs := types.check(p)
+    errs := types.check_errs(cs)
+    if len(errs) > 0:
+        out2 := ""
+        for e in errs:
+            out2 = out2 + e + "\n"
+        eprint(out2)
+        exit(1)
+
+fn compile(src_path: string, runtime_path: string, out_c: string, argv0: string):
+    check_or_die(src_path, argv0)
     src := ""
     match io.read_text(src_path):
         Ok(s): src = s

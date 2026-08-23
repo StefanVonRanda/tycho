@@ -87,5 +87,5 @@ fn main():
         return
     if len(out) == 0 or not emit_c:
         usage()
-    driver.compile(src, rt, out + ".c")
+    driver.compile(src, rt, out + ".c", av[0])
     print("wrote " + out + ".c")

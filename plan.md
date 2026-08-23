@@ -1047,15 +1047,71 @@ self-built twice, the two emitted `.c` identical.
   covered every corpus `tests/run.sh` walks from the start, not just
   `tests/*.ty`. Phase 7d widens it.
 
-- [ ] **Phase 7d — `scripts/tychoc1_sweep.sh` covers only `tests/*.ty`**
+- [x] **Phase 7d — `scripts/tychoc1_sweep.sh` covers only `tests/*.ty`**
   - Scope: the sweep script. `tests/run.sh` also walks `examples/*.ty`,
     `tests/pkg/`, `tests/reject/`, `tests/reject/pkg/`, `tests/abort/`,
     `tests/diag/`, `tests/warn/` and `tests/warn/pkg/`. Phase 7c found the
     session-killing fixture in `tests/reject/`, i.e. outside the sweep.
   - Done when: the sweep walks every corpus `tests/run.sh` does, each capped,
     with a per-corpus line so a regression names its own corpus.
-  - Verify: the widened sweep green, and `generic_recur_grow` reddening it with
-    `_inst_cap`'s threshold lowered to 4.
+
+  **Done 2026-08-23**, and widening it found a defect bigger than the one it
+  was written for.
+
+  **`--emit-c` never ran the type checker.** `compile()` was lex -> parse ->
+  emit and called neither `resolve` nor `check`, so the whole front end — the
+  331/337 refusals Phases 5-6b were built and gated for — was not in the
+  compile path at all:
+
+  ```
+  tests/reject/type_mismatch.ty  --typecheck -> exit 1 (refused)
+  tests/reject/type_mismatch.ty  --emit-c    -> exit 0 (emitted C)
+  ```
+
+  `driver.check_or_die` now runs ahead of emit. The reject corpus went
+  **217 -> 336 of 337 refused**, `reject/pkg` 17/17, while `tests/` MATCH held
+  at 199 — the invalid started being refused without the valid breaking. The
+  narrow sweep could never have seen this: `tests/*.ty` are all valid programs.
+
+  **The sweep's own bug, found the same way:** goldens are NOT beside the
+  source. `tests/run.sh:158` keys `examples/*.ty` off `tests/<basename>.out`,
+  and the first widened run scored `examples MATCH=0` against a path that does
+  not exist. Corrected, it is 22 of 23.
+
+  ```
+  tests      : compile=201 clean-error=73 link=201 RUN=201 MATCH=199
+  examples   : compile=23  clean-error=0  link=23  RUN=23  MATCH=22
+  tests/pkg  : compile=0   clean-error=23
+  abort(cmp) : n=19  refused=2   accepted=17
+  diag (cmp) : n=40  refused=40  accepted=0
+  warn (cmp) : n=12  refused=6   accepted=6
+  reject     : n=337 refused=336 accepted=1
+  reject/pkg : n=17  refused=17  accepted=0
+  TOTAL TIMEOUT=0 KILLED=0
+  ```
+
+  `abort`/`diag`/`warn` compare STDERR and exit status, which this sweep does
+  not model; they are swept for runaways only and their verdict column is
+  deliberately meaningless. A runaway is the only outcome that fails the sweep,
+  because it is the only one that can take the machine down.
+
+- [ ] **Phase 7e — no `tests/pkg/` fixture compiles (0 of 23)**
+  - Found by Phase 7d's widening; invisible to every sweep before it.
+  - Scope: multi-file packages. `tests/pkg/<name>/main.ty` plus siblings, entry
+    resolved the way `tests/run.sh:189-201` does.
+  - Done when: the sweep's `tests/pkg` line shows a non-zero compile and a
+    stated MATCH.
+  - Verify: `sh scripts/tychoc1_sweep.sh`, that line before and after.
+
+- [ ] **Phase 7f — one reject fixture still compiles, and 17 abort fixtures do**
+  - `reject accepted=1` of 337, and `abort refused=2 accepted=17`. The abort
+    figure is expected — an abort fixture is a valid program that dies at RUN
+    time — but it is unverified here, and the sweep cannot tell a correct abort
+    from a compile that merely succeeded.
+  - Done when: the 1 accepted reject fixture is named and refused, and the
+    abort corpus is scored on its exit status rather than on compiling.
+  - Verify: `sh scripts/tychoc1_sweep.sh` with an abort leg that reads exit
+    status, plus the named reject fixture refused.
 
 - [ ] **Phase 8 — codegen: maps, soa, generics, affine, concurrency**
   - Scope: `compiler/emit/`. Compact-dict maps, `soa`, monomorphised generics,
