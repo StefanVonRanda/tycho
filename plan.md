@@ -1167,8 +1167,55 @@ self-built twice, the two emitted `.c` identical.
   - Scope: `compiler/emit/`. Compact-dict maps, `soa`, monomorphised generics,
     handle destructors, `spawn`/`channel`/`select`, `parallel for`.
   - Done when: `TYCHOC=./tychoc1 make test` is green at the same count as
-    `./tychoc` — 719 fixtures at the last measurement, to be re-measured.
+    `./tychoc` — **752**, measured 2026-08-23; the "719" this said was stale.
   - Verify: `sh scripts/tychoc1_sweep.sh` — never an unbounded `make test`.
+
+  ### The soa target, read out of `./tychoc`'s own output
+
+  `494d3475` landed the type registry and heap classification; the expression,
+  lvalue, builtin and statement paths are not written, so all six soa fixtures
+  still die `expr:SoaLit -- Phase 8`. The shape below is **measured**, not
+  designed — `./tychoc tests/soa_basic.ty --emit-c` — so the remaining work is
+  mechanical rather than exploratory. Field `N` is the element struct's Nth
+  field in declaration order.
+
+  ```c
+  typedef struct { tycho_int *f0; tycho_int *f1; tycho_int *f2;
+                   tycho_int len; tycho_int cap; } Soa0;
+  static tycho_int Soa0_bound(Soa0 *s, tycho_int i);   /* dies out of range  */
+  static void Soa0_push(Arena*, Soa0*, S_P);           /* doubles cap from 4 */
+  static void Soa0_set(Arena*, Soa0*, tycho_int, S_P);
+  static S_P  Soa0_pop(Soa0*);                         /* dies when empty    */
+  static Soa0 Soa0_copy(Arena*, Soa0);                 /* cap = len          */
+  static int  Soa0_eq(Soa0, Soa0);
+  ```
+
+  Every call site, as `./tychoc` spells it:
+
+  | Tycho | emitted C |
+  |---|---|
+  | `ps := soa []P` | `Soa0 h_ps = (Soa0){0};` |
+  | `push(ps, v)` | `Soa0_push(&_scope, &(h_ps), v)` |
+  | `len(ps)` | `((h_ps).len)` |
+  | `ps[i].x` (read) | `((h_ps).f0[Soa0_bound(&(h_ps), i)])` |
+  | `ps[i].x = v` | the same expression, as an lvalue |
+  | `g := ps[i]` (gather) | `(S_P){ f0[b], f1[b], f2[b] }` with `b` bound once |
+  | `pop(ps)` | `Soa0_pop(&(h_ps))` |
+
+  The scatter form is the one worth care: `ps[2].z = ps[2].z + 1` emits
+  `Soa0_bound` **twice**, once per occurrence, rather than binding the index —
+  match that, because a fixture's output cannot tell the two apart and a
+  "tidier" single-bind diverges from the reference for no gain.
+
+  Fixtures: `soa_basic`, `soa`, `soa_pop`, `soa_scatter`, `soa_scatter_heap`,
+  `generic_soa_param`. `tests/kw_contextual_names.ty` mentions `soa` as an
+  ordinary identifier and already compiles — it is not a soa test.
+
+  **Read `tools/tycho-sim/run.sh` before believing a green soa run.** Its
+  subject is swap-remove: forgetting to re-point a moved entity's slot leaves
+  the pool LENGTH right, so every count and every field-wise sum still reads
+  correctly while exactly one id addresses somebody else, and a golden
+  re-recorded from that build agrees with it.
 
   **PARTIAL, committed unticked.** `sh scripts/tychoc1_sweep.sh` moved
   `compile=126 clean-error=148 / link=125 RUN=125 MATCH=122` to
