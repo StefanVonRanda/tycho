@@ -430,11 +430,19 @@ fn _iidx(cs: inout C, key: string) -> int:
             return i
     return -1
 
+# Without this a recursive generic at a GROWING type (`grow([x])` binding $T to
+# int, [int], [[int]] ...) never reaches the fixpoint and allocates until the
+# OOM killer fires. src/tychoc.c caps at the same 1024 and refuses.
+fn _inst_cap(n: int):
+    if n > 1024:
+        _bad("too many generic instantiations (> 1024) -- a recursive generic at a growing type?")
+
 fn _inst_struct(cs: inout C, n: string, targs: [string]) -> string:
     key := "S|" + n + "|" + _tjoin(targs)
     ex := _iidx(&cs, key)
     if ex >= 0:
         return "S~" + cs.iname[ex]
+    _inst_cap(len(cs.ikey))
     gi := _gsidx(&cs, n)
     mang := n + "__" + str(len(cs.ikey))
     push(cs.ikey, key)
@@ -455,6 +463,7 @@ fn _inst_enum(cs: inout C, n: string, targs: [string]) -> string:
     ex := _iidx(&cs, key)
     if ex >= 0:
         return "E~" + cs.iname[ex]
+    _inst_cap(len(cs.ikey))
     gi := _geidx(&cs, n)
     mang := n + "__" + str(len(cs.ikey))
     push(cs.ikey, key)
@@ -555,6 +564,7 @@ fn _inst_fn(cs: inout C, n: string, targs: [string]) -> int:
     ex := _iidx(&cs, key)
     if ex >= 0:
         return _fidx(&cs, cs.iname[ex])
+    _inst_cap(len(cs.ikey))
     gi := _gfidx(&cs, n)
     mang := n + "__" + str(len(cs.ikey))
     push(cs.ikey, key)

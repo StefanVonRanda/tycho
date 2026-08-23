@@ -1000,13 +1000,62 @@ self-built twice, the two emitted `.c` identical.
   `match_payload_mut`, `int_overflow` — the last of these already differed at
   Phase 7 and is the sweep's one pre-existing mismatch).
 
-- [ ] **Phase 7c — find the fixture that OOMs the box under tychoc1**
+- [x] **Phase 7c — find the fixture that OOMs the box under tychoc1**
   - Scope: diagnosis only. Bisect the 752-fixture corpus OUTSIDE `tests/*.ty`
     under `ulimit -v`, sequentially, so a runaway dies alone.
   - Done when: the fixture is named and the cause stated — fat frames from the
     missing optimisation passes, or a genuine codegen defect.
   - Verify: the named fixture reproducing under a cap, and passing under
     `./tychoc`. Do NOT run an unbounded `make test` to find it.
+
+  **Done 2026-08-23. The fixture is `tests/reject/generic_recur_grow.ty`, and
+  the cause is a genuine codegen defect, not fat frames.** It was the only
+  non-terminating file in 429 swept under `ulimit -v 2000000` + `timeout 5`:
+  `examples/` 23, `tests/pkg/` 23, `tests/abort/` 19, `tests/diag/` 40,
+  `tests/warn/` 10 all clean; `tests/reject/` 337 gave exactly one TIMEOUT.
+
+  It is three lines, and the whole runaway is in the type it binds:
+
+  ```tycho
+  fn grow(x: $T) -> int:
+      return grow([x])
+  ```
+
+  Each instantiation binds `$T` one array deeper — `int`, `[int]`, `[[int]]`
+  — so the monomorphiser never reaches a fixpoint. `./tychoc` caps at 1024 and
+  refuses (`tests/reject/generic_recur_grow.ty:2: error: too many generic
+  instantiations (> 1024) -- a recursive generic at a growing type?`); Phase 8's
+  monomorphiser had no cap and allocated until the kernel killed it.
+
+  **Why only the full suite died:** `tests/reject/` is outside
+  `scripts/tychoc1_sweep.sh`'s corpus, so every bounded sweep run to date was
+  green while the one fixture that kills the box sat just outside it.
+
+  Fixed in `compiler/emit/emit.ty@_inst_cap`, called from all three
+  instantiation paths (`_inst_struct`, `_inst_enum`, `_inst_fn`). Measured
+  after the fix, **with no memory cap at all** — the OOM scenario:
+
+  ```
+  $ timeout 20 ./tychoc1 tests/reject/generic_recur_grow.ty --emit-c -o /tmp/gr
+  exit=1  elapsed_ms=109
+  ```
+
+  Sweep unmoved at `compile=201 clean-error=73 link=201 RUN=201`, MATCH 199,
+  `make parse-check` all green.
+
+  **Cost of finding it late:** three killed sessions. The sweep should have
+  covered every corpus `tests/run.sh` walks from the start, not just
+  `tests/*.ty`. Phase 7d widens it.
+
+- [ ] **Phase 7d — `scripts/tychoc1_sweep.sh` covers only `tests/*.ty`**
+  - Scope: the sweep script. `tests/run.sh` also walks `examples/*.ty`,
+    `tests/pkg/`, `tests/reject/`, `tests/reject/pkg/`, `tests/abort/`,
+    `tests/diag/`, `tests/warn/` and `tests/warn/pkg/`. Phase 7c found the
+    session-killing fixture in `tests/reject/`, i.e. outside the sweep.
+  - Done when: the sweep walks every corpus `tests/run.sh` does, each capped,
+    with a per-corpus line so a regression names its own corpus.
+  - Verify: the widened sweep green, and `generic_recur_grow` reddening it with
+    `_inst_cap`'s threshold lowered to 4.
 
 - [ ] **Phase 8 — codegen: maps, soa, generics, affine, concurrency**
   - Scope: `compiler/emit/`. Compact-dict maps, `soa`, monomorphised generics,
