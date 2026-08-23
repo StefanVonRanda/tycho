@@ -85,12 +85,13 @@ struct C:
     loopdepth: int
     arena: string
     oks: [string]
+    ewlen: bool
     subn: [string]
     subp: [[ast.Param]]
     sube: [ast.Expr]
 
 fn _new() -> C:
-    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], [], [][ast.Param], []ast.Expr)
+    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [][ast.Param], []ast.Expr)
 
 fn _bad(msg: string):
     die("tychoc1: " + msg)
@@ -2121,6 +2122,58 @@ fn _binop(cs: inout C, op: string, ea: ast.Expr, eb: ast.Expr) -> (string, strin
             return ("(tycho_str_cmp(" + a + ", " + b + ") " + op + " 0)", "bool")
         a, b = _widen(a, at, b, bt)
         return ("(" + a + " " + op + " " + b + ")", "bool")
+    # Element-wise array arithmetic, and the scalar BROADCAST form. Shape read
+    # from `./tychoc tests/array_arith.ty --emit-c`: a fresh result array in the
+    # current arena, filled by one loop, with a length guard on the two-array
+    # form. Placed before the scalar operators so `a * b` on arrays never falls
+    # through to a C `*` on two structs.
+    if op == "*" or op == "/" or op == "%" or op == "+" or op == "-":
+        ewa := _is_arr(at)
+        ewb := _is_arr(bt)
+        if ewa or ewb:
+            et := at
+            if ewa:
+                et = _elem(at)
+            else:
+                et = _elem(bt)
+            ct := ""
+            if ewa:
+                ct = _cty(&cs, at)
+            else:
+                ct = _cty(&cs, bt)
+            ce := _cty(&cs, et)
+            va := _fresh(&cs, "_ewa")
+            vb := _fresh(&cs, "_ewb")
+            vr := _fresh(&cs, "_ewr")
+            vi := _fresh(&cs, "_ewi")
+            hd := ""
+            ln := ""
+            lhs := ""
+            rhs := ""
+            if ewa and ewb:
+                hd = ct + " " + va + " = (" + a + "); " + ct + " " + vb + " = (" + b + ");\n" +
+                    "   if (" + va + ".len != " + vb + ".len) tycho_ew_len(" + va + ".len, " + vb + ".len);\n"
+                ln = va + ".len"
+                lhs = va + ".data[" + vi + "]"
+                rhs = vb + ".data[" + vi + "]"
+            elif ewa:
+                hd = ct + " " + va + " = (" + a + "); " + ce + " " + vb + " = (" + b + ");\n"
+                ln = va + ".len"
+                lhs = va + ".data[" + vi + "]"
+                rhs = vb
+            else:
+                hd = ce + " " + va + " = (" + a + "); " + ct + " " + vb + " = (" + b + ");\n"
+                ln = vb + ".len"
+                lhs = va
+                rhs = vb + ".data[" + vi + "]"
+            rt2 := "[" + et + "]"
+            return ("({ " + hd +
+                "   " + ct + " " + vr + "; " + vr + ".len = " + ln + "; " + vr + ".cap = " + ln + ";\n" +
+                "   " + vr + ".data = " + vr + ".len ? (" + ce + " *)arena_alloc(" + cs.arena +
+                ", (size_t)" + vr + ".len * sizeof(" + ce + " )) : 0;\n" +
+                "   for (tycho_int " + vi + " = 0; " + vi + " < " + vr + ".len; " + vi + "++) " +
+                vr + ".data[" + vi + "] = (" + lhs + " " + op + " " + rhs + ");\n" +
+                "   " + vr + "; })", rt2)
     if op == "+" and (at == "string" or at == "bytes"):
         if bt == "char":
             return ("tycho_str_concat_char(" + cs.arena + ", " + a + ", " + b + ")", "string")
