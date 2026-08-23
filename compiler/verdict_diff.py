@@ -40,6 +40,22 @@ import classify_rejects as C
 ROOTS = ("tests", "corelib", "tools", "examples", "server", "bench")
 EXPECT = 1078          # a leg that scores 0 of 0 is green by accident
 SITES = C.load_sites()
+# The four TYPE fixtures Phase 6a does not refuse -- the same list compiler/run.sh
+# carries, and for the same reason: three need generic instantiation (Phase 6b),
+# one sits inside an f-string the parser keeps as raw text.
+KNOWN_TYPE_MISS = {
+    "tests/reject/generic_bounded_field_degraded.ty",
+    "tests/reject/generic_inst_inout_fnvalue.ty",
+    "tests/reject/generic_params_17.ty",
+    "tests/reject/len_scalar.ty",
+    # the same rule, reached only through an INSTANTIATED generic: the error is
+    # in the template body and only a bound $T makes it one
+    "tests/diag/generic_inst_name.ty",
+    "tests/reject/pkg/generic_inst_callsite/helper.ty",
+    "tests/reject/pkg/generic_inst_callsite/main.ty",
+    "tests/reject/pkg/generic_inst_srcfile/helper.ty",
+    "tests/reject/pkg/generic_inst_srcfile/main.ty",
+}
 LIT = lambda f: len(re.sub(r"%[-0-9.*]*(?:ll)?[a-zA-Z]", "", f))
 
 
@@ -67,6 +83,9 @@ def tychoc_verdict(path):
         return "SYNTAX", msg, loc
     if any(k in best[1] for k in C.NAME_SITES):
         return "NAME", msg, loc
+    if (any(k in best[1] for k in C.TYPE_SITES)
+            and not any(k in best[1] for k in C.TYPE_EXCLUDE)):
+        return "TYPE", msg, loc
     return "SEMANTIC", msg, loc
 
 
@@ -74,9 +93,11 @@ def main():
     files = sorted(os.path.join(d, n)
                    for root in ROOTS for d, _, ns in os.walk(root)
                    for n in ns if n.endswith(".ty"))
-    n = {"ACCEPT": 0, "SEMANTIC": 0, "NAME": 0, "SYNTAX": 0, "UNMATCHED": 0}
-    bad = rbad = lbad = 0
+    n = {"ACCEPT": 0, "SEMANTIC": 0, "NAME": 0, "TYPE": 0, "SYNTAX": 0, "UNMATCHED": 0}
+    bad = rbad = lbad = tbad = 0
     lok = lbad2 = lskip = 0
+    tok = tbad2 = tskip = 0
+    sixb = 0
     for f in files:
         cls, msg, loc = tychoc_verdict(f)
         n[cls] += 1
@@ -109,24 +130,56 @@ def main():
                 print("  LINE-DISAGREE %s tychoc=%s tychoc1=%s" % (f, loc, mine))
             else:
                 lok += 1
+        t = subprocess.run(["./tychoc1", f, "--typecheck"], capture_output=True, text=True)
+        typed = t.returncode == 0
+        if typed != (cls not in ("SYNTAX", "NAME", "TYPE")):
+            if not (cls == "TYPE" and f in KNOWN_TYPE_MISS):
+                tbad += 1
+                print("  TYPE-DISAGREE %s tychoc=%s tychoc1=%s :: %s"
+                      % (f, cls, "accept" if typed else "reject",
+                         (msg or t.stderr.split("\n")[0]).strip()[:90]))
+        if typed and " sixb=1" in t.stdout:
+            sixb += 1
+        if cls == "TYPE" and f not in KNOWN_TYPE_MISS:
+            m = re.search(r"^(\S+?(?::\d+)?): error: ", t.stderr, re.M)
+            mine = m.group(1) if m else ""
+            if not loc or not mine:
+                tskip += 1
+                print("  TYPE-LINE-UNLOCATED %s tychoc=%r tychoc1=%r" % (f, loc, mine))
+            elif mine != loc:
+                tbad2 += 1
+                print("  TYPE-LINE-DISAGREE %s tychoc=%s tychoc1=%s" % (f, loc, mine))
+            else:
+                tok += 1
         if cls == "ACCEPT" and resolved:
             late = [w for w in q.stdout.split() if w.startswith("late=")]
             if late and late[0] != "late=0":
                 lbad += 1
                 print("  LATE %s %s :: %s" % (f, late[0], q.stderr.split("\n")[0][:90]))
-    print("leg5  whole-tree verdicts: files=%d tychoc(accept=%d semantic=%d name=%d syntax=%d) disagreements=%d"
-          % (len(files), n["ACCEPT"], n["SEMANTIC"], n["NAME"], n["SYNTAX"], bad))
+    print("leg5  whole-tree verdicts: files=%d tychoc(accept=%d semantic=%d name=%d type=%d syntax=%d) disagreements=%d"
+          % (len(files), n["ACCEPT"], n["SEMANTIC"], n["NAME"], n["TYPE"], n["SYNTAX"], bad))
     print("leg6  whole-tree resolution: disagreements=%d unused-local/import on an accepted file=%d"
           % (rbad, lbad))
     print("leg8  NAME diagnostic file:line vs ./tychoc: scored=%d agree=%d disagree=%d unlocated=%d"
           % (lok + lbad2 + lskip, lok, lbad2, lskip))
+    print("leg10 whole-tree typecheck: disagreements=%d (%d TYPE files known-missed)"
+          % (tbad, len(KNOWN_TYPE_MISS)))
+    print("leg11 TYPE diagnostic file:line vs ./tychoc: scored=%d agree=%d disagree=%d unlocated=%d"
+          % (tok + tbad2 + tskip, tok, tbad2, tskip))
+    print("leg12 files whose program uses a generic/newtype/handle/bounded: %d of %d accepted "
+          "-- every such construct is answered `?` here; Phase 6b's number to drive down"
+          % (sixb, n["ACCEPT"]))
+    if tok + tbad2 + tskip != n["TYPE"] - len(KNOWN_TYPE_MISS):
+        print("parse-check: leg11 scored %d of %d TYPE files"
+              % (tok + tbad2 + tskip, n["TYPE"] - len(KNOWN_TYPE_MISS)))
+        return 1
     if lok + lbad2 + lskip != n["NAME"]:
         print("parse-check: leg8 scored %d of %d NAME files" % (lok + lbad2 + lskip, n["NAME"]))
         return 1
     if len(files) != EXPECT:
         print("parse-check: the tree is %d .ty files, expected %d" % (len(files), EXPECT))
         return 1
-    return 1 if (bad or rbad or lbad or lbad2 or lskip) else 0
+    return 1 if (bad or rbad or lbad or lbad2 or lskip or tbad or tbad2 or tskip) else 0
 
 
 if __name__ == "__main__":

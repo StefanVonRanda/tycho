@@ -1,0 +1,2158 @@
+package types
+
+import "core:sort"
+import "../ast"
+
+# The monomorphic type checker -- src/tychoc.c's type-resolve section
+# (src/tychoc.c:5716-9350) for the non-generic language, plus the type rules
+# parse_type enforces while a declaration is read (src/tychoc.c:2378-2632).
+#
+# THE ONE INVARIANT THAT MATTERS. A type is a STRING and `?` is UNKNOWN.
+# Every rule below fires only when the types it compares are KNOWN; anything
+# this pass cannot work out -- a generic instantiation, a UFCS method, a
+# newtype's underlying operations, a value crossing a `$T` -- is `?`, and `?` is
+# compatible with everything. So this pass can only ever accept MORE than
+# src/tychoc.c, never less, which is exactly what compiler/run.sh's leg2c and
+# leg6 measure: `wrongly-rejected=0` over 1,078 real files is the expensive
+# property, not the new refusals.
+#
+# Encoding: `int` `float` `bool` `string` `bytes` `ptr` `char` `void` `u8`..`f32`
+#   arr(T) fix(N,T) bnd(N,T) map(K,V) tup(A,B) fun(R,P...) soa(S)
+#   opt(T) res(T,E) chan(T) task @Name(mangled struct/enum/newtype/handle) ?
+# `@` prefixes a declared name so a struct called `arr` cannot collide with the
+# array constructor.
+
+fn _head(q: string) -> string:
+    for i := 0; i < len(q); i += 1:
+        if q[i] == 40:
+            return q[0:i]
+    return q
+
+fn _targs(q: string) -> [string]:
+    out := []string
+    depth := 0
+    start := 0
+    for j := 0; j < len(q); j += 1:
+        c := q[j]
+        if c == 40:
+            depth += 1
+            if depth == 1:
+                start = j + 1
+        elif c == 41:
+            depth -= 1
+            if depth == 0:
+                push(out, q[start:j])
+                return out
+        elif c == 44 and depth == 1:
+            push(out, q[start:j])
+            start = j + 1
+    return out
+
+fn _arg0(q: string) -> string:
+    a := _targs(q)
+    if len(a) == 0:
+        return "?"
+    return a[0]
+
+fn _arg1(q: string) -> string:
+    a := _targs(q)
+    if len(a) < 2:
+        return "?"
+    return a[1]
+
+fn known(t: string) -> bool:
+    return find(t, "?") < 0
+
+fn compat(a: string, b: string) -> bool:
+    if a == "?" or b == "?" or a == b:
+        return true
+    ha := _head(a)
+    hb := _head(b)
+    if ha != hb:
+        return false
+    aa := _targs(a)
+    bb := _targs(b)
+    if len(aa) != len(bb) or len(aa) == 0:
+        return false
+    for i := 0; i < len(aa); i += 1:
+        if not compat(aa[i], bb[i]):
+            return false
+    return true
+
+fn _is_arr(t: string) -> bool:
+    h := _head(t)
+    return h == "arr" or h == "fix" or h == "bnd"
+
+fn _is_int(t: string) -> bool:
+    return t == "int" or t == "u8" or t == "u16" or t == "u32" or t == "u64" or
+        t == "i8" or t == "i16" or t == "i32" or t == "i64"
+
+fn _is_num(t: string) -> bool:
+    return _is_int(t) or t == "float" or t == "f32"
+
+fn _is_prim_name(s: string) -> bool:
+    if s == "int" or s == "float" or s == "bool" or s == "string":
+        return true
+    if s == "ptr" or s == "bytes" or s == "u32" or s == "u64" or s == "f32":
+        return true
+    return s == "u8" or s == "u16" or s == "i8" or s == "i16" or s == "i32" or s == "i64"
+
+# ---------------------------------------------------------------- the tables
+
+struct TDecl:
+    name: string                       # mangled, without the `@`
+    kind: string                       # struct enum newtype handle
+    generic: bool
+    fnames: [string]                   # struct fields / enum variants
+    ftypes: [string]                   # field type, or a variant's payload joined by "|"
+    file: string
+    line: int
+
+struct FSig:
+    name: string                       # mangled
+    file: string
+    line: int
+    pnames: [string]
+    ptypes: [string]
+    pflags: [string]                   # "inout" "sink" "var" ""
+    ret: string
+    generic: bool
+    builtin: bool
+
+struct VBind:
+    name: string
+    ty: string
+    mutable: bool
+
+struct C:
+    tds: [TDecl]
+    tindex: [string: int]
+    sg: [FSig]
+    sindex: [string: int]
+    vowner: [string: string]           # mangled variant -> "@Enum"
+    vpay: [string: string]             # mangled variant -> payload joined by "|"
+    consts: [string: string]           # mangled const -> type
+    constv: [string: int]              # ... and its folded int value, for a match arm
+    typarams: [string: bool]           # the type parameters in scope right now
+    subs: [string: bool]               # declared `subscript` names -- the only callable place
+    vars: [VBind]
+    nvars: int
+    errs: [string]
+    perrs: [string]
+    counts: [string: int]
+    file: string
+    line: int
+    prefix: string
+    ret: string
+    void_ok: bool
+    skip: bool                         # inside a generic template: resolve nothing
+    imports: [ast.ImportD]
+    all_imports: [ast.ImportD]
+    in_arg: bool
+    nmatch: int
+    uses6b: bool                       # the program declares a generic, newtype, handle or bounded
+
+fn _cerr(cs: inout C, msg: string):
+    push(cs.errs, cs.file + ":" + str(cs.line) + ": error: " + msg)
+
+# The type rules parse_type enforces run while the DECLARATION is read, so they
+# precede every body diagnostic in the whole build -- the same split
+# resolve.ty@_perr makes for the import leak, and for the same reason.
+fn _cperr(cs: inout C, msg: string):
+    push(cs.perrs, cs.file + ":" + str(cs.line) + ": error: " + msg)
+
+fn _tnote(cs: inout C, key: string):
+    cs.counts[key] = cs.counts.get(key, 0) + 1
+
+fn _prefix_of(cs: inout C, q: string) -> string:
+    for im in cs.all_imports:
+        if len(im.alias) > 0 and im.alias == q:
+            return pkg_basename(im.path) + "__"
+    return q + "__"
+
+# The declared type named `n` (already mangled), as an encoded type.
+fn _named(cs: inout C, m: string) -> string:
+    if m in cs.tindex:
+        if cs.tds[cs.tindex[m]].generic:
+            return "?"
+        return "@" + m
+    return ""
+
+fn _lookup_type(cs: inout C, q: string, n: string) -> string:
+    if len(q) > 0:
+        return _named(&cs, _prefix_of(&cs, q) + n)
+    if len(cs.prefix) > 0:
+        r := _named(&cs, cs.prefix + n)
+        if len(r) > 0:
+            return r
+    return _named(&cs, n)
+
+# --- ast.Ty -> encoded type -------------------------------------------------
+#
+# Where src/tychoc.c dies, this dies too -- these are the parse_type rules, and
+# they are TYPE-class in compiler/reject_class.tsv. Everything it cannot resolve
+# (a type parameter, a generic instance) becomes `?`.
+fn _enc(cs: inout C, t: ast.Ty) -> string:
+    match t:
+        ast.TPrim(p): return p
+        ast.TParam(n): return "?"
+        ast.TName(q, n, targs):
+            if len(q) == 0 and n == "void":
+                if not cs.void_ok:
+                    _cperr(&cs, "'void' is a type only as a Result's ok payload, as in Result(void, string)")
+                return "void"
+            if len(q) == 0 and n == "Option":
+                inner := _enc_noval(&cs, targs[0])
+                if inner == "void":
+                    _cperr(&cs, "Option(void) is not a type")
+                return "opt(" + inner + ")"
+            if len(q) == 0 and n == "Channel":
+                inner := _enc_noval(&cs, targs[0])
+                if inner == "void":
+                    _cperr(&cs, "Channel(void) is not a type")
+                return "chan(" + inner + ")"
+            if len(q) == 0 and n == "Result":
+                keep := cs.void_ok
+                cs.void_ok = true
+                ok := _enc(&cs, targs[0])
+                cs.void_ok = keep
+                er := _enc_noval(&cs, targs[1])
+                return "res(" + ok + "," + er + ")"
+            if len(q) == 0 and (n in cs.typarams):
+                return "?"
+            r := _lookup_type(&cs, q, n)
+            if len(targs) > 0:
+                for a in targs:
+                    _tnote(&cs, "targ:" + _enc_noval(&cs, a))
+                if len(r) == 0 and not cs.skip and not _known_generic(&cs, q, n):
+                    _cperr(&cs, "unknown type '" + n + "'")
+                return "?"
+            if len(r) == 0:
+                if cs.skip:
+                    return "?"
+                _cperr(&cs, "unknown type '" + n + "'")
+                return "?"
+            return r
+        ast.TArr(k):
+            el := _enc_noval(&cs, k[0])
+            if el == "void":
+                _cperr(&cs, "an array element type cannot be void")
+            return "arr(" + el + ")"
+        ast.TFix(sz, k):
+            el := _enc_noval(&cs, k[0])
+            if len(sz) > 0 and sz[0] == 36:
+                return "?"             # `[$N]T` is a TEMPLATE pattern, not a type
+            n := _fixsize(&cs, sz)
+            if el == "bool" or el == "void":
+                _cperr(&cs, "a fixed-size array element cannot be bool or void")
+            return "fix(" + n + "," + el + ")"
+        ast.TBnd(sz, k):
+            cs.uses6b = true
+            el := _enc_noval(&cs, k[0])
+            n := "?"                       # a bounded capacity is Phase 6b's rule
+            if len(sz) > 0 and sz[0] >= 48 and sz[0] <= 57:
+                n = _dec(sz)
+            return "bnd(" + n + "," + el + ")"
+        ast.TMap(k):
+            kt := _enc_noval(&cs, k[0])
+            vt := _enc_noval(&cs, k[1])
+            if not _mapkey_ok(&cs, kt):
+                _cperr(&cs, "map keys must be string, int (directly or through a newtype), a fieldless enum, or a hashable struct/tuple/array")
+            return "map(" + kt + "," + vt + ")"
+        ast.TTup(k):
+            out := "tup("
+            for i := 0; i < len(k); i += 1:
+                e := _enc_noval(&cs, k[i])
+                if e == "void":
+                    _cperr(&cs, "a tuple element cannot be void")
+                if i > 0:
+                    out = out + ","
+                out = out + e
+            return out + ")"
+        ast.TFn(hr, k):
+            r := "void"
+            np := len(k)
+            if hr:
+                np = len(k) - 1
+                r = _enc_noval(&cs, k[len(k) - 1])
+            out := "fun(" + r
+            for i := 0; i < np; i += 1:
+                e := _enc_noval(&cs, k[i])
+                if e == "void":
+                    _cperr(&cs, "a function-type parameter cannot be void")
+                out = out + "," + e
+            return out + ")"
+        ast.TSoa(k):
+            el := _enc_noval(&cs, k[0])
+            return "soa(" + el + ")"
+    return "?"
+
+# Every nested position but Result's ok payload forbids `void`.
+fn _enc_noval(cs: inout C, t: ast.Ty) -> string:
+    keep := cs.void_ok
+    cs.void_ok = false
+    r := _enc(&cs, t)
+    cs.void_ok = keep
+    return r
+
+# `[N]T` / `bounded[N]T`: a literal, or an int `const`. src/tychoc.c:2487.
+# A fixed size is compared as TEXT, so `[0xA]int` and `[10]int` must normalise
+# to the same thing or a legal program is refused (tests/int_hex.ty:17).
+fn _dec(sz: string) -> string:
+    base := 10
+    i := 0
+    if len(sz) > 2 and sz[0] == 48 and (sz[1] == 120 or sz[1] == 88):
+        base = 16
+        i = 2
+    elif len(sz) > 2 and sz[0] == 48 and (sz[1] == 98 or sz[1] == 66):
+        base = 2
+        i = 2
+    v := 0
+    for i < len(sz):
+        c := sz[i]
+        d := -1
+        if c >= 48 and c <= 57:
+            d = c - 48
+        elif c >= 97 and c <= 102:
+            d = c - 87
+        elif c >= 65 and c <= 70:
+            d = c - 55
+        elif c == 95:
+            i += 1
+            continue
+        if d < 0 or d >= base:
+            return "?"
+        v = v * base + d
+        i += 1
+    return str(v)
+
+fn _fixsize(cs: inout C, sz: string) -> string:
+    if len(sz) == 0:
+        return "?"
+    if sz[0] == 36:
+        return "?"
+    if sz[0] >= 48 and sz[0] <= 57:
+        return _dec(sz)
+    if cs.skip:
+        return "?"
+    if len(cs.prefix) > 0 and (cs.prefix + sz) in cs.consts:
+        return "?"
+    if sz in cs.consts:
+        return "?"
+    _cperr(&cs, "a fixed-size array length must be an integer literal or an int `const` -- '" + sz + "' is not")
+    return "?"
+
+fn _mapkey_ok(cs: inout C, k: string) -> bool:
+    if k == "?":
+        return true
+    if k == "string" or _is_int(k):
+        return true
+    h := _head(k)
+    if h == "tup" or h == "arr" or h == "fix":
+        for a in _targs(k):
+            if not _mapkey_ok(&cs, a):
+                return false
+        return true
+    if len(k) > 1 and k[0] == 64:
+        m := k[1:]
+        if m in cs.tindex:
+            d := cs.tds[cs.tindex[m]]
+            if d.kind == "newtype":
+                return _mapkey_ok(&cs, d.ftypes[0])
+            if d.kind == "enum":
+                for p in d.ftypes:
+                    if len(p) > 0:
+                        return false
+                return true
+            if d.kind == "struct":
+                for ft in d.ftypes:
+                    if not _mapkey_ok(&cs, ft):
+                        return false
+                return true
+        return false
+    return false
+
+# ---------------------------------------------------------------- the context
+#
+# Two passes over the declarations, for the reason src/tychoc.c pre-scans: a
+# struct field may name a type declared LATER in the same file (`[B]` above
+# `struct B`), which ./tychoc accepts -- measured 2026-08-23. So every NAME is
+# registered first and only then is any type encoded.
+
+struct DRef:
+    line: int
+    cat: int                           # 1 struct 2 enum 3 newtype 4 handle 5 const 6 subscript 7 fn
+    idx: int
+
+fn _sorted_decls(u: ast.Unit) -> [DRef]:
+    ds := []DRef
+    for k := 0; k < len(u.structs); k += 1:
+        push(ds, DRef(u.structs[k].line, 1, k))
+    for k := 0; k < len(u.enums); k += 1:
+        push(ds, DRef(u.enums[k].line, 2, k))
+    for k := 0; k < len(u.newtypes); k += 1:
+        push(ds, DRef(u.newtypes[k].line, 3, k))
+    for k := 0; k < len(u.handles); k += 1:
+        push(ds, DRef(u.handles[k].line, 4, k))
+    for k := 0; k < len(u.consts); k += 1:
+        push(ds, DRef(u.consts[k].line, 5, k))
+    for k := 0; k < len(u.subscripts); k += 1:
+        push(ds, DRef(u.subscripts[k].line, 6, k))
+    for k := 0; k < len(u.fns); k += 1:
+        push(ds, DRef(u.fns[k].line, 7, k))
+    for a := 0; a < len(ds); a += 1:
+        b := a
+        for c := a + 1; c < len(ds); c += 1:
+            if ds[c].line < ds[b].line:
+                b = c
+        tmp := ds[a]
+        ds[a] = ds[b]
+        ds[b] = tmp
+    return ds
+
+fn _addt(cs: inout C, name: string, kind: string, generic: bool, file: string, line: int):
+    if name in cs.tindex:
+        return
+    cs.tindex[name] = len(cs.tds)
+    push(cs.tds, TDecl(name, kind, generic, []string, []string, file, line))
+
+fn _typarams_of(cs: inout C, names: [string]):
+    cs.typarams = []string: bool
+    for n in names:
+        cs.typarams[n] = true
+
+fn _register(cs: inout C, p: Program):
+    for f in p.files:
+        for sd in f.unit.structs:
+            _addt(&cs, f.prefix + sd.name, "struct", len(sd.typarams) > 0, f.path, sd.line)
+        for ed in f.unit.enums:
+            _addt(&cs, f.prefix + ed.name, "enum", len(ed.typarams) > 0, f.path, ed.line)
+            for v in ed.variants:
+                cs.vowner[f.prefix + v.name] = "@" + f.prefix + ed.name
+        for nd in f.unit.newtypes:
+            _addt(&cs, f.prefix + nd.name, "newtype", false, f.path, nd.line)
+        for hd in f.unit.handles:
+            _addt(&cs, f.prefix + hd.name, "handle", false, f.path, hd.line)
+
+# The signature of one fn, as src/tychoc.c's Sig. A generic fn's signature is
+# recorded but never CHECKED against a call: monomorphisation is Phase 6b, so
+# every call to one yields `?`.
+fn _sig_of(cs: inout C, prefix: string, fd: ast.Fn) -> FSig:
+    _typarams_of(&cs, fd.typarams)
+    for pm in fd.params:
+        for tt in pm.ty:
+            for sp in _sizeparams_ty(tt, []string):
+                cs.typarams[sp] = true
+    pn := []string
+    pt := []string
+    pf := []string
+    for pm in fd.params:
+        cs.line = pm.line
+        t := "?"
+        if len(pm.ty) == 1:
+            t = _enc(&cs, pm.ty[0])
+        push(pn, pm.name)
+        push(pt, t)
+        fl := ""
+        if pm.is_inout:
+            fl = "inout"
+            if _head(t) == "fun":
+                _cerr(&cs, "inout parameter '" + pm.name + "': a function value can't be inout (a callee could write a closure back into the caller and it would dangle)")
+        elif pm.is_sink:
+            fl = "sink"
+        if pm.is_variadic:
+            fl = "var"
+        push(pf, fl)
+    cs.line = fd.line
+    rt := "void"
+    if len(fd.ret) == 1:
+        keep := cs.void_ok
+        cs.void_ok = false
+        rt = _enc(&cs, fd.ret[0])
+        cs.void_ok = keep
+    nm := prefix + fd.name
+    if fd.is_extern:
+        nm = fd.name
+    cs.typarams = []string: bool
+    return FSig(nm, cs.file, fd.line, pn, pt, pf, rt, len(fd.typarams) > 0, false)
+
+fn _addsig(cs: inout C, s: FSig):
+    if s.name in cs.sindex:
+        return
+    cs.sindex[s.name] = len(cs.sg)
+    push(cs.sg, s)
+
+fn _bsig(cs: inout C, name: string, ret: string, ps: [string]):
+    pn := []string
+    pf := []string
+    for i := 0; i < len(ps); i += 1:
+        push(pn, "x")
+        push(pf, "")
+    _addsig(&cs, FSig(name, "", 0, pn, ps, pf, ret, false, true))
+
+# src/tychoc.c@register_builtins, verbatim: the fixed-signature table, and ONLY
+# that table. The shape-directed builtins (len/push/keys/str/to_*/...) bypass it
+# and are checked one by one in _call_builtin.
+fn _builtin_sigs_t(cs: inout C):
+    _bsig(&cs, "print", "void", ["string"])
+    _bsig(&cs, "println", "void", ["string"])
+    _bsig(&cs, "eprint", "void", ["string"])
+    _bsig(&cs, "input", "string", []string)
+    _bsig(&cs, "read_all", "string", []string)
+    _bsig(&cs, "clock", "int", []string)
+    _bsig(&cs, "now", "int", []string)
+    _bsig(&cs, "ncpu", "int", []string)
+    _bsig(&cs, "chr", "string", ["int"])
+    _bsig(&cs, "to_char", "char", ["int"])
+    _bsig(&cs, "die", "void", ["string"])
+    _bsig(&cs, "exit", "void", ["int"])
+    _bsig(&cs, "substr", "string", ["string", "int", "int"])
+    _bsig(&cs, "find", "int", ["string", "string"])
+    _bsig(&cs, "char_at", "char", ["string", "int"])
+    _bsig(&cs, "split", "arr(string)", ["string", "string"])
+    _bsig(&cs, "read_file", "string", ["string"])
+    _bsig(&cs, "write_file", "bool", ["string", "string"])
+    _bsig(&cs, "list_dir", "arr(string)", ["string"])
+    _bsig(&cs, "args", "arr(string)", []string)
+    _bsig(&cs, "getenv", "string", ["string"])
+    _bsig(&cs, "is_null", "bool", ["ptr"])
+    _bsig(&cs, "sqrt", "float", ["float"])
+    _bsig(&cs, "pow", "float", ["float", "float"])
+    _bsig(&cs, "floor", "float", ["float"])
+    _bsig(&cs, "fabs", "float", ["float"])
+
+# ---------------------------------------------------------------- scopes
+
+fn _vmark(cs: inout C) -> int:
+    return cs.nvars
+
+fn _vrestore(cs: inout C, m: int):
+    cs.nvars = m
+
+fn _vpush(cs: inout C, name: string, ty: string, mutable: bool):
+    b := VBind(name, ty, mutable)
+    if cs.nvars < len(cs.vars):
+        cs.vars[cs.nvars] = b
+    else:
+        push(cs.vars, b)
+    cs.nvars += 1
+
+fn _vfind(cs: inout C, name: string) -> int:
+    for i := cs.nvars - 1; i >= 0; i -= 1:
+        if cs.vars[i].name == name:
+            return i
+    return -1
+
+fn _vtype(cs: inout C, name: string) -> string:
+    i := _vfind(&cs, name)
+    if i < 0:
+        return ""
+    return cs.vars[i].ty
+
+fn _is_pkg(cs: inout C, q: string) -> bool:
+    if _vfind(&cs, q) >= 0:
+        return false
+    for im in cs.all_imports:
+        if (len(im.alias) > 0 and im.alias == q) or pkg_basename(im.path) == q:
+            return true
+    return false
+
+fn _sigidx(cs: inout C, m: string) -> int:
+    if m in cs.sindex:
+        return cs.sindex[m]
+    return -1
+
+fn _sigtype(s: FSig) -> string:
+    out := "fun(" + s.ret
+    for t in s.ptypes:
+        out = out + "," + t
+    return out + ")"
+
+# The struct a value of encoded type `t` is, or "" -- seeing through a newtype,
+# which src/tychoc.c@base_of does for every field and index operation.
+fn _base(cs: inout C, t: string) -> string:
+    if len(t) > 1 and t[0] == 64:
+        m := t[1:]
+        if m in cs.tindex and cs.tds[cs.tindex[m]].kind == "newtype":
+            return _base(&cs, cs.tds[cs.tindex[m]].ftypes[0])
+    return t
+
+fn _tdecl(cs: inout C, t: string) -> int:
+    if len(t) > 1 and t[0] == 64:
+        m := t[1:]
+        if m in cs.tindex:
+            return cs.tindex[m]
+    return -1
+
+fn _field_ty(cs: inout C, t: string, f: string) -> string:
+    i := _tdecl(&cs, _base(&cs, t))
+    if i < 0:
+        return "?"
+    d := cs.tds[i]
+    if d.kind != "struct":
+        return "?"
+    for k := 0; k < len(d.fnames); k += 1:
+        if d.fnames[k] == f:
+            return d.ftypes[k]
+    return "?"
+
+fn _elem_of(cs: inout C, t: string) -> string:
+    b := _base(&cs, t)
+    h := _head(b)
+    if h == "arr" or h == "soa":
+        return _targs(b)[0]
+    if h == "fix" or h == "bnd":
+        return _targs(b)[1]
+    return "?"
+
+# ---------------------------------------------------------------- expressions
+
+fn _exs(cs: inout C, es: [ast.Expr]):
+    for e in es:
+        _ex(&cs, e)
+
+fn _ex(cs: inout C, e: ast.Expr) -> string:
+    return _ex2(&cs, e, "?")
+
+# `want` is the EXPECTED type, which src/tychoc.c@resolve_exp threads for the
+# same three reasons: `None` and `Ok()`/`Err()` have no type of their own, an
+# empty `[]` takes the annotation's, and an untyped lambda parameter takes the
+# expected fn type's.
+fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
+    cs.line = ast.line_of(e)
+    # src/tychoc.c@resolve_exp's literal adaptation, and the reason it has to be
+    # here rather than only in _binop: a LITERAL takes the expected type's width
+    # (`x: u32 = 1`, `scale(v, 2)` at a float parameter), a variable never does.
+    if want != "?":
+        if (e is ast.IntLit) and (_is_int(want) or want == "float" or want == "f32"):
+            return want
+        if (e is ast.FloatLit) and want == "f32":
+            return want
+    match e:
+        ast.IntLit(l, v): return "int"
+        ast.FloatLit(l, v): return "float"
+        ast.StrLit(l, v): return "string"
+        ast.FStrLit(l, v): return "string"
+        ast.CharLit(l, v): return "char"
+        ast.BoolLit(l, v): return "bool"
+        ast.NullLit(l): return "ptr"
+        ast.Name(l, n):
+            t := _vtype(&cs, n)
+            if len(t) > 0:
+                return t
+            if len(cs.prefix) > 0 and (cs.prefix + n) in cs.consts:
+                return cs.consts[cs.prefix + n]
+            if n in cs.consts:
+                return cs.consts[n]
+            if len(cs.prefix) > 0 and (cs.prefix + n) in cs.vowner:
+                return cs.vowner[cs.prefix + n]
+            if n in cs.vowner:
+                return cs.vowner[n]
+            si := _sigidx(&cs, n)
+            if si < 0 and len(cs.prefix) > 0:
+                si = _sigidx(&cs, cs.prefix + n)
+            if si >= 0 and not cs.sg[si].generic:
+                return _sigtype(cs.sg[si])
+            return "?"
+        ast.Field(l, k, f):
+            match k[0]:
+                ast.Name(l2, q):
+                    if _is_pkg(&cs, q):
+                        m := _prefix_of(&cs, q) + f
+                        if m in cs.consts:
+                            return cs.consts[m]
+                        if m in cs.vowner:
+                            return cs.vowner[m]
+                        si := _sigidx(&cs, m)
+                        if si >= 0 and not cs.sg[si].generic:
+                            return _sigtype(cs.sg[si])
+                        return "?"
+                _: pass
+            rt := _ex(&cs, k[0])
+            ft := _field_ty(&cs, rt, f)
+            _tnote(&cs, "f:" + ft)
+            return ft
+        ast.TupIdx(l, k, i):
+            rt := _base(&cs, _ex(&cs, k[0]))
+            if _head(rt) != "tup":
+                return "?"
+            els := _targs(rt)
+            if i >= len(els):
+                _cerr(&cs, "tuple index " + str(i) + " out of range (the tuple has " + str(len(els)) + " elements)")
+                return "?"
+            return els[i]
+        ast.Index(l, k):
+            rt := _base(&cs, _ex(&cs, k[0]))
+            it := _ex(&cs, k[1])
+            h := _head(rt)
+            if h == "map":
+                kt := _targs(rt)[0]
+                if not compat(kt, it):
+                    _cerr(&cs, "map key must be " + kt + ", got " + it)
+                return _targs(rt)[1]
+            if h == "tup":
+                _cerr(&cs, "a tuple element is named `.0`, `.1`, ... not `[i]` -- the index must be a constant position, so it is not a subscript")
+                return "?"
+            if rt == "string" or rt == "bytes":
+                return "int"
+            if _is_arr(rt) or h == "soa":
+                _tnote(&cs, "x:" + _elem_of(&cs, rt))
+                return _elem_of(&cs, rt)
+            return "?"
+        ast.Slice(l, a, b, k):
+            rt := _ex(&cs, k[0])
+            for i := 1; i < len(k); i += 1:
+                _ex(&cs, k[i])
+            return _base(&cs, rt)
+        ast.Call(l, q, n, ts, args):
+            ct := _call(&cs, l, q, n, ts, args, want)
+            _tnote(&cs, "c:" + ct)
+            return ct
+        ast.CallVal(l, k):
+            ct := _base(&cs, _ex(&cs, k[0]))
+            keep := cs.in_arg
+            cs.in_arg = true
+            for i := 1; i < len(k); i += 1:
+                _ex(&cs, k[i])
+            cs.in_arg = keep
+            if _head(ct) == "fun":
+                return _targs(ct)[0]
+            return "?"
+        ast.Named(l, nm, k): return _ex(&cs, k[0])
+        ast.Binop(l, o, k):
+            bt := _binop(&cs, o, k)
+            _tnote(&cs, "o:" + bt)
+            return bt
+        ast.Unop(l, o, k):
+            t := _ex(&cs, k[0])
+            if o == "not":
+                return "bool"
+            return t
+        ast.IsVar(l, k, q, v):
+            st := _base(&cs, _ex(&cs, k[0]))
+            if known(st):
+                h := _head(st)
+                if h == "opt" or h == "res":
+                    yes := "Some"
+                    no := "None"
+                    if h == "res":
+                        yes = "Ok"
+                        no = "Err"
+                    if v != yes and v != no:
+                        _cerr(&cs, "'" + v + "' is not a variant of " + st + "; write `" + yes + "` or `" + no + "`")
+                    return "bool"
+                ti := _tdecl(&cs, st)
+                if ti >= 0 and cs.tds[ti].kind == "enum":
+                    found := false
+                    for vn in cs.tds[ti].fnames:
+                        if vn == v:
+                            found = true
+                    if not found:
+                        _cerr(&cs, "'" + v + "' is not a variant of " + cs.tds[ti].name)
+                    return "bool"
+                if h != "opt" and h != "res" and _tdecl(&cs, st) < 0:
+                    _cerr(&cs, "`is` asks an enum, Option or Result value which variant it holds; " + st + " is none of those")
+                elif _tdecl(&cs, st) >= 0 and cs.tds[_tdecl(&cs, st)].kind != "enum":
+                    _cerr(&cs, "`is` asks an enum, Option or Result value which variant it holds; " + st + " is none of those")
+            return "bool"
+        ast.ArrLit(l, k):
+            wb := _base(&cs, want)
+            ew := "?"
+            if _is_arr(wb):
+                ew = _elem_of(&cs, wb)
+            if _head(wb) == "fix" and len(_targs(wb)[0]) > 0 and _targs(wb)[0][0] >= 48 and
+                    _targs(wb)[0][0] <= 57 and str(len(k)) != _targs(wb)[0]:
+                for x in k:
+                    _ex2(&cs, x, ew)
+                cs.line = l
+                _cerr(&cs, "a fixed-size array of length " + _targs(wb)[0] + " needs " + _targs(wb)[0] + " elements, got " + str(len(k)))
+                return wb
+            et := "?"
+            for i := 0; i < len(k); i += 1:
+                t := _ex2(&cs, k[i], ew)
+                if t == "void":
+                    _cerr(&cs, "an array element cannot be void -- this element produces no value (a call to a procedure that returns nothing?)")
+                elif et == "?":
+                    et = t
+                elif not compat(t, et):
+                    _cerr(&cs, "array elements must all have the same type")
+                    return "?"
+            if et == "?" and ew != "?":
+                et = ew
+            if _is_arr(wb) and compat(_elem_of(&cs, wb), et):
+                return wb                  # a fixed or bounded destination keeps its own kind
+            return "arr(" + et + ")"
+        ast.MapLit(l, k):
+            kt := "?"
+            vt := "?"
+            for i := 0; i + 1 < len(k); i += 2:
+                a := _ex(&cs, k[i])
+                b := _ex(&cs, k[i + 1])
+                if kt == "?":
+                    kt = a
+                if vt == "?":
+                    vt = b
+            return "map(" + kt + "," + vt + ")"
+        ast.EmptyArr(l, t):
+            if len(t) == 0:
+                if _is_arr(_base(&cs, want)):
+                    return want
+                return "?"
+            at := "arr(" + _enc(&cs, t[0]) + ")"
+            if _is_arr(_base(&cs, want)) and compat(_elem_of(&cs, want), _elem_of(&cs, at)):
+                return want
+            return at
+        ast.EmptyMap(l, t):
+            if len(t) < 2:
+                return "?"
+            kt := _enc(&cs, t[0])
+            vt := _enc(&cs, t[1])
+            if not _mapkey_ok(&cs, kt):
+                _cerr(&cs, "map keys must be string, int (directly or through a newtype), a fieldless enum, or a hashable struct/tuple/array")
+            return "map(" + kt + "," + vt + ")"
+        ast.SoaLit(l, t):
+            if len(t) == 0:
+                return "?"
+            return "soa(" + _enc(&cs, t[0]) + ")"
+        ast.Tuple(l, k):
+            out := "tup("
+            ws := _targs(_base(&cs, want))
+            for i := 0; i < len(k); i += 1:
+                w := "?"
+                if _head(_base(&cs, want)) == "tup" and i < len(ws):
+                    w = ws[i]
+                if i > 0:
+                    out = out + ","
+                out = out + _ex2(&cs, k[i], w)
+            return out + ")"
+        ast.SomeE(l, k):
+            w := "?"
+            if _head(_base(&cs, want)) == "opt":
+                w = _targs(_base(&cs, want))[0]
+            return "opt(" + _ex2(&cs, k[0], w) + ")"
+        ast.NoneE(l):
+            if _head(_base(&cs, want)) == "opt":
+                return want
+            return "opt(?)"
+        ast.OkE(l, k):
+            wb := _base(&cs, want)
+            if len(k) == 0:
+                if _head(wb) == "res":
+                    if _targs(wb)[0] != "void" and known(_targs(wb)[0]):
+                        _cerr(&cs, "declared type " + want + " but value is Ok(); Ok() is only a Result(void, E)")
+                    return want
+                return "res(void,?)"
+            w := "?"
+            if _head(wb) == "res":
+                w = _targs(wb)[0]
+                if w == "void":
+                    _cerr(&cs, "Result(void, " + _targs(wb)[1] + ") carries no ok value -- write Ok(), not Ok(x)")
+                    return want
+            return "res(" + _ex2(&cs, k[0], w) + ",?)"
+        ast.ErrE(l, k):
+            wb := _base(&cs, want)
+            w := "?"
+            if _head(wb) == "res":
+                w = _targs(wb)[1]
+            return "res(?," + _ex2(&cs, k[0], w) + ")"
+        ast.SpawnE(l, k):
+            _exs(&cs, k)
+            return "task"
+        ast.OrRet(l, k):
+            t := _base(&cs, _ex(&cs, k[0]))
+            if _head(t) == "res":
+                return _targs(t)[0]
+            if _head(t) == "opt":
+                return _targs(t)[0]
+            return "?"
+        ast.Spread(l, k): return _ex(&cs, k[0])
+        ast.Addr(l, k):
+            if not cs.in_arg:
+                _cerr(&cs, "'&' is only valid as the argument to an inout parameter, e.g. f(&x)")
+            return _ex(&cs, k[0])
+        ast.ChanE(l, t, k):
+            _exs(&cs, k)
+            if len(t) == 0:
+                return "chan(?)"
+            return "chan(" + _enc(&cs, t[0]) + ")"
+        ast.Lambda(l, ps, rt, body):
+            m := _vmark(&cs)
+            wb := _base(&cs, want)
+            wps := _targs(wb)
+            out := "fun("
+            r := "?"
+            if len(rt) == 1:
+                r = _enc(&cs, rt[0])
+            elif _head(wb) == "fun" and len(wps) > 0:
+                r = wps[0]
+            out = out + r
+            for i := 0; i < len(ps); i += 1:
+                pt := "?"
+                if len(ps[i].ty) == 1:
+                    pt = _enc(&cs, ps[i].ty[0])
+                elif _head(wb) == "fun" and i + 1 < len(wps):
+                    pt = wps[i + 1]
+                _vpush(&cs, ps[i].name, pt, false)
+                out = out + "," + pt
+            keepr := cs.ret
+            cs.ret = "?"
+            _exs(&cs, body)
+            cs.ret = keepr
+            _vrestore(&cs, m)
+            return out + ")"
+    return "?"
+
+# ---------------------------------------------------------------- operators
+#
+# src/tychoc.c:7200-7460, arm for arm. The LITERAL ADAPTATION rules matter as
+# much as the refusals: an int literal takes a sized/f32/float operand's type,
+# and a variable never widens -- so `f < 0` is legal and `f < n` is not, and a
+# checker that widened both would accept a program src/tychoc.c refuses (which
+# is safe) while one that widened neither would REFUSE `f < 0` (which is not).
+
+fn _is_intlit(e: ast.Expr) -> bool:
+    return e is ast.IntLit
+
+fn _is_numlit(e: ast.Expr) -> bool:
+    return (e is ast.IntLit) or (e is ast.FloatLit)
+
+fn _elem_arith_ok(op: string, et: string) -> bool:
+    if et == "?":
+        return true
+    if op == "%":
+        return _is_int(et)
+    if op != "+" and op != "-" and op != "*" and op != "/":
+        return false
+    if _is_num(et):
+        return true
+    if len(et) > 1 and et[0] == 64:
+        return true                        # a newtype over int/float; _binop has the base
+    if et == "char":
+        return op == "+" or op == "-"
+    return false
+
+fn _arith_op(op: string) -> bool:
+    return op == "+" or op == "-" or op == "*" or op == "/" or op == "%"
+
+fn _binop(cs: inout C, op: string, k: [ast.Expr]) -> string:
+    lt := _ex(&cs, k[0])
+    rt := _ex(&cs, k[1])
+    cs.line = ast.line_of(k[0])
+    if op == "and" or op == "or":
+        return "bool"
+    if op == "in":
+        rb := _base(&cs, rt)
+        if _head(rb) != "map":
+            if known(rb):
+                _cerr(&cs, "`in` tests membership in a map; the right operand must be a map")
+            return "bool"
+        kt := _targs(rb)[0]
+        if not compat(kt, lt):
+            _cerr(&cs, "`in` key must be " + kt)
+        return "bool"
+    # literal adaptation, value-directional: a LITERAL takes the other side's
+    # width, a variable never widens.
+    if _is_intlit(k[0]) and _is_int(rt):
+        lt = rt
+    if _is_intlit(k[1]) and _is_int(lt):
+        rt = lt
+    if rt == "f32" and _is_numlit(k[0]):
+        lt = "f32"
+    if lt == "f32" and _is_numlit(k[1]):
+        rt = "f32"
+    if not known(lt) or not known(rt):
+        if op == "==" or op == "!=" or op == "<" or op == ">" or op == "<=" or op == ">=":
+            return "bool"
+        return "?"                     # an unknown operand poisons the RESULT too:
+                                       # `f * 2` at an unknown `f` is not an int
+    if op == "==" or op == "!=":
+        if lt != rt:
+            _cerr(&cs, "cannot compare " + lt + " with " + rt)
+        elif _head(lt) == "fun":
+            _cerr(&cs, "functions are not comparable -- closures have no structural equality; compare the values they produce instead")
+        return "bool"
+    if op == "<" or op == ">" or op == "<=" or op == ">=":
+        if lt == "float" and rt == "int" and _is_intlit(k[1]):
+            rt = "float"
+        elif rt == "float" and lt == "int" and _is_intlit(k[0]):
+            lt = "float"
+        b := _base(&cs, lt)
+        if lt != rt or not (_is_num(b) or b == "char" or b == "string"):
+            _cerr(&cs, "ordering compares two ints, two floats, two strings, or two values of the same numeric newtype")
+        return "bool"
+    if op == "+" and lt == "string":
+        if rt != "string" and rt != "char":
+            _cerr(&cs, "cannot concatenate string with " + rt)
+        return "string"
+    if op == "+" and lt == "bytes":
+        if rt != "bytes" and rt != "char":
+            _cerr(&cs, "cannot concatenate bytes with " + rt)
+        return "bytes"
+    if op == "<<" or op == ">>":
+        if not _is_int(lt) or not _is_int(rt):
+            _cerr(&cs, "shift operators require integer operands (got " + lt + ", " + rt + ")")
+        return lt
+    la := _is_arr(lt)
+    ra := _is_arr(rt)
+    if la and ra and _arith_op(op):
+        if _head(lt) == "bnd" or _head(rt) == "bnd":
+            _cerr(&cs, "element-wise `" + op + "` is defined for [T] and [N]T only (got " + lt + ", " + rt + ")")
+            return lt
+        el := _elem_of(&cs, lt)
+        er := _elem_of(&cs, rt)
+        if el != er:
+            _cerr(&cs, "element-wise `" + op + "` requires two arrays with the same element type (got " + lt + ", " + rt + ")")
+        elif (_head(lt) == "fix") != (_head(rt) == "fix"):
+            _cerr(&cs, "cannot mix a fixed array and a growable array in element-wise `" + op + "`")
+        elif lt != rt:
+            _cerr(&cs, "element-wise `" + op + "` on a fixed array requires the same static length (got " + lt + " and " + rt + ")")
+        elif not _elem_arith_ok(op, el):
+            _cerr(&cs, "`" + op + "` is not defined element-wise on " + lt + " -- there is no element-wise `" + op + "` for " + el)
+        return lt
+    if (la or ra) and _arith_op(op):
+        at := lt
+        st := rt
+        sc := k[1]
+        if ra:
+            at = rt
+            st = lt
+            sc = k[0]
+        if _head(at) == "bnd":
+            _cerr(&cs, "element-wise `" + op + "` is defined for [T] and [N]T only (got " + lt + ", " + rt + ")")
+            return at
+        et := _elem_of(&cs, at)
+        if _is_intlit(sc) and _is_int(et):
+            st = et
+        elif et == "f32" and _is_numlit(sc):
+            st = "f32"
+        elif et == "float" and st == "int" and _is_intlit(sc):
+            st = "float"
+        if st != et:
+            _cerr(&cs, "element-wise `" + op + "` requires the scalar to have the array's element type (got " + lt + " and " + rt + ")")
+        elif not _elem_arith_ok(op, et):
+            _cerr(&cs, "`" + op + "` is not defined element-wise on " + at + " -- there is no element-wise `" + op + "` for " + et)
+        return at
+    if op == "%" or op == "&" or op == "|" or op == "^":
+        if not _is_int(lt) or lt != rt:
+            _cerr(&cs, "modulo / bitwise operators require two matching integers (got " + lt + ", " + rt + ")")
+        return lt
+    if lt == "int" and rt == "int":
+        return "int"
+    if lt == rt and _is_int(lt):
+        return lt
+    if lt == "f32" and rt == "f32":
+        return "f32"
+    if (op == "+" or op == "-") and (lt == "char" or rt == "char") and
+            (lt == "char" or lt == "int") and (rt == "char" or rt == "int"):
+        return "char"
+    if lt == "float" and rt == "float":
+        return "float"
+    ln := _base(&cs, lt)
+    if lt == rt and _tdecl(&cs, lt) >= 0 and cs.tds[_tdecl(&cs, lt)].kind == "newtype" and
+            (ln == "int" or ln == "float"):
+        return lt
+    if lt == "float" and rt == "int" and _is_intlit(k[1]):
+        return "float"
+    if rt == "float" and lt == "int" and _is_intlit(k[0]):
+        return "float"
+    if lt == "bytes" or rt == "bytes":
+        _cerr(&cs, "bytes has no arithmetic (got " + lt + ", " + rt + ")")
+        return lt
+    if _tdecl(&cs, lt) >= 0 or _tdecl(&cs, rt) >= 0:
+        return "?"                     # a newtype operand: src/tychoc.c has its
+                                       # own message and Phase 6b owns the rule
+    _cerr(&cs, "arithmetic requires two ints or two floats (got " + lt + ", " + rt + ") -- convert one side, e.g. to_float(x) to compute in floats, or to_int(x) in ints")
+    return lt
+
+# ---------------------------------------------------------------- calls
+
+fn _any_named(args: [ast.Expr]) -> bool:
+    for a in args:
+        if a is ast.Named:
+            return true
+    return false
+
+fn _walk_args(cs: inout C, args: [ast.Expr]):
+    keep := cs.in_arg
+    cs.in_arg = true
+    for a in args:
+        _ex(&cs, a)
+    cs.in_arg = keep
+
+# One call against one known, non-generic signature: arity, each argument's
+# type, and the two `&` rules. Skipped whole when a variadic or a named argument
+# is in play -- `?` is the answer to anything this pass cannot ground.
+fn _check_args(cs: inout C, name: string, si: int, args: [ast.Expr], line: int):
+    s := cs.sg[si]
+    variadic := false
+    for f in s.pflags:
+        if f == "var":
+            variadic = true
+    if _any_named(args):
+        keep := cs.in_arg
+        cs.in_arg = true
+        for a in args:
+            _ex(&cs, a)
+        cs.in_arg = keep
+        return
+    if not variadic and len(args) != len(s.ptypes):
+        keep2 := cs.in_arg
+        cs.in_arg = true
+        for a in args:
+            _ex(&cs, a)
+        cs.in_arg = keep2
+        cs.line = line
+        _cerr(&cs, "'" + name + "' takes " + str(len(s.ptypes)) + " argument(s), got " + str(len(args)))
+        return
+    n := len(args)
+    if variadic and len(s.ptypes) - 1 < n:
+        n = len(s.ptypes) - 1
+        for i := n; i < len(args); i += 1:
+            if (args[i] is ast.Spread) and len(args) - n > 1:
+                cs.line = line
+                _cerr(&cs, "a spread argument `x...` must be the only variadic argument to '" + name + "'")
+                return
+    keep3 := cs.in_arg
+    cs.in_arg = true
+    for i := 0; i < len(args); i += 1:
+        want := "?"
+        if i < n:
+            want = s.ptypes[i]
+        at := _ex2(&cs, args[i], want)
+        cs.line = line
+        if i < n:
+            if s.pflags[i] == "inout":
+                if not (args[i] is ast.Addr):
+                    _cerr(&cs, "argument " + str(i + 1) + " of '" + name + "' is inout; pass it as '&variable'")
+            elif args[i] is ast.Addr:
+                _cerr(&cs, "argument " + str(i + 1) + " of '" + name + "' is not inout; remove the '&'")
+            if not compat(at, want):
+                _cerr(&cs, "argument " + str(i + 1) + " of '" + name + "' is " + at + ", expected " + want)
+        cs.line = ast.line_of(args[i])
+    cs.in_arg = keep3
+    cs.line = line
+
+fn _check_fields(cs: inout C, ti: int, args: [ast.Expr], line: int) -> string:
+    d := cs.tds[ti]
+    if _any_named(args) or d.generic:
+        keep := cs.in_arg
+        cs.in_arg = true
+        for a in args:
+            _ex(&cs, a)
+        cs.in_arg = keep
+        if d.generic:
+            return "?"
+        return "@" + d.name
+    keep2 := cs.in_arg
+    cs.in_arg = true
+    if len(args) != len(d.fnames):
+        for a in args:
+            _ex(&cs, a)
+        cs.in_arg = keep2
+        cs.line = line
+        _cerr(&cs, d.name + " takes " + str(len(d.fnames)) + " field value(s), got " + str(len(args)))
+        return "@" + d.name
+    for i := 0; i < len(args); i += 1:
+        at := _ex2(&cs, args[i], d.ftypes[i])
+        cs.line = line
+        if not compat(at, d.ftypes[i]):
+            _cerr(&cs, "field '" + d.fnames[i] + "' of " + d.name + " is " + d.ftypes[i] + ", got " + at)
+        cs.line = ast.line_of(args[i])
+    cs.in_arg = keep2
+    cs.line = line
+    return "@" + d.name
+
+fn _check_variant(cs: inout C, m: string, args: [ast.Expr], line: int) -> string:
+    owner := cs.vowner[m]
+    pay := []string
+    if m in cs.vpay and len(cs.vpay[m]) > 0:
+        pay = split(cs.vpay[m], "|")
+    ti := _tdecl(&cs, owner)
+    generic := ti >= 0 and cs.tds[ti].generic
+    keep := cs.in_arg
+    cs.in_arg = true
+    if generic or _any_named(args) or len(args) != len(pay):
+        for a in args:
+            _ex(&cs, a)
+        cs.in_arg = keep
+        cs.line = line
+        if generic:
+            return "?"
+        if len(args) != len(pay):
+            _cerr(&cs, m + " takes " + str(len(pay)) + " payload value(s), got " + str(len(args)))
+        return owner
+    for i := 0; i < len(args); i += 1:
+        at := _ex2(&cs, args[i], pay[i])
+        cs.line = line
+        if not compat(at, pay[i]):
+            _cerr(&cs, "payload " + str(i + 1) + " of " + m + " is " + at + ", expected " + pay[i])
+        cs.line = ast.line_of(args[i])
+    cs.in_arg = keep
+    cs.line = line
+    return owner
+
+fn _call(cs: inout C, l: int, q: string, n: string, ts: [ast.Ty], args: [ast.Expr], want: string) -> string:
+    for t in ts:
+        _enc(&cs, t)
+    if len(ts) > 0:
+        _walk_args(&cs, args)
+        return "?"                     # an explicit type argument is Phase 6b
+    if len(q) > 0:
+        if not _is_pkg(&cs, q):
+            if _shape_builtin(n):
+                args2 := []ast.Expr
+                push(args2, ast.Name(l, q))
+                for a in args:
+                    push(args2, a)
+                return _call_builtin(&cs, l, n, args2, want)
+            # `x.f(...)`: a UFCS method on a value. Which function it names needs
+            # the receiver's type and the whole method set, which is Phase 6b's
+            # monomorphisation surface -- `?`, and no argument is checked.
+            _walk_args(&cs, args)
+            return "?"
+        m := _prefix_of(&cs, q) + n
+        return _call_named(&cs, l, m, n, args, want)
+    # The shape-directed builtins are resolved BEFORE the Sig table, exactly as
+    # src/tychoc.c:6740-6990 sits before its sig_find at :7049 -- a user `fn len`
+    # in the entry package is registered UNMANGLED, so without this ordering the
+    # bare `len(b)` inside core:strings found it and refused a program ./tychoc
+    # accepts (tests/warn/pkg/corelib_mute/main.ty).
+    if _shape_builtin(n):
+        return _call_builtin(&cs, l, n, args, want)
+    if len(cs.prefix) > 0:
+        m := cs.prefix + n
+        if _sigidx(&cs, m) >= 0 or m in cs.tindex or m in cs.vowner:
+            return _call_named(&cs, l, m, n, args, want)
+    if _sigidx(&cs, n) >= 0 or n in cs.tindex or n in cs.vowner:
+        return _call_named(&cs, l, n, n, args, want)
+    return _call_builtin(&cs, l, n, args, want)
+
+fn _call_named(cs: inout C, l: int, m: string, spelt: string, args: [ast.Expr], want: string) -> string:
+    si := _sigidx(&cs, m)
+    if si >= 0:
+        if cs.sg[si].generic:
+            _walk_args(&cs, args)
+            return "?"
+        _check_args(&cs, spelt, si, args, l)
+        return cs.sg[si].ret
+    if m in cs.tindex:
+        d := cs.tds[cs.tindex[m]]
+        if d.kind == "struct":
+            return _check_fields(&cs, cs.tindex[m], args, l)
+        if d.kind == "newtype":
+            _walk_args(&cs, args)
+            return "@" + m
+        _walk_args(&cs, args)
+        return "?"
+    if m in cs.vowner:
+        return _check_variant(&cs, m, args, l)
+    _walk_args(&cs, args)
+    return "?"
+
+# ---------------------------------------------------------------- builtins
+#
+# The shape-directed half of src/tychoc.c:6740-6990: str/hash/to_*/len/keys/
+# push/pop/reserve and the map_* family bypass the fixed Sig table because their
+# answer follows the ARGUMENT's type. Everything else falls through to the Sig
+# table, which is where `'print' takes 1 argument(s), got 0` comes from.
+
+fn _sized_conv(n: string) -> string:
+    if n == "to_u8":
+        return "u8"
+    if n == "to_u16":
+        return "u16"
+    if n == "to_u32":
+        return "u32"
+    if n == "to_u64":
+        return "u64"
+    if n == "to_i8":
+        return "i8"
+    if n == "to_i16":
+        return "i16"
+    if n == "to_i32":
+        return "i32"
+    if n == "to_i64":
+        return "i64"
+    if n == "to_f32":
+        return "f32"
+    return ""
+
+fn _str_ok(cs: inout C, t: string) -> bool:
+    b := _base(&cs, t)
+    if b == "?":
+        return true
+    if _is_num(b) or b == "bool" or b == "string" or b == "char" or b == "bytes":
+        return true
+    h := _head(b)
+    if h == "arr" or h == "fix" or h == "bnd" or h == "map" or h == "tup" or h == "opt" or h == "res":
+        return true
+    i := _tdecl(&cs, b)
+    return i >= 0 and (cs.tds[i].kind == "struct" or cs.tds[i].kind == "enum")
+
+fn _arity(cs: inout C, n: string, args: [ast.Expr], want: int, msg: string) -> bool:
+    if len(args) == want:
+        return true
+    _cerr(&cs, msg)
+    return false
+
+fn _call_builtin(cs: inout C, l: int, n: string, args: [ast.Expr], want: string) -> string:
+    ats := []string
+    keep := cs.in_arg
+    cs.in_arg = true
+    a0 := "?"
+    if len(args) > 0:
+        a0 = _ex(&cs, args[0])
+        push(ats, a0)
+    b0 := _base(&cs, a0)
+    # push's VALUE is checked against the array's element type, so it is the one
+    # builtin whose second argument needs the expected type threaded into it --
+    # `push(rows, [10, 20, 30])` at a bounded[3]int element is the case.
+    w1 := "?"
+    if n == "push":
+        w1 = _elem_of(&cs, b0)
+    for i := 1; i < len(args); i += 1:
+        push(ats, _ex2(&cs, args[i], w1))
+    cs.in_arg = keep
+    cs.line = l
+    if n == "str":
+        if not _arity(&cs, n, args, 1, "str(x) takes one argument"):
+            return "string"
+        if not _str_ok(&cs, a0):
+            _cerr(&cs, "str(x) can't stringify a " + a0)
+        return "string"
+    if n == "hash":
+        if not _arity(&cs, n, args, 1, "hash(x) takes one argument"):
+            return "int"
+        if known(a0) and not _mapkey_ok(&cs, a0):
+            _cerr(&cs, "hash(x) can't hash a " + a0 + " (hashable = the map-key types: int, string, their newtypes, fieldless enums, and composites of those)")
+        return "int"
+    if n == "to_float":
+        if not _arity(&cs, n, args, 1, "to_float(n) takes one argument"):
+            return "float"
+        if known(a0) and not (_is_int(a0) or a0 == "f32" or (_tdecl(&cs, a0) >= 0 and b0 == "float")):
+            _cerr(&cs, "to_float(n) takes an int, a sized int, f32, or a float newtype")
+        return "float"
+    if n == "to_int":
+        if not _arity(&cs, n, args, 1, "to_int(x) takes one argument"):
+            return "int"
+        if a0 == "int":
+            _cerr(&cs, "to_int(x): x is already an int -- indexing a string (s[i]) yields the byte value as an int; use chr(x) for its one-character string")
+        elif known(a0) and not (a0 == "float" or _is_int(a0) or a0 == "f32" or a0 == "char" or
+                (_tdecl(&cs, a0) >= 0 and _is_int(b0))):
+            _cerr(&cs, "to_int(x) takes a float (truncates toward zero), a sized int, f32, a char, or an int newtype")
+        return "int"
+    if len(_sized_conv(n)) > 0:
+        if not _arity(&cs, n, args, 1, n + "(x) takes one argument"):
+            return _sized_conv(n)
+        if known(b0) and not (_is_num(b0) or b0 == "char"):
+            _cerr(&cs, n + "(x) takes a numeric value")
+        return _sized_conv(n)
+    if n == "to_str":
+        if not _arity(&cs, n, args, 1, "to_str(x) takes one argument"):
+            return "string"
+        if known(a0) and not (a0 == "bytes" or (_tdecl(&cs, a0) >= 0 and b0 == "string")):
+            _cerr(&cs, "to_str(x) takes bytes or a string newtype")
+        return "string"
+    if n == "to_bytes":
+        if not _arity(&cs, n, args, 1, "to_bytes(s) takes one argument"):
+            return "bytes"
+        if known(b0) and not (b0 == "string" or b0 == "bytes" or b0 == "arr(int)"):
+            _cerr(&cs, "to_bytes(x) takes a string or [int]")
+        return "bytes"
+    if n == "to_bool":
+        if not _arity(&cs, n, args, 1, "to_bool(x) takes one argument"):
+            return "bool"
+        if known(a0) and not (_tdecl(&cs, a0) >= 0 and b0 == "bool"):
+            _cerr(&cs, "to_bool(x) takes a bool newtype")
+        return "bool"
+    if n == "to_under":
+        if not _arity(&cs, n, args, 1, "to_under(x) takes one argument"):
+            return "?"
+        i := _tdecl(&cs, a0)
+        if i < 0 or cs.tds[i].kind != "newtype":
+            if known(a0):
+                _cerr(&cs, "to_under(x) takes a newtype value, got " + a0)
+            return "?"
+        return cs.tds[i].ftypes[0]
+    if n == "len":
+        if not _arity(&cs, n, args, 1, "len(...) takes one argument"):
+            return "int"
+        h := _head(b0)
+        if known(b0) and not (_is_arr(b0) or b0 == "string" or b0 == "bytes" or h == "map" or h == "soa"):
+            _cerr(&cs, "len(...) takes an array, a string, bytes, a map, or a soa")
+        return "int"
+    if n == "keys":
+        if not _arity(&cs, n, args, 1, "keys(m) takes one argument"):
+            return "?"
+        if _head(b0) != "map":
+            if known(b0):
+                _cerr(&cs, "keys's argument must be a map")
+            return "?"
+        return "arr(" + _targs(b0)[0] + ")"
+    if n == "push":
+        if not _arity(&cs, n, args, 2, "push(arr, value) takes two arguments"):
+            return "void"
+        if known(b0) and not (_is_arr(b0) or _head(b0) == "soa"):
+            _cerr(&cs, "push's first argument must be an array or soa")
+            return "void"
+        el := _elem_of(&cs, b0)
+        if not compat(el, ats[1]):
+            _cerr(&cs, "push's value must be " + el)
+        return "void"
+    if n == "pop":
+        if not _arity(&cs, n, args, 1, "pop(arr) takes one argument"):
+            return "?"
+        if known(b0) and not (_is_arr(b0) or _head(b0) == "soa"):
+            _cerr(&cs, "pop's first argument must be an array or soa")
+            return "?"
+        return _elem_of(&cs, b0)
+    if n == "reserve":
+        if not _arity(&cs, n, args, 2, "reserve(arr, n) takes two arguments"):
+            return "void"
+        if known(b0) and not (_is_arr(b0) or _head(b0) == "map"):
+            _cerr(&cs, "reserve's first argument must be an array or a map")
+        return "void"
+    if n == "zero":
+        return "?"
+    si := _sigidx(&cs, n)
+    if si >= 0:
+        _check_args(&cs, n, si, args, l)
+        return cs.sg[si].ret
+    return "?"
+
+# ---------------------------------------------------------------- match
+#
+# src/tychoc.c:8440-8640. Exhaustiveness is the half a verdict differential
+# cannot get for free: a match that covers three of four variants COMPILES under
+# a checker that forgot to count, and the program then falls off the end.
+
+fn _variant_names(cs: inout C, et: string) -> [string]:
+    i := _tdecl(&cs, et)
+    if i < 0:
+        return []string
+    return cs.tds[i].fnames
+
+fn _variant_payload(cs: inout C, et: string, name: string) -> [string]:
+    i := _tdecl(&cs, et)
+    if i < 0:
+        return []string
+    d := cs.tds[i]
+    for k := 0; k < len(d.fnames); k += 1:
+        if d.fnames[k] == name:
+            if len(d.ftypes[k]) == 0:
+                return []string
+            return split(d.ftypes[k], "|")
+    return []string
+
+fn _arm_binds(cs: inout C, a: ast.Arm, tys: [string]):
+    for i := 0; i < len(a.binds); i += 1:
+        t := "?"
+        if i < len(tys):
+            t = tys[i]
+        if t == "void":
+            cs.line = a.line
+            _cerr(&cs, "cannot bind a void value")
+            t = "?"
+        _vpush(&cs, a.binds[i], t, true)
+    for b in a.subbinds:
+        _vpush(&cs, b, "?", true)
+
+fn _match(cs: inout C, l: int, subj: [ast.Expr], arms: [ast.Arm]):
+    st := _base(&cs, _ex(&cs, subj[0]))
+    wild := false
+    for i := 0; i < len(arms); i += 1:
+        if arms[i].kind == "variant" and arms[i].name == "_":
+            if i != len(arms) - 1:
+                cs.line = arms[i].line
+                _cerr(&cs, "a `_` wildcard must be the last match arm")
+            wild = true
+        if arms[i].kind == "scalar":
+            for p in arms[i].pats:
+                if p.kind == "name" and p.loname == "_":
+                    if i != len(arms) - 1:
+                        cs.line = arms[i].line
+                        _cerr(&cs, "a `_` wildcard must be the last match arm")
+                    wild = true
+    h := _head(st)
+    if h == "opt" or h == "res":
+        # A REFINED side: `Err(A(n))` covers one variant of the payload enum, so
+        # `Err` alone is not covered until every variant is. src/tychoc.c@SideCov;
+        # tests/reject/match_result_partial_err.ty's own header says why the
+        # "must cover both Ok and Err" wording would be false here.
+        cov0 := []string: bool
+        cov1 := []string: bool
+        ref0 := false
+        ref1 := false
+        full0 := false
+        full1 := false
+        seen0 := false
+        seen1 := false
+        yes := "Some"
+        no := "None"
+        if h == "res":
+            yes = "Ok"
+            no = "Err"
+        for a in arms:
+            m := _vmark(&cs)
+            cs.line = a.line
+            if a.name == "_":
+                pass
+            elif a.name == yes:
+                seen0 = true
+                nested := _nested_of(&cs, a, _targs(st)[0])
+                if len(nested) > 0:
+                    ref0 = true
+                    cov0[nested] = true
+                else:
+                    full0 = true       # a plain binding covers the whole side
+                pay := []string
+                push(pay, _targs(st)[0])
+                if h == "res" and _targs(st)[0] == "void" and len(a.binds) > 0:
+                    _cerr(&cs, "Ok carries no value here -- write a bare `Ok:` arm")
+                else:
+                    _arm_binds(&cs, a, pay)
+            elif a.name == no:
+                seen1 = true
+                nested := ""
+                if h == "res":
+                    nested = _nested_of(&cs, a, _targs(st)[1])
+                if len(nested) > 0:
+                    ref1 = true
+                    cov1[nested] = true
+                else:
+                    full1 = true
+                pay := []string
+                if h == "res":
+                    push(pay, _targs(st)[1])
+                _arm_binds(&cs, a, pay)
+            elif known(st):
+                if h == "opt":
+                    _cerr(&cs, "an Option's arms are Some(x), None, and _, not '" + a.name + "'")
+                else:
+                    _cerr(&cs, "'" + a.name + "' is not a variant of " + st + "; write `Ok` or `Err`")
+            _tblock(&cs, a.body)
+            _vrestore(&cs, m)
+        if not wild and known(st):
+            cs.line = l
+            if not (seen0 and seen1):
+                if h == "opt":
+                    _cerr(&cs, "match on an Option must cover both Some and None")
+                else:
+                    _cerr(&cs, "match on a Result must cover both Ok and Err")
+            else:
+                _side_cov(&cs, l, _targs(st)[0], cov0, ref0 and not full0)
+                if h == "res":
+                    _side_cov(&cs, l, _targs(st)[1], cov1, ref1 and not full1)
+        return
+    ti := _tdecl(&cs, st)
+    if ti >= 0 and cs.tds[ti].kind == "enum":
+        names := _variant_names(&cs, st)
+        covered := []string: bool
+        for a in arms:
+            m := _vmark(&cs)
+            cs.line = a.line
+            if a.name != "_":
+                found := false
+                for v in names:
+                    if v == a.name:
+                        found = true
+                if not found:
+                    _cerr(&cs, "'" + a.name + "' is not a variant of " + cs.tds[ti].name)
+                elif a.name in covered:
+                    _cerr(&cs, "duplicate arm for " + a.name)
+                covered[a.name] = true
+                pay := _variant_payload(&cs, st, a.name)
+                if found and len(a.binds) != len(pay) and len(a.subbinds) == 0:
+                    _cerr(&cs, a.name + " binds " + str(len(pay)) + " value(s), got " + str(len(a.binds)))
+                _arm_binds(&cs, a, pay)
+            _tblock(&cs, a.body)
+            _vrestore(&cs, m)
+        if not wild:
+            for v in names:
+                if not (v in covered):
+                    cs.line = l
+                    _cerr(&cs, "non-exhaustive match: missing variant " + v + " of " + cs.tds[ti].name)
+        return
+    if st == "int" or st == "char" or st == "bool" or not known(st):
+        los := []int
+        his := []int
+        lns := []int
+        for a in arms:
+            m := _vmark(&cs)
+            cs.line = a.line
+            if a.kind == "scalar":
+                for p in a.pats:
+                    if p.kind == "name":
+                        if p.loname != "_":
+                            cv := _const_int(&cs, p.loname)
+                            if cv[0] == 0:
+                                _cerr(&cs, "'" + p.loname + "' is not an int constant (match arms for " + st + " are literals)")
+                            else:
+                                push(los, cv[1])
+                                push(his, cv[1])
+                                push(lns, a.line)
+                        continue
+                    if st == "int" and p.kind != "int":
+                        _cerr(&cs, "a match on an int takes int literal arms, not a " + p.kind)
+                    if st == "char" and p.kind != "char":
+                        _cerr(&cs, "a match on a char takes char literal arms")
+                    if st == "bool" and p.kind != "bool":
+                        _cerr(&cs, "a match on a bool takes true/false arms")
+                    if p.lo > p.hi:
+                        _cerr(&cs, "a range starts at " + str(p.lo) + " and ends at " + str(p.hi) + " (the start must not exceed the end)")
+                    push(los, p.lo)
+                    push(his, p.hi)
+                    push(lns, a.line)
+            elif a.name != "_" and known(st):
+                cv := _const_int(&cs, a.name)
+                if cv[0] == 0:
+                    _cerr(&cs, "'" + a.name + "' is not an int constant (match arms for " + st + " are literals)")
+                else:
+                    push(los, cv[1])
+                    push(his, cv[1])
+                    push(lns, a.line)
+            _tblock(&cs, a.body)
+            _vrestore(&cs, m)
+        for i := 0; i < len(los); i += 1:
+            for j := i + 1; j < len(los); j += 1:
+                if los[j] <= his[i] and los[i] <= his[j]:
+                    cs.line = lns[j]
+                    if lns[j] < lns[i]:
+                        cs.line = lns[i]
+                    _cerr(&cs, "duplicate or overlapping match arm: [" + str(los[i]) + ".." + str(his[i]) +
+                          "] overlaps [" + str(los[j]) + ".." + str(his[j]) + "]")
+                    return
+        if not wild and known(st):
+            cs.line = l
+            if st == "int" or st == "char":
+                _cerr(&cs, "a match on " + st + " must carry a `_` arm (the domain is unbounded)")
+            else:
+                has0 := false
+                has1 := false
+                for i := 0; i < len(los); i += 1:
+                    if los[i] <= 0 and 0 <= his[i]:
+                        has0 = true
+                    if los[i] <= 1 and 1 <= his[i]:
+                        has1 = true
+                if not has0 or not has1:
+                    _cerr(&cs, "a match on a bool must cover both true and false, or carry a `_` arm")
+        return
+    cs.line = l
+    if st == "string" or st == "bytes" or st == "float":
+        _cerr(&cs, "match on " + st + " is refused: nothing in the tree dispatches on it -- use if/elif (see docs/internals/design-scalar-match.md D1)")
+    else:
+        _cerr(&cs, "match expects an Option, Result, or enum value, or an int/char/bool, got " + st)
+    for a in arms:
+        m := _vmark(&cs)
+        _tblock(&cs, a.body)
+        _vrestore(&cs, m)
+
+# (found, value) for an int `const` by the name written at a match arm.
+fn _const_int(cs: inout C, name: string) -> [int]:
+    out := []int
+    push(out, 0)
+    push(out, 0)
+    k := ""
+    if len(cs.prefix) > 0 and (cs.prefix + name) in cs.constv:
+        k = cs.prefix + name
+    elif name in cs.constv:
+        k = name
+    if len(k) == 0:
+        return out
+    out[0] = 1
+    out[1] = cs.constv[k]
+    return out
+
+# ---------------------------------------------------------------- statements
+
+fn _tblock(cs: inout C, body: [ast.Stmt]):
+    m := _vmark(&cs)
+    for s in body:
+        _tstmt(&cs, s)
+    _vrestore(&cs, m)
+
+# The type an if/match VALUE block produces, and the rule that its branches must
+# agree (src/tychoc.c:8272). The parser rewrote each tail into a Decl/Assign of
+# the same target, so the branch types are read back off those tails.
+fn _value_type(cs: inout C, body: [ast.Stmt], want: string) -> string:
+    if len(body) == 0:
+        return "?"
+    # ONLY the last statement is the tail. A value arm may be a whole block
+    # (tests/if_expr_block.ty), whose leading `:=` statements bind branch-locals
+    # -- reading their types as branch results reported `int and string` for a
+    # program src/tychoc.c accepts.
+    m := _vmark(&cs)
+    for i := 0; i < len(body) - 1; i += 1:
+        _tstmt(&cs, body[i])
+    t := _tail_type(&cs, body[len(body) - 1], want)
+    _vrestore(&cs, m)
+    return t
+
+fn _tail_type(cs: inout C, s: ast.Stmt, want: string) -> string:
+    match s:
+        ast.Decl(l, n, ty, rhs, vb):
+            if len(rhs) == 1:
+                return _ex2(&cs, rhs[0], want)
+            return "?"
+        ast.Assign(l, n, rhs): return _ex2(&cs, rhs[0], want)
+        ast.ExprStmt(l, k): return _ex2(&cs, k[0], want)
+        ast.IfS(l, c, b, e):
+            t := _ex(&cs, c[0])
+            cs.line = l
+            if known(t) and t != "bool":
+                _cerr(&cs, "if condition must be bool")
+            m := _vmark(&cs)
+            ta := _value_type(&cs, b, want)
+            _vrestore(&cs, m)
+            m2 := _vmark(&cs)
+            tb := _value_type(&cs, e, want)
+            bl := cs.line                  # the disagreeing branch's own line
+            _vrestore(&cs, m2)
+            if ta == "?":
+                return tb
+            if tb != "?" and not compat(ta, tb):
+                cs.line = bl
+                _cerr(&cs, "if/match branches produce different types (" + ta + " and " + tb + ")")
+            return ta
+        ast.MatchS(l, subj, arms):
+            _match(&cs, l, subj, arms)
+            return "?"
+        _:
+            _tstmt(&cs, s)
+            return "?"
+    return "?"
+
+# The roots src/tychoc.c@is_lvalue accepts. A CALL is one only when it names a
+# declared `subscript` -- `b.get().v[0] = 9` is a call on a TEMPORARY and is
+# refused (tests/reject/place_call_receiver.ty), and a tuple element is not an
+# index-assign root at all.
+fn _is_place(cs: inout C, e: ast.Expr) -> bool:
+    match e:
+        ast.Name(l, n): return true
+        ast.Field(l, k, f): return _is_place(&cs, k[0])
+        ast.Index(l, k): return _is_place(&cs, k[0])
+        ast.Call(l, q, n, ts, a): return n in cs.subs
+        _: return false
+    return false
+
+fn _place_ty(cs: inout C, e: ast.Expr) -> string:
+    match e:
+        ast.Index(l, k):
+            rt := _base(&cs, _ex(&cs, k[0]))
+            h := _head(rt)
+            cs.line = l
+            if rt == "string":
+                _cerr(&cs, "cannot index-assign an element of string (it is immutable)")
+                return "?"
+            if _head(rt) == "tup" or (known(rt) and not (_is_arr(rt) or h == "map" or h == "soa")) or
+                    not _is_place(&cs, k[0]):
+                _cerr(&cs, "can only index-assign an array or map variable or field")
+                return "?"
+            it := _ex(&cs, k[1])
+            cs.line = l
+            if h == "map":
+                kt := _targs(rt)[0]
+                if not compat(kt, it):
+                    _cerr(&cs, "map key must be " + kt + ", got " + it)
+                return _targs(rt)[1]
+            return _elem_of(&cs, rt)
+        ast.Field(l, k, f):
+            if not _is_place(&cs, k[0]):
+                cs.line = l
+                _cerr(&cs, "cannot assign to a field of a temporary (only variables, fields, and composite-array elements are places)")
+                return "?"
+            return _ex(&cs, e)
+        _: return _ex(&cs, e)
+    return "?"
+
+fn _tstmt(cs: inout C, s: ast.Stmt):
+    cs.line = ast.sline_of(s)
+    match s:
+        ast.ExprStmt(l, k):
+            t := _ex(&cs, k[0])
+            if (k[0] is ast.OrRet) and t != "void" and known(t):
+                cs.line = l
+                _cerr(&cs, "`or_return` here produces " + t + ", which this statement discards -- bind it (x := ... or_return)")
+        ast.Decl(l, name, ty, rhs, vb):
+            want := "?"
+            if len(ty) == 1:
+                want = _enc(&cs, ty[0])
+            t := "?"
+            if len(rhs) == 1:
+                t = _ex2(&cs, rhs[0], want)
+            elif len(vb) > 0:
+                t = _value_type(&cs, vb, want)
+            cs.line = l
+            if not compat(want, t):
+                _cerr(&cs, "declared type " + want + " but value is " + t)
+            if t == "void":
+                _cerr(&cs, "cannot bind a void value")
+                t = "?"
+            if len(ty) == 1:
+                t = want
+            _tnote(&cs, "d:" + t)
+            _vpush(&cs, name, t, true)
+        ast.MDecl(l, isdecl, names, rhs):
+            t := "?"
+            if len(rhs) == 1:
+                t = _base(&cs, _ex(&cs, rhs[0]))
+            els := _targs(t)
+            cs.line = l
+            for i := 0; i < len(names); i += 1:
+                et := "?"
+                if _head(t) == "tup" and i < len(els):
+                    et = els[i]
+                if isdecl:
+                    _tnote(&cs, "m:" + et)
+                    _vpush(&cs, names[i], et, true)
+                else:
+                    _assign_check(&cs, names[i], et)
+        ast.Assign(l, name, rhs):
+            vt := _vtype(&cs, name)
+            want := "?"
+            if len(vt) > 0:
+                want = vt
+            t := _ex2(&cs, rhs[0], want)
+            cs.line = l
+            _assign_check(&cs, name, t)
+        ast.PlaceSet(l, k):
+            pt := _place_ty(&cs, k[0])
+            vt := _ex2(&cs, k[1], pt)
+            cs.line = l
+            if not compat(pt, vt):
+                if k[0] is ast.Field:
+                    _cerr(&cs, "cannot assign " + vt + " to a " + pt + " field")
+                else:
+                    _cerr(&cs, "cannot assign " + vt + " to a " + pt + " element")
+        ast.ConstS(l, name, v):
+            t := _ex(&cs, v[0])
+            cs.line = l
+            _vpush(&cs, name, t, false)
+        ast.ReturnS(l, k):
+            if len(k) == 1:
+                t := _ex2(&cs, k[0], cs.ret)
+                cs.line = l
+                if not compat(t, cs.ret):
+                    _cerr(&cs, "returning " + t + " but proc returns " + cs.ret)
+        ast.DeleteS(l, k): _exs(&cs, k)
+        ast.IfS(l, c, b, e):
+            t := _ex(&cs, c[0])
+            cs.line = l
+            if known(t) and t != "bool":
+                _cerr(&cs, "if condition must be bool")
+            _tblock(&cs, b)
+            _tblock(&cs, e)
+        ast.WhileS(l, c, b):
+            if len(c) == 1:
+                t := _ex(&cs, c[0])
+                cs.line = l
+                if known(t) and t != "bool":
+                    _cerr(&cs, "for condition must be bool")
+            _tblock(&cs, b)
+        ast.For3(l, init, c, b):
+            m := _vmark(&cs)
+            for st in init:
+                _tstmt(&cs, st)
+            if len(c) == 1:
+                t := _ex(&cs, c[0])
+                cs.line = l
+                if known(t) and t != "bool":
+                    _cerr(&cs, "for condition must be bool")
+            _tblock(&cs, b)
+            _vrestore(&cs, m)
+        ast.ForIn(l, v, coll, b):
+            ct := _base(&cs, _ex(&cs, coll[0]))
+            cs.line = l
+            et := "?"
+            h := _head(ct)
+            if h == "map":
+                _cerr(&cs, "a map is not directly iterable -- `for k in m` indexes it by position. Loop over `keys(m)` instead: `for k in keys(m):`")
+            elif _is_arr(ct) or h == "soa":
+                et = _elem_of(&cs, ct)
+            elif ct == "string" or ct == "bytes":
+                et = "int"
+            elif h == "chan":
+                et = _targs(ct)[0]
+            m := _vmark(&cs)
+            _tnote(&cs, "i:" + et)
+            _vpush(&cs, v, et, true)
+            _tblock(&cs, b)
+            _vrestore(&cs, m)
+        ast.ForRange(l, v, bounds, b):
+            for x in bounds:
+                _ex(&cs, x)
+            m := _vmark(&cs)
+            cs.line = l
+            _vpush(&cs, v, "int", false)
+            _tblock(&cs, b)
+            _vrestore(&cs, m)
+        ast.ParallelS(l, w, b):
+            _exs(&cs, w)
+            for st in b:
+                _tstmt(&cs, st)
+        ast.MatchS(l, subj, arms): _match(&cs, l, subj, arms)
+        ast.SelectS(l, arms):
+            for a in arms:
+                m := _vmark(&cs)
+                _exs(&cs, a.ch)
+                for bnd in a.binds:
+                    _vpush(&cs, bnd, "?", true)
+                _tblock(&cs, a.body)
+                _vrestore(&cs, m)
+        _: pass
+
+fn _assign_check(cs: inout C, name: string, t: string):
+    vt := _vtype(&cs, name)
+    if len(vt) == 0:
+        return
+    if not compat(vt, t):
+        _cerr(&cs, "cannot assign " + t + " to '" + name + "' of type " + vt)
+
+# ---------------------------------------------------------------- the pass
+
+fn _fill_decls(cs: inout C, p: Program):
+    for f in p.files:
+        cs.file = f.path
+        cs.prefix = f.prefix
+        cs.imports = f.unit.imports
+        for d in _sorted_decls(f.unit):
+            if d.cat == 1:
+                sd := f.unit.structs[d.idx]
+                _typarams_of(&cs, sd.typarams)
+                cs.skip = len(sd.typarams) > 0
+                fn_ := []string
+                ft := []string
+                for fl in sd.fields:
+                    cs.line = fl.line
+                    push(fn_, fl.name)
+                    push(ft, _enc(&cs, fl.ty))
+                i := cs.tindex[f.prefix + sd.name]
+                cs.tds[i].fnames = fn_
+                cs.tds[i].ftypes = ft
+            elif d.cat == 2:
+                ed := f.unit.enums[d.idx]
+                _typarams_of(&cs, ed.typarams)
+                cs.skip = len(ed.typarams) > 0
+                vn := []string
+                vt := []string
+                for v in ed.variants:
+                    cs.line = v.line
+                    pay := ""
+                    for k := 0; k < len(v.payload); k += 1:
+                        if k > 0:
+                            pay = pay + "|"
+                        pay = pay + _enc(&cs, v.payload[k])
+                    push(vn, v.name)
+                    push(vt, pay)
+                    cs.vpay[f.prefix + v.name] = pay
+                i := cs.tindex[f.prefix + ed.name]
+                cs.tds[i].fnames = vn
+                cs.tds[i].ftypes = vt
+            elif d.cat == 3:
+                nd := f.unit.newtypes[d.idx]
+                cs.line = nd.line
+                cs.skip = false
+                u := []string
+                push(u, _enc(&cs, nd.under))
+                i := cs.tindex[f.prefix + nd.name]
+                cs.tds[i].ftypes = u
+            elif d.cat == 5:
+                cd := f.unit.consts[d.idx]
+                cs.line = cd.line
+                cs.skip = false
+                cs.consts[f.prefix + cd.name] = _ex(&cs, cd.value)
+                match cd.value:
+                    ast.IntLit(cl, cv): cs.constv[f.prefix + cd.name] = cv
+                    ast.CharLit(cl, cv): cs.constv[f.prefix + cd.name] = cv
+                    _: pass
+            elif d.cat == 6:
+                sb := f.unit.subscripts[d.idx]
+                cs.subs[sb.name] = true
+                cs.line = sb.line
+                cs.skip = true
+                _typarams_of(&cs, []string)
+                _enc(&cs, sb.ret)
+                for pm in sb.params:
+                    for tt in pm.ty:
+                        _enc(&cs, tt)
+            else:
+                fd := f.unit.fns[d.idx]
+                cs.skip = len(fd.typarams) > 0
+                _addsig(&cs, _sig_of(&cs, f.prefix, fd))
+                cs.line = fd.line
+                if len(fd.params) > 16 and len(fd.typarams) == 0 and
+                        len(_sig_sizeparams(fd.params, fd.ret)) == 0:
+                    _cerr(&cs, "too many parameters (max 16)")
+            cs.skip = false
+            _typarams_of(&cs, []string)
+
+# src/tychoc.c:12683 -- a struct that contains itself BY VALUE has no size. An
+# array, map or Option breaks the cycle; a tuple, a fixed array and a plain
+# field do not.
+fn _contains(cs: inout C, t: string, target: string, seen: [string: bool]) -> bool:
+    h := _head(t)
+    if h == "tup" or h == "fix":
+        for a in _targs(t):
+            if _contains(&cs, a, target, seen) and _head(a) != "?":
+                return true
+        return false
+    i := _tdecl(&cs, t)
+    if i < 0:
+        return false
+    if t == target:
+        return true
+    if t in seen:
+        return false
+    s2 := seen
+    s2[t] = true
+    d := cs.tds[i]
+    if d.kind != "struct" and d.kind != "newtype":
+        return false
+    for ft in d.ftypes:
+        if _contains(&cs, ft, target, s2):
+            return true
+    return false
+
+fn _infinite_check(cs: inout C):
+    best := -1
+    for i := 0; i < len(cs.tds); i += 1:
+        d := cs.tds[i]
+        if d.kind != "struct" or d.generic:
+            continue
+        for ft in d.ftypes:
+            if _contains(&cs, ft, "@" + d.name, []string: bool):
+                # A MUTUAL cycle makes every struct in it infinite; src/tychoc.c
+                # dies on the declaration that CLOSES the cycle, which is the
+                # last one read (tests/reject/struct_mutual_by_value.ty:6).
+                if best < 0 or d.line > cs.tds[best].line:
+                    best = i
+                break
+    if best >= 0:
+        cs.file = cs.tds[best].file
+        cs.line = cs.tds[best].line
+        _cerr(&cs, "infinite type: " + cs.tds[best].name + " contains itself by value -- use an array ([" + cs.tds[best].name + "]) or Option([" + cs.tds[best].name + "]) for indirection")
+
+fn check(p: Program) -> C:
+    cs := C([]TDecl, []string: int, []FSig, []string: int, []string: string, []string: string,
+            []string: string, []string: int, []string: bool, []string: bool, []VBind, 0, []string, []string,
+            []string: int, "", 0, "", "?", false, false, []ast.ImportD, []ast.ImportD, false, 0, false)
+    for f in p.files:
+        for im in f.unit.imports:
+            push(cs.all_imports, im)
+    _builtin_sigs_t(&cs)
+    for f in p.files:
+        if len(f.unit.newtypes) > 0 or len(f.unit.handles) > 0:
+            cs.uses6b = true
+        for fd in f.unit.fns:
+            if len(fd.typarams) > 0:
+                cs.uses6b = true
+        for sd in f.unit.structs:
+            if len(sd.typarams) > 0:
+                cs.uses6b = true
+        for ed in f.unit.enums:
+            if len(ed.typarams) > 0:
+                cs.uses6b = true
+    _register(&cs, p)
+    _fill_decls(&cs, p)
+    _infinite_check(&cs)
+    for f in p.files:
+        cs.file = f.path
+        cs.prefix = f.prefix
+        cs.imports = f.unit.imports
+        for fd in f.unit.fns:
+            if fd.is_extern or len(fd.typarams) > 0:
+                continue
+            si := _sigidx(&cs, f.prefix + fd.name)
+            if si < 0:
+                continue
+            cs.line = fd.line
+            m := _vmark(&cs)
+            for i := 0; i < len(fd.params); i += 1:
+                t := cs.sg[si].ptypes[i]
+                if cs.sg[si].pflags[i] == "var":
+                    t = "arr(" + t + ")"
+                _tnote(&cs, "p:" + t)
+                _vpush(&cs, fd.params[i].name, t, false)
+            cs.ret = cs.sg[si].ret
+            _tnote(&cs, "r:" + cs.ret)
+            _tblock(&cs, fd.body)
+            _vrestore(&cs, m)
+            cs.ret = "?"
+    # `main`: src/tychoc.c:9310 and :9313, a whole-program rule like `no 'main'`.
+    mi := _sigidx(&cs, "main")
+    if mi >= 0:
+        cs.file = cs.sg[mi].file
+        cs.line = cs.sg[mi].line
+        if len(cs.sg[mi].ptypes) > 0:
+            _cerr(&cs, "'main' takes no parameters -- the command line arrives through the `args()` builtin")
+        r := cs.sg[mi].ret
+        if r != "void" and r != "res(void,string)" and known(r):
+            _cerr(&cs, "'main' returns nothing or Result(void, string), not " + r)
+    for e in cs.errs:
+        push(cs.perrs, e)
+    cs.errs = cs.perrs
+    return cs
+
+fn check_errs(cs: C) -> [string]:
+    return cs.errs
+
+fn check_census(cs: C) -> [string]:
+    names := keys(cs.counts)
+    sort.asc(names)
+    out := []string
+    for n in names:
+        push(out, n + " " + str(cs.counts[n]))
+    return out
+
+# A type NAME carrying arguments is a generic instance -- of a declared generic,
+# or of nothing at all, which is `unknown type` exactly as the bare form is.
+fn _known_generic(cs: inout C, q: string, n: string) -> bool:
+    if len(q) > 0:
+        return (_prefix_of(&cs, q) + n) in cs.tindex
+    if len(cs.prefix) > 0 and (cs.prefix + n) in cs.tindex:
+        return true
+    return (n in cs.tindex) or (n in cs.typarams)
+
+fn _shape_builtin(n: string) -> bool:
+    if n == "len" or n == "push" or n == "pop" or n == "keys" or n == "reserve":
+        return true
+    return n == "str" or n == "hash" or n == "to_under" or len(_sized_conv(n)) > 0
+
+# One side of an Option/Result match, when its arms REFINED the payload: every
+# variant of the payload enum must appear, and the diagnostic names the missing
+# one rather than the side.
+fn _side_cov(cs: inout C, l: int, pay: string, cov: [string: bool], refined: bool):
+    if not refined:
+        return
+    ti := _tdecl(&cs, _base(&cs, pay))
+    if ti < 0 or cs.tds[ti].kind != "enum":
+        return
+    for v in cs.tds[ti].fnames:
+        if not (v in cov):
+            cs.line = l
+            _cerr(&cs, "non-exhaustive match: missing variant " + v + " of " + cs.tds[ti].name)
+            return
+
+# The nested variant an Option/Result arm refines, or "". `Err(Sized(n, why))`
+# parses as a `sub`; `Err(Nope)` -- a NULLARY variant -- parses as a single
+# BINDING, and src/tychoc.c@match_arm_payload promotes it the same way. Reading
+# only the first form reported six accepted files as non-exhaustive.
+fn _nested_of(cs: inout C, a: ast.Arm, pay: string) -> string:
+    if len(a.sub) > 0:
+        return a.sub
+    if len(a.binds) != 1:
+        return ""
+    ti := _tdecl(&cs, _base(&cs, pay))
+    if ti < 0 or cs.tds[ti].kind != "enum":
+        return ""
+    for v in cs.tds[ti].fnames:
+        if v == a.binds[0]:
+            return v
+    return ""
+
+# Does this PROGRAM use anything Phase 6b owns -- a generic, a newtype, a handle
+# or a `bounded`? Every such construct is answered `?` here, so the number of
+# files this is true of is the size of what 6a defers, and it is printed by
+# `--typecheck` rather than left implicit. Phase 6b watches it fall.
+fn check_uses6b(cs: C) -> bool:
+    return cs.uses6b

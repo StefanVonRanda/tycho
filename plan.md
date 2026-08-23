@@ -679,7 +679,7 @@ self-built twice, the two emitted `.c` identical.
 > verifiable in one pass, and a phase that stalls halfway commits nothing. The
 > split is by what the verdict differential can score separately.
 
-- [ ] **Phase 6a — `types/`: the monomorphic type checker**
+- [x] **Phase 6a — `types/`: the monomorphic type checker**
   - Scope: `compiler/types/`. Type resolve and inference over the non-generic
     language: scalars, `string`/`bytes`, arrays, maps, structs, enums, tuples,
     `Option`/`Result`, function signatures, operators, indexing, field access,
@@ -692,6 +692,75 @@ self-built twice, the two emitted `.c` identical.
     `die_at` site in `src/tychoc.c`, never by tychoc1's behaviour. `leg2b
     wrongly-rejected=0` is the leg that matters more than the new refusals.
     State the new SYNTAX/NAME/TYPE/SEMANTIC split.
+
+  **Done 2026-08-23.** `compiler/types/tcheck.ty` (~1,100 lines), `--typecheck`
+  and `--type-census` at `compiler/main.ty@mode`. A type is a STRING and `?` is
+  UNKNOWN: every rule fires only where `compat()` genuinely disagrees, so a
+  generic instantiation, a UFCS method or a `$T` value is `?` and refuses
+  nothing. That is what makes `wrongly-rejected=0` structural rather than lucky.
+
+  **The split, decided by the `die_at` SITE and never by tychoc1's behaviour**
+  (`scripts/classify_rejects.py@TYPE_SITES`, with `TYPE_EXCLUDE` for the one
+  format whose site is inside `instantiate_generic`):
+  `python3 scripts/classify_rejects.py compiler/reject_class.tsv` ->
+  `classified 337 {'TYPE': 147, 'SEMANTIC': 103, 'SYNTAX': 57, 'NAME': 30}`,
+  from 57 / 30 / 250. Left SEMANTIC with the reason recorded at the list: the
+  generic, newtype, affine, `bounded`, `where`, subscript, extern-C-ABI, sink
+  consume and "cannot infer ..." families, each a rule family of its own.
+
+  ```
+  $ make parse-check                      # ~20.3 s (20.48 / 20.13 / 20.15), was 15.5 s
+  leg2c tests/reject/*.ty --typecheck: SYNTAX+NAME+TYPE=234 rejected=230 missed=4 (KNOWN 4) | SEMANTIC=103 accepted=103 wrongly-rejected=0
+  leg9  type census: 1666 distinct types, 117612 inference sites, 2590 deferred to Phase 6b
+  leg5  whole-tree verdicts: files=1078 tychoc(accept=552 semantic=135 name=151 type=166 syntax=74) disagreements=0
+  leg10 whole-tree typecheck: disagreements=0 (9 TYPE files known-missed)
+  leg11 TYPE diagnostic file:line vs ./tychoc: scored=157 agree=157 disagree=0 unlocated=0
+  leg12 files whose program uses a generic/newtype/handle/bounded: 202 of 552 accepted
+  parse-check: all green
+  ```
+
+  legs 1/1b/1c/2/2b/3/4/4b/7/8 are unmoved and both older goldens are
+  UNCHANGED (`git status` shows neither `census.expected.out` nor
+  `rcensus.expected.out` modified); `compiler/tcensus.expected.out` is the one
+  new golden.
+
+  **Nothing is excluded by FILE.** The brief's exclusion count is leg12 instead:
+  202 of the 552 accepted programs contain a generic, newtype, handle or
+  `bounded`, and 2,590 of the 117,612 inference sites are `?`. Both are printed
+  every run and are Phase 6b's numbers to drive to zero.
+
+  **The four TYPE fixtures not refused are KNOWN BY NAME**, compared as a SET so
+  a new miss reddens and so does a fixed one: three need generic instantiation
+  (`generic_bounded_field_degraded`, `generic_inst_inout_fnvalue`,
+  `generic_params_17`), and `len_scalar.ty` writes `len(x)` INSIDE an f-string,
+  whose interpolations the parser still keeps as raw text. `verdict_diff.py`
+  carries five more of the first kind under `tests/diag` and
+  `tests/reject/pkg`, which leg2c's corpus does not reach.
+
+  **Five negative controls, each observed and reverted.** C3c is the one the
+  phase was written to find:
+
+  | control | what reddened |
+  |---|---|
+  | C1 the if-condition rule disabled | leg2c missed 4 -> 8, the miss-SET check, leg10 disagreements=4 |
+  | C2 enum exhaustiveness disabled | leg2c missed 4 -> 5 (`match_non_exhaustive`), leg10=2 |
+  | C3 an unknown operand no longer poisons the result (`f * 2` at an unknown `f` read as int -- the real defect, found by corelib/test/toml) | leg9 moved 277 sites; leg2/2b/2c all green, leg10 found 1 file |
+  | **C3c `str(x)` answers `?` instead of `string`** | **leg9 ALONE**: 3,098 call results and 6,644 downstream sites re-typed while legs 1, 1b, 1c, 2, 2b, 2c, 5, 6, 8, 10 and 11 stayed fully green over all 1,078 files |
+  | C4 `main`'s two signature rules lose their line | leg11 disagree=6, every verdict leg green |
+  | C5 the literal-adaptation rule deleted (`x: u32 = 1`) | leg10 disagreements=6 -- the accept side can redden |
+
+  Two real defects the legs found while building it, both of the "green verdict,
+  wrong answer" class: the operand poison above, and `keys(m)`/`push` needing the
+  expected type threaded into the argument. One ordering fact was measured rather
+  than assumed: the shape-directed builtins resolve BEFORE the Sig table
+  (`src/tychoc.c:6740-6990` precedes its `sig_find`), without which a user
+  `fn len` in the entry package captured the bare `len(b)` inside `core:strings`
+  and refused a program `./tychoc` accepts.
+
+  Three gates my diff can move, all run: `make goldens-check` ok (521 golden
+  files, all tracked), `make script-check` ok (26 .py, 96 .sh),
+  `python3 scripts/check_citations.py` ok.
+
 
 - [ ] **Phase 6b — `types/`: generics, newtypes, affine, `where`, `bounded`**
   - Scope: `compiler/types/`. Generic inference and monomorphisation, explicit
@@ -961,3 +1030,17 @@ self-built twice, the two emitted `.c` identical.
   - Verify: `make parse-check` (leg8 must stay at 151/151), plus `make test`,
     which owns `tests/reject/no_main.ty`'s golden.
   - Do NOT run: `make ci`.
+
+- [ ] **f-string interpolations are still raw text, so nothing inside one is
+  checked** (found in Phase 6a, out of scope there). `ast.FStrLit` keeps the body
+  as written and `compiler/types/resolve.ty@_fstring_uses` only scans it for
+  identifiers to mark used. `src/tychoc.c:2712` parses each `{...}` into a real
+  expression. The visible cost today is one fixture:
+  `tests/reject/len_scalar.ty` is `print(f"{len(x)}")` at an int `x`, and it is
+  one of the four KNOWN misses in `compiler/run.sh`'s leg2c.
+  - Scope: parse each interpolation into `ast.Expr` and hang them off the node.
+  - Done when: `len_scalar.ty` leaves `KNOWN_TYPE_MISS` in both
+    `compiler/run.sh` and `compiler/verdict_diff.py`.
+  - Verify: `make parse-check`. Expect leg3's census to MOVE (the interpolations
+    become real nodes) and say by how much; both other censuses should not.
+  - Do NOT run: `make test`. Nothing here reaches `src/tychoc.c`.

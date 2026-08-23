@@ -62,6 +62,104 @@ NAME_SITES = [
     "declared and not used",
 ]
 
+# Monomorphic TYPE sites: Phase 6a's scope, read off src/tychoc.c's type-resolve
+# section. A rule lands here when its subject is one of the eleven the phase
+# names -- scalars, string/bytes, arrays, maps, structs, enums, tuples,
+# Option/Result, function signatures, operators, indexing, field access, match
+# exhaustiveness, assignment and return compatibility -- and NOT a generic, a
+# newtype, an affine type (handle/task/channel), `bounded`, a `where` predicate,
+# a subscript, the extern C-ABI list, the sink consume analysis, or one of the
+# "cannot infer ..." diagnostics, each of which is a rule family of its own and
+# stays SEMANTIC. Matched as substrings of the FORMAT string, so each entry names
+# a rule rather than a line. Checked BEFORE the SYNTAX/SEMANTIC split and AFTER
+# NAME, like every other class here.
+# Rules whose message reads like a monomorphic one but whose SITE is inside
+# generic instantiation -- src/tychoc.c@instantiate_generic. Phase 6b owns them.
+# Checked before TYPE_SITES, since the argument-compatibility entry there would
+# otherwise swallow this one.
+TYPE_EXCLUDE = [
+    "which does not fit the parameter pattern",
+]
+
+TYPE_SITES = [
+    "unknown type",
+    "'void' is a type only as a Result",
+    "an array element cannot be void",
+    "an array element type cannot be void",
+    "a tuple element cannot be void",
+    "Option(void) is not a type",
+    "a function-type parameter cannot be void",
+    "map keys must be",
+    "a fixed-size array length must be an integer literal",
+    "a fixed-size array element cannot be",
+    "infinite type",
+    "if condition must be bool",
+    "for condition must be bool",
+    "declared type",
+    "returning %s but proc returns",
+    "argument %d of",
+    "takes %d argument(s), got",
+    "cannot compare",
+    "ordering compares two ints",
+    "arithmetic requires two ints or two floats",
+    "is not defined element-wise",
+    "element-wise `%s` requires",
+    "element-wise `%s` is defined for",
+    "cannot mix a fixed array and a growable array",
+    "cannot concatenate",
+    "on a fixed array requires the same static length",
+    "array elements must all have the same type",
+    "element %d of a",
+    "a fixed-size array of length",
+    "field '%s' of %s is",
+    "map key must be",
+    "a map is not directly iterable",
+    "tuple index %lld out of range",
+    "a tuple element is named",
+    "`in` tests membership in a map",
+    "`in` key must be",
+    "`is` asks an enum, Option or Result value",
+    "is not a variant of",
+    "non-exhaustive match",
+    "match on a Result must cover",
+    "match on an Option must cover",
+    "a match on a bool must cover",
+    "must carry a `_` arm",
+    "is refused: nothing in the tree dispatches on it",
+    "duplicate arm for",
+    "duplicate or overlapping match arm",
+    "wildcard must be the last match arm",
+    "a range starts at",
+    "a match on an int takes int literal arms",
+    "is not an int constant",
+    "carries no value here",
+    "carries no ok value",
+    "cannot bind a void value",
+    "branches produce different types",
+    "cannot assign %s to",
+    "can only index-assign an array or map",
+    "cannot index-assign an element of",
+    "cannot assign to a field of a temporary",
+    "'main' takes no parameters",
+    "'main' returns nothing or Result(void, string)",
+    "too many parameters (max",
+    "len(...) takes",
+    "push's first argument",
+    "push's value must be",
+    "pop(arr) takes one argument",
+    "to_int(x)",
+    "to_float(n)",
+    "takes a numeric value",
+    "can't hash a",
+    "'&' is only valid as the argument to an inout parameter",
+    "is inout; pass it as",
+    "a function value can't be inout",
+    "which this statement discards",
+    "spread `...` is only valid as the argument to a variadic parameter",
+    "must be the only variadic argument",
+    "functions are not comparable",
+]
+
 NEEDS_SYMBOLS = [
     "unknown type",
     "is already defined",
@@ -209,6 +307,8 @@ def main():
             cls = "SYNTAX"          # the SYNTAX boundary is Phase 4's, untouched
         elif any(k in f for k in NAME_SITES):
             cls = "NAME"
+        elif any(k in f for k in TYPE_SITES) and not any(k in f for k in TYPE_EXCLUDE):
+            cls = "TYPE"
         else:
             cls = "SEMANTIC"
         out.append((p, cls, line, msg))

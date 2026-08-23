@@ -171,3 +171,42 @@ fn dump_symbols(src_path: string, argv0: string):
     for l in types.symbol_lines(rs):
         out = out + l + "\n"
     print(out)
+
+# --- --typecheck / --type-census --------------------------------------------
+# Phase 6a. NAME resolution runs first and its diagnostics win, exactly as
+# src/tychoc.c resolves a name before it can have a type -- so a file that fails
+# to resolve reports the same message it did at Phase 5, and the TYPE class is
+# only ever reached on a file that resolves cleanly.
+
+fn typecheck_only(src_path: string, argv0: string):
+    p := types.load(src_path, argv0)
+    rs := types.resolve(p)
+    if len(rs.errs) > 0:
+        out := ""
+        for e in rs.errs:
+            out = out + e + "\n"
+        eprint(out)
+        exit(1)
+    cs := types.check(p)
+    errs := types.check_errs(cs)
+    if len(errs) > 0:
+        out2 := ""
+        for e in errs:
+            out2 = out2 + e + "\n"
+        eprint(out2)
+        exit(1)
+    sixb := "0"
+    if types.check_uses6b(cs):
+        sixb = "1"
+    print("TYPECHECK-OK files=" + str(len(p.files)) + " sixb=" + sixb + "\n")
+
+fn type_census(src_path: string, argv0: string):
+    p := types.load(src_path, argv0)
+    rs := types.resolve(p)
+    if len(rs.errs) > 0:
+        exit(1)
+    cs := types.check(p)
+    out := ""
+    for l in types.check_census(cs):
+        out = out + l + "\n"
+    print(out)

@@ -41,6 +41,17 @@
 #        input. Phase 5b put a line on every AST node, and a line that is
 #        PRESENT BUT WRONG passes every leg above: the file is refused either
 #        way. Printed by compiler/verdict_diff.py alongside legs 5 and 6.
+#   [2c] the reject corpus a THIRD time, under `--typecheck`: the SYNTAX, NAME
+#        and TYPE files must be refused and the SEMANTIC ones accepted. Phase 6a
+#        split TYPE out of SEMANTIC by the same rule -- the die_at SITE.
+#   [9]  the TYPE census: the type this pass INFERRED at every declaration,
+#        parameter, return, loop variable, call, field, index and operator.
+#        Making `str(x)` answer `?` instead of `string` left every verdict leg
+#        on all 1,078 files green and moved 9,742 counted sites here.
+#   [10] the whole tree under `--typecheck`, and [11] every TYPE file's
+#        `file:line` against ./tychoc's -- leg8's argument, for the new class.
+#   [12] how many accepted programs use a generic/newtype/handle/bounded, all of
+#        which this pass answers `?`: the size of what Phase 6a defers.
 #
 # The split in compiler/reject_class.tsv is COMMITTED, not recomputed: it is
 # grounded in src/tychoc.c's diagnostic sites (see scripts/classify_rejects.py),
@@ -55,6 +66,7 @@ TYCHOC1="${TYCHOC1:-./tychoc1}"
 TSV=compiler/reject_class.tsv
 GOLDEN=compiler/census.expected.out
 RGOLDEN=compiler/rcensus.expected.out
+TGOLDEN=compiler/tcensus.expected.out
 T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT
 rc=0
@@ -96,10 +108,20 @@ leg_accept "leg1c tools+examples+server+bench" "$(find tools examples server ben
 # decided by the signature, the five-name predicate set, or a parse-time const
 # fold. scripts/classify_rejects.py carries the reasoning; rerun it to rebuild.
 sr=0; sa=0; ma=0; mr=0
-nsyn=0; nname=0; nsem=0
+nsyn=0; nname=0; nsem=0; ntype=0
 rr=0; rm_=0; ra=0; rw=0
+tr=0; tm=0; ta=0; tw=0
+# The four TYPE fixtures Phase 6a does NOT refuse, KNOWN BY NAME rather than by
+# count -- the form Phase 3b used for the literal-range misses, so a new miss
+# reddens the lane and so does a fixed one. Three need generic instantiation
+# (Phase 6b); the fourth sits inside an f-string, whose interpolations the
+# parser still keeps as raw text (see plan.md).
+KNOWN_TYPE_MISS="tests/reject/generic_bounded_field_degraded.ty tests/reject/generic_inst_inout_fnvalue.ty tests/reject/generic_params_17.ty tests/reject/len_scalar.ty"
+# (the whole-tree list in compiler/verdict_diff.py carries five more, all under
+# tests/diag and tests/reject/pkg, which this leg does not reach)
+seen_miss=""
 while IFS='	' read -r f cls line msg; do
-    case "$cls" in SYNTAX) nsyn=$((nsyn+1)) ;; NAME) nname=$((nname+1)) ;; SEMANTIC) nsem=$((nsem+1)) ;; esac
+    case "$cls" in SYNTAX) nsyn=$((nsyn+1)) ;; NAME) nname=$((nname+1)) ;; TYPE) ntype=$((ntype+1)) ;; SEMANTIC) nsem=$((nsem+1)) ;; esac
     if "$TYCHOC1" "$f" --parse >/dev/null 2>&1; then v=accept; else v=reject; fi
     case "$cls$v" in
         SYNTAXreject)   sr=$((sr+1)) ;;
@@ -111,17 +133,32 @@ while IFS='	' read -r f cls line msg; do
     case "$cls$w" in
         SYNTAXreject|NAMEreject) rr=$((rr+1)) ;;
         SYNTAXaccept|NAMEaccept) rm_=$((rm_+1)); echo "  NAME-NOT-REJECTED $f :: $msg" ;;
-        SEMANTICaccept)          ra=$((ra+1)) ;;
-        SEMANTICreject)          rw=$((rw+1)); echo "  SEMANTIC-WRONGLY-REJECTED $f :: $msg :: $("$TYCHOC1" "$f" --resolve 2>&1 | head -1)" ;;
+        *accept)                 ra=$((ra+1)) ;;
+        *reject)                 rw=$((rw+1)); echo "  NON-NAME-WRONGLY-REJECTED $f :: $msg :: $("$TYCHOC1" "$f" --resolve 2>&1 | head -1)" ;;
+    esac
+    if "$TYCHOC1" "$f" --typecheck >/dev/null 2>&1; then x=accept; else x=reject; fi
+    case "$cls$x" in
+        SYNTAXreject|NAMEreject|TYPEreject) tr=$((tr+1)) ;;
+        TYPEaccept)   tm=$((tm+1)); seen_miss="$seen_miss $f"; echo "  TYPE-NOT-REJECTED $f :: $msg" ;;
+        SYNTAXaccept|NAMEaccept) tm=$((tm+1)); seen_miss="$seen_miss $f"; echo "  TYPE-NOT-REJECTED $f :: $msg" ;;
+        SEMANTICaccept) ta=$((ta+1)) ;;
+        SEMANTICreject) tw=$((tw+1)); echo "  SEMANTIC-WRONGLY-REJECTED $f :: $msg :: $("$TYCHOC1" "$f" --typecheck 2>&1 | head -1)" ;;
     esac
 done < "$TSV"
 echo "leg2  tests/reject/*.ty --parse: SYNTAX=$((sr+sa)) rejected=$sr missed=$sa | NAME+SEMANTIC=$((ma+mr)) accepted=$ma wrongly-rejected=$mr"
-echo "leg2b tests/reject/*.ty --resolve: SYNTAX+NAME=$((rr+rm_)) rejected=$rr missed=$rm_ | SEMANTIC=$((ra+rw)) accepted=$ra wrongly-rejected=$rw"
-[ "$nsyn" = 57 ] && [ "$nname" = 30 ] && [ "$nsem" = 250 ] || { echo "parse-check: the split moved -- expected SYNTAX=57 NAME=30 SEMANTIC=250"; rc=1; }
+echo "leg2b tests/reject/*.ty --resolve: SYNTAX+NAME=$((rr+rm_)) rejected=$rr missed=$rm_ | TYPE+SEMANTIC=$((ra+rw)) accepted=$ra wrongly-rejected=$rw"
+echo "leg2c tests/reject/*.ty --typecheck: SYNTAX+NAME+TYPE=$((tr+tm)) rejected=$tr missed=$tm (KNOWN 4) | SEMANTIC=$((ta+tw)) accepted=$ta wrongly-rejected=$tw"
+[ "$nsyn" = 57 ] && [ "$nname" = 30 ] && [ "$ntype" = 147 ] && [ "$nsem" = 103 ] || { echo "parse-check: the split moved -- expected SYNTAX=57 NAME=30 TYPE=147 SEMANTIC=103"; rc=1; }
 [ "$mr" = 0 ] || { echo "parse-check: a NAME or SEMANTIC fixture was rejected by --parse; a parser has no symbol table"; rc=1; }
 [ "$sa" = 0 ] || { echo "parse-check: a SYNTAX fixture was accepted; the parser must refuse it"; rc=1; }
 [ "$rm_" = 0 ] || { echo "parse-check: a NAME fixture resolved; the resolver must refuse it"; rc=1; }
-[ "$rw" = 0 ] || { echo "parse-check: a SEMANTIC fixture was rejected by --resolve; a resolver cannot see a type error"; rc=1; }
+[ "$rw" = 0 ] || { echo "parse-check: a TYPE or SEMANTIC fixture was rejected by --resolve; a resolver cannot see a type error"; rc=1; }
+# The misses are compared as a SET, not as a count: a new one reddens the lane
+# and so does a fixed one, which is what stops this exemption from widening.
+got=$(echo $seen_miss | tr ' ' '\n' | LC_ALL=C sort | tr '\n' ' ')
+want=$(echo $KNOWN_TYPE_MISS | tr ' ' '\n' | LC_ALL=C sort | tr '\n' ' ')
+[ "$got" = "$want" ] || { echo "parse-check: the TYPE misses moved"; echo "    now:  $got"; echo "    was:  $want"; rc=1; }
+[ "$tw" = 0 ] || { echo "parse-check: a SEMANTIC fixture was rejected by --typecheck; its rule is not a monomorphic type rule"; rc=1; }
 
 # [3] -- the census, against a recorded golden
 for f in $(ls tests/*.ty) $(find corelib -name '*.ty' | sort) $(find tools examples server bench -name '*.ty' | sort); do
@@ -154,6 +191,26 @@ if [ -n "$RECORD" ]; then
 elif ! cmp -s "$T/rcensus.out" "$RGOLDEN"; then
     echo "parse-check: the RESOLUTION census moved -- a name resolves to a different declaration"
     diff "$RGOLDEN" "$T/rcensus.out" | head -20
+    rc=1
+fi
+
+# [9] -- the TYPE census: every declaration, parameter, return, loop variable,
+# call result, field access, index and operator, printed as the type this pass
+# INFERRED for it. The verdict legs cannot see a wrong inference on a program
+# that is accepted either way -- reading `f * 2` at an unknown `f` as `int` left
+# every one of legs 1..8 and 2c green while the type was simply wrong.
+for f in $(ls tests/*.ty) $(find corelib -name '*.ty' | sort) $(find tools examples server bench -name '*.ty' | sort); do
+    "$TYCHOC1" "$f" --type-census 2>/dev/null || true
+done | awk '{c[$1]+=$2} END{for (k in c) printf "%s=%d\n", k, c[k]}' | LC_ALL=C sort > "$T/tcensus.out"
+tkinds=$(wc -l < "$T/tcensus.out")
+tnodes=$(awk -F= '{s+=$2} END{print s}' "$T/tcensus.out")
+tunk=$(awk -F= '/^[a-z]:\?=/{s+=$2} END{print s+0}' "$T/tcensus.out")
+echo "leg9  type census: $tkinds distinct types, $tnodes inference sites, $tunk deferred to Phase 6b"
+if [ -n "$RECORD" ]; then
+    cp "$T/tcensus.out" "$TGOLDEN"; echo "parse-check: recorded $TGOLDEN"
+elif ! cmp -s "$T/tcensus.out" "$TGOLDEN"; then
+    echo "parse-check: the TYPE census moved -- an expression infers a different type"
+    diff "$TGOLDEN" "$T/tcensus.out" | head -20
     rc=1
 fi
 
