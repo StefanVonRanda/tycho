@@ -1322,6 +1322,45 @@ self-built twice, the two emitted `.c` identical.
   - Verify: `sh scripts/tychoc1_sweep.sh` unmoved, plus a probe nesting a
     hashable struct 12 deep and keying a map on it.
 
+- [ ] **Phase 10a — `io.read_text` is miscompiled: the fixpoint's real blocker**
+  - **A six-line reproduction, far smaller than the self-compile that found
+    it.** Compiled by `./tychoc1`, linked against `corelib/io/io_shim.c` and
+    `corelib/strings/strings_shim.c`:
+
+    ```tycho
+    package main
+
+    import "core:io"
+
+    fn main():
+        match io.read_text("runtime/tycho_rt.c"):
+            Ok(s): println("OK len=" + str(len(s)))
+            Err(e): println("ERR " + str(e))
+    ```
+
+    prints `ERR NotFound` for a file that is present and 134,884 bytes.
+    `./tychoc` compiles the same probe correctly. **No fixture catches this:
+    262 of them compile, link and run, and 258 match.**
+  - **Ruled OUT, each measured, do not redo:**
+    - the extern CALL is correct —
+      `iox_read_file(tycho_str_copy(&_scope, h_p), &(h_st))` reaches the real
+      symbol, not a stub;
+    - the duplicate `h_iox_read_file` stub is gone (an extern no longer gets a
+      Tycho body) and removing it did not fix this;
+    - the `RF_` constants fold correctly — `RF_MISS = 0`, `RF_OK = 1`, and the
+      emitted `st == 1` -> Ok / `st == 0` -> Err matches the source;
+    - passing extern arguments WITHOUT the arena copy (as `./tychoc` does)
+      makes it worse: the probe then SEGFAULTS, exit 139. So the copy is not
+      the fault and that change must not be reapplied on its own.
+  - Next: diff `./tychoc`'s and `./tychoc1`'s emitted `h_io__read_bytes` side
+    by side. Both are small; the divergence is inside that one function or in
+    `has_nul`/`or_return` around it.
+  - Done when: the probe prints `OK len=134884`, and `tychoc2` compiles
+    `hello.ty`.
+  - Verify: the probe, then the full self-host chain — `tychoc1` emits its own
+    source, `cc` builds it with the two shims, and the resulting `tychoc2`
+    compiles a program whose output matches `./tychoc`'s.
+
 - [ ] **Phase 8d — concurrency codegen (the 8 remaining fixtures)**
   - `chan_param_recv`, `generic_channel`, `generic_enum_channel`,
     `generic_struct_instance_types`, `select_enum_match`,
