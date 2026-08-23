@@ -1396,7 +1396,15 @@ fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
             return ("(" + _cty(&cs, ot) + "){0}", ot)
         ast.SpawnE(l, k): _bad("expr:SpawnE -- Phase 8")
         ast.Spread(l, k): _bad("expr:Spread -- Phase 8")
-        ast.Addr(l, k): _bad("expr:Addr -- Phase 8")
+        ast.Addr(l, k):
+            # `&x` reaching the EXPRESSION path. An inout ARGUMENT never gets
+            # here -- `_addr_of` handles that -- so this is the residual case,
+            # and it delegates rather than growing a second implementation.
+            # Measured: the `&` here is not load-bearing for either fixture
+            # (removing it moves no count), so what this arm buys is that Addr
+            # stops aborting, not the address itself.
+            _, at5 := _lvalue(&cs, k[0])
+            return (_addr_of(&cs, e), at5)
         ast.ChanE(l, t, k): _bad("expr:ChanE -- Phase 8")
         ast.Lambda(l, p, r, b): return _lambda(&cs, p, r, b[0])
         _: _bad("unsupported expression -- Phase 8")
