@@ -1013,7 +1013,112 @@ self-built twice, the two emitted `.c` identical.
     handle destructors, `spawn`/`channel`/`select`, `parallel for`.
   - Done when: `TYCHOC=./tychoc1 make test` is green at the same count as
     `./tychoc` — 719 fixtures at the last measurement, to be re-measured.
-  - Verify: both runs, counts compared; plus `make corelib` under the override.
+  - Verify: `sh scripts/tychoc1_sweep.sh` — never an unbounded `make test`.
+
+  **PARTIAL, committed unticked.** `sh scripts/tychoc1_sweep.sh` moved
+  `compile=126 clean-error=148 / link=125 RUN=125 MATCH=122` to
+  `compile=201 clean-error=73 / link=201 RUN=201 MATCH=199`, with
+  `TIMEOUT=0 KILLED=0` throughout. **Maps and generics are done; soa, channels
+  and handles are not.** Landed:
+
+  - **Compact-dict maps**, one stamped kind per `(K, V)`, mirroring
+    `src/tychoc.c:13481` line for line — int32 index table over dense
+    insertion-ordered entries, tombstone + backward-shift index delete,
+    allocation-free compaction. String / int / fieldless-enum (stored as the
+    tag, rebuilt through `_sing_tab_<E>`) / struct / tuple / array keys, with a
+    generated FNV deep hash per hashable struct, tuple and composite array.
+    `m[k]`, `m[k] = v`, `m.get(k[, d])`, `k in m`, `delete m[k]`, `keys(m)`,
+    `len(m)`, `reserve(m, n)`, `==` and `str(m)`.
+  - **Monomorphised generics**: generic structs, enums and functions, one deep
+    instance per distinct binding, discovered to a fixpoint (an instance body
+    that instantiates another gets its own body emitted). Type arguments come
+    from an explicit `f$(T)`, from the wanted type, or from unifying the
+    declared parameter/field/payload types against the arguments. A bare
+    variant of a generic enum resolves through the wanted type or by inferring
+    its arguments — never by picking whichever instance was stamped first.
+  - **UFCS** (`x.f(a)` is `f(x, a)`), in both spellings the parser produces.
+  - **The owner arena for a heap `inout` parameter.** A map or array reached
+    through `inout` grew its buffer in the CALLEE's `_scope`, which is freed on
+    return, so `tests/maps.ty`'s `drop(&m, "x")` left a dangling entry table.
+    Each heap `inout` parameter now carries its owning arena, as
+    `src/tychoc.c@owner_arena_of` does with `_ina_<name>`.
+  - **A bare `[]` declaration typed by its first `push`** (and by a map
+    annotation), which was blocking four generic fixtures.
+  - **A side-effecting index key is evaluated once.** `m[f()] += 1` desugars to
+    `m[f()] = m[f()] + 1` with the same key node twice; it is hoisted to a temp.
+  - **`push`/`pop`/`reserve` reach their first argument as a PLACE**, which is
+    what `push(m["g"], 3)` needs — and is also what fixed `projections`, the
+    fixture whose emitted C did not compile at Phase 7b.
+
+  `compound_index_eval` and `projections` are both fixed as a side effect. The
+  two remaining non-clean fixtures are `int_overflow` and `match_payload_mut`,
+  both of which already differed at Phase 7b.
+
+  **73 clean errors remain, grouped by the FIRST error each fixture reports.**
+  Roughly 18 are Phase 8's own and 55 are Phase 7b's:
+
+  | n | cause | owner |
+  |---|---|---|
+  | 4 | `soa` literals (`expr:SoaLit`) | **8** |
+  | 2 | `soa` types (`type:TSoa`) | **8** |
+  | 4 | `channel(T, n)` (`expr:ChanE`) | **8** |
+  | 2 | the `Channel(T)` type | **8** |
+  | 1 | `wait` on a spawned task | **8** |
+  | 3 | `handle` / `subscript` declarations | **8** |
+  | 2 | `&place` outside an `inout` argument (`expr:Addr`) | **8** |
+  | 11 | function types (`type:TFn`) | 7b |
+  | 7 | fixed-size arrays `[N]T` | 7b |
+  | 5 | lambdas | 7b |
+  | 5 | sized ints and `f32` as a primitive type | 7b |
+  | 8 | sized/byte conversions and other builtins (`to_u8`, `to_u32`, `to_bytes`, `fabs`, `list_dir`, `hash`) | 7b |
+  | 4 | `bounded[N]T` | 7b |
+  | 4 | f-strings | 7b |
+  | 3 | `extern` functions | 7b |
+  | 3 | unknown names (a fn value, two match-payload binds) | 7b |
+  | 2 | `len()` of a non-collection | 7b |
+  | 2 | `None` / `Ok` with no type to belong to | 7b |
+  | 1 | indexing a `char` element | 7b |
+
+  Not done and deliberately untouched: `soa`, `spawn`/`channel`/`select`,
+  `parallel for` and handle destructors. Concurrency was left last on purpose —
+  it emits threads, and Phase 7c has still not named the fixture that OOMs.
+
+  **Measurement notes.** Four sweeps in a row read `MATCH=199`; one read 198 and
+  was not reproduced, so one fixture is intermittently flaky and has not been
+  identified. `make parse-check` is all green (`disagreements=0` on 1,078
+  files). Negative control: reversing the entry walk in the generated
+  `keys()` — insertion order being the whole point of the compact dict — drops
+  MATCH 199 -> 193, and reverting restores it. A FIRST control (dropping the
+  key deep-copy on insert) moved nothing and is recorded here as **decoration**:
+  every map key in this corpus is a literal or outlives its map, so no fixture
+  can see it.
+
+- [ ] **Phase 8b — one fixture's sweep verdict is not reproducible** (found in
+  Phase 8, out of scope there)
+  - Five consecutive `sh scripts/tychoc1_sweep.sh` runs on the same binary read
+    `MATCH=199` four times and `198` once. The 198 was not reproduced and the
+    fixture was not identified; `bad.sh`-style per-fixture reruns were stable at
+    the same two mismatches three times over.
+  - Scope: diagnosis. Run the sweep in a loop recording the per-fixture verdict,
+    and name the fixture that moves.
+  - Done when: the fixture is named and the cause stated — a timeout near the
+    5 s bound, a per-process hash seed leaking into output, or a genuine
+    nondeterminism in the emitted C.
+  - Verify: the named fixture disagreeing with itself across repeated runs of
+    the SAME binary. Do NOT run an unbounded `make test`.
+
+- [ ] **Phase 8c — `_hashable` is depth-capped at 8 and fails closed** (found in
+  Phase 8, out of scope there)
+  - `compiler/emit/emit.ty@_hashable_d` stops at depth 8 and returns false,
+    because a struct whose field is an array OF ITSELF is a legal recursive
+    shape and recursing on it never terminates (it OOM'd two fixtures before the
+    cap). The cap is a guess, not a proof: a legitimately hashable struct nested
+    deeper than 8 loses its generated hash and the map that keys on it stops
+    compiling, with no diagnostic naming the cap.
+  - Scope: replace the depth cap with a visited set over struct/tuple ids.
+  - Done when: the recursive shapes still terminate and no legal depth is cut.
+  - Verify: `sh scripts/tychoc1_sweep.sh` unmoved, plus a probe nesting a
+    hashable struct 12 deep and keying a map on it.
 
 - [ ] **Phase 9 — diagnostics wording**
   - Scope: `compiler/` diagnostics. Goldens in `tests/` pin message text,

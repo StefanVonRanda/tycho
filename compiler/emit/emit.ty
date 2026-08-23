@@ -47,10 +47,23 @@ struct C:
     vnames: [string]
     vtypes: [string]
     vcn: [string]
+    vown: [string]
     ntn: [string]
     ntu: [string]
     tks: [string]
+    mks: [string]
     gks: [string]
+    gs: [ast.StructD]
+    ge: [ast.EnumD]
+    gf: [ast.Fn]
+    tpn: [string]
+    tpv: [string]
+    pk: [int]
+    ptv: [string]
+    ikey: [string]
+    iname: [string]
+    iarg: [string]
+    pendk: [int]
     want: string
     tmp: int
     cur_ret: string
@@ -58,7 +71,7 @@ struct C:
     arena: string
 
 fn _new() -> C:
-    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], "", 0, "void", 0, "&_scope")
+    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], "", 0, "void", 0, "&_scope")
 
 fn _bad(msg: string):
     die("tychoc1: " + msg)
@@ -117,6 +130,148 @@ fn _telems(cs: inout C, t: string) -> [string]:
 fn _tup_of(cs: inout C, es: [string]) -> string:
     return "T~" + str(_tkind(&cs, _tjoin(es)))
 
+# A map type is stamped out per (key, value) pair exactly as a tuple kind is:
+# the registry key is "K|V" and the type string is "M~<index>". The emitted C
+# mirrors src/tychoc.c:12894's compact indexed dict -- an int32 index table over
+# dense insertion-ordered entries -- so keys() order and str() form agree.
+fn _is_map(t: string) -> bool:
+    return strings.starts_with(t, "M~")
+
+fn _mkind(cs: inout C, key: string) -> int:
+    for i := 0; i < len(cs.mks); i += 1:
+        if cs.mks[i] == key:
+            return i
+    push(cs.mks, key)
+    return len(cs.mks) - 1
+
+fn _map_of(cs: inout C, k: string, v: string) -> string:
+    return "M~" + str(_mkind(&cs, k + "|" + v))
+
+fn _mparts(cs: inout C, t: string) -> [string]:
+    i := strings.parse_int(_tname(t))
+    return split(cs.mks[i], "|")
+
+fn _mkey(cs: inout C, t: string) -> string:
+    return _mparts(&cs, t)[0]
+
+fn _mval(cs: inout C, t: string) -> string:
+    return _mparts(&cs, t)[1]
+
+fn _mpfx(cs: inout C, t: string) -> string:
+    return "tycho_mapM" + _tname(t)
+
+# How a key is REPRESENTED in the entry table: a fieldless enum is stored as its
+# tag, so `keys()` has to rebuild the singleton (src/tychoc.c:12926).
+fn _kclass(cs: inout C, k: string) -> string:
+    if k == "string":
+        return "str"
+    if k == "int" or k == "char" or k == "bool":
+        return "int"
+    if _is_enum(k):
+        return "enum"
+    if _is_struct(k) or _is_tup(k) or _is_arr(k):
+        return "comp"
+    _bad("a map key of type '" + k + "' is not hashable")
+    return ""
+
+fn _kslot(cs: inout C, k: string) -> string:
+    c := _kclass(&cs, k)
+    if c == "str":
+        return "char *"
+    if c == "int" or c == "enum":
+        return "tycho_int "
+    return _cty(&cs, k) + " "
+
+# The key as the generated functions take it, from a Tycho-level value.
+fn _keyrt(cs: inout C, k: string, code: string) -> string:
+    if _kclass(&cs, k) == "enum":
+        return "((tycho_int)((" + code + ")->tag))"
+    return code
+
+fn _khash(cs: inout C, k: string, e: string) -> string:
+    c := _kclass(&cs, k)
+    if c == "str":
+        return "tycho_si_hash(" + e + ")"
+    if c == "int" or c == "enum":
+        return "tycho_ik_hash((tycho_int)(" + e + "))"
+    return _hash(&cs, k, e)
+
+fn _kmatch(cs: inout C, k: string, ek: string, q: string) -> string:
+    c := _kclass(&cs, k)
+    if c == "str":
+        return "(strcmp(" + ek + ", " + q + ") == 0)"
+    if c == "int" or c == "enum":
+        return "(" + ek + " == " + q + ")"
+    return _eq(&cs, ek, q, k)
+
+fn _kcopy(cs: inout C, k: string) -> string:
+    c := _kclass(&cs, k)
+    if c == "str":
+        return "tycho_str_copy(a, k)"
+    if c == "int" or c == "enum":
+        return "k"
+    return _copy(&cs, "k", k, "a")
+
+# A struct/tuple key hashes field-wise, FNV-folded from the per-process seed --
+# src/tychoc.c:10170's gen_hash, which is what makes `==`-equal values hash equal.
+fn _hashable(cs: inout C, t: string) -> bool:
+    return _hashable_d(&cs, t, 0)
+
+# Depth-bounded: a struct whose field is an array OF ITSELF is a legal recursive
+# shape and would otherwise recurse forever here.
+fn _hashable_d(cs: inout C, t: string, d: int) -> bool:
+    if d > 8:
+        return false
+    if t == "int" or t == "char" or t == "bool" or t == "float" or t == "string":
+        return true
+    if _is_enum(t):
+        i := _eidx(&cs, t[2:])
+        if i < 0:
+            return false
+        for v in cs.eds[i].vpay:
+            if len(v.ptypes) > 0:
+                return false
+        return true
+    if _is_arr(t):
+        return _hashable_d(&cs, _elem(t), d + 1)
+    if _is_struct(t):
+        i2 := _sidx(&cs, _tname(t))
+        if i2 < 0:
+            return false
+        for ft in cs.sds[i2].ftypes:
+            if not _hashable_d(&cs, ft, d + 1):
+                return false
+        return true
+    if _is_tup(t):
+        for et in _telems(&cs, t):
+            if not _hashable_d(&cs, et, d + 1):
+                return false
+        return true
+    return false
+
+fn _hash(cs: inout C, t: string, v: string) -> string:
+    if t == "string":
+        return "tycho_si_hash(" + v + ")"
+    if t == "float":
+        return "tycho_ik_hash((tycho_int)((union { double _d; tycho_int _l; }){ ._d = (" +
+            v + ") })._l)"
+    if _is_enum(t):
+        return "tycho_ik_hash((tycho_int)((" + v + ")->tag))"
+    if _is_struct(t):
+        return "tycho_hash_S_" + _tname(t) + "(" + v + ")"
+    if _is_tup(t):
+        return "tycho_hash_T" + _tname(t) + "(" + v + ")"
+    if _is_arr(t):
+        e := _elem(t)
+        if e == "int":
+            return "tycho_arr_int_hash(" + v + ")"
+        if e == "float":
+            return "tycho_arr_float_hash(" + v + ")"
+        if e == "string":
+            return "tycho_arr_str_hash(" + v + ")"
+        return "tycho_arr_K" + str(_akind(&cs, e)) + "_hash(" + v + ")"
+    return "tycho_ik_hash((tycho_int)(" + v + "))"
+
 # Option and Result are monomorphised into ordinary enums, one per
 # instantiation, named `_G<n>` so `_bare_variant` can tell them from a user
 # enum -- otherwise a bare `Ok` would resolve into a generated one.
@@ -173,7 +328,7 @@ fn _is_resT(cs: inout C, t: string) -> bool:
 fn _heap(cs: inout C, t: string) -> bool:
     if t == "string":
         return true
-    if _is_arr(t) or _is_enum(t):
+    if _is_arr(t) or _is_enum(t) or _is_map(t):
         return true
     if _is_struct(t):
         i := _sidx(&cs, _tname(t))
@@ -224,6 +379,210 @@ fn _apfx(cs: inout C, elem: string) -> string:
         return "tycho_arr_str"
     return "tycho_arr_K" + str(_akind(&cs, elem))
 
+# --- generics: monomorphised, one deep instance per distinct binding ---------
+# src/tychoc.c:12773 clones the template body per instance and resolves it; the
+# same shape here, with a `tpn/tpv` binding stack instead of a substitution pass.
+# A binding is pushed while an instance's types (or body) are resolved and popped
+# after, so a nested instantiation sees only its own parameters.
+
+fn _gsidx(cs: inout C, n: string) -> int:
+    for i := 0; i < len(cs.gs); i += 1:
+        if cs.gs[i].name == n:
+            return i
+    return -1
+
+fn _geidx(cs: inout C, n: string) -> int:
+    for i := 0; i < len(cs.ge); i += 1:
+        if cs.ge[i].name == n:
+            return i
+    return -1
+
+fn _gfidx(cs: inout C, n: string) -> int:
+    for i := 0; i < len(cs.gf); i += 1:
+        if cs.gf[i].name == n:
+            return i
+    return -1
+
+fn _tpget(cs: inout C, n: string) -> string:
+    for i := len(cs.tpn) - 1; i >= 0; i -= 1:
+        if cs.tpn[i] == n:
+            return cs.tpv[i]
+    return ""
+
+fn _bind(cs: inout C, ns: [string], vs: [string]) -> int:
+    m := len(cs.tpn)
+    for i := 0; i < len(ns); i += 1:
+        push(cs.tpn, ns[i])
+        if i < len(vs):
+            push(cs.tpv, vs[i])
+        else:
+            push(cs.tpv, "")
+    return m
+
+fn _unbind(cs: inout C, m: int):
+    for len(cs.tpn) > m:
+        pop(cs.tpn)
+        pop(cs.tpv)
+
+fn _iidx(cs: inout C, key: string) -> int:
+    for i := 0; i < len(cs.ikey); i += 1:
+        if cs.ikey[i] == key:
+            return i
+    return -1
+
+fn _inst_struct(cs: inout C, n: string, targs: [string]) -> string:
+    key := "S|" + n + "|" + _tjoin(targs)
+    ex := _iidx(&cs, key)
+    if ex >= 0:
+        return "S~" + cs.iname[ex]
+    gi := _gsidx(&cs, n)
+    mang := n + "__" + str(len(cs.ikey))
+    push(cs.ikey, key)
+    push(cs.iname, mang)
+    push(cs.iarg, _tjoin(targs))
+    push(cs.pendk, -1)
+    push(cs.sds, SD(mang, [], []))
+    si := len(cs.sds) - 1
+    m := _bind(&cs, cs.gs[gi].typarams, targs)
+    for f in cs.gs[gi].fields:
+        push(cs.sds[si].fnames, f.name)
+        push(cs.sds[si].ftypes, _ty(&cs, f.ty))
+    _unbind(&cs, m)
+    return "S~" + mang
+
+fn _inst_enum(cs: inout C, n: string, targs: [string]) -> string:
+    key := "E|" + n + "|" + _tjoin(targs)
+    ex := _iidx(&cs, key)
+    if ex >= 0:
+        return "E~" + cs.iname[ex]
+    gi := _geidx(&cs, n)
+    mang := n + "__" + str(len(cs.ikey))
+    push(cs.ikey, key)
+    push(cs.iname, mang)
+    push(cs.iarg, _tjoin(targs))
+    push(cs.pendk, -1)
+    push(cs.eds, ED(mang, [], []))
+    ei := len(cs.eds) - 1
+    m := _bind(&cs, cs.ge[gi].typarams, targs)
+    for v in cs.ge[gi].variants:
+        push(cs.eds[ei].vnames, v.name)
+        ps := []string
+        for pt in v.payload:
+            push(ps, _ty(&cs, pt))
+        push(cs.eds[ei].vpay, VD(v.name, ps))
+    _unbind(&cs, m)
+    return "E~" + mang
+
+# The instance's own type arguments, read back out of the registry so a call
+# site can unify a template type against a concrete instance.
+fn _inst_of(cs: inout C, mang: string) -> [string]:
+    for i := 0; i < len(cs.iname); i += 1:
+        if cs.iname[i] == mang:
+            return split(cs.iarg[i], "|")
+    return []string
+
+fn _inst_base(cs: inout C, mang: string) -> string:
+    for i := 0; i < len(cs.iname); i += 1:
+        if cs.iname[i] == mang:
+            return split(cs.ikey[i], "|")[1]
+    return ""
+
+# A call site binds the type parameters by matching the DECLARED parameter type
+# against the argument's concrete type -- the same shape src/tychoc.c infers,
+# structurally and left to right, first binding wins.
+fn _unify(cs: inout C, t: ast.Ty, a: string, tps: [string], bs: inout [string]):
+    if len(a) == 0:
+        return
+    match t:
+        ast.TParam(n):
+            for i := 0; i < len(tps); i += 1:
+                if tps[i] == n and len(bs[i]) == 0:
+                    bs[i] = a
+            return
+        ast.TArr(es):
+            if _is_arr(a):
+                _unify(&cs, es[0], _elem(a), tps, &bs)
+            return
+        ast.TMap(es):
+            if _is_map(a):
+                _unify(&cs, es[0], _mkey(&cs, a), tps, &bs)
+                _unify(&cs, es[1], _mval(&cs, a), tps, &bs)
+            return
+        ast.TTup(es):
+            if _is_tup(a):
+                el := _telems(&cs, a)
+                for i := 0; i < len(es) and i < len(el); i += 1:
+                    _unify(&cs, es[i], el[i], tps, &bs)
+            return
+        ast.TName(q, n, targs):
+            if len(targs) == 0:
+                for i := 0; i < len(tps); i += 1:
+                    if tps[i] == n and len(bs[i]) == 0:
+                        bs[i] = a
+                return
+            if n == "Option" and _is_optT(&cs, a):
+                ei := _eidx(&cs, _tname(a))
+                _unify(&cs, targs[0], cs.eds[ei].vpay[1].ptypes[0], tps, &bs)
+                return
+            if n == "Result" and _is_resT(&cs, a):
+                ei2 := _eidx(&cs, _tname(a))
+                ok := cs.eds[ei2].vpay[0].ptypes
+                if len(targs) > 0 and len(ok) > 0:
+                    _unify(&cs, targs[0], ok[0], tps, &bs)
+                er := cs.eds[ei2].vpay[1].ptypes
+                if len(targs) > 1 and len(er) > 0:
+                    _unify(&cs, targs[1], er[0], tps, &bs)
+                return
+            if not (_is_struct(a) or _is_enum(a)):
+                return
+            if _inst_base(&cs, _tname(a)) != n:
+                return
+            ia := _inst_of(&cs, _tname(a))
+            for i := 0; i < len(targs) and i < len(ia); i += 1:
+                _unify(&cs, targs[i], ia[i], tps, &bs)
+            return
+        _: return
+    return
+
+fn _blank(n: int) -> [string]:
+    out := []string
+    for i := 0; i < n; i += 1:
+        push(out, "")
+    return out
+
+fn _inst_fn(cs: inout C, n: string, targs: [string]) -> int:
+    key := "F|" + n + "|" + _tjoin(targs)
+    ex := _iidx(&cs, key)
+    if ex >= 0:
+        return _fidx(&cs, cs.iname[ex])
+    gi := _gfidx(&cs, n)
+    mang := n + "__" + str(len(cs.ikey))
+    push(cs.ikey, key)
+    push(cs.iname, mang)
+    push(cs.iarg, _tjoin(targs))
+    push(cs.pendk, -1)
+    ii := len(cs.ikey) - 1
+    m := _bind(&cs, cs.gf[gi].typarams, targs)
+    pn := []string
+    pt := []string
+    pio := []bool
+    pv := false
+    for prm in cs.gf[gi].params:
+        if len(prm.ty) == 0:
+            _bad("untyped parameter on '" + n + "'")
+        one := _ty(&cs, prm.ty[0])
+        if prm.is_variadic:
+            pv = true
+            one = "[" + one + "]"
+        push(pn, prm.name)
+        push(pt, one)
+        push(pio, prm.is_inout)
+    rt := _tyo(&cs, cs.gf[gi].ret)
+    _unbind(&cs, m)
+    push(cs.fds, FD(mang, pn, pt, pio, pv, rt))
+    cs.pendk[ii] = len(cs.fds) - 1
+    return len(cs.fds) - 1
+
 fn _cty(cs: inout C, t: string) -> string:
     if t == "int" or t == "char":
         return "tycho_int"
@@ -241,6 +600,8 @@ fn _cty(cs: inout C, t: string) -> string:
         return "E_" + _tname(t) + " *"
     if _is_tup(t):
         return "TychoTup" + _tname(t)
+    if _is_map(t):
+        return "TychoMapM" + _tname(t)
     if _is_arr(t):
         e := _elem(t)
         if e == "int":
@@ -268,8 +629,19 @@ fn _ty(cs: inout C, t: ast.Ty) -> string:
                 return _opt_of(&cs, _ty(&cs, targs[0]))
             if len(q) == 0 and n == "Result" and len(targs) == 2:
                 return _res_of(&cs, _ty(&cs, targs[0]), _ty(&cs, targs[1]))
+            if len(q) == 0 and len(targs) > 0:
+                as2 := []string
+                for a in targs:
+                    push(as2, _ty(&cs, a))
+                if _gsidx(&cs, n) >= 0:
+                    return _inst_struct(&cs, n, as2)
+                if _geidx(&cs, n) >= 0:
+                    return _inst_enum(&cs, n, as2)
             if len(q) > 0 or len(targs) > 0:
                 _bad("qualified or generic type '" + n + "' -- Phase 8")
+            tv := _tpget(&cs, n)
+            if len(tv) > 0:
+                return tv
             ni := _ntidx(&cs, n)
             if ni >= 0:
                 if len(cs.ntu[ni]) == 0:
@@ -282,9 +654,15 @@ fn _ty(cs: inout C, t: ast.Ty) -> string:
             _bad("unknown type '" + n + "'")
         ast.TArr(es):
             return "[" + _ty(&cs, es[0]) + "]"
-        ast.TParam(n): _bad("type:TParam -- Phase 8")
+        ast.TParam(n):
+            v := _tpget(&cs, n)
+            if len(v) == 0:
+                _bad("unbound type parameter '$" + n + "'")
+            return v
         ast.TFix(n, e): _bad("type:TFix -- Phase 8")
-        ast.TMap(e): _bad("type:TMap -- Phase 8")
+        ast.TMap(e):
+            kt := _ty(&cs, e[0])
+            return _map_of(&cs, kt, _ty(&cs, e[1]))
         ast.TTup(e):
             es2 := []string
             for x in e:
@@ -301,14 +679,24 @@ fn _ty(cs: inout C, t: ast.Ty) -> string:
 fn _ty_ready(cs: inout C, t: ast.Ty) -> bool:
     match t:
         ast.TPrim(p): return true
+        ast.TParam(n): return len(_tpget(&cs, n)) > 0
         ast.TName(q, n, targs):
-            if len(q) > 0 or len(targs) > 0:
+            if len(q) > 0:
                 return false
+            if len(targs) > 0:
+                for a in targs:
+                    if not _ty_ready(&cs, a):
+                        return false
+                return _gsidx(&cs, n) >= 0 or _geidx(&cs, n) >= 0
+            if len(_tpget(&cs, n)) > 0:
+                return true
             ni := _ntidx(&cs, n)
             if ni >= 0:
                 return len(cs.ntu[ni]) > 0
             return _sidx(&cs, n) >= 0 or _eidx(&cs, n) >= 0
         ast.TArr(es): return _ty_ready(&cs, es[0])
+        ast.TMap(es):
+            return _ty_ready(&cs, es[0]) and _ty_ready(&cs, es[1])
         ast.TTup(es):
             for x in es:
                 if not _ty_ready(&cs, x):
@@ -337,6 +725,7 @@ fn _restore(cs: inout C, m: int):
         pop(cs.vnames)
         pop(cs.vtypes)
         pop(cs.vcn)
+        pop(cs.vown)
 
 # A nested `x := x + 1` shadows the outer x, and in C the new declarator is
 # already in scope inside its own initialiser -- so the inner read would see
@@ -349,6 +738,7 @@ fn _push(cs: inout C, n: string, t: string) -> string:
     push(cs.vnames, n)
     push(cs.vtypes, t)
     push(cs.vcn, cn)
+    push(cs.vown, "&_scope")
     return cn
 
 fn _vtype(cs: inout C, n: string) -> string:
@@ -370,6 +760,30 @@ fn _vcname(cs: inout C, n: string) -> string:
             return cs.vcn[i]
     return ""
 
+# A heap value reached through an `inout` parameter belongs to the CALLER's
+# arena: allocating its growth in this function's `_scope` leaves the buffer
+# dangling the moment the callee returns. Each such parameter therefore carries
+# its owning arena alongside it, exactly as src/tychoc.c@owner_arena_of does
+# with its `_ina_<name>`.
+fn _rootname(e: ast.Expr) -> string:
+    match e:
+        ast.Name(l, n): return n
+        ast.Field(l, r, f): return _rootname(r[0])
+        ast.Index(l, k): return _rootname(k[0])
+        ast.TupIdx(l, k, i): return _rootname(k[0])
+        ast.Addr(l, k): return _rootname(k[0])
+        _: return ""
+    return ""
+
+fn _ownerof(cs: inout C, e: ast.Expr) -> string:
+    n := _rootname(e)
+    if len(n) == 0:
+        return "&_scope"
+    for i := len(cs.vnames) - 1; i >= 0; i -= 1:
+        if cs.vnames[i] == n:
+            return cs.vown[i]
+    return "&_scope"
+
 fn _fresh(cs: inout C, p: string) -> string:
     cs.tmp += 1
     return p + str(cs.tmp)
@@ -383,6 +797,8 @@ fn _copy(cs: inout C, code: string, t: string, arena: string) -> string:
         return _apfx(&cs, _elem(t)) + "_copy(" + arena + ", " + code + ")"
     if _is_enum(t):
         return "tycho_copy_E_" + _tname(t) + "(" + arena + ", " + code + ")"
+    if _is_map(t):
+        return _mpfx(&cs, t) + "_copy(" + arena + ", " + code + ")"
     if _is_struct(t) and _heap(&cs, t):
         return "tycho_copy_S_" + _tname(t) + "(" + arena + ", " + code + ")"
     if _is_tup(t) and _heap(&cs, t):
@@ -406,6 +822,8 @@ fn _tostr(cs: inout C, code: string, t: string) -> string:
         return "tycho_str_T" + _tname(t) + "(" + cs.arena + ", " + code + ")"
     if _is_enum(t):
         return "tycho_str_E_" + _tname(t) + "(" + cs.arena + ", " + code + ")"
+    if _is_map(t):
+        return "tycho_str_mapM" + _tname(t) + "(" + cs.arena + ", " + code + ")"
     if _is_arr(t):
         e := _elem(t)
         if e == "int":
@@ -418,6 +836,18 @@ fn _tostr(cs: inout C, code: string, t: string) -> string:
     _bad("str() of unsupported type '" + t + "'")
     return ""
 
+# The value a missing map key reads as. A Tycho string carries a length header
+# in front of the pointer, so a NULL `char *` is not the empty string -- it
+# crashes the first read (tests/map_index_read.ty prints exactly that case).
+fn _zero(cs: inout C, t: string) -> string:
+    if t == "string":
+        return "TYCHO_LIT(\"\")"
+    if t == "float":
+        return "0.0"
+    if t == "int" or t == "char" or t == "bool":
+        return "0LL"
+    return "(" + _cty(&cs, t) + "){0}"
+
 fn _eq(cs: inout C, a: string, b: string, t: string) -> string:
     if t == "string":
         return "(tycho_str_cmp(" + a + ", " + b + ") == 0)"
@@ -427,6 +857,8 @@ fn _eq(cs: inout C, a: string, b: string, t: string) -> string:
         return "tycho_eq_T" + _tname(t) + "(" + a + ", " + b + ")"
     if _is_enum(t):
         return "tycho_eq_E_" + _tname(t) + "(" + a + ", " + b + ")"
+    if _is_map(t):
+        return _mpfx(&cs, t) + "_eq(" + a + ", " + b + ")"
     if _is_arr(t):
         return _apfx(&cs, _elem(t)) + "_eq(" + a + ", " + b + ")"
     return "(" + a + " == " + b + ")"
@@ -434,6 +866,18 @@ fn _eq(cs: inout C, a: string, b: string, t: string) -> string:
 # --- expressions ------------------------------------------------------------
 # Every `_ex` returns the C text; `_ty_of` the type string. They are computed
 # together and returned as a tuple so an expression is walked once.
+
+# A key that can be evaluated twice with no observable difference.
+fn _simple(e: ast.Expr) -> bool:
+    match e:
+        ast.Name(l, n): return true
+        ast.IntLit(l, v): return true
+        ast.StrLit(l, v): return true
+        ast.CharLit(l, v): return true
+        ast.BoolLit(l, v): return true
+        ast.FloatLit(l, v): return true
+        _: return false
+    return false
 
 fn _place(e: ast.Expr) -> bool:
     match e:
@@ -500,8 +944,13 @@ fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
             ic, it := _ex(&cs, k[1])
             if rt == "string":
                 return ("tycho_str_get(" + rc + ", " + ic + ")", "int")
+            if _is_map(rt):
+                vt := _mval(&cs, rt)
+                g := _mpfx(&cs, rt) + "_get(" + rc + ", " +
+                    _keyrt(&cs, _mkey(&cs, rt), ic) + ", " + _zero(&cs, vt) + ")"
+                return (_copy(&cs, g, vt, cs.arena), vt)
             if not _is_arr(rt):
-                _bad("indexing a non-array -- maps are Phase 8")
+                _bad("indexing a non-array")
             et := _elem(rt)
             return (_apfx(&cs, et) + "_get(" + rc + ", " + ic + ")", et)
         ast.Slice(l, hl, hh, k):
@@ -549,6 +998,12 @@ fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
             return _arrlit(&cs, k)
         ast.EmptyArr(l, ts):
             et := ""
+            if len(ts) == 0 and _is_map(cs.want):
+                # `m: [K: V] = []` -- a bare [] under a map annotation is the
+                # empty map, not an empty array.
+                mv2 := _fresh(&cs, "_mp")
+                return ("({ " + _cty(&cs, cs.want) + " " + mv2 + " = " +
+                    _mpfx(&cs, cs.want) + "_with_cap(&_scope, 0); " + mv2 + "; })", cs.want)
             if len(ts) > 0:
                 et = _ty(&cs, ts[0])
             else:
@@ -611,10 +1066,16 @@ fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
             return _orret(&cs, k[0])
         ast.FStrLit(l, v): _bad("expr:FStrLit -- Phase 8")
         ast.NullLit(l): _bad("expr:NullLit -- Phase 8")
-        ast.CallVal(l, k): _bad("expr:CallVal -- Phase 8")
+        ast.CallVal(l, k):
+            return _callval(&cs, k)
         ast.Named(l, n, k): _bad("expr:Named -- Phase 8")
-        ast.MapLit(l, k): _bad("expr:MapLit -- Phase 8")
-        ast.EmptyMap(l, t): _bad("expr:EmptyMap -- Phase 8")
+        ast.MapLit(l, k):
+            return _maplit(&cs, k)
+        ast.EmptyMap(l, t):
+            mt := _map_of(&cs, _ty(&cs, t[0]), _ty(&cs, t[1]))
+            mv := _fresh(&cs, "_mp")
+            return ("({ " + _cty(&cs, mt) + " " + mv + " = " + _mpfx(&cs, mt) +
+                "_with_cap(&_scope, 0); " + mv + "; })", mt)
         ast.SoaLit(l, t): _bad("expr:SoaLit -- Phase 8")
         ast.SpawnE(l, k): _bad("expr:SpawnE -- Phase 8")
         ast.Spread(l, k): _bad("expr:Spread -- Phase 8")
@@ -642,13 +1103,28 @@ fn _tag(cs: inout C, ei: int, vn: string) -> int:
     return 0
 
 fn _bare_variant(cs: inout C, n: string) -> int:
+    if _is_enum(cs.want):
+        w := _eidx(&cs, _tname(cs.want))
+        if w >= 0 and not _is_gen(cs.eds[w].name):
+            for v in cs.eds[w].vnames:
+                if v == n:
+                    return w
     for i := 0; i < len(cs.eds); i += 1:
-        if _is_gen(cs.eds[i].name):
+        if _is_gen(cs.eds[i].name) or _is_inst(&cs, cs.eds[i].name):
             continue
         for v in cs.eds[i].vnames:
             if v == n:
                 return i
     return -1
+
+# An INSTANCE of a generic enum is reachable only through the wanted type or by
+# inferring its arguments -- never by a bare variant name, which would otherwise
+# resolve `Has("hi")` into whichever instance happened to be stamped first.
+fn _is_inst(cs: inout C, n: string) -> bool:
+    for i := 0; i < len(cs.iname); i += 1:
+        if cs.iname[i] == n:
+            return true
+    return false
 
 fn _variant(cs: inout C, ei: int, vn: string, args: [ast.Expr]) -> (string, string):
     en := cs.eds[ei].name
@@ -739,9 +1215,76 @@ fn _arrlit(cs: inout C, k: [ast.Expr]) -> (string, string):
     cs.want = sw
     return (out + v + ".len = " + str(len(k)) + "LL; " + v + "; })", "[" + et + "]")
 
+fn _maplit(cs: inout C, k: [ast.Expr]) -> (string, string):
+    if len(k) < 2:
+        _bad("an empty map literal needs a type")
+    kc0, kt := _ex_scope(&cs, k[0])
+    vc0, vt := _ex_scope(&cs, k[1])
+    mt := _map_of(&cs, kt, vt)
+    v := _fresh(&cs, "_mp")
+    n := len(k) / 2
+    out := "({ " + _cty(&cs, mt) + " " + v + " = " + _mpfx(&cs, mt) +
+        "_with_cap(&_scope, " + str(n) + "LL); "
+    for i := 0; i < len(k); i += 2:
+        sw := cs.want
+        cs.want = kt
+        kc, kct := _ex_scope(&cs, k[i])
+        cs.want = vt
+        vc, vct := _ex_scope(&cs, k[i + 1])
+        cs.want = sw
+        if vt == "float" and vct == "int":
+            vc = "(double)(" + vc + ")"
+        out = out + _mpfx(&cs, mt) + "_put(&_scope, &" + v + ", " +
+            _keyrt(&cs, kt, kc) + ", " + vc + "); "
+    return (out + v + "; })", mt)
+
+# `m.get(k)` / `m.get(k, default)` reach emit as a call on a field expression;
+# the map read is the only receiver method the language has (fn values are 7b's).
+fn _mapget(cs: inout C, mc: string, mt: string, args: [ast.Expr]) -> (string, string):
+    if len(args) != 1 and len(args) != 2:
+        _bad("m.get(key) or m.get(key, default)")
+    kc, kct := _ex(&cs, args[0])
+    vt := _mval(&cs, mt)
+    d := _zero(&cs, vt)
+    if len(args) == 2:
+        sw := cs.want
+        cs.want = vt
+        dc, dt := _ex(&cs, args[1])
+        cs.want = sw
+        if vt == "float" and dt == "int":
+            dc = "(double)(" + dc + ")"
+        d = dc
+    g := _mpfx(&cs, mt) + "_get(" + mc + ", " + _keyrt(&cs, _mkey(&cs, mt), kc) +
+        ", " + d + ")"
+    return (_copy(&cs, g, vt, cs.arena), vt)
+
+fn _callval(cs: inout C, k: [ast.Expr]) -> (string, string):
+    match k[0]:
+        ast.Field(l, r, f):
+            if f != "get" or not _is_map(_argtypes(&cs, r)[0]):
+                # UFCS: `x.f(a)` is `f(x, a)` for any free function f.
+                ua := []ast.Expr
+                push(ua, r[0])
+                for i := 1; i < len(k); i += 1:
+                    push(ua, k[i])
+                return _call(&cs, l, "", f, []ast.Ty, ua)
+            mc, mt := _ex(&cs, r[0])
+            if not _is_map(mt):
+                _bad(".get() on a non-map")
+            rest := []ast.Expr
+            for i := 1; i < len(k); i += 1:
+                push(rest, k[i])
+            return _mapget(&cs, mc, mt, rest)
+        _: _bad("call of a value -- Phase 7b")
+    return ("", "")
+
 fn _binop(cs: inout C, op: string, ea: ast.Expr, eb: ast.Expr) -> (string, string):
     a, at := _ex(&cs, ea)
     b, bt := _ex(&cs, eb)
+    if op == "in":
+        if not _is_map(bt):
+            _bad("`in` tests membership in a map")
+        return (_mpfx(&cs, bt) + "_has(" + b + ", " + _keyrt(&cs, _mkey(&cs, bt), a) + ")", "bool")
     if op == "and":
         return ("(" + a + " && " + b + ")", "bool")
     if op == "or":
@@ -783,9 +1326,65 @@ fn _widen(a: string, at: string, b: string, bt: string) -> (string, string):
 
 fn _call(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], args: [ast.Expr]) -> (string, string):
     if len(q) > 0:
+        # `m.get(k)` lexes as a qualifier-dot-name call; a local of map type
+        # named `m` is the map-read, not a package.
+        qt := _vtype(&cs, q)
+        if n == "get" and _is_map(qt):
+            return _mapget(&cs, _vcname(&cs, q), qt, args)
+        if len(qt) > 0:
+            # UFCS: `x.f(a)` on a local value is `f(x, a)`.
+            ua := []ast.Expr
+            push(ua, ast.Name(l, q))
+            for a in args:
+                push(ua, a)
+            return _call(&cs, l, "", n, tas, ua)
         _bad("package-qualified call '" + q + "." + n + "' -- Phase 8")
-    if len(tas) > 0:
-        _bad("explicit type arguments -- Phase 8")
+    ta := []string
+    for t in tas:
+        push(ta, _ty(&cs, t))
+    if n == "zero" and len(ta) == 1 and len(args) == 0:
+        return (_zero(&cs, ta[0]), ta[0])
+    gfi := _gfidx(&cs, n)
+    if gfi >= 0:
+        tps := cs.gf[gfi].typarams
+        bs := ta
+        if len(bs) < len(tps):
+            bs = _blank(len(tps))
+            for j := 0; j < len(ta); j += 1:
+                bs[j] = ta[j]
+            ats := _argtypes(&cs, args)
+            for j := 0; j < len(cs.gf[gfi].params) and j < len(ats); j += 1:
+                if len(cs.gf[gfi].params[j].ty) > 0:
+                    _unify(&cs, cs.gf[gfi].params[j].ty[0], ats[j], tps, &bs)
+        for j := 0; j < len(bs); j += 1:
+            if len(bs[j]) == 0:
+                _bad("cannot infer '$" + tps[j] + "' at a call to '" + n + "'")
+        fj := _inst_fn(&cs, n, bs)
+        return _call(&cs, l, "", cs.fds[fj].name, []ast.Ty, args)
+    gsi := _gsidx(&cs, n)
+    if gsi >= 0:
+        tps2 := cs.gs[gsi].typarams
+        bs2 := ta
+        if len(bs2) < len(tps2):
+            bs2 = _blank(len(tps2))
+            for j := 0; j < len(ta); j += 1:
+                bs2[j] = ta[j]
+            if _is_struct(cs.want) and _inst_base(&cs, _tname(cs.want)) == n:
+                wa := _inst_of(&cs, _tname(cs.want))
+                for j := 0; j < len(bs2) and j < len(wa); j += 1:
+                    if len(bs2[j]) == 0:
+                        bs2[j] = wa[j]
+            ats2 := _argtypes(&cs, _reorder(&cs, _fieldnames(&cs, gsi), args, n))
+            for j := 0; j < len(cs.gs[gsi].fields) and j < len(ats2); j += 1:
+                _unify(&cs, cs.gs[gsi].fields[j].ty, ats2[j], tps2, &bs2)
+        for j := 0; j < len(bs2); j += 1:
+            if len(bs2[j]) == 0:
+                _bad("cannot infer '$" + tps2[j] + "' constructing '" + n + "'")
+        it := _inst_struct(&cs, n, bs2)
+        return _call(&cs, l, "", _tname(it), []ast.Ty, args)
+    gei := _geidx(&cs, n)
+    if gei >= 0:
+        _bad("a generic enum is named by a variant, not by the enum")
     ni := _ntidx(&cs, n)
     if ni >= 0:
         if len(args) != 1:
@@ -798,6 +1397,9 @@ fn _call(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], args: [ast.Ex
     ei := _bare_variant(&cs, n)
     if ei >= 0:
         return _variant(&cs, ei, n, args)
+    gv := _gen_variant(&cs, n, ta, args)
+    if len(gv) > 0:
+        return _variant(&cs, _eidx(&cs, _tname(gv)), n, args)
     si := _sidx(&cs, n)
     if si >= 0:
         args = _reorder(&cs, cs.sds[si].fnames, args, n)
@@ -816,6 +1418,8 @@ fn _call(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], args: [ast.Ex
                 out = out + ", "
             out = out + ac
         return (out + " })", "S~" + n)
+    if len(tas) > 0:
+        _bad("explicit type arguments -- Phase 8")
     fi := _fidx(&cs, n)
     if fi >= 0 and not _shadowable(n):
         np := len(cs.fds[fi].ptypes)
@@ -834,6 +1438,8 @@ fn _call(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], args: [ast.Ex
                 continue
             if cs.fds[fi].pinout[i]:
                 out2 = out2 + ", " + _addr_of(&cs, args[i])
+                if _heap(&cs, pt):
+                    out2 = out2 + ", " + _ownerof(&cs, args[i])
                 continue
             sw := cs.want
             cs.want = pt
@@ -849,6 +1455,68 @@ fn _call(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], args: [ast.Ex
 
 # An `inout` argument is written `&place` at the call and is a pointer in the
 # ABI, so the place is taken as an lvalue rather than read.
+# A variant name that belongs to a GENERIC enum template: the instance is the
+# wanted type when there is one, otherwise it is inferred from the payload.
+fn _gen_variant(cs: inout C, n: string, ta: [string], args: [ast.Expr]) -> string:
+    for gi := 0; gi < len(cs.ge); gi += 1:
+        vi := -1
+        for j := 0; j < len(cs.ge[gi].variants); j += 1:
+            if cs.ge[gi].variants[j].name == n:
+                vi = j
+        if vi < 0:
+            continue
+        tps := cs.ge[gi].typarams
+        if _is_enum(cs.want) and _inst_base(&cs, _tname(cs.want)) == cs.ge[gi].name:
+            return cs.want
+        bs := _blank(len(tps))
+        for j := 0; j < len(ta) and j < len(bs); j += 1:
+            bs[j] = ta[j]
+        ats := _argtypes(&cs, args)
+        pl := cs.ge[gi].variants[vi].payload
+        for j := 0; j < len(pl) and j < len(ats); j += 1:
+            _unify(&cs, pl[j], ats[j], tps, &bs)
+        ok := true
+        for j := 0; j < len(bs); j += 1:
+            if len(bs[j]) == 0:
+                ok = false
+        if not ok:
+            continue
+        return _inst_enum(&cs, cs.ge[gi].name, bs)
+    return ""
+
+fn _fieldnames(cs: inout C, gi: int) -> [string]:
+    out := []string
+    for f in cs.gs[gi].fields:
+        push(out, f.name)
+    return out
+
+# The concrete type of each argument, computed by walking it with no `want`.
+# The walk is pure string building, so doing it again for the real emission
+# costs only temp numbers.
+fn _argtypes(cs: inout C, args: [ast.Expr]) -> [string]:
+    out := []string
+    sw := cs.want
+    cs.want = ""
+    for a in args:
+        match a:
+            ast.NoneE(l): push(out, "")
+            ast.OkE(l, k): push(out, "")
+            ast.ErrE(l, k): push(out, "")
+            ast.EmptyArr(l, ts):
+                if len(ts) == 0:
+                    push(out, "")
+                else:
+                    ac, at := _ex(&cs, a)
+                    push(out, at)
+            ast.Named(l, nm, k):
+                ac2, at2 := _ex(&cs, k[0])
+                push(out, at2)
+            _:
+                ac3, at3 := _ex(&cs, a)
+                push(out, at3)
+    cs.want = sw
+    return out
+
 fn _addr_of(cs: inout C, e: ast.Expr) -> string:
     match e:
         ast.Addr(l, k):
@@ -924,6 +1592,14 @@ fn _shadowable(n: string) -> bool:
         n == "to_float" or n == "sqrt" or n == "find" or n == "split" or
         n == "substr" or n == "input" or n == "read_all" or n == "clock" or n == "hash"
 
+# push/pop/reserve MUTATE their first argument, so it has to be reached as a
+# place: `push(m["g"], 3)` on a map element is the map's value slot, not the
+# copy a read would hand back.
+fn _target(cs: inout C, e: ast.Expr) -> (string, string):
+    if _place(e):
+        return _lvalue(&cs, e)
+    return _ex(&cs, e)
+
 fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
     if n == "str" and len(args) == 1:
         c, t := _ex(&cs, args[0])
@@ -932,7 +1608,7 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
         c, t := _ex(&cs, args[0])
         if t == "string":
             return ("tycho_str_len(" + c + ")", "int")
-        if _is_arr(t):
+        if _is_arr(t) or _is_map(t):
             return ("((" + c + ").len)", "int")
         _bad("len() of unsupported type '" + t + "'")
     if n == "print" and len(args) == 1:
@@ -951,28 +1627,43 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
         c, t := _ex(&cs, args[0])
         return ("exit((int)(" + c + "))", "void")
     if n == "push" and len(args) == 2:
-        rc, rt := _ex(&cs, args[0])
+        rc, rt := _target(&cs, args[0])
         vc, vt := _ex_scope(&cs, args[1])
+        if strings.starts_with(rt, "?A"):
+            pi := strings.parse_int(rt[2:])
+            rt = "[" + vt + "]"
+            cs.ptv[pi] = rt
+            _vset(&cs, _rootname(args[0]), rt)
         if not _is_arr(rt):
             _bad("push() on a non-array")
         et := _elem(rt)
         if et == "float" and vt == "int":
             vc = "(double)(" + vc + ")"
+        ow := _ownerof(&cs, args[0])
         if _place(args[1]) and _heap(&cs, et):
-            vc = _copy(&cs, vc, et, "&_scope")
-        return (_apfx(&cs, et) + "_push(&_scope, &(" + rc + "), " + vc + ")", "void")
+            vc = _copy(&cs, vc, et, ow)
+        return (_apfx(&cs, et) + "_push(" + ow + ", &(" + rc + "), " + vc + ")", "void")
     if n == "pop" and len(args) == 1:
-        rc, rt := _ex(&cs, args[0])
+        rc, rt := _target(&cs, args[0])
         if not _is_arr(rt):
             _bad("pop() on a non-array")
         et := _elem(rt)
-        return (_apfx(&cs, et) + "_pop(&_scope, &(" + rc + "))", et)
+        return (_apfx(&cs, et) + "_pop(" + _ownerof(&cs, args[0]) + ", &(" + rc + "))", et)
+    if n == "keys" and len(args) == 1:
+        c, t := _ex(&cs, args[0])
+        if not _is_map(t):
+            _bad("keys() takes a map")
+        kt := _mkey(&cs, t)
+        return (_mpfx(&cs, t) + "_keys(" + cs.arena + ", " + c + ")", "[" + kt + "]")
     if n == "reserve" and len(args) == 2:
-        rc, rt := _ex(&cs, args[0])
+        rc, rt := _target(&cs, args[0])
         vc, vt := _ex(&cs, args[1])
+        ow2 := _ownerof(&cs, args[0])
+        if _is_map(rt):
+            return (_mpfx(&cs, rt) + "_reserve(" + ow2 + ", &(" + rc + "), " + vc + ")", "void")
         if not _is_arr(rt):
             _bad("reserve() on a non-array")
-        return (_apfx(&cs, _elem(rt)) + "_reserve(&_scope, &(" + rc + "), " + vc + ")", "void")
+        return (_apfx(&cs, _elem(rt)) + "_reserve(" + ow2 + ", &(" + rc + "), " + vc + ")", "void")
     if n == "chr" and len(args) == 1:
         c, t := _ex(&cs, args[0])
         return ("tycho_chr(" + cs.arena + ", " + c + ")", "string")
@@ -1057,8 +1748,12 @@ fn _lvalue(cs: inout C, e: ast.Expr) -> (string, string):
         ast.Index(l, k):
             rc, rt := _lvalue(&cs, k[0])
             ic, it := _ex(&cs, k[1])
+            if _is_map(rt):
+                vt := _mval(&cs, rt)
+                return ("(*" + _mpfx(&cs, rt) + "_slotptr(" + _ownerof(&cs, k[0]) + ", &(" + rc + "), " +
+                    _keyrt(&cs, _mkey(&cs, rt), ic) + "))", vt)
             if not _is_arr(rt):
-                _bad("indexed assignment on a non-array -- maps are Phase 8")
+                _bad("indexed assignment on a non-array")
             et := _elem(rt)
             return ("(*" + _apfx(&cs, et) + "_ptr(&(" + rc + "), " + ic + "))", et)
         _: _bad("unsupported assignment target")
@@ -1067,12 +1762,15 @@ fn _lvalue(cs: inout C, e: ast.Expr) -> (string, string):
 # --- statements -------------------------------------------------------------
 
 fn _rhs(cs: inout C, e: ast.Expr, want: string) -> (string, string):
+    return _rhs2(&cs, e, want, "&_scope")
+
+fn _rhs2(cs: inout C, e: ast.Expr, want: string, arena: string) -> (string, string):
     sw := cs.want
     cs.want = want
     c, t := _ex(&cs, e)
     cs.want = sw
     if _place(e) and _heap(&cs, t):
-        c = _copy(&cs, c, t, "&_scope")
+        c = _copy(&cs, c, t, arena)
     if len(want) > 0 and want == "float" and t == "int":
         c = "(double)(" + c + ")"
         t = "float"
@@ -1119,6 +1817,21 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                 want = _ty(&cs, ann[0])
             if len(rhs) == 0:
                 _bad("a declaration with no initialiser")
+            if len(ann) == 0 and not _is_arr(cs.want):
+                # `out := []` -- the element type comes from the first push into
+                # it, which is only known once the rest of the body is walked.
+                # The declaration is emitted with a placeholder and patched in
+                # _fnbody, the same shape the value-if declaration uses.
+                match rhs[0]:
+                    ast.EmptyArr(l2, ts):
+                        if len(ts) == 0:
+                            cs.tmp += 1
+                            kk := cs.tmp
+                            push(cs.pk, kk)
+                            push(cs.ptv, "")
+                            cnp := _push(&cs, n, "?A" + str(len(cs.pk) - 1))
+                            return ind + "_PT" + str(kk) + " " + cnp + " = _PE" + str(kk) + ";\n"
+                    _: pass
             c, t := _rhs(&cs, rhs[0], want)
             if len(want) > 0:
                 t = want
@@ -1139,9 +1852,38 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                 _vset(&cs, n, rt)
             return ind + _vcname(&cs, n) + " = " + rc + ";\n"
         ast.PlaceSet(l, k):
+            # `m[f()] += 1` desugars to `m[f()] = m[f()] + 1` with the SAME key
+            # node on both sides; hoist a side-effecting key into a temp so it
+            # is evaluated exactly once, as src/tychoc.c does.
+            lhs := k[0]
+            rhs := k[1]
+            pre := ""
+            match lhs:
+                ast.Index(l2, ix):
+                    if not _simple(ix[1]):
+                        kc0, kt0 := _ex(&cs, ix[1])
+                        cs.tmp += 1
+                        kn := "_mk" + str(cs.tmp)
+                        cn3 := _push(&cs, kn, kt0)
+                        pre = ind + _cty(&cs, kt0) + " " + cn3 + " = " + kc0 + ";\n"
+                        nk := ast.Name(l2, kn)
+                        lhs = ast.Index(l2, [ix[0], nk])
+                        match rhs:
+                            ast.Binop(l3, op3, bk):
+                                match bk[0]:
+                                    ast.Index(l4, ix2):
+                                        rhs = ast.Binop(l3, op3, [ast.Index(l4, [ix2[0], nk]), bk[1]])
+                                    _: pass
+                            _: pass
+                _: pass
+            k = [lhs, rhs]
             lc, lt := _lvalue(&cs, k[0])
-            rc2, rt2 := _rhs(&cs, k[1], lt)
-            return ind + lc + " = " + rc2 + ";\n"
+            ow := _ownerof(&cs, k[0])
+            sav2 := cs.arena
+            cs.arena = ow
+            rc2, rt2 := _rhs2(&cs, k[1], lt, ow)
+            cs.arena = sav2
+            return pre + ind + lc + " = " + rc2 + ";\n"
         ast.ReturnS(l, k):
             if len(k) == 0:
                 return ind + "{ arena_free(&_scope); return; }\n"
@@ -1247,7 +1989,17 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
         ast.ForRange(l, n, c, b): _bad("stmt:ForRange -- Phase 8")
         ast.ParallelS(l, w, b): _bad("stmt:ParallelS -- Phase 8")
         ast.SelectS(l, a): _bad("stmt:SelectS -- Phase 8")
-        ast.DeleteS(l, k): _bad("stmt:DeleteS -- Phase 8")
+        ast.DeleteS(l, k):
+            match k[0]:
+                ast.Index(l2, ix):
+                    mc, mt := _lvalue(&cs, ix[0])
+                    kc, kt := _ex(&cs, ix[1])
+                    if not _is_map(mt):
+                        _bad("`delete` takes a map element")
+                    return ind + _mpfx(&cs, mt) + "_del(&(" + mc + "), " +
+                        _keyrt(&cs, _mkey(&cs, mt), kc) + ");\n"
+                _: _bad("`delete` takes a map element")
+            return ""
         _: _bad("unsupported statement -- Phase 8")
     return ""
 
@@ -1379,12 +2131,14 @@ fn _match(cs: inout C, subj: ast.Expr, arms: [ast.Arm], ind: string) -> string:
 fn _collect(cs: inout C, u: ast.Unit):
     for sd in u.structs:
         if len(sd.typarams) > 0:
-            _bad("generic struct '" + sd.name + "' -- Phase 8")
-        push(cs.sds, SD(sd.name, [], []))
+            push(cs.gs, sd)
+        else:
+            push(cs.sds, SD(sd.name, [], []))
     for ed in u.enums:
         if len(ed.typarams) > 0:
-            _bad("generic enum '" + ed.name + "' -- Phase 8")
-        push(cs.eds, ED(ed.name, [], []))
+            push(cs.ge, ed)
+        else:
+            push(cs.eds, ED(ed.name, [], []))
     for nt in u.newtypes:
         push(cs.ntn, nt.name)
         push(cs.ntu, "")
@@ -1398,19 +2152,26 @@ fn _collect(cs: inout C, u: ast.Unit):
         if len(cs.ntu[i]) == 0:
             cs.ntu[i] = _ty(&cs, u.newtypes[i].under)
     for i := 0; i < len(u.structs); i += 1:
+        if len(u.structs[i].typarams) > 0:
+            continue
+        si := _sidx(&cs, u.structs[i].name)
         for f in u.structs[i].fields:
-            push(cs.sds[i].fnames, f.name)
-            push(cs.sds[i].ftypes, _ty(&cs, f.ty))
+            push(cs.sds[si].fnames, f.name)
+            push(cs.sds[si].ftypes, _ty(&cs, f.ty))
     for i := 0; i < len(u.enums); i += 1:
+        if len(u.enums[i].typarams) > 0:
+            continue
+        ei := _eidx(&cs, u.enums[i].name)
         for v in u.enums[i].variants:
-            push(cs.eds[i].vnames, v.name)
+            push(cs.eds[ei].vnames, v.name)
             ps := []string
             for p in v.payload:
                 push(ps, _ty(&cs, p))
-            push(cs.eds[i].vpay, VD(v.name, ps))
+            push(cs.eds[ei].vpay, VD(v.name, ps))
     for f in u.fns:
         if len(f.typarams) > 0:
-            _bad("generic function '" + f.name + "' -- Phase 8")
+            push(cs.gf, f)
+            continue
         if f.is_extern:
             _bad("extern function '" + f.name + "' -- Phase 8")
         pn := []string
@@ -1454,6 +2215,8 @@ fn _arr_protos(cs: inout C) -> string:
             "static " + ct + " " + p + "_copy(Arena *, " + ct + ");\n" +
             "static int " + p + "_eq(" + ct + ", " + ct + ");\n" +
             "static char *tycho_str_arr_" + k + "(Arena *, " + ct + ");\n"
+        if _hashable(&cs, e):
+            out = out + "static uint64_t " + p + "_hash(" + ct + ");\n"
     return out
 
 fn _arr_defs(cs: inout C) -> (string, string, string):
@@ -1510,6 +2273,11 @@ fn _arr_defs(cs: inout C) -> (string, string, string):
             "        if (i) r = tycho_str_concat(a, r, tycho_str_from_c(a, \", \"));\n" +
             "        r = tycho_str_concat(a, r, " + _tostr_a(&cs, "xs.data[i]", e) + ");\n    }\n" +
             "    return tycho_str_concat(a, r, tycho_str_from_c(a, \"]\"));\n}\n"
+        if _hashable(&cs, e):
+            fb = fb + "static uint64_t " + p + "_hash(" + ct + " x) {\n" +
+                "    uint64_t h = tycho_hash_k0;\n" +
+                "    for (tycho_int i = 0; i < x.len; i++) h = h * UINT64_C(1099511628211) ^ " +
+                _hash(&cs, e, "x.data[i]") + ";\n    return h;\n}\n"
         i += 1
     return (td, sb, fb)
 
@@ -1564,6 +2332,178 @@ fn _tup_defs(cs: inout C) -> (string, string, string, string):
             fb = fb + cp + "    return r;\n}\n"
         i += 1
     return (td, sb, pr, fb)
+
+# One compact indexed dict per (key, value) kind: an int32 index table over a
+# dense insertion-ordered entry list, with tombstones, backward-shift index
+# delete and allocation-free compaction. Mirrors src/tychoc.c:13481 line for
+# line -- the shape is what makes keys() insertion-ordered.
+fn _map_defs(cs: inout C) -> (string, string, string, string):
+    td := ""
+    sb := ""
+    pr := ""
+    fb := ""
+    i := 0
+    for i < len(cs.mks):
+        mt := "M~" + str(i)
+        kt := _mkey(&cs, mt)
+        vt := _mval(&cs, mt)
+        ct := "TychoMapM" + str(i)
+        p := "tycho_mapM" + str(i)
+        ks := _kslot(&cs, kt)
+        vc := _cty(&cs, vt) + " "
+        kp := ks + "k"
+        kcp := _kcopy(&cs, kt)
+        vcp := _copy(&cs, "v", vt, "a")
+        kat := _cty(&cs, "[" + kt + "]")
+        kaf := _apfx(&cs, kt)
+        kel := "m.ekeys[e]"
+        if _kclass(&cs, kt) == "enum":
+            kel = "_sing_tab_" + _tname(kt) + "[m.ekeys[e]]"
+        td = td + "typedef struct " + ct + "_ " + ct + ";\n"
+        sb = sb + "struct " + ct + "_ { " + ks + "*ekeys; " + vc +
+            "*evals; unsigned char *elive; int *idx; tycho_int len; tycho_int ecount; tycho_int ecap; tycho_int icap; };\n"
+        pr = pr +
+            "static " + ct + " " + p + "_with_cap(Arena *, tycho_int);\n" +
+            "static void " + p + "_reserve(Arena *, " + ct + " *, tycho_int);\n" +
+            "static tycho_int " + p + "_find(" + ct + ", " + kp + ");\n" +
+            "static void " + p + "_idxput(" + ct + " *, tycho_int);\n" +
+            "static void " + p + "_idxgrow(Arena *, " + ct + " *);\n" +
+            "static void " + p + "_compact(" + ct + " *);\n" +
+            "static tycho_int " + p + "_append(Arena *, " + ct + " *, " + kp + ", " + vc + "v);\n" +
+            "static void " + p + "_put(Arena *, " + ct + " *, " + kp + ", " + vc + "v);\n" +
+            "static " + vc + "*" + p + "_slotptr(Arena *, " + ct + " *, " + kp + ");\n" +
+            "static void " + p + "_del(" + ct + " *, " + kp + ");\n" +
+            "static " + ct + " " + p + "_copy(Arena *, " + ct + ");\n" +
+            "static " + vc + p + "_get(" + ct + ", " + kp + ", " + vc + "dflt);\n" +
+            "static int " + p + "_has(" + ct + ", " + kp + ");\n" +
+            "static " + kat + " " + p + "_keys(Arena *, " + ct + ");\n" +
+            "static int " + p + "_eq(" + ct + ", " + ct + ");\n" +
+            "static char *tycho_str_mapM" + str(i) + "(Arena *, " + ct + ");\n"
+        fb = fb +
+            "static " + ct + " " + p + "_with_cap(Arena *a, tycho_int cap) {\n" +
+            "    " + ct + " m; m.len = 0; m.ecount = 0;\n" +
+            "    if (cap <= 0) { m.ekeys = 0; m.evals = 0; m.elive = 0; m.idx = 0; m.ecap = 0; m.icap = 0; return m; }\n" +
+            "    tycho_int ec = 4; while (ec < cap) ec *= 2; tycho_int ic = 8; while (ic < cap * 2) ic *= 2; m.ecap = ec; m.icap = ic;\n" +
+            "    m.ekeys = (" + ks + "*)arena_alloc(a, (size_t)ec * sizeof(" + ks + "));\n" +
+            "    m.evals = (" + vc + "*)arena_alloc(a, (size_t)ec * sizeof(" + vc + "));\n" +
+            "    m.elive = (unsigned char *)arena_alloc(a, (size_t)ec);\n" +
+            "    m.idx = (int *)arena_alloc(a, (size_t)ic * sizeof(int));\n" +
+            "    for (tycho_int i = 0; i < ic; i++) m.idx[i] = 0; return m;\n}\n" +
+            "static void " + p + "_reserve(Arena *a, " + ct + " *m, tycho_int cap) {\n" +
+            "    if (cap <= 0) return;\n" +
+            "    tycho_int ec = 4; while (ec < cap) ec *= 2; tycho_int ic = 8; while (ic < cap * 2) ic *= 2;\n" +
+            "    if (m->ecap >= ec && m->icap >= ic) return;\n" +
+            "    " + ks + "*nk = (" + ks + "*)arena_alloc(a, (size_t)ec * sizeof(" + ks + "));\n" +
+            "    " + vc + "*nv = (" + vc + "*)arena_alloc(a, (size_t)ec * sizeof(" + vc + "));\n" +
+            "    unsigned char *nl = (unsigned char *)arena_alloc(a, (size_t)ec);\n" +
+            "    int *ni = (int *)arena_alloc(a, (size_t)ic * sizeof(int));\n" +
+            "    for (tycho_int i = 0; i < ic; i++) ni[i] = 0;\n" +
+            "    for (tycho_int e = 0; e < m->ecount; e++) { nk[e] = m->ekeys[e]; nv[e] = m->evals[e]; nl[e] = m->elive[e]; }\n" +
+            "    m->ekeys = nk; m->evals = nv; m->elive = nl; m->ecap = ec;\n" +
+            "    m->idx = ni; m->icap = ic;\n" +
+            "    for (tycho_int e = 0; e < m->ecount; e++) if (m->elive[e]) " + p + "_idxput(m, e);\n}\n" +
+            "static tycho_int " + p + "_find(" + ct + " m, " + kp + ") {\n" +
+            "    if (m.icap == 0) return -1; uint64_t mask = (uint64_t)m.icap - 1; tycho_int i = (tycho_int)(" +
+            _khash(&cs, kt, "k") + " & mask); int e;\n" +
+            "    while ((e = m.idx[i]) != 0) { if (" + _kmatch(&cs, kt, "m.ekeys[e - 1]", "k") +
+            ") return e - 1; i = (tycho_int)((i + 1) & mask); }\n    return -1;\n}\n" +
+            "static void " + p + "_idxput(" + ct + " *m, tycho_int ei) {\n" +
+            "    uint64_t mask = (uint64_t)m->icap - 1; tycho_int i = (tycho_int)(" +
+            _khash(&cs, kt, "m->ekeys[ei]") + " & mask);\n" +
+            "    while (m->idx[i] != 0) i = (tycho_int)((i + 1) & mask); m->idx[i] = (int)(ei + 1);\n}\n" +
+            "static void " + p + "_idxgrow(Arena *a, " + ct + " *m) {\n" +
+            "    tycho_int ic = m->icap ? m->icap * 2 : 8; int *ni = (int *)arena_alloc(a, (size_t)ic * sizeof(int));\n" +
+            "    for (tycho_int i = 0; i < ic; i++) ni[i] = 0; m->idx = ni; m->icap = ic;\n" +
+            "    for (tycho_int e = 0; e < m->ecount; e++) if (m->elive[e]) " + p + "_idxput(m, e);\n}\n" +
+            "static void " + p + "_compact(" + ct + " *m) {\n" +
+            "    tycho_int w = 0; for (tycho_int r = 0; r < m->ecount; r++) if (m->elive[r]) { if (w != r) { m->ekeys[w] = m->ekeys[r]; m->evals[w] = m->evals[r]; m->elive[w] = 1; } w++; }\n" +
+            "    m->ecount = w; for (tycho_int i = 0; i < m->icap; i++) m->idx[i] = 0;\n" +
+            "    for (tycho_int e = 0; e < m->ecount; e++) " + p + "_idxput(m, e);\n}\n" +
+            "static tycho_int " + p + "_append(Arena *a, " + ct + " *m, " + kp + ", " + vc + "v) {\n" +
+            "    if (m->ecount == m->ecap) { tycho_int dead = m->ecount - m->len;\n" +
+            "        if (dead > m->ecap / 2) " + p + "_compact(m);\n" +
+            "        else { tycho_int nc = m->ecap ? m->ecap * 2 : 4;\n" +
+            "            " + ks + "*nk = (" + ks + "*)arena_alloc(a, (size_t)nc * sizeof(" + ks + ")); " +
+            vc + "*nv = (" + vc + "*)arena_alloc(a, (size_t)nc * sizeof(" + vc + ")); unsigned char *nl = (unsigned char *)arena_alloc(a, (size_t)nc);\n" +
+            "            for (tycho_int e = 0; e < m->ecount; e++) { nk[e] = m->ekeys[e]; nv[e] = m->evals[e]; nl[e] = m->elive[e]; }\n" +
+            "            m->ekeys = nk; m->evals = nv; m->elive = nl; m->ecap = nc; } }\n" +
+            "    tycho_int e = m->ecount++; m->ekeys[e] = k; m->evals[e] = v; m->elive[e] = 1; return e;\n}\n" +
+            "static void " + p + "_put(Arena *a, " + ct + " *m, " + kp + ", " + vc + "v) {\n" +
+            "    tycho_int e = " + p + "_find(*m, k); if (e >= 0) { m->evals[e] = " + vcp + "; return; }\n" +
+            "    if ((m->len + 1) * 2 > m->icap) " + p + "_idxgrow(a, m);\n" +
+            "    tycho_int ne = " + p + "_append(a, m, " + kcp + ", " + vcp + "); m->len++; " + p + "_idxput(m, ne);\n}\n" +
+            "static " + vc + "*" + p + "_slotptr(Arena *a, " + ct + " *m, " + kp + ") {\n" +
+            "    tycho_int e = " + p + "_find(*m, k); if (e >= 0) return &m->evals[e];\n" +
+            "    if ((m->len + 1) * 2 > m->icap) " + p + "_idxgrow(a, m);\n" +
+            "    tycho_int ne = " + p + "_append(a, m, " + kcp + ", " + _zero(&cs, vt) + "); m->len++; " + p + "_idxput(m, ne);\n" +
+            "    return &m->evals[ne];\n}\n" +
+            "static void " + p + "_del(" + ct + " *m, " + kp + ") {\n" +
+            "    if (m->icap == 0) return; uint64_t mask = (uint64_t)m->icap - 1; tycho_int i = (tycho_int)(" +
+            _khash(&cs, kt, "k") + " & mask), found = -1;\n" +
+            "    while (m->idx[i] != 0) { if (" + _kmatch(&cs, kt, "m->ekeys[m->idx[i] - 1]", "k") +
+            ") { found = i; break; } i = (tycho_int)((i + 1) & mask); }\n" +
+            "    if (found < 0) return; tycho_int ei = m->idx[found] - 1; m->elive[ei] = 0; m->len--;\n" +
+            "    tycho_int g = found;\n" +
+            "    for (;;) { m->idx[g] = 0; tycho_int j = g;\n" +
+            "        for (;;) { j = (tycho_int)((j + 1) & mask); if (m->idx[j] == 0) return;\n" +
+            "            tycho_int h = (tycho_int)(" + _khash(&cs, kt, "m->ekeys[m->idx[j] - 1]") + " & mask);\n" +
+            "            if (g <= j) { if (g < h && h <= j) continue; } else { if (g < h || h <= j) continue; } break; }\n" +
+            "        m->idx[g] = m->idx[j]; g = j; }\n}\n" +
+            "static " + ct + " " + p + "_copy(Arena *a, " + ct + " src) {\n" +
+            "    " + ct + " r = " + p + "_with_cap(a, src.len ? src.len : 0);\n" +
+            "    for (tycho_int e = 0; e < src.ecount; e++) if (src.elive[e]) " + p +
+            "_put(a, &r, src.ekeys[e], src.evals[e]);\n    return r;\n}\n" +
+            "static " + vc + p + "_get(" + ct + " m, " + kp + ", " + vc + "dflt) {\n" +
+            "    tycho_int e = " + p + "_find(m, k); return e < 0 ? dflt : m.evals[e];\n}\n" +
+            "static int " + p + "_has(" + ct + " m, " + kp + ") { return " + p + "_find(m, k) >= 0; }\n" +
+            "static " + kat + " " + p + "_keys(Arena *a, " + ct + " m) {\n" +
+            "    " + kat + " r = " + kaf + "_with_cap(a, m.len);\n" +
+            "    for (tycho_int e = 0; e < m.ecount; e++) if (m.elive[e]) " + kaf +
+            "_push(a, &r, " + kel + ");\n    return r;\n}\n" +
+            "static int " + p + "_eq(" + ct + " x, " + ct + " y) {\n" +
+            "    if (x.len != y.len) return 0;\n" +
+            "    for (tycho_int e = 0; e < x.ecount; e++) if (x.elive[e]) { tycho_int s = " + p +
+            "_find(y, x.ekeys[e]); if (s < 0 || !(" + _eq(&cs, "y.evals[s]", "x.evals[e]", vt) +
+            ")) return 0; }\n    return 1;\n}\n" +
+            "static char *tycho_str_mapM" + str(i) + "(Arena *a, " + ct + " m) {\n" +
+            "    char *r = tycho_str_from_c(a, \"[\"); int first = 1;\n" +
+            "    for (tycho_int e = 0; e < m.ecount; e++) if (m.elive[e]) {\n" +
+            "        if (!first) r = tycho_str_concat(a, r, tycho_str_from_c(a, \", \")); first = 0;\n" +
+            "        r = tycho_str_concat(a, r, " + _tostr_a(&cs, kel, kt) + ");\n" +
+            "        r = tycho_str_concat(a, r, tycho_str_from_c(a, \": \"));\n" +
+            "        r = tycho_str_concat(a, r, " + _tostr_a(&cs, "m.evals[e]", vt) + ");\n" +
+            "    }\n    return tycho_str_concat(a, r, tycho_str_from_c(a, \"]\"));\n}\n"
+        i += 1
+    return (td, sb, pr, fb)
+
+# A deep hash per hashable struct/tuple, folded FNV-style from the per-process
+# seed so that ==-equal values always hash equal (src/tychoc.c:13255).
+fn _hash_defs(cs: inout C) -> (string, string):
+    pr := ""
+    fb := ""
+    for i := 0; i < len(cs.sds); i += 1:
+        n := cs.sds[i].name
+        if not _hashable(&cs, "S~" + n):
+            continue
+        pr = pr + "static uint64_t tycho_hash_S_" + n + "(S_" + n + ");\n"
+        b := "static uint64_t tycho_hash_S_" + n + "(S_" + n + " v) {\n" +
+            "    uint64_t h = tycho_hash_k0;\n"
+        for j := 0; j < len(cs.sds[i].fnames); j += 1:
+            b = b + "    h = h * UINT64_C(1099511628211) ^ " +
+                _hash(&cs, cs.sds[i].ftypes[j], "v.f_" + cs.sds[i].fnames[j]) + ";\n"
+        fb = fb + b + "    return h;\n}\n"
+    for i := 0; i < len(cs.tks); i += 1:
+        if not _hashable(&cs, "T~" + str(i)):
+            continue
+        pr = pr + "static uint64_t tycho_hash_T" + str(i) + "(TychoTup" + str(i) + ");\n"
+        b2 := "static uint64_t tycho_hash_T" + str(i) + "(TychoTup" + str(i) + " v) {\n" +
+            "    uint64_t h = tycho_hash_k0;\n"
+        es := split(cs.tks[i], "|")
+        for j := 0; j < len(es); j += 1:
+            b2 = b2 + "    h = h * UINT64_C(1099511628211) ^ " +
+                _hash(&cs, es[j], "v.f" + str(j)) + ";\n"
+        fb = fb + b2 + "    return h;\n}\n"
+    return (pr, fb)
 
 fn _tostr_a(cs: inout C, code: string, t: string) -> string:
     s := _tostr(&cs, code, t)
@@ -1658,10 +2598,22 @@ fn _enum_support(cs: inout C) -> (string, string, string):
             defs = defs + "typedef struct {" + fl + " } E_" + n + "_" + vn + ";\n"
             un = un + " E_" + n + "_" + vn + " " + vn + ";"
         defs = defs + "struct E_" + n + " { int tag; union {" + un + " } u; };\n"
+        allbare := true
         for t := 0; t < len(cs.eds[i].vnames); t += 1:
             if len(cs.eds[i].vpay[t].ptypes) == 0:
                 defs = defs + "static E_" + n + " _sing_" + n + "_" + str(t) +
                     " = { " + str(t) + " };\n"
+            else:
+                allbare = false
+        # a fieldless enum is stored in a map's key table as its TAG, so keys()
+        # rebuilds the value through this table (src/tychoc.c:13100).
+        if allbare and len(cs.eds[i].vnames) > 0:
+            tab := "static E_" + n + " *const _sing_tab_" + n + "[] = {"
+            for t := 0; t < len(cs.eds[i].vnames); t += 1:
+                if t > 0:
+                    tab = tab + ", "
+                tab = tab + "&_sing_" + n + "_" + str(t)
+            defs = defs + tab + "};\n"
         proto = proto + "static E_" + n + " *tycho_copy_E_" + n + "(Arena *, E_" + n + " *);\n" +
             "static int tycho_eq_E_" + n + "(E_" + n + " *, E_" + n + " *);\n" +
             "static char *tycho_str_E_" + n + "(Arena *, E_" + n + " *);\n"
@@ -1700,6 +2652,42 @@ fn _enum_support(cs: inout C) -> (string, string, string):
             st + "    return tycho_str_from_c(a, \"<?>\");\n}\n"
     return (defs, proto, body)
 
+fn _fnbody(cs: inout C, fi: int, body: [ast.Stmt]) -> (string, string):
+    nm := cs.fds[fi].name
+    rt := cs.fds[fi].ret
+    cs.cur_ret = rt
+    sig := _cty(&cs, rt) + " h_" + nm + "(Arena *_parent"
+    m := _mark(&cs)
+    for j := 0; j < len(cs.fds[fi].pnames); j += 1:
+        pt := cs.fds[fi].ptypes[j]
+        cn := _push(&cs, cs.fds[fi].pnames[j], pt)
+        if cs.fds[fi].pinout[j]:
+            sig = sig + ", " + _cty(&cs, pt) + " *" + cn
+            cs.vcn[len(cs.vcn) - 1] = "(*" + cn + ")"
+            if _heap(&cs, pt):
+                sig = sig + ", Arena *_ina_" + cn
+                cs.vown[len(cs.vown) - 1] = "_ina_" + cn
+        else:
+            sig = sig + ", " + _cty(&cs, pt) + " " + cn
+    sig = sig + ")"
+    pm := len(cs.pk)
+    b := _block(&cs, body, "    ")
+    for i := pm; i < len(cs.pk); i += 1:
+        if len(cs.ptv[i]) == 0:
+            _bad("a bare [] with nothing to type it")
+        b = _replace(b, "_PT" + str(cs.pk[i]), _cty(&cs, cs.ptv[i]))
+        b = _replace(b, "_PE" + str(cs.pk[i]),
+            _apfx(&cs, _elem(cs.ptv[i])) + "_with_cap(&_scope, 0)")
+    _restore(&cs, m)
+    out := sig + " {\n" +
+        "    Arena _scope = arena_child(_parent); _scope.name = \"" + nm + "\";\n" + b
+    if rt == "void":
+        out = out + "    arena_free(&_scope);\n}\n"
+    else:
+        out = out + "    arena_free(&_scope);\n" +
+            "    { fprintf(stderr, \"tycho: fell off the end of " + nm + "\\n\"); exit(1); }\n}\n"
+    return (sig + ";\n", out)
+
 # --- the unit ---------------------------------------------------------------
 
 fn unit(u: ast.Unit) -> string:
@@ -1715,34 +2703,29 @@ fn unit(u: ast.Unit) -> string:
     fns := ""
     protos := ""
     for f in u.fns:
-        fi := _fidx(&cs, f.name)
-        rt := cs.fds[fi].ret
-        cs.cur_ret = rt
-        sig := _cty(&cs, rt) + " h_" + f.name + "(Arena *_parent"
-        m := _mark(&cs)
-        for j := 0; j < len(cs.fds[fi].pnames); j += 1:
-            pt := cs.fds[fi].ptypes[j]
-            cn := _push(&cs, cs.fds[fi].pnames[j], pt)
-            if cs.fds[fi].pinout[j]:
-                sig = sig + ", " + _cty(&cs, pt) + " *" + cn
-                cs.vcn[len(cs.vcn) - 1] = "(*" + cn + ")"
-            else:
-                sig = sig + ", " + _cty(&cs, pt) + " " + cn
-        sig = sig + ")"
-        protos = protos + sig + ";\n"
-        b := _block(&cs, f.body, "    ")
-        _restore(&cs, m)
-        tail := "    arena_free(&_scope);\n"
-        if rt != "void":
-            tail = tail + "    arena_free(&_scope);\n"
-        fns = fns + sig + " {\n" +
-            "    Arena _scope = arena_child(_parent); _scope.name = \"" + f.name + "\";\n" +
-            b
-        if rt == "void":
-            fns = fns + "    arena_free(&_scope);\n}\n"
-        else:
-            fns = fns + "    arena_free(&_scope);\n" +
-                "    { fprintf(stderr, \"tycho: fell off the end of " + f.name + "\\n\"); exit(1); }\n}\n"
+        if len(f.typarams) > 0:
+            continue
+        pc, bc := _fnbody(&cs, _fidx(&cs, f.name), f.body)
+        protos = protos + pc
+        fns = fns + bc
+    # Stage 2: every generic instance discovered while emitting -- and every one
+    # discovered while emitting THOSE -- gets its own body. The registry only
+    # ever grows at the end, so a forward scan reaches the whole closure.
+    for k := 0; k < len(cs.ikey); k += 1:
+        if cs.pendk[k] < 0:
+            continue
+        fj := cs.pendk[k]
+        cs.pendk[k] = -1
+        parts := split(cs.ikey[k], "|")
+        gi := _gfidx(&cs, parts[1])
+        tg := []string
+        for q := 2; q < len(parts); q += 1:
+            push(tg, parts[q])
+        mb := _bind(&cs, cs.gf[gi].typarams, tg)
+        pc2, bc2 := _fnbody(&cs, fj, cs.gf[gi].body)
+        _unbind(&cs, mb)
+        protos = protos + pc2
+        fns = fns + bc2
 
     # Order matters in C: opaque typedefs, then the array structs (which name
     # element types only through pointers), then struct bodies in dependency
@@ -1756,12 +2739,18 @@ fn unit(u: ast.Unit) -> string:
     cs.arena = "&_scope"
     edefs, eproto, ebody := _enum_support(&cs)
     sproto, sbody := _struct_support(&cs)
+    mtd, msb, mpr, mfb := _map_defs(&cs)
+    nm := 0
+    for nm != len(cs.mks):
+        nm = len(cs.mks)
+        mtd, msb, mpr, mfb = _map_defs(&cs)
     atd, asb, afb := _arr_defs(&cs)
     nk := 0
     for nk != len(cs.akinds):
         nk = len(cs.akinds)
         atd, asb, afb = _arr_defs(&cs)
-    head = head + atd + asb
+    htd = htd + mtd
+    head = head + atd + asb + msb
     for i in _struct_order(&cs):
         head = head + "struct S_" + cs.sds[i].name + "_ {\n"
         for j := 0; j < len(cs.sds[i].fnames); j += 1:
@@ -1775,8 +2764,9 @@ fn unit(u: ast.Unit) -> string:
     for ntk != len(cs.tks):
         ntk = len(cs.tks)
         ttd, tsb, tpr, tfb = _tup_defs(&cs)
+    hpr, hfb := _hash_defs(&cs)
     head = htd + ttd + head + tsb + edefs + "\n" + _arr_protos(&cs) + sproto + eproto +
-        tpr + "\n" + afb + sbody + ebody + tfb + "\n"
+        tpr + mpr + hpr + "\n" + afb + sbody + ebody + tfb + hfb + mfb + "\n"
 
     entry := "\nint main(int argc, char **argv) {\n" +
         "    tycho_hash_seed_init();  /* random per-process map-hash seed, before any map use */\n" +
