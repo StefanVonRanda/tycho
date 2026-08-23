@@ -2440,6 +2440,15 @@ fn _call(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], args: [ast.Ex
             # drop the separator the arena would have needed
             out2 = strings.replace(out2, "(@, ", "(")
             out2 = strings.replace(out2, "(@", "(")
+            if cs.fds[fi].ret == "bytes":
+                ov := _fresh(&cs, "_o")
+                ol := _fresh(&cs, "_ol")
+                sep2 := ", "
+                if strings.ends_with(out2, "("):
+                    sep2 = ""
+                return ("({ unsigned char *" + ov + " = 0; tycho_int " + ol + " = 0; " +
+                    out2 + sep2 + "&" + ov + ", &" + ol + "); tycho_bytes_from_c(" +
+                    cs.arena + ", " + ov + ", " + ol + "); })", "bytes")
         return (out2 + ")", cs.fds[fi].ret)
     return _builtin(&cs, n, args)
 
@@ -4019,9 +4028,24 @@ fn program(pfx: [string], us: [ast.Unit]) -> string:
             xps = xps + _cty(&cs, cs.fds[xi].ptypes[xj])
             if cs.fds[xi].pinout[xj]:
                 xps = xps + " *"
+        xrt := _cty(&cs, cs.fds[xi].ret)
+        if cs.fds[xi].ret == "bytes":
+            # A `bytes` return crosses the ABI as (ptr, len) OUT-PARAMETERS and
+            # the C function returns void; the caller wraps them with
+            # tycho_bytes_from_c. ./tychoc emits
+            #   extern void iox_read_file(char *, tycho_int *,
+            #                             unsigned char **, tycho_int *);
+            # Returning char * instead passes 2 arguments where the shim reads
+            # 4 -- which is why io.read_text answered NotFound for a file that
+            # exists, and why dropping the argument copy turned it into a
+            # segfault. A `string` return does NOT use this form.
+            xrt = "void"
+            if len(xps) > 0:
+                xps = xps + ", "
+            xps = xps + "unsigned char **, tycho_int *"
         if len(xps) == 0:
             xps = "void"
-        head = head + "extern " + _cty(&cs, cs.fds[xi].ret) + " " + cs.fds[xi].name +
+        head = head + "extern " + xrt + " " + cs.fds[xi].name +
             "(" + xps + ");\n"
     head = head + atd + asb + msb + osb
     for i in _struct_order(&cs):
