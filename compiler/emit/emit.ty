@@ -85,9 +85,12 @@ struct C:
     loopdepth: int
     arena: string
     oks: [string]
+    subn: [string]
+    subp: [[ast.Param]]
+    sube: [ast.Expr]
 
 fn _new() -> C:
-    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [])
+    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], [], [][ast.Param], []ast.Expr)
 
 fn _bad(msg: string):
     die("tychoc1: " + msg)
@@ -1376,6 +1379,9 @@ fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
         ast.FStrLit(l, v): return _fstr(&cs, v)
         ast.NullLit(l): _bad("expr:NullLit -- Phase 8")
         ast.CallVal(l, k):
+            sc, st3, ok3 := _subcallval(&cs, k, false)
+            if ok3:
+                return (sc, st3)
             return _callval(&cs, k)
         ast.Named(l, n, k): _bad("expr:Named -- Phase 8")
         ast.MapLit(l, k):
@@ -1761,6 +1767,67 @@ fn _tag(cs: inout C, ei: int, vn: string) -> int:
 # UFCS across a package boundary: `c.describe()` on a `geom.Circle` reaches
 # `geom__describe`, because a method-style call follows its RECEIVER's package
 # when the calling package has no such function.
+# A subscript has NO runtime object: the call INLINES to the place its body
+# yields (spec ROADMAP 2.4). Rather than substituting the AST, each parameter is
+# bound as a variable whose C NAME is the argument's already-emitted text, so the
+# yielded expression emits against the caller's own values. `lv` picks the place
+# form (`*..._ptr`) over the rvalue form (`..._get`), which is the only thing
+# that differs between a write through the projection and a read of it.
+# `g.edge(1)` parses as CallVal with a Field callee, not as Call -- the same
+# split Phase 4 found at src/tychoc.c:4136, where one E_CALL covers both.
+fn _subcallval(cs: inout C, k: [ast.Expr], lv: bool) -> (string, string, bool):
+    match k[0]:
+        ast.Field(l6, r6, f6):
+            si := _subidx(&cs, f6)
+            if si >= 0:
+                ua := []ast.Expr
+                push(ua, r6[0])
+                for ai := 1; ai < len(k); ai += 1:
+                    push(ua, k[ai])
+                c, t := _subinline(&cs, si, ua, lv)
+                return (c, t, true)
+        _: pass
+    return ("", "", false)
+
+fn _subidx(cs: inout C, n: string) -> int:
+    for i := 0; i < len(cs.subn); i += 1:
+        if cs.subn[i] == n:
+            return i
+    return -1
+
+fn _subinline(cs: inout C, si: int, args: [ast.Expr], lv: bool) -> (string, string):
+    ps := cs.subp[si]
+    if len(args) != len(ps):
+        _bad("subscript '" + cs.subn[si] + "' takes " + str(len(ps)) + " argument(s)")
+    nsave := len(cs.vnames)
+    for i := 0; i < len(ps); i += 1:
+        ac := ""
+        at := ""
+        if lv and _place(args[i]):
+            ac, at = _lvalue(&cs, args[i])
+        else:
+            ac, at = _ex(&cs, args[i])
+        push(cs.vnames, ps[i].name)
+        push(cs.vtypes, at)
+        push(cs.vcn, ac)
+        push(cs.vown, "&_scope")
+    inner := cs.sube[si]
+    match cs.sube[si]:
+        ast.Addr(l, k): inner = k[0]
+        _: pass
+    rc := ""
+    rt := ""
+    if lv:
+        rc, rt = _lvalue(&cs, inner)
+    else:
+        rc, rt = _ex(&cs, inner)
+    for len(cs.vnames) > nsave:
+        pop(cs.vnames)
+        pop(cs.vtypes)
+        pop(cs.vcn)
+        pop(cs.vown)
+    return (rc, rt)
+
 fn _ufcs_name(cs: inout C, n: string, rt: string) -> string:
     if _fidx(&cs, n) >= 0:
         return n
@@ -2120,6 +2187,10 @@ fn _call(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], args: [ast.Ex
             push(ua, ast.Name(l, q))
             for a in args:
                 push(ua, a)
+            # `g.edge(1)` where edge is a subscript inlines to its yielded place.
+            sxi := _subidx(&cs, n)
+            if sxi >= 0:
+                return _subinline(&cs, sxi, ua, false)
             return _call(&cs, l, "", _ufcs_name(&cs, n, qt), tas, ua)
         if _ispkg(&cs, q):
             qv := _qvariant(&cs, _qpfx(&cs, q), n)
@@ -2582,6 +2653,23 @@ fn _lvalue(cs: inout C, e: ast.Expr) -> (string, string):
                 _bad("indexed assignment on a non-array")
             et := _elem(rt)
             return ("(*" + _apfx(&cs, et) + "_ptr(&(" + rc + "), " + ic + "))", et)
+        ast.Call(l, q, n, tas, args):
+            # A subscript call IS a place: `g.edge(1).weight = 99` writes
+            # through the projection, so the lvalue path inlines it too.
+            sxl := _subidx(&cs, n)
+            if sxl < 0:
+                _bad("unsupported assignment target")
+            ua2 := []ast.Expr
+            if len(q) > 0:
+                push(ua2, ast.Name(l, q))
+            for a in args:
+                push(ua2, a)
+            return _subinline(&cs, sxl, ua2, true)
+        ast.CallVal(l, k):
+            sc2, st4, ok4 := _subcallval(&cs, k, true)
+            if not ok4:
+                _bad("unsupported assignment target")
+            return (sc2, st4)
         _: _bad("unsupported assignment target")
     return ("", "")
 
@@ -3637,8 +3725,12 @@ fn program(pfx: [string], us: [ast.Unit]) -> string:
     for x in pfx:
         push(cs.fpfx, x)
     for u0 in us:
-        if len(u0.handles) > 0 or len(u0.subscripts) > 0:
-            _bad("handle/subscript declarations -- Phase 8")
+        if len(u0.handles) > 0:
+            _bad("handle declarations -- Phase 8")
+        for sd in u0.subscripts:
+            push(cs.subn, sd.name)
+            push(cs.subp, sd.params)
+            push(cs.sube, sd.place)
         for im in u0.imports:
             b := _pkg_base(im.path)
             push(cs.ala, b)
