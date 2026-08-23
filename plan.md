@@ -1322,6 +1322,24 @@ self-built twice, the two emitted `.c` identical.
   - Verify: `sh scripts/tychoc1_sweep.sh` unmoved, plus a probe nesting a
     hashable struct 12 deep and keying a map on it.
 
+- [ ] **Phase 8c — const-generic size inference (`[$N]T`)**
+  - `tests/const_generic_size.ty` and `tests/generic_many_typaram_names.ty`,
+    both dying `unknown name 'N'`. `fn sumN(xs: [$N]int)` infers N from the
+    argument's length, monomorphises, and uses N as an ordinary int const in
+    the body.
+  - **Why it is not another `_unify` arm, measured 2026-08-24.** The AST keeps
+    the size — `ast.TFix(string, [Ty])`, "the size exactly as written", so
+    `[$N]int` carries `"$N"` — but `compiler/emit/emit.ty@_ty`'s TFix arm
+    lowers it to `"[" + elem + "]"` and **discards the size**. By the time
+    `_unify` sees the concrete argument it is a plain `[int]`, so there is
+    nothing to bind N from. Adding a TFix arm to `_unify` alone would bind
+    nothing; the size has to survive in emit's type STRING first, which
+    touches every array path (`_is_arr`, `_elem`, `_apfx`, the array defs).
+  - Done when: both fixtures match, and the sweep's other counts do not fall.
+  - Verify: `sh scripts/tychoc1_sweep.sh`, plus a control that makes the two
+    instances share one N and shows the count drop — two call sites with
+    DIFFERENT lengths must produce two instances, which is the whole feature.
+
 - [ ] **Phase 9 — diagnostics wording**
   - Scope: `compiler/` diagnostics. Goldens in `tests/` pin message text,
     batching order and the second "declared here" location.
