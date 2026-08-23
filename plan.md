@@ -1322,6 +1322,38 @@ self-built twice, the two emitted `.c` identical.
   - Verify: `sh scripts/tychoc1_sweep.sh` unmoved, plus a probe nesting a
     hashable struct 12 deep and keying a map on it.
 
+- [ ] **Phase 8d — concurrency codegen (the 8 remaining fixtures)**
+  - `chan_param_recv`, `generic_channel`, `generic_enum_channel`,
+    `generic_struct_instance_types`, `select_enum_match`,
+    `select_default_closed` (channels/select), `int_hex` (`parallel for`).
+    Errors are `expr:ChanE`, `generic type 'Channel'`, `stmt:ParallelS`.
+  - **This is the one lane that can HANG THE MACHINE rather than print a wrong
+    answer.** Three sessions were already killed by an unbounded `tychoc1` run
+    (Phase 7c). Every probe goes through `scripts/tychoc1_sweep.sh` or the same
+    `ulimit -v 2000000` + `timeout` wrapper, sequentially; a miscompiled spawn
+    shows up as the sweep's TIMEOUT/KILLED columns, which fail it by design.
+  - **`parallel for` is not a small arm** — read from
+    `./tychoc tests/int_hex.ty --emit-c`, one `parallel for i in 0..<3` expands
+    to: `_plo`/`_phi` bounds with a `_phi < _plo` clamp; `_pk = tycho_ncpu()`
+    clamped to the range and to `[1, 64]`; an `HTask *_pts[64]`; a start loop
+    allocating an `HSpawnA_<id>` in each task's own root arena, filling the
+    chunk bounds `_plo + (_phi-_plo)*_pc/_pk`, and calling
+    `tycho_task_start(_tk, tycho_spawn_<id>, _sa)`; then a join loop doing
+    `tycho_task_join` / read `*(T *)_pts[_pc]->ret` / `tycho_task_free` and
+    merging into the reduction variable. So it needs the SAME per-instance
+    arg-struct and thunk machinery `spawn` does — build that first, then
+    `parallel for` is a caller of it.
+  - The authority is `src/tychoc.c:7603` (`parallel for` chunked fan-out with
+    reduction merge). `tycho_task_new/start/join/free` and `tycho_ncpu` are
+    already in `runtime/tycho_rt.c` — do NOT re-emit them, which is the
+    mistake that cost four non-linking files in the element-wise work.
+  - Done when: the sweep's `tests` MATCH rises by up to 8 with
+    `TIMEOUT=0 KILLED=0` still holding.
+  - Verify: `sh scripts/tychoc1_sweep.sh`, plus a DETERMINISM leg — any
+    spawn/channel fixture must give identical output over at least 5 runs,
+    because a golden that matches once proves nothing when scheduling is
+    involved.
+
 - [ ] **Phase 8c — const-generic size inference (`[$N]T`)**
   - `tests/const_generic_size.ty` and `tests/generic_many_typaram_names.ty`,
     both dying `unknown name 'N'`. `fn sumN(xs: [$N]int)` infers N from the
