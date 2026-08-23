@@ -1256,6 +1256,28 @@ fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
                 if len(hi) == 0:
                     hi = "tycho_str_len(" + rc + ")"
                 return ("tycho_str_substr(" + cs.arena + ", " + rc + ", " + lo + ", " + hi + ")", rt)
+            # A soa slice offsets EVERY field pointer by lo and carries cap 0,
+            # so it is a view; the copy-on-bind comes from _heap, as for arrays.
+            if _is_soa(rt):
+                ss := _fresh(&cs, "_sv")
+                sl := _fresh(&cs, "_lo")
+                sh := _fresh(&cs, "_hi")
+                if len(hi) == 0:
+                    hi = ss + ".len"
+                st2 := _selem(&cs, rt)
+                si2 := _sidx(&cs, _tname(st2))
+                offs := ""
+                for fi := 0; fi < len(cs.sds[si2].fnames); fi += 1:
+                    offs = offs + ss + ".f" + str(fi) + " + " + sl + ", "
+                # Copied, not returned as a view: the sliced Soa's field
+                # pointers alias the SOURCE buffers, so `sl[0].x = -1` would
+                # write through to q[1].x. ./tychoc wraps the same way.
+                return (_spfx(&cs, rt) + "_copy(" + cs.arena + ", ({ " + _cty(&cs, rt) + " " + ss + " = " + rc + "; tycho_int " +
+                    sl + " = " + lo + ", " + sh + " = " + hi + "; if (" + sl + " < 0 || " +
+                    sh + " > " + ss + ".len || " + sl + " > " + sh + ") { fprintf(stderr, " +
+                    "\"tycho: slice [%\" TY_PRId \":%\" TY_PRId \"] out of bounds (len %\" TY_PRId \")\\n\", " +
+                    sl + ", " + sh + ", " + ss + ".len); exit(1); } (" + _cty(&cs, rt) + "){ " +
+                    offs + sh + " - " + sl + ", 0 }; }))", rt)
             if not _is_arr(rt):
                 _bad("slicing '" + rt + "'")
             sv := _fresh(&cs, "_sv")
@@ -3084,6 +3106,14 @@ fn _soa_defs(cs: inout C) -> (string, string):
         sb = sb + "static tycho_int " + ct + "_bound(" + ct + " *s, tycho_int i) { " +
             "if (i < 0 || i >= s->len) { fprintf(stderr, \"tycho: index %\" TY_PRId " +
             "\" out of bounds (len %\" TY_PRId \")\\n\", i, s->len); exit(1); } return i; }\n"
+        # Prototypes: a struct's own eq/str is emitted BEFORE these bodies and
+        # can call them (a struct field may be a soa -- tests/soa.ty's Bag).
+        sb = sb + "static void " + ct + "_push(Arena*, " + ct + "*, " + et + ");\n" +
+            "static void " + ct + "_set(Arena*, " + ct + "*, tycho_int, " + et + ");\n" +
+            "static " + et + " " + ct + "_pop(" + ct + "*);\n" +
+            "static " + et + " " + ct + "_get(" + ct + "*, tycho_int);\n" +
+            "static " + ct + " " + ct + "_copy(Arena*, " + ct + ");\n" +
+            "static int " + ct + "_eq(" + ct + ", " + ct + ");\n"
         grow := ""
         stores := ""
         gath := ""
