@@ -86,13 +86,15 @@ struct C:
     arena: string
     oks: [string]
     ewlen: bool
+    accs: [string]
+    vacc: [string]
     exn: [string]
     subn: [string]
     subp: [[ast.Param]]
     sube: [ast.Expr]
 
 fn _new() -> C:
-    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [][ast.Param], []ast.Expr)
+    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], [], [][ast.Param], []ast.Expr)
 
 fn _bad(msg: string):
     die("tychoc1: " + msg)
@@ -995,6 +997,7 @@ fn _restore(cs: inout C, m: int):
         pop(cs.vtypes)
         pop(cs.vcn)
         pop(cs.vown)
+        pop(cs.vacc)
 
 # A nested `x := x + 1` shadows the outer x, and in C the new declarator is
 # already in scope inside its own initialiser -- so the inner read would see
@@ -1008,6 +1011,7 @@ fn _push(cs: inout C, n: string, t: string) -> string:
     push(cs.vtypes, t)
     push(cs.vcn, cn)
     push(cs.vown, "&_scope")
+    push(cs.vacc, "")
     return cn
 
 fn _vtype(cs: inout C, n: string) -> string:
@@ -2906,7 +2910,15 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             if len(want) > 0:
                 t = want
             cn := _push(&cs, n, t)
-            return ind + _cty(&cs, t) + " " + cn + " = " + c + ";\n"
+            out9 := ind + _cty(&cs, t) + " " + cn + " = " + c + ";\n"
+            if t == "string" and _isacc(&cs, n):
+                cs.vacc[len(cs.vacc) - 1] = cn
+                # the shadow length/capacity the in-place append maintains;
+                # the length starts as the initialiser's own, cap 0 meaning
+                # "not yet owned", exactly as src/tychoc.c does it.
+                out9 = out9 + ind + "tycho_int _len" + cn + " = ((const tycho_int *)" +
+                    cn + ")[-1]; tycho_int _cap" + cn + " = 0;\n"
+            return out9
         ast.ConstS(l, n, k):
             c, t := _ex(&cs, k[0])
             cn2 := _push(&cs, n, t)
@@ -2917,6 +2929,31 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                 _bad("assignment to unknown name '" + n + "'")
             if t == "?":
                 t = ""
+            # `out = out + X` on an accumulator becomes an in-place append,
+            # which is what makes a concat loop linear instead of quadratic.
+            if t == "string" and len(_accof(&cs, n)) > 0:
+                match k[0]:
+                    ast.Binop(l9, op9, bk9):
+                        if op9 == "+" and len(bk9) == 2:
+                            isself := false
+                            match bk9[0]:
+                                ast.Name(l8, n8):
+                                    if n8 == n:
+                                        isself = true
+                                _: pass
+                            if isself:
+                                ac9, at9 := _ex(&cs, bk9[1])
+                                cn9 := _accof(&cs, n)
+                                # `out = out + c` where c is a CHAR appends one
+                                # codepoint, not a string: the runtime has a
+                                # separate entry point for it.
+                                fn9 := "tycho_str_append"
+                                if at9 != "string" and at9 != "bytes":
+                                    fn9 = "tycho_str_append_char"
+                                return ind + fn9 + "(" + _ownerof(&cs, ast.Name(l, n)) +
+                                    ", &" + cn9 + ", &_len" + cn9 + ", &_cap" + cn9 + ", " +
+                                    ac9 + ");\n"
+                    _: pass
             rc, rt := _rhs(&cs, k[0], t)
             if len(t) == 0:
                 _vset(&cs, n, rt)
@@ -3880,10 +3917,81 @@ fn _enum_support(cs: inout C) -> (string, string, string):
             st + "    return tycho_str_from_c(a, \"<?>\");\n}\n"
     return (defs, proto, body)
 
+# `out = out + x` in a loop is quadratic when each step allocates a fresh
+# string. src/tychoc.c:9885 turns it into an in-place append; this is the same
+# pass, and it is what the fixpoint needs -- tychoc1 emits a compiler that
+# wants >7 GB to compile the compiler where ./tychoc's wants under 300 MB.
+#
+# Conservative by design: a name qualifies only when EVERY assignment to it in
+# the whole body is a self-append. A single other assignment disqualifies it,
+# because the shadow length would then be stale.
+# The shadow base for the binding `n` resolves to RIGHT NOW. Rebuilding it
+# from the C name breaks under shadowing, because _push renames the second
+# binding (h_out_s3) and the two sites then disagree.
+fn _accof(cs: inout C, n: string) -> string:
+    for i := len(cs.vnames) - 1; i >= 0; i -= 1:
+        if cs.vnames[i] == n:
+            return cs.vacc[i]
+    return ""
+
+fn _isacc(cs: inout C, n: string) -> bool:
+    for a in cs.accs:
+        if a == n:
+            return true
+    return false
+
+fn _acc_scan(ss: [ast.Stmt], selfapp: inout [string], other: inout [string],
+        decl: inout [string]):
+    for st in ss:
+        match st:
+            ast.Decl(l, n, ann, rhs, vv):
+                if len(vv) == 0:
+                    push(decl, n)
+            ast.Assign(l, n, k):
+                ok := false
+                match k[0]:
+                    ast.Binop(l2, op, bk):
+                        if op == "+":
+                            match bk[0]:
+                                ast.Name(l3, nn):
+                                    if nn == n:
+                                        ok = true
+                                _: pass
+                    _: pass
+                if ok:
+                    push(selfapp, n)
+                else:
+                    push(other, n)
+            ast.PlaceSet(l, k): pass
+            ast.IfS(l, c, t, e):
+                _acc_scan(t, &selfapp, &other, &decl)
+                _acc_scan(e, &selfapp, &other, &decl)
+            ast.WhileS(l, c, b): _acc_scan(b, &selfapp, &other, &decl)
+            ast.ForIn(l, v, c, b): _acc_scan(b, &selfapp, &other, &decl)
+            ast.For3(l, ip, c, b):
+                _acc_scan(ip, &selfapp, &other, &decl)
+                _acc_scan(b, &selfapp, &other, &decl)
+            _: pass
+
 fn _fnbody(cs: inout C, fi: int, body: [ast.Stmt]) -> (string, string):
     nm := cs.fds[fi].name
     rt := cs.fds[fi].ret
     cs.cur_ret = rt
+    sa := []string
+    ot := []string
+    dc := []string
+    _acc_scan(body, &sa, &ot, &dc)
+    cs.accs = []string
+    for a in sa:
+        bad := true
+        for d in dc:
+            if d == a:
+                bad = false
+        for o in ot:
+            if o == a:
+                bad = true
+        if not bad:
+            push(cs.accs, a)
     sig := _cty(&cs, rt) + " h_" + nm + "(Arena *_parent"
     m := _mark(&cs)
     for j := 0; j < len(cs.fds[fi].pnames); j += 1:
