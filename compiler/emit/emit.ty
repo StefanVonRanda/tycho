@@ -2437,7 +2437,14 @@ fn _call(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], args: [ast.Ex
             cs.want = sw
             if pt == "float" and at == "int":
                 ac = "(double)(" + ac + ")"
-            if _place(args[i]) and _heap(&cs, pt):
+            # NO COPY passing an ARRAY or MAP down. runtime/tycho_rt.c's header states the
+            # model: an argument is a pointer into the caller's arena and the
+            # callee's arena is a CHILD, so the value outlives the call. The
+            # copy here made every `_k(toks, i)` clone the whole token array --
+            # 42,626 elements per call, quadratic, and the reason gen-2 could
+            # not compile the compiler. Anything that RETAINS a value past the
+            # call copies at that point instead (see `push`).
+            if _place(args[i]) and _heap(&cs, pt) and not (_is_arr(pt) or _is_map(pt)):
                 ac = _copy(&cs, ac, pt, "&_scope")
             out2 = out2 + ", " + ac
         if xtn:
