@@ -86,12 +86,13 @@ struct C:
     arena: string
     oks: [string]
     ewlen: bool
+    exn: [string]
     subn: [string]
     subp: [[ast.Param]]
     sube: [ast.Expr]
 
 fn _new() -> C:
-    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [][ast.Param], []ast.Expr)
+    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [][ast.Param], []ast.Expr)
 
 fn _bad(msg: string):
     die("tychoc1: " + msg)
@@ -497,6 +498,14 @@ fn _cidx(cs: inout C, n: string) -> int:
         if cs.cnames[i] == n:
             return i
     return -1
+
+# An extern is called by its BARE C name with no arena: it is a foreign symbol,
+# not a Tycho proc. `./tychoc` emits `strx_parse_double(h_s, &(h_st))`.
+fn _isext(cs: inout C, n: string) -> bool:
+    for i := 0; i < len(cs.exn); i += 1:
+        if cs.exn[i] == n:
+            return true
+    return false
 
 fn _fidx(cs: inout C, n: string) -> int:
     p := _pfx(&cs)
@@ -1413,7 +1422,9 @@ fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
         ast.OrRet(l, k):
             return _orret(&cs, k[0])
         ast.FStrLit(l, v): return _fstr(&cs, v)
-        ast.NullLit(l): _bad("expr:NullLit -- Phase 8")
+        ast.NullLit(l):
+            # `null` is the ptr literal; ptr is void* in the ABI.
+            return ("((void *)0)", "ptr")
         ast.CallVal(l, k):
             sc, st3, ok3 := _subcallval(&cs, k, false)
             if ok3:
@@ -2403,6 +2414,9 @@ fn _call(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], args: [ast.Ex
             if len(args) != np:
                 _bad("'" + n + "' takes " + str(np) + " argument(s)")
         out2 := "h_" + cs.fds[fi].name + "(" + cs.arena
+        xtn := _isext(&cs, cs.fds[fi].name)
+        if xtn:
+            out2 = cs.fds[fi].name + "(@"
         for i := 0; i < np; i += 1:
             pt := cs.fds[fi].ptypes[i]
             if cs.fds[fi].pvar and i == np - 1:
@@ -2422,6 +2436,10 @@ fn _call(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], args: [ast.Ex
             if _place(args[i]) and _heap(&cs, pt):
                 ac = _copy(&cs, ac, pt, "&_scope")
             out2 = out2 + ", " + ac
+        if xtn:
+            # drop the separator the arena would have needed
+            out2 = strings.replace(out2, "(@, ", "(")
+            out2 = strings.replace(out2, "(@", "(")
         return (out2 + ")", cs.fds[fi].ret)
     return _builtin(&cs, n, args)
 
@@ -2563,7 +2581,7 @@ fn _shadowable(n: string) -> bool:
         n == "chr" or n == "to_char" or n == "char_at" or n == "to_int" or
         n == "to_float" or n == "sqrt" or n == "find" or n == "split" or
         n == "substr" or n == "input" or n == "read_all" or n == "clock" or n == "hash" or
-        n == "fabs" or n == "list_dir"
+        n == "fabs" or n == "list_dir" or n == "getenv"
 
 # push/pop/reserve MUTATE their first argument, so it has to be reached as a
 # place: `push(m["g"], 3)` on a map element is the map's value slot, not the
@@ -2697,6 +2715,9 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
     if n == "list_dir" and len(args) == 1:
         c, t := _ex(&cs, args[0])
         return ("tycho_list_dir(" + cs.arena + ", " + c + ")", "[string]")
+    if n == "getenv" and len(args) == 1:
+        c, t := _ex(&cs, args[0])
+        return ("tycho_getenv(" + cs.arena + ", " + c + ")", "string")
     if n == "find" and len(args) == 2:
         c, t := _ex(&cs, args[0])
         sc, st := _ex(&cs, args[1])
@@ -3284,7 +3305,7 @@ fn _collect2(cs: inout C, u: ast.Unit):
         if len(f.typarams) > 0:
             continue
         if f.is_extern:
-            _bad("extern function '" + f.name + "' -- Phase 8")
+            push(cs.exn, f.name)
         pn := []string
         pt := []string
         pio := []bool
@@ -3299,7 +3320,10 @@ fn _collect2(cs: inout C, u: ast.Unit):
             push(pn, pp.name)
             push(pt, one)
             push(pio, pp.is_inout)
-        push(cs.fds, FD(p + f.name, pn, pt, pio, pv, _tyo(&cs, f.ret)))
+        nmf := p + f.name
+        if f.is_extern:
+            nmf = f.name
+        push(cs.fds, FD(nmf, pn, pt, pio, pv, _tyo(&cs, f.ret)))
     for c in u.consts:
         cc, ct := _ex(&cs, c.value)
         push(cs.cnames, p + c.name)
@@ -3964,6 +3988,22 @@ fn program(pfx: [string], us: [ast.Unit]) -> string:
         nk = len(cs.akinds)
         atd, asb, afb = _arr_defs(&cs)
     htd = htd + mtd
+    # `extern double strx_parse_double(char *, tycho_int *);` -- the foreign
+    # symbol's prototype, matching ./tychoc. An inout parameter is a pointer.
+    for xi := 0; xi < len(cs.fds); xi += 1:
+        if not _isext(&cs, cs.fds[xi].name):
+            continue
+        xps := ""
+        for xj := 0; xj < len(cs.fds[xi].ptypes); xj += 1:
+            if xj > 0:
+                xps = xps + ", "
+            xps = xps + _cty(&cs, cs.fds[xi].ptypes[xj])
+            if cs.fds[xi].pinout[xj]:
+                xps = xps + " *"
+        if len(xps) == 0:
+            xps = "void"
+        head = head + "extern " + _cty(&cs, cs.fds[xi].ret) + " " + cs.fds[xi].name +
+            "(" + xps + ");\n"
     head = head + atd + asb + msb + osb
     for i in _struct_order(&cs):
         head = head + "struct S_" + cs.sds[i].name + "_ {\n"
