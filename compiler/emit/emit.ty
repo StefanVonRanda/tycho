@@ -2466,7 +2466,8 @@ fn _shadowable(n: string) -> bool:
         n == "die" or n == "exit" or n == "push" or n == "pop" or n == "reserve" or
         n == "chr" or n == "to_char" or n == "char_at" or n == "to_int" or
         n == "to_float" or n == "sqrt" or n == "find" or n == "split" or
-        n == "substr" or n == "input" or n == "read_all" or n == "clock" or n == "hash"
+        n == "substr" or n == "input" or n == "read_all" or n == "clock" or n == "hash" or
+        n == "fabs" or n == "list_dir"
 
 # push/pop/reserve MUTATE their first argument, so it has to be reached as a
 # place: `push(m["g"], 3)` on a map element is the map's value slot, not the
@@ -2584,6 +2585,12 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
     if n == "sqrt" and len(args) == 1:
         c, t := _ex(&cs, args[0])
         return ("sqrt(" + c + ")", "float")
+    if n == "fabs" and len(args) == 1:
+        c, t := _ex(&cs, args[0])
+        return ("fabs(" + c + ")", "float")
+    if n == "list_dir" and len(args) == 1:
+        c, t := _ex(&cs, args[0])
+        return ("tycho_list_dir(" + cs.arena + ", " + c + ")", "[string]")
     if n == "find" and len(args) == 2:
         c, t := _ex(&cs, args[0])
         sc, st := _ex(&cs, args[1])
