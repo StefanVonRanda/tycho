@@ -922,6 +922,57 @@ self-built twice, the two emitted `.c` identical.
     regression.
   - Verify: `TYCHOC=./tychoc1 make test`, count recorded in the commit message.
 
+  **PARTIAL, committed unticked 2026-08-23.** ~1,220 lines of `compiler/emit/`
+  land here with a measured but incomplete result. The phase stays open.
+
+  **Never run `make test` under `tychoc1` unbounded.** Three sessions were
+  killed doing it; the third returned **exit 137 (SIGKILL)** — the OOM killer —
+  at `TYCHO_THREADS=4`. The same command on `./tychoc` at the same throttle is
+  fine, so the harness and the parallelism are not the cause. Every `tychoc1`
+  invocation gets `ulimit -v 2000000` and a `timeout`, run sequentially. The
+  bounded sweep is `scripts/tychoc1_sweep.sh` and takes ~2 min.
+
+  **Measured, bounded, 2026-08-23** (`sh scripts/tychoc1_sweep.sh`):
+
+  ```
+  compile=77 clean-error=197 TIMEOUT=0 KILLED=0
+  link=77 RUN=77 MATCH=76
+  ```
+
+  Baseline the same day, `TYCHO_THREADS=4 make test` on `./tychoc`:
+  `passed: 752  failed: 0`. **The gate table's "719 fixtures" is stale — it is
+  752.** So Phase 7 stands at **76 of 274 `tests/*.ty` matching their golden**,
+  up from Phase 1's single program, and the 197 clean errors are constructs
+  `compiler/emit/` does not yet emit.
+
+  A first sweep reported one hang, `io_builtins`, and it was a HARNESS artifact
+  rather than a `tychoc1` defect: it reads stdin and that sweep did not redirect
+  it, where `tests/run.sh` feeds it from a `.in` file. The committed script
+  feeds `tests/<name>.in` when present and `/dev/null` otherwise, which is what
+  moved RUN 76 -> 77 and MATCH 75 -> 76.
+
+  **Not established:** which fixture actually triggers the OOM. It is not in
+  `tests/*.ty` — all 274 are clean under a 2 GB cap. `make test` covers 752
+  fixtures including `tests/recursion/` (deliberate deep recursion) and
+  `tests/conc/`, and `tychoc1` has none of the eight optimisation passes, so
+  its frames are fatter than baseline. That is a hypothesis, not a measurement,
+  and proving it costs a session each time it is wrong.
+
+- [ ] **Phase 7b — the remaining 197 `tests/*.ty` do not compile under tychoc1**
+  - Scope: `compiler/emit/`. Each is a construct Phase 7 does not emit yet.
+  - Done when: the bounded sweep's `clean-error` count falls and `MATCH` rises,
+    both stated. Phase 8's subjects (maps, soa, generics, affine, concurrency)
+    are excluded and stay Phase 8's.
+  - Verify: `sh scripts/tychoc1_sweep.sh` — never an unbounded `make test`.
+
+- [ ] **Phase 7c — find the fixture that OOMs the box under tychoc1**
+  - Scope: diagnosis only. Bisect the 752-fixture corpus OUTSIDE `tests/*.ty`
+    under `ulimit -v`, sequentially, so a runaway dies alone.
+  - Done when: the fixture is named and the cause stated — fat frames from the
+    missing optimisation passes, or a genuine codegen defect.
+  - Verify: the named fixture reproducing under a cap, and passing under
+    `./tychoc`. Do NOT run an unbounded `make test` to find it.
+
 - [ ] **Phase 8 — codegen: maps, soa, generics, affine, concurrency**
   - Scope: `compiler/emit/`. Compact-dict maps, `soa`, monomorphised generics,
     handle destructors, `spawn`/`channel`/`select`, `parallel for`.

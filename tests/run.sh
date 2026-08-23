@@ -30,7 +30,7 @@
 set -u
 cd "$(dirname "$0")/.." || exit 2          # repo root
 
-TYCHOC=./tychoc
+TYCHOC="${TYCHOC:-./tychoc}"
 [ -x "$TYCHOC" ] || { echo "no ./tychoc — run 'make' first"; exit 2; }
 
 CC="${CC:-cc}"
