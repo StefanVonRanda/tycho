@@ -262,6 +262,18 @@ fn _selem(cs: inout C, t: string) -> string:
 fn _spfx(cs: inout C, t: string) -> string:
     return "Soa" + _tname(t)
 
+# `ps[i].x` -> `((ps).fN[SoaK_bound(&(ps), i)])`. The bound call is emitted per
+# OCCURRENCE, matching ./tychoc: `ps[2].z = ps[2].z + 1` checks twice.
+fn _soafld(cs: inout C, bc: string, bt: string, ic: string, f: string) -> (string, string):
+    st := _selem(&cs, bt)
+    si := _sidx(&cs, _tname(st))
+    for i := 0; i < len(cs.sds[si].fnames); i += 1:
+        if cs.sds[si].fnames[i] == f:
+            return ("((" + bc + ").f" + str(i) + "[" + _spfx(&cs, bt) + "_bound(&(" +
+                bc + "), " + ic + ")])", cs.sds[si].ftypes[i])
+    _bad("no field '" + f + "' on " + _tname(st))
+    return ("", "")
+
 # How a key is REPRESENTED in the entry table: a fieldless enum is stored as its
 # tag, so `keys()` has to rebuild the singleton (src/tychoc.c:12926).
 fn _kclass(cs: inout C, k: string) -> string:
@@ -1195,6 +1207,15 @@ fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
             pm, pt2 := _pkgmember(&cs, r[0], f)
             if len(pt2) > 0:
                 return (pm, pt2)
+            # `ps[i].x` PROJECTS into the soa's own buffer for x -- it is never a
+            # gather followed by a field read, which would copy every field.
+            match r[0]:
+                ast.Index(l2, k2):
+                    bc2, bt2 := _ex(&cs, k2[0])
+                    if _is_soa(bt2):
+                        ic3, it3 := _ex(&cs, k2[1])
+                        return _soafld(&cs, bc2, bt2, ic3, f)
+                _: pass
             rc, rt := _ex(&cs, r[0])
             if not _is_struct(rt):
                 _bad("field '" + f + "' on non-struct")
@@ -1208,6 +1229,8 @@ fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
             ic, it := _ex(&cs, k[1])
             if rt == "string" or rt == "bytes":
                 return ("tycho_str_get(" + rc + ", " + ic + ")", "int")
+            if _is_soa(rt):
+                return (_spfx(&cs, rt) + "_get(&(" + rc + "), " + ic + ")", _selem(&cs, rt))
             if _is_map(rt):
                 vt := _mval(&cs, rt)
                 g := _mpfx(&cs, rt) + "_get(" + rc + ", " +
@@ -1340,7 +1363,9 @@ fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
             mv := _fresh(&cs, "_mp")
             return ("({ " + _cty(&cs, mt) + " " + mv + " = " + _mpfx(&cs, mt) +
                 "_with_cap(&_scope, 0); " + mv + "; })", mt)
-        ast.SoaLit(l, t): _bad("expr:SoaLit -- Phase 8")
+        ast.SoaLit(l, t):
+            ot := _soa_of(&cs, _ty(&cs, t[0]))
+            return ("(" + _cty(&cs, ot) + "){0}", ot)
         ast.SpawnE(l, k): _bad("expr:SpawnE -- Phase 8")
         ast.Spread(l, k): _bad("expr:Spread -- Phase 8")
         ast.Addr(l, k): _bad("expr:Addr -- Phase 8")
@@ -2358,7 +2383,7 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
         c, t := _ex(&cs, args[0])
         if t == "string" or t == "bytes":
             return ("tycho_str_len(" + c + ")", "int")
-        if _is_arr(t) or _is_map(t):
+        if _is_arr(t) or _is_map(t) or _is_soa(t):
             return ("((" + c + ").len)", "int")
         _bad("len() of unsupported type '" + t + "'")
     if n == "print" and len(args) == 1:
@@ -2384,6 +2409,9 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
             rt = "[" + vt + "]"
             cs.ptv[pi] = rt
             _vset(&cs, _rootname(args[0]), rt)
+        if _is_soa(rt):
+            return (_spfx(&cs, rt) + "_push(" + _ownerof(&cs, args[0]) + ", &(" + rc +
+                "), " + vc + ")", "void")
         if not _is_arr(rt):
             _bad("push() on a non-array")
         et := _elem(rt)
@@ -2395,6 +2423,8 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
         return (_apfx(&cs, et) + "_push(" + ow + ", &(" + rc + "), " + vc + ")", "void")
     if n == "pop" and len(args) == 1:
         rc, rt := _target(&cs, args[0])
+        if _is_soa(rt):
+            return (_spfx(&cs, rt) + "_pop(&(" + rc + "))", _selem(&cs, rt))
         if not _is_arr(rt):
             _bad("pop() on a non-array")
         et := _elem(rt)
@@ -2496,6 +2526,15 @@ fn _lvalue(cs: inout C, e: ast.Expr) -> (string, string):
                 _bad("assignment to unknown name '" + n + "'")
             return (_vcname(&cs, n), t)
         ast.Field(l, r, f):
+            # The scatter write `ps[i].x = v`. The projection is already a C
+            # lvalue, so the read and write paths emit the same expression.
+            match r[0]:
+                ast.Index(l3, k3):
+                    bc3, bt3 := _lvalue(&cs, k3[0])
+                    if _is_soa(bt3):
+                        ic4, it4 := _ex(&cs, k3[1])
+                        return _soafld(&cs, bc3, bt3, ic4, f)
+                _: pass
             rc, rt := _lvalue(&cs, r[0])
             si := _sidx(&cs, _tname(rt))
             if si < 0:
@@ -2642,6 +2681,19 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                             _: pass
                 _: pass
             k = [lhs, rhs]
+            match k[0]:
+                ast.Index(l5, k5):
+                    bc5, bt5 := _lvalue(&cs, k5[0])
+                    if _is_soa(bt5):
+                        ic5, it5 := _ex(&cs, k5[1])
+                        ow5 := _ownerof(&cs, k5[0])
+                        sav5 := cs.arena
+                        cs.arena = ow5
+                        vc5, vt5 := _rhs2(&cs, k[1], _selem(&cs, bt5), ow5)
+                        cs.arena = sav5
+                        return pre + ind + _spfx(&cs, bt5) + "_set(" + ow5 + ", &(" +
+                            bc5 + "), " + ic5 + ", " + vc5 + ");\n"
+                _: pass
             lc, lt := _lvalue(&cs, k[0])
             ow := _ownerof(&cs, k[0])
             sav2 := cs.arena
@@ -3010,6 +3062,70 @@ fn _arr_protos(cs: inout C) -> string:
         if _hashable(&cs, e):
             out = out + "static uint64_t " + p + "_hash(" + ct + ");\n"
     return out
+
+# One growable arena buffer per FIELD plus a shared len/cap, which is the whole
+# point of a soa. Shape read out of `./tychoc tests/soa_basic.ty --emit-c`, not
+# designed here -- see plan.md's "The soa target" table for every call site.
+fn _soa_defs(cs: inout C) -> (string, string):
+    sb := ""
+    fb := ""
+    i := 0
+    for i < len(cs.oks):
+        st := cs.oks[i]
+        ct := "Soa" + str(i)
+        et := _cty(&cs, st)
+        si := _sidx(&cs, _tname(st))
+        fns := cs.sds[si].fnames
+        fts := cs.sds[si].ftypes
+        flds := ""
+        for j := 0; j < len(fns); j += 1:
+            flds = flds + _cty(&cs, fts[j]) + " *f" + str(j) + "; "
+        sb = sb + "typedef struct { " + flds + "tycho_int len; tycho_int cap; } " + ct + ";\n"
+        sb = sb + "static tycho_int " + ct + "_bound(" + ct + " *s, tycho_int i) { " +
+            "if (i < 0 || i >= s->len) { fprintf(stderr, \"tycho: index %\" TY_PRId " +
+            "\" out of bounds (len %\" TY_PRId \")\\n\", i, s->len); exit(1); } return i; }\n"
+        grow := ""
+        stores := ""
+        gath := ""
+        cpy := ""
+        eqs := ""
+        for j := 0; j < len(fns); j += 1:
+            c := _cty(&cs, fts[j])
+            f := "f" + str(j)
+            grow = grow + "        " + c + " *n" + str(j) + " = (" + c +
+                " *)arena_alloc(a, (size_t)nc * sizeof(" + c + " )); for (tycho_int i = 0; i < s->len; i++) n" +
+                str(j) + "[i] = s->" + f + "[i]; s->" + f + " = n" + str(j) + ";\n"
+            stores = stores + "    s->" + f + "[s->len] = v.f_" + fns[j] + ";\n"
+            if len(gath) > 0:
+                gath = gath + ", "
+            gath = gath + "s->" + f + "[_i]"
+            cpy = cpy + "    r." + f + " = s.len ? (" + c + " *)arena_alloc(a, (size_t)s.len * sizeof(" +
+                c + " )) : 0;\n    for (tycho_int i = 0; i < s.len; i++) r." + f + "[i] = s." + f + "[i];\n"
+            if len(eqs) > 0:
+                eqs = eqs + " && "
+            # a heap field cannot be compared with `==`; _eq picks the right
+            # comparison per type (soa_scatter_heap holds an array per element).
+            eqs = eqs + "(" + _eq(&cs, "a." + f + "[i]", "b." + f + "[i]", fts[j]) + ")"
+        fb = fb + "static void " + ct + "_push(Arena *a, " + ct + " *s, " + et + " v) {\n" +
+            "    if (s->len == s->cap) {\n        tycho_int nc = s->cap ? s->cap * 2 : 4;\n" +
+            grow + "        s->cap = nc;\n    }\n" + stores + "    s->len++;\n}\n"
+        sets := ""
+        for j := 0; j < len(fns); j += 1:
+            sets = sets + "    s->f" + str(j) + "[_si] = v.f_" + fns[j] + ";\n"
+        fb = fb + "static void " + ct + "_set(Arena *a, " + ct + " *s, tycho_int ix, " +
+            et + " v) {\n    tycho_int _si = " + ct + "_bound(s, ix);\n" + sets + "}\n"
+        fb = fb + "static " + et + " " + ct + "_pop(" + ct + " *s) {\n" +
+            "    if (s->len == 0) { fprintf(stderr, \"tycho: pop from an empty array\\n\"); exit(1); }\n" +
+            "    s->len--;\n    tycho_int _i = s->len;\n    return (" + et + "){ " + gath + " };\n}\n"
+        fb = fb + "static " + et + " " + ct + "_get(" + ct + " *s, tycho_int ix) {\n" +
+            "    tycho_int _i = " + ct + "_bound(s, ix);\n    return (" + et + "){ " + gath + " };\n}\n"
+        fb = fb + "static " + ct + " " + ct + "_copy(Arena *a, " + ct + " s) {\n" +
+            "    " + ct + " r; r.len = s.len; r.cap = s.len;\n" + cpy + "    return r;\n}\n"
+        fb = fb + "static int " + ct + "_eq(" + ct + " a, " + ct + " b) {\n" +
+            "    if (a.len != b.len) return 0;\n" +
+            "    for (tycho_int i = 0; i < a.len; i++) if (!(" + eqs + ")) return 0;\n    return 1;\n}\n"
+        i += 1
+    return (sb, fb)
 
 fn _arr_defs(cs: inout C) -> (string, string, string):
     # (typedefs, struct bodies, function bodies) for every stamped array kind.
@@ -3558,13 +3674,18 @@ fn program(pfx: [string], us: [ast.Unit]) -> string:
     for nm != len(cs.mks):
         nm = len(cs.mks)
         mtd, msb, mpr, mfb = _map_defs(&cs)
+    osb, ofb := _soa_defs(&cs)
+    no := 0
+    for no != len(cs.oks):
+        no = len(cs.oks)
+        osb, ofb = _soa_defs(&cs)
     atd, asb, afb := _arr_defs(&cs)
     nk := 0
     for nk != len(cs.akinds):
         nk = len(cs.akinds)
         atd, asb, afb = _arr_defs(&cs)
     htd = htd + mtd
-    head = head + atd + asb + msb
+    head = head + atd + asb + msb + osb
     for i in _struct_order(&cs):
         head = head + "struct S_" + cs.sds[i].name + "_ {\n"
         for j := 0; j < len(cs.sds[i].fnames); j += 1:
@@ -3592,7 +3713,7 @@ fn program(pfx: [string], us: [ast.Unit]) -> string:
         ttd, tsb, tpr, tfb = _tup_defs(&cs)
     hpr, hfb := _hash_defs(&cs)
     head = htd + ttd + ftd + head + tsb + edefs + "\n" + _arr_protos(&cs) + sproto + eproto +
-        tpr + mpr + hpr + "\n" + afb + sbody + ebody + tfb + hfb + mfb + "\n"
+        tpr + mpr + hpr + "\n" + afb + sbody + ebody + tfb + hfb + mfb + ofb + "\n"
 
     entry := "\nint main(int argc, char **argv) {\n" +
         "    tycho_hash_seed_init();  /* random per-process map-hash seed, before any map use */\n" +
