@@ -1762,6 +1762,14 @@ fn _ex_scope(cs: inout C, e: ast.Expr) -> (string, string):
     cs.arena = sav
     return (c, t)
 
+# _tag DIES on an unknown variant, so it cannot be used to ASK whether a name
+# is one. This is the asking form.
+fn _tagopt(cs: inout C, ei: int, vn: string) -> int:
+    for i := 0; i < len(cs.eds[ei].vnames); i += 1:
+        if cs.eds[ei].vnames[i] == vn:
+            return i
+    return -1
+
 fn _tag(cs: inout C, ei: int, vn: string) -> int:
     for i := 0; i < len(cs.eds[ei].vnames); i += 1:
         if cs.eds[ei].vnames[i] == vn:
@@ -3017,16 +3025,52 @@ fn _match(cs: inout C, subj: ast.Expr, arms: [ast.Arm], ind: string) -> string:
             first = false
             m := _mark(&cs)
             binds := ""
+            nulsub := ""
             for i := 0; i < len(a.binds); i += 1:
                 if i >= len(pay):
                     _bad("variant " + a.name + " binds more than its payload")
+                # `Err(NotFound)` -- a NULLARY nested variant. It has no parens,
+                # so the parser cannot tell it from a binding name and files it
+                # under binds; only the payload's own variant list can. Without
+                # this the arm emits no inner tag test and swallows every Err.
+                pei := _eidx(&cs, _tname(pay[i]))
+                nt := -1
+                if pei >= 0:
+                    nt = _tagopt(&cs, pei, a.binds[i])
+                if nt >= 0:
+                    nulsub = str(nt)
+                    continue
                 bcn := _push(&cs, a.binds[i], pay[i])
                 cs.vcn[len(cs.vcn) - 1] = "(*" + bcn + ")"
                 binds = binds + ind + "        " + _cty(&cs, pay[i]) + " *" + bcn +
                     " = &" + v + "->u." + a.name + ".f" + str(i) + ";\n"
+            # A NESTED pattern -- `Err(TooBig(n))`. The Arm has carried
+            # sub/subbinds since the parser, and nothing read them until now, so
+            # the inner binding was simply never in scope. The payload is itself
+            # an enum: test its tag too, and bind from ITS payload.
+            cond := v + "->tag == " + str(tag)
+            if len(nulsub) > 0:
+                cond = "(" + cond + ") && ((" + v + "->u." + a.name + ".f0)->tag == " + nulsub + ")"
+            if len(a.sub) > 0:
+                if len(pay) != 1:
+                    _bad("a nested pattern needs a single-payload variant")
+                ii := _eidx(&cs, _tname(pay[0]))
+                if ii < 0:
+                    _bad("nested pattern on a non-enum payload '" + pay[0] + "'")
+                itag := _tag(&cs, ii, a.sub)
+                iv := v + "->u." + a.name + ".f0"
+                cond = "(" + cond + ") && ((" + iv + ")->tag == " + str(itag) + ")"
+                ipay := cs.eds[ii].vpay[itag].ptypes
+                for j := 0; j < len(a.subbinds); j += 1:
+                    if j >= len(ipay):
+                        _bad("variant " + a.sub + " binds more than its payload")
+                    scn := _push(&cs, a.subbinds[j], ipay[j])
+                    cs.vcn[len(cs.vcn) - 1] = "(*" + scn + ")"
+                    binds = binds + ind + "        " + _cty(&cs, ipay[j]) + " *" + scn +
+                        " = &(" + iv + ")->u." + a.sub + ".f" + str(j) + ";\n"
             body := _block(&cs, a.body, ind + "        ")
             _restore(&cs, m)
-            out = out + head + " (" + v + "->tag == " + str(tag) + ") {\n" + binds + body +
+            out = out + head + " (" + cond + ") {\n" + binds + body +
                 ind + "    }\n"
         if first:
             return out + deflt + ind + "}\n"
