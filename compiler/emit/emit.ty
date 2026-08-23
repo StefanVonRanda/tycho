@@ -2653,7 +2653,12 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
         if et == "float" and vt == "int":
             vc = "(double)(" + vc + ")"
         ow := _ownerof(&cs, args[0])
-        if _place(args[1]) and _heap(&cs, et):
+        # A CONSTRUCTED value needs the copy as much as a place does: its
+        # interior strings/arrays were allocated in the caller's temporary
+        # scope, and pushing the struct by value leaves them dangling once that
+        # scope is reused. Observed in the self-compile as an FD whose `name`
+        # pointed into generated C text.
+        if _heap(&cs, et):
             vc = _copy(&cs, vc, et, ow)
         return (_apfx(&cs, et) + "_push(" + ow + ", &(" + rc + "), " + vc + ")", "void")
     if n == "pop" and len(args) == 1:
