@@ -958,12 +958,47 @@ self-built twice, the two emitted `.c` identical.
   its frames are fatter than baseline. That is a hypothesis, not a measurement,
   and proving it costs a session each time it is wrong.
 
-- [ ] **Phase 7b — the remaining 197 `tests/*.ty` do not compile under tychoc1**
+- [ ] **Phase 7b — the remaining `tests/*.ty` that do not compile under tychoc1**
   - Scope: `compiler/emit/`. Each is a construct Phase 7 does not emit yet.
   - Done when: the bounded sweep's `clean-error` count falls and `MATCH` rises,
     both stated. Phase 8's subjects (maps, soa, generics, affine, concurrency)
     are excluded and stay Phase 8's.
   - Verify: `sh scripts/tychoc1_sweep.sh` — never an unbounded `make test`.
+
+  **PARTIAL, committed unticked 2026-08-23.** `sh scripts/tychoc1_sweep.sh`
+  moved `compile=77 clean-error=197 / link=77 RUN=77 MATCH=76` to
+  `compile=126 clean-error=148 / link=125 RUN=125 MATCH=122`. Landed: newtype
+  erasure, tuples (literal, `.0`, destructuring, multi-return), Option/Result
+  monomorphised into stamped enums with `or_return`, `inout`/`sink`/variadic
+  parameters, named call and struct arguments, value-`if`/value-`match`
+  declarations, `for x in <string>`, and `args`/`now`/`read_file`/`write_file`.
+
+  **148 remain, grouped by the FIRST error each fixture reports** (a fixture may
+  need more than one of these):
+
+  | n | cause | owner |
+  |---|---|---|
+  | 51 | generics — generic struct/enum/fn, `$T` | Phase 8 |
+  | 44 | maps — `[K: V]`, `[]K: V`, map literal, indexing | Phase 8 |
+  | 5 | `soa` | Phase 8 |
+  | 3 | handle / channel / spawn | Phase 8 |
+  | 10 | sized ints and `bytes` — `u8`..`i64`, `f32`, `to_u32`, `to_bytes` | **7b** |
+  | 9 | closures and function values — `TFn`, `Lambda`, `CallVal` | **7b** |
+  | 5 | fixed-size arrays `[N]T` | **7b** |
+  | 3 | `bounded[N]T` | **7b** |
+  | 3 | f-strings — the parser hands `FStrLit` its body UNPARSED, so emit would have to re-lex the interpolations | **7b** |
+  | 4 | package-qualified calls / `import` | **7b** |
+  | 3 | `extern` functions | **7b** |
+  | 8 | one-offs: `len()` of a non-collection (2), `list_dir`, `hash`, two `None`/`Ok` with no type to belong to, two unknown names | **7b** |
+
+  **103 of the 148 are Phase 8's subjects and are out of this phase's scope by
+  rule.** The 45 that are 7b's are the table's lower half.
+
+  Also still open, and NOT clean errors — they emit C and then fail:
+  1 fixture whose C does not compile (`projections`, an `inout` argument whose
+  place is not a C lvalue) and 3 whose output differs (`compound_index_eval`,
+  `match_payload_mut`, `int_overflow` — the last of these already differed at
+  Phase 7 and is the sweep's one pre-existing mismatch).
 
 - [ ] **Phase 7c — find the fixture that OOMs the box under tychoc1**
   - Scope: diagnosis only. Bisect the 752-fixture corpus OUTSIDE `tests/*.ty`
