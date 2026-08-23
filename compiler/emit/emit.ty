@@ -1345,8 +1345,22 @@ fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
         ast.Tuple(l, k):
             ecs := []string
             ets := []string
+            # Each element is emitted under the CORRESPONDING element of the
+            # wanted tuple type, so `return (Ok(3), "full")` tells the bare `Ok`
+            # which Result it belongs to. Only the signature writes that down.
+            swt := cs.want
+            wts := []string
+            if _is_tup(swt):
+                wts = _telems(&cs, swt)
+            ti := 0
             for x in k:
+                if ti < len(wts):
+                    cs.want = wts[ti]
+                else:
+                    cs.want = ""
+                ti += 1
                 xc, xt := _ex_scope(&cs, x)
+                cs.want = swt
                 if _place(x) and _heap(&cs, xt):
                     xc = _copy(&cs, xc, xt, "&_scope")
                 push(ecs, xc)
@@ -2566,7 +2580,17 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
         return ("exit((int)(" + c + "))", "void")
     if n == "push" and len(args) == 2:
         rc, rt := _target(&cs, args[0])
+        # The value is emitted under the target's ELEMENT type, so a bare
+        # `None`/`Ok` in `push(xs, None)` knows which Option/Result it belongs
+        # to. Without it the element type is only discoverable from the value,
+        # which a bare None does not carry.
+        swp := cs.want
+        if _is_arr(rt):
+            cs.want = _elem(rt)
+        elif _is_soa(rt):
+            cs.want = _selem(&cs, rt)
         vc, vt := _ex_scope(&cs, args[1])
+        cs.want = swp
         if strings.starts_with(rt, "?A"):
             pi := strings.parse_int(rt[2:])
             rt = "[" + vt + "]"
