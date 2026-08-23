@@ -688,6 +688,27 @@ fn _unify(cs: inout C, t: ast.Ty, a: string, tps: [string], bs: inout [string]):
             if _is_soa(a):
                 _unify(&cs, es[0], _selem(&cs, a), tps, &bs)
             return
+        # A FUNCTION type. Without this arm `Plan($T)` holding
+        # `[fn($T) -> $T]` cannot bind $T from a `[fn(int) -> int]` argument:
+        # TArr recurses to the element, finds a fn, and stops. ast.TFn stores
+        # the params in order with the return type LAST (compiler/ast/ast.ty:22).
+        # `bounded[N]T` lowers to the dynamic array (Phase 7b), so its element
+        # unifies exactly as an array's does -- `Box($T)` with `xs: bounded[4]$T`.
+        ast.TBnd(nn, es):
+            if _is_arr(a):
+                _unify(&cs, es[0], _elem(a), tps, &bs)
+            return
+        ast.TFn(hr, es):
+            if _is_fn(a):
+                aps := _fps(&cs, a)
+                np := len(es)
+                if hr:
+                    np = np - 1
+                for fi := 0; fi < np and fi < len(aps); fi += 1:
+                    _unify(&cs, es[fi], aps[fi], tps, &bs)
+                if hr and np < len(es):
+                    _unify(&cs, es[np], _fret(&cs, a), tps, &bs)
+            return
         ast.TMap(es):
             if _is_map(a):
                 _unify(&cs, es[0], _mkey(&cs, a), tps, &bs)
