@@ -84,9 +84,10 @@ struct C:
     cur_ret: string
     loopdepth: int
     arena: string
+    oks: [string]
 
 fn _new() -> C:
-    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope")
+    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [])
 
 fn _bad(msg: string):
     die("tychoc1: " + msg)
@@ -236,6 +237,30 @@ fn _mval(cs: inout C, t: string) -> string:
 
 fn _mpfx(cs: inout C, t: string) -> string:
     return "tycho_mapM" + _tname(t)
+
+# A soa type is stamped out per ELEMENT STRUCT, keyed by the struct's type
+# string, and spelled "O~<index>". src/tychoc.c:13034 emits the same shape: one
+# growable arena buffer per field plus a shared len/cap.
+fn _is_soa(t: string) -> bool:
+    return strings.starts_with(t, "O~")
+
+fn _okind(cs: inout C, key: string) -> int:
+    for i := 0; i < len(cs.oks); i += 1:
+        if cs.oks[i] == key:
+            return i
+    push(cs.oks, key)
+    return len(cs.oks) - 1
+
+fn _soa_of(cs: inout C, st: string) -> string:
+    if not _is_struct(st):
+        _bad("a soa element must be a struct, not '" + st + "'")
+    return "O~" + str(_okind(&cs, st))
+
+fn _selem(cs: inout C, t: string) -> string:
+    return cs.oks[strings.parse_int(_tname(t))]
+
+fn _spfx(cs: inout C, t: string) -> string:
+    return "Soa" + _tname(t)
 
 # How a key is REPRESENTED in the entry table: a fieldless enum is stored as its
 # tag, so `keys()` has to rebuild the singleton (src/tychoc.c:12926).
@@ -409,7 +434,7 @@ fn _heap(cs: inout C, t: string) -> bool:
         return true
     if _is_fn(t):
         return true
-    if _is_arr(t) or _is_enum(t) or _is_map(t):
+    if _is_arr(t) or _is_enum(t) or _is_map(t) or _is_soa(t):
         return true
     if _is_struct(t):
         i := _sidx(&cs, _tname(t))
@@ -643,6 +668,10 @@ fn _unify(cs: inout C, t: ast.Ty, a: string, tps: [string], bs: inout [string]):
             if _is_arr(a):
                 _unify(&cs, es[0], _elem(a), tps, &bs)
             return
+        ast.TSoa(es):
+            if _is_soa(a):
+                _unify(&cs, es[0], _selem(&cs, a), tps, &bs)
+            return
         ast.TMap(es):
             if _is_map(a):
                 _unify(&cs, es[0], _mkey(&cs, a), tps, &bs)
@@ -769,6 +798,8 @@ fn _cty(cs: inout C, t: string) -> string:
         return "FnC" + _tname(t)
     if _is_map(t):
         return "TychoMapM" + _tname(t)
+    if _is_soa(t):
+        return "Soa" + _tname(t)
     if _is_arr(t):
         e := _elem(t)
         if e == "int":
@@ -855,7 +886,8 @@ fn _ty(cs: inout C, t: ast.Ty) -> string:
             for i := 0; i < nps; i += 1:
                 push(ps2, _ty(&cs, e[i]))
             return _fn_of(&cs, r2, ps2)
-        ast.TSoa(e): _bad("type:TSoa -- Phase 8")
+        ast.TSoa(e):
+            return _soa_of(&cs, _ty(&cs, e[0]))
         ast.TBnd(n, e):
             # `bounded[N]T` lowers to the dynamic array too. NOT covered by this:
             # the capacity trap on an over-cap push, which needs N carried in the
@@ -994,6 +1026,8 @@ fn _copy(cs: inout C, code: string, t: string, arena: string) -> string:
         return "tycho_copy_E_" + _tname(t) + "(" + arena + ", " + code + ")"
     if _is_map(t):
         return _mpfx(&cs, t) + "_copy(" + arena + ", " + code + ")"
+    if _is_soa(t):
+        return _spfx(&cs, t) + "_copy(" + arena + ", " + code + ")"
     if _is_struct(t) and _heap(&cs, t):
         return "tycho_copy_S_" + _tname(t) + "(" + arena + ", " + code + ")"
     if _is_tup(t) and _heap(&cs, t):
@@ -1029,6 +1063,8 @@ fn _tostr(cs: inout C, code: string, t: string) -> string:
         return "tycho_str_E_" + _tname(t) + "(" + cs.arena + ", " + code + ")"
     if _is_map(t):
         return "tycho_str_mapM" + _tname(t) + "(" + cs.arena + ", " + code + ")"
+    if _is_soa(t):
+        return "tycho_str_from_c(" + cs.arena + ", \"<soa [" + _tname(_selem(&cs, t)) + "]>\")"
     if _is_arr(t):
         e := _elem(t)
         if e == "int":
@@ -1071,6 +1107,8 @@ fn _eq(cs: inout C, a: string, b: string, t: string) -> string:
         return "tycho_eq_E_" + _tname(t) + "(" + a + ", " + b + ")"
     if _is_map(t):
         return _mpfx(&cs, t) + "_eq(" + a + ", " + b + ")"
+    if _is_soa(t):
+        return _spfx(&cs, t) + "_eq(" + a + ", " + b + ")"
     if _is_arr(t):
         return _apfx(&cs, _elem(t)) + "_eq(" + a + ", " + b + ")"
     return "(" + a + " == " + b + ")"
