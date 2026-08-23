@@ -1374,9 +1374,44 @@ self-built twice, the two emitted `.c` identical.
     `./tychoc`'s form, so `io.read_bytes` is not the site.
   - `ulimit -v` turns this into a clean diagnostic instead of a fourth killed
     session -- keep every `tychoc2` run capped.
-  - Next: find which allocation. A `with_cap` or `arena_new` handed a garbage
-    size is the shape; `_arr_defs`/`_soa_defs`/`_tup_defs` string building and
-    the `_fresh` counters are where to look first.
+  **The allocation is NAMED, by gdb on a `-g` build (`break tycho_oom`):**
+
+  ```
+  #1 block_get (cap=8385549048750239608)
+  #2 arena_alloc (a=..., n=8385549048750239608)
+  #3 tycho_str_alloc (n=8385549048750239592)
+  #4 tycho_str_copy (s=0x... "o_str(&_t, 1LL)); arena_free(&_t); }\n")
+  #5 h_emit__program (self.c:21635)
+  ```
+
+  The requested size decodes to ASCII, so the "length header" being read is
+  TEXT: the pointer is into the middle of a buffer with no valid header. The
+  statement is the extern-prototype loop this session added:
+
+  ```c
+  char *h_xnm = tycho_str_copy(&_scope,
+      ((tycho_arr_K20_get(((h_cs).f_fds), h_xi)).f_name));
+  ```
+
+  `cs.fds[xi].name` -- reading a struct out of a stamped array and taking its
+  string field -- yields a garbage pointer. K20 is the stamped kind for `[FD]`.
+
+  **Ruled out by probe, each compiled with tychoc1 and RUN:**
+  - string slicing (`s[a:b]`, sliced-and-concatenated in a loop): correct,
+    and identical to `./tychoc`'s answer;
+  - dedup through an `inout [string]` (lookup-then-push, called repeatedly):
+    correct, len=2 as it should be;
+  - the exact FD shape in isolation -- a 6-field struct with a string, three
+    arrays and a bool, pushed into an array, then `.name` read both directly
+    and through an `inout` parameter: correct;
+  - the aliasing theory (passing `cs.fds[xi].name` into a call that also
+    takes `&cs`): binding the name to a local first changes nothing, the
+    crash is on the BINDING line itself.
+
+  So the shape is fine in isolation and wrong at this site. Next: dump
+  `cs.fds.len` and the raw element bytes at that point, or compare the K20
+  element layout against FD's -- a stamped array whose element type does not
+  match what was pushed would produce exactly this.
   - Done when: the probe prints `OK len=134884`, and `tychoc2` compiles
     `hello.ty`.
   - Verify: the probe, then the full self-host chain — `tychoc1` emits its own

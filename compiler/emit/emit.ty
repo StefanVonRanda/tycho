@@ -4023,7 +4023,11 @@ fn program(pfx: [string], us: [ast.Unit]) -> string:
     # `extern double strx_parse_double(char *, tycho_int *);` -- the foreign
     # symbol's prototype, matching ./tychoc. An inout parameter is a pointer.
     for xi := 0; xi < len(cs.fds); xi += 1:
-        if not _isext(&cs, cs.fds[xi].name):
+        # The name is bound FIRST. Passing `cs.fds[xi].name` straight into a
+        # call that also takes `&cs` reads a field of the very value being
+        # borrowed, and the argument came out as a garbage pointer.
+        xnm := cs.fds[xi].name
+        if not _isext(&cs, xnm):
             continue
         xps := ""
         for xj := 0; xj < len(cs.fds[xi].ptypes); xj += 1:
