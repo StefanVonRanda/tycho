@@ -1418,6 +1418,42 @@ self-built twice, the two emitted `.c` identical.
     source, `cc` builds it with the two shims, and the resulting `tychoc2`
     compiles a program whose output matches `./tychoc`'s.
 
+- [ ] **Phase 10b — the fixpoint needs deep-copy elision, and that is MEASURED**
+  Self-hosting works for a small program (`0f53b055`): tychoc1 compiles its
+  own source, the C builds into tychoc2 with the two corelib shims, and
+  tychoc2 compiles `fn main(): print(str(1))` into a binary printing `1`,
+  matching `./tychoc`'s.
+
+  **Gen-2 does not exist, and the reason is not a bug.** Measured 2026-08-24
+  on the same input (`compiler/main.ty`), same machine:
+
+  | compiler | built by | peak memory for the same compile |
+  |---|---|---|
+  | `tychoc1` | `./tychoc` | **under 300 MB** (succeeds at `ulimit -v 300000`) |
+  | `tychoc2` | `tychoc1`  | **over 7 GB** (OOMs at `ulimit -v 7000000`, ~100 s in) |
+
+  A **>23x blowup**, and it is the eight deep-copy-elision passes at
+  `src/tychoc.c:9350-13916` -- move-on-last-use, sink-argument adopt,
+  match-arm payload borrow, return-slot, return-only escape, accumulator
+  in-place append, construction-arg move, bounds-check elision. Phase 7's
+  brief deliberately said "correct unoptimised output only" and none were
+  ported. The compiler is string-concat-heavy, so without in-place append and
+  move-on-last-use its own memory goes quadratic.
+
+  So the fixpoint is blocked by a KNOWN, DELIBERATE omission rather than a
+  defect, and closing it means porting the elision passes -- starting with
+  accumulator in-place append and move-on-last-use, which are the two that
+  bear on `out = out + x`.
+
+  Not the cause, each measured: dropping the `_place` gate on all seven copy
+  sites changes nothing (OOM at 84 s instead of 100 s, sweep identical), and
+  under gdb -- which does not inherit the ulimit -- it runs past 200 s without
+  failing, so it is steady growth and not a runaway allocation.
+
+  - Done when: `tychoc2 compiler/main.ty --emit-c` completes, and its output
+    is byte-identical to `tychoc1`'s (`cmp self.c self2.c`).
+  - Verify: that `cmp`, plus a third generation to confirm it is stable.
+
 - [ ] **Phase 8d — concurrency codegen (the 8 remaining fixtures)**
   - `chan_param_recv`, `generic_channel`, `generic_enum_channel`,
     `generic_struct_instance_types`, `select_enum_match`,
