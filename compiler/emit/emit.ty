@@ -3953,6 +3953,10 @@ fn program(pfx: [string], us: [ast.Unit]) -> string:
         for f in us[i].fns:
             if len(f.typarams) > 0:
                 continue
+            # An extern has NO Tycho body; emitting one gives every extern a
+            # second, empty `h_<name>` definition beside the real C symbol.
+            if f.is_extern:
+                continue
             pc, bc := _fnbody(&cs, _fidx(&cs, f.name), f.body)
             protos = protos + pc
             fns = fns + bc

@@ -1352,9 +1352,31 @@ self-built twice, the two emitted `.c` identical.
     - passing extern arguments WITHOUT the arena copy (as `./tychoc` does)
       makes it worse: the probe then SEGFAULTS, exit 139. So the copy is not
       the fault and that change must not be reapplied on its own.
-  - Next: diff `./tychoc`'s and `./tychoc1`'s emitted `h_io__read_bytes` side
-    by side. Both are small; the divergence is inside that one function or in
-    `has_nul`/`or_return` around it.
+  - **RESOLVED 2026-08-24 (`2786196f`)**: the cause was the extern ABI for a
+    `bytes` return, found exactly by the diff this line proposed. The probe
+    prints `OK len=134884` now.
+
+  ### The second defect, behind the first: emit runs away in self-compiled code
+
+  `tychoc2` now builds, links, runs, and its whole FRONT END is correct --
+  `--dump-tokens`, `--parse`, `--resolve` and `--typecheck` all give right
+  answers on a two-line program. Only `--emit-c` fails, with a clean
+  `tycho: out of memory`.
+
+  **Narrowed, each measured:**
+  - It is a SINGLE ENORMOUS ALLOCATION, not a loop: **7 ms** to failure.
+  - It is not the runtime read -- it fails identically with `--runtime`
+    pointing at an 11-byte file, so the 134 KB read is not the allocation.
+  - It is therefore inside `emit.program` itself, on a two-line input.
+  - It is not the duplicate `h_<name>` extern stub: that is now removed
+    (an extern gets no Tycho body) and the OOM is unchanged.
+  - The emitted `iox_read_file` call in `self.c` is byte-correct and matches
+    `./tychoc`'s form, so `io.read_bytes` is not the site.
+  - `ulimit -v` turns this into a clean diagnostic instead of a fourth killed
+    session -- keep every `tychoc2` run capped.
+  - Next: find which allocation. A `with_cap` or `arena_new` handed a garbage
+    size is the shape; `_arr_defs`/`_soa_defs`/`_tup_defs` string building and
+    the `_fresh` counters are where to look first.
   - Done when: the probe prints `OK len=134884`, and `tychoc2` compiles
     `hello.ty`.
   - Verify: the probe, then the full self-host chain — `tychoc1` emits its own
