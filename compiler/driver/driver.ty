@@ -20,15 +20,22 @@ fn read_runtime(path: string) -> string:
         Err(e): die("tychoc1: cannot read runtime '" + path + "'")
     return ""
 
-fn compile_str(src: string, runtime: string) -> string:
-    toks, notes := lex.tokenize_all(src, false)
-    u := parse.unit(toks, notes)
-    return runtime + emit.unit(u)
+# The whole loaded program, not just the entry file. `types.load` already walks
+# the package graph -- corelib root, per-file imports, post-order, cycle
+# detection -- so emit is handed every file with the package prefix the loader
+# gave it, and mangles against that (src/tychoc.c@pkg_prefix_for).
+fn compile_str(p: types.Program, runtime: string) -> string:
+    pfx := []string
+    us := []ast.Unit
+    for f in p.files:
+        push(pfx, f.prefix)
+        push(us, f.unit)
+    return runtime + emit.program(pfx, us)
 
 # Refuse what the front end refuses, before emitting anything. Until Phase 7d
 # this ran lex -> parse -> emit and never called resolve or check, so 120 of the
 # 337 reject fixtures compiled to C in silence while `--typecheck` refused them.
-fn check_or_die(src_path: string, argv0: string):
+fn check_or_die(src_path: string, argv0: string) -> types.Program:
     p := types.load(src_path, argv0)
     rs := types.resolve(p)
     if len(rs.errs) > 0:
@@ -45,14 +52,11 @@ fn check_or_die(src_path: string, argv0: string):
             out2 = out2 + e + "\n"
         eprint(out2)
         exit(1)
+    return p
 
 fn compile(src_path: string, runtime_path: string, out_c: string, argv0: string):
-    check_or_die(src_path, argv0)
-    src := ""
-    match io.read_text(src_path):
-        Ok(s): src = s
-        Err(e): die("tychoc1: cannot read '" + src_path + "'")
-    c := compile_str(src, read_runtime(runtime_path))
+    p := check_or_die(src_path, argv0)
+    c := compile_str(p, read_runtime(runtime_path))
     if not io.write(out_c, c):
         die("tychoc1: cannot write '" + out_c + "'")
 

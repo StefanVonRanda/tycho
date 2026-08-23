@@ -1095,13 +1095,45 @@ self-built twice, the two emitted `.c` identical.
   deliberately meaningless. A runaway is the only outcome that fails the sweep,
   because it is the only one that can take the machine down.
 
-- [ ] **Phase 7e — no `tests/pkg/` fixture compiles (0 of 23)**
-  - Found by Phase 7d's widening; invisible to every sweep before it.
-  - Scope: multi-file packages. `tests/pkg/<name>/main.ty` plus siblings, entry
-    resolved the way `tests/run.sh:189-201` does.
-  - Done when: the sweep's `tests/pkg` line shows a non-zero compile and a
-    stated MATCH.
-  - Verify: `sh scripts/tychoc1_sweep.sh`, that line before and after.
+- [ ] **Phase 7e — multi-package emit: 16 of 23 `tests/pkg/` fixtures**
+
+  **PARTIAL, committed unticked.** `sh scripts/tychoc1_sweep.sh`:
+
+  | line | before | after |
+  |---|---|---|
+  | `tests` | compile=201 MATCH=199 | compile=201 MATCH=199 |
+  | `examples` | compile=23 MATCH=22 | compile=23 MATCH=22 |
+  | `tests/pkg` | compile=0 clean-error=23 MATCH=0 | compile=16 clean-error=7 **MATCH=16** |
+  | `reject` | refused=336/337 | refused=336/337 |
+  | `reject/pkg` | refused=17/17 | refused=15/17 — see Phase 7g |
+
+  `driver.compile` hands `emit.program` every file `types.load` walked, with
+  the loader's own package prefix, and emit mangles `<pkg>__name` the way
+  `src/tychoc.c@pkg_prefix_for` does. Collection is two passes so a name
+  declared in a LATER file of the same package still resolves. A variant name
+  is package-SCOPED (`tests/pkg/variant_shadow`), a qualified member
+  (`levels.DEBUG`, `geom.Red`) resolves as that package's const or variant, and
+  UFCS follows its receiver's package. Diagnostics are untouched and still
+  print the unmangled form — `make parse-check` leg4b/leg14 green.
+
+  The 7 that remain are NOT package work: fn values / `TFn` (`fnval`,
+  `fnvalcross`, `fnvalparen`, `generic_collections`), the `u8` primitive
+  (`sized_pkg`), `extern` functions (`corelib_variant_shadow`, `vendor_deps`).
+
+  - Done when: all 23 compile and match.
+  - Verify: `sh scripts/tychoc1_sweep.sh`, the `tests/pkg` line.
+  - Negative control, observed: `_pfx` forced to `""` drops `tests/pkg` to
+    compile=1 MATCH=1 and `tests` MATCH to 198; reverting restores 16/16/199.
+
+- [ ] **Phase 7g — the checker accepts a generic body it should refuse**
+  - `tests/reject/pkg/generic_inst_callsite` and `generic_inst_srcfile` both
+    report `TYPECHECK-OK files=2`; `./tychoc` refuses each at the `x + x` in
+    the sibling file, with a note naming the instantiating call. They scored as
+    "refused" until Phase 7e only because emit parsed the entry file alone and
+    died on an unknown call — a refusal for the wrong reason.
+  - Scope: `compiler/types/`. Re-check a generic body against each binding.
+  - Done when: `reject/pkg` is back to refused=17/17.
+  - Verify: `sh scripts/tychoc1_sweep.sh`, the `reject/pkg` line.
 
 - [ ] **Phase 7f — one reject fixture still compiles, and 17 abort fixtures do**
   - `reject accepted=1` of 337, and `abort refused=2 accepted=17`. The abort

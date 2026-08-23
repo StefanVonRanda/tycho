@@ -64,6 +64,16 @@ struct C:
     iname: [string]
     iarg: [string]
     pendk: [int]
+    fpfx: [string]
+    ala: [string]
+    alp: [string]
+    cf: int
+    gsf: [int]
+    gef: [int]
+    gff: [int]
+    ntt: [ast.Ty]
+    ntf: [int]
+    edp: [string]
     want: string
     tmp: int
     cur_ret: string
@@ -71,10 +81,46 @@ struct C:
     arena: string
 
 fn _new() -> C:
-    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], "", 0, "void", 0, "&_scope")
+    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope")
 
 fn _bad(msg: string):
     die("tychoc1: " + msg)
+
+# --- package mangling -------------------------------------------------------
+# src/tychoc.c@pkg_prefix_for: a name declared in package `geom` is emitted as
+# `geom__name`; the ENTRY package carries no prefix. A qualifier resolves
+# through the alias table to the package's real name (an aliased import binds
+# the alias to the path's last component). Diagnostics keep the source spelling
+# -- nothing here is ever printed.
+
+fn _pfx(cs: inout C) -> string:
+    if cs.cf < 0 or cs.cf >= len(cs.fpfx):
+        return ""
+    return cs.fpfx[cs.cf]
+
+fn _qpfx(cs: inout C, q: string) -> string:
+    for i := 0; i < len(cs.ala); i += 1:
+        if cs.ala[i] == q:
+            return cs.alp[i] + "__"
+    return q + "__"
+
+fn _pkg_base(path: string) -> string:
+    s := path
+    if len(s) > 5 and s[0:5] == "core:":
+        s = s[5:]
+    cut := -1
+    for i := 0; i < len(s); i += 1:
+        if s[i] == 47:
+            cut = i
+    if cut < 0:
+        return s
+    return s[cut + 1:]
+
+fn _ispkg(cs: inout C, q: string) -> bool:
+    for i := 0; i < len(cs.ala); i += 1:
+        if cs.ala[i] == q:
+            return true
+    return false
 
 # --- type strings -----------------------------------------------------------
 # "int" "float" "bool" "string" "char" "void"; "[T]"; "S~Name"; "E~Name".
@@ -98,6 +144,11 @@ fn _tname(t: string) -> string:
 # underlying type, so `_ty` resolves the name away and nothing downstream ever
 # sees one.
 fn _ntidx(cs: inout C, n: string) -> int:
+    p := _pfx(&cs)
+    if len(p) > 0:
+        for i := 0; i < len(cs.ntn); i += 1:
+            if cs.ntn[i] == p + n:
+                return i
     for i := 0; i < len(cs.ntn); i += 1:
         if cs.ntn[i] == n:
             return i
@@ -294,6 +345,7 @@ fn _opt_of(cs: inout C, t: string) -> string:
         push(ps, t)
         push(vs, VD("Some", ps))
         push(cs.eds, ED(nm, ["None", "Some"], vs))
+        push(cs.edp, "")
     return "E~" + nm
 
 fn _res_of(cs: inout C, t: string, e: string) -> string:
@@ -308,6 +360,7 @@ fn _res_of(cs: inout C, t: string, e: string) -> string:
         push(vs, VD("Ok", ok))
         push(vs, VD("Err", er))
         push(cs.eds, ED(nm, ["Ok", "Err"], vs))
+        push(cs.edp, "")
     return "E~" + nm
 
 # `want` is the type an expression is being built FOR. `None` and `Err(e)` carry
@@ -344,18 +397,44 @@ fn _heap(cs: inout C, t: string) -> bool:
     return false
 
 fn _sidx(cs: inout C, n: string) -> int:
+    p := _pfx(&cs)
+    if len(p) > 0:
+        for i := 0; i < len(cs.sds); i += 1:
+            if cs.sds[i].name == p + n:
+                return i
     for i := 0; i < len(cs.sds); i += 1:
         if cs.sds[i].name == n:
             return i
     return -1
 
 fn _eidx(cs: inout C, n: string) -> int:
+    p := _pfx(&cs)
+    if len(p) > 0:
+        for i := 0; i < len(cs.eds); i += 1:
+            if cs.eds[i].name == p + n:
+                return i
     for i := 0; i < len(cs.eds); i += 1:
         if cs.eds[i].name == n:
             return i
     return -1
 
+fn _cidx(cs: inout C, n: string) -> int:
+    p := _pfx(&cs)
+    if len(p) > 0:
+        for i := 0; i < len(cs.cnames); i += 1:
+            if cs.cnames[i] == p + n:
+                return i
+    for i := 0; i < len(cs.cnames); i += 1:
+        if cs.cnames[i] == n:
+            return i
+    return -1
+
 fn _fidx(cs: inout C, n: string) -> int:
+    p := _pfx(&cs)
+    if len(p) > 0:
+        for i := 0; i < len(cs.fds); i += 1:
+            if cs.fds[i].name == p + n:
+                return i
     for i := 0; i < len(cs.fds); i += 1:
         if cs.fds[i].name == n:
             return i
@@ -386,18 +465,33 @@ fn _apfx(cs: inout C, elem: string) -> string:
 # after, so a nested instantiation sees only its own parameters.
 
 fn _gsidx(cs: inout C, n: string) -> int:
+    p := _pfx(&cs)
+    if len(p) > 0:
+        for i := 0; i < len(cs.gs); i += 1:
+            if cs.gs[i].name == p + n:
+                return i
     for i := 0; i < len(cs.gs); i += 1:
         if cs.gs[i].name == n:
             return i
     return -1
 
 fn _geidx(cs: inout C, n: string) -> int:
+    p := _pfx(&cs)
+    if len(p) > 0:
+        for i := 0; i < len(cs.ge); i += 1:
+            if cs.ge[i].name == p + n:
+                return i
     for i := 0; i < len(cs.ge); i += 1:
         if cs.ge[i].name == n:
             return i
     return -1
 
 fn _gfidx(cs: inout C, n: string) -> int:
+    p := _pfx(&cs)
+    if len(p) > 0:
+        for i := 0; i < len(cs.gf); i += 1:
+            if cs.gf[i].name == p + n:
+                return i
     for i := 0; i < len(cs.gf); i += 1:
         if cs.gf[i].name == n:
             return i
@@ -438,13 +532,14 @@ fn _inst_cap(n: int):
         _bad("too many generic instantiations (> 1024) -- a recursive generic at a growing type?")
 
 fn _inst_struct(cs: inout C, n: string, targs: [string]) -> string:
-    key := "S|" + n + "|" + _tjoin(targs)
+    gi := _gsidx(&cs, n)
+    gn := cs.gs[gi].name
+    key := "S|" + gn + "|" + _tjoin(targs)
     ex := _iidx(&cs, key)
     if ex >= 0:
         return "S~" + cs.iname[ex]
     _inst_cap(len(cs.ikey))
-    gi := _gsidx(&cs, n)
-    mang := n + "__" + str(len(cs.ikey))
+    mang := gn + "__" + str(len(cs.ikey))
     push(cs.ikey, key)
     push(cs.iname, mang)
     push(cs.iarg, _tjoin(targs))
@@ -452,33 +547,41 @@ fn _inst_struct(cs: inout C, n: string, targs: [string]) -> string:
     push(cs.sds, SD(mang, [], []))
     si := len(cs.sds) - 1
     m := _bind(&cs, cs.gs[gi].typarams, targs)
+    save := cs.cf
+    cs.cf = cs.gsf[gi]
     for f in cs.gs[gi].fields:
         push(cs.sds[si].fnames, f.name)
         push(cs.sds[si].ftypes, _ty(&cs, f.ty))
+    cs.cf = save
     _unbind(&cs, m)
     return "S~" + mang
 
 fn _inst_enum(cs: inout C, n: string, targs: [string]) -> string:
-    key := "E|" + n + "|" + _tjoin(targs)
+    gi := _geidx(&cs, n)
+    gn := cs.ge[gi].name
+    key := "E|" + gn + "|" + _tjoin(targs)
     ex := _iidx(&cs, key)
     if ex >= 0:
         return "E~" + cs.iname[ex]
     _inst_cap(len(cs.ikey))
-    gi := _geidx(&cs, n)
-    mang := n + "__" + str(len(cs.ikey))
+    mang := gn + "__" + str(len(cs.ikey))
     push(cs.ikey, key)
     push(cs.iname, mang)
     push(cs.iarg, _tjoin(targs))
     push(cs.pendk, -1)
     push(cs.eds, ED(mang, [], []))
+    push(cs.edp, cs.fpfx[cs.gef[gi]])
     ei := len(cs.eds) - 1
     m := _bind(&cs, cs.ge[gi].typarams, targs)
+    save := cs.cf
+    cs.cf = cs.gef[gi]
     for v in cs.ge[gi].variants:
         push(cs.eds[ei].vnames, v.name)
         ps := []string
         for pt in v.payload:
             push(ps, _ty(&cs, pt))
         push(cs.eds[ei].vpay, VD(v.name, ps))
+    cs.cf = save
     _unbind(&cs, m)
     return "E~" + mang
 
@@ -560,19 +663,22 @@ fn _blank(n: int) -> [string]:
     return out
 
 fn _inst_fn(cs: inout C, n: string, targs: [string]) -> int:
-    key := "F|" + n + "|" + _tjoin(targs)
+    gi := _gfidx(&cs, n)
+    gn := cs.gf[gi].name
+    key := "F|" + gn + "|" + _tjoin(targs)
     ex := _iidx(&cs, key)
     if ex >= 0:
         return _fidx(&cs, cs.iname[ex])
     _inst_cap(len(cs.ikey))
-    gi := _gfidx(&cs, n)
-    mang := n + "__" + str(len(cs.ikey))
+    mang := gn + "__" + str(len(cs.ikey))
     push(cs.ikey, key)
     push(cs.iname, mang)
     push(cs.iarg, _tjoin(targs))
     push(cs.pendk, -1)
     ii := len(cs.ikey) - 1
     m := _bind(&cs, cs.gf[gi].typarams, targs)
+    save := cs.cf
+    cs.cf = cs.gff[gi]
     pn := []string
     pt := []string
     pio := []bool
@@ -588,6 +694,7 @@ fn _inst_fn(cs: inout C, n: string, targs: [string]) -> int:
         push(pt, one)
         push(pio, prm.is_inout)
     rt := _tyo(&cs, cs.gf[gi].ret)
+    cs.cf = save
     _unbind(&cs, m)
     push(cs.fds, FD(mang, pn, pt, pio, pv, rt))
     cs.pendk[ii] = len(cs.fds) - 1
@@ -632,14 +739,17 @@ fn _ty(cs: inout C, t: ast.Ty) -> string:
             if p == "int" or p == "float" or p == "bool" or p == "string" or p == "char" or p == "void":
                 return p
             _bad("unsupported primitive type '" + p + "' -- Phase 8")
-        ast.TName(q, n, targs):
+        ast.TName(q, n0, targs):
+            n := n0
+            if len(q) > 0:
+                n = _qpfx(&cs, q) + n0
             if len(q) == 0 and len(targs) == 0 and n == "void":
                 return "void"
             if len(q) == 0 and n == "Option" and len(targs) == 1:
                 return _opt_of(&cs, _ty(&cs, targs[0]))
             if len(q) == 0 and n == "Result" and len(targs) == 2:
                 return _res_of(&cs, _ty(&cs, targs[0]), _ty(&cs, targs[1]))
-            if len(q) == 0 and len(targs) > 0:
+            if len(targs) > 0:
                 as2 := []string
                 for a in targs:
                     push(as2, _ty(&cs, a))
@@ -647,8 +757,7 @@ fn _ty(cs: inout C, t: ast.Ty) -> string:
                     return _inst_struct(&cs, n, as2)
                 if _geidx(&cs, n) >= 0:
                     return _inst_enum(&cs, n, as2)
-            if len(q) > 0 or len(targs) > 0:
-                _bad("qualified or generic type '" + n + "' -- Phase 8")
+                _bad("generic type '" + n0 + "' -- Phase 8")
             tv := _tpget(&cs, n)
             if len(tv) > 0:
                 return tv
@@ -657,11 +766,13 @@ fn _ty(cs: inout C, t: ast.Ty) -> string:
                 if len(cs.ntu[ni]) == 0:
                     _bad("newtype '" + n + "' used before its underlying type resolves")
                 return cs.ntu[ni]
-            if _sidx(&cs, n) >= 0:
-                return "S~" + n
-            if _eidx(&cs, n) >= 0:
-                return "E~" + n
-            _bad("unknown type '" + n + "'")
+            si0 := _sidx(&cs, n)
+            if si0 >= 0:
+                return "S~" + cs.sds[si0].name
+            ei0 := _eidx(&cs, n)
+            if ei0 >= 0:
+                return "E~" + cs.eds[ei0].name
+            _bad("unknown type '" + n0 + "'")
         ast.TArr(es):
             return "[" + _ty(&cs, es[0]) + "]"
         ast.TParam(n):
@@ -690,9 +801,10 @@ fn _ty_ready(cs: inout C, t: ast.Ty) -> bool:
     match t:
         ast.TPrim(p): return true
         ast.TParam(n): return len(_tpget(&cs, n)) > 0
-        ast.TName(q, n, targs):
+        ast.TName(q, n0, targs):
+            n := n0
             if len(q) > 0:
-                return false
+                n = _qpfx(&cs, q) + n0
             if len(targs) > 0:
                 for a in targs:
                     if not _ty_ready(&cs, a):
@@ -933,14 +1045,17 @@ fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
             t := _vtype(&cs, n)
             if len(t) > 0:
                 return (_vcname(&cs, n), t)
-            for i := 0; i < len(cs.cnames); i += 1:
-                if cs.cnames[i] == n:
-                    return (cs.ccode[i], cs.ctypes[i])
+            ci := _cidx(&cs, n)
+            if ci >= 0:
+                return (cs.ccode[ci], cs.ctypes[ci])
             ei := _bare_variant(&cs, n)
             if ei >= 0:
                 return _variant(&cs, ei, n, [])
             _bad("unknown name '" + n + "'")
         ast.Field(l, r, f):
+            pm, pt2 := _pkgmember(&cs, r[0], f)
+            if len(pt2) > 0:
+                return (pm, pt2)
             rc, rt := _ex(&cs, r[0])
             if not _is_struct(rt):
                 _bad("field '" + f + "' on non-struct")
@@ -1112,6 +1227,50 @@ fn _tag(cs: inout C, ei: int, vn: string) -> int:
     _bad("enum " + cs.eds[ei].name + " has no variant '" + vn + "'")
     return 0
 
+# `levels.DEBUG` and `geom.Red` parse as a FIELD on a name. When that name is an
+# imported package and not a local, the member is that package's const or its
+# bare variant. Returns ("", "") when the receiver is an ordinary value.
+# UFCS across a package boundary: `c.describe()` on a `geom.Circle` reaches
+# `geom__describe`, because a method-style call follows its RECEIVER's package
+# when the calling package has no such function.
+fn _ufcs_name(cs: inout C, n: string, rt: string) -> string:
+    if _fidx(&cs, n) >= 0:
+        return n
+    tn := ""
+    if _is_struct(rt) or _is_enum(rt):
+        tn = _tname(rt)
+    if len(tn) == 0:
+        return n
+    best := ""
+    for i := 0; i < len(cs.fpfx); i += 1:
+        pf := cs.fpfx[i]
+        if len(pf) == 0 or len(pf) > len(tn):
+            continue
+        if tn[0:len(pf)] != pf or len(pf) <= len(best):
+            continue
+        if _fidx(&cs, pf + n) >= 0:
+            best = pf
+    if len(best) == 0:
+        return n
+    return best + n
+
+fn _pkgmember(cs: inout C, r: ast.Expr, f: string) -> (string, string):
+    q := ""
+    match r:
+        ast.Name(l, nm): q = nm
+        _: q = ""
+    if len(q) == 0 or len(_vtype(&cs, q)) > 0 or not _ispkg(&cs, q):
+        return ("", "")
+    pf := _qpfx(&cs, q)
+    for i := 0; i < len(cs.cnames); i += 1:
+        if cs.cnames[i] == pf + f:
+            return (cs.ccode[i], cs.ctypes[i])
+    ei := _qvariant(&cs, pf, f)
+    if ei >= 0:
+        return _variant(&cs, ei, f, []ast.Expr)
+    _bad("unknown package member '" + q + "." + f + "'")
+    return ("", "")
+
 fn _bare_variant(cs: inout C, n: string) -> int:
     if _is_enum(cs.want):
         w := _eidx(&cs, _tname(cs.want))
@@ -1119,7 +1278,15 @@ fn _bare_variant(cs: inout C, n: string) -> int:
             for v in cs.eds[w].vnames:
                 if v == n:
                     return w
+    return _qvariant(&cs, _pfx(&cs), n)
+
+# A variant name is PACKAGE-scoped: `EmptyInput` in main is a different variant
+# from a sibling package's, even spelt the same (tests/pkg/variant_shadow). So
+# the search is confined to the enums declared with this prefix.
+fn _qvariant(cs: inout C, pfx: string, n: string) -> int:
     for i := 0; i < len(cs.eds); i += 1:
+        if cs.edp[i] != pfx:
+            continue
         if _is_gen(cs.eds[i].name) or _is_inst(&cs, cs.eds[i].name):
             continue
         for v in cs.eds[i].vnames:
@@ -1347,7 +1514,12 @@ fn _call(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], args: [ast.Ex
             push(ua, ast.Name(l, q))
             for a in args:
                 push(ua, a)
-            return _call(&cs, l, "", n, tas, ua)
+            return _call(&cs, l, "", _ufcs_name(&cs, n, qt), tas, ua)
+        if _ispkg(&cs, q):
+            qv := _qvariant(&cs, _qpfx(&cs, q), n)
+            if qv >= 0:
+                return _variant(&cs, qv, n, args)
+            return _call(&cs, l, "", _qpfx(&cs, q) + n, tas, args)
         _bad("package-qualified call '" + q + "." + n + "' -- Phase 8")
     ta := []string
     for t in tas:
@@ -1412,10 +1584,11 @@ fn _call(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], args: [ast.Ex
         return _variant(&cs, _eidx(&cs, _tname(gv)), n, args)
     si := _sidx(&cs, n)
     if si >= 0:
+        sn := cs.sds[si].name
         args = _reorder(&cs, cs.sds[si].fnames, args, n)
         if len(args) != len(cs.sds[si].ftypes):
             _bad("struct " + n + " takes " + str(len(cs.sds[si].ftypes)) + " field(s)")
-        out := "((S_" + n + "){ "
+        out := "((S_" + sn + "){ "
         for i := 0; i < len(args); i += 1:
             ft := cs.sds[si].ftypes[i]
             sw := cs.want
@@ -1427,7 +1600,7 @@ fn _call(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], args: [ast.Ex
             if i > 0:
                 out = out + ", "
             out = out + ac
-        return (out + " })", "S~" + n)
+        return (out + " })", "S~" + sn)
     if len(tas) > 0:
         _bad("explicit type arguments -- Phase 8")
     fi := _fidx(&cs, n)
@@ -1440,7 +1613,7 @@ fn _call(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], args: [ast.Ex
         else:
             if len(args) != np:
                 _bad("'" + n + "' takes " + str(np) + " argument(s)")
-        out2 := "h_" + n + "(" + cs.arena
+        out2 := "h_" + cs.fds[fi].name + "(" + cs.arena
         for i := 0; i < np; i += 1:
             pt := cs.fds[fi].ptypes[i]
             if cs.fds[fi].pvar and i == np - 1:
@@ -2054,9 +2227,9 @@ fn _trim_nl(s: string) -> string:
 # already folded to one literal by the time it reaches here.
 fn _patv(cs: inout C, kind: string, v: int, nm: string) -> string:
     if kind == "name":
-        for i := 0; i < len(cs.cnames); i += 1:
-            if cs.cnames[i] == nm:
-                return cs.ccode[i]
+        ci := _cidx(&cs, nm)
+        if ci >= 0:
+            return cs.ccode[ci]
         t := _vtype(&cs, nm)
         if len(t) > 0:
             return _vcname(&cs, nm)
@@ -2138,29 +2311,57 @@ fn _match(cs: inout C, subj: ast.Expr, arms: [ast.Arm], ind: string) -> string:
 
 # --- declaration collection -------------------------------------------------
 
-fn _collect(cs: inout C, u: ast.Unit):
+# Two passes, because a package's files are collected in one go and a name may
+# be declared in a LATER file of the same package -- src/tychoc.c merges every
+# file's declarations before it resolves any of them. Pass 1 registers the
+# names (already package-mangled); pass 2 resolves the types those names carry.
+
+fn _collect1(cs: inout C, u: ast.Unit):
+    p := _pfx(&cs)
     for sd in u.structs:
         if len(sd.typarams) > 0:
-            push(cs.gs, sd)
+            push(cs.gs, ast.StructD(p + sd.name, sd.typarams, sd.fields, sd.line))
+            push(cs.gsf, cs.cf)
         else:
-            push(cs.sds, SD(sd.name, [], []))
+            push(cs.sds, SD(p + sd.name, [], []))
     for ed in u.enums:
         if len(ed.typarams) > 0:
-            push(cs.ge, ed)
+            push(cs.ge, ast.EnumD(p + ed.name, ed.typarams, ed.variants, ed.line))
+            push(cs.gef, cs.cf)
         else:
-            push(cs.eds, ED(ed.name, [], []))
+            push(cs.eds, ED(p + ed.name, [], []))
+            push(cs.edp, p)
     for nt in u.newtypes:
-        push(cs.ntn, nt.name)
+        push(cs.ntn, p + nt.name)
         push(cs.ntu, "")
-    # A newtype over a LATER newtype is legal, so resolve only the ones whose
-    # every named part is already known and repeat until nothing moves.
-    for pas := 0; pas <= len(u.newtypes); pas += 1:
-        for i := 0; i < len(u.newtypes); i += 1:
-            if len(cs.ntu[i]) == 0 and _ty_ready(&cs, u.newtypes[i].under):
-                cs.ntu[i] = _ty(&cs, u.newtypes[i].under)
-    for i := 0; i < len(u.newtypes); i += 1:
+        push(cs.ntt, nt.under)
+        push(cs.ntf, cs.cf)
+    for f in u.fns:
+        if len(f.typarams) > 0:
+            push(cs.gf, ast.Fn(p + f.name, f.params, f.ret, f.typarams, f.wheres,
+                f.body, f.is_extern, f.lib, f.dnote, f.line))
+            push(cs.gff, cs.cf)
+
+# A newtype over a LATER newtype is legal -- and, across packages, over one
+# declared in a file collected earlier -- so resolve only the ones whose every
+# named part is already known and repeat until nothing moves. Each is resolved
+# with its OWN file current, which is what makes an unqualified name in it
+# resolve against its own package.
+fn _collect_nt(cs: inout C):
+    save := cs.cf
+    for pas := 0; pas <= len(cs.ntn); pas += 1:
+        for i := 0; i < len(cs.ntn); i += 1:
+            cs.cf = cs.ntf[i]
+            if len(cs.ntu[i]) == 0 and _ty_ready(&cs, cs.ntt[i]):
+                cs.ntu[i] = _ty(&cs, cs.ntt[i])
+    for i := 0; i < len(cs.ntn); i += 1:
+        cs.cf = cs.ntf[i]
         if len(cs.ntu[i]) == 0:
-            cs.ntu[i] = _ty(&cs, u.newtypes[i].under)
+            cs.ntu[i] = _ty(&cs, cs.ntt[i])
+    cs.cf = save
+
+fn _collect2(cs: inout C, u: ast.Unit):
+    p := _pfx(&cs)
     for i := 0; i < len(u.structs); i += 1:
         if len(u.structs[i].typarams) > 0:
             continue
@@ -2175,12 +2376,11 @@ fn _collect(cs: inout C, u: ast.Unit):
         for v in u.enums[i].variants:
             push(cs.eds[ei].vnames, v.name)
             ps := []string
-            for p in v.payload:
-                push(ps, _ty(&cs, p))
+            for pt2 in v.payload:
+                push(ps, _ty(&cs, pt2))
             push(cs.eds[ei].vpay, VD(v.name, ps))
     for f in u.fns:
         if len(f.typarams) > 0:
-            push(cs.gf, f)
             continue
         if f.is_extern:
             _bad("extern function '" + f.name + "' -- Phase 8")
@@ -2188,20 +2388,20 @@ fn _collect(cs: inout C, u: ast.Unit):
         pt := []string
         pio := []bool
         pv := false
-        for p in f.params:
-            if len(p.ty) == 0:
+        for pp in f.params:
+            if len(pp.ty) == 0:
                 _bad("untyped parameter on '" + f.name + "'")
-            one := _ty(&cs, p.ty[0])
-            if p.is_variadic:
+            one := _ty(&cs, pp.ty[0])
+            if pp.is_variadic:
                 pv = true
                 one = "[" + one + "]"
-            push(pn, p.name)
+            push(pn, pp.name)
             push(pt, one)
-            push(pio, p.is_inout)
-        push(cs.fds, FD(f.name, pn, pt, pio, pv, _tyo(&cs, f.ret)))
+            push(pio, pp.is_inout)
+        push(cs.fds, FD(p + f.name, pn, pt, pio, pv, _tyo(&cs, f.ret)))
     for c in u.consts:
         cc, ct := _ex(&cs, c.value)
-        push(cs.cnames, c.name)
+        push(cs.cnames, p + c.name)
         push(cs.ctypes, ct)
         push(cs.ccode, cc)
 
@@ -2700,24 +2900,45 @@ fn _fnbody(cs: inout C, fi: int, body: [ast.Stmt]) -> (string, string):
 
 # --- the unit ---------------------------------------------------------------
 
-fn unit(u: ast.Unit) -> string:
+# `pfx[i]` is file i's package prefix -- "" for the ENTRY package, `<pkg>__`
+# for every other, exactly as src/tychoc.c@pkg_prefix_for spells it. The files
+# arrive in the loader's post-order, so a package's dependencies are collected
+# before it is.
+fn program(pfx: [string], us: [ast.Unit]) -> string:
     cs := _new()
-    if len(u.handles) > 0 or len(u.subscripts) > 0:
-        _bad("handle/subscript declarations -- Phase 8")
-    if len(u.imports) > 0:
-        _bad("imports -- Phase 8")
-    _collect(&cs, u)
+    for x in pfx:
+        push(cs.fpfx, x)
+    for u0 in us:
+        if len(u0.handles) > 0 or len(u0.subscripts) > 0:
+            _bad("handle/subscript declarations -- Phase 8")
+        for im in u0.imports:
+            b := _pkg_base(im.path)
+            push(cs.ala, b)
+            push(cs.alp, b)
+            if len(im.alias) > 0:
+                push(cs.ala, im.alias)
+                push(cs.alp, b)
+    for i := 0; i < len(us); i += 1:
+        cs.cf = i
+        _collect1(&cs, us[i])
+    _collect_nt(&cs)
+    for i := 0; i < len(us); i += 1:
+        cs.cf = i
+        _collect2(&cs, us[i])
+    cs.cf = -1
     if _fidx(&cs, "main") < 0:
         _bad("no 'main' procedure")
 
     fns := ""
     protos := ""
-    for f in u.fns:
-        if len(f.typarams) > 0:
-            continue
-        pc, bc := _fnbody(&cs, _fidx(&cs, f.name), f.body)
-        protos = protos + pc
-        fns = fns + bc
+    for i := 0; i < len(us); i += 1:
+        cs.cf = i
+        for f in us[i].fns:
+            if len(f.typarams) > 0:
+                continue
+            pc, bc := _fnbody(&cs, _fidx(&cs, f.name), f.body)
+            protos = protos + pc
+            fns = fns + bc
     # Stage 2: every generic instance discovered while emitting -- and every one
     # discovered while emitting THOSE -- gets its own body. The registry only
     # ever grows at the end, so a forward scan reaches the whole closure.
@@ -2732,6 +2953,7 @@ fn unit(u: ast.Unit) -> string:
         for q := 2; q < len(parts); q += 1:
             push(tg, parts[q])
         mb := _bind(&cs, cs.gf[gi].typarams, tg)
+        cs.cf = cs.gff[gi]
         pc2, bc2 := _fnbody(&cs, fj, cs.gf[gi].body)
         _unbind(&cs, mb)
         protos = protos + pc2
