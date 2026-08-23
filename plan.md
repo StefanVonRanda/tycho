@@ -762,7 +762,7 @@ self-built twice, the two emitted `.c` identical.
   `python3 scripts/check_citations.py` ok.
 
 
-- [ ] **Phase 6b — `types/`: generics, newtypes, affine, `where`, `bounded`**
+- [x] **Phase 6b — `types/`: generics, newtypes, affine, `where`, `bounded`**
   - Scope: `compiler/types/`. Generic inference and monomorphisation, explicit
     type arguments, the five closed `where` predicates, newtype distinctness
     across a package boundary, the affine rules for handle/task/channel, and
@@ -775,6 +775,144 @@ self-built twice, the two emitted `.c` identical.
     same as a correct one on a reject corpus. `tools/tycho-ledger/run.sh` and
     `tools/tycho-fh/run.sh` are the two lanes in this tree whose subject is
     exactly this — read what they assert before writing the legs.
+
+  **Done 2026-08-23.** `compiler/types/zsema.ty` (~860 lines) plus hooks in
+  `tcheck.ty`. `--typecheck` is the WHOLE semantic check now: SEMANTIC has
+  stopped being an accept bucket, so leg2c and leg10 score all four classes as
+  refusals. Two new legs, leg13 and leg14, and each found a defect on its first
+  run.
+
+  **The filename sorts last on purpose.** tychoc reads a package's files in
+  sorted order and a struct declared in a LATER file of the same package is
+  invisible to an earlier one -- `sema.ty` sorted before `tcheck.ty` and every
+  `inout C` failed with `unknown type 'C'`. Measured, not guessed.
+
+  ```
+  $ make parse-check                    # 20.6 s (20.87 / 20.54 / 20.49), was 20.3 s
+  leg2c tests/reject/*.ty --typecheck: all=337 rejected=331 missed=6 (KNOWN 6)
+  leg2b tests/reject/*.ty --resolve: SYNTAX+NAME=87 rejected=87 missed=0 | TYPE+SEMANTIC=250 accepted=250 wrongly-rejected=0
+  leg9  type census: 1768 distinct types, 117802 inference sites, 1235 deferred
+  leg13 affine shapes, one probe each: refused=11/11 accepted=8/8
+  leg14 newtype distinctness: refused=4/4 accepted=2/2 (no message names a mangled type)
+  leg5  whole-tree verdicts: files=1078 ... disagreements=0
+  leg6  whole-tree resolution: disagreements=0 unused-local/import on an accepted file=0
+  leg8  NAME diagnostic file:line vs ./tychoc: scored=151 agree=151 disagree=0 unlocated=0
+  leg10 whole-tree typecheck: disagreements=0 (25 TYPE files known-missed)
+  leg11 TYPE diagnostic file:line vs ./tychoc: scored=160 agree=160 disagree=0 unlocated=0
+  leg12 accepted programs with an UNGROUNDED 6b construct: 22 of 552
+  parse-check: all green
+  ```
+
+  **leg2c: 230 of 337 refused -> 331 of 337.** The 103 SEMANTIC fixtures fell to
+  6. What landed: the affine discipline for channel/task/handle at all seven
+  type-intern choke points and at the expression level (array/map/tuple/Option
+  literal, `push`), the copy and reassign rules, closure capture,
+  `channel(...)`-only-in-a-declaration, `close(h)` on a variable; the newtype
+  underlying-type list; `bounded[N]` capacity and element; the FFI parameter and
+  return types; `inout`/`sink` on an affine type; generic INFERENCE --
+  parameter-pattern unification, explicit type arguments and their count, the
+  five closed `where` predicates, size parameters, unbound-in-the-return, the
+  empty variadic; generic AGGREGATE instantiation (from a written type and from a
+  constructor call) with the partial-type-argument rule and the 1024 cap; the
+  `sink` mention count with its heap gate; overlapping access; and eight smaller
+  rules.
+
+  **leg2c's KNOWN list was RE-CUT, not widened.** Phase 6a's four names are gone:
+  `generic_bounded_field_degraded`, `generic_inst_inout_fnvalue` and
+  `generic_params_17` needed generic instantiation and now have it. The six that
+  remain are named with their reason in `compiler/run.sh`, and two are OUTSIDE
+  this phase's scope lock -- `typeset_notin` and `len_scalar` need
+  `compiler/parse/`, where a `where` type SET is parsed and discarded and an
+  f-string's interpolations are kept as raw text. The other four are
+  `generic_recur_grow` (needs the template BODY instantiated) and the three
+  pending-type (B-3) grounding fixtures. `verdict_diff.py` carries 19, of which
+  14 are new and honest: the eleven `tests/conc/reject/` fixtures are the
+  CONCURRENCY rules -- what `spawn` may be applied to, `parallel for`'s reduction
+  and control-flow rules, capturing a task, `wait`'s argument -- and three are
+  match-ARM name rules. Both families are written up as Phase 6c.
+
+  **leg12 was redefined, and saying so is the point.** Phase 6a's flag was set by
+  a program DECLARING a generic/newtype/handle/bounded, which no amount of work
+  could drive down: 202 of 552 was a census of the corpus, not of what the pass
+  defers. It now marks a construct actually left `?` -- an instantiation that
+  could not be ground, a generic return, a bounded capacity. **22 of 552**, and
+  leg9's `?` count fell 2,590 -> 1,235 on the same change. The 22 that remain are
+  legitimate: a generic aggregate whose type arguments are themselves generic, a
+  UFCS method call (the receiver's method set is Phase 6c), and `bounded[$N]T`.
+
+  **`leg2b wrongly-rejected=0` held at every step** and was re-measured after
+  each of the eleven waves -- it is the property this phase could most easily
+  have spent. Four false refusals were caught and fixed while it was being built,
+  each a rule that was too wide: a bare `T` in a signature bound as a type
+  parameter even where a struct of that name is declared
+  (`corelib/testing/testing.ty` has `fn eq(t: inout T, got: $T, ...)`); the "no
+  argument fixes $T" rule fired on a `$T` buried in a generic-struct parameter; a
+  generic signature's NAMES resolved in the caller's package rather than the
+  callee's; and the `sink` mention rule ran on a non-heap type, which is legal
+  and enforces nothing (`tests/sink_scalar_noop.ty`).
+
+  **leg13 and leg14 exist because a checker that refuses everything scores
+  identically to a correct one on a reject corpus**, and each found a real defect
+  on its first run. leg13 is eleven affine shapes, each its OWN probe, each
+  paired with an accepting twin one token away -- including the borrow twin
+  `tools/tycho-fh/run.sh` argues for (passing a handle must stay a borrow, not
+  become a consume) and the same generic at a non-affine type, which is what
+  proves the refusal is about the INSTANCE. Its find was in the probe itself,
+  which is the failure `tycho-verify` §3 names: the capture probe's lambda never
+  mentioned the channel, so the leg passed against a rule it never reached.
+  leg14 is `tools/tycho-ledger/run.sh`'s argument -- a newtype is ERASED in
+  lowering (spec §5.4), so no golden and no type census can see whether two
+  domain types are distinct -- four probes that must fail, each refusal grepped
+  for `__`. It found the newtype-under diagnostic printing `@coin__Cents`.
+
+  **Seven negative controls, each observed and reverted.** C6b is the one the
+  brief asked for:
+
+  | control | what reddened |
+  |---|---|
+  | C1 the container/aggregate affine rule disabled | leg2c 331 -> 320, leg10 0 -> 11, leg13 11/11 -> 10/11 |
+  | C2 the newtype underlying-type list dropped | leg2c -> 319, leg10 -> 12, **leg14 4/4 -> 1/4** |
+  | C3 the five `where` predicates always satisfied | leg2c -> 326, leg10 -> 5 |
+  | C4 the `sink` mention rule loses its heap gate | leg2c UNMOVED at 331, **leg10 -> 1** -- a too-wide rule reddens the ACCEPT side and nothing else |
+  | C5 a bare `T` binds even where a TYPE of that name is declared | leg2c UNMOVED, leg10 -> 2, leg9 1235 -> 1252 |
+  | C6 a generic call answers `?` instead of its substituted return | leg9 1235 -> 2342 deferred sites, leg12 22 -> 86, leg2c -> 330 |
+  | **C6b a diagnostic prints the MANGLED type name again** | **leg14 ALONE: 4/4 -> 3/4, while leg2c (331), leg5, leg6, leg8, leg10 and leg11 stayed fully green over all 1,078 files** |
+  | C7 the overlapping-access (inout alias) rules disabled | leg2c -> 328, leg10 -> 3 |
+
+  Both older goldens are UNCHANGED (`git status` shows neither
+  `census.expected.out` nor `rcensus.expected.out` modified);
+  `compiler/tcensus.expected.out` is the only one re-recorded.
+
+  Three gates my diff can move, all run: `make goldens-check` ok (521 golden
+  files, all tracked), `make script-check` ok (26 .py, 96 .sh),
+  `python3 scripts/check_citations.py` ok.
+
+- [ ] **Phase 6c — the four rule families `--typecheck` still misses**
+  - Scope: `compiler/types/`, and for item 1 ALSO `compiler/parse/` +
+    `compiler/ast/`, which Phase 6b's scope lock excluded.
+    1. **Two rules the AST cannot express.** `compiler/parse/parse.ty@_wheres`
+       parses a `where T: int | string` type SET and pushes only `T`, discarding
+       the members, so `typeset_notin` cannot be scored; and an f-string's
+       interpolations are kept as raw text, so `len_scalar` is invisible. Both
+       need an AST change first.
+    2. **The concurrency rules.** Eleven `tests/conc/reject/` fixtures: what
+       `spawn` may be applied to (a named user fn, not a builtin, not a closure,
+       no `inout` parameters), `parallel for`'s reduction shape and its
+       break/return bans, capturing a task, and `wait`'s argument. Each is a
+       statement SHAPE, not a type rule.
+    3. **The match-ARM name rules.** `foreign_variant_bare`, `foreign_variant_is`
+       and `result_arm_mangled` — a variant of another package's enum must be
+       written qualified, and a Result's arms are `Ok`/`Err`/`_`.
+    4. **Pending-type (B-3) grounding**, a subsystem of its own:
+       `infer_bare_empty`, `infer_use_before_ground`,
+       `void_grounds_pending_push`. Plus `generic_recur_grow`, which needs the
+       generic template BODY instantiated rather than only its signature, and the
+       UFCS method call that leaves 22 programs ungrounded at leg12.
+  - Done when: `compiler/run.sh`'s KNOWN list and `compiler/verdict_diff.py`'s
+    are both EMPTY, and leg2c reads `rejected=337 missed=0`.
+  - Verify: leg2c, leg10 and leg11 unmoved at 0; `leg2b wrongly-rejected=0`;
+    each family gets a probe with an accepting twin, as leg13 does.
+  - Do NOT run: `make test`, `make ci`. The lane is `make parse-check`.
 
 - [ ] **Phase 7 — `lower/` + `emit/`: core codegen**
   - Scope: `compiler/lower/`, `compiler/emit/`. Arena scoping, structs, enums,

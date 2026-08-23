@@ -107,6 +107,10 @@ struct TDecl:
     ftypes: [string]                   # field type, or a variant's payload joined by "|"
     file: string
     line: int
+    pats: [ast.Ty]                     # the field / payload types AS WRITTEN,
+    pcnt: [int]                        # flattened, with a payload count per
+    tps: [string]                      # variant -- what an INSTANCE substitutes
+    pfx: string                        # into (Phase 6b)
 
 struct FSig:
     name: string                       # mangled
@@ -118,6 +122,12 @@ struct FSig:
     ret: string
     generic: bool
     builtin: bool
+    pty: [ast.Ty]                      # the parameter types AS WRITTEN -- a `$T`
+    rty: [ast.Ty]                      # pattern is what a call unifies against,
+    tps: [string]                      # and the encoded ptypes above have already
+    whs: [string]                      # collapsed every one of them to `?`
+    pfx: string                        # the package prefix its type NAMES resolve in
+    szs: [string]                      # the `$N` size parameters, kept apart
 
 struct VBind:
     name: string
@@ -134,6 +144,8 @@ struct C:
     consts: [string: string]           # mangled const -> type
     constv: [string: int]              # ... and its folded int value, for a match arm
     typarams: [string: bool]           # the type parameters in scope right now
+    tbind: [string: string]            # $T -> the type it is BOUND to at this
+                                       # instantiation; empty outside one
     subs: [string: bool]               # declared `subscript` names -- the only callable place
     vars: [VBind]
     nvars: int
@@ -149,8 +161,26 @@ struct C:
     imports: [ast.ImportD]
     all_imports: [ast.ImportD]
     in_arg: bool
+    lam_mark: int                      # the variable-stack mark at the innermost
+                                       # closure's entry
+    nlambda: int                       # depth inside a closure body: a channel
+                                       # read from an enclosing scope here is a
+                                       # CAPTURE (src/tychoc.c:5937)
+    chan_decl: bool                    # this expression is the DIRECT rhs of a `:=`
     nmatch: int
-    uses6b: bool                       # the program declares a generic, newtype, handle or bounded
+    ment: [string: int]                # mentions of each name in the function
+    sinkp: [string: bool]              # ... and which of its params are `sink`
+    parms: [string: bool]              # ... and which names ARE parameters
+    loopd: int                         # loop nesting depth
+    ntd0: int                          # how many declared types there were before
+                                       # the first generic INSTANCE was stamped
+    uses6b: bool                       # a 6b construct this pass could NOT ground:
+                                       # a generic call or aggregate left `?`, or
+                                       # a bounded whose capacity is unknown.
+                                       # Phase 6a counted every program that
+                                       # DECLARED one, which no amount of work
+                                       # could drive down -- 6b made the flag
+                                       # mean what leg12's label always claimed
 
 fn _cerr(cs: inout C, msg: string):
     push(cs.errs, cs.file + ":" + str(cs.line) + ": error: " + msg)
@@ -195,7 +225,10 @@ fn _lookup_type(cs: inout C, q: string, n: string) -> string:
 fn _enc(cs: inout C, t: ast.Ty) -> string:
     match t:
         ast.TPrim(p): return p
-        ast.TParam(n): return "?"
+        ast.TParam(n):
+            if n in cs.tbind:
+                return cs.tbind[n]
+            return "?"
         ast.TName(q, n, targs):
             if len(q) == 0 and n == "void":
                 if not cs.void_ok:
@@ -205,11 +238,13 @@ fn _enc(cs: inout C, t: ast.Ty) -> string:
                 inner := _enc_noval(&cs, targs[0])
                 if inner == "void":
                     _cperr(&cs, "Option(void) is not a type")
+                _nest_aff(&cs, inner, "cont")
                 return "opt(" + inner + ")"
             if len(q) == 0 and n == "Channel":
                 inner := _enc_noval(&cs, targs[0])
                 if inner == "void":
                     _cperr(&cs, "Channel(void) is not a type")
+                _nest_aff(&cs, inner, "cont")
                 return "chan(" + inner + ")"
             if len(q) == 0 and n == "Result":
                 keep := cs.void_ok
@@ -217,16 +252,23 @@ fn _enc(cs: inout C, t: ast.Ty) -> string:
                 ok := _enc(&cs, targs[0])
                 cs.void_ok = keep
                 er := _enc_noval(&cs, targs[1])
+                _nest_aff(&cs, ok, "cont")
+                _nest_aff(&cs, er, "cont")
                 return "res(" + ok + "," + er + ")"
+            if len(q) == 0 and (n in cs.tbind):
+                return cs.tbind[n]
             if len(q) == 0 and (n in cs.typarams):
                 return "?"
             r := _lookup_type(&cs, q, n)
             if len(targs) > 0:
+                enc := []string
                 for a in targs:
-                    _tnote(&cs, "targ:" + _enc_noval(&cs, a))
+                    ea := _enc_noval(&cs, a)
+                    _tnote(&cs, "targ:" + ea)
+                    push(enc, ea)
                 if len(r) == 0 and not cs.skip and not _known_generic(&cs, q, n):
                     _cperr(&cs, "unknown type '" + n + "'")
-                return "?"
+                return _inst_named(&cs, q, n, targs, enc)
             if len(r) == 0:
                 if cs.skip:
                     return "?"
@@ -237,6 +279,7 @@ fn _enc(cs: inout C, t: ast.Ty) -> string:
             el := _enc_noval(&cs, k[0])
             if el == "void":
                 _cperr(&cs, "an array element type cannot be void")
+            _nest_aff(&cs, el, "cont")
             return "arr(" + el + ")"
         ast.TFix(sz, k):
             el := _enc_noval(&cs, k[0])
@@ -245,19 +288,22 @@ fn _enc(cs: inout C, t: ast.Ty) -> string:
             n := _fixsize(&cs, sz)
             if el == "bool" or el == "void":
                 _cperr(&cs, "a fixed-size array element cannot be bool or void")
+            _nest_aff(&cs, el, "cont")
             return "fix(" + n + "," + el + ")"
         ast.TBnd(sz, k):
-            cs.uses6b = true
             el := _enc_noval(&cs, k[0])
-            n := "?"                       # a bounded capacity is Phase 6b's rule
-            if len(sz) > 0 and sz[0] >= 48 and sz[0] <= 57:
-                n = _dec(sz)
+            n := _bnd_size(&cs, sz)
+            if n == "?":
+                cs.uses6b = true
+            _bnd_elem(&cs, el)
+            _nest_aff(&cs, el, "cont")
             return "bnd(" + n + "," + el + ")"
         ast.TMap(k):
             kt := _enc_noval(&cs, k[0])
             vt := _enc_noval(&cs, k[1])
             if not _mapkey_ok(&cs, kt):
                 _cperr(&cs, "map keys must be string, int (directly or through a newtype), a fieldless enum, or a hashable struct/tuple/array")
+            _nest_aff(&cs, vt, "cont")
             return "map(" + kt + "," + vt + ")"
         ast.TTup(k):
             out := "tup("
@@ -265,6 +311,7 @@ fn _enc(cs: inout C, t: ast.Ty) -> string:
                 e := _enc_noval(&cs, k[i])
                 if e == "void":
                     _cperr(&cs, "a tuple element cannot be void")
+                _nest_aff(&cs, e, "cont")
                 if i > 0:
                     out = out + ","
                 out = out + e
@@ -275,11 +322,13 @@ fn _enc(cs: inout C, t: ast.Ty) -> string:
             if hr:
                 np = len(k) - 1
                 r = _enc_noval(&cs, k[len(k) - 1])
+                _nest_aff(&cs, r, "fn")
             out := "fun(" + r
             for i := 0; i < np; i += 1:
                 e := _enc_noval(&cs, k[i])
                 if e == "void":
                     _cperr(&cs, "a function-type parameter cannot be void")
+                _nest_aff(&cs, e, "fn")
                 out = out + "," + e
             return out + ")"
         ast.TSoa(k):
@@ -411,10 +460,12 @@ fn _sorted_decls(u: ast.Unit) -> [DRef]:
     return ds
 
 fn _addt(cs: inout C, name: string, kind: string, generic: bool, file: string, line: int):
+    # `pats`/`tps`/`pfx` are filled by _fill_decls; an INSTANCE is stamped by
+    # zsema.ty@_inst_agg and carries none of them.
     if name in cs.tindex:
         return
     cs.tindex[name] = len(cs.tds)
-    push(cs.tds, TDecl(name, kind, generic, []string, []string, file, line))
+    push(cs.tds, TDecl(name, kind, generic, []string, []string, file, line, []ast.Ty, []int, []string, ""))
 
 fn _typarams_of(cs: inout C, names: [string]):
     cs.typarams = []string: bool
@@ -425,8 +476,23 @@ fn _register(cs: inout C, p: Program):
     for f in p.files:
         for sd in f.unit.structs:
             _addt(&cs, f.prefix + sd.name, "struct", len(sd.typarams) > 0, f.path, sd.line)
+            si2 := cs.tindex[f.prefix + sd.name]
+            for fl in sd.fields:
+                push(cs.tds[si2].fnames, fl.name)
+            cs.tds[si2].tps = sd.typarams
+            cs.tds[si2].pfx = f.prefix
+            for fl in sd.fields:
+                push(cs.tds[si2].pats, fl.ty)
+                push(cs.tds[si2].pcnt, 1)
         for ed in f.unit.enums:
             _addt(&cs, f.prefix + ed.name, "enum", len(ed.typarams) > 0, f.path, ed.line)
+            ei2 := cs.tindex[f.prefix + ed.name]
+            cs.tds[ei2].tps = ed.typarams
+            cs.tds[ei2].pfx = f.prefix
+            for v2 in ed.variants:
+                push(cs.tds[ei2].pcnt, len(v2.payload))
+                for py2 in v2.payload:
+                    push(cs.tds[ei2].pats, py2)
             for v in ed.variants:
                 cs.vowner[f.prefix + v.name] = "@" + f.prefix + ed.name
         for nd in f.unit.newtypes:
@@ -462,6 +528,9 @@ fn _sig_of(cs: inout C, prefix: string, fd: ast.Fn) -> FSig:
             fl = "sink"
         if pm.is_variadic:
             fl = "var"
+        _aff_param_check(&cs, pm.name, t, fl)
+        if fd.is_extern and not pm.is_inout and not _ffi_param_ok(&cs, t):
+            _cperr(&cs, "extern fn '" + fd.name + "': parameter '" + pm.name + "' must be int/char/float/bool/string/ptr/bytes, [int]/[float]/[string], or a handle (no other composites across the C boundary)")
         push(pf, fl)
     cs.line = fd.line
     rt := "void"
@@ -470,11 +539,28 @@ fn _sig_of(cs: inout C, prefix: string, fd: ast.Fn) -> FSig:
         cs.void_ok = false
         rt = _enc(&cs, fd.ret[0])
         cs.void_ok = keep
+    if fd.is_extern and not _ffi_ret_ok(&cs, rt):
+        _cperr(&cs, "extern fn '" + fd.name + "': return type must be int/char/float/bool/string/ptr/bytes, [int]/[float], Option(string), a handle, or omitted")
+    if _head(rt) == "chan":
+        _cperr(&cs, "a function cannot return a channel -- create it in the owning scope and pass it down")
     nm := prefix + fd.name
     if fd.is_extern:
         nm = fd.name
     cs.typarams = []string: bool
-    return FSig(nm, cs.file, fd.line, pn, pt, pf, rt, len(fd.typarams) > 0, false)
+    szs := _sig_sizeparams(fd.params, fd.ret)
+    tps := []string                    # the parser lists a `$T` once per mention
+    for tn in fd.typarams:             # (`fn singleton(x: $V) -> [$V]` twice);
+        if not _has_name6(tps, tn):    # an explicit type-arg COUNT needs the
+            push(tps, tn)              # DISTINCT parameters
+    pats := []ast.Ty
+    for pm in fd.params:
+        if len(pm.ty) == 1:
+            push(pats, pm.ty[0])
+        else:
+            push(pats, ast.TPrim("?"))
+    return FSig(nm, cs.file, fd.line, pn, pt, pf, rt,
+                len(tps) > 0 or len(szs) > 0, false,
+                pats, fd.ret, tps, fd.wheres, prefix, szs)
 
 fn _addsig(cs: inout C, s: FSig):
     if s.name in cs.sindex:
@@ -488,7 +574,7 @@ fn _bsig(cs: inout C, name: string, ret: string, ps: [string]):
     for i := 0; i < len(ps); i += 1:
         push(pn, "x")
         push(pf, "")
-    _addsig(&cs, FSig(name, "", 0, pn, ps, pf, ret, false, true))
+    _addsig(&cs, FSig(name, "", 0, pn, ps, pf, ret, false, true, []ast.Ty, []ast.Ty, []string, []string, "", []string))
 
 # src/tychoc.c@register_builtins, verbatim: the fixed-signature table, and ONLY
 # that table. The shape-directed builtins (len/push/keys/str/to_*/...) bypass it
@@ -619,6 +705,8 @@ fn _ex(cs: inout C, e: ast.Expr) -> string:
 # empty `[]` takes the annotation's, and an untyped lambda parameter takes the
 # expected fn type's.
 fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
+    chan_ok := cs.chan_decl
+    cs.chan_decl = false
     cs.line = ast.line_of(e)
     # src/tychoc.c@resolve_exp's literal adaptation, and the reason it has to be
     # here rather than only in _binop: a LITERAL takes the expected type's width
@@ -639,19 +727,26 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
         ast.Name(l, n):
             t := _vtype(&cs, n)
             if len(t) > 0:
+                if cs.nlambda > 0 and _vfind(&cs, n) < cs.lam_mark and _head(t) == "chan":
+                    cs.line = l
+                    _cerr(&cs, "a closure cannot capture a channel handle -- take it as a parameter instead")
                 return t
             if len(cs.prefix) > 0 and (cs.prefix + n) in cs.consts:
                 return cs.consts[cs.prefix + n]
             if n in cs.consts:
                 return cs.consts[n]
             if len(cs.prefix) > 0 and (cs.prefix + n) in cs.vowner:
-                return cs.vowner[cs.prefix + n]
+                return _bare_variant(&cs, l, n, cs.vowner[cs.prefix + n])
             if n in cs.vowner:
-                return cs.vowner[n]
+                return _bare_variant(&cs, l, n, cs.vowner[n])
             si := _sigidx(&cs, n)
             if si < 0 and len(cs.prefix) > 0:
                 si = _sigidx(&cs, cs.prefix + n)
-            if si >= 0 and not cs.sg[si].generic:
+            if si >= 0 and cs.sg[si].generic:
+                cs.line = l
+                _cerr(&cs, "'" + n + "' is generic, so it has no single function value -- there is no instantiation to take. Wrap it in a lambda that fixes the types")
+                return "?"
+            if si >= 0:
                 return _sigtype(cs.sg[si])
             return "?"
         ast.Field(l, k, f):
@@ -664,12 +759,18 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
                         if m in cs.vowner:
                             return cs.vowner[m]
                         si := _sigidx(&cs, m)
-                        if si >= 0 and not cs.sg[si].generic:
+                        if si >= 0 and cs.sg[si].generic:
+                            cs.line = l
+                            _cerr(&cs, "'" + q + "." + f + "' is generic, so it has no single function value -- there is no instantiation to take. Wrap it in a lambda that fixes the types")
+                            return "?"
+                        if si >= 0:
                             return _sigtype(cs.sg[si])
                         return "?"
                 _: pass
             rt := _ex(&cs, k[0])
             ft := _field_ty(&cs, rt, f)
+            cs.line = l
+            _no_field(&cs, rt, f)
             _tnote(&cs, "f:" + ft)
             return ft
         ast.TupIdx(l, k, i):
@@ -709,6 +810,10 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
             _tnote(&cs, "c:" + ct)
             return ct
         ast.CallVal(l, k):
+            cvt := _base(&cs, _ex(&cs, k[0]))
+            if known(cvt) and _head(cvt) != "fun":
+                cs.line = l
+                _cerr(&cs, "this value has type " + cvt + ", not a procedure -- it cannot be called")
             ct := _base(&cs, _ex(&cs, k[0]))
             keep := cs.in_arg
             cs.in_arg = true
@@ -779,6 +884,7 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
                     return "?"
             if et == "?" and ew != "?":
                 et = ew
+            _nest_aff_e(&cs, et)
             if _is_arr(wb) and compat(_elem_of(&cs, wb), et):
                 return wb                  # a fixed or bounded destination keeps its own kind
             return "arr(" + et + ")"
@@ -792,6 +898,7 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
                     kt = a
                 if vt == "?":
                     vt = b
+            _nest_aff_e(&cs, vt)
             return "map(" + kt + "," + vt + ")"
         ast.EmptyArr(l, t):
             if len(t) == 0:
@@ -821,15 +928,19 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
                 w := "?"
                 if _head(_base(&cs, want)) == "tup" and i < len(ws):
                     w = ws[i]
+                et_ := _ex2(&cs, k[i], w)
+                _nest_aff_e(&cs, et_)
                 if i > 0:
                     out = out + ","
-                out = out + _ex2(&cs, k[i], w)
+                out = out + et_
             return out + ")"
         ast.SomeE(l, k):
             w := "?"
             if _head(_base(&cs, want)) == "opt":
                 w = _targs(_base(&cs, want))[0]
-            return "opt(" + _ex2(&cs, k[0], w) + ")"
+            it_ := _ex2(&cs, k[0], w)
+            _nest_aff_e(&cs, it_)
+            return "opt(" + it_ + ")"
         ast.NoneE(l):
             if _head(_base(&cs, want)) == "opt":
                 return want
@@ -872,6 +983,9 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
             return _ex(&cs, k[0])
         ast.ChanE(l, t, k):
             _exs(&cs, k)
+            cs.line = l
+            if not chan_ok:
+                _cerr(&cs, "a channel must be created directly in a declaration: ch := channel(T, cap)")
             if len(t) == 0:
                 return "chan(?)"
             return "chan(" + _enc(&cs, t[0]) + ")"
@@ -892,11 +1006,19 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
                     pt = _enc(&cs, ps[i].ty[0])
                 elif _head(wb) == "fun" and i + 1 < len(wps):
                     pt = wps[i + 1]
+                if len(ps[i].ty) == 0 and not known(pt):
+                    _cerr(&cs, "lambda parameter '" + ps[i].name + "' needs a type here -- no expected fn type supplies it (annotate: fn(x: T))")
                 _vpush(&cs, ps[i].name, pt, false)
                 out = out + "," + pt
             keepr := cs.ret
+            keepc := cs.nlambda
+            keepm := cs.lam_mark
             cs.ret = "?"
+            cs.nlambda = cs.nlambda + 1
+            cs.lam_mark = m
             _exs(&cs, body)
+            cs.nlambda = keepc
+            cs.lam_mark = keepm
             cs.ret = keepr
             _vrestore(&cs, m)
             return out + ")"
@@ -1058,9 +1180,13 @@ fn _binop(cs: inout C, op: string, k: [ast.Expr]) -> string:
     if lt == "bytes" or rt == "bytes":
         _cerr(&cs, "bytes has no arithmetic (got " + lt + ", " + rt + ")")
         return lt
-    if _tdecl(&cs, lt) >= 0 or _tdecl(&cs, rt) >= 0:
-        return "?"                     # a newtype operand: src/tychoc.c has its
-                                       # own message and Phase 6b owns the rule
+    li := _tdecl(&cs, lt)
+    ri := _tdecl(&cs, rt)
+    if li >= 0 and ri >= 0 and cs.tds[li].kind == "newtype" and cs.tds[ri].kind == "newtype" and lt != rt:
+        _cerr(&cs, "arithmetic on two different newtypes: '" + _short(cs.tds[li].name) + "' and '" + _short(cs.tds[ri].name) + "' are distinct types even though both are represented as their base")
+        return "?"
+    if li >= 0 or ri >= 0:
+        return "?"                     # a same-newtype operand keeps its type
     _cerr(&cs, "arithmetic requires two ints or two floats (got " + lt + ", " + rt + ") -- convert one side, e.g. to_float(x) to compute in floats, or to_int(x) in ints")
     return lt
 
@@ -1084,6 +1210,8 @@ fn _walk_args(cs: inout C, args: [ast.Expr]):
 # is in play -- `?` is the answer to anything this pass cannot ground.
 fn _check_args(cs: inout C, name: string, si: int, args: [ast.Expr], line: int):
     s := cs.sg[si]
+    _alias_check(&cs, name, s, args, line)
+    _sink_check(&cs, name, s, args, line)
     variadic := false
     for f in s.pflags:
         if f == "var":
@@ -1171,6 +1299,14 @@ fn _check_variant(cs: inout C, m: string, args: [ast.Expr], line: int) -> string
     generic := ti >= 0 and cs.tds[ti].generic
     keep := cs.in_arg
     cs.in_arg = true
+    if generic and not _any_named(args):
+        cs.in_arg = keep
+        at0 := 0
+        for v := 0; v < len(cs.tds[ti].fnames); v += 1:
+            if cs.tds[ti].fnames[v] == _short(m):
+                return _inst_ctor(&cs, line, ti, args, at0, cs.tds[ti].pcnt[v])
+            at0 += cs.tds[ti].pcnt[v]
+        return "?"
     if generic or _any_named(args) or len(args) != len(pay):
         for a in args:
             _ex(&cs, a)
@@ -1195,8 +1331,10 @@ fn _call(cs: inout C, l: int, q: string, n: string, ts: [ast.Ty], args: [ast.Exp
     for t in ts:
         _enc(&cs, t)
     if len(ts) > 0:
-        _walk_args(&cs, args)
-        return "?"                     # an explicit type argument is Phase 6b
+        if len(q) > 0 and not _is_pkg(&cs, q):
+            _walk_args(&cs, args)
+            return "?"
+        return _explicit_call(&cs, l, q, n, ts, args, want)
     if len(q) > 0:
         if not _is_pkg(&cs, q):
             if _shape_builtin(n):
@@ -1219,6 +1357,12 @@ fn _call(cs: inout C, l: int, q: string, n: string, ts: [ast.Ty], args: [ast.Exp
     # accepts (tests/warn/pkg/corelib_mute/main.ty).
     if _shape_builtin(n):
         return _call_builtin(&cs, l, n, args, want)
+    vt := _vtype(&cs, n)
+    if len(vt) > 0 and known(vt) and _head(_base(&cs, vt)) != "fun":
+        _walk_args(&cs, args)
+        cs.line = l
+        _cerr(&cs, "'" + n + "' has type " + vt + ", not a procedure -- it cannot be called")
+        return "?"
     if len(cs.prefix) > 0:
         m := cs.prefix + n
         if _sigidx(&cs, m) >= 0 or m in cs.tindex or m in cs.vowner:
@@ -1231,12 +1375,13 @@ fn _call_named(cs: inout C, l: int, m: string, spelt: string, args: [ast.Expr], 
     si := _sigidx(&cs, m)
     if si >= 0:
         if cs.sg[si].generic:
-            _walk_args(&cs, args)
-            return "?"
+            return _generic_call(&cs, l, si, spelt, []ast.Ty, args)
         _check_args(&cs, spelt, si, args, l)
         return cs.sg[si].ret
     if m in cs.tindex:
         d := cs.tds[cs.tindex[m]]
+        if d.kind == "struct" and d.generic:
+            return _inst_ctor(&cs, l, cs.tindex[m], args, 0, len(args))
         if d.kind == "struct":
             return _check_fields(&cs, cs.tindex[m], args, l)
         if d.kind == "newtype":
@@ -1396,6 +1541,7 @@ fn _call_builtin(cs: inout C, l: int, n: string, args: [ast.Expr], want: string)
             _cerr(&cs, "push's first argument must be an array or soa")
             return "void"
         el := _elem_of(&cs, b0)
+        _nest_aff_e(&cs, ats[1])
         if not compat(el, ats[1]):
             _cerr(&cs, "push's value must be " + el)
         return "void"
@@ -1411,6 +1557,16 @@ fn _call_builtin(cs: inout C, l: int, n: string, args: [ast.Expr], want: string)
             return "void"
         if known(b0) and not (_is_arr(b0) or _head(b0) == "map"):
             _cerr(&cs, "reserve's first argument must be an array or a map")
+        return "void"
+    if n == "close":
+        if len(args) == 1 and _aff_kind(&cs, a0) == "handle" and not (args[0] is ast.Name):
+            _cerr(&cs, "close(h) takes a handle variable")
+        return "void"
+    if n == "send":
+        if len(args) == 2 and _head(b0) == "chan":
+            w := _targs(b0)[0]
+            if not compat(w, ats[1]):
+                _cerr(&cs, "send on " + b0 + " needs a " + w + " value")
         return "void"
     if n == "zero":
         return "?"
@@ -1779,12 +1935,20 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
                 want = _enc(&cs, ty[0])
             t := "?"
             if len(rhs) == 1:
+                cs.chan_decl = true
                 t = _ex2(&cs, rhs[0], want)
+                cs.chan_decl = false
             elif len(vb) > 0:
                 t = _value_type(&cs, vb, want)
             cs.line = l
+            if len(rhs) == 1:
+                _aff_bind_check(&cs, t, rhs[0])
             if not compat(want, t):
                 _cerr(&cs, "declared type " + want + " but value is " + t)
+            if len(ty) == 0 and len(rhs) == 1:
+                _bare_result(&cs, t, rhs[0])
+            if want == "f32" and len(rhs) == 1:
+                _f32_fits(&cs, rhs[0])
             if t == "void":
                 _cerr(&cs, "cannot bind a void value")
                 t = "?"
@@ -1814,6 +1978,7 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
                 want = vt
             t := _ex2(&cs, rhs[0], want)
             cs.line = l
+            _aff_reassign_check(&cs, name, want)
             _assign_check(&cs, name, t)
         ast.PlaceSet(l, k):
             pt := _place_ty(&cs, k[0])
@@ -1843,13 +2008,16 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
             _tblock(&cs, b)
             _tblock(&cs, e)
         ast.WhileS(l, c, b):
+            cs.loopd = cs.loopd + 1
             if len(c) == 1:
                 t := _ex(&cs, c[0])
                 cs.line = l
                 if known(t) and t != "bool":
                     _cerr(&cs, "for condition must be bool")
             _tblock(&cs, b)
+            cs.loopd = cs.loopd - 1
         ast.For3(l, init, c, b):
+            cs.loopd = cs.loopd + 1
             m := _vmark(&cs)
             for st in init:
                 _tstmt(&cs, st)
@@ -1860,7 +2028,9 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
                     _cerr(&cs, "for condition must be bool")
             _tblock(&cs, b)
             _vrestore(&cs, m)
+            cs.loopd = cs.loopd - 1
         ast.ForIn(l, v, coll, b):
+            cs.loopd = cs.loopd + 1
             ct := _base(&cs, _ex(&cs, coll[0]))
             cs.line = l
             et := "?"
@@ -1878,7 +2048,9 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
             _vpush(&cs, v, et, true)
             _tblock(&cs, b)
             _vrestore(&cs, m)
+            cs.loopd = cs.loopd - 1
         ast.ForRange(l, v, bounds, b):
+            cs.loopd = cs.loopd + 1
             for x in bounds:
                 _ex(&cs, x)
             m := _vmark(&cs)
@@ -1886,6 +2058,7 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
             _vpush(&cs, v, "int", false)
             _tblock(&cs, b)
             _vrestore(&cs, m)
+            cs.loopd = cs.loopd - 1
         ast.ParallelS(l, w, b):
             _exs(&cs, w)
             for st in b:
@@ -1925,7 +2098,12 @@ fn _fill_decls(cs: inout C, p: Program):
                 for fl in sd.fields:
                     cs.line = fl.line
                     push(fn_, fl.name)
-                    push(ft, _enc(&cs, fl.ty))
+                    fty := _enc(&cs, fl.ty)
+                    push(ft, fty)
+                    _field_aff(&cs, sd.line, fty)
+                    if _has_sizeparam(fl.ty):
+                        cs.line = sd.line
+                        _cperr(&cs, "a struct field cannot be a `[$N]T` size-parameterized array -- use a fixed `[N]T` or a dynamic `[T]`")
                 i := cs.tindex[f.prefix + sd.name]
                 cs.tds[i].fnames = fn_
                 cs.tds[i].ftypes = ft
@@ -1941,7 +2119,15 @@ fn _fill_decls(cs: inout C, p: Program):
                     for k := 0; k < len(v.payload); k += 1:
                         if k > 0:
                             pay = pay + "|"
-                        pay = pay + _enc(&cs, v.payload[k])
+                        pt_ := _enc(&cs, v.payload[k])
+                        pay = pay + pt_
+                        if _head(pt_) == "chan":
+                            cs.line = ed.line
+                            _cperr(&cs, "an enum payload cannot be a channel")
+                        if _has_sizeparam(v.payload[k]):
+                            cs.line = ed.line
+                            _cperr(&cs, "an enum payload cannot be a `[$N]T` size-parameterized array -- use a fixed `[N]T` or a dynamic `[T]`")
+                        cs.line = v.line
                     push(vn, v.name)
                     push(vt, pay)
                     cs.vpay[f.prefix + v.name] = pay
@@ -1953,7 +2139,14 @@ fn _fill_decls(cs: inout C, p: Program):
                 cs.line = nd.line
                 cs.skip = false
                 u := []string
-                push(u, _enc(&cs, nd.under))
+                ut := _enc(&cs, nd.under)
+                push(u, ut)
+                if _head(ut) == "chan":
+                    _cperr(&cs, "a newtype cannot wrap a channel")
+                elif _has_sizeparam(nd.under):
+                    _cperr(&cs, "a newtype cannot wrap a `[$N]T` size-parameterized array")
+                else:
+                    _newtype_check(&cs, ut)
                 i := cs.tindex[f.prefix + nd.name]
                 cs.tds[i].ftypes = u
             elif d.cat == 5:
@@ -1969,12 +2162,24 @@ fn _fill_decls(cs: inout C, p: Program):
                 sb := f.unit.subscripts[d.idx]
                 cs.subs[sb.name] = true
                 cs.line = sb.line
-                cs.skip = true
+                if len(sb.params) > 0 and len(sb.params[0].ty) == 1 and _ty_generic_inst(&cs, sb.params[0].ty[0]):
+                    _cperr(&cs, "a subscript receiver may not be generic: declare the subscript on a concrete instance")
                 _typarams_of(&cs, []string)
-                _enc(&cs, sb.ret)
+                cs.skip = false
+                rt2 := _enc(&cs, sb.ret)
+                mk2 := _vmark(&cs)
                 for pm in sb.params:
                     for tt in pm.ty:
-                        _enc(&cs, tt)
+                        _vpush(&cs, pm.name, _enc(&cs, tt), true)
+                kia := cs.in_arg
+                cs.in_arg = true       # the yielded place is written `&expr`
+                pt2 := _place_ty(&cs, sb.place)
+                cs.in_arg = kia
+                _vrestore(&cs, mk2)
+                cs.line = sb.line
+                if known(rt2) and known(pt2) and not compat(rt2, pt2):
+                    _cperr(&cs, "subscript '" + sb.name + "' is declared `-> inout " + rt2 + "` but yields a place of type " + pt2)
+                cs.skip = true
             else:
                 fd := f.unit.fns[d.idx]
                 cs.skip = len(fd.typarams) > 0
@@ -1983,6 +2188,10 @@ fn _fill_decls(cs: inout C, p: Program):
                 if len(fd.params) > 16 and len(fd.typarams) == 0 and
                         len(_sig_sizeparams(fd.params, fd.ret)) == 0:
                     _cerr(&cs, "too many parameters (max 16)")
+                if len(_dedup6(fd.typarams)) > 16:
+                    _cperr(&cs, "too many type parameters (max 16)")
+                if len(_sig_sizeparams(fd.params, fd.ret)) > 16:
+                    _cperr(&cs, "too many size parameters (max 16)")
             cs.skip = false
             _typarams_of(&cs, []string)
 
@@ -2034,25 +2243,14 @@ fn _infinite_check(cs: inout C):
 
 fn check(p: Program) -> C:
     cs := C([]TDecl, []string: int, []FSig, []string: int, []string: string, []string: string,
-            []string: string, []string: int, []string: bool, []string: bool, []VBind, 0, []string, []string,
-            []string: int, "", 0, "", "?", false, false, []ast.ImportD, []ast.ImportD, false, 0, false)
+            []string: string, []string: int, []string: bool, []string: string, []string: bool, []VBind, 0, []string, []string,
+            []string: int, "", 0, "", "?", false, false, []ast.ImportD, []ast.ImportD, false, 0, 0, false, 0, []string: int, []string: bool, []string: bool, 0, 0, false)
     for f in p.files:
         for im in f.unit.imports:
             push(cs.all_imports, im)
     _builtin_sigs_t(&cs)
-    for f in p.files:
-        if len(f.unit.newtypes) > 0 or len(f.unit.handles) > 0:
-            cs.uses6b = true
-        for fd in f.unit.fns:
-            if len(fd.typarams) > 0:
-                cs.uses6b = true
-        for sd in f.unit.structs:
-            if len(sd.typarams) > 0:
-                cs.uses6b = true
-        for ed in f.unit.enums:
-            if len(ed.typarams) > 0:
-                cs.uses6b = true
     _register(&cs, p)
+    cs.ntd0 = len(cs.tds)
     _fill_decls(&cs, p)
     _infinite_check(&cs)
     for f in p.files:
@@ -2066,6 +2264,14 @@ fn check(p: Program) -> C:
             if si < 0:
                 continue
             cs.line = fd.line
+            cs.ment = _mentions(fd.body)
+            cs.sinkp = []string: bool
+            cs.parms = []string: bool
+            cs.loopd = 0
+            for pm in fd.params:
+                cs.parms[pm.name] = true
+                if pm.is_sink:
+                    cs.sinkp[pm.name] = true
             m := _vmark(&cs)
             for i := 0; i < len(fd.params); i += 1:
                 t := cs.sg[si].ptypes[i]

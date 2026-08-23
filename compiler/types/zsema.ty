@@ -1,0 +1,1133 @@
+package types
+
+import "../ast"
+
+# THE FILENAME SORTS LAST ON PURPOSE. tychoc reads a package's files in sorted
+# order and a struct declared in a LATER file of the same package is not visible
+# to an earlier one: `sema.ty` sorted before `tcheck.ty` and every `inout C`
+# below failed with `unknown type 'C'`. Measured 2026-08-23. Rename this file
+# only to something that still sorts after tcheck.ty.
+
+# Phase 6b -- the rules src/tychoc.c enforces OUTSIDE compat(): the affine
+# discipline for handle/task/channel, the newtype underlying-type list, the
+# `bounded[N]` capacity, the FFI boundary types, and the declaration-shape rules
+# a generic signature is held to. Every one of them refuses a program a
+# monomorphic type checker accepts, which is why they sat in the SEMANTIC class
+# through Phase 6a.
+#
+# THE INVARIANT PHASE 6A ESTABLISHED STILL HOLDS AND IS NOT FREE HERE. `?` is
+# unknown and compatible with everything, so a rule that fires on `?` refuses a
+# legal program. Every predicate below returns "no error" for `?`, and every
+# caller is a position whose type this pass actually GROUND -- never a `$T`.
+
+# --------------------------------------------------------------- affine types
+#
+# src/tychoc.c interns task/handle/channel at the type-construction choke points
+# (arrc_sized_b:1116, tup_of:1335, opt_of:1216, res_of:1239, mapc_of:1536,
+# funcc_of:1559, chan_of:1085) so every aggregate that could hold one fails
+# closed. The same seven positions are the callers of `_nest_aff` below.
+
+fn _aff_kind(cs: inout C, t: string) -> string:
+    if t == "task":
+        return "task"
+    if _head(t) == "chan":
+        return "chan"
+    i := _tdecl(&cs, t)
+    if i >= 0 and cs.tds[i].kind == "handle":
+        return "handle"
+    return ""
+
+fn _aff_msg(k: string) -> string:
+    if k == "task":
+        return "a task handle cannot be stored in a container or aggregate -- wait(t) first"
+    if k == "handle":
+        return "a handle cannot be stored in a container/aggregate, captured, or returned -- it is freed at the end of its scope"
+    return "a channel handle cannot be stored in a container or aggregate -- pass it as an argument instead"
+
+# `mode` is "cont" for a container/aggregate (all three affine kinds are
+# refused) or "fn" for a function TYPE's parameter or return, where
+# src/tychoc.c:1562-1564 refuses a task or a channel and ALLOWS a handle -- a
+# handle is what an `extern fn` opener returns, so an fn value may name one.
+fn _nest_aff(cs: inout C, t: string, mode: string):
+    k := _aff_kind(&cs, t)
+    if len(k) == 0:
+        return
+    if mode == "fn":
+        if k == "handle":
+            return
+        if k == "task":
+            _cperr(&cs, "a function value cannot take a task or channel handle")
+        else:
+            _cperr(&cs, "a function value cannot take a task or channel handle")
+        return
+    _cperr(&cs, _aff_msg(k))
+
+# The expression-level half: an array/map/tuple/Option literal, or a push, whose
+# ELEMENT type was inferred to be affine. src/tychoc.c reaches the same intern
+# functions from resolve_exp, so `[spawn f(1)]` and `push(cs, ch)` die at the
+# same message a declared `[Channel(int)]` does.
+fn _nest_aff_e(cs: inout C, t: string):
+    k := _aff_kind(&cs, t)
+    if len(k) > 0:
+        _cerr(&cs, _aff_msg(k))
+
+# ------------------------------------------------------------ newtype `under`
+#
+# src/tychoc.c:4790. A fixed or bounded array is still an array (IS_ARRC covers
+# both), so `fix`/`bnd` are in the list; a generic instance is `?` and passes.
+fn _newtype_under_ok(cs: inout C, u: string) -> bool:
+    if not known(u):
+        return true
+    if u == "int" or u == "float" or u == "string" or u == "bool":
+        return true
+    h := _head(u)
+    if h == "arr" or h == "map" or h == "fix" or h == "bnd":
+        return true
+    i := _tdecl(&cs, u)
+    if i >= 0 and cs.tds[i].kind == "struct":
+        return true
+    return false
+
+# The `(got %s)` half of the message is the SOURCE spelling, which this pass
+# does not keep -- the encoded form stands in. Phase 9 pins the wording.
+fn _newtype_check(cs: inout C, u: string):
+    if not _newtype_under_ok(&cs, u):
+        _cperr(&cs, "a newtype's underlying type must be int, float, string, bool, an array, a map, or a struct (got " + _show(&cs, u) + ")")
+
+# -------------------------------------------------------------- bounded[N]T
+#
+# src/tychoc.c:2378-2385. Three rules, and the capacity one needs the const's
+# VALUE, not just its existence -- `bounded[CAP]int` at `const CAP = 0` is the
+# fixture, and a checker that only asked "is CAP a const" would accept it.
+fn _bnd_size(cs: inout C, sz: string) -> string:
+    if len(sz) == 0:
+        return "?"
+    if sz[0] == 36:
+        return "?"                     # `bounded[$N]T` is a template pattern
+    if sz[0] >= 48 and sz[0] <= 57:
+        v := _dec(sz)
+        if v == "0":
+            _cperr(&cs, "a bounded capacity must be positive")
+        return v
+    if cs.skip:
+        return "?"
+    nm := ""
+    if len(cs.prefix) > 0 and (cs.prefix + sz) in cs.consts:
+        nm = cs.prefix + sz
+    elif sz in cs.consts:
+        nm = sz
+    if len(nm) == 0:
+        _cperr(&cs, "a bounded capacity must be an integer literal or an int `const` -- '" + sz + "' is not")
+        return "?"
+    if nm in cs.constv:
+        if cs.constv[nm] <= 0:
+            _cperr(&cs, "a bounded capacity must be positive")
+        return str(cs.constv[nm])
+    return "?"
+
+fn _bnd_elem(cs: inout C, el: string):
+    if el == "bool" or el == "void":
+        _cperr(&cs, "a bounded element cannot be bool or void")
+
+# ------------------------------------------------------------------- the FFI
+#
+# src/tychoc.c:4506-4525 and the two die sites at :4585 / :4611. The sized
+# numerics are accepted because parse_type consumes the sized-type NAME in an
+# extern signature and hands back `int`; tychoc1 keeps the spelling, so the
+# names are listed.
+fn _ffi_scalar(t: string) -> bool:
+    if t == "int" or t == "char" or t == "float" or t == "bool":
+        return true
+    if t == "string" or t == "ptr" or t == "f32":
+        return true
+    return t == "u8" or t == "u16" or t == "u32" or t == "u64" or t == "i8" or t == "i16" or t == "i32" or t == "i64"
+
+fn _ffi_param_ok(cs: inout C, t: string) -> bool:
+    if not known(t):
+        return true
+    if _ffi_scalar(t) or t == "bytes":
+        return true
+    if t == "arr(int)" or t == "arr(float)" or t == "arr(string)":
+        return true
+    return _aff_kind(&cs, t) == "handle"
+
+fn _ffi_ret_ok(cs: inout C, t: string) -> bool:
+    if not known(t) or t == "void":
+        return true
+    if _ffi_scalar(t) or t == "bytes":
+        return true
+    if t == "arr(int)" or t == "arr(float)" or t == "opt(string)":
+        return true
+    return _aff_kind(&cs, t) == "handle"
+
+# ------------------------------------------------- affine `inout` and `sink`
+#
+# src/tychoc.c:4311. Passing an affine value plainly is ALREADY a borrow, so
+# neither modifier has anything to do; the fixtures are affine_inout_chan,
+# affine_sink_param and chan_inout_param.
+fn _aff_param_check(cs: inout C, name: string, t: string, flag: string):
+    if flag != "inout" and flag != "sink":
+        return
+    if len(_aff_kind(&cs, t)) == 0:
+        return
+    _cerr(&cs, "'" + name + "' is " + flag + ", which an affine type cannot be -- it has one owner and is freed at that scope's exit, so there is nothing to consume or copy back. Pass it plainly: that is already a borrow")
+
+# ------------------------------------------- declaration-shape rules (6b)
+#
+# Each of these is a whole-declaration rule src/tychoc.c runs once, in
+# resolve_program (:9196-9235) or while the declaration is parsed. They are
+# `_cperr`s for the same reason Phase 6a's parse_type rules are: they precede
+# every body diagnostic in the build.
+
+# A `[$N]T` size parameter is meaningful only in a generic fn parameter, where
+# the argument fixes N. src/tychoc.c:9213 / :9219 / :9226.
+fn _has_sizeparam(t: ast.Ty) -> bool:
+    match t:
+        ast.TFix(sz, k):
+            if len(sz) > 0 and sz[0] == 36:
+                return true
+            return _has_sizeparam(k[0])
+        ast.TBnd(sz, k): return _has_sizeparam(k[0])
+        ast.TArr(k): return _has_sizeparam(k[0])
+        ast.TSoa(k): return _has_sizeparam(k[0])
+        ast.TMap(k):
+            for a in k:
+                if _has_sizeparam(a):
+                    return true
+            return false
+        ast.TTup(k):
+            for a in k:
+                if _has_sizeparam(a):
+                    return true
+            return false
+        ast.TFn(hr, k):
+            for a in k:
+                if _has_sizeparam(a):
+                    return true
+            return false
+        ast.TName(q, n, targs):
+            for a in targs:
+                if _has_sizeparam(a):
+                    return true
+            return false
+        _: return false
+    return false
+
+# A struct FIELD may not be a channel (src/tychoc.c:9203) nor a handle
+# (:4697); a task has no type syntax and cannot be written in one.
+fn _field_aff(cs: inout C, dline: int, t: string):
+    k := _aff_kind(&cs, t)
+    if len(k) == 0:
+        return
+    keep := cs.line
+    cs.line = dline
+    if k == "chan":
+        _cperr(&cs, "a struct field cannot be a channel")
+    else:
+        _cperr(&cs, _aff_msg(k))
+    cs.line = keep
+
+# Is this written type an instance of a DECLARED generic -- `Pool($T)` rather
+# than a bare name? src/tychoc.c:4440 refuses one as a subscript receiver.
+fn _ty_generic_inst(cs: inout C, t: ast.Ty) -> bool:
+    match t:
+        ast.TName(q, n, targs):
+            if len(targs) == 0:
+                return false
+            if q == "" and (n == "Option" or n == "Result" or n == "Channel"):
+                return false
+            return true
+        _: return false
+    return false
+
+# src/tychoc.c:8324-8338. An affine value may be BOUND only by the expression
+# that creates it: `spawn` for a task, a call for a handle (only an `extern fn`
+# opener produces one), `channel(...)` for a channel. `e := c` is the copy this
+# refuses, and it is the shape a golden cannot see -- the program still runs.
+fn _aff_bind_check(cs: inout C, t: string, rhs: ast.Expr):
+    k := _aff_kind(&cs, t)
+    if k == "task":
+        if not (rhs is ast.SpawnE):
+            _cerr(&cs, "a task handle cannot be copied or re-bound -- bind the spawn directly (t := spawn f(...))")
+    elif k == "handle":
+        if not (rhs is ast.Call) and not (rhs is ast.CallVal):
+            _cerr(&cs, "a handle cannot be copied -- it is freed once, at the end of its scope, and a second name would free it twice; bind the opener directly (f := open(...)), or pass this one as an argument, which borrows it")
+    elif k == "chan":
+        if not (rhs is ast.ChanE):
+            _cerr(&cs, "a channel cannot be copied -- it is freed once, when its creating scope exits, and a second name hides every send and receive from the compiler's analysis; bind the channel(...) directly, or pass this one as an argument")
+
+# src/tychoc.c:8394-8400 -- rebinding orphans the value the scope-exit free
+# targets. `want` is the VARIABLE's type, read before the rhs is scored.
+fn _aff_reassign_check(cs: inout C, name: string, vt: string):
+    k := _aff_kind(&cs, vt)
+    if k == "task":
+        _cerr(&cs, "a task variable cannot be reassigned -- each task is waited exactly once")
+    elif k == "chan":
+        _cerr(&cs, "a channel variable cannot be reassigned")
+    elif k == "handle":
+        _cerr(&cs, "a handle variable cannot be reassigned -- it is freed once, at the end of its scope")
+
+# ------------------------------------------------------- generic instantiation
+#
+# src/tychoc.c@instantiate_generic (:8940-9040) and the Stage-2 deep clone at
+# :12773. What is reproduced here is the INFERENCE, not the clone: a call to a
+# generic binds each `$T` by unifying the written parameter pattern against the
+# argument's type, checks the `where` predicates against the bindings, and
+# answers the SUBSTITUTED return type instead of `?`.
+#
+# The direction of every failure is deliberate. `_unify` answers TRUE for
+# anything it cannot ground -- an unknown argument type, a generic-struct
+# pattern, a function type -- because a false here REFUSES a legal program, and
+# `leg2b wrongly-rejected=0` over 1,078 files is the property this phase must
+# not spend.
+
+fn _unify(cs: inout C, pat: ast.Ty, at: string, b: inout [string: string]) -> bool:
+    if not known(at):
+        return true
+    ab := _base(&cs, at)
+    match pat:
+        ast.TParam(n):
+            if n in b:
+                return compat(b[n], at)
+            b[n] = at
+            return true
+        ast.TPrim(p):
+            if p == "?":
+                return true
+            return compat(p, at)
+        ast.TArr(k):
+            if _head(ab) != "arr":
+                return false
+            return _unify(&cs, k[0], _targs(ab)[0], &b)
+        ast.TFix(sz, k):
+            if _head(ab) != "fix":
+                return false
+            g := _targs(ab)
+            if len(sz) > 0 and sz[0] == 36:
+                nm := sz[1:]
+                if nm in b:
+                    if b[nm] != g[0]:
+                        return false
+                else:
+                    b[nm] = g[0]
+            elif _dec(sz) != g[0]:
+                return false
+            return _unify(&cs, k[0], g[1], &b)
+        ast.TBnd(sz, k):
+            if _head(ab) != "bnd":
+                return false
+            return _unify(&cs, k[0], _targs(ab)[1], &b)
+        ast.TMap(k):
+            if _head(ab) != "map":
+                return false
+            g := _targs(ab)
+            if not _unify(&cs, k[0], g[0], &b):
+                return false
+            return _unify(&cs, k[1], g[1], &b)
+        ast.TTup(k):
+            if _head(ab) != "tup":
+                return false
+            g := _targs(ab)
+            if len(g) != len(k):
+                return false
+            for i := 0; i < len(k); i += 1:
+                if not _unify(&cs, k[i], g[i], &b):
+                    return false
+            return true
+        ast.TSoa(k):
+            if _head(ab) != "soa":
+                return false
+            return _unify(&cs, k[0], _targs(ab)[0], &b)
+        ast.TFn(hr, k):
+            return true                # a lambda's inferred type is partly `?`
+        ast.TName(q, n, targs):
+            if len(q) == 0 and (n in cs.typarams) and len(_lookup_type(&cs, q, n)) == 0:
+                # A bare `T` refers to the `$T` introduced earlier in the same
+                # signature -- UNLESS a type of that name is declared, which
+                # corelib/testing does (`fn eq(t: inout T, got: $T, ...)`, where
+                # param 1 is the struct and only params 2-3 are the parameter).
+                if n in b:
+                    return compat(b[n], at)
+                b[n] = at
+                return true
+            if len(q) == 0 and n == "Option" and len(targs) == 1:
+                if _head(ab) != "opt":
+                    return false
+                return _unify(&cs, targs[0], _targs(ab)[0], &b)
+            if len(q) == 0 and n == "Channel" and len(targs) == 1:
+                if _head(ab) != "chan":
+                    return false
+                return _unify(&cs, targs[0], _targs(ab)[0], &b)
+            if len(q) == 0 and n == "Result" and len(targs) == 2:
+                if _head(ab) != "res":
+                    return false
+                g2 := _targs(ab)
+                if not _unify(&cs, targs[0], g2[0], &b):
+                    return false
+                return _unify(&cs, targs[1], g2[1], &b)
+            if len(targs) > 0:
+                return true            # a generic instance is not ground here
+            r := _lookup_type(&cs, q, n)
+            if len(r) == 0 or not known(r):
+                return true
+            return compat(r, at)
+        _: return true
+    return true
+
+# The five closed predicates, src/tychoc.c@constraint_ok. The first four see
+# through a newtype (`base_of`); `defaultable` does NOT, and that asymmetry is
+# the whole of tests/reject/where_defaultable_bad.ty.
+fn _pred_ok(cs: inout C, pred: string, t: string) -> bool:
+    if not known(t):
+        return true
+    b := _base(&cs, t)
+    if pred == "numeric":
+        return b == "int" or b == "float"
+    if pred == "comparable":
+        return b == "int" or b == "char" or b == "float" or b == "string"
+    if pred == "has_str":
+        return b == "int" or b == "bool" or b == "float" or b == "string"
+    if pred == "hashable":
+        return _mapkey_ok(&cs, t)
+    if pred == "defaultable":
+        return t == "int" or t == "float" or t == "bool" or t == "string"
+    return true
+
+# The `$T` names a written pattern mentions, in order of first appearance.
+fn _has_name6(xs: [string], n: string) -> bool:
+    for x in xs:
+        if x == n:
+            return true
+    return false
+
+fn _pat_params(t: ast.Ty, tps: [string], acc: [string]) -> [string]:
+    out := acc
+    match t:
+        ast.TParam(n):
+            push(out, n)
+            return out
+        ast.TArr(k): return _pat_params(k[0], tps, out)
+        ast.TSoa(k): return _pat_params(k[0], tps, out)
+        ast.TBnd(sz, k): return _pat_params(k[0], tps, out)
+        ast.TFix(sz, k): return _pat_params(k[0], tps, out)
+        ast.TMap(k):
+            for a in k:
+                out = _pat_params(a, tps, out)
+            return out
+        ast.TTup(k):
+            for a in k:
+                out = _pat_params(a, tps, out)
+            return out
+        ast.TFn(hr, k):
+            for a in k:
+                out = _pat_params(a, tps, out)
+            return out
+        ast.TName(q, n, targs):
+            if len(q) == 0 and _has_name6(tps, n):
+                push(out, n)
+            for a in targs:
+                out = _pat_params(a, tps, out)
+            return out
+        _: return out
+    return out
+
+# The written type with `$T` replaced by its binding. `_enc` reads cs.tbind for
+# exactly this, so the substitution runs the SAME encoder the declaration did --
+# which is what makes the affine and map-key rules fire on the INSTANCE.
+fn _subst(cs: inout C, s: FSig, t: ast.Ty, b: [string: string]) -> string:
+    keep := cs.tbind
+    kp := cs.prefix
+    kt := cs.typarams
+    cs.tbind = b
+    cs.prefix = s.pfx
+    cs.typarams = []string: bool
+    for n in s.tps:
+        cs.typarams[n] = true
+    r := _enc(&cs, t)
+    cs.tbind = keep
+    cs.prefix = kp
+    cs.typarams = kt
+    return r
+
+# One call to one generic function. `ts` is the explicit `f$(int, string)` list,
+# empty when the call is written plainly.
+fn _generic_call(cs: inout C, l: int, si: int, spelt: string, ts: [ast.Ty], args: [ast.Expr]) -> string:
+    kp := cs.prefix
+    ktp := cs.typarams
+    r := _generic_call2(&cs, l, si, spelt, ts, args)
+    cs.prefix = kp
+    cs.typarams = ktp
+    return r
+
+fn _generic_call2(cs: inout C, l: int, si: int, spelt: string, ts: [ast.Ty], args: [ast.Expr]) -> string:
+    s := cs.sg[si]
+    ats := []string
+    keep := cs.in_arg
+    cs.in_arg = true
+    for a in args:
+        push(ats, _ex(&cs, a))
+    cs.in_arg = keep
+    cs.line = l
+    if _any_named(args):
+        return "?"
+    for a in args:
+        if a is ast.Spread:
+            return "?"                 # a spread feeds a variadic elementwise
+    cs.typarams = []string: bool
+    for n in s.tps:
+        cs.typarams[n] = true
+    cs.prefix = s.pfx                  # every NAME in the signature resolves in
+                                       # the callee's package, not the caller's
+    b := []string: string
+    for i := 0; i < len(ts); i += 1:
+        if i < len(s.tps):
+            b[s.tps[i]] = _enc(&cs, ts[i])
+    variadic := len(s.pflags) > 0 and s.pflags[len(s.pflags) - 1] == "var"
+    np := len(s.pty)
+    if variadic:
+        np = np - 1
+    if len(args) < np:
+        return "?"                     # arity is the monomorphic checker's rule
+    if not variadic and len(args) != np:
+        return "?"
+    for i := 0; i < np; i += 1:
+        if not _unify(&cs, s.pty[i], ats[i], &b):
+            _cerr(&cs, "argument " + str(i + 1) + " of '" + spelt + "' is " + ats[i] + ", which does not fit the parameter pattern")
+            return "?"
+    if variadic:
+        vp := s.pty[len(s.pty) - 1]
+        for i := np; i < len(args); i += 1:
+            if not _unify(&cs, vp, ats[i], &b):
+                _cerr(&cs, "argument " + str(i + 1) + " of '" + spelt + "' is " + ats[i] + ", which does not fit the parameter pattern")
+                return "?"
+        if len(args) == np:
+            for tp in _pat_params(vp, s.tps, []string):
+                if not (tp in b):
+                    _cerr(&cs, "cannot infer the element type of an empty variadic call to generic '" + spelt + "'; pass at least one argument, or name the type: " + spelt + "$(<type>)()")
+                    return "?"
+    if len(s.pty) > 16:
+        cs.line = s.line               # src/tychoc.c names the DECLARATION
+        _cerr(&cs, "too many parameters (max 16)")
+        return "?"
+    for sp in s.szs:
+        if not (sp in b) and not _sp_in_params(s, sp):
+            _cerr(&cs, "the return type of '" + spelt + "' has a type parameter not fixed by any argument; pass it explicitly, e.g. " + spelt + "$(int)")
+            return "?"
+    for tp in s.tps:
+        if not (tp in b) and not _tp_in_params(&cs, s, tp):
+            _cerr(&cs, "no argument fixes '" + spelt + "''s type parameter $" + tp + " -- it appears only in the return type. Give it explicitly: " + spelt + "$(<the type for $T>)(...)")
+            return "?"
+    for w in s.whs:
+        i := 0
+        for i < len(w) and w[i] != 40:
+            i += 1
+        if i >= len(w) or len(w) < 2:
+            continue                   # a type-set constraint: the parser keeps
+                                       # only its name, so the SET is not here
+        pred := w[0:i]
+        tp := w[i + 1:len(w) - 1]
+        if tp in b and not _pred_ok(&cs, pred, b[tp]):
+            _cerr(&cs, "'" + spelt + "' instantiated with " + tp + " = " + b[tp] + ", which does not satisfy `" + pred + "(" + tp + ")`")
+            return "?"
+    # The instance's SUBSTITUTED parameter types, which is where the affine
+    # rules bite: `inout $T` is legal until `$T` is bound at a channel
+    # (src/tychoc.c:8997, and the note beside check_inout_param_type).
+    for i := 0; i < len(s.pty) and i < len(s.pflags); i += 1:
+        if s.pflags[i] == "inout" or s.pflags[i] == "sink":
+            pt := _subst(&cs, s, s.pty[i], b)
+            if len(_aff_kind(&cs, pt)) > 0:
+                cs.line = l
+                _cerr(&cs, "'" + s.pnames[i] + "' is " + s.pflags[i] + ", which an affine type cannot be -- '" + spelt + "' was instantiated at one. Pass it plainly: that is already a borrow")
+                return "?"
+            if s.pflags[i] == "inout" and _head(pt) == "fun":
+                cs.line = l
+                _cerr(&cs, "inout parameter '" + s.pnames[i] + "': a function value can't be inout (a callee could write a closure back into the caller and it would dangle)")
+                return "?"
+    if len(s.rty) == 1:
+        r := _subst(&cs, s, s.rty[0], b)
+        if not known(r):
+            cs.uses6b = true
+        cs.line = l
+        k := _aff_kind(&cs, r)
+        if k == "handle":
+            _cerr(&cs, "a Tycho fn cannot return a handle -- '" + spelt + "' was instantiated at one; only an `extern fn` opener may, because a handle is freed at the end of its scope")
+            return "?"
+        if k == "chan":
+            _cerr(&cs, "a function cannot return a channel -- create it in the owning scope and pass it down")
+            return "?"
+        return r
+    return "void"
+
+# `f$(int)(...)`. src/tychoc.c refuses the form on a non-generic function, and
+# `zero$(T)` is the one builtin that takes a type argument and constrains it.
+fn _explicit_call(cs: inout C, l: int, q: string, n: string, ts: [ast.Ty], args: [ast.Expr], want: string) -> string:
+    if n == "zero" and len(q) == 0:
+        _walk_args(&cs, args)
+        cs.line = l
+        t := _enc(&cs, ts[0])
+        if known(t) and not _pred_ok(&cs, "defaultable", t):
+            _cerr(&cs, "zero$(" + t + "): only int, float, bool, and string are defaultable")
+        return t
+    si := -1
+    spelt := n
+    if len(q) > 0:
+        spelt = _prefix_of(&cs, q) + n
+        si = _sigidx(&cs, spelt)
+    else:
+        if len(cs.prefix) > 0:
+            si = _sigidx(&cs, cs.prefix + n)
+        if si < 0:
+            si = _sigidx(&cs, n)
+    if si < 0:
+        for t in ts:
+            _enc(&cs, t)
+        _walk_args(&cs, args)
+        return "?"                     # a generic ENUM variant or struct: 6c
+    if not cs.sg[si].generic:
+        for t in ts:
+            _enc(&cs, t)
+        _walk_args(&cs, args)
+        cs.line = l
+        _cerr(&cs, "explicit type arguments given, but '" + n + "' is not a generic function")
+        return cs.sg[si].ret
+    if len(ts) != len(cs.sg[si].tps):
+        for t in ts:
+            _enc(&cs, t)
+        _walk_args(&cs, args)
+        cs.line = l
+        _cerr(&cs, "'" + spelt + "' has " + str(len(cs.sg[si].tps)) + " type parameter(s), but " + str(len(ts)) + " explicit type argument(s) were given")
+        return "?"
+    return _generic_call(&cs, l, si, n, ts, args)
+
+# Does `tp` appear anywhere in a PARAMETER pattern? src/tychoc.c's message says
+# "it appears only in the return type", and that is literally the rule: a `$T`
+# buried in a generic-struct argument (`peek(s: Stack($T)) -> $T`) IS fixed by
+# the call, even though this pass cannot yet say to what.
+fn _tp_in_params(cs: inout C, s: FSig, tp: string) -> bool:
+    for i := 0; i < len(s.pty); i += 1:
+        for q in _pat_params(s.pty[i], s.tps, []string):
+            if q == tp:
+                return true
+    return false
+
+# src/tychoc.c:8390 -- `x := Ok(1)` has no Result type of its own: the error
+# side is unknowable from the value. A call that RETURNS a Result is fine, and
+# an annotation supplies both sides, so the rule is narrow on purpose.
+fn _bare_result(cs: inout C, t: string, rhs: ast.Expr):
+    if _head(t) != "res":
+        return
+    if not ((rhs is ast.OkE) or (rhs is ast.ErrE)):
+        return
+    g := _targs(t)
+    if known(g[0]) and known(g[1]):
+        return
+    w := "Ok(...)"
+    if rhs is ast.ErrE:
+        w = "Err(...)"
+    _cerr(&cs, "cannot infer the Result type of " + w + " -- annotate it (x : Result(T, E) = " + w + ")")
+
+# A nullary variant of a GENERIC enum, written bare, fixes nothing.
+fn _bare_variant(cs: inout C, l: int, n: string, owner: string) -> string:
+    i := _tdecl(&cs, owner)
+    if i >= 0 and cs.tds[i].generic:
+        cs.line = l
+        _cerr(&cs, n + " is a variant of generic enum " + cs.tds[i].name + "; supply the type explicitly, e.g. " + n + "$(int)")
+        return "?"
+    return owner
+
+# 07-memory-model.md §11.5: two arguments of ONE call may not overlap when one
+# of them is `inout`. Three shapes, three messages in src/tychoc.c, and all
+# three are invisible to a monomorphic type check -- every argument's TYPE is
+# correct in each of them.
+fn _alias_check(cs: inout C, name: string, s: FSig, args: [ast.Expr], line: int):
+    n := len(args)
+    if n > len(s.pflags):
+        n = len(s.pflags)
+    for i := 0; i < n; i += 1:
+        if s.pflags[i] != "inout" or not (args[i] is ast.Addr):
+            continue
+        r := _place_root(args[i])
+        if len(r) == 0:
+            continue
+        for j := i + 1; j < n; j += 1:
+            if s.pflags[j] == "inout" and (args[j] is ast.Addr) and _place_root(args[j]) == r:
+                cs.line = line
+                _cerr(&cs, "variable '" + r + "' passed to two inout parameters of '" + name + "' (overlapping mutable access)")
+                return
+        # Scoped to a BARE by-value variable: `a[i]` and `a.f` are distinct
+        # extracted values and are left alone (src/tychoc.c:7150).
+        for j := 0; j < len(args); j += 1:
+            if j == i or (j < n and s.pflags[j] == "inout"):
+                continue
+            if (args[j] is ast.Name) and _place_root(args[j]) == r:
+                cs.line = line
+                _cerr(&cs, "variable '" + r + "' is passed to an inout parameter and also by value in the same call to '" + name + "' (overlapping access -- the by-value copy would alias the inout'd value)")
+                return
+    for i := 0; i < len(args); i += 1:
+        if not (args[i] is ast.Slice):
+            continue
+        r := _place_root(args[i])
+        if len(r) == 0:
+            continue
+        for j := 0; j < n; j += 1:
+            if s.pflags[j] == "inout" and (args[j] is ast.Addr) and _place_root(args[j]) == r:
+                cs.line = line
+                _cerr(&cs, "cannot pass a slice of '" + r + "' and an inout of '" + r + "' in one call (the inout may reallocate the buffer the slice views)")
+                return
+
+# The variable an argument is ROOTED at: `&g.cells[i]` and `a[1:2]` are both
+# rooted at their bare name. `Addr` and `Slice` unwrap, then field and index
+# steps do, exactly as src/tychoc.c:7139 walks `E_FIELD`/`E_INDEX`.
+fn _place_root(e: ast.Expr) -> string:
+    match e:
+        ast.Name(l, nm): return nm
+        ast.Addr(l, k): return _place_root(k[0])
+        ast.Slice(l, a, b, k): return _place_root(k[0])
+        ast.Field(l, k, f): return _place_root(k[0])
+        ast.Index(l, k): return _place_root(k[0])
+        _: return ""
+    return ""
+
+# ------------------------------------------------- generic AGGREGATE instances
+#
+# src/tychoc.c@struct_instantiate / enum_instantiate, and the Stage-2 deep clone
+# at :12773. `subst_type` there rebuilds every field type FROM SCRATCH, which is
+# the seam that lost `bounded` once (FRICTION #51-54): the instance is not the
+# template, and a rule checked on the template sees `$T`, never the type it was
+# bound to. So an instance here is stamped as a real TDecl whose field types are
+# re-encoded through `_subst` -- the SAME encoder, which is what makes the
+# channel, task, handle and map-key rules fire on the instance.
+
+fn _inst_key(m: string, enc: [string]) -> string:
+    k := m + "$"
+    for i := 0; i < len(enc); i += 1:
+        if i > 0:
+            k = k + ","
+        k = k + enc[i]
+    return k
+
+# `Box(int)` written as a TYPE. src/tychoc.c:2587 / :2616: the arguments must be
+# EITHER exactly the declaration's own parameters, in order (a recursive
+# reference from inside the template), OR all concrete. A list mixing the two --
+# `Box([$T])` -- is refused, and that is generic_partial_struct/_enum.
+fn _inst_named(cs: inout C, q: string, n: string, targs: [ast.Ty], enc: [string]) -> string:
+    m := ""
+    if len(q) > 0:
+        m = _prefix_of(&cs, q) + n
+    elif len(cs.prefix) > 0 and (cs.prefix + n) in cs.tindex:
+        m = cs.prefix + n
+    elif n in cs.tindex:
+        m = n
+    if len(m) == 0 or not (m in cs.tindex):
+        return "?"
+    ti := cs.tindex[m]
+    d := cs.tds[ti]
+    if not d.generic or (d.kind != "struct" and d.kind != "enum"):
+        cs.uses6b = true
+        return "?"
+    selfref := len(targs) == len(d.tps)
+    concrete := true
+    for i := 0; i < len(targs); i += 1:
+        if not _is_self_param(targs[i], d.tps, i):
+            selfref = false
+        if _has_param(targs[i]):
+            concrete = false
+    if selfref:
+        return "?"                     # a recursive reference to the template
+    if not concrete:
+        kind := "struct"
+        if d.kind == "enum":
+            kind = "enum"
+        _cperr(&cs, "generic " + kind + " '" + n + "': its type arguments must be EITHER exactly its own parameters, in order (a recursive reference), OR all concrete -- a list mixing the two is not supported, even where each argument alone would be legal")
+        return "?"
+    return _inst_agg(&cs, ti, enc)
+
+fn _is_self_param(t: ast.Ty, tps: [string], i: int) -> bool:
+    if i >= len(tps):
+        return false
+    match t:
+        ast.TParam(nm): return nm == tps[i]
+        ast.TName(q, nm, ts): return len(q) == 0 and len(ts) == 0 and nm == tps[i]
+        _: return false
+    return false
+
+fn _has_param(t: ast.Ty) -> bool:
+    match t:
+        ast.TParam(nm): return true
+        ast.TArr(k): return _has_param(k[0])
+        ast.TSoa(k): return _has_param(k[0])
+        ast.TFix(sz, k): return _has_param(k[0])
+        ast.TBnd(sz, k): return _has_param(k[0])
+        ast.TMap(k):
+            for a in k:
+                if _has_param(a):
+                    return true
+            return false
+        ast.TTup(k):
+            for a in k:
+                if _has_param(a):
+                    return true
+            return false
+        ast.TFn(hr, k):
+            for a in k:
+                if _has_param(a):
+                    return true
+            return false
+        ast.TName(q, nm, ts):
+            for a in ts:
+                if _has_param(a):
+                    return true
+            return false
+        _: return false
+    return false
+
+# Stamp (or find) the instance of the generic aggregate at `ti` bound to `enc`.
+# The 1024 cap is src/tychoc.c's own, and it is what stops a recursive generic
+# at a growing type from running this pass forever rather than reporting.
+fn _inst_agg(cs: inout C, ti: int, enc: [string]) -> string:
+    d := cs.tds[ti]
+    if len(enc) != len(d.tps):
+        return "?"
+    for e in enc:
+        if not known(e):
+            cs.uses6b = true
+            return "?"                 # nothing to stamp yet
+    key := _inst_key(d.name, enc)
+    if key in cs.tindex:
+        return "@" + key
+    if len(cs.tds) > 1024 + cs.ntd0:
+        _cperr(&cs, "too many generic instantiations (> 1024) -- a recursive generic at a growing type?")
+        return "?"
+    b := []string: string
+    for i := 0; i < len(d.tps); i += 1:
+        b[d.tps[i]] = enc[i]
+    cs.tindex[key] = len(cs.tds)
+    push(cs.tds, TDecl(key, d.kind, false, d.fnames, []string, d.file, d.line,
+                       []ast.Ty, []int, []string, ""))
+    ni := cs.tindex[key]
+    keepb := cs.tbind
+    keepp := cs.prefix
+    keept := cs.typarams
+    cs.tbind = b
+    cs.prefix = d.pfx
+    cs.typarams = []string: bool
+    for nm in d.tps:
+        cs.typarams[nm] = true
+    out := []string
+    at := 0
+    for v := 0; v < len(d.pcnt); v += 1:
+        pay := ""
+        for c := 0; c < d.pcnt[v]; c += 1:
+            e := _enc(&cs, d.pats[at])
+            at += 1
+            if c > 0:
+                pay = pay + "|"
+            pay = pay + e
+            k := _aff_kind(&cs, e)
+            if len(k) > 0:
+                if d.kind == "enum":
+                    _cperr(&cs, "an enum payload cannot be a " + _aff_word(k) + " -- '" + _short(d.name) + "' was instantiated at one")
+                else:
+                    _cperr(&cs, "a struct field cannot be a " + _aff_word(k) + " -- '" + _short(d.name) + "' was instantiated at one")
+        push(out, pay)
+    cs.tds[ni].ftypes = out
+    cs.tbind = keepb
+    cs.prefix = keepp
+    cs.typarams = keept
+    return "@" + key
+
+fn _aff_word(k: string) -> string:
+    if k == "task":
+        return "task"
+    if k == "handle":
+        return "handle"
+    return "channel"
+
+fn _short(m: string) -> string:
+    i := len(m) - 1
+    for i >= 1:
+        if m[i] == 95 and m[i - 1] == 95:
+            return m[i + 1:]
+        i -= 1
+    return m
+
+# `Box(ch)` / `Full(ch)`: a generic aggregate instantiated from a CONSTRUCTOR
+# call rather than a written type. The bindings come from unifying each field
+# (or payload) pattern against the argument, which is src/tychoc.c's own
+# inference for a struct literal at a generic type.
+fn _inst_ctor(cs: inout C, l: int, ti: int, args: [ast.Expr], at0: int, npay: int) -> string:
+    d := cs.tds[ti]
+    ats := []string
+    keep := cs.in_arg
+    cs.in_arg = true
+    for a in args:
+        push(ats, _ex(&cs, a))
+    cs.in_arg = keep
+    cs.line = l
+    if len(args) != npay:
+        return "?"
+    ktp := cs.typarams
+    kp := cs.prefix
+    cs.typarams = []string: bool
+    for nm in d.tps:
+        cs.typarams[nm] = true
+    cs.prefix = d.pfx
+    b := []string: string
+    ok := true
+    for i := 0; i < npay; i += 1:
+        if not _unify(&cs, d.pats[at0 + i], ats[i], &b):
+            ok = false
+    cs.typarams = ktp
+    cs.prefix = kp
+    cs.line = l
+    if not ok:
+        _cerr(&cs, "argument " + str(1) + " of '" + _short(d.name) + "' does not fit the field pattern")
+        return "?"
+    enc := []string
+    for nm in d.tps:
+        if nm in b:
+            push(enc, b[nm])
+        else:
+            push(enc, "?")
+    return _inst_agg(&cs, ti, enc)
+
+# ------------------------------------------------------------ `sink` consumes
+#
+# src/tychoc.c's sink rules are TEXTUAL on purpose, and the message says so: one
+# mention is how the compiler proves the consume is the last use on every path
+# with no dataflow analysis. So the check is a mention COUNT over the enclosing
+# function's body -- `len(w)`, `w[0]`, `w[0] = ...` and passing `w` anywhere
+# else all disqualify it, before the consuming line as well as after.
+
+fn _count_e(e: ast.Expr, m: inout [string: int]):
+    match e:
+        ast.Name(l, n): m[n] = m.get(n, 0) + 1
+        ast.Field(l, k, f): _count_es(k, &m)
+        ast.TupIdx(l, k, i): _count_es(k, &m)
+        ast.Index(l, k): _count_es(k, &m)
+        ast.Slice(l, a, b, k): _count_es(k, &m)
+        ast.Call(l, q, n, ts, k): _count_es(k, &m)
+        ast.CallVal(l, k): _count_es(k, &m)
+        ast.Named(l, n, k): _count_es(k, &m)
+        ast.Binop(l, o, k): _count_es(k, &m)
+        ast.Unop(l, o, k): _count_es(k, &m)
+        ast.IsVar(l, k, q, n): _count_es(k, &m)
+        ast.ArrLit(l, k): _count_es(k, &m)
+        ast.MapLit(l, k): _count_es(k, &m)
+        ast.Tuple(l, k): _count_es(k, &m)
+        ast.SomeE(l, k): _count_es(k, &m)
+        ast.OkE(l, k): _count_es(k, &m)
+        ast.ErrE(l, k): _count_es(k, &m)
+        ast.SpawnE(l, k): _count_es(k, &m)
+        ast.OrRet(l, k): _count_es(k, &m)
+        ast.Spread(l, k): _count_es(k, &m)
+        ast.Addr(l, k): _count_es(k, &m)
+        ast.ChanE(l, t, k): _count_es(k, &m)
+        ast.Lambda(l, ps, rt, k): _count_es(k, &m)
+        _: pass
+
+fn _count_es(es: [ast.Expr], m: inout [string: int]):
+    for e in es:
+        _count_e(e, &m)
+
+fn _count_s(s: ast.Stmt, m: inout [string: int]):
+    match s:
+        ast.ExprStmt(l, k): _count_es(k, &m)
+        ast.Decl(l, n, ty, rhs, vb):
+            _count_es(rhs, &m)
+            _count_b(vb, &m)
+        ast.MDecl(l, isd, ns, rhs):
+            _count_es(rhs, &m)
+            if not isd:
+                for n in ns:
+                    m[n] = m.get(n, 0) + 1
+        ast.Assign(l, n, rhs):
+            m[n] = m.get(n, 0) + 1
+            _count_es(rhs, &m)
+        ast.PlaceSet(l, k): _count_es(k, &m)
+        ast.ConstS(l, n, v): _count_es(v, &m)
+        ast.ReturnS(l, k): _count_es(k, &m)
+        ast.DeleteS(l, k): _count_es(k, &m)
+        ast.IfS(l, c, b, e):
+            _count_es(c, &m)
+            _count_b(b, &m)
+            _count_b(e, &m)
+        ast.WhileS(l, c, b):
+            _count_es(c, &m)
+            _count_b(b, &m)
+        ast.For3(l, i, c, b):
+            _count_b(i, &m)
+            _count_es(c, &m)
+            _count_b(b, &m)
+        ast.ForIn(l, v, c, b):
+            _count_es(c, &m)
+            _count_b(b, &m)
+        ast.ForRange(l, v, bd, b):
+            _count_es(bd, &m)
+            _count_b(b, &m)
+        ast.ParallelS(l, w, b):
+            _count_es(w, &m)
+            _count_b(b, &m)
+        ast.MatchS(l, subj, arms):
+            _count_es(subj, &m)
+            for a in arms:
+                _count_b(a.body, &m)
+        ast.SelectS(l, arms):
+            for a in arms:
+                _count_es(a.ch, &m)
+                _count_b(a.body, &m)
+        _: pass
+
+fn _count_b(b: [ast.Stmt], m: inout [string: int]):
+    for s in b:
+        _count_s(s, &m)
+
+fn _mentions(body: [ast.Stmt]) -> [string: int]:
+    m := []string: int
+    _count_b(body, &m)
+    return m
+
+# One call's `sink` arguments, checked against the three rules.
+fn _sink_check(cs: inout C, name: string, s: FSig, args: [ast.Expr], line: int):
+    n := len(args)
+    if n > len(s.pflags):
+        n = len(s.pflags)
+    for i := 0; i < n; i += 1:
+        if s.pflags[i] != "sink":
+            continue
+        if not _is_heap(&cs, s.ptypes[i]):
+            continue                   # `sink` on a non-heap type enforces nothing
+        match args[i]:
+            ast.Name(l, v):
+                if (v in cs.parms) and not (v in cs.sinkp):
+                    continue           # a plain parameter is copied, never adopted
+                cs.line = line
+                if v in cs.sinkp:
+                    _cerr(&cs, "'" + v + "' is a `sink` parameter and cannot be handed to another `sink` parameter: a parameter's buffer is never adopted, however it was declared. Copy it first (`y := " + v + "`) and consume `y`")
+                elif cs.loopd > 0:
+                    _cerr(&cs, "'" + v + "' is consumed by a `sink` parameter inside a loop, where the next iteration would consume it again; no named variable can be adopted in a loop, a copy made in the loop included. Lift the call out of the loop, or pass a fresh value (a literal, or a call's result)")
+                elif cs.ment.get(v, 0) != 1:
+                    _cerr(&cs, "'" + v + "' is consumed by a `sink` parameter but is mentioned " + str(cs.ment.get(v, 0)) + " times in this function: a sink argument must be the variable's ONLY mention")
+            _: pass
+
+# src/tychoc.c@type_is_heap. A `sink` on a non-heap type is legal and enforces
+# NOTHING (tests/sink_scalar_noop.ty), so the consume rules above are gated on
+# it -- without the gate that fixture is refused, which is exactly what the
+# first version of this leg did.
+fn _is_heap(cs: inout C, t: string) -> bool:
+    if not known(t):
+        return false
+    b := _base(&cs, t)
+    if b == "string" or b == "bytes":
+        return true
+    h := _head(b)
+    if h == "arr" or h == "fix" or h == "bnd" or h == "map" or h == "soa" or h == "fun":
+        return true
+    if h == "opt":
+        return _is_heap(&cs, _targs(b)[0])
+    if h == "res":
+        g := _targs(b)
+        return _is_heap(&cs, g[0]) or _is_heap(&cs, g[1])
+    if h == "tup":
+        for a in _targs(b):
+            if _is_heap(&cs, a):
+                return true
+        return false
+    i := _tdecl(&cs, b)
+    if i < 0:
+        return false
+    d := cs.tds[i]
+    if d.kind == "enum":
+        for pay in d.ftypes:
+            if len(pay) > 0:
+                return true
+        return false
+    if d.kind == "struct":
+        for ft in d.ftypes:
+            if _is_heap(&cs, ft):
+                return true
+    return false
+
+# The `$N` size parameters a written pattern mentions. Kept apart from
+# `_pat_params` because a size parameter is bound by an array's LENGTH, not by
+# a type, and its unbound-in-the-return message is a different one.
+fn _size_params(t: ast.Ty, acc: [string]) -> [string]:
+    out := acc
+    match t:
+        ast.TFix(sz, k):
+            if len(sz) > 0 and sz[0] == 36:
+                push(out, sz[1:])
+            return _size_params(k[0], out)
+        ast.TArr(k): return _size_params(k[0], out)
+        ast.TSoa(k): return _size_params(k[0], out)
+        ast.TBnd(sz, k): return _size_params(k[0], out)
+        ast.TMap(k):
+            for a in k:
+                out = _size_params(a, out)
+            return out
+        ast.TTup(k):
+            for a in k:
+                out = _size_params(a, out)
+            return out
+        ast.TFn(hr, k):
+            for a in k:
+                out = _size_params(a, out)
+            return out
+        ast.TName(q, n, ts):
+            for a in ts:
+                out = _size_params(a, out)
+            return out
+        _: return out
+    return out
+
+fn _sp_in_params(s: FSig, sp: string) -> bool:
+    for i := 0; i < len(s.pty); i += 1:
+        for q in _size_params(s.pty[i], []string):
+            if q == sp:
+                return true
+    return false
+
+# `p.yy` on a struct that has no such field. `_field_ty` answers `?` so nothing
+# downstream refuses; the diagnostic has to be raised here.
+fn _no_field(cs: inout C, rt: string, f: string):
+    if f in cs.subs:
+        return                         # `g.at(0)`: a declared subscript, not a field
+    i := _tdecl(&cs, _base(&cs, rt))
+    if i < 0 or cs.tds[i].kind != "struct" or len(cs.tds[i].fnames) == 0:
+        return
+    for nm in cs.tds[i].fnames:
+        if nm == f:
+            return
+    _cerr(&cs, "struct " + _short(cs.tds[i].name) + " has no field '" + f + "'")
+
+# The largest finite f32 (IEEE-754 binary32). src/tychoc.c refuses a literal
+# past it rather than letting it become an infinity in silence.
+fn _f32_fits(cs: inout C, e: ast.Expr):
+    match e:
+        ast.FloatLit(l, v):
+            if v > 3.4028234663852886e38 or v < -3.4028234663852886e38:
+                cs.line = l
+                _cerr(&cs, "f32 literal out of range")
+        _: pass
+
+fn _dedup6(xs: [string]) -> [string]:
+    out := []string
+    for x in xs:
+        if not _has_name6(out, x):
+            push(out, x)
+    return out
+
+# A type as a DIAGNOSTIC names it. The encoded `@coin__Cents` is the internal
+# spelling and must never reach a message: tools/tycho-ledger/run.sh greps every
+# refusal for `__` for exactly this reason, and the newtype-under rule printed
+# the mangled form until leg14 caught it.
+fn _show(cs: inout C, t: string) -> string:
+    if len(t) > 1 and t[0] == 64:
+        m := t[1:]
+        i := 0
+        for i + 1 < len(m):
+            if m[i] == 95 and m[i + 1] == 95:
+                return m[0:i] + "." + m[i + 2:]
+            i += 1
+        return m
+    return t

@@ -40,14 +40,36 @@ import classify_rejects as C
 ROOTS = ("tests", "corelib", "tools", "examples", "server", "bench")
 EXPECT = 1078          # a leg that scores 0 of 0 is green by accident
 SITES = C.load_sites()
-# The four TYPE fixtures Phase 6a does not refuse -- the same list compiler/run.sh
-# carries, and for the same reason: three need generic instantiation (Phase 6b),
-# one sits inside an f-string the parser keeps as raw text.
+# The fixtures `--typecheck` does not refuse -- the same list compiler/run.sh
+# carries, with the same reasons. Phase 6b turned `--typecheck` into the whole
+# semantic check, so SEMANTIC is scored as a refusal here too.
 KNOWN_TYPE_MISS = {
-    "tests/reject/generic_bounded_field_degraded.ty",
-    "tests/reject/generic_inst_inout_fnvalue.ty",
-    "tests/reject/generic_params_17.ty",
+    "tests/reject/generic_recur_grow.ty",
+    "tests/reject/infer_bare_empty.ty",
+    "tests/reject/infer_use_before_ground.ty",
     "tests/reject/len_scalar.ty",
+    "tests/reject/typeset_notin.ty",
+    "tests/reject/void_grounds_pending_push.ty",
+    # THE CONCURRENCY RULES, a family of their own: what `spawn` may be applied
+    # to, `parallel for`'s reduction and control-flow rules, capturing a task,
+    # and wait's argument. None of them is a type rule -- each is a statement
+    # SHAPE -- and they are Phase 6c's, named there.
+    "tests/conc/reject/builtin.ty",
+    "tests/conc/reject/capture.ty",
+    "tests/conc/reject/closure.ty",
+    "tests/conc/reject/inout.ty",
+    "tests/conc/reject/parfor_assign.ty",
+    "tests/conc/reject/parfor_break.ty",
+    "tests/conc/reject/parfor_push.ty",
+    "tests/conc/reject/parfor_read_acc.ty",
+    "tests/conc/reject/parfor_return.ty",
+    "tests/conc/reject/select_return_in_parfor.ty",
+    "tests/conc/reject/wait_nontask.ty",
+    # a match ARM naming a foreign package's variant, or a Result arm written
+    # with one: the arm-name rules, also Phase 6c
+    "tests/reject/pkg/foreign_variant_bare/main.ty",
+    "tests/reject/pkg/foreign_variant_is/main.ty",
+    "tests/reject/pkg/result_arm_mangled/main.ty",
     # the same rule, reached only through an INSTANTIATED generic: the error is
     # in the template body and only a bound $T makes it one
     "tests/diag/generic_inst_name.ty",
@@ -98,6 +120,7 @@ def main():
     lok = lbad2 = lskip = 0
     tok = tbad2 = tskip = 0
     sixb = 0
+    ntype_scored = 0
     for f in files:
         cls, msg, loc = tychoc_verdict(f)
         n[cls] += 1
@@ -132,15 +155,16 @@ def main():
                 lok += 1
         t = subprocess.run(["./tychoc1", f, "--typecheck"], capture_output=True, text=True)
         typed = t.returncode == 0
-        if typed != (cls not in ("SYNTAX", "NAME", "TYPE")):
-            if not (cls == "TYPE" and f in KNOWN_TYPE_MISS):
+        if typed != (cls == "ACCEPT"):
+            if f not in KNOWN_TYPE_MISS:
                 tbad += 1
                 print("  TYPE-DISAGREE %s tychoc=%s tychoc1=%s :: %s"
                       % (f, cls, "accept" if typed else "reject",
                          (msg or t.stderr.split("\n")[0]).strip()[:90]))
-        if typed and " sixb=1" in t.stdout:
+        if cls == "ACCEPT" and typed and " sixb=1" in t.stdout:
             sixb += 1
         if cls == "TYPE" and f not in KNOWN_TYPE_MISS:
+            ntype_scored += 1
             m = re.search(r"^(\S+?(?::\d+)?): error: ", t.stderr, re.M)
             mine = m.group(1) if m else ""
             if not loc or not mine:
@@ -166,12 +190,14 @@ def main():
           % (tbad, len(KNOWN_TYPE_MISS)))
     print("leg11 TYPE diagnostic file:line vs ./tychoc: scored=%d agree=%d disagree=%d unlocated=%d"
           % (tok + tbad2 + tskip, tok, tbad2, tskip))
-    print("leg12 files whose program uses a generic/newtype/handle/bounded: %d of %d accepted "
-          "-- every such construct is answered `?` here; Phase 6b's number to drive down"
+    print("leg12 accepted programs with a generic/newtype/handle/bounded construct this pass "
+          "could NOT ground: %d of %d -- Phase 6a counted every program that DECLARED one "
+          "(202), which no amount of work could drive down; the flag now marks an "
+          "instantiation, a generic return or a bounded capacity actually left `?`"
           % (sixb, n["ACCEPT"]))
-    if tok + tbad2 + tskip != n["TYPE"] - len(KNOWN_TYPE_MISS):
+    if tok + tbad2 + tskip != ntype_scored:
         print("parse-check: leg11 scored %d of %d TYPE files"
-              % (tok + tbad2 + tskip, n["TYPE"] - len(KNOWN_TYPE_MISS)))
+              % (tok + tbad2 + tskip, ntype_scored))
         return 1
     if lok + lbad2 + lskip != n["NAME"]:
         print("parse-check: leg8 scored %d of %d NAME files" % (lok + lbad2 + lskip, n["NAME"]))
