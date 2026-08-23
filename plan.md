@@ -965,40 +965,58 @@ self-built twice, the two emitted `.c` identical.
     are excluded and stay Phase 8's.
   - Verify: `sh scripts/tychoc1_sweep.sh` — never an unbounded `make test`.
 
-  **PARTIAL, committed unticked 2026-08-23.** `sh scripts/tychoc1_sweep.sh`
-  moved `compile=77 clean-error=197 / link=77 RUN=77 MATCH=76` to
-  `compile=126 clean-error=148 / link=125 RUN=125 MATCH=122`. Landed: newtype
-  erasure, tuples (literal, `.0`, destructuring, multi-return), Option/Result
-  monomorphised into stamped enums with `or_return`, `inout`/`sink`/variadic
-  parameters, named call and struct arguments, value-`if`/value-`match`
-  declarations, `for x in <string>`, and `args`/`now`/`read_file`/`write_file`.
+  **STILL PARTIAL, committed unticked 2026-08-23 (second pass).**
+  `sh scripts/tychoc1_sweep.sh`, before and after this pass:
 
-  **148 remain, grouped by the FIRST error each fixture reports** (a fixture may
-  need more than one of these):
+  ```
+  before  tests: compile=201 clean-error=73 link=201 RUN=201 MATCH=199
+          examples 22 | tests/pkg 16 | reject 336/337 | reject/pkg 15/17
+  after   tests: compile=233 clean-error=41 link=232 RUN=232 MATCH=230
+          examples 22 | tests/pkg 19 | reject 336/337 | reject/pkg 15/17
+  ```
+
+  Nothing regressed; `warn` improved too (refused 5 -> 4). `make parse-check`
+  still all green, `disagreements=0` on 1,078 files.
+
+  **Landed this pass**, all six of the phase's named families bar `extern`:
+  f-strings (split and hole re-lex in emit, so no parser change was needed --
+  the AST census is untouched); sized ints and `bytes` (u8..i64, f32, the
+  to_XXX conversions, width-preserving arithmetic and the shift guards);
+  fixed arrays `[N]T` and `bounded[N]T` (both lowered to the dynamic array);
+  array literals adapting to the annotated element type; function values and
+  closures (the 3-word fat pointer, per-function `__clo` trampolines, per-lambda
+  Env struct + copier, free-variable capture including a call's CALLEE name);
+  plus two one-offs the families exposed -- char arithmetic masking to a byte
+  and `str`/`==` of a fn value.
+
+  **41 clean errors remain**, 18 of them Phase 8's:
 
   | n | cause | owner |
   |---|---|---|
-  | 51 | generics — generic struct/enum/fn, `$T` | Phase 8 |
-  | 44 | maps — `[K: V]`, `[]K: V`, map literal, indexing | Phase 8 |
-  | 5 | `soa` | Phase 8 |
-  | 3 | handle / channel / spawn | Phase 8 |
-  | 10 | sized ints and `bytes` — `u8`..`i64`, `f32`, `to_u32`, `to_bytes` | **7b** |
-  | 9 | closures and function values — `TFn`, `Lambda`, `CallVal` | **7b** |
-  | 5 | fixed-size arrays `[N]T` | **7b** |
-  | 3 | `bounded[N]T` | **7b** |
-  | 3 | f-strings — the parser hands `FStrLit` its body UNPARSED, so emit would have to re-lex the interpolations | **7b** |
-  | 4 | package-qualified calls / `import` | **7b** |
-  | 3 | `extern` functions | **7b** |
-  | 8 | one-offs: `len()` of a non-collection (2), `list_dir`, `hash`, two `None`/`Ok` with no type to belong to, two unknown names | **7b** |
+  | 6 | `soa` (`SoaLit` 4, `TSoa` 2) | **8** |
+  | 6 | channels (`ChanE` 4, `Channel(T)` 2) | **8** |
+  | 3 | `handle` / `subscript` declarations | **8** |
+  | 2 | `&place` outside an `inout` argument | **8** |
+  | 1 | `wait` on a spawned task | **8** |
+  | 3 | `extern` — see below, NOT reachable by this sweep | 7b |
+  | 3 | a generic struct with a fn-typed or bounded field: `cannot infer $T` | 7b |
+  | 3 | elementwise array arithmetic / broadcast (`array_arith`, `array_bcast`, `char_elem_ops`) | 7b |
+  | 2 | `$N` const generics used as a VALUE (`const_generic_size`, `generic_many_typaram_names`) | 7b |
+  | 3 | `None`/`Ok` with no type to belong to (`bounded_elems`, `inference`, `option_arrays`, `result_tuple`) | 7b |
+  | 2 | two match-payload binds not in scope (`nested_pattern`, `result_void`) | 7b |
+  | 4 | builtins: `fabs`, `list_dir`, `hash`, `len` of a non-collection | 7b |
+  | 1 | `stmt:ParallelS` (`int_hex`) | 8 |
 
-  **103 of the 148 are Phase 8's subjects and are out of this phase's scope by
-  rule.** The 45 that are 7b's are the table's lower half.
+  **`extern` cannot raise MATCH and is not worth emitting until that changes.**
+  The three fixtures name `tycho_test_make_locale_hostile` and
+  `tycho_test_float_roundtrip`, which live in a test shim `tests/run.sh` links;
+  the sweep compiles the emitted C with `cc x.c -lpthread -lm` and nothing else,
+  so even a perfect `extern` lowering would fail at LINK rather than match.
 
   Also still open, and NOT clean errors — they emit C and then fail:
-  1 fixture whose C does not compile (`projections`, an `inout` argument whose
-  place is not a C lvalue) and 3 whose output differs (`compound_index_eval`,
-  `match_payload_mut`, `int_overflow` — the last of these already differed at
-  Phase 7 and is the sweep's one pre-existing mismatch).
+  1 fixture whose C does not compile (`newtype_over_aggregate`, below) and
+  2 whose output differs (`match_payload_mut`, `int_overflow` — the latter has
+  differed since Phase 7). `projections` and `compound_index_eval` are fixed.
 
 - [x] **Phase 7c — find the fixture that OOMs the box under tychoc1**
   - Scope: diagnosis only. Bisect the 752-fixture corpus OUTSIDE `tests/*.ty`
@@ -1510,3 +1528,17 @@ self-built twice, the two emitted `.c` identical.
   - Verify: `make parse-check`. Expect leg3's census to MOVE (the interpolations
     become real nodes) and say by how much; both other censuses should not.
   - Do NOT run: `make test`. Nothing here reaches `src/tychoc.c`.
+
+- [ ] **Phase 7f — emit's C declaration order puts tuple bodies before map bodies**
+  - Scope: `compiler/emit/emit.ty@program`. A tuple whose ELEMENT is a map holds
+    it by value, so `struct TychoTup0_ { ... TychoMapM0 f1; ... }` names an
+    incomplete type. `tests/newtype_over_aggregate.ty` is the first fixture to
+    reach it (it was a clean error until Phase 7b's second pass lowered `[N]T`),
+    and it is the sweep's only `compile` that does not `link`.
+  - **The obvious fix is measured wrong.** Moving `msb` ahead of `ttd` — the map
+    struct bodies hold only pointers, so it looks safe — fixes that one fixture
+    and breaks FIVE others: `link 232 -> 227`, `MATCH 230 -> 225`, observed
+    2026-08-23 and reverted. The order is a real dependency graph, not a list,
+    and it needs solving as one.
+  - Done when: `tests` `link` equals `compile` in the sweep, with MATCH >= 230.
+  - Verify: `sh scripts/tychoc1_sweep.sh` only. Never an unbounded `make test`.
