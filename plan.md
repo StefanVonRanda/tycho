@@ -1454,6 +1454,35 @@ self-built twice, the two emitted `.c` identical.
     is byte-identical to `tychoc1`'s (`cmp self.c self2.c`).
   - Verify: that `cmp`, plus a third generation to confirm it is stable.
 
+  **An accumulator pass was ATTEMPTED and REVERTED 2026-08-24. Read this
+  before trying again.** The emitted shape is right and was copied from
+  `./tychoc tests/.../acc --emit-c`:
+
+  ```c
+  char *h_out = TYCHO_LIT("");
+  tycho_int _lenh_out = ((const tycho_int *)h_out)[-1]; tycho_int _caph_out = 0;
+  ...
+  tycho_str_append(&_scope, &h_out, &_lenh_out, &_caph_out, TYCHO_LIT("x"));
+  ```
+
+  `tycho_str_append` is already in `runtime/tycho_rt.c` -- no runtime change.
+
+  What the attempt got wrong, measured at each step against the 262/262/258
+  baseline:
+  - marking a name an accumulator from ASSIGNMENTS alone breaks 7 files at
+    LINK (link 262 -> 255, MATCH 258 -> 250): a parameter, or a name bound by
+    a form other than a plain `Decl`, never gets its `_len`/`_cap` shadows
+    declared, so the append names undefined identifiers;
+  - requiring the name to be declared by a plain `Decl` in the same body
+    recovers most of it but not all -- link 257, MATCH 253, still 5 short.
+    The residue is a SCOPE/SHADOWING problem: `_push` renames a shadowing
+    binding (`h_out_s3`), so the shadow declared at one `Decl` and the name
+    resolved at the assignment can disagree.
+  - The next attempt should carry the shadow names in the variable table
+    beside `vcn`, so the append always names the same instance the assignment
+    resolved, instead of rebuilding them from the C name by string
+    concatenation.
+
 - [ ] **Phase 8d — concurrency codegen (the 8 remaining fixtures)**
   - `chan_param_recv`, `generic_channel`, `generic_enum_channel`,
     `generic_struct_instance_types`, `select_enum_match`,
