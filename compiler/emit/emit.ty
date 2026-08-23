@@ -3489,9 +3489,16 @@ fn _arr_defs(cs: inout C) -> (string, string, string):
     return (td, sb, fb)
 
 # _tostr, but writing into an explicit arena rather than the caller's _scope.
+# "Plain" means every element's C type is COMPLETE where the tuple typedefs are
+# emitted, which is before the array/map/soa bodies and before the struct
+# bodies. A map, soa or ARRAY element is NOT complete there -- that is Phase 7f,
+# seen as `struct TychoTup0_ { ... TychoMapM0 f1; }` with an incomplete f1 and
+# as `struct TychoTup3_ { TychoArrK17 f0; }` with no TychoArrK17 declared. The
+# TychoArrK<n> kinds are GENERATED, not runtime types, despite TychoArrInt and
+# TychoArrStr looking like they come from the runtime.
 fn _tup_plain(cs: inout C, i: int) -> bool:
     for e in split(cs.tks[i], "|"):
-        if _is_struct(e) or _is_tup(e):
+        if _is_struct(e) or _is_tup(e) or _is_map(e) or _is_soa(e) or _is_arr(e):
             return false
     return true
 
@@ -3977,6 +3984,18 @@ fn program(pfx: [string], us: [ast.Unit]) -> string:
     for nm != len(cs.mks):
         nm = len(cs.mks)
         mtd, msb, mpr, mfb = _map_defs(&cs)
+    # DISCOVERY PRE-PASS. Each generator below has its own local fixpoint, run
+    # in sequence, and `_tup_defs` runs LAST -- so an array/map/soa kind that
+    # only a TUPLE introduces was registered after the array fixpoint had
+    # finished and never got a body. That is Phase 7f: `struct TychoTup3_ {
+    # TychoArrK17 f0; }` with no TychoArrK17 anywhere. Running the tuple
+    # generator first for its REGISTRATIONS alone (output discarded, it is
+    # regenerated in full below) lets the array fixpoint see those kinds.
+    _pt1, _pt2, _pt3, _pt4 := _tup_defs(&cs)
+    npre := 0
+    for npre != len(cs.tks):
+        npre = len(cs.tks)
+        _pt1, _pt2, _pt3, _pt4 = _tup_defs(&cs)
     osb, ofb := _soa_defs(&cs)
     no := 0
     for no != len(cs.oks):
