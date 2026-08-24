@@ -1832,26 +1832,30 @@ MEASURE WITH CALLGRIND, NOT THE CLOCK. This machine drifts +/-5% between runs,
 which is the size of most of these wins; `valgrind --tool=callgrind` gives a
 deterministic instruction count.
 
-WHERE IT STANDS on compiler/main.ty (tychoc 90 ms alongside):
+WHERE IT STANDS on compiler/main.ty (tychoc 89 ms alongside):
 
     5.0x   at the start of this work
     3.8x   341 ms
     3.1x   279 ms   two-stage bootstrap (e4e0abbe), unblocked by 82aae400
     2.8x   254 ms   concat chains flattened (c7f6ed37)
     2.7x   242 ms   arena bump inlined (cb76f804)
+    2.6x   239 ms   same-arena strings shared (f1d14147)
+    2.6x   230 ms   same-arena ENUMS shared (the AST copies)
+    2.4x   217 ms   push keeps a temporary already in the array's arena
 
-    instructions   2.820e9 -> 2.383e9
+    instructions   2.820e9 -> 2.173e9
 
-PROFILE NOW (callgrind, exclusive): memcpy 11.9%, tycho_str_copy 11.2%,
-tycho_copy_E_ast__Expr 8.4%, the Expr-array copy 7.6%, arena_alloc_slow 7.5%,
-arena_alloc_i 6.9%. The allocator is no longer one hot symbol; what is left is
-the DEEP-COPY TAX -- roughly 40% of the profile is copying values that the
-caller could have been handed. That is move-on-last-use, and it is the only
-remaining lever of the right size.
+The sharing rule that did most of it: a value that is IMMUTABLE (string, enum)
+and already lives in the destination arena is stored, not copied -- there is
+nothing a later write could corrupt and no lifetime to extend. Arrays and maps
+are excluded because push and element assignment write them in place, and a
+place rooted in a live string ACCUMULATOR is excluded because that buffer is
+written past its own end (tests/value_semantics.ty catches it).
 
-arena_alloc_slow at 7.5% is worth a look first: the guard falls through
-whenever an arena has no block yet, so every arena's FIRST allocation is slow
-(~1.1M of them).
+PROFILE NOW (exclusive): memcpy 11.8%, tycho_str_copy 11.5%,
+tycho_copy_E_ast__Expr 8.0%, the Expr-array copy 7.4%, arena_alloc_slow 6.9%,
+arena_alloc_i 6.9%. Still roughly a third in copying. The array copies are what
+is left, and arrays cannot use the sharing rule -- that needs move-on-last-use.
 
 RULED OUT, each measured against the baseline:
   - the full return-only escape analysis (src/tychoc.c@collect_ret_alias) --
@@ -1863,6 +1867,12 @@ RULED OUT, each measured against the baseline:
     suspect, since it needs its buffer to be the last allocation in its arena.
 Both reverted. Do not re-port them without first finding what the promotion
 breaks.
+  - evaluating push()'s value directly in the ARRAY's arena (instead of the
+    scope, then copying) -- 190 fixtures. The narrow version that only drops the
+    copy when both are already in &_scope is what shipped.
+  - widening the arena fast path to survive a non-empty bucket table -- no gain
+    (221 ms against 217), so an arena that has recycled is not the common case
+    the guard was suspected of losing.
 
 Done when: the ratio is <= 1.0 on compiler/main.ty and tycho-db.
 Verify: best-of-three wall clock, both compilers, same input, --emit-c.
