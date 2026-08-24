@@ -693,14 +693,17 @@ fn _expr(rs: inout R, bi: [string: bool], ctors: [string: bool], e: ast.Expr):
             k := _kindof(&rs, n)
             if k == "fn" or k == "extern":
                 _note(&rs, "fnval:" + n)
+                _dwarn(&rs, n)
                 return
             if len(rs.prefix) > 0:
                 k2 := _kindof(&rs, rs.prefix + n)
                 if k2 == "fn" or k2 == "generic":
                     _note(&rs, "fnval:" + rs.prefix + n)
+                    _dwarnq(&rs, rs.prefix + n, n)
                     return
             if k == "generic":
                 _note(&rs, "fnval:" + n)
+                _dwarn(&rs, n)
                 return
             _err(&rs, "unknown variable '" + n + "'" + _dym(n, _vcands(&rs)))
         ast.Call(l, q, n, ts, args):

@@ -89,6 +89,11 @@ fn _op(toks: [lex.Tok], i: int, s: string) -> int:
 fn _ident(toks: [lex.Tok], i: int, what: string) -> (string, int):
     t := _at(toks, i)
     if t.kind != "ident":
+        # One arm names them all, as in src/tychoc.c@eat: a keyword written
+        # where a name belongs is reported as the keyword, not as a parse shape.
+        kw := _kwname(t)
+        if len(kw) > 0:
+            _die(t, "'" + kw + "' is a reserved keyword and cannot be used as " + what)
         _fail(t, what)
     return (t.text, i + 1)
 
@@ -1349,6 +1354,17 @@ fn _has_name(xs: [string], s: string) -> bool:
 # `tps` is the function's own `$T` parameters. src/tychoc.c@parse_fn closes both
 # halves at parse time: the predicate against a fixed five-name set, and every
 # type-parameter mention against the signature that was just read.
+# The source text of the token span [a, b), joined tight -- a `where` type set
+# is compared against a rendered type, and every set element in the corpus is a
+# plain name.
+# gap: a spaced spelling like `[string: int]` renders with the space and would
+# not match this.
+fn _spanttxt(toks: [lex.Tok], a: int, b: int) -> string:
+    out := ""
+    for k := a; k < b; k += 1:
+        out = out + _at(toks, k).text
+    return out
+
 fn _wheres(toks: [lex.Tok], i0: int, tps: [string]) -> ([string], int):
     i := i0 + 1
     out := []string
@@ -1360,15 +1376,19 @@ fn _wheres(toks: [lex.Tok], i0: int, tps: [string]) -> ([string], int):
             if not _has_name(tps, p):
                 _die(_at(toks, i), "`where " + p + ": ...`: '" + p + "' is not a type parameter of this function")
             a, k := ty(toks, i + 1)
+            set := _spanttxt(toks, i + 1, k)
             i = k
             nset := 1
             for _isop(toks, i, "|"):
                 b, m := ty(toks, i + 1)
+                set = set + "|" + _spanttxt(toks, i + 1, m)
                 i = m
                 nset += 1
             if nset > 16:
                 _die(_at(toks, i0), "at most 16 types in a `where` type set")
-            push(out, p)
+            # The SET is kept, not just the parameter name: the checker needs it
+            # to refuse an instantiation outside it (src/tychoc.c:8982).
+            push(out, p + ":" + set)
         else:
             if not _is_where_pred(p):
                 _die(_at(toks, i), "unknown `where` predicate '" + p +

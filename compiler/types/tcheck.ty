@@ -919,7 +919,7 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
                         yes = "Ok"
                         no = "Err"
                     if v != yes and v != no:
-                        _cerr(&cs, "'" + v + "' is not a variant of " + st + "; write `" + yes + "` or `" + no + "`")
+                        _cerr(&cs, "'" + v + "' is not a variant of " + _show(&cs, st) + "; write `" + yes + "` or `" + no + "`")
                     return "bool"
                 ti := _tdecl(&cs, st)
                 if ti >= 0 and cs.tds[ti].kind == "enum":
@@ -1760,7 +1760,7 @@ fn _match(cs: inout C, l: int, subj: [ast.Expr], arms: [ast.Arm]):
                 if h == "opt":
                     _cerr(&cs, "an Option's arms are Some(x), None, and _, not '" + a.name + "'")
                 else:
-                    _cerr(&cs, "'" + a.name + "' is not a variant of " + st + "; write `Ok` or `Err`")
+                    _cerr(&cs, "'" + a.name + "' is not a variant of " + _show(&cs, st) + "; write `Ok` or `Err`")
             _tblock(&cs, a.body)
             _vrestore(&cs, m)
         if not wild and known(st):

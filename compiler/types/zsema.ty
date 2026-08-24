@@ -225,6 +225,9 @@ fn _field_aff(cs: inout C, dline: int, t: string):
     if k == "chan":
         _cperr(&cs, "a struct field cannot be a channel")
     else:
+        # The handle arm (src/tychoc.c:4697) blames the FIELD, not the struct
+        # header the channel arm blames.
+        cs.line = keep
         _cperr(&cs, _aff_msg(k))
     cs.line = keep
 
@@ -519,12 +522,34 @@ fn _generic_call2(cs: inout C, l: int, si: int, spelt: string, ts: [ast.Ty], arg
             _cerr(&cs, "no argument fixes '" + spelt + "''s type parameter $" + tp + " -- it appears only in the return type. Give it explicitly: " + spelt + "$(<the type for $T>)(...)")
             return "?"
     for w in s.whs:
+        ci := 0
+        for ci < len(w) and w[ci] != 58:
+            ci += 1
+        if ci < len(w):
+            # type-set form `T:a|b`, kept by the parser as written
+            tp2 := w[0:ci]
+            set := split(w[ci + 1:], "|")
+            if tp2 in b:
+                got := _show(&cs, b[tp2])
+                inset := false
+                for e in set:
+                    if e == got:
+                        inset = true
+                if not inset:
+                    txt := ""
+                    for j := 0; j < len(set); j += 1:
+                        if j > 0:
+                            txt = txt + " | "
+                        txt = txt + set[j]
+                    _cerr(&cs, "'" + spelt + "' instantiated with " + tp2 + " = " + got +
+                        ", which is not in the type set { " + txt + " }")
+                    return "?"
+            continue
         i := 0
         for i < len(w) and w[i] != 40:
             i += 1
         if i >= len(w) or len(w) < 2:
-            continue                   # a type-set constraint: the parser keeps
-                                       # only its name, so the SET is not here
+            continue
         pred := w[0:i]
         tp := w[i + 1:len(w) - 1]
         if tp in b and not _pred_ok(&cs, pred, b[tp]):
@@ -1130,25 +1155,51 @@ fn _dedup6(xs: [string]) -> [string]:
 #     @Stack$int  -> Stack(int)   @Cents     -> Cents
 # Anything unrecognised passes through, so a new encoding degrades to the raw
 # form rather than being mangled.
+# Render an internal type the way the source spells it (src/tychoc.c@type_name).
 fn _show(cs: inout C, t: string) -> string:
-    if strings.starts_with(t, "arr(") and strings.ends_with(t, ")"):
-        return "[" + _show(&cs, t[4:len(t) - 1]) + "]"
-    if strings.starts_with(t, "fix(") and strings.ends_with(t, ")"):
-        inner := t[4:len(t) - 1]
-        c := 0
-        for c < len(inner) and inner[c] != 44:
-            c += 1
-        if c < len(inner):
-            return "[" + inner[0:c] + "]" + _show(&cs, inner[c + 1:])
+    h := _head(t)
+    a := _targs(t)
+    if h == "arr" and len(a) == 1:
+        return "[" + _show(&cs, a[0]) + "]"
+    if h == "fix" and len(a) == 2:
+        return "[" + a[0] + "]" + _show(&cs, a[1])
+    if h == "bnd" and len(a) == 2:
+        return "bounded[" + a[0] + "]" + _show(&cs, a[1])
+    if h == "map" and len(a) == 2:
+        return "[" + _show(&cs, a[0]) + ": " + _show(&cs, a[1]) + "]"
+    if h == "opt" and len(a) == 1:
+        return "Option(" + _show(&cs, a[0]) + ")"
+    if h == "res" and len(a) == 2:
+        return "Result(" + _show(&cs, a[0]) + ", " + _show(&cs, a[1]) + ")"
+    if h == "chan" and len(a) == 1:
+        return "Channel(" + _show(&cs, a[0]) + ")"
+    if h == "tup" and len(a) > 0:
+        out := "("
+        for i := 0; i < len(a); i += 1:
+            if i > 0:
+                out = out + ", "
+            out = out + _show(&cs, a[i])
+        return out + ")"
+    if h == "fun" and len(a) > 0:
+        # fun(R, P...) -- the RETURN type comes first internally, last in print.
+        out := "fn("
+        for i := 1; i < len(a); i += 1:
+            if i > 1:
+                out = out + ", "
+            out = out + _show(&cs, a[i])
+        out = out + ")"
+        if a[0] != "void":
+            out = out + " -> " + _show(&cs, a[0])
+        return out
     if len(t) > 1 and t[0] == 64 and strings.contains(t, "$"):
         m := t[1:]
         parts := split(m, "$")
-        out := _show(&cs, "@" + parts[0]) + "("
+        out2 := _show(&cs, "@" + parts[0]) + "("
         for i := 1; i < len(parts); i += 1:
             if i > 1:
-                out = out + ", "
-            out = out + _show(&cs, parts[i])
-        return out + ")"
+                out2 = out2 + ", "
+            out2 = out2 + _show(&cs, parts[i])
+        return out2 + ")"
     if len(t) > 1 and t[0] == 64:
         m := t[1:]
         i := 0

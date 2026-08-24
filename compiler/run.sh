@@ -112,18 +112,18 @@ nsyn=0; nname=0; nsem=0; ntype=0
 rr=0; rm_=0; ra=0; rw=0
 tr=0; tm=0; ta=0; tw=0
 # Phase 6b made `--typecheck` the WHOLE semantic check: SEMANTIC is no longer an
-# accept bucket, so every one of the 337 fixtures must be refused except the six
+# accept bucket, so every one of the 337 fixtures must be refused except the five
 # named here. Each name carries its reason, and the set is compared as a SET, so
 # a new miss reddens the lane and so does a fixed one.
 #   len_scalar          `len(x)` inside an f-string, whose interpolations the
-#   typeset_notin       parser keeps as raw text / discards (compiler/parse is
-#                       out of Phase 6b's scope -- see plan.md's Phase 6c)
+#                       parser keeps as raw text (compiler/parse is out of Phase
+#                       6b's scope -- see plan.md's Phase 6c)
 #   generic_recur_grow  needs the template BODY instantiated, not just its
 #                       signature
 #   infer_bare_empty    the pending-type (B-3) grounding analysis, a subsystem
 #   infer_use_before_ground   of its own
 #   void_grounds_pending_push
-KNOWN_TYPE_MISS="tests/reject/generic_recur_grow.ty tests/reject/infer_bare_empty.ty tests/reject/infer_use_before_ground.ty tests/reject/len_scalar.ty tests/reject/typeset_notin.ty tests/reject/void_grounds_pending_push.ty"
+KNOWN_TYPE_MISS="tests/reject/generic_recur_grow.ty tests/reject/infer_bare_empty.ty tests/reject/infer_use_before_ground.ty tests/reject/len_scalar.ty tests/reject/void_grounds_pending_push.ty"
 # (the whole-tree list in compiler/verdict_diff.py carries five more, all under
 # tests/diag and tests/reject/pkg, which this leg does not reach)
 seen_miss=""
@@ -162,7 +162,7 @@ echo "leg2c tests/reject/*.ty --typecheck: all=$((tr+tm)) rejected=$tr missed=$t
 got=$(echo $seen_miss | tr ' ' '\n' | LC_ALL=C sort | tr '\n' ' ')
 want=$(echo $KNOWN_TYPE_MISS | tr ' ' '\n' | LC_ALL=C sort | tr '\n' ' ')
 [ "$got" = "$want" ] || { echo "parse-check: the TYPE misses moved"; echo "    now:  $got"; echo "    was:  $want"; rc=1; }
-[ "$tr" = 331 ] || { echo "parse-check: --typecheck refused $tr of 337, expected 331"; rc=1; }
+[ "$tr" = 332 ] || { echo "parse-check: --typecheck refused $tr of 337, expected 332"; rc=1; }
 
 # [3] -- the census, against a recorded golden
 for f in $(ls tests/*.ty) $(find corelib -name '*.ty' | sort) $(find tools examples server bench -name '*.ty' | sort); do
