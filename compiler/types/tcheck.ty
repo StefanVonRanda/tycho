@@ -1088,8 +1088,11 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
                 w = _targs(wb)[1]
             return "res(?," + _ex2(&cs, k[0], w) + ")"
         ast.SpawnE(l, k):
-            _exs(&cs, k)
-            return "task"
+            # `task(T)`, not a bare `task`: wait(t) has to know what it yields.
+            rt := "void"
+            if len(k) > 0:
+                rt = _ex(&cs, k[0])
+            return "task(" + rt + ")"
         ast.OrRet(l, k):
             t := _base(&cs, _ex(&cs, k[0]))
             if _head(t) == "res":
@@ -1690,6 +1693,14 @@ fn _call_builtin(cs: inout C, l: int, n: string, args: [ast.Expr], want: string)
             if not compat(w, ats[1]):
                 _cerr(&cs, "send on " + b0 + " needs a " + w + " value")
         return "void"
+    if n == "wait":
+        if len(args) == 1 and _head(b0) == "task":
+            return _targs(b0)[0]
+        return "?"
+    if n == "recv":
+        if len(args) == 1 and _head(b0) == "chan":
+            return "opt(" + _targs(b0)[0] + ")"
+        return "?"
     if n == "zero":
         return "?"
     si := _sigidx(&cs, n)

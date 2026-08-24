@@ -29,7 +29,7 @@ import "../ast"
 # closed. The same seven positions are the callers of `_nest_aff` below.
 
 fn _aff_kind(cs: inout C, t: string) -> string:
-    if t == "task":
+    if t == "task" or _head(t) == "task":
         return "task"
     if _head(t) == "chan":
         return "chan"
