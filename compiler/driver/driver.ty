@@ -1,7 +1,9 @@
 package driver
 
 import "core:io"
+import "core:os"
 import "core:sort"
+import "core:strings"
 import "../ast"
 import "../emit"
 import "../lex"
@@ -14,10 +16,20 @@ import "../types"
 # compilers on one copy of the runtime at the cost of tychoc1 needing that path
 # to exist. `--runtime` is the escape hatch when it does not.
 
-fn read_runtime(path: string) -> string:
+fn read_runtime(path: string, argv0: string) -> string:
     match io.read_text(path):
         Ok(s): return s
-        Err(e): die("tychoc1: cannot read runtime '" + path + "'")
+        Err(e): pass
+    # The default path is relative to the CWD, which is only right when tychoc1
+    # is run from the repo root -- `cd tmp && tychoc1 x.ty` could not build at
+    # all. Fall back beside the binary, as corelib_root does.
+    d := types.dir_of(argv0)
+    for c in [d + "/runtime/tycho_rt.c", d + "/../runtime/tycho_rt.c",
+              d + "/../share/tycho/runtime/tycho_rt.c"]:
+        match io.read_text(c):
+            Ok(s): return s
+            Err(e): pass
+    die("tychoc1: cannot read runtime '" + path + "'")
     return ""
 
 # The whole loaded program, not just the entry file. `types.load` already walks
@@ -64,9 +76,110 @@ fn check_or_die(src_path: string, argv0: string) -> types.Program:
         exit(1)
     return p
 
+
+# --- the build path ------------------------------------------------------------
+# Until now tychoc1 only ever emitted C. `tychoc <file> -o <name>` has to reach a
+# BINARY, which means the same cc line src/tychoc.c builds: the shims each loaded
+# corelib package ships, the -l for each `extern "Lib"`, and -I the corelib root.
+
+fn _shims(p: types.Program) -> [string]:
+    out := []string
+    seen := []string: bool
+    for f in p.files:
+        if len(f.pkg) == 0 or f.dir in seen:
+            continue
+        seen[f.dir] = true
+        c := f.dir + "/" + f.pkg + "_shim.c"
+        match io.read_text(c):
+            Ok(s): push(out, c)
+            Err(e): pass
+    return out
+
+fn _links(p: types.Program) -> [string]:
+    out := []string
+    seen := []string: bool
+    for f in p.files:
+        for fd in f.unit.fns:
+            if fd.is_extern and len(fd.lib) > 0 and not (fd.lib in seen):
+                seen[fd.lib] = true
+                push(out, fd.lib)
+    return out
+
+# NEVER eat a .c this compiler did not write (src/tychoc.c:14399). A file WE left
+# behind starts with the runtime banner and is fair game; anything else is the
+# user's and the intermediate would destroy it.
+fn _guard_c(c_path: string):
+    match io.read_text(c_path):
+        Ok(s):
+            head := s
+            if len(head) > 79:
+                head = head[0:79]
+            if not strings.contains(head, "Tycho runtime"):
+                eprint("tychoc1: " + c_path + " already exists and was not written by tychoc1 -- " +
+                    "the intermediate C would destroy it.\n" +
+                    "  rename it, or build elsewhere with -o <dir>/<name>\n")
+                exit(1)
+        Err(e): pass
+
+fn build(src_path: string, runtime_path: string, base: string, argv0: string):
+    c_path := base + ".c"
+    _guard_c(c_path)
+    p := check_or_die(src_path, argv0)
+    c := compile_str(p, read_runtime(runtime_path, argv0))
+    if not io.write(c_path, c):
+        die("tychoc1: cannot write '" + c_path + "'")
+    argv := ["cc", "-O3", "-fwrapv", "-pthread"]
+    root := types.corelib_root(argv0)
+    if len(root) > 0:
+        push(argv, "-I" + root)
+    push(argv, "-o")
+    push(argv, base)
+    push(argv, c_path)
+    for sh in _shims(p):
+        push(argv, sh)
+    for l in _links(p):
+        push(argv, "-l" + l)
+    push(argv, "-lm")
+    if os.exec(argv) != 0:
+        # the .c SURVIVES a cc failure on purpose: it is the evidence
+        eprint("tychoc1: C compilation failed\n")
+        exit(1)
+    match io.remove(c_path):
+        Ok(b): pass
+        Err(e): pass
+    print("built " + base + "\n")
+
+# --- --bundle ------------------------------------------------------------------
+# The whole import graph as one post-order source stream. types.load already walks
+# it in that order, so the only work here is the entry package's header: its files
+# become `package main`, because the bundle has no prefixes.
+
+fn _as_main(src: string) -> string:
+    i := 0
+    for i < len(src):
+        e := i
+        for e < len(src) and src[e] != 10:
+            e += 1
+        if strings.starts_with(src[i:e], "package "):
+            return src[0:i] + "package main" + src[e:]
+        if e >= len(src):
+            break
+        i = e + 1
+    return src
+
+fn bundle(src_path: string, argv0: string):
+    p := types.load(src_path, argv0)
+    out := ""
+    for f in p.files:
+        if f.dir == p.entry_dir:
+            out = out + _as_main(f.src) + "\n"
+        else:
+            out = out + f.src + "\n"
+    print(out)
+
 fn compile(src_path: string, runtime_path: string, out_c: string, argv0: string):
     p := check_or_die(src_path, argv0)
-    c := compile_str(p, read_runtime(runtime_path))
+    c := compile_str(p, read_runtime(runtime_path, argv0))
     if not io.write(out_c, c):
         die("tychoc1: cannot write '" + out_c + "'")
 

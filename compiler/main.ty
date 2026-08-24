@@ -3,8 +3,19 @@ package main
 import "core:strings"
 import "driver"
 
+# `foo.ty` -> `foo`, the default output base when no -o is given.
+fn _strip_ext(p: string) -> string:
+    i := len(p)
+    for i > 0:
+        i -= 1
+        if p[i] == 46:
+            return p[0:i]
+        if p[i] == 47:
+            break
+    return p
+
 fn usage():
-    die("usage: tychoc1 <file.ty> (--emit-c -o <name> [--runtime P] | --dump-tokens | --round-trip | --dump-dnotes | --parse | --parse-census | --resolve | --resolve-census | --dump-symbols | --typecheck | --type-census)")
+    die("usage: tychoc1 <file.ty> ([-o <name>] [--emit-c] [--runtime P] | --bundle | --dump-tokens | --round-trip | --dump-dnotes | --parse | --parse-census | --resolve | --resolve-census | --dump-symbols | --typecheck | --type-census)")
 
 fn main():
     av := args()
@@ -13,10 +24,15 @@ fn main():
     rt := "runtime/tycho_rt.c"
     emit_c := false
     mode := "compile"
+    eof := false
     i := 1
     for i < len(av):
         a := av[i]
-        if a == "--emit-c":
+        if not eof and a == "--":
+            eof = true
+        elif eof:
+            src = a
+        elif a == "--emit-c":
             emit_c = true
         elif a == "--dump-tokens":
             mode = "dump"
@@ -38,6 +54,8 @@ fn main():
             mode = "typecheck"
         elif a == "--type-census":
             mode = "tcensus"
+        elif a == "--bundle":
+            mode = "bundle"
         elif a == "-o":
             i += 1
             if i >= len(av):
@@ -85,7 +103,17 @@ fn main():
     if mode == "symbols":
         driver.dump_symbols(src, av[0])
         return
-    if len(out) == 0 or not emit_c:
+    if mode == "bundle":
+        driver.bundle(src, av[0])
+        return
+    if not emit_c:
+        # The default is a BINARY: emit the C beside it, run cc, remove the C.
+        base := out
+        if len(base) == 0:
+            base = _strip_ext(src)
+        driver.build(src, rt, base, av[0])
+        return
+    if len(out) == 0:
         usage()
     driver.compile(src, rt, out + ".c", av[0])
     print("wrote " + out + ".c")

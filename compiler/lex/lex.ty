@@ -91,8 +91,21 @@ fn postfixable(kind: string, text: string) -> bool:
         return true
     return kind == "op" and (text == ")" or text == "]")
 
-fn _die(line: int, msg: string):
-    die("tychoc1: line " + str(line) + ": " + msg)
+# A lexer error names its FILE when one is known, in the same shape the parser
+# uses: without it, a broken sibling in a package was reported as `tychoc1: line
+# 1`, which names no file at all and sent the reader to the entry file.
+fn _die(file: string, src: string, line: int, msg: string):
+    if len(file) == 0:
+        die("tychoc1: line " + str(line) + ": " + msg)
+    out := file + ":" + str(line) + ": error: " + msg
+    ls := split(src, "\n")
+    if line >= 1 and line <= len(ls):
+        num := str(line)
+        pad := ""
+        for k := len(num); k < 6; k += 1:
+            pad = pad + " "
+        out = out + "\n" + pad + num + " | " + ls[line - 1]
+    die(out)
 
 # --- `# deprecated:` doc notes ----------------------------------------------
 # src/tychoc.c@dnote_scan runs during lexing and only on a comment-ONLY line, so
@@ -131,7 +144,7 @@ fn dnote_above(notes: [DNote], line: int) -> string:
 # Each takes the index of the opening delimiter and returns the index just past
 # the closing one.
 
-fn scan_str(src: string, i0: int, line: int, interp: bool) -> int:
+fn scan_str(src: string, i0: int, line: int, interp: bool, file: string) -> int:
     n := len(src)
     i := i0 + 1
     depth := 0
@@ -140,7 +153,7 @@ fn scan_str(src: string, i0: int, line: int, interp: bool) -> int:
         if c == 34 and depth == 0:
             return i + 1
         if c == 10:
-            _die(line, "unterminated string literal")
+            _die(file, src, line, "unterminated string literal")
         if interp and depth == 0 and c == 123 and i + 1 < n and src[i + 1] == 123:
             i += 2
             continue
@@ -161,36 +174,36 @@ fn scan_str(src: string, i0: int, line: int, interp: bool) -> int:
             i += 1
             for i < n and src[i] != 34:
                 if src[i] == 10:
-                    _die(line, "unterminated string literal")
+                    _die(file, src, line, "unterminated string literal")
                 if src[i] == 92:
                     i += 1
                     if i >= n:
-                        _die(line, "unterminated string literal")
+                        _die(file, src, line, "unterminated string literal")
                 i += 1
             if i >= n:
-                _die(line, "unterminated string literal")
+                _die(file, src, line, "unterminated string literal")
             i += 1
             continue
         if c == 92:
             i += 1
             if i >= n:
-                _die(line, "unterminated string literal")
+                _die(file, src, line, "unterminated string literal")
             e := src[i]
             if e != 110 and e != 116 and e != 114 and e != 92 and e != 34:
-                _die(line, "unsupported escape (use \\n \\t \\r \\\\ \\\")")
+                _die(file, src, line, "unsupported escape (use \\n \\t \\r \\\\ \\\")")
             i += 1
             continue
         if depth == 0 and c < 32 and c != 9:
-            _die(line, "raw control byte in string literal (use an escape such as \\n or \\t)")
+            _die(file, src, line, "raw control byte in string literal (use an escape such as \\n or \\t)")
         i += 1
-    _die(line, "unterminated string literal")
+    _die(file, src, line, "unterminated string literal")
     return i
 
 # `...` interprets no escape at all, so its body is re-escaped here into the
 # four two-character escapes the language has -- exactly what src/tychoc.c does,
 # and for the same reason: the text is pasted into a C string literal later.
 # Returns (end index, escaped body, lines consumed).
-fn scan_raw(src: string, i0: int, line: int) -> (int, string, int):
+fn scan_raw(src: string, i0: int, line: int, file: string) -> (int, string, int):
     n := len(src)
     i := i0 + 1
     out := ""
@@ -209,7 +222,7 @@ fn scan_raw(src: string, i0: int, line: int) -> (int, string, int):
         elif c == 34:
             esc = "\\\""
         elif c < 32:
-            _die(line + nl, "raw control byte in string literal (use an escape such as \\n or \\t)")
+            _die(file, src, line + nl, "raw control byte in string literal (use an escape such as \\n or \\t)")
         if len(esc) > 0:
             out = out + src[seg:i] + esc
             i += 1
@@ -217,19 +230,19 @@ fn scan_raw(src: string, i0: int, line: int) -> (int, string, int):
         else:
             i += 1
     if i >= n:
-        _die(line, "unterminated raw string literal")
+        _die(file, src, line, "unterminated raw string literal")
     out = out + src[seg:i]
     return (i + 1, out, nl)
 
 # 'x' or one escape -> one byte. Returns (end index, byte value).
-fn scan_char(src: string, i0: int, line: int) -> (int, int):
+fn scan_char(src: string, i0: int, line: int, file: string) -> (int, int):
     n := len(src)
     i := i0 + 1
     cv := 0
     if i < n and src[i] == 92:
         i += 1
         if i >= n:
-            _die(line, "empty or unterminated char literal")
+            _die(file, src, line, "empty or unterminated char literal")
         e := src[i]
         if e == 110:
             cv = 10
@@ -246,19 +259,19 @@ fn scan_char(src: string, i0: int, line: int) -> (int, int):
         elif e == 120:
             # \xNN takes EXACTLY two hex digits -- fixed width, never C's greedy form.
             if i + 2 >= n or not is_hex(src[i + 1]) or not is_hex(src[i + 2]):
-                _die(line, "\\x takes exactly two hex digits (e.g. '\\x41')")
+                _die(file, src, line, "\\x takes exactly two hex digits (e.g. '\\x41')")
             cv = 16 * hex_val(src[i + 1]) + hex_val(src[i + 2])
             i += 2
         else:
-            _die(line, "unsupported char escape (use \\n \\t \\r \\0 \\xNN \\\\ \\')")
+            _die(file, src, line, "unsupported char escape (use \\n \\t \\r \\0 \\xNN \\\\ \\')")
         i += 1
     elif i < n and src[i] != 39 and src[i] != 10:
         cv = src[i]
         i += 1
     else:
-        _die(line, "empty or unterminated char literal")
+        _die(file, src, line, "empty or unterminated char literal")
     if i >= n or src[i] != 39:
-        _die(line, "char literal must be exactly one character")
+        _die(file, src, line, "char literal must be exactly one character")
     return (i + 1, cv)
 
 # --- operators --------------------------------------------------------------
@@ -312,7 +325,7 @@ fn tokenize_ex(src: string, keep_trivia: bool) -> [Tok]:
 # The path-carrying entry. `tokenize_all` keeps its old shape so the token dump,
 # round-trip and census modes are untouched.
 fn tokenize_file(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNote]):
-    ts, ns := tokenize_all(src, keep_trivia)
+    ts, ns := tokenize_named(src, keep_trivia, file)
     for i := 0; i < len(ts); i += 1:
         ts[i].file = file
         ts[i].src = src
@@ -329,6 +342,9 @@ fn dnotes(src: string) -> [DNote]:
 # the pipeline reads them; they exist so the round-trip control can assert that
 # every non-whitespace byte of the source is covered by exactly one token.
 fn tokenize_all(src: string, keep_trivia: bool) -> ([Tok], [DNote]):
+    return tokenize_named(src, keep_trivia, "")
+
+fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNote]):
     toks := []Tok
     notes := []DNote
     errs := []string
@@ -368,7 +384,7 @@ fn tokenize_all(src: string, keep_trivia: bool) -> ([Tok], [DNote]):
                 cont = true
             pend = false
         if ws_sp and ws_tab and bracket_depth == 0 and not cont:
-            _die(line, "mixed tabs and spaces in indentation; use one consistently")
+            _die(file, src, line, "mixed tabs and spaces in indentation; use one consistently")
 
         # A blank or comment-only line carries no indentation information;
         # measuring it would emit a DEDENT the source never asked for.
@@ -413,7 +429,7 @@ fn tokenize_all(src: string, keep_trivia: bool) -> ([Tok], [DNote]):
                     pop(stack)
                     push(toks, _t("dedent", "", line, col + 1, ""))
                 if col != stack[len(stack) - 1]:
-                    _die(line, "inconsistent indentation")
+                    _die(file, src, line, "inconsistent indentation")
 
         for p < n and src[p] != 10 and src[p] != 35:
             c := src[p]
@@ -446,8 +462,8 @@ fn tokenize_all(src: string, keep_trivia: bool) -> ([Tok], [DNote]):
                         p += 1
                     if p == digits:
                         if hexed:
-                            _die(line, "a hex literal needs at least one digit after `0x`")
-                        _die(line, "a binary literal needs digits 0 or 1 after `0b`")
+                            _die(file, src, line, "a hex literal needs at least one digit after `0x`")
+                        _die(file, src, line, "a binary literal needs digits 0 or 1 after `0b`")
                 is_float := false
                 if not prefixed and p + 1 < n and src[p] == 46 and is_digit(src[p + 1]):
                     is_float = true
@@ -471,7 +487,7 @@ fn tokenize_all(src: string, keep_trivia: bool) -> ([Tok], [DNote]):
                     # dying here would be a divergence rather than a fix.
                     match strings.parse_float(raw):
                         Ok(v): fv = v
-                        Err(strings.Overflow): _die(line, "float literal out of range: `" + raw +
+                        Err(strings.Overflow): _die(file, src, line, "float literal out of range: `" + raw +
                             "` exceeds the largest float (IEEE-754 binary64); write 1.0/0.0 for an infinity")
                         Err(strings.Underflow): fv = 0.0
                         Err(strings.Empty): fv = 0.0
@@ -485,7 +501,7 @@ fn tokenize_all(src: string, keep_trivia: bool) -> ([Tok], [DNote]):
                     for q := digits; q < p; q += 1:
                         d := hex_val(src[q])
                         if v > (imax - d) / litbase:
-                            _die(line, "integer literal out of range")
+                            _die(file, src, line, "integer literal out of range")
                         v = v * litbase + d
                     push(toks, Tok("int", raw, line, tcol, v, 0.0, raw, "", ""))
                     last_kind = "int"
@@ -510,7 +526,7 @@ fn tokenize_all(src: string, keep_trivia: bool) -> ([Tok], [DNote]):
                 q0 := p
                 if fstr:
                     q0 += 1
-                e := scan_str(src, q0, line, fstr)
+                e := scan_str(src, q0, line, fstr, file)
                 body := src[q0 + 1:e - 1]
                 flag := 0
                 if fstr:
@@ -522,7 +538,7 @@ fn tokenize_all(src: string, keep_trivia: bool) -> ([Tok], [DNote]):
                 continue
 
             if c == 96:
-                e, body, nl := scan_raw(src, p, line)
+                e, body, nl := scan_raw(src, p, line, file)
                 push(toks, Tok("str", body, line, tcol, 0, 0.0, src[s:e], "", ""))
                 p = e
                 line += nl
@@ -531,7 +547,7 @@ fn tokenize_all(src: string, keep_trivia: bool) -> ([Tok], [DNote]):
                 continue
 
             if c == 39:
-                e, cv := scan_char(src, p, line)
+                e, cv := scan_char(src, p, line, file)
                 push(toks, Tok("char", src[s:e], line, tcol, cv, 0.0, src[s:e], "", ""))
                 p = e
                 last_kind = "char"
@@ -539,12 +555,12 @@ fn tokenize_all(src: string, keep_trivia: bool) -> ([Tok], [DNote]):
                 continue
 
             if c == 47 and p + 1 < n and src[p + 1] == 47:
-                _die(line, "'//' is not valid in Tycho -- use '#' for comments, or '/' for division")
+                _die(file, src, line, "'//' is not valid in Tycho -- use '#' for comments, or '/' for division")
             l := op_len(src, p)
             # `!` exists only as `!=`; a lone one is an unexpected character,
             # exactly as in src/tychoc.c's operator chain.
             if not is_op_start(c) and not (c == 33 and l == 2):
-                _die(line, "unexpected character '" + src[p:p + 1] + "'")
+                _die(file, src, line, "unexpected character '" + src[p:p + 1] + "'")
             text := src[p:p + l]
             if text == "(" or text == "[":
                 if bracket_depth == 0:
