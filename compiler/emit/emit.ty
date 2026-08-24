@@ -1356,6 +1356,13 @@ fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
             return ("TYCHO_LIT(\"" + s + "\")", "string")
         ast.Name(l, n):
             t := _vtype(&cs, n)
+            if strings.starts_with(t, "?A") and len(cs.want) > 0 and cs.want != "?" and not strings.starts_with(cs.want, "?A"):
+                # A pending binding is also typed by a USE: passing it to a
+                # parameter, or putting it beside a typed sibling in a literal.
+                pi8 := strings.parse_int(t[2:])
+                cs.ptv[pi8] = cs.want
+                _vset(&cs, n, cs.want)
+                return (_vcname(&cs, n), cs.want)
             if len(t) > 0:
                 return (_vcname(&cs, n), t)
             ci := _cidx(&cs, n)
@@ -3598,6 +3605,16 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                             push(cs.ptv, "")
                             cnp := _push(&cs, n, "?A" + str(len(cs.pk) - 1))
                             return ind + "_PT" + str(kk) + " " + cnp + " = _PE" + str(kk) + ";\n"
+                    ast.NoneE(l2):
+                        # `o := None` -- the Option is fixed by the first
+                        # assignment, exactly as a bare `[]`'s element is fixed
+                        # by the first push.
+                        cs.tmp += 1
+                        kn := cs.tmp
+                        push(cs.pk, kn)
+                        push(cs.ptv, "")
+                        cnn := _push(&cs, n, "?A" + str(len(cs.pk) - 1))
+                        return ind + "_PT" + str(kn) + " " + cnn + " = _PE" + str(kn) + ";\n"
                     _: pass
             c, t := _rhs(&cs, rhs[0], want)
             if len(want) > 0:
@@ -3620,6 +3637,13 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             t := _vtype(&cs, n)
             if len(t) == 0:
                 _bad("assignment to unknown name '" + n + "'")
+            if strings.starts_with(t, "?A"):
+                # the first assignment is what types a pending binding
+                pi9 := strings.parse_int(t[2:])
+                gc, gt := _ex(&cs, k[0])
+                cs.ptv[pi9] = gt
+                _vset(&cs, n, gt)
+                return ind + _vcname(&cs, n) + " = " + gc + ";\n"
             if t == "?":
                 t = ""
             # `out = out + X` on an accumulator becomes an in-place append,
@@ -4724,10 +4748,15 @@ fn _fnbody(cs: inout C, fi: int, body: [ast.Stmt]) -> (string, string):
     cs.fnbase = sfb
     for i := pm; i < len(cs.pk); i += 1:
         if len(cs.ptv[i]) == 0:
-            _bad("a bare [] with nothing to type it")
+            _bad("a bare [] or None with nothing to type it")
         b = _replace(b, "_PT" + str(cs.pk[i]), _cty(&cs, cs.ptv[i]))
-        b = _replace(b, "_PE" + str(cs.pk[i]),
-            _apfx(&cs, _elem(cs.ptv[i])) + "_with_cap(&_scope, 0)")
+        init9 := _zero(&cs, cs.ptv[i])
+        if _is_arr(cs.ptv[i]):
+            init9 = _apfx(&cs, _elem(cs.ptv[i])) + "_with_cap(&_scope, 0)"
+        elif _is_enum(cs.ptv[i]):
+            ei9 := _eidx(&cs, _tname(cs.ptv[i]))
+            init9 = "(&_sing_" + cs.eds[ei9].name + "_" + str(_tag(&cs, ei9, "None")) + ")"
+        b = _replace(b, "_PE" + str(cs.pk[i]), init9)
     _restore(&cs, m)
     # the `$N` bindings are this function's, not the module's
     for len(cs.cnames) > cm:
