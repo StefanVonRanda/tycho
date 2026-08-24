@@ -4334,33 +4334,6 @@ fn _trim_nl(s: string) -> string:
 # would reach into the matched value (tests/match_payload_mut.ty), so a mutated
 # binding keeps its owning copy. ./tychoc does this in can_move_from's
 # neighbourhood (src/tychoc.c@block_mutates); this is the same rule.
-fn _ekids(e: ast.Expr) -> [ast.Expr]:
-    match e:
-        ast.Field(l, k, f): return k
-        ast.TupIdx(l, k, n): return k
-        ast.Index(l, k): return k
-        ast.Slice(l, a, b, k): return k
-        ast.Call(l, q, n, ts, k): return k
-        ast.CallVal(l, k): return k
-        ast.Named(l, n, k): return k
-        ast.Binop(l, o, k): return k
-        ast.Unop(l, o, k): return k
-        ast.IsVar(l, k, q, n): return k
-        ast.ArrLit(l, k): return k
-        ast.MapLit(l, k): return k
-        ast.Tuple(l, k): return k
-        ast.SomeE(l, k): return k
-        ast.OkE(l, k): return k
-        ast.ErrE(l, k): return k
-        ast.SpawnE(l, k): return k
-        ast.OrRet(l, k): return k
-        ast.Spread(l, k): return k
-        ast.Addr(l, k): return k
-        ast.ChanE(l, t, k): return k
-        ast.Lambda(l, pr, r, k): return k
-        _: return []ast.Expr
-    return []ast.Expr
-
 fn _mroot(e: ast.Expr) -> string:
     match e:
         ast.Name(l, n): return n
@@ -4372,20 +4345,44 @@ fn _mroot(e: ast.Expr) -> string:
         _: return ""
     return ""
 
+# The children are walked through a parameter rather than a returned [Expr]:
+# returning the child array is a RETENTION and deep-copies the whole subtree,
+# which cost more than the copy this pass removes (measured: _mroot alone).
 fn _mut_e(e: ast.Expr, nm: string) -> bool:
     match e:
         ast.Addr(l, k):
             if _mroot(k[0]) == nm:
                 return true
-        ast.Call(l, q, n, ts, args):
-            # every receiver-writing builtin takes its subject first, so one
-            # conservative test covers push/pop/reserve/sort and any future one.
-            if len(q) == 0 and len(args) > 0 and _mroot(args[0]) == nm:
+            return _mut_es(k, nm)
+        ast.Call(l, q, n, ts, k):
+            # Conservative at ANY unqualified call taking the binding first:
+            # that covers push/pop/reserve without a list, and a sink parameter,
+            # which adopts its argument and is invisible from here. Naming only
+            # the three builtins left the compiler's own source miscompiled.
+            if len(q) == 0 and len(k) > 0 and _mroot(k[0]) == nm:
                 return true
-        _: pass
-    for c in _ekids(e):
-        if _mut_e(c, nm):
-            return true
+            return _mut_es(k, nm)
+        ast.Field(l, k, f): return _mut_es(k, nm)
+        ast.TupIdx(l, k, n): return _mut_es(k, nm)
+        ast.Index(l, k): return _mut_es(k, nm)
+        ast.Slice(l, a2, b2, k): return _mut_es(k, nm)
+        ast.CallVal(l, k): return _mut_es(k, nm)
+        ast.Named(l, n, k): return _mut_es(k, nm)
+        ast.Binop(l, o, k): return _mut_es(k, nm)
+        ast.Unop(l, o, k): return _mut_es(k, nm)
+        ast.IsVar(l, k, q, n): return _mut_es(k, nm)
+        ast.ArrLit(l, k): return _mut_es(k, nm)
+        ast.MapLit(l, k): return _mut_es(k, nm)
+        ast.Tuple(l, k): return _mut_es(k, nm)
+        ast.SomeE(l, k): return _mut_es(k, nm)
+        ast.OkE(l, k): return _mut_es(k, nm)
+        ast.ErrE(l, k): return _mut_es(k, nm)
+        ast.SpawnE(l, k): return _mut_es(k, nm)
+        ast.OrRet(l, k): return _mut_es(k, nm)
+        ast.Spread(l, k): return _mut_es(k, nm)
+        ast.ChanE(l, t, k): return _mut_es(k, nm)
+        ast.Lambda(l, pr, r, k): return _mut_es(k, nm)
+        _: return false
     return false
 
 fn _mut_es(k: [ast.Expr], nm: string) -> bool:
