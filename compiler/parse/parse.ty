@@ -289,7 +289,7 @@ fn _args(toks: [lex.Tok], i0: int) -> ([ast.Expr], int):
     i = _op(toks, i, ")")
     return (out, i)
 
-fn _typeargs(toks: [lex.Tok], i0: int) -> ([ast.Ty], int):
+fn _typeargs(toks: [lex.Tok], i0: int, who: string) -> ([ast.Ty], int):
     # `$(T1, ...)`, the '$' already consumed
     i := _op(toks, i0, "(")
     out := []ast.Ty
@@ -302,7 +302,7 @@ fn _typeargs(toks: [lex.Tok], i0: int) -> ([ast.Ty], int):
         i += 1
     i = _op(toks, i, ")")
     if len(out) == 0:
-        _die(_at(toks, i0), "explicit type arguments need at least one type")
+        _die(_at(toks, i0), "'" + who + "$()' needs at least one explicit type argument")
     return (out, i)
 
 fn _lambda(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
@@ -470,7 +470,7 @@ fn primary(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
                 return (ast.OkE(t.line, [a]), i)
             return (ast.ErrE(t.line, [a]), i)
         if _isop(toks, i, "$"):
-            tas, j := _typeargs(toks, i + 1)
+            tas, j := _typeargs(toks, i + 1, nm)
             i = j
             vargs := []ast.Expr
             if _isop(toks, i, "("):
@@ -549,7 +549,7 @@ fn postfix(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
                     _: q = ""
                 tas := []ast.Ty
                 if _isop(toks, i, "$"):
-                    a, k := _typeargs(toks, i + 1)
+                    a, k := _typeargs(toks, i + 1, q + "." + fname)
                     tas = a
                     i = k
                 vargs := []ast.Expr

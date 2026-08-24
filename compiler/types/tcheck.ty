@@ -547,6 +547,32 @@ fn _typarams_of(cs: inout C, names: [string]):
     for n in names:
         cs.typarams[n] = true
 
+# src/tychoc.c@die_not_variant: a variant of ANOTHER package's enum written
+# bare. Returns "" when the spelling is fine, else the whole message.
+fn _foreign_variant(cs: inout C, tdname: string, qual: string, v: string) -> string:
+    if len(qual) > 0:
+        return ""
+    # Only a PACKAGE prefix counts. A generic instance is `Cell$@lib__Cause`,
+    # whose `__` is inside the type ARGUMENT and names no package of the enum.
+    head := tdname
+    for i := 0; i < len(tdname); i += 1:
+        if tdname[i] == 36 or tdname[i] == 64:
+            head = tdname[0:i]
+            break
+    us := -1
+    for i := 0; i + 1 < len(head); i += 1:
+        if head[i] == 95 and head[i + 1] == 95:
+            us = i
+            break
+    if us < 0:
+        return ""
+    pkg := head[0:us]
+    if cs.prefix == pkg + "__":
+        return ""                      # the enum's own package writes it bare
+    return "'" + v + "' is a variant of " + _show(&cs, "@" + tdname) +
+        ", but a variant of another package's enum must be written qualified -- write '" +
+        pkg + "." + v + "'"
+
 fn _register(cs: inout C, p: Program):
     for f in p.files:
         for sd in f.unit.structs:
@@ -928,7 +954,11 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
                         if vn == v:
                             found = true
                     if not found:
-                        _cerr(&cs, "'" + v + "' is not a variant of " + cs.tds[ti].name)
+                        _cerr(&cs, "'" + v + "' is not a variant of " + _show(&cs, "@" + cs.tds[ti].name))
+                    else:
+                        fv := _foreign_variant(&cs, cs.tds[ti].name, q, v)
+                        if len(fv) > 0:
+                            _cerr(&cs, fv)
                     return "bool"
                 if h != "opt" and h != "res" and _tdecl(&cs, st) < 0:
                     _cerr(&cs, "`is` asks an enum, Option or Result value which variant it holds; " + st + " is none of those")
@@ -1728,7 +1758,7 @@ fn _match(cs: inout C, l: int, subj: [ast.Expr], arms: [ast.Arm]):
             cs.line = a.line
             if a.name == "_":
                 pass
-            elif a.name == yes:
+            elif a.name == yes and len(a.qual) == 0:
                 seen0 = true
                 nested := _nested_of(&cs, a, _targs(st)[0])
                 if len(nested) > 0:
@@ -1742,7 +1772,7 @@ fn _match(cs: inout C, l: int, subj: [ast.Expr], arms: [ast.Arm]):
                     _cerr(&cs, "Ok carries no value here -- write a bare `Ok:` arm")
                 else:
                     _arm_binds(&cs, a, pay)
-            elif a.name == no:
+            elif a.name == no and len(a.qual) == 0:
                 seen1 = true
                 nested := ""
                 if h == "res":
@@ -1757,10 +1787,13 @@ fn _match(cs: inout C, l: int, subj: [ast.Expr], arms: [ast.Arm]):
                     push(pay, _targs(st)[1])
                 _arm_binds(&cs, a, pay)
             elif known(st):
+                spelt2 := a.name
+                if len(a.qual) > 0:
+                    spelt2 = a.qual + "." + a.name
                 if h == "opt":
-                    _cerr(&cs, "an Option's arms are Some(x), None, and _, not '" + a.name + "'")
+                    _cerr(&cs, "an Option's arms are Some(x), None, and _, not '" + spelt2 + "'")
                 else:
-                    _cerr(&cs, "'" + a.name + "' is not a variant of " + _show(&cs, st) + "; write `Ok` or `Err`")
+                    _cerr(&cs, "a Result's arms are Ok(x), Err(e), and _, not '" + spelt2 + "'")
             _tblock(&cs, a.body)
             _vrestore(&cs, m)
         if not wild and known(st):
@@ -1787,8 +1820,13 @@ fn _match(cs: inout C, l: int, subj: [ast.Expr], arms: [ast.Arm]):
                 for v in names:
                     if v == a.name:
                         found = true
+                fv := ""
+                if found:
+                    fv = _foreign_variant(&cs, cs.tds[ti].name, a.qual, a.name)
                 if not found:
-                    _cerr(&cs, "'" + a.name + "' is not a variant of " + cs.tds[ti].name)
+                    _cerr(&cs, "'" + a.name + "' is not a variant of " + _show(&cs, "@" + cs.tds[ti].name))
+                elif len(fv) > 0:
+                    _cerr(&cs, fv)
                 elif a.name in covered:
                     _cerr(&cs, "duplicate arm for " + a.name)
                 covered[a.name] = true
