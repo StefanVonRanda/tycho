@@ -756,6 +756,13 @@ fn _inst_of(cs: inout C, mang: string) -> [string]:
             return split(cs.iarg[i], "|")
     return []string
 
+# `intern__Interner` -> `Interner`; a name with no package prefix is unchanged.
+fn _shortn(n: string) -> string:
+    for i := 0; i + 1 < len(n); i += 1:
+        if n[i] == 95 and n[i + 1] == 95:
+            return n[i + 2:]
+    return n
+
 fn _inst_base(cs: inout C, mang: string) -> string:
     for i := 0; i < len(cs.iname); i += 1:
         if cs.iname[i] == mang:
@@ -842,13 +849,21 @@ fn _unify(cs: inout C, t: ast.Ty, a: string, tps: [string], bs: inout [string]):
                 ok := cs.eds[ei2].vpay[0].ptypes
                 if len(targs) > 0 and len(ok) > 0:
                     _unify(&cs, targs[0], ok[0], tps, &bs)
+                elif len(targs) > 0:
+                    # `Result(void, E)`: the Ok arm carries NO payload, so the
+                    # pattern's `$T` has nothing to bind against and the call
+                    # was refused as uninferrable. It is void.
+                    _unify(&cs, targs[0], "void", tps, &bs)
                 er := cs.eds[ei2].vpay[1].ptypes
                 if len(targs) > 1 and len(er) > 0:
                     _unify(&cs, targs[1], er[0], tps, &bs)
                 return
             if not (_is_struct(a) or _is_enum(a)):
                 return
-            if _inst_base(&cs, _tname(a)) != n:
+            # The pattern names the template UNQUALIFIED (`Interner($K,$V)` as
+            # written inside its own package) while the instance's base carries
+            # the package prefix, so compare the short names.
+            if _shortn(_inst_base(&cs, _tname(a))) != _shortn(n):
                 return
             ia := _inst_of(&cs, _tname(a))
             for i := 0; i < len(targs) and i < len(ia); i += 1:
