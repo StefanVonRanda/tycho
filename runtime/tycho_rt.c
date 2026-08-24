@@ -683,8 +683,15 @@ static void *arena_alloc_slow(Arena *a, size_t n) {
 static inline void *arena_alloc_i(Arena *a, size_t n) {
     n = (n + 7u) & ~(size_t)7u;
     HBlock *h = a->head;
+    size_t k = n >> 3;
+    /* The slow path reuses a chunk only if THIS size class has one. Testing the
+     * bucket table's mere EXISTENCE sent every later allocation in the arena
+     * down the slow path, and an arena gets that table the first time anything
+     * in it recycles -- which is any arena that has ever grown an array. */
+    int reusable = (k < TYCHO_NBKT) ? (a->bkt != NULL && a->bkt[k] != NULL)
+                                    : (a->freelist != NULL);
     if (__builtin_expect(h != NULL && h->off + n <= h->cap
-                         && a->bkt == NULL && a->freelist == NULL && !g_arena_stats, 1)) {
+                         && !reusable && !g_arena_stats, 1)) {
         void *p = (char *)(h + 1) + h->off;
         h->off += n;
         return p;
