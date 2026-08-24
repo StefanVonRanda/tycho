@@ -342,6 +342,8 @@ fn tokenize_ex(src: string, keep_trivia: bool) -> [Tok]:
 
 # The path-carrying entry. `tokenize_all` keeps its old shape so the token dump,
 # round-trip and census modes are untouched.
+# gap: the file is stamped in a second pass over the token array, which costs
+# one extra copy of it at the return boundary.
 fn tokenize_file(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNote]):
     ts, ns := tokenize_named(src, keep_trivia, file)
     # The token carries its OWN LINE, not the whole file. Stamping the source

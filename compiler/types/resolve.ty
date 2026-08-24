@@ -151,14 +151,26 @@ fn _excerpt(rs: inout R, file: string, line: int) -> string:
     for i := 0; i < len(rs.srcp); i += 1:
         if rs.srcp[i] != file:
             continue
-        ls := split(rs.srct[i], "\n")
-        if line > len(ls):
+        # Scan to the line rather than splitting the whole file: a warning is
+        # one line of output and split() allocated an array of every line in a
+        # 130 KB source for each one.
+        src := rs.srct[i]
+        st := 0
+        ln := 1
+        for st < len(src) and ln < line:
+            if src[st] == 10:
+                ln += 1
+            st += 1
+        if ln != line or st >= len(src):
             return ""
+        en := st
+        for en < len(src) and src[en] != 10:
+            en += 1
         num := str(line)
         pad := ""
         for k := len(num); k < 6; k += 1:
             pad = pad + " "
-        return "\n" + pad + num + " | " + ls[line - 1]
+        return "\n" + pad + num + " | " + src[st:en]
     return ""
 
 # Typo suggestions. src/tychoc.c:1469@edit_dist is a bounded Levenshtein and
