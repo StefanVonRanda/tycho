@@ -1831,13 +1831,27 @@ THE TWO-STAGE BUILD IS STILL OFF, and the corpus is not what blocks it --
     tychoc1: line 1: unexpected character ''
 
 `--resolve` on the same file is fine, and so is a normal compile, which is why
-tests/run.sh is green either way. The one thing `--parse` does differently is
-driver.parse_only: `lex.tokenize_all(_read(src_path), false)` -- the only caller
-that reads the file itself and tokenizes with NO file name. The reported
-character is EMPTY, so the lexer is reading at or past len(src). Suspect the
-string handed back by `_read`, whose whole body is a match arm returning its
-payload. PREDATES today's work: reproduced with emit.ty from adcf6712, and
-fa8ce3bb (before the payload borrow) cannot self-host at all.
+tests/run.sh is green either way. PREDATES today's work: reproduced with
+emit.ty from adcf6712, and fa8ce3bb cannot self-host at all.
+
+Narrowed, and each of these was checked at the emitted C rather than reasoned:
+  - It is MEMORY, not logic. Adding one unrelated `print` of the source length
+    to parse_only makes the failure vanish -- the layout shift hides it.
+  - The message is TRUNCATED, which is the sharpest clue. Instrumenting the
+    lexer's `_die` with extra text produced the SAME short line, so the message
+    string stops at a NUL: `src[p]` is a zero byte where the file has none. The
+    source buffer is being clobbered, or read past its length, during lexing.
+  - NOT the read: a probe doing the same `match io.read_text(p): Ok(s): return s`
+    then walking the result reports the right length and no NULs under both
+    compilers.
+  - NOT the inline temporary: binding the source to a local first still fails.
+  - NOT the token hand-back: `tycho_arr_K17_copy` deep-copies its elements and
+    `tycho_copy_S_lex__Tok` copies all four of its strings.
+  - NOT valgrind-visible: memcheck is silent, as it always is for an arena --
+    a use-after-free inside a live block is invisible to it.
+Next probe: dump the source bytes at the point of failure inside tokenize_named
+(not in parse_only, which is where the layout shift hides it) and find WHICH
+allocation lands on top of them.
 
 Fixing this is worth 19%: the self-built compiler is 277 ms against the shipped
 341 ms, and the Makefile change is three lines.
