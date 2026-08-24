@@ -730,6 +730,7 @@ fn _builtin_sigs_t(cs: inout C):
     _bsig(&cs, "args", "arr(string)", []string)
     _bsig(&cs, "getenv", "string", ["string"])
     _bsig(&cs, "is_null", "bool", ["ptr"])
+    _bsig(&cs, "to_ptr", "ptr", ["int"])
     _bsig(&cs, "sqrt", "float", ["float"])
     _bsig(&cs, "pow", "float", ["float", "float"])
     _bsig(&cs, "floor", "float", ["float"])

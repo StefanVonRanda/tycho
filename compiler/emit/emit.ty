@@ -1232,6 +1232,11 @@ fn _tostr(cs: inout C, code: string, t: string) -> string:
         if e == "string":
             return "tycho_arr_str_str(" + cs.arena + ", " + code + ")"
         return "tycho_str_arr_K" + str(_akind(&cs, e)) + "(" + cs.arena + ", " + code + ")"
+    if t == "ptr":
+        # A ptr has no printable value; the generated struct stringifier prints
+        # a placeholder for it rather than refusing the whole struct
+        # (src/tychoc.c's gen_str does the same).
+        return "tycho_str_from_c(" + cs.arena + ", \"<ptr>\")"
     _bad("str() of unsupported type '" + t + "'")
     return ""
 
@@ -1950,6 +1955,18 @@ fn _fv_body(cs: inout C, body: [ast.Stmt], bs0: [string], out: inout [string], w
                     for b3 in a.binds:
                         push(bs2, b3)
                     _fv_body(&cs, a.body, bs2, &out, &wr)
+            ast.SelectS(l, arms):
+                # A `select:` inside a parallel body captures the CHANNELS it
+                # names; without this arm they were not passed to the worker.
+                for a in arms:
+                    _fvs(&cs, a.ch, bs, &out)
+                    bs3 := bs
+                    for b4 in a.binds:
+                        push(bs3, b4)
+                    _fv_body(&cs, a.body, bs3, &out, &wr)
+            ast.ParallelS(l, w, b5):
+                _fvs(&cs, w, bs, &out)
+                _fv_body(&cs, b5, bs, &out, &wr)
             _: pass
 
 fn _has(xs: [string], n: string) -> bool:
@@ -3018,6 +3035,17 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
     if n == "sqrt" and len(args) == 1:
         c, t := _ex(&cs, args[0])
         return ("sqrt(" + c + ")", "float")
+    if n == "floor" and len(args) == 1:
+        c, t := _ex(&cs, args[0])
+        return ("floor(" + c + ")", "float")
+    # The two FFI escapes: an opaque handle's NULL test, and an int used as a
+    # sentinel pointer (SQLITE_TRANSIENT is (void*)-1).
+    if n == "is_null" and len(args) == 1:
+        c, t := _ex(&cs, args[0])
+        return ("((" + c + ") == 0)", "bool")
+    if n == "to_ptr" and len(args) == 1:
+        c, t := _ex(&cs, args[0])
+        return ("((void*)(tycho_int)(" + c + "))", "ptr")
     if n == "fabs" and len(args) == 1:
         c, t := _ex(&cs, args[0])
         return ("fabs(" + c + ")", "float")
@@ -3095,6 +3123,8 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
     if n == "hash" and len(args) == 1:
         c, t := _ex(&cs, args[0])
         return (_hash(&cs, t, c), "int")
+    if n == "ncpu" and len(args) == 0:
+        return ("tycho_ncpu()", "int")
     if n == "clock" and len(args) == 0:
         return ("tycho_clock()", "int")
     _bad("unsupported call '" + n + "' with " + str(len(args)) + " argument(s)")
