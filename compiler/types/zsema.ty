@@ -1098,7 +1098,8 @@ fn _no_field(cs: inout C, rt: string, f: string):
     for nm in cs.tds[i].fnames:
         if nm == f:
             return
-    _cerr(&cs, "struct " + _short(cs.tds[i].name) + " has no field '" + f + "'")
+    _cerr(&cs, "struct " + _short(cs.tds[i].name) + " has no field '" + f + "'" +
+        _tdym(f, cs.tds[i].fnames))
 
 # The largest finite f32 (IEEE-754 binary32). src/tychoc.c refuses a literal
 # past it rather than letting it become an infinity in silence.

@@ -202,6 +202,54 @@ fn _cexcerpt(cs: inout C, file: string, line: int) -> string:
         return "\n" + pad + num + " | " + ls[line - 1]
     return ""
 
+# Typo suggestions, same threshold as resolve.ty@_dym and the same source:
+# src/tychoc.c:1469@edit_dist accepts the best candidate when
+# bestd <= (strlen(name) <= 4 ? 1 : 2).
+fn _tedit(a: string, b: string) -> int:
+    la := len(a)
+    lb := len(b)
+    prev := []int
+    for j := 0; j <= lb; j += 1:
+        push(prev, j)
+    for i := 1; i <= la; i += 1:
+        cur := []int
+        push(cur, i)
+        for j := 1; j <= lb; j += 1:
+            c := 1
+            if a[i - 1] == b[j - 1]:
+                c = 0
+            v := prev[j - 1] + c
+            if prev[j] + 1 < v:
+                v = prev[j] + 1
+            if cur[j - 1] + 1 < v:
+                v = cur[j - 1] + 1
+            push(cur, v)
+        prev = cur
+    return prev[lb]
+
+fn _tdym(name: string, cands: [string]) -> string:
+    best := ""
+    bestd := 99
+    for c in cands:
+        if c == name:
+            continue
+        d := _tedit(name, c)
+        if d < bestd:
+            bestd = d
+            best = c
+    lim := 2
+    if len(name) <= 4:
+        lim = 1
+    if bestd <= lim and len(best) > 0:
+        return "; did you mean '" + best + "'?"
+    return ""
+
+fn _tycands(cs: inout C) -> [string]:
+    out := []string
+    for td in cs.tds:
+        push(out, _short(td.name))
+    return out
+
 fn _cerr(cs: inout C, msg: string):
     push(cs.errs, cs.file + ":" + str(cs.line) + ": error: " + msg +
         _cexcerpt(&cs, cs.file, cs.line))
@@ -289,12 +337,12 @@ fn _enc(cs: inout C, t: ast.Ty) -> string:
                     _tnote(&cs, "targ:" + ea)
                     push(enc, ea)
                 if len(r) == 0 and not cs.skip and not _known_generic(&cs, q, n):
-                    _cperr(&cs, "unknown type '" + n + "'")
+                    _cperr(&cs, "unknown type '" + n + "'" + _tdym(n, _tycands(&cs)))
                 return _inst_named(&cs, q, n, targs, enc)
             if len(r) == 0:
                 if cs.skip:
                     return "?"
-                _cperr(&cs, "unknown type '" + n + "'")
+                _cperr(&cs, "unknown type '" + n + "'" + _tdym(n, _tycands(&cs)))
                 return "?"
             return r
         ast.TArr(k):

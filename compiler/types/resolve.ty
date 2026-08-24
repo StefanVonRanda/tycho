@@ -137,6 +137,65 @@ fn _excerpt(rs: inout R, file: string, line: int) -> string:
         return "\n" + pad + num + " | " + ls[line - 1]
     return ""
 
+# Typo suggestions. src/tychoc.c:1469@edit_dist is a bounded Levenshtein and
+# its caller accepts the best candidate when
+#     bestd <= (strlen(name) <= 4 ? 1 : 2)
+# -- that threshold is copied, not invented, because it decides which
+# tests/diag/dym_*.err goldens can match at all.
+fn _edit(a: string, b: string) -> int:
+    la := len(a)
+    lb := len(b)
+    prev := []int
+    for j := 0; j <= lb; j += 1:
+        push(prev, j)
+    for i := 1; i <= la; i += 1:
+        cur := []int
+        push(cur, i)
+        for j := 1; j <= lb; j += 1:
+            c := 1
+            if a[i - 1] == b[j - 1]:
+                c = 0
+            v := prev[j - 1] + c
+            if prev[j] + 1 < v:
+                v = prev[j] + 1
+            if cur[j - 1] + 1 < v:
+                v = cur[j - 1] + 1
+            push(cur, v)
+        prev = cur
+    return prev[lb]
+
+fn _dym(name: string, cands: [string]) -> string:
+    best := ""
+    bestd := 99
+    for c in cands:
+        if c == name:
+            continue
+        d := _edit(name, c)
+        if d < bestd:
+            bestd = d
+            best = c
+    lim := 2
+    if len(name) <= 4:
+        lim = 1
+    if bestd <= lim and len(best) > 0:
+        return "; did you mean '" + best + "'?"
+    return ""
+
+# The candidate sets each site draws from: locals in scope, and table symbols
+# of a given kind. Kept beside _dym so the two stay in step.
+fn _vcands(rs: inout R) -> [string]:
+    out := []string
+    for i := 0; i < rs.nvars; i += 1:
+        push(out, rs.vars[i].name)
+    return out
+
+fn _scands(rs: inout R, kind: string) -> [string]:
+    out := []string
+    for sy in rs.syms:
+        if sy.kind == kind:
+            push(out, _short(sy.name))
+    return out
+
 fn _err(rs: inout R, msg: string):
     push(rs.errs, rs.file + ":" + str(rs.line) + ": error: " + msg +
         _excerpt(&rs, rs.file, rs.line))
@@ -493,7 +552,7 @@ fn _qual_is_pkg(rs: inout R, q: string) -> bool:
     if _imported_anywhere(&rs, q):
         _err(&rs, "package '" + q + "' is used here but this file does not `import` it (another file in the build does; imports are per-file)")
         return true
-    _err(&rs, "unknown variable '" + q + "'")
+    _err(&rs, "unknown variable '" + q + "'" + _dym(q, _vcands(&rs)))
     return true
 
 fn _expr(rs: inout R, bi: [string: bool], ctors: [string: bool], e: ast.Expr):
@@ -526,7 +585,7 @@ fn _expr(rs: inout R, bi: [string: bool], ctors: [string: bool], e: ast.Expr):
             if k == "generic":
                 _note(&rs, "fnval:" + n)
                 return
-            _err(&rs, "unknown variable '" + n + "'")
+            _err(&rs, "unknown variable '" + n + "'" + _dym(n, _vcands(&rs)))
         ast.Call(l, q, n, ts, args):
             _tys(&rs, ts)
             if len(q) == 0:
@@ -618,7 +677,7 @@ fn _call_bare(rs: inout R, bi: [string: bool], ctors: [string: bool], n: string)
     if _lookup(&rs, n) >= 0:
         _note(&rs, "callval")
         return
-    _err(&rs, "unknown procedure '" + n + "'")
+    _err(&rs, "unknown procedure '" + n + "'" + _dym(n, _scands(&rs, "fn")))
 
 # --- statements -------------------------------------------------------------
 
@@ -638,7 +697,7 @@ fn _assign_to(rs: inout R, name: string):
     if name == "_":
         _err(&rs, "`_` is not a discard -- it is an ordinary variable, and this one was never declared")
         return
-    _err(&rs, "assignment to unknown variable '" + name + "'")
+    _err(&rs, "assignment to unknown variable '" + name + "'" + _dym(name, _vcands(&rs)))
 
 # src/tychoc.c@resolve_block: a `:=` may not re-declare a name already live in
 # THIS block's duplicate scope. That scope is the block's own start, except in a
