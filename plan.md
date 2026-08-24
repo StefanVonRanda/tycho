@@ -1849,9 +1849,28 @@ Narrowed, and each of these was checked at the emitted C rather than reasoned:
     `tycho_copy_S_lex__Tok` copies all four of its strings.
   - NOT valgrind-visible: memcheck is silent, as it always is for an arena --
     a use-after-free inside a live block is invisible to it.
-Next probe: dump the source bytes at the point of failure inside tokenize_named
-(not in parse_only, which is where the layout shift hides it) and find WHICH
-allocation lands on top of them.
+LOCALISED. Dumping the source bytes from inside tokenize_named at the point of
+failure, on `fn main():`:
+
+    DBG p=4 n=20 len=20 c=0 l=1
+    DBG bytes=102 110 32 109 0 105 110 40 41 58 10 ...
+    file:  102 110 32 109 97 105 110 40 41 58 10 ...
+                            ^ index 4: 97 ('a') has become 0
+
+Exactly ONE byte of the source is overwritten, with a NUL, at index 4 -- one
+past the first byte of the identifier `main` at index 3. That is the shape of a
+string terminator: a 1-byte string was allocated AT src+3, so its NUL landed on
+src+4. So the arena handed out a region INSIDE the live source buffer.
+
+Not the free list: making arena_recycle a no-op in runtime/tycho_rt.c does not
+change the failure, so this is not FBIP reuse handing back a live chunk. What
+is left is a block that was released (arena reset or freed) while the source
+still pointed into it, and then re-handed to another arena from the pool.
+
+Next probe: find which arena the source ends up in. tycho_str_alloc returning a
+pointer inside a live buffer means either the bump pointer moved backwards or
+the block was pooled early -- both are visible by printing the block and offset
+at the allocation of the source and at the allocation of that 1-byte string.
 
 Fixing this is worth 19%: the self-built compiler is 277 ms against the shipped
 341 ms, and the Makefile change is three lines.
