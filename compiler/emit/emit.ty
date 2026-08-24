@@ -506,6 +506,18 @@ fn _gname(cs: inout C, key: string) -> string:
 fn _is_gen(n: string) -> bool:
     return strings.starts_with(n, "_G")
 
+# The payload type of an Option INSTANCE (the enum's Some arm).
+fn _opt_inner(cs: inout C, t: string) -> string:
+    if not _is_optT(&cs, t):
+        return ""
+    ei := _eidx(&cs, _tname(t))
+    if ei < 0:
+        return ""
+    pay := cs.eds[ei].vpay[_tag(&cs, ei, "Some")].ptypes
+    if len(pay) == 0:
+        return ""
+    return pay[0]
+
 fn _opt_of(cs: inout C, t: string) -> string:
     nm := _gname(&cs, "O|" + t)
     if _eidx(&cs, nm) < 0:
@@ -2775,6 +2787,26 @@ fn _call(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], args: [ast.Ex
             cs.want = sw
             if pt == "float" and at == "int":
                 ac = "(double)(" + ac + ")"
+            # An extern's `bytes` PARAMETER crosses as two C arguments -- the
+            # data pointer and its length -- exactly as a `bytes` RETURN crosses
+            # as two out-parameters. Passing it as one `char *` put the NEXT
+            # argument in the length slot, and iox_write_bytes then wrote
+            # through a bogus status pointer: SIGSEGV in core:io and core:os.
+            if xtn and _is_arr(pt):
+                xa := _fresh(&cs, "_xa")
+                cast9 := "(const " + _cty(&cs, _elem(pt)) + " *)"
+                if _elem(pt) == "string":
+                    cast9 = "(const char *const *)"
+                out2 = out2 + ", ({ " + _cty(&cs, pt) + " " + xa + " = " + ac + "; " +
+                    cast9 + xa + ".data; })" + ", ({ " + _cty(&cs, pt) + " " + xa +
+                    "b = " + ac + "; " + xa + "b.len; })"
+                continue
+            if xtn and pt == "bytes":
+                xb := _fresh(&cs, "_xb")
+                out2 = out2 + ", ({ char *" + xb + " = " + ac +
+                    "; (const unsigned char *)" + xb + "; })" +
+                    ", tycho_str_len(" + ac + ")"
+                continue
             # NO COPY passing an ARRAY or MAP down. runtime/tycho_rt.c's header states the
             # model: an argument is a pointer into the caller's arena and the
             # callee's arena is a CHILD, so the value outlives the call. The
@@ -2789,6 +2821,28 @@ fn _call(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], args: [ast.Ex
             # drop the separator the arena would have needed
             out2 = strings.replace(out2, "(@, ", "(")
             out2 = strings.replace(out2, "(@", "(")
+            if cs.fds[fi].ret == "string":
+                # A C `char *` is NOT a tycho string: tycho's carries its length
+                # in the 8 bytes BEFORE the buffer, so using the raw pointer read
+                # whatever sat there as the length (garbage, then SIGSEGV in
+                # core:os). NULL becomes "".
+                xs9 := _fresh(&cs, "_x")
+                return ("tycho_str_from_c(" + cs.arena + ", ({ const char *" + xs9 +
+                    " = " + out2 + "); " + xs9 + " ? " + xs9 + " : \"\"; }))", "string")
+            if _is_optT(&cs, cs.fds[fi].ret) and _opt_inner(&cs, cs.fds[fi].ret) == "string":
+                # NULL is None; anything else is Some(str). The wrap mirrors
+                # ./tychoc's, in this compiler's enum representation.
+                ot := cs.fds[fi].ret
+                oi := _eidx(&cs, _tname(ot))
+                en := cs.eds[oi].name
+                xv := _fresh(&cs, "_x")
+                ov2 := _fresh(&cs, "_ov")
+                return ("({ const char *" + xv + " = " + out2 + "); E_" + en + " *" + ov2 +
+                    " = &_sing_" + en + "_" + str(_tag(&cs, oi, "None")) + "; if (" + xv + ") { " +
+                    ov2 + " = (E_" + en + " *)arena_alloc(&_scope, offsetof(E_" + en +
+                    ", u) + sizeof(E_" + en + "_Some)); " + ov2 + "->tag = " +
+                    str(_tag(&cs, oi, "Some")) + "; " + ov2 + "->u.Some.f0 = tycho_str_from_c(" +
+                    cs.arena + ", " + xv + "); } " + ov2 + "; })", ot)
             if cs.fds[fi].ret == "bytes":
                 ov := _fresh(&cs, "_o")
                 ol := _fresh(&cs, "_ol")
@@ -5177,10 +5231,29 @@ fn program(pfx: [string], us: [ast.Unit]) -> string:
         for xj := 0; xj < len(cs.fds[xi].ptypes); xj += 1:
             if xj > 0:
                 xps = xps + ", "
+            # A `bytes` PARAMETER is (data, len), matching the call site.
+            if cs.fds[xi].ptypes[xj] == "bytes" and not cs.fds[xi].pinout[xj]:
+                xps = xps + "const unsigned char *, tycho_int"
+                continue
+            # So is an ARRAY: the shim gets the element pointer and the count,
+            # never the array struct by value (`osx_exec(argv: [string])`).
+            if _is_arr(cs.fds[xi].ptypes[xj]) and not cs.fds[xi].pinout[xj]:
+                el := _elem(cs.fds[xi].ptypes[xj])
+                if el == "string":
+                    xps = xps + "const char *const *, tycho_int"
+                else:
+                    xps = xps + "const " + _cty(&cs, el) + " *, tycho_int"
+                continue
             xps = xps + _cty(&cs, cs.fds[xi].ptypes[xj])
             if cs.fds[xi].pinout[xj]:
                 xps = xps + " *"
         xrt := _cty(&cs, cs.fds[xi].ret)
+        # An `Option(string)` return crosses as a plain `char *`: NULL is None.
+        # Declaring it as the Option ENUM pointer made the caller read a tag out
+        # of a C string -- "tycho: non-exhaustive match" in core:io's line
+        # reader (iox_read_line).
+        if _is_optT(&cs, cs.fds[xi].ret) and _opt_inner(&cs, cs.fds[xi].ret) == "string":
+            xrt = "char *"
         if cs.fds[xi].ret == "bytes":
             # A `bytes` return crosses the ABI as (ptr, len) OUT-PARAMETERS and
             # the C function returns void; the caller wraps them with
