@@ -179,7 +179,7 @@ fn ty(toks: [lex.Tok], i0: int) -> (ast.Ty, int):
             i = k
         i = _op(toks, i, ")")
         if len(es) < 2:
-            _die(t, "a tuple type needs at least two elements")
+            _die(t, "a tuple type needs at least two elements; parentheses do not group a type, so write it bare")
         if len(es) > 8:
             _die(t, "a tuple has at most 8 elements")
         return (ast.TTup(es), i)
@@ -305,7 +305,8 @@ fn _lambda(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
     ln := _ln(toks, i0 - 1)
     t := _at(toks, i0)
     if t.kind == "ident":
-        _die(t, "a named function cannot be declared inside another")
+        _die(t, "a named function cannot be declared inside another -- declare '" +
+            t.text + "' at the top level, or use a lambda 'fn(x): expr'")
     i := _op(toks, i0, "(")
     ps := []ast.Param
     for not _isop(toks, i, ")"):
@@ -885,7 +886,7 @@ fn matchs(toks: [lex.Tok], i0: int, value: bool) -> (ast.Stmt, int):
             i = j
         else:
             if _k(toks, i) == "str":
-                _die(_at(toks, i), "`match` does not take a string arm")
+                _die(_at(toks, i), "`match` does not take a string arm -- int, char, bool, a range and a const name do; for strings use an if/elif chain on `==`")
             v, j := _ident(toks, i, "a match arm `Variant(bindings):` or `Variant:`")
             nm = v
             i = j
@@ -1054,7 +1055,7 @@ fn simple(toks: [lex.Tok], i0: int) -> (ast.Stmt, int, bool):
     match e:
         ast.Name(l, n):
             if n == "while":
-                _die(t, "Tycho has no `while` -- use `for cond:` for a conditional loop")
+                _die(t, "Tycho has no `while` -- use `for cond:` for a conditional loop (e.g. `for i < 3:`)")
         _: pass
     if e is ast.SpawnE:
         _die(t, "a `spawn` must be bound to a task handle -- write `t := spawn f(args)`")
@@ -1129,7 +1130,7 @@ fn forstmt(toks: [lex.Tok], i0: int, par: bool) -> (ast.Stmt, int):
         i += 2
         if _dotlt_ahead(toks, i):
             if not par:
-                _die(t, "`0..<N` counts only in a `parallel for`")
+                _die(t, "`0..<N` counts only in a `parallel for` -- write `for idx := 0; idx < N; idx += 1:` for a sequential count")
             if not (_k(toks, i) == "int" and _at(toks, i).ival == 0 and _isop(toks, i + 1, "..<")):
                 _die(t, "`parallel for` counts from zero: write `0..<N`")
             hi, j := expr(toks, i + 2)
@@ -1138,7 +1139,7 @@ fn forstmt(toks: [lex.Tok], i0: int, par: bool) -> (ast.Stmt, int):
             b, k := block(toks, i)
             return (ast.ForRange(t.line, v, [ast.IntLit(t.line, 0), hi], b), k)
         if _isid(toks, i, "range") and _isop(toks, i + 1, "("):
-            _die(t, "`range()` was removed: write `for i := 0; i < N; i += 1:` to count")
+            _die(t, "`range()` was removed: write `for idx := 0; idx < N; idx += 1:` to count, or `parallel for idx in 0..<N:` to count in parallel")
         coll, j := expr(toks, i)
         # src/tychoc.c:4024 -- an array and a channel source are both scalar
         # handles, so the source must NAME one; a temp could alias a channel.

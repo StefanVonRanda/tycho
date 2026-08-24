@@ -2365,7 +2365,9 @@ fn check(p: Program) -> C:
             _cerr(&cs, "'main' takes no parameters -- the command line arrives through the `args()` builtin")
         r := cs.sg[mi].ret
         if r != "void" and r != "res(void,string)" and known(r):
-            _cerr(&cs, "'main' returns nothing or Result(void, string), not " + r)
+            _cerr(&cs, "'main' returns nothing or Result(void, string), not " + r +
+                " -- an Err reaching the entry point is printed, so the error type is the message." +
+                " For a status other than 0 or 1 (diff(1)'s 0/1/2, say), call the `exit(code)` builtin")
     for e in cs.errs:
         push(cs.perrs, e)
     cs.errs = cs.perrs

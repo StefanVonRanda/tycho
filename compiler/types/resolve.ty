@@ -677,6 +677,14 @@ fn _call_bare(rs: inout R, bi: [string: bool], ctors: [string: bool], n: string)
     if _lookup(&rs, n) >= 0:
         _note(&rs, "callval")
         return
+    # src/tychoc.c:7064 special-cases this one by name; it is not a corelib
+    # lookup, so it is a literal here too.
+    # gap: src/tychoc.c:5698's corelib hint ("core:arrays provides `sort` --
+    # add `import \"core:arrays\"` ...") needs a scan of the corelib's exported
+    # symbols, which tychoc1 does not build. diag_corelib_call_hint stays red.
+    if n == "eprintln":
+        _err(&rs, "unknown procedure 'eprintln' -- stderr has no println; use `eprint(s + \"\\n\")`")
+        return
     _err(&rs, "unknown procedure '" + n + "'" + _dym(n, _scands(&rs, "fn")))
 
 # --- statements -------------------------------------------------------------

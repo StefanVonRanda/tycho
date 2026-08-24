@@ -1109,7 +1109,8 @@ fn _f32_fits(cs: inout C, e: ast.Expr):
         ast.FloatLit(l, v):
             if v > 3.4028234663852886e38 or v < -3.4028234663852886e38:
                 cs.line = l
-                _cerr(&cs, "f32 literal out of range")
+                _cerr(&cs, "f32 literal out of range: `" + str(v) +
+                    "` exceeds the largest f32 (IEEE-754 binary32); write to_f32(1.0/0.0) for an infinity")
         _: pass
 
 fn _dedup6(xs: [string]) -> [string]:
