@@ -747,7 +747,12 @@ fn _expr(rs: inout R, bi: [string: bool], ctors: [string: bool], e: ast.Expr):
                         imp = " -- and this file does not `import` it; add the import first"
                     _err(&rs, "package '" + q + "' has no symbol '" + n + "'" + imp)
             else:
+                # UFCS: `b.twice()` calls `twice`, and report_dead counts calls.
                 _note(&rs, "method:" + n)
+                if _callable(_kindof(&rs, rs.prefix + n)):
+                    _note(&rs, "call:" + rs.prefix + n)
+                elif _callable(_kindof(&rs, n)):
+                    _note(&rs, "call:" + n)
             _exprs(&rs, bi, ctors, args)
         ast.Field(l, k, f):
             match k[0]:
@@ -757,6 +762,12 @@ fn _expr(rs: inout R, bi: [string: bool], ctors: [string: bool], e: ast.Expr):
                         kk := _kindof(&rs, m)
                         if len(kk) > 0:
                             _note(&rs, "pkgmember:" + m)
+                            # `opsx.bump` as a VALUE is a use, exactly as the
+                            # unqualified `f := bump` is -- report_dead counts
+                            # `fnval:` and saw neither.
+                            if _callable(kk):
+                                _note(&rs, "fnval:" + m)
+                                _dwarnq(&rs, m, q + "." + f)
                         else:
                             _err(&rs, "package '" + q + "' has no variant, const or function '" + f + "'")
                         return
@@ -782,7 +793,17 @@ fn _expr(rs: inout R, bi: [string: bool], ctors: [string: bool], e: ast.Expr):
         ast.TupIdx(l, k, i): _exprs(&rs, bi, ctors, k)
         ast.Index(l, k): _exprs(&rs, bi, ctors, k)
         ast.Slice(l, a, b, k): _exprs(&rs, bi, ctors, k)
-        ast.CallVal(l, k): _exprs(&rs, bi, ctors, k)
+        ast.CallVal(l, k):
+            # A CHAINED UFCS call -- `b.twice().shown()` -- has a Field callee
+            # whose receiver is not a name, so it never reaches the arm above.
+            match k[0]:
+                ast.Field(l2, r2, fn2):
+                    if _callable(_kindof(&rs, rs.prefix + fn2)):
+                        _note(&rs, "call:" + rs.prefix + fn2)
+                    elif _callable(_kindof(&rs, fn2)):
+                        _note(&rs, "call:" + fn2)
+                _: pass
+            _exprs(&rs, bi, ctors, k)
         ast.Named(l, nm, k): _exprs(&rs, bi, ctors, k)
         ast.Binop(l, o, k): _exprs(&rs, bi, ctors, k)
         ast.Unop(l, o, k): _exprs(&rs, bi, ctors, k)

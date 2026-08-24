@@ -56,6 +56,10 @@ fn main():
             mode = "tcensus"
         elif a == "--bundle":
             mode = "bundle"
+        elif a == "--print-shims":
+            mode = "shims"
+        elif a == "--print-deps":
+            mode = "deps"
         elif a == "-o":
             i += 1
             if i >= len(av):
@@ -105,6 +109,12 @@ fn main():
         return
     if mode == "bundle":
         driver.bundle(src, av[0])
+        return
+    if mode == "shims":
+        driver.print_shims(src, av[0])
+        return
+    if mode == "deps":
+        driver.print_deps(src, av[0])
         return
     if not emit_c:
         # The default is a BINARY: emit the C beside it, run cc, remove the C.

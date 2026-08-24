@@ -178,6 +178,35 @@ fn bundle(src_path: string, argv0: string):
             out = out + f.src + "\n"
     print(out)
 
+# `--print-shims` / `--print-deps`: the transitive closure of the C shims each
+# loaded package ships, and the pkg-config NAMES it needs. The harnesses read
+# both -- one to link, the other to decide whether a missing library is a SKIP
+# rather than a failure (src/tychoc.c's own comment beside print_deps).
+fn print_shims(src_path: string, argv0: string):
+    p := types.load(src_path, argv0)
+    out := ""
+    for c in _shims(p):
+        out = out + c + "\n"
+    print(out)
+
+fn print_deps(src_path: string, argv0: string):
+    p := types.load(src_path, argv0)
+    seen := []string: bool
+    out := ""
+    for f in p.files:
+        if f.dir in seen:
+            continue
+        seen[f.dir] = true
+        match io.read_text(f.dir + "/deps"):
+            Ok(txt):
+                for ln in split(txt, "\n"):
+                    t := strings.trim(ln)
+                    if len(t) > 0 and t[0] != 35 and not (t in seen):
+                        seen[t] = true
+                        out = out + t + "\n"
+            Err(e): pass
+    print(out)
+
 fn compile(src_path: string, runtime_path: string, out_c: string, argv0: string):
     p := check_or_die(src_path, argv0)
     c := compile_str(p, read_runtime(runtime_path, argv0))

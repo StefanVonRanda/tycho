@@ -2105,6 +2105,16 @@ fn _pkgmember(cs: inout C, r: ast.Expr, f: string) -> (string, string):
     ei := _qvariant(&cs, pf, f)
     if ei >= 0:
         return _variant(&cs, ei, f, []ast.Expr)
+    # `opsx.bump` taken as a VALUE: the same trampoline the unqualified spelling
+    # gets, under the package-mangled name.
+    fi := -1
+    for i := 0; i < len(cs.fds); i += 1:
+        if cs.fds[i].name == pf + f:
+            fi = i
+    if fi >= 0:
+        _need_clo(&cs, fi)
+        ft := _fn_of(&cs, cs.fds[fi].ret, cs.fds[fi].ptypes)
+        return ("(" + _cty(&cs, ft) + "){0, " + cs.fds[fi].name + "__clo, 0}", ft)
     _bad("unknown package member '" + q + "." + f + "'")
     return ("", "")
 
@@ -2285,6 +2295,16 @@ fn _mapget(cs: inout C, mc: string, mt: string, args: [ast.Expr]) -> (string, st
 fn _callval(cs: inout C, k: [ast.Expr]) -> (string, string):
     match k[0]:
         ast.Field(l, r, f):
+            # `(pkg.f)(x)` -- the parenthesised immediate call. The receiver is a
+            # PACKAGE, not a value, so it must not be evaluated as one.
+            match r[0]:
+                ast.Name(l9, q9):
+                    if len(_vtype(&cs, q9)) == 0 and _ispkg(&cs, q9):
+                        ra := []ast.Expr
+                        for i := 1; i < len(k); i += 1:
+                            push(ra, k[i])
+                        return _call(&cs, l, q9, f, []ast.Ty, ra)
+                _: pass
             rt0 := _argtypes(&cs, r)[0]
             if _is_struct(rt0):
                 si4 := _sidx(&cs, _tname(rt0))
