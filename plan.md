@@ -1823,67 +1823,10 @@ dying scope) and the self-built compiler now passes the whole 752-fixture
 corpus. The match-arm payload borrow landed (1730220d). Ratio on
 compiler/main.ty is ~3.1x, from 5.0x.
 
-THE TWO-STAGE BUILD IS STILL OFF, and the corpus is not what blocks it --
-`make parse-check` is. A tychoc1 built by tychoc1 fails `--parse` on EVERY file:
-
-    ./tychoc compiler/main.ty -o s1 && ./s1 compiler/main.ty -o s2
-    ./s2 /tmp/p3.ty --parse      # fn main(): / pass
-    tychoc1: line 1: unexpected character ''
-
-`--resolve` on the same file is fine, and so is a normal compile, which is why
-tests/run.sh is green either way. PREDATES today's work: reproduced with
-emit.ty from adcf6712, and fa8ce3bb cannot self-host at all.
-
-Narrowed, and each of these was checked at the emitted C rather than reasoned:
-  - It is MEMORY, not logic. Adding one unrelated `print` of the source length
-    to parse_only makes the failure vanish -- the layout shift hides it.
-  - The message is TRUNCATED, which is the sharpest clue. Instrumenting the
-    lexer's `_die` with extra text produced the SAME short line, so the message
-    string stops at a NUL: `src[p]` is a zero byte where the file has none. The
-    source buffer is being clobbered, or read past its length, during lexing.
-  - NOT the read: a probe doing the same `match io.read_text(p): Ok(s): return s`
-    then walking the result reports the right length and no NULs under both
-    compilers.
-  - NOT the inline temporary: binding the source to a local first still fails.
-  - NOT the token hand-back: `tycho_arr_K17_copy` deep-copies its elements and
-    `tycho_copy_S_lex__Tok` copies all four of its strings.
-  - NOT valgrind-visible: memcheck is silent, as it always is for an arena --
-    a use-after-free inside a live block is invisible to it.
-LOCALISED. Dumping the source bytes from inside tokenize_named at the point of
-failure, on `fn main():`:
-
-    DBG p=4 n=20 len=20 c=0 l=1
-    DBG bytes=102 110 32 109 0 105 110 40 41 58 10 ...
-    file:  102 110 32 109 97 105 110 40 41 58 10 ...
-                            ^ index 4: 97 ('a') has become 0
-
-Exactly ONE byte of the source is overwritten, with a NUL, at index 4 -- one
-past the first byte of the identifier `main` at index 3. That is the shape of a
-string terminator: a 1-byte string was allocated AT src+3, so its NUL landed on
-src+4. So the arena handed out a region INSIDE the live source buffer.
-
-Not the free list: making arena_recycle a no-op in runtime/tycho_rt.c does not
-change the failure, so this is not FBIP reuse handing back a live chunk. What
-is left is a block that was released (arena reset or freed) while the source
-still pointed into it, and then re-handed to another arena from the pool.
-
-Also ruled out: block size. TYCHO_BLOCK=1024 / 65536 / 1048576 all fail
-identically, so this is not pooling luck -- the aliasing is deterministic.
-
-The write is a NUL at src+4 with src+3 holding its own byte unchanged, which is
-exactly `tycho_str_substr(&_scope, src, 3, 4)` handing back a pointer EQUAL TO
-src+3: a 1-byte string allocated on top of the live source, its terminator
-landing one past. So _scope's bump pointer is inside src's own buffer. The C
-emitted for the identifier scan is correct (`h_name = tycho_str_substr(&_scope,
-h_src, h_s, h_p)`), so the fault is in the arena state, not the call.
-
-Next probe: two arenas sharing a block. Print the block address and offset at
-the source's allocation and at that 1-byte allocation -- if they are the same
-block with a rewound offset, an Arena struct is being COPIED BY VALUE somewhere
-and both copies are bumping their own view of the same block.
-
-Fixing this is worth 19%: the self-built compiler is 277 ms against the shipped
-341 ms, and the Makefile change is three lines.
+The two-stage build is ON (e4e0abbe) and the blocker is fixed (82aae400):
+to_str/to_bool emit their argument unchanged, so their result is that place and
+retaining it must copy -- core:io was handing back a pointer into the frame it
+had just freed. Shipped compiler 341 ms -> 279 ms.
 
 MEASURE WITH CALLGRIND, NOT THE CLOCK. This machine drifts +/-5% between runs,
 which is the size of the wins being chased; `valgrind --tool=callgrind` gives a
