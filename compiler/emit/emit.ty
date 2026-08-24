@@ -1278,7 +1278,15 @@ fn _acc_rooted(cs: inout C, e: ast.Expr) -> bool:
 # The same rule as the declaration path: a string already in the destination
 # arena, not rooted in an accumulator, is shared rather than copied.
 fn _shares(cs: inout C, e: ast.Expr, t: string, arena: string) -> bool:
-    return t == "string" and _ownerof(&cs, e) == arena and not _acc_rooted(&cs, e)
+    # Enums join strings here: a variant is immutable once built -- there is no
+    # assignment to a payload, and a match arm that WRITES its binding keeps its
+    # own copy -- so retaining one into the arena it already lives in has nothing
+    # to protect. This is where the AST copies were: tycho_copy_E_ast__Expr and
+    # the Expr-array copy under it were 16% of the profile. Arrays and maps are
+    # NOT here: push and element assignment write them in place.
+    if t != "string" and not _is_enum(t):
+        return false
+    return _ownerof(&cs, e) == arena and not _acc_rooted(&cs, e)
 
 fn _ownerof(cs: inout C, e: ast.Expr) -> string:
     n := _rootname(e)
@@ -3428,7 +3436,7 @@ fn _rhs2(cs: inout C, e: ast.Expr, want: string, arena: string) -> (string, stri
         # owned") so its first append reallocates too. Same arena means the two
         # also die together, so there is no lifetime to extend. Arrays and maps
         # ARE mutable and still copy.
-        if t != "string" or _ownerof(&cs, e) != arena or _acc_rooted(&cs, e):
+        if not _shares(&cs, e, t, arena):
             c = _copy(&cs, c, t, arena)
     if len(want) > 0 and want == "float" and t == "int":
         c = "(double)(" + c + ")"
