@@ -60,6 +60,8 @@ struct R:
     pkg_used: [string: bool]
     file: string
     line: int                          # the line of the node being walked
+    srcp: [string]                     # file paths, parallel to srct
+    srct: [string]                     # their source, for the diagnostic excerpt
     prefix: string
     root: string
     entry_in_corelib: bool
@@ -114,8 +116,30 @@ fn _builtin_ctors() -> [string: bool]:
 # is the walk's current node, set by _expr/_stmt and by the declaration loops --
 # a stale one is the failure this cannot see for itself, which is why
 # compiler/run.sh leg 9 compares every NAME rejection against ./tychoc's line.
+# Every diagnostic carries the offending SOURCE LINE beneath it, right-aligned
+# to width 6 then " | ", which is the shape every tests/diag/*.err golden pins:
+#
+#     tests/diag/dym_var.ty:3: error: unknown variable 'coutn'
+#          3 |     print(str(coutn))
+fn _excerpt(rs: inout R, file: string, line: int) -> string:
+    if line <= 0:
+        return ""
+    for i := 0; i < len(rs.srcp); i += 1:
+        if rs.srcp[i] != file:
+            continue
+        ls := split(rs.srct[i], "\n")
+        if line > len(ls):
+            return ""
+        num := str(line)
+        pad := ""
+        for k := len(num); k < 6; k += 1:
+            pad = pad + " "
+        return "\n" + pad + num + " | " + ls[line - 1]
+    return ""
+
 fn _err(rs: inout R, msg: string):
-    push(rs.errs, rs.file + ":" + str(rs.line) + ": error: " + msg)
+    push(rs.errs, rs.file + ":" + str(rs.line) + ": error: " + msg +
+        _excerpt(&rs, rs.file, rs.line))
 
 # src/tychoc.c drains `declared and not used` and `imported and not used` only
 # AFTER resolve has finished without dying (report_unused_locals /
@@ -154,7 +178,10 @@ fn _add(rs: inout R, name: string, kind: string, file: string, pkg: string):
 
 fn build_table(p: Program) -> R:
     rs := R([]Sym, []string: int, []Binding, 0, []string: int, []ast.ImportD, []string,
-            []ast.ImportD, []string: bool, "", 0, "", p.root, false, false, false, -1, []string: bool, []string, []string, []string)
+            []ast.ImportD, []string: bool, "", 0, []string, []string, "", p.root, false, false, false, -1, []string: bool, []string, []string, []string)
+    for f in p.files:
+        push(rs.srcp, f.path)
+        push(rs.srct, f.src)
     rs.bsigs = _builtin_sigs()
     rs.entry_in_corelib = under_corelib(p.root, p.entry_dir)
     ctors := _builtin_ctors()

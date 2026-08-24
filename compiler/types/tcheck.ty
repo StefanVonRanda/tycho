@@ -135,6 +135,8 @@ struct VBind:
     mutable: bool
 
 struct C:
+    srcp: [string]                     # file paths, parallel to srct
+    srct: [string]                     # their source, for the diagnostic excerpt
     tds: [TDecl]
     tindex: [string: int]
     sg: [FSig]
@@ -182,14 +184,34 @@ struct C:
                                        # could drive down -- 6b made the flag
                                        # mean what leg12's label always claimed
 
+# The offending source line beneath the message, the shape every
+# tests/diag/*.err golden pins. Same rule as resolve.ty@_excerpt.
+fn _cexcerpt(cs: inout C, file: string, line: int) -> string:
+    if line <= 0:
+        return ""
+    for i := 0; i < len(cs.srcp); i += 1:
+        if cs.srcp[i] != file:
+            continue
+        ls := split(cs.srct[i], "\n")
+        if line > len(ls):
+            return ""
+        num := str(line)
+        pad := ""
+        for k := len(num); k < 6; k += 1:
+            pad = pad + " "
+        return "\n" + pad + num + " | " + ls[line - 1]
+    return ""
+
 fn _cerr(cs: inout C, msg: string):
-    push(cs.errs, cs.file + ":" + str(cs.line) + ": error: " + msg)
+    push(cs.errs, cs.file + ":" + str(cs.line) + ": error: " + msg +
+        _cexcerpt(&cs, cs.file, cs.line))
 
 # The type rules parse_type enforces run while the DECLARATION is read, so they
 # precede every body diagnostic in the whole build -- the same split
 # resolve.ty@_perr makes for the import leak, and for the same reason.
 fn _cperr(cs: inout C, msg: string):
-    push(cs.perrs, cs.file + ":" + str(cs.line) + ": error: " + msg)
+    push(cs.perrs, cs.file + ":" + str(cs.line) + ": error: " + msg +
+        _cexcerpt(&cs, cs.file, cs.line))
 
 fn _tnote(cs: inout C, key: string):
     cs.counts[key] = cs.counts.get(key, 0) + 1
@@ -2242,10 +2264,12 @@ fn _infinite_check(cs: inout C):
         _cerr(&cs, "infinite type: " + cs.tds[best].name + " contains itself by value -- use an array ([" + cs.tds[best].name + "]) or Option([" + cs.tds[best].name + "]) for indirection")
 
 fn check(p: Program) -> C:
-    cs := C([]TDecl, []string: int, []FSig, []string: int, []string: string, []string: string,
+    cs := C([]string, []string, []TDecl, []string: int, []FSig, []string: int, []string: string, []string: string,
             []string: string, []string: int, []string: bool, []string: string, []string: bool, []VBind, 0, []string, []string,
             []string: int, "", 0, "", "?", false, false, []ast.ImportD, []ast.ImportD, false, 0, 0, false, 0, []string: int, []string: bool, []string: bool, 0, 0, false)
     for f in p.files:
+        push(cs.srcp, f.path)
+        push(cs.srct, f.src)
         for im in f.unit.imports:
             push(cs.all_imports, im)
     _builtin_sigs_t(&cs)
