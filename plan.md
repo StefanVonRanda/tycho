@@ -1817,8 +1817,25 @@ Two measured causes, both architectural:
     walker that binds a payload copies the subtree (22,032 Expr deep copies in
     one tycho-db typecheck). tychoc1 also runs ~2x the passes ./tychoc does.
 
+PROGRESS: the return-slot move (fa8ce3bb) took a SELF-BUILT tychoc1 from 331ms
+to 255ms on compiler/main.ty, which proves the elision passes compound into
+tychoc1's own speed. The two-stage build that would ship that gain is BLOCKED:
+with tychoc1 built by tychoc1, three fixtures fail (combinator,
+compound_index_eval, fnval_generic_wrap) with "tychoc1: unsupported assignment
+target" -- an internal error, so the self-built compiler's own AST is corrupt.
+Narrowed: --parse-census is IDENTICAL between the two builds, so the parser is
+fine and the fault is in emit, in a construction whose interior still lands in
+the wrong arena. Reproduce with:
+    ./tychoc compiler/main.ty -o /tmp/s1 && ./tmp/s1 compiler/main.ty -o /tmp/s2
+    TYCHOC=/tmp/s2 make test
+
 Done when: the ratio is <= 1.0 on compiler/main.ty and tycho-db.
 Verify: best-of-three wall clock, both compilers, same input, --emit-c.
 Gates: TYCHOC=./tychoc1 make test (752), make parse-check.
 Not this: --native (measured slower, 341ms), -O3 (already used), per-token
-field trimming (probe showed <1%).
+field trimming (<1%), the copy_live lint (<1%), a per-loop scratch arena reset
+per iteration (3 fixtures leak -- an early return escapes it), and one
+per-function scratch reset per statement (307 fixtures: values DO outlive their
+statement, and a reset reissues the same block). That last one is the useful
+negative: the per-statement arena_new/arena_free is not removable without the
+move-on-last-use liveness analysis that decides which values escape.
