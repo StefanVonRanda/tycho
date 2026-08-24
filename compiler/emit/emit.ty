@@ -2432,7 +2432,7 @@ fn _orret(cs: inout C, e: ast.Expr) -> (string, string):
 fn _arrlit(cs: inout C, k: [ast.Expr]) -> (string, string):
     if len(k) == 0:
         _bad("an empty array literal needs a type")
-    c0, et0 := _ex_scope(&cs, k[0])
+    c0, et0 := _ex(&cs, k[0])
     et := et0
     # `a: [u32] = [1, 2]` -- the elements adapt to the ANNOTATED element type,
     # which is the only place it is written down; taking it from element 0 alone
@@ -2449,7 +2449,7 @@ fn _arrlit(cs: inout C, k: [ast.Expr]) -> (string, string):
         ac := c0
         at2 := et0
         if i > 0:
-            ac2, at3 := _ex_scope(&cs, k[i])
+            ac2, at3 := _ex(&cs, k[i])
             ac = ac2
             at2 = at3
         if at2 != et and not _heap(&cs, et):
@@ -2463,23 +2463,23 @@ fn _arrlit(cs: inout C, k: [ast.Expr]) -> (string, string):
 fn _maplit(cs: inout C, k: [ast.Expr]) -> (string, string):
     if len(k) < 2:
         _bad("an empty map literal needs a type")
-    kc0, kt := _ex_scope(&cs, k[0])
-    vc0, vt := _ex_scope(&cs, k[1])
+    kc0, kt := _ex(&cs, k[0])
+    vc0, vt := _ex(&cs, k[1])
     mt := _map_of(&cs, kt, vt)
     v := _fresh(&cs, "_mp")
     n := len(k) / 2
     out := "({ " + _cty(&cs, mt) + " " + v + " = " + _mpfx(&cs, mt) +
-        "_with_cap(&_scope, " + str(n) + "LL); "
+        "_with_cap(" + cs.arena + ", " + str(n) + "LL); "
     for i := 0; i < len(k); i += 2:
         sw := cs.want
         cs.want = kt
-        kc, kct := _ex_scope(&cs, k[i])
+        kc, kct := _ex(&cs, k[i])
         cs.want = vt
-        vc, vct := _ex_scope(&cs, k[i + 1])
+        vc, vct := _ex(&cs, k[i + 1])
         cs.want = sw
         if vt == "float" and vct == "int":
             vc = "(double)(" + vc + ")"
-        out = out + _mpfx(&cs, mt) + "_put(&_scope, &" + v + ", " +
+        out = out + _mpfx(&cs, mt) + "_put(" + cs.arena + ", &" + v + ", " +
             _keyrt(&cs, kt, kc) + ", " + vc + "); "
     return (out + v + "; })", mt)
 
