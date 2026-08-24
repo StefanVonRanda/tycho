@@ -5089,17 +5089,27 @@ fn _tostr_a(cs: inout C, code: string, t: string) -> string:
     s := _tostr(&cs, code, t)
     return _replace(s, "&_scope", "a")
 
+# Appends the SPAN between matches, not one character at a time. The old shape
+# (`out = out + s[i:i+1]`) allocated a one-byte slice and concatenated it for
+# every byte of every function body, and _fnbody calls this on each body it
+# patches -- it was 27% of the compile on its own, measured with callgrind.
+# The `s[i] == f0` guard is what keeps the scan from slicing at every position.
 fn _replace(s: string, from: string, to: string) -> string:
+    n := len(from)
+    if n == 0:
+        return s
+    f0 := from[0]
     out := ""
     i := 0
-    for i < len(s):
-        if i + len(from) <= len(s) and s[i:i + len(from)] == from:
-            out = out + to
-            i += len(from)
+    last := 0
+    for i + n <= len(s):
+        if s[i] == f0 and s[i:i + n] == from:
+            out = out + s[last:i] + to
+            i += n
+            last = i
         else:
-            out = out + s[i:i + 1]
             i += 1
-    return out
+    return out + s[last:]
 
 fn _struct_order(cs: inout C) -> [int]:
     order := []int
@@ -5400,6 +5410,18 @@ fn _fnbody(cs: inout C, fi: int, body: [ast.Stmt]) -> (string, string):
         pop(cs.cnames)
         pop(cs.ctypes)
         pop(cs.ccode)
+    # A body that never allocates gets no scope arena. Every call still paid
+    # arena_child + arena_free for it: of 6.91M arenas created compiling
+    # compiler/main.ty, 5.80M never had a single allocation. The test is that
+    # the emitted body mentions _scope nowhere except in the frees themselves,
+    # which is exact -- an allocation, a copy or an inout hand-off all name it.
+    bare := _replace(b, "arena_free(&_scope); ", "")
+    bare = _replace(bare, "arena_free(&_scope);\n", "")
+    if not strings.contains(bare, "_scope"):
+        out0 := sig + " {\n" + bare
+        if rt != "void":
+            out0 = out0 + "    { fprintf(stderr, \"tycho: fell off the end of " + nm + "\\n\"); exit(1); }\n"
+        return (sig + ";\n", out0 + "}\n")
     out := sig + " {\n" +
         "    Arena _scope = arena_child(_parent); _scope.name = \"" + nm + "\";\n" + b
     if rt == "void":
