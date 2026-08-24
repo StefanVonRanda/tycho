@@ -1193,11 +1193,11 @@ fn _binop(cs: inout C, op: string, k: [ast.Expr]) -> string:
         el := _elem_of(&cs, lt)
         er := _elem_of(&cs, rt)
         if el != er:
-            _cerr(&cs, "element-wise `" + op + "` requires two arrays with the same element type (got " + lt + ", " + rt + ")")
+            _cerr(&cs, "element-wise `" + op + "` requires two arrays with the same element type (got " + _show(&cs, lt) + ", " + _show(&cs, rt) + ")")
         elif (_head(lt) == "fix") != (_head(rt) == "fix"):
             _cerr(&cs, "cannot mix a fixed array and a growable array in element-wise `" + op + "`")
         elif lt != rt:
-            _cerr(&cs, "element-wise `" + op + "` on a fixed array requires the same static length (got " + lt + " and " + rt + ")")
+            _cerr(&cs, "element-wise `" + op + "` on a fixed array requires the same static length (got " + _show(&cs, lt) + " and " + _show(&cs, rt) + ")")
         elif not _elem_arith_ok(op, el):
             _cerr(&cs, "`" + op + "` is not defined element-wise on " + lt + " -- there is no element-wise `" + op + "` for " + el)
         return lt
@@ -1220,7 +1220,7 @@ fn _binop(cs: inout C, op: string, k: [ast.Expr]) -> string:
         elif et == "float" and st == "int" and _is_intlit(sc):
             st = "float"
         if st != et:
-            _cerr(&cs, "element-wise `" + op + "` requires the scalar to have the array's element type (got " + lt + " and " + rt + ")")
+            _cerr(&cs, "element-wise `" + op + "` requires the scalar to have the array's element type (got " + _show(&cs, lt) + " and " + _show(&cs, rt) + ")")
         elif not _elem_arith_ok(op, et):
             _cerr(&cs, "`" + op + "` is not defined element-wise on " + at + " -- there is no element-wise `" + op + "` for " + et)
         return at
@@ -1325,7 +1325,7 @@ fn _check_args(cs: inout C, name: string, si: int, args: [ast.Expr], line: int):
             elif args[i] is ast.Addr:
                 _cerr(&cs, "argument " + str(i + 1) + " of '" + name + "' is not inout; remove the '&'")
             if not compat(at, want):
-                _cerr(&cs, "argument " + str(i + 1) + " of '" + name + "' is " + at + ", expected " + want)
+                _cerr(&cs, "argument " + str(i + 1) + " of '" + name + "' is " + _show(&cs, at) + ", expected " + _show(&cs, want))
         cs.line = ast.line_of(args[i])
     cs.in_arg = keep3
     cs.line = line
@@ -1391,7 +1391,7 @@ fn _check_variant(cs: inout C, m: string, args: [ast.Expr], line: int) -> string
         at := _ex2(&cs, args[i], pay[i])
         cs.line = line
         if not compat(at, pay[i]):
-            _cerr(&cs, "payload " + str(i + 1) + " of " + m + " is " + at + ", expected " + pay[i])
+            _cerr(&cs, "payload " + str(i + 1) + " of " + m + " is " + _show(&cs, at) + ", expected " + _show(&cs, pay[i]))
         cs.line = ast.line_of(args[i])
     cs.in_arg = keep
     cs.line = line
@@ -2014,7 +2014,7 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
             if len(rhs) == 1:
                 _aff_bind_check(&cs, t, rhs[0])
             if not compat(want, t):
-                _cerr(&cs, "declared type " + want + " but value is " + t)
+                _cerr(&cs, "declared type " + _show(&cs, want) + " but value is " + _show(&cs, t))
             if len(ty) == 0 and len(rhs) == 1:
                 _bare_result(&cs, t, rhs[0])
             if want == "f32" and len(rhs) == 1:

@@ -1,4 +1,5 @@
 package types
+import "core:strings"
 
 import "../ast"
 
@@ -1122,7 +1123,31 @@ fn _dedup6(xs: [string]) -> [string]:
 # spelling and must never reach a message: tools/tycho-ledger/run.sh greps every
 # refusal for `__` for exactly this reason, and the newtype-under rule printed
 # the mangled form until leg14 caught it.
+# The SOURCE spelling of an internal type encoding, for diagnostics. The
+# goldens pin what a programmer wrote, not how the checker stores it:
+#     arr(float)  -> [float]      fix(3,int) -> [3]int
+#     @Stack$int  -> Stack(int)   @Cents     -> Cents
+# Anything unrecognised passes through, so a new encoding degrades to the raw
+# form rather than being mangled.
 fn _show(cs: inout C, t: string) -> string:
+    if strings.starts_with(t, "arr(") and strings.ends_with(t, ")"):
+        return "[" + _show(&cs, t[4:len(t) - 1]) + "]"
+    if strings.starts_with(t, "fix(") and strings.ends_with(t, ")"):
+        inner := t[4:len(t) - 1]
+        c := 0
+        for c < len(inner) and inner[c] != 44:
+            c += 1
+        if c < len(inner):
+            return "[" + inner[0:c] + "]" + _show(&cs, inner[c + 1:])
+    if len(t) > 1 and t[0] == 64 and strings.contains(t, "$"):
+        m := t[1:]
+        parts := split(m, "$")
+        out := _show(&cs, "@" + parts[0]) + "("
+        for i := 1; i < len(parts); i += 1:
+            if i > 1:
+                out = out + ", "
+            out = out + _show(&cs, parts[i])
+        return out + ")"
     if len(t) > 1 and t[0] == 64:
         m := t[1:]
         i := 0
