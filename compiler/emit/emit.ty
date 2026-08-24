@@ -2648,6 +2648,19 @@ fn _binop(cs: inout C, op: string, ea: ast.Expr, eb: ast.Expr) -> (string, strin
     if op == "+" and (at == "string" or at == "bytes"):
         if bt == "char":
             return ("tycho_str_concat_char(" + cs.arena + ", " + a + ", " + b + ")", "string")
+        # FLATTEN a chain: `w + x + y + z` parses left-nested, so each `+` would
+        # allocate an intermediate and re-copy the whole growing prefix -- O(n^2)
+        # bytes for n pieces. The runtime already carries concat3..concat6 (one
+        # allocation, one copy per piece) and ./tychoc emits 654 of them
+        # compiling compiler/main.ty where tychoc1 emitted none.
+        for k := 5; k >= 2; k -= 1:
+            nm := "tycho_str_concat"
+            if k > 2:
+                nm = nm + str(k)
+            pre := nm + "(" + cs.arena + ", "
+            if strings.starts_with(a, pre) and _one_call(a):
+                return ("tycho_str_concat" + str(k + 1) + "(" + cs.arena + ", " +
+                    a[len(pre):len(a) - 1] + ", " + b + ")", "string")
         return ("tycho_str_concat(" + cs.arena + ", " + a + ", " + b + ")", "string")
     if op == "/" and at == "int" and bt == "int":
         return ("tycho_idiv(" + a + ", " + b + ")", "int")
@@ -5130,6 +5143,33 @@ fn _uses_t(s: string) -> bool:
                 return true
         i += 1
     return false
+
+# Is this emitted code exactly ONE balanced call -- depth reaching 0 only at the
+# final byte? String literals are skipped, since TYCHO_LIT("(") is common in the
+# code emit produces. Used to decide whether a concat can absorb its left side.
+fn _one_call(s: string) -> bool:
+    d := 0
+    q := false
+    i := 0
+    n := len(s)
+    for i < n:
+        c := s[i]
+        if q:
+            if c == 92:
+                i += 2
+                continue
+            if c == 34:
+                q = false
+        elif c == 34:
+            q = true
+        elif c == 40:
+            d += 1
+        elif c == 41:
+            d -= 1
+            if d == 0 and i != n - 1:
+                return false
+        i += 1
+    return d == 0
 
 fn _replace(s: string, from: string, to: string) -> string:
     n := len(from)
