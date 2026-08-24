@@ -1468,6 +1468,21 @@ fn _place(e: ast.Expr) -> bool:
         ast.Field(l, r, f): return true
         ast.Index(l, k): return true
         ast.TupIdx(l, k, n): return true
+        ast.Call(l, q, n, ts, k):
+            # to_str/to_bool lower to their ARGUMENT unchanged (there is no
+            # conversion to make -- the representations are identical), so the
+            # result IS that place and retaining it must still copy. Reading them
+            # as calls made `Ok(to_str(b))` in core:io hand back a pointer into
+            # the frame read_text was about to free: the source of every --parse
+            # run came back with one byte overwritten.
+            # to_under is deliberately NOT here. It aliases the same way, but
+            # ./tychoc aliases too and tests/newtype_agg.out records that answer
+            # (`m := to_under(e); m[k] = ...` writes THROUGH to the argument).
+            # Copying it there loses the update and reddens that fixture, so the
+            # aliasing is the contract until the golden says otherwise.
+            if len(q) == 0 and len(k) == 1 and (n == "to_str" or n == "to_bool"):
+                return _place(k[0])
+            return false
         _: return false
     return false
 
