@@ -44,6 +44,12 @@ fn check_or_die(src_path: string, argv0: string) -> types.Program:
             out = out + e + "\n"
         eprint(out)
         exit(1)
+    # Warnings are printed only when resolve SUCCEEDED: a build that dies has
+    # no warnings to report, which is what tests/warn's goldens assume.
+    wl := ""
+    for w in types.warn_lines(rs):
+        wl = wl + w + "\n"
+    eprint(wl)
     cs := types.check(p)
     errs := types.check_errs(cs)
     if len(errs) > 0:

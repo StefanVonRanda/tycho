@@ -40,6 +40,7 @@ struct Sym:
     kind: string                       # fn generic extern struct enum variant newtype handle const subscript
     file: string
     pkg: string
+    dnote: string                      # the `# deprecated:` note, "" if none
 
 struct Binding:
     name: string
@@ -60,6 +61,7 @@ struct R:
     pkg_used: [string: bool]
     file: string
     line: int                          # the line of the node being walked
+    warns: [string]                    # deferred, printed to stderr, never fatal
     srcp: [string]                     # file paths, parallel to srct
     srct: [string]                     # their source, for the diagnostic excerpt
     prefix: string
@@ -196,6 +198,15 @@ fn _scands(rs: inout R, kind: string) -> [string]:
             push(out, _short(sy.name))
     return out
 
+# A warning is never fatal: it is collected and printed to stderr after the
+# build succeeds, which is what the tests/warn goldens capture.
+fn _warn(rs: inout R, msg: string):
+    push(rs.warns, rs.file + ":" + str(rs.line) + ": warning: " + msg +
+        _excerpt(&rs, rs.file, rs.line))
+
+fn warn_lines(rs: R) -> [string]:
+    return rs.warns
+
 fn _err(rs: inout R, msg: string):
     push(rs.errs, rs.file + ":" + str(rs.line) + ": error: " + msg +
         _excerpt(&rs, rs.file, rs.line))
@@ -225,6 +236,9 @@ fn _note(rs: inout R, key: string):
 # --- the global table -------------------------------------------------------
 
 fn _add(rs: inout R, name: string, kind: string, file: string, pkg: string):
+    _addn(&rs, name, kind, file, pkg, "")
+
+fn _addn(rs: inout R, name: string, kind: string, file: string, pkg: string, dn: string):
     if name in rs.bsigs:
         _err(&rs, "'" + name + "' is already defined")
         return
@@ -233,11 +247,11 @@ fn _add(rs: inout R, name: string, kind: string, file: string, pkg: string):
         _err(&rs, "'" + name + "' is already defined (" + prev.kind + " in " + prev.file + ")")
         return
     rs.index[name] = len(rs.syms)
-    push(rs.syms, Sym(name, kind, file, pkg))
+    push(rs.syms, Sym(name, kind, file, pkg, dn))
 
 fn build_table(p: Program) -> R:
     rs := R([]Sym, []string: int, []Binding, 0, []string: int, []ast.ImportD, []string,
-            []ast.ImportD, []string: bool, "", 0, []string, []string, "", p.root, false, false, false, -1, []string: bool, []string, []string, []string)
+            []ast.ImportD, []string: bool, "", 0, []string, []string, []string, "", p.root, false, false, false, -1, []string: bool, []string, []string, []string)
     for f in p.files:
         push(rs.srcp, f.path)
         push(rs.srct, f.src)
@@ -327,7 +341,7 @@ fn build_table(p: Program) -> R:
             elif len(fd.typarams) > 0:
                 _add(&rs, f.prefix + fd.name, "generic", f.path, f.pkg)
             else:
-                _add(&rs, f.prefix + fd.name, "fn", f.path, f.pkg)
+                _addn(&rs, f.prefix + fd.name, "fn", f.path, f.pkg, fd.dnote)
     return rs
 
 # --- scopes -----------------------------------------------------------------
@@ -595,6 +609,9 @@ fn _expr(rs: inout R, bi: [string: bool], ctors: [string: bool], e: ast.Expr):
             elif _qual_is_pkg(&rs, q):
                 m := _pkg_sym(&rs, q, n)
                 if _callable(_kindof(&rs, m)) or _kindof(&rs, m) == "const":
+                    # `old.stale(3)` warns as `old.stale`, the QUALIFIED
+                    # spelling, which is how the golden names it.
+                    _dwarnq(&rs, m, q + "." + n)
                     _note(&rs, "pkgcall:" + m)
                 elif n in bi:
                     _err(&rs, "'" + n + "' is a builtin, not a member of package '" + q + "' -- call it directly: " + n + "(...)")
@@ -664,11 +681,25 @@ fn _expr(rs: inout R, bi: [string: bool], ctors: [string: bool], e: ast.Expr):
 # fallback is last and is a deferral: a local by this name is only callable when
 # it is fn-typed, which is a Phase 6 question -- resolving it here would refuse
 # a legal call, and this pass may only ever accept more.
+# `double(2)` where `double` carries a `# deprecated:` note warns AT THE CALL,
+# naming the note verbatim. src/tychoc.c@dnote_scan attaches the note; Phase 2b
+# carried it to ast.Fn.dnote and it reaches the Sym here.
+fn _dwarnq(rs: inout R, mangled: string, spelt: string):
+    if mangled in rs.index:
+        sy := rs.syms[rs.index[mangled]]
+        if len(sy.dnote) > 0:
+            _warn(&rs, "`" + spelt + "` is deprecated: " + sy.dnote)
+
+fn _dwarn(rs: inout R, mangled: string):
+    _dwarnq(&rs, mangled, _short(mangled))
+
 fn _call_bare(rs: inout R, bi: [string: bool], ctors: [string: bool], n: string):
     if len(rs.prefix) > 0 and _callable(_kindof(&rs, rs.prefix + n)):
+        _dwarn(&rs, rs.prefix + n)
         _note(&rs, "call:" + rs.prefix + n)
         return
     if _callable(_kindof(&rs, n)):
+        _dwarn(&rs, n)
         _note(&rs, "call:" + n)
         return
     if n in bi or n in ctors:
