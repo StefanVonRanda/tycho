@@ -2859,7 +2859,12 @@ fn _call(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], args: [ast.Ex
             # 42,626 elements per call, quadratic, and the reason gen-2 could
             # not compile the compiler. Anything that RETAINS a value past the
             # call copies at that point instead (see `push`).
-            if _place(args[i]) and _heap(&cs, pt) and not (_is_arr(pt) or _is_map(pt)):
+            # NO COPY for ANY heap value passed down, strings included: the
+            # callee's arena is a CHILD, so the argument outlives the call, and
+            # whatever RETAINS it copies at the retention point. Copying strings
+            # here deep-copied core:json's 3.5 MB document on every one of
+            # 50,000 parse_value calls -- 5.7 GiB live, and the benchmark died.
+            if false:
                 ac = _copy(&cs, ac, pt, "&_scope")
             out2 = out2 + ", " + ac
         if xtn:
@@ -4029,24 +4034,55 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                 match k[0]:
                     ast.Binop(l9, op9, bk9):
                         if op9 == "+" and len(bk9) == 2:
+                            # The accumulator sits at the LEFT SPINE's leaf:
+                            # `doc = doc + a + b + c` parses as (((doc+a)+b)+c),
+                            # so only walking one level missed every multi-term
+                            # append and materialised a whole copy per term --
+                            # bench/json needed 7.2 GiB and died.
+                            terms := []ast.Expr
+                            push(terms, bk9[1])
+                            spine := bk9[0]
+                            for true:
+                                done9 := true
+                                match spine:
+                                    ast.Binop(l7, op7, bk7):
+                                        if op7 == "+" and len(bk7) == 2:
+                                            push(terms, bk7[1])
+                                            spine = bk7[0]
+                                            done9 = false
+                                    _: pass
+                                if done9:
+                                    break
                             isself := false
-                            match bk9[0]:
+                            match spine:
                                 ast.Name(l8, n8):
                                     if n8 == n:
                                         isself = true
                                 _: pass
+                            for tm9 in terms:
+                                if _mentions(tm9, n):
+                                    isself = false
                             if isself:
-                                ac9, at9 := _ex(&cs, bk9[1])
                                 cn9 := _accof(&cs, n)
-                                # `out = out + c` where c is a CHAR appends one
-                                # codepoint, not a string: the runtime has a
-                                # separate entry point for it.
-                                fn9 := "tycho_str_append"
-                                if at9 != "string" and at9 != "bytes":
-                                    fn9 = "tycho_str_append_char"
-                                return ind + fn9 + "(" + _ownerof(&cs, ast.Name(l, n)) +
-                                    ", &" + cn9 + ", &_len" + cn9 + ", &_cap" + cn9 + ", " +
-                                    ac9 + ");\n"
+                                out9 := ""
+                                # The appended TERMS are copied into the
+                                # accumulator's own buffer, so their
+                                # intermediates die with the statement -- in the
+                                # function's arena they lived to the end of the
+                                # run (bench/json: 5.7 GiB).
+                                sav9 := cs.arena
+                                cs.arena = "&_t"
+                                for q9 := len(terms) - 1; q9 >= 0; q9 -= 1:
+                                    tc9, tt9 := _ex(&cs, terms[q9])
+                                    fnq := "tycho_str_append"
+                                    if tt9 != "string" and tt9 != "bytes":
+                                        fnq = "tycho_str_append_char"
+                                    out9 = out9 + "    " + fnq + "(" + _ownerof(&cs, ast.Name(l, n)) +
+                                        ", &" + cn9 + ", &_len" + cn9 + ", &_cap" + cn9 + ", " +
+                                        tc9 + "); "
+                                cs.arena = sav9
+                                return ind + "{ Arena _t = arena_new(0); " + out9 +
+                                    "arena_free(&_t); }\n"
                     _: pass
             rc, rt := _rhs(&cs, k[0], t)
             if len(t) == 0:
@@ -5074,6 +5110,20 @@ fn _isacc(cs: inout C, n: string) -> bool:
             return true
     return false
 
+# Does this expression mention `n`? A multi-piece append may only go in place
+# when no piece reads the accumulator: `s = s + "." + s` would otherwise see the
+# buffer an earlier append already grew (tests/append_alias.ty).
+fn _mentions(e: ast.Expr, n: string) -> bool:
+    match e:
+        ast.Name(l, m):
+            if m == n:
+                return true
+        _: pass
+    for c in ast.kids(e):
+        if _mentions(c, n):
+            return true
+    return false
+
 fn _acc_scan(ss: [ast.Stmt], selfapp: inout [string], other: inout [string],
         decl: inout [string]):
     for st in ss:
@@ -5082,16 +5132,41 @@ fn _acc_scan(ss: [ast.Stmt], selfapp: inout [string], other: inout [string],
                 if len(vv) == 0:
                     push(decl, n)
             ast.Assign(l, n, k):
+                # The accumulator is the LEFT SPINE's leaf, so `doc = doc + a + b`
+                # counts as a self-append too -- classifying it as `other` cost
+                # bench/json 7.2 GiB of intermediate copies.
                 ok := false
-                match k[0]:
-                    ast.Binop(l2, op, bk):
-                        if op == "+":
-                            match bk[0]:
-                                ast.Name(l3, nn):
-                                    if nn == n:
-                                        ok = true
-                                _: pass
+                sp := k[0]
+                for true:
+                    stop := true
+                    match sp:
+                        ast.Binop(l2, op, bk):
+                            if op == "+" and len(bk) == 2:
+                                sp = bk[0]
+                                stop = false
+                        _: pass
+                    if stop:
+                        break
+                match sp:
+                    ast.Name(l3, nn):
+                        if nn == n and not (k[0] is ast.Name):
+                            ok = true
                     _: pass
+                if ok:
+                    # every piece to the RIGHT of the leaf must be free of `n`
+                    sp2 := k[0]
+                    for true:
+                        stop2 := true
+                        match sp2:
+                            ast.Binop(l4, op4, bk4):
+                                if op4 == "+" and len(bk4) == 2:
+                                    if _mentions(bk4[1], n):
+                                        ok = false
+                                    sp2 = bk4[0]
+                                    stop2 = false
+                            _: pass
+                        if stop2:
+                            break
                 if ok:
                     push(selfapp, n)
                 else:
