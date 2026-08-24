@@ -30,8 +30,13 @@ tychoc: src/tychoc.c $(EMBED)
 # from the repo root or given --runtime.
 TYCHOC1_SRC := compiler/main.ty $(wildcard compiler/*/*.ty)
 
+# TWO-STAGE. Stage 1 is built by ./tychoc; stage 2 is built by stage 1, so the
+# shipped compiler carries its OWN elisions. Stage 1 lives in the repo root, not
+# under build/, because the corelib is located relative to the binary.
 tychoc1: tychoc $(TYCHOC1_SRC)
-	./tychoc compiler/main.ty -o tychoc1
+	./tychoc compiler/main.ty -o tychoc1-stage1
+	./tychoc1-stage1 compiler/main.ty -o tychoc1
+	@rm -f tychoc1-stage1
 
 tycho: tychoc tools/tycho.ty tools/tycho_shim.c
 	./tychoc tools/tycho.ty --shim tools/tycho_shim.c -o tycho
