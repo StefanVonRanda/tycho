@@ -872,7 +872,19 @@ fn _call_bare(rs: inout R, bi: [string: bool], ctors: [string: bool], n: string)
     if n == "eprintln":
         _err(&rs, "unknown procedure 'eprintln' -- stderr has no println; use `eprint(s + \"\\n\")`")
         return
-    _err(&rs, "unknown procedure '" + n + "'" + _dym(n, _scands(&rs, "fn")))
+    # A high-confidence corelib match beats a weak local typo (src/tychoc.c:7061).
+    cl, strong := corelib_hint(rs.root, n)
+    if len(cl) > 0 and strong:
+        _err(&rs, "unknown procedure '" + n + "' -- " + cl)
+        return
+    dy := _dym(n, _scands(&rs, "fn"))
+    if len(dy) > 0:
+        _err(&rs, "unknown procedure '" + n + "'" + dy)
+        return
+    if len(cl) > 0:
+        _err(&rs, "unknown procedure '" + n + "' -- " + cl)
+        return
+    _err(&rs, "unknown procedure '" + n + "'")
 
 # --- statements -------------------------------------------------------------
 

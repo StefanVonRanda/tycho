@@ -1,5 +1,7 @@
 package types
 
+import "core:io"
+import "core:strings"
 import "../ast"
 
 # CC-6, the channel-liveness lint (src/tychoc.c@check_channel_liveness). For
@@ -212,3 +214,94 @@ fn check_channels(rs: inout R, p: Program):
         if fns[i].is_extern or len(fns[i].typarams) > 0:
             continue
         _cdecls(&rs, fns, i, fns[i].body, files[i])
+
+# --- the corelib hint (src/tychoc.c@corelib_hint) ----------------------------
+# An unknown procedure that a corelib package DOES provide is the commonest
+# newcomer error, and "unknown procedure 'sort'" says nothing about
+# `import "core:arrays"`. The packages are scanned on disk, by line, exactly as
+# the C compiler scans them -- no index is kept, because this runs only on the
+# path that is already dying.
+
+fn _cl_fn(ln: string) -> string:
+    if not strings.starts_with(ln, "fn "):
+        return ""
+    p := 3
+    for p < len(ln) and ln[p] == 32:
+        p += 1
+    s := p
+    for p < len(ln):
+        c := ln[p]
+        if (c >= 97 and c <= 122) or (c >= 65 and c <= 90) or (c >= 48 and c <= 57) or c == 95:
+            p += 1
+        else:
+            break
+    if p == s or p >= len(ln) or ln[p] != 40:
+        return ""
+    return ln[s:p]
+
+fn _cl_fns(dir: string) -> [string]:
+    out := []string
+    for f in list_dir(dir):
+        if not strings.ends_with(f, ".ty"):
+            continue
+        match io.read_text(dir + "/" + f):
+            Ok(txt):
+                for ln in split(txt, "\n"):
+                    nm := _cl_fn(ln)
+                    if len(nm) > 0 and nm[0] != 95:
+                        push(out, nm)
+            Err(e): pass
+    return out
+
+fn corelib_hint(root: string, name: string) -> (string, bool):
+    if len(root) == 0:
+        return ("", false)
+    pkg_match := ""
+    fn_best := ""
+    fn_pkg := ""
+    fn_rank := 99
+    lv_best := ""
+    lv_pkg := ""
+    lv_d := 99
+    for pk in list_dir(root):
+        if len(pk) == 0 or pk[0] == 46:
+            continue
+        pdir := root + "/" + pk
+        fns := _cl_fns(pdir)
+        if len(fns) == 0:
+            continue
+        if pk == name:
+            pkg_match = pk
+        for fnm in fns:
+            rank := 99
+            if fnm == name:
+                rank = 0
+            elif len(fnm) > len(name) + 1 and fnm[len(fnm) - len(name):] == name and
+                    fnm[len(fnm) - len(name) - 1] == 95:
+                rank = 1
+            if rank < fn_rank:
+                fn_rank = rank
+                fn_best = fnm
+                fn_pkg = pk
+            ed := _edit(name, fnm)
+            if ed < lv_d:
+                lv_d = ed
+                lv_best = fnm
+                lv_pkg = pk
+    if len(fn_best) > 0 and fn_rank <= 1:
+        return ("core:" + fn_pkg + " provides `" + fn_best + "` -- add `import \"core:" + fn_pkg +
+            "\"` and call `" + fn_pkg + "." + fn_best + "(...)`", true)
+    if len(pkg_match) > 0:
+        ex := _cl_fns(root + "/" + pkg_match)
+        if len(ex) > 0:
+            return ("`" + pkg_match + "` is a corelib package -- add `import \"core:" + pkg_match +
+                "\"` and call e.g. `" + pkg_match + "." + ex[0] + "(...)`", true)
+        return ("`" + pkg_match + "` is a corelib package -- add `import \"core:" + pkg_match +
+            "\"` and qualify its functions as `" + pkg_match + ".NAME(...)`", true)
+    lim := 2
+    if len(name) <= 4:
+        lim = 1
+    if len(lv_best) > 0 and lv_d <= lim:
+        return ("core:" + lv_pkg + " has `" + lv_best + "` -- add `import \"core:" + lv_pkg +
+            "\"` and call `" + lv_pkg + "." + lv_best + "(...)`", false)
+    return ("", false)

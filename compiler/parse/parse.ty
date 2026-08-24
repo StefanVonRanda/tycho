@@ -402,6 +402,20 @@ fn primary(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
 
     if t.kind == "op" and t.text == "[":
         i += 1
+        # `xs := [string]` -- the TYPE spelling where a value goes. "expected an
+        # expression" is true and useless. Only for a primitive type KEYWORD,
+        # which can never be an expression: `[Foo]` stays a one-element literal
+        # of a variable named Foo (src/tychoc.c:2820).
+        k0 := _at(toks, i)
+        if k0.kind == "kw" and _is_prim(k0.text):
+            if _isop(toks, i + 1, "]"):
+                _die(t, "`[" + k0.text + "]` is the TYPE, not a value -- for an empty array write " +
+                    "`[]" + k0.text + "`, or annotate the declaration: `xs : [" + k0.text + "] = []`")
+            k2 := _at(toks, i + 2)
+            if _isop(toks, i + 1, ":") and k2.kind == "kw" and _is_prim(k2.text) and _isop(toks, i + 3, "]"):
+                _die(t, "`[" + k0.text + ": " + k2.text + "]` is the TYPE, not a value -- for an empty map write " +
+                    "`[]" + k0.text + ": " + k2.text + "`, or annotate the declaration: `m : [" +
+                    k0.text + ": " + k2.text + "] = []`")
         if _isop(toks, i, "]"):
             i += 1
             if not _starts_type_lit(toks, i):
