@@ -128,6 +128,7 @@ struct FSig:
     whs: [string]                      # collapsed every one of them to `?`
     pfx: string                        # the package prefix its type NAMES resolve in
     szs: [string]                      # the `$N` size parameters, kept apart
+    body: [ast.Stmt]                   # the TEMPLATE's body, checked per instance
 
 struct VBind:
     name: string
@@ -137,6 +138,8 @@ struct VBind:
 struct C:
     cwarns: [string]                   # non-fatal, drained by the driver
     errbase: int                       # errs at the current proc's entry; -1 outside one
+    instd: [string: bool]              # (template, bindings) already body-checked
+    instdepth: int                     # nesting guard for a recursive template
     srcp: [string]                     # file paths, parallel to srct
     srct: [string]                     # their source, for the diagnostic excerpt
     tds: [TDecl]
@@ -684,7 +687,7 @@ fn _sig_of(cs: inout C, prefix: string, fd: ast.Fn) -> FSig:
             push(pats, ast.TPrim("?"))
     return FSig(nm, cs.file, fd.line, pn, pt, pf, rt,
                 len(tps) > 0 or len(szs) > 0, false,
-                pats, fd.ret, tps, fd.wheres, prefix, szs)
+                pats, fd.ret, tps, fd.wheres, prefix, szs, fd.body)
 
 fn _addsig(cs: inout C, s: FSig):
     if s.name in cs.sindex:
@@ -698,7 +701,7 @@ fn _bsig(cs: inout C, name: string, ret: string, ps: [string]):
     for i := 0; i < len(ps); i += 1:
         push(pn, "x")
         push(pf, "")
-    _addsig(&cs, FSig(name, "", 0, pn, ps, pf, ret, false, true, []ast.Ty, []ast.Ty, []string, []string, "", []string))
+    _addsig(&cs, FSig(name, "", 0, pn, ps, pf, ret, false, true, []ast.Ty, []ast.Ty, []string, []string, "", []string, []ast.Stmt))
 
 # src/tychoc.c@register_builtins, verbatim: the fixed-signature table, and ONLY
 # that table. The shape-directed builtins (len/push/keys/str/to_*/...) bypass it
@@ -2399,7 +2402,7 @@ fn _infinite_check(cs: inout C):
         _cerr(&cs, "infinite type: " + cs.tds[best].name + " contains itself by value -- use an array ([" + cs.tds[best].name + "]) or Option([" + cs.tds[best].name + "]) for indirection")
 
 fn check(p: Program) -> C:
-    cs := C([]string, -1, []string, []string, []TDecl, []string: int, []FSig, []string: int, []string: string, []string: string,
+    cs := C([]string, -1, []string: bool, 0, []string, []string, []TDecl, []string: int, []FSig, []string: int, []string: string, []string: string,
             []string: string, []string: int, []string: bool, []string: string, []string: bool, []VBind, 0, []string, []string,
             []string: int, "", 0, "", "?", false, false, []ast.ImportD, []ast.ImportD, false, 0, 0, false, 0, []string: int, []string: bool, []string: bool, 0, 0, false)
     for f in p.files:

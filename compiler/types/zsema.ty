@@ -581,8 +581,81 @@ fn _generic_call2(cs: inout C, l: int, si: int, spelt: string, ts: [ast.Ty], arg
         if k == "chan":
             _cerr(&cs, "a function cannot return a channel -- create it in the owning scope and pass it down")
             return "?"
+        _inst_body(&cs, s, b, l, spelt)
         return r
+    _inst_body(&cs, s, b, l, spelt)
     return "void"
+
+# The template's BODY, checked once per distinct instantiation. Until this ran,
+# `fn twice(x: $T) -> $T: return x + x` was accepted at $T=bool: a template body
+# is never resolved as written, only its instances are (src/tychoc.c resolves
+# the substituted body at each call). The error names the TEMPLATE's file and
+# line, and a note names the call -- the only line the user can change.
+fn _inst_body(cs: inout C, s: FSig, b: [string: string], l: int, spelt: string):
+    if len(s.body) == 0 or cs.instdepth > 8:
+        return
+    key := s.name
+    for tp in s.tps:
+        if tp in b:
+            key = key + "|" + b[tp]
+        else:
+            return                     # not fully bound: nothing to check yet
+    if key in cs.instd:
+        return
+    cs.instd[key] = true
+    # A bare `T` naming a DECLARED type is not the `$T` of the same short name
+    # -- corelib/testing has both (`t: inout T` is the struct, `got: $T` the
+    # parameter). Binding it would turn the struct into the bound type, so that
+    # name is dropped from the substitution for the body walk only.
+    bb := b
+    sfile := cs.file
+    sline := cs.line
+    sret := cs.ret
+    stb := cs.tbind
+    sprefix := cs.prefix
+    seb := cs.errbase
+    n0 := len(cs.errs)
+    m := _vmark(&cs)
+    cs.tbind = bb
+    cs.file = s.file
+    cs.prefix = s.pfx
+    cs.errbase = -1
+    cs.instdepth += 1
+    for i := 0; i < len(s.pnames) and i < len(s.pty); i += 1:
+        cs.line = s.line
+        # The signature's own encoding wins when it is already ground; only a
+        # bare `$T` parameter is substituted. A DEEPER pattern (`[$T]`) stays
+        # `?`, which is weaker but never wrong -- and a bare `T` NAMING a
+        # declared type (corelib/testing's `t: inout T`, whose package also has
+        # a `$T`) must keep the struct, which a blanket substitution lost.
+        pt9 := "?"
+        if i < len(s.ptypes):
+            pt9 = s.ptypes[i]
+        if not known(pt9):
+            match s.pty[i]:
+                ast.TParam(tn9):
+                    if tn9 in b:
+                        pt9 = b[tn9]
+                _: pass
+        if i < len(s.pflags) and s.pflags[i] == "var":
+            pt9 = "arr(" + pt9 + ")"   # a variadic parameter IS the array
+        _vpush(&cs, s.pnames[i], pt9, false)
+    cs.ret = "void"
+    if len(s.rty) == 1:
+        cs.ret = _subst(&cs, s, s.rty[0], b)
+    _tblock(&cs, s.body)
+    cs.instdepth -= 1
+    _vrestore(&cs, m)
+    cs.tbind = stb
+    cs.prefix = sprefix
+    cs.file = sfile
+    cs.errbase = seb
+    cs.ret = sret
+    cs.line = sline
+    if len(cs.errs) > n0:
+        push(cs.errs, sfile + ":" + str(l) +
+            ": note: required from here -- this call instantiated the generic" +
+            _cexcerpt(&cs, sfile, l))
 
 # `f$(int)(...)`. src/tychoc.c refuses the form on a non-generic function, and
 # `zero$(T)` is the one builtin that takes a type argument and constrains it.
