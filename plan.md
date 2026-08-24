@@ -1873,6 +1873,18 @@ breaks.
   - widening the arena fast path to survive a non-empty bucket table -- no gain
     (221 ms against 217), so an arena that has recycled is not the common case
     the guard was suspected of losing.
+  - MOVE-ON-LAST-USE itself, written and gated green (752/752, parse-check,
+    corelib): a local read exactly once and not from inside a loop hands over
+    its buffer instead of copying. It is a NET LOSS of 8% -- 217 ms -> 234 ms --
+    and the split is the useful part: with the moves disabled but the census
+    still running, 233 ms. So the read census costs ~16 ms and the moves it
+    enables save ~1. Two reasons, both worth knowing before anyone tries again:
+    the census is a per-function AST walk plus two maps, and the sites it
+    reaches (declaration and assignment) are NOT where the copying is. The
+    remaining tycho_copy_E_ast__Expr calls are deep copies ACROSS arenas --
+    returns, and containers built in another arena -- which no last-use rule can
+    elide. Reverted; the diff is recoverable from this commit's parent if the
+    census is ever made free.
 
 Done when: the ratio is <= 1.0 on compiler/main.ty and tycho-db.
 Verify: best-of-three wall clock, both compilers, same input, --emit-c.
