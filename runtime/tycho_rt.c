@@ -622,7 +622,7 @@ static int arena_owns(Arena *a, const void *p) {
     return 0;
 }
 
-void *arena_alloc(Arena *a, size_t n) {
+static void *arena_alloc_slow(Arena *a, size_t n) {
     n = (n + 7u) & ~(size_t)7u;             /* 8-byte align (max align of Tycho types: tycho_int/double/ptr) */
     size_t k = n >> 3;                       /* 8-byte size class */
     if (g_arena_stats) atomic_fetch_add_explicit(&st_alloc_reqs, 1, memory_order_relaxed);
@@ -672,6 +672,31 @@ void *arena_alloc(Arena *a, size_t n) {
     }
     return p;
 }
+
+/* The bump is ~6 instructions; reaching it through a call to the full routine
+ * (size classes, both free lists, the block check, four stats branches) cost
+ * ~32, and compiling compiler/main.ty makes 30M of these -- 35% of the whole
+ * profile. The fast path is inlined and the rest left out of line. The guards
+ * are exactly the conditions under which the slow path would have bumped
+ * anyway: a head block with room, no free list of either kind on this arena,
+ * and stats off. */
+static inline void *arena_alloc_i(Arena *a, size_t n) {
+    n = (n + 7u) & ~(size_t)7u;
+    HBlock *h = a->head;
+    if (__builtin_expect(h != NULL && h->off + n <= h->cap
+                         && a->bkt == NULL && a->freelist == NULL && !g_arena_stats, 1)) {
+        void *p = (char *)(h + 1) + h->off;
+        h->off += n;
+        return p;
+    }
+    return arena_alloc_slow(a, n);
+}
+
+/* Kept as a real symbol: a corelib shim is compiled standalone by make
+ * shim-check and links against this, and only the generated C in THIS
+ * translation unit gets the inline form below. */
+void *arena_alloc(Arena *a, size_t n) { return arena_alloc_i(a, n); }
+#define arena_alloc(a, n) arena_alloc_i((a), (n))
 
 /* Reset for reuse (a loop's scratch arena, each iteration): RETAIN the head
  * block and just rewind it (off=0), releasing only any overflow blocks to the
