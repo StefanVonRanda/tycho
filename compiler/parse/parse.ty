@@ -54,7 +54,7 @@ fn _isid(toks: [lex.Tok], i: int, s: string) -> bool:
 # gap: a token lexed through tokenize()/tokenize_ex() carries no file, so those
 # paths still print the bare `tychoc1: line N:` form. Only the compile path,
 # which goes through lex.tokenize_file, is covered.
-fn _where(t: lex.Tok, msg: string) -> string:
+fn _where(t: lex.Tok, msg: string, caret: bool) -> string:
     if len(t.file) == 0:
         return "tychoc1: line " + str(t.line) + ": " + msg
     out := t.file + ":" + str(t.line) + ": error: " + msg
@@ -67,13 +67,28 @@ fn _where(t: lex.Tok, msg: string) -> string:
     pad := ""
     for k := len(num); k < 6; k += 1:
         pad = pad + " "
-    return out + "\n" + pad + num + " | " + ls[t.line - 1]
+    src := ls[t.line - 1]
+    out = out + "\n" + pad + num + " | " + src
+    # The caret sits under the offending token (src/tychoc.c@src_snippet), and
+    # ONLY where ./tychoc sets g_err_col: a token-shape mismatch in eat(), a
+    # non-expression where one belongs, and a keyword used as a name. Putting it
+    # on every parse error added it to 34 fixtures ./tychoc leaves bare.
+    if caret and t.col > 0 and t.col <= len(src) + 1:
+        sp := ""
+        for k := 1; k < t.col; k += 1:
+            sp = sp + " "
+        out = out + "\n       | " + sp + "^"
+    return out
 
 fn _fail(t: lex.Tok, want: string):
-    die(_where(t, "expected " + want + ", found " + t.kind + " '" + t.text + "'"))
+    die(_where(t, "expected " + want + ", found " + t.kind + " '" + t.text + "'", true))
 
 fn _die(t: lex.Tok, msg: string):
-    die(_where(t, msg))
+    die(_where(t, msg, false))
+
+# The two `_die` sites ./tychoc carets (src/tychoc.c:3035 and :3740).
+fn _diec(t: lex.Tok, msg: string):
+    die(_where(t, msg, true))
 
 fn _expect(toks: [lex.Tok], i: int, kind: string, text: string) -> int:
     t := _at(toks, i)
@@ -93,7 +108,7 @@ fn _ident(toks: [lex.Tok], i: int, what: string) -> (string, int):
         # where a name belongs is reported as the keyword, not as a parse shape.
         kw := _kwname(t)
         if len(kw) > 0:
-            _die(t, "'" + kw + "' is a reserved keyword and cannot be used as " + what)
+            _diec(t, "'" + kw + "' is a reserved keyword and cannot be used as " + what)
         _fail(t, what)
     return (t.text, i + 1)
 
@@ -493,7 +508,7 @@ fn primary(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
 
     if t.kind == "indent":
         _die(t, "unexpected indentation: this line is indented further than the block it belongs to")
-    _die(t, "expected an expression")
+    _diec(t, "expected an expression")
     return (ast.IntLit(t.line, 0), i0)
 
 fn postfix(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
@@ -1194,7 +1209,7 @@ fn stmt(toks: [lex.Tok], i0: int) -> (ast.Stmt, int):
         if n.kind == "op" and n.text == ":" and _k(toks, i + 2) != "newline":
             bad = true
         if bad:
-            _die(t, "'" + kw + "' is a reserved keyword and cannot be used as a variable name")
+            _diec(t, "'" + kw + "' is a reserved keyword and cannot be used as a variable name")
 
     if t.kind == "ident" and t.text == "const" and _k(toks, i + 1) == "ident":
         nm, j := _ident(toks, i + 1, "a constant name after 'const'")

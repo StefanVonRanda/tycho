@@ -255,6 +255,22 @@ fn _cwarn(cs: inout C, msg: string):
     push(cs.cwarns, cs.file + ":" + str(cs.line) + ": warning: " + msg +
         _cexcerpt(&cs, cs.file, cs.line))
 
+# A newtype is erased in lowering, so "is int, expected Cents" reads as a
+# compiler quirk until you see that Cents IS an int, declared here
+# (src/tychoc.c:7122). Emitted AFTER its error, which is the order ./tychoc
+# flushes them in.
+fn _cnote(cs: inout C, file: string, line: int, msg: string):
+    push(cs.errs, file + ":" + str(line) + ": note: " + msg + _cexcerpt(&cs, file, line))
+
+fn _nt_note(cs: inout C, a: string, b: string):
+    for t in [b, a]:
+        if len(t) > 1 and t[0] == 64 and (t[1:] in cs.tindex):
+            d := cs.tds[cs.tindex[t[1:]]]
+            if d.kind == "newtype" and d.line > 0 and len(d.ftypes) > 0:
+                _cnote(&cs, d.file, d.line, "`" + _show(&cs, t) + "` is a distinct type over " +
+                    _show(&cs, d.ftypes[0]) + ", declared here -- it does not accept its underlying type implicitly")
+                return
+
 fn _cerr(cs: inout C, msg: string):
     push(cs.errs, cs.file + ":" + str(cs.line) + ": error: " + msg +
         _cexcerpt(&cs, cs.file, cs.line))
@@ -1255,7 +1271,7 @@ fn _binop(cs: inout C, op: string, k: [ast.Expr]) -> string:
         elif et == "float" and st == "int" and _is_intlit(sc):
             st = "float"
         if st != et:
-            _cerr(&cs, "element-wise `" + op + "` requires the scalar to have the array's element type (got " + _show(&cs, lt) + " and " + _show(&cs, rt) + ")")
+            _cerr(&cs, "element-wise `" + op + "` requires the scalar to have the array's element type (got " + _show(&cs, lt) + " and " + _show(&cs, rt) + ") -- a literal adapts, but a variable never widens")
         elif not _elem_arith_ok(op, et):
             _cerr(&cs, "`" + op + "` is not defined element-wise on " + at + " -- there is no element-wise `" + op + "` for " + et)
         return at
@@ -1361,6 +1377,7 @@ fn _check_args(cs: inout C, name: string, si: int, args: [ast.Expr], line: int):
                 _cerr(&cs, "argument " + str(i + 1) + " of '" + name + "' is not inout; remove the '&'")
             if not compat(at, want):
                 _cerr(&cs, "argument " + str(i + 1) + " of '" + name + "' is " + _show(&cs, at) + ", expected " + _show(&cs, want))
+                _nt_note(&cs, at, want)
         cs.line = ast.line_of(args[i])
     cs.in_arg = keep3
     cs.line = line

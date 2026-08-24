@@ -313,6 +313,25 @@ fn _add(rs: inout R, name: string, kind: string, file: string, pkg: string):
 fn _addn(rs: inout R, name: string, kind: string, file: string, pkg: string, dn: string):
     _addl(&rs, name, kind, file, pkg, dn, 0)
 
+fn _shadow_warn(rs: inout R, name: string, kind: string, file: string, ln: int):
+    if not (_short(name) in rs.shadow) or kind != "fn":
+        return
+    short := _short(name)
+    sf := rs.file
+    sl := rs.line
+    rs.file = file
+    rs.line = ln
+    if len(rs.prefix) > 0:
+        _warn(&rs, "`" + short + "` collides with the builtin of the same name -- every unqualified `" +
+            short + "(...)` calls the BUILTIN, so this procedure is unreachable by that name (§3.7)." +
+            " Rename it, or call it qualified as `pkg." + short + "(...)`.")
+    else:
+        _warn(&rs, "`" + short + "` collides with the builtin of the same name -- every unqualified `" +
+            short + "(...)` calls the BUILTIN, so this procedure is unreachable by that name (§3.7)." +
+            " `package main` has no package prefix to qualify with, so rename it.")
+    rs.file = sf
+    rs.line = sl
+
 fn _addl(rs: inout R, name: string, kind: string, file: string, pkg: string, dn: string, ln: int):
     # src/tychoc.c:4276 makes a builtin collision a WARNING, not an error: the
     # builtin wins every unqualified call, so the procedure is merely
@@ -325,24 +344,12 @@ fn _addl(rs: inout R, name: string, kind: string, file: string, pkg: string, dn:
     # name that is shadowable WITHOUT being one of those (len, hash, push, ...)
     # downgrades to the warning.
     if name in rs.bsigs:
+        # ./tychoc prints BOTH for a name that is shadowable AND has a builtin
+        # signature (`die`): the warning, then the hard error.
+        _shadow_warn(&rs, name, kind, file, ln)
         _err(&rs, "'" + name + "' is already defined")
         return
-    if _short(name) in rs.shadow and kind == "fn":
-        short := _short(name)
-        sf := rs.file
-        sl := rs.line
-        rs.file = file
-        rs.line = ln
-        if len(rs.prefix) > 0:
-            _warn(&rs, "`" + short + "` collides with the builtin of the same name -- every unqualified `" +
-                short + "(...)` calls the BUILTIN, so this procedure is unreachable by that name (§3.7)." +
-                " Rename it, or call it qualified as `pkg." + short + "(...)`.")
-        else:
-            _warn(&rs, "`" + short + "` collides with the builtin of the same name -- every unqualified `" +
-                short + "(...)` calls the BUILTIN, so this procedure is unreachable by that name (§3.7)." +
-                " `package main` has no package prefix to qualify with, so rename it.")
-        rs.file = sf
-        rs.line = sl
+    _shadow_warn(&rs, name, kind, file, ln)
 
     if name in rs.index:
         prev := rs.syms[rs.index[name]]
@@ -670,7 +677,10 @@ fn _enum_qual(rs: inout R, q: string, n: string) -> bool:
     _err(&rs, "'" + n + "' is a variant of enum " + q + ", not a package member -- variant names are global, write " + n + "(...)")
     return true
 
-fn _qual_is_pkg(rs: inout R, q: string) -> bool:
+# `report` is false at a qualified CALL: there the "no symbol" message below
+# carries the whole story, and ./tychoc prints only that one. Everywhere else an
+# unknown qualifier is still an unknown variable.
+fn _qual_is_pkg(rs: inout R, q: string, report: bool) -> bool:
     if _lookup(&rs, q) >= 0:
         return false
     if _imported_here(&rs, q):
@@ -678,7 +688,8 @@ fn _qual_is_pkg(rs: inout R, q: string) -> bool:
     if _imported_anywhere(&rs, q):
         _err(&rs, "package '" + q + "' is used here but this file does not `import` it (another file in the build does; imports are per-file)")
         return true
-    _err(&rs, "unknown variable '" + q + "'" + _dym(q, _vcands(&rs)))
+    if report:
+        _err(&rs, "unknown variable '" + q + "'" + _dym(q, _vcands(&rs)))
     return true
 
 fn _expr(rs: inout R, bi: [string: bool], ctors: [string: bool], e: ast.Expr):
@@ -721,7 +732,7 @@ fn _expr(rs: inout R, bi: [string: bool], ctors: [string: bool], e: ast.Expr):
                 _call_bare(&rs, bi, ctors, n)
             elif _enum_qual(&rs, q, n):
                 _note(&rs, "enumqual")
-            elif _qual_is_pkg(&rs, q):
+            elif _qual_is_pkg(&rs, q, false):
                 m := _pkg_sym(&rs, q, n)
                 if _callable(_kindof(&rs, m)) or _kindof(&rs, m) == "const":
                     # `old.stale(3)` warns as `old.stale`, the QUALIFIED
@@ -731,14 +742,17 @@ fn _expr(rs: inout R, bi: [string: bool], ctors: [string: bool], e: ast.Expr):
                 elif n in bi:
                     _err(&rs, "'" + n + "' is a builtin, not a member of package '" + q + "' -- call it directly: " + n + "(...)")
                 else:
-                    _err(&rs, "package '" + q + "' has no symbol '" + n + "'")
+                    imp := ""
+                    if not _imported_here(&rs, q):
+                        imp = " -- and this file does not `import` it; add the import first"
+                    _err(&rs, "package '" + q + "' has no symbol '" + n + "'" + imp)
             else:
                 _note(&rs, "method:" + n)
             _exprs(&rs, bi, ctors, args)
         ast.Field(l, k, f):
             match k[0]:
                 ast.Name(l2, q):
-                    if _qual_is_pkg(&rs, q):
+                    if _qual_is_pkg(&rs, q, true):
                         m := _pkg_sym(&rs, q, f)
                         kk := _kindof(&rs, m)
                         if len(kk) > 0:
@@ -753,7 +767,7 @@ fn _expr(rs: inout R, bi: [string: bool], ctors: [string: bool], e: ast.Expr):
             _exprs(&rs, bi, ctors, k)
         ast.IsVar(l, k, q, v):
             _exprs(&rs, bi, ctors, k)
-            if len(q) > 0 and _qual_is_pkg(&rs, q):
+            if len(q) > 0 and _qual_is_pkg(&rs, q, true):
                 _note(&rs, "isvar:" + _pkg_sym(&rs, q, v))
             else:
                 _note(&rs, "isvar:" + v)
@@ -994,7 +1008,7 @@ fn _arms(rs: inout R, bi: [string: bool], ctors: [string: bool], arms: [ast.Arm]
         m := _mark(&rs)
         rs.line = a.line
         if a.kind == "variant":
-            if len(a.qual) > 0 and _qual_is_pkg(&rs, a.qual):
+            if len(a.qual) > 0 and _qual_is_pkg(&rs, a.qual, true):
                 _note(&rs, "armvariant:" + _pkg_sym(&rs, a.qual, a.name))
             elif not (a.name in ctors):
                 if len(rs.prefix) > 0 and _kindof(&rs, rs.prefix + a.name) == "variant":
@@ -1113,7 +1127,11 @@ fn resolve(p: Program) -> R:
             continue
         push(rs.late, rs.all_imp_file[i] + ":" + str(im.line) +
              ": error: `" + im.path + "` imported and not used in this file")
-    report_dead(&rs)
+    # src/tychoc.c runs report_dead_procs AFTER codegen, so a build that dies
+    # never reaches it: a never-called warning is suppressed by a failed build,
+    # while a collision warning (raised during resolution) is not.
+    if len(rs.errs) == 0 and len(rs.perrs) == 0:
+        report_dead(&rs)
     # Parse-phase diagnostics come first, whenever the walk happened to find them.
     for e in rs.errs:
         push(rs.perrs, e)
