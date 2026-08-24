@@ -1842,8 +1842,9 @@ WHERE IT STANDS on compiler/main.ty (tychoc 88-91 ms alongside):
     2.6x   230 ms   same-arena strings and ENUMS shared (f1d14147 and after)
     2.4x   217 ms   push keeps a temporary already in the array's arena
     2.2x   201 ms   destructuring a call result (b957b857) + for-in snapshot
+    2.2x   200 ms   arena fast path tests the size class (9fbe9f35)
 
-    instructions   2.820e9 -> 1.962e9
+    instructions   2.820e9 -> 1.924e9
 
 THE RULE that did most of it: a value already in the destination arena is stored
 rather than copied, when nothing can write through it -- strings and enums are
@@ -1870,9 +1871,26 @@ breaks.
   - evaluating push()'s value directly in the ARRAY's arena (instead of the
     scope, then copying) -- 190 fixtures. The narrow version that only drops the
     copy when both are already in &_scope is what shipped.
-  - widening the arena fast path to survive a non-empty bucket table -- no gain
-    (221 ms against 217), so an arena that has recycled is not the common case
-    the guard was suspected of losing.
+  - (This one was WRONG and is now shipped as 9fbe9f35: widening the arena fast
+    path to test the size CLASS rather than the bucket table's existence was
+    dismissed on a wall-clock reading of 221 ms against 217, inside this
+    machine's drift. Measured in instructions it removes 3.92M slow-path calls
+    and 2%. Do not judge a change of this size by the clock.)
+  - the return-only escape analysis, SECOND attempt, this time with a bounded
+    census (candidates come from the return statements, only those names are
+    counted over the body -- so the +7.7% of the first attempt is gone). It
+    reddens 32 fixtures: every pkg_* program plus tests/subscript, and subscript
+    fails with a WRONG VALUE (r=11,31,30 against 11,22,30), not a crash. So the
+    promotion introduces aliasing somewhere the "every read is inside a return"
+    rule believes it has excluded. Worth resuming from that fixture: it is small
+    and it is the only non-package one.
+
+    WHY IT IS WORTH RESUMING: the census told us where the copying is. 5.5M of
+    the 8.2M string copies in a self-compile are inside tycho_copy_E_ast__Expr,
+    and 5.5M of the 5.9M AST copies come from tycho_arr_K0_copy -- an array of
+    Exprs being deep-copied. Those are the parser returning `(node, i)` up
+    through the recursion, re-homing the whole subtree at every level. Promotion
+    is the only thing that removes them.
   - MOVE-ON-LAST-USE itself, written and gated green (752/752, parse-check,
     corelib): a local read exactly once and not from inside a loop hands over
     its buffer instead of copying. It is a NET LOSS of 8% -- 217 ms -> 234 ms --
