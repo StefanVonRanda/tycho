@@ -1,6 +1,7 @@
 package parse
 
 import "../ast"
+import "core:io"
 import "../lex"
 
 # Tokens -> ast. The cursor is carried as an int and handed back with every
@@ -34,24 +35,35 @@ fn _at(toks: [lex.Tok], i: int) -> lex.Tok:
         return toks[0]
     return toks[i]
 
+# These index DIRECTLY rather than through `_at`. `_at` returns a whole Tok by
+# value, and a Tok carries four strings (text, raw, file, and its source line),
+# every one of which is copied on the way out -- callgrind put that copy at 3.3%
+# of a compile, and these three are the parser's hottest calls.
+fn _cl(toks: [lex.Tok], i: int) -> int:
+    if i >= len(toks):
+        return len(toks) - 1
+    if i < 0:
+        return 0
+    return i
+
 fn _k(toks: [lex.Tok], i: int) -> string:
-    return _at(toks, i).kind
+    return toks[_cl(toks, i)].kind
 
 fn _x(toks: [lex.Tok], i: int) -> string:
-    return _at(toks, i).text
+    return toks[_cl(toks, i)].text
 
 # The source line every node is stamped with: the line of the token the node
 # starts at, which is the line src/tychoc.c names in `file:line: error: ...`.
 fn _ln(toks: [lex.Tok], i: int) -> int:
-    return _at(toks, i).line
+    return toks[_cl(toks, i)].line
 
 fn _isop(toks: [lex.Tok], i: int, s: string) -> bool:
-    t := _at(toks, i)
-    return t.kind == "op" and t.text == s
+    j := _cl(toks, i)
+    return toks[j].kind == "op" and toks[j].text == s
 
 fn _iskw(toks: [lex.Tok], i: int, s: string) -> bool:
-    t := _at(toks, i)
-    return t.kind == "kw" and t.text == s
+    j := _cl(toks, i)
+    return toks[j].kind == "kw" and toks[j].text == s
 
 fn _isid(toks: [lex.Tok], i: int, s: string) -> bool:
     t := _at(toks, i)
@@ -71,13 +83,22 @@ fn _where(t: lex.Tok, msg: string, caret: bool) -> string:
     out := t.file + ":" + str(t.line) + ": error: " + msg
     if t.line <= 0:
         return out
-    if len(t.src) == 0 and t.line > 0:
-        return out
     num := str(t.line)
     pad := ""
     for k := len(num); k < 6; k += 1:
         pad = pad + " "
-    src := t.src
+    # The token carries its FILE, not its text: a Tok is copied on every parser
+    # accessor, and a per-token source string cost 3.3% of every compile. An
+    # error is rare, so the line is read from disk here instead.
+    src := ""
+    match io.read_text(t.file):
+        Ok(txt):
+            ls := split(txt, "\n")
+            if t.line >= 1 and t.line <= len(ls):
+                src = ls[t.line - 1]
+        Err(e): pass
+    if len(src) == 0:
+        return out
     out = out + "\n" + pad + num + " | " + src
     # The caret sits under the offending token (src/tychoc.c@src_snippet), and
     # ONLY where ./tychoc sets g_err_col: a token-shape mismatch in eat(), a

@@ -203,7 +203,54 @@ fn _cdecls(rs: inout R, fns: [ast.Fn], owner: int, body: [ast.Stmt], file: strin
                     _cdecls(&rs, fns, owner, a.body, file)
             _: pass
 
+# Is there a `ch := channel(T, n)` anywhere? The scan below copies every
+# function body into one flat list, which is pure waste on the programs -- most
+# of them -- that declare no channel at all.
+fn _any_chan_decl(body: [ast.Stmt]) -> bool:
+    for s in body:
+        match s:
+            ast.Decl(l, n, t, r, v):
+                if len(r) > 0 and (r[0] is ast.ChanE):
+                    return true
+                if _any_chan_decl(v):
+                    return true
+            ast.IfS(l, c, b, e):
+                if _any_chan_decl(b) or _any_chan_decl(e):
+                    return true
+            ast.WhileS(l, c, b):
+                if _any_chan_decl(b):
+                    return true
+            ast.For3(l, ip, c, b):
+                if _any_chan_decl(ip) or _any_chan_decl(b):
+                    return true
+            ast.ForIn(l, n, coll, b):
+                if _any_chan_decl(b):
+                    return true
+            ast.ForRange(l, n, k, b):
+                if _any_chan_decl(b):
+                    return true
+            ast.ParallelS(l, w, b):
+                if _any_chan_decl(b):
+                    return true
+            ast.MatchS(l, c, arms):
+                for a in arms:
+                    if _any_chan_decl(a.body):
+                        return true
+            ast.SelectS(l, arms):
+                for a in arms:
+                    if _any_chan_decl(a.body):
+                        return true
+            _: pass
+    return false
+
 fn check_channels(rs: inout R, p: Program):
+    any := false
+    for f in p.files:
+        for fd in f.unit.fns:
+            if _any_chan_decl(fd.body):
+                any = true
+    if not any:
+        return
     fns := []ast.Fn
     files := []string
     for f in p.files:

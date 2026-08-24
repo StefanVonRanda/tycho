@@ -91,6 +91,9 @@ struct C:
     accs: [string]
     vacc: [string]
     exn: [string]
+    smap: [string: int]                # same for structs and enums
+    emap: [string: int]
+    fmap: [string: int]                # fds name -> index, rebuilt when fds grows
     fnbase: int                        # first local slot; params below it are BORROWS
     hdn: [string]                      # handle type names, and the free fn each names
     hdf: [string]
@@ -101,7 +104,7 @@ struct C:
     sube: [ast.Expr]
 
 fn _new() -> C:
-    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], 0, [], [], [], [], [], [][ast.Param], []ast.Expr)
+    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr)
 
 fn _bad(msg: string):
     die("tychoc1: " + msg)
@@ -607,25 +610,29 @@ fn _heap(cs: inout C, t: string) -> bool:
     return false
 
 fn _sidx(cs: inout C, n: string) -> int:
-    p := _pfx(&cs)
-    if len(p) > 0:
+    if len(cs.smap) != len(cs.sds):
+        cs.smap = []string: int
         for i := 0; i < len(cs.sds); i += 1:
-            if cs.sds[i].name == p + n:
-                return i
-    for i := 0; i < len(cs.sds); i += 1:
-        if cs.sds[i].name == n:
-            return i
+            if not (cs.sds[i].name in cs.smap):
+                cs.smap[cs.sds[i].name] = i
+    p := _pfx(&cs)
+    if len(p) > 0 and (p + n) in cs.smap:
+        return cs.smap[p + n]
+    if n in cs.smap:
+        return cs.smap[n]
     return -1
 
 fn _eidx(cs: inout C, n: string) -> int:
-    p := _pfx(&cs)
-    if len(p) > 0:
+    if len(cs.emap) != len(cs.eds):
+        cs.emap = []string: int
         for i := 0; i < len(cs.eds); i += 1:
-            if cs.eds[i].name == p + n:
-                return i
-    for i := 0; i < len(cs.eds); i += 1:
-        if cs.eds[i].name == n:
-            return i
+            if not (cs.eds[i].name in cs.emap):
+                cs.emap[cs.eds[i].name] = i
+    p := _pfx(&cs)
+    if len(p) > 0 and (p + n) in cs.emap:
+        return cs.emap[p + n]
+    if n in cs.emap:
+        return cs.emap[n]
     return -1
 
 fn _cidx(cs: inout C, n: string) -> int:
@@ -647,15 +654,20 @@ fn _isext(cs: inout C, n: string) -> bool:
             return true
     return false
 
+# A MAP, not a scan. This is called once per emitted call and the table holds
+# every function in the program: callgrind put the linear version at 6.1% of a
+# self-compile, with its string compares showing up again under memcmp.
 fn _fidx(cs: inout C, n: string) -> int:
-    p := _pfx(&cs)
-    if len(p) > 0:
+    if len(cs.fmap) != len(cs.fds):
+        cs.fmap = []string: int
         for i := 0; i < len(cs.fds); i += 1:
-            if cs.fds[i].name == p + n:
-                return i
-    for i := 0; i < len(cs.fds); i += 1:
-        if cs.fds[i].name == n:
-            return i
+            if not (cs.fds[i].name in cs.fmap):
+                cs.fmap[cs.fds[i].name] = i
+    p := _pfx(&cs)
+    if len(p) > 0 and (p + n) in cs.fmap:
+        return cs.fmap[p + n]
+    if n in cs.fmap:
+        return cs.fmap[n]
     return -1
 
 # The generated-array registry. int/float/string reuse the runtime's own three
@@ -4059,9 +4071,10 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                                     if n8 == n:
                                         isself = true
                                 _: pass
-                            for tm9 in terms:
-                                if _mentions(tm9, n):
-                                    isself = false
+                            # No _mentions() check here: _acc_scan already
+                            # disqualified any accumulator whose own append
+                            # terms name it, and this path runs per STATEMENT
+                            # while that runs once per function.
                             if isself:
                                 cn9 := _accof(&cs, n)
                                 out9 := ""

@@ -16,10 +16,9 @@ struct Tok:
     fval: float       # float literal value
     raw: string       # the exact source slice, for the round-trip control
     file: string      # the path this token was lexed from, for diagnostics
-    src: string       # that file's whole source, for the diagnostic excerpt
 
 fn _t(kind: string, text: string, line: int, col: int, raw: string) -> Tok:
-    return Tok(kind, text, line, col, 0, 0.0, raw, "", "")
+    return Tok(kind, text, line, col, 0, 0.0, raw, "")
 
 fn is_digit(c: int) -> bool:
     return c >= 48 and c <= 57
@@ -335,11 +334,8 @@ fn tokenize_file(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNote
     # into every token deep-copied it per token (Tycho value semantics): peak
     # live for a 6k-line program was 110.9 MiB, and 3.9 MiB without it -- which
     # is why tychoc1 could not resolve its own 35k-line source at 16 GB.
-    ls := split(src, "\n")
     for i := 0; i < len(ts); i += 1:
         ts[i].file = file
-        if ts[i].line >= 1 and ts[i].line <= len(ls):
-            ts[i].src = ls[ts[i].line - 1]
     return (ts, ns)
 
 # The `# deprecated:` notes this file's comments carry, in source order. They are
@@ -505,7 +501,7 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
                         Err(strings.Underflow): fv = 0.0
                         Err(strings.Empty): fv = 0.0
                         Err(strings.Syntax): fv = 0.0
-                    push(toks, Tok("float", raw, line, tcol, 0, fv, raw, "", ""))
+                    push(toks, Tok("float", raw, line, tcol, 0, fv, raw, ""))
                     last_kind = "float"
                     last_text = raw
                 else:
@@ -516,7 +512,7 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
                         if v > (imax - d) / litbase:
                             _die(file, src, line, "integer literal out of range")
                         v = v * litbase + d
-                    push(toks, Tok("int", raw, line, tcol, v, 0.0, raw, "", ""))
+                    push(toks, Tok("int", raw, line, tcol, v, 0.0, raw, ""))
                     last_kind = "int"
                     last_text = raw
                 continue
@@ -544,7 +540,7 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
                 flag := 0
                 if fstr:
                     flag = 1
-                push(toks, Tok("str", body, line, tcol, flag, 0.0, src[s:e], "", ""))
+                push(toks, Tok("str", body, line, tcol, flag, 0.0, src[s:e], ""))
                 p = e
                 last_kind = "str"
                 last_text = body
@@ -552,7 +548,7 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
 
             if c == 96:
                 e, body, nl := scan_raw(src, p, line, file)
-                push(toks, Tok("str", body, line, tcol, 0, 0.0, src[s:e], "", ""))
+                push(toks, Tok("str", body, line, tcol, 0, 0.0, src[s:e], ""))
                 p = e
                 line += nl
                 last_kind = "str"
@@ -561,7 +557,7 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
 
             if c == 39:
                 e, cv := scan_char(src, p, line, file)
-                push(toks, Tok("char", src[s:e], line, tcol, cv, 0.0, src[s:e], "", ""))
+                push(toks, Tok("char", src[s:e], line, tcol, cv, 0.0, src[s:e], ""))
                 p = e
                 last_kind = "char"
                 last_text = src[s:e]
