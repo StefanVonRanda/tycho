@@ -470,6 +470,32 @@ fn _hashable_d(cs: inout C, t: string, d: int) -> bool:
         return true
     return false
 
+# The DETERMINISTIC twin of _hash: the `hash()` builtin must not depend on the
+# per-process map seed, so it uses the runtime's `_det` family and the generated
+# `dhash` bodies (src/tychoc.c emits the same pair).
+fn _hash_det(cs: inout C, t: string, v: string) -> string:
+    if t == "string" or t == "bytes":
+        return "tycho_si_hash_det(" + v + ")"
+    if t == "float":
+        return "tycho_ik_hash_det((tycho_int)((union { double _d; tycho_int _l; }){ ._d = (" +
+            v + ") })._l)"
+    if _is_enum(t):
+        return "tycho_ik_hash_det((tycho_int)((" + v + ")->tag))"
+    if _is_struct(t):
+        return "tycho_dhash_S_" + _tname(t) + "(" + v + ")"
+    if _is_tup(t):
+        return "tycho_dhash_T" + _tname(t) + "(" + v + ")"
+    if _is_arr(t):
+        e := _elem(t)
+        if e == "int":
+            return "tycho_arr_int_hash_det(" + v + ")"
+        if e == "float":
+            return "tycho_arr_float_hash_det(" + v + ")"
+        if e == "string":
+            return "tycho_arr_str_hash_det(" + v + ")"
+        return "tycho_arr_K" + str(_akind(&cs, e)) + "_dhash(" + v + ")"
+    return "tycho_ik_hash_det((tycho_int)(" + v + "))"
+
 fn _hash(cs: inout C, t: string, v: string) -> string:
     if t == "string":
         return "tycho_si_hash(" + v + ")"
@@ -802,6 +828,17 @@ fn _inst_base(cs: inout C, mang: string) -> string:
 # A call site binds the type parameters by matching the DECLARED parameter type
 # against the argument's concrete type -- the same shape src/tychoc.c infers,
 # structurally and left to right, first binding wins.
+# Is a struct/enum declared whose SHORT name is `n`? The tables key on the
+# package-mangled name, so the comparison drops the prefix.
+fn _declared_short(cs: inout C, n: string) -> bool:
+    for i := 0; i < len(cs.sds); i += 1:
+        if _shortn(cs.sds[i].name) == n:
+            return true
+    for i := 0; i < len(cs.eds); i += 1:
+        if _shortn(cs.eds[i].name) == n:
+            return true
+    return false
+
 fn _unify(cs: inout C, t: ast.Ty, a: string, tps: [string], bs: inout [string]):
     if len(a) == 0:
         return
@@ -860,6 +897,12 @@ fn _unify(cs: inout C, t: ast.Ty, a: string, tps: [string], bs: inout [string]):
             return
         ast.TName(q, n, targs):
             if len(targs) == 0:
+                # A bare `T` is the `$T` of the same short name UNLESS a type of
+                # that name is DECLARED: corelib/testing has both (`t: inout T`
+                # is the struct, `got: $T` the parameter), and binding the
+                # struct first gave every instance the wrong element type.
+                if _declared_short(&cs, n):
+                    return
                 for i := 0; i < len(tps); i += 1:
                     if tps[i] == n and len(bs[i]) == 0:
                         bs[i] = a
@@ -1046,8 +1089,10 @@ fn _ty(cs: inout C, t: ast.Ty) -> string:
                 if _geidx(&cs, n) >= 0:
                     return _inst_enum(&cs, n, as2)
                 _bad("generic type '" + n0 + "' -- Phase 8")
+            # A DECLARED type of that name wins over a type parameter spelled
+            # the same (corelib/testing's `T`); see _unify's matching guard.
             tv := _tpget(&cs, n)
-            if len(tv) > 0:
+            if len(tv) > 0 and not _declared_short(&cs, n0):
                 return tv
             ni := _ntidx(&cs, n)
             if ni >= 0:
@@ -3226,7 +3271,7 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
             _cty(&cs, rt) + " " + w + " = " + val + "; " + rel + "; " + w + "; })", rt)
     if n == "hash" and len(args) == 1:
         c, t := _ex(&cs, args[0])
-        return (_hash(&cs, t, c), "int")
+        return ("(tycho_int)(" + _hash_det(&cs, t, c) + ")", "int")
     if n == "ncpu" and len(args) == 0:
         return ("tycho_ncpu()", "int")
     if n == "clock" and len(args) == 0:
@@ -3876,6 +3921,12 @@ fn _select(cs: inout C, arms: [ast.Arm], ind: string) -> string:
         elif a.kind == "closed":
             closed = _block(&cs, a.body, ind + "        ")
     if len(dflt) > 0:
+        # A `closed:` arm beside a `default:` still wins when every channel is
+        # closed and drained -- `stage.cancelled()` is exactly that shape, and
+        # taking the default there made a cancelled source keep producing.
+        if len(closed) > 0:
+            out = out + ind + "    if (!_open" + id + ") {\n" + closed +
+                ind + "        goto _sel_done_" + id + ";\n" + ind + "    }\n"
         out = out + dflt + ind + "    goto _sel_done_" + id + ";\n"
     else:
         out = out + ind + "    if (!_open" + id + ") {\n" + closed +
@@ -4461,7 +4512,8 @@ fn _arr_protos(cs: inout C) -> string:
             "static int " + p + "_eq(" + ct + ", " + ct + ");\n" +
             "static char *tycho_str_arr_" + k + "(Arena *, " + ct + ");\n"
         if _hashable(&cs, e):
-            out = out + "static uint64_t " + p + "_hash(" + ct + ");\n"
+            out = out + "static uint64_t " + p + "_hash(" + ct + ");\n" +
+                "static uint64_t " + p + "_dhash(" + ct + ");\n"
     return out
 
 # One growable arena buffer per FIELD plus a shared len/cap, which is the whole
@@ -4594,7 +4646,11 @@ fn _arr_defs(cs: inout C) -> (string, string, string):
             fb = fb + "static uint64_t " + p + "_hash(" + ct + " x) {\n" +
                 "    uint64_t h = tycho_hash_k0;\n" +
                 "    for (tycho_int i = 0; i < x.len; i++) h = h * UINT64_C(1099511628211) ^ " +
-                _hash(&cs, e, "x.data[i]") + ";\n    return h;\n}\n"
+                _hash(&cs, e, "x.data[i]") + ";\n    return h;\n}\n" +
+                "static uint64_t " + p + "_dhash(" + ct + " x) {\n" +
+                "    uint64_t h = UINT64_C(0x9e3779b97f4a7c15);\n" +
+                "    for (tycho_int i = 0; i < x.len; i++) h = h * UINT64_C(1099511628211) ^ " +
+                _hash_det(&cs, e, "x.data[i]") + ";\n    return h;\n}\n"
         i += 1
     return (td, sb, fb)
 
@@ -4809,24 +4865,34 @@ fn _hash_defs(cs: inout C) -> (string, string):
         n := cs.sds[i].name
         if not _hashable(&cs, "S~" + n):
             continue
-        pr = pr + "static uint64_t tycho_hash_S_" + n + "(S_" + n + ");\n"
+        pr = pr + "static uint64_t tycho_hash_S_" + n + "(S_" + n + ");\n" +
+            "static uint64_t tycho_dhash_S_" + n + "(S_" + n + ");\n"
         b := "static uint64_t tycho_hash_S_" + n + "(S_" + n + " v) {\n" +
             "    uint64_t h = tycho_hash_k0;\n"
+        d := "static uint64_t tycho_dhash_S_" + n + "(S_" + n + " v) {\n" +
+            "    uint64_t h = UINT64_C(0x9e3779b97f4a7c15);\n"
         for j := 0; j < len(cs.sds[i].fnames); j += 1:
             b = b + "    h = h * UINT64_C(1099511628211) ^ " +
                 _hash(&cs, cs.sds[i].ftypes[j], "v.f_" + cs.sds[i].fnames[j]) + ";\n"
-        fb = fb + b + "    return h;\n}\n"
+            d = d + "    h = h * UINT64_C(1099511628211) ^ " +
+                _hash_det(&cs, cs.sds[i].ftypes[j], "v.f_" + cs.sds[i].fnames[j]) + ";\n"
+        fb = fb + b + "    return h;\n}\n" + d + "    return h;\n}\n"
     for i := 0; i < len(cs.tks); i += 1:
         if not _hashable(&cs, "T~" + str(i)):
             continue
-        pr = pr + "static uint64_t tycho_hash_T" + str(i) + "(TychoTup" + str(i) + ");\n"
+        pr = pr + "static uint64_t tycho_hash_T" + str(i) + "(TychoTup" + str(i) + ");\n" +
+            "static uint64_t tycho_dhash_T" + str(i) + "(TychoTup" + str(i) + ");\n"
         b2 := "static uint64_t tycho_hash_T" + str(i) + "(TychoTup" + str(i) + " v) {\n" +
             "    uint64_t h = tycho_hash_k0;\n"
+        d2 := "static uint64_t tycho_dhash_T" + str(i) + "(TychoTup" + str(i) + " v) {\n" +
+            "    uint64_t h = UINT64_C(0x9e3779b97f4a7c15);\n"
         es := split(cs.tks[i], "|")
         for j := 0; j < len(es); j += 1:
             b2 = b2 + "    h = h * UINT64_C(1099511628211) ^ " +
                 _hash(&cs, es[j], "v.f" + str(j)) + ";\n"
-        fb = fb + b2 + "    return h;\n}\n"
+            d2 = d2 + "    h = h * UINT64_C(1099511628211) ^ " +
+                _hash_det(&cs, es[j], "v.f" + str(j)) + ";\n"
+        fb = fb + b2 + "    return h;\n}\n" + d2 + "    return h;\n}\n"
     return (pr, fb)
 
 fn _tostr_a(cs: inout C, code: string, t: string) -> string:
@@ -4945,12 +5011,21 @@ fn _enum_support(cs: inout C) -> (string, string, string):
         eq := "static int tycho_eq_E_" + n + "(E_" + n + " *x, E_" + n + " *y) {\n" +
             "    if (x->tag != y->tag) return 0;\n"
         st := "static char *tycho_str_E_" + n + "(Arena *a, E_" + n + " *v) {\n"
+        # str() prints the variant MANGLED, as ./tychoc does -- corelib's own
+        # golden reads `Err(strings__EmptyInput)`. The prefix is the enum type's
+        # own package; an entry-package enum has none and prints bare.
+        epfx := ""
+        for q := 0; q + 1 < len(n); q += 1:
+            if n[q] == 95 and n[q + 1] == 95:
+                epfx = n[0:q + 2]
+                break
         for t := 0; t < len(cs.eds[i].vnames); t += 1:
             vn := cs.eds[i].vnames[t]
+            shown := epfx + vn
             ps := cs.eds[i].vpay[t].ptypes
             tg := str(t)
             if len(ps) == 0:
-                st = st + "    if (v->tag == " + tg + ") return tycho_str_from_c(a, \"" + vn + "\");\n"
+                st = st + "    if (v->tag == " + tg + ") return tycho_str_from_c(a, \"" + shown + "\");\n"
                 eq = eq + "    if (x->tag == " + tg + ") return 1;\n"
                 continue
             cp = cp + "    if (v->tag == " + tg + ") {\n" +
@@ -4958,7 +5033,7 @@ fn _enum_support(cs: inout C) -> (string, string, string):
                 ", u) + sizeof(E_" + n + "_" + vn + ")); d->tag = " + tg + ";\n"
             eqs := ""
             st = st + "    if (v->tag == " + tg + ") {\n" +
-                "        char *r = tycho_str_from_c(a, \"" + vn + "(\");\n"
+                "        char *r = tycho_str_from_c(a, \"" + shown + "(\");\n"
             for j := 0; j < len(ps); j += 1:
                 fj := ".u." + vn + ".f" + str(j)
                 cp = cp + "        d->u." + vn + ".f" + str(j) + " = " +

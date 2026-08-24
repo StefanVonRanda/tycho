@@ -122,6 +122,33 @@ fn _guard_c(c_path: string):
                 exit(1)
         Err(e): pass
 
+# The pkg-config flags every loaded package asks for, in one list. A package
+# with no `deps` file contributes nothing; a pkg-config that fails is skipped
+# rather than fatal, exactly as a missing optional dependency is elsewhere.
+# gap: the flags are split on spaces, so a path containing a space would break.
+fn _pkgflags(p: types.Program) -> [string]:
+    out := []string
+    seen := []string: bool
+    for f in p.files:
+        if f.dir in seen:
+            continue
+        seen[f.dir] = true
+        match io.read_text(f.dir + "/deps"):
+            Ok(txt):
+                for ln in split(txt, "\n"):
+                    t := strings.trim(ln)
+                    if len(t) == 0 or t[0] == 35 or (t in seen):
+                        continue
+                    seen[t] = true
+                    r := os.run("pkg-config --cflags --libs " + t)
+                    if r.code != 0:
+                        continue
+                    for w in split(strings.trim(r.out), " "):
+                        if len(strings.trim(w)) > 0:
+                            push(out, strings.trim(w))
+            Err(e): pass
+    return out
+
 fn build(src_path: string, runtime_path: string, base: string, argv0: string):
     c_path := base + ".c"
     _guard_c(c_path)
@@ -140,6 +167,11 @@ fn build(src_path: string, runtime_path: string, base: string, argv0: string):
         push(argv, sh)
     for l in _links(p):
         push(argv, "-l" + l)
+    # Each loaded package's `deps` file names pkg-config packages; their cflags
+    # and libs go on the cc line, or a program using core:tls/zip/compress/
+    # crypto/image/http/sqlite does not LINK (24 of them did not).
+    for fl in _pkgflags(p):
+        push(argv, fl)
     push(argv, "-lm")
     if os.exec(argv) != 0:
         # the .c SURVIVES a cc failure on purpose: it is the evidence
