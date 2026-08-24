@@ -1867,10 +1867,20 @@ change the failure, so this is not FBIP reuse handing back a live chunk. What
 is left is a block that was released (arena reset or freed) while the source
 still pointed into it, and then re-handed to another arena from the pool.
 
-Next probe: find which arena the source ends up in. tycho_str_alloc returning a
-pointer inside a live buffer means either the bump pointer moved backwards or
-the block was pooled early -- both are visible by printing the block and offset
-at the allocation of the source and at the allocation of that 1-byte string.
+Also ruled out: block size. TYCHO_BLOCK=1024 / 65536 / 1048576 all fail
+identically, so this is not pooling luck -- the aliasing is deterministic.
+
+The write is a NUL at src+4 with src+3 holding its own byte unchanged, which is
+exactly `tycho_str_substr(&_scope, src, 3, 4)` handing back a pointer EQUAL TO
+src+3: a 1-byte string allocated on top of the live source, its terminator
+landing one past. So _scope's bump pointer is inside src's own buffer. The C
+emitted for the identifier scan is correct (`h_name = tycho_str_substr(&_scope,
+h_src, h_s, h_p)`), so the fault is in the arena state, not the call.
+
+Next probe: two arenas sharing a block. Print the block address and offset at
+the source's allocation and at that 1-byte allocation -- if they are the same
+block with a rewound offset, an Arena struct is being COPIED BY VALUE somewhere
+and both copies are bumping their own view of the same block.
 
 Fixing this is worth 19%: the self-built compiler is 277 ms against the shipped
 341 ms, and the Makefile change is three lines.
