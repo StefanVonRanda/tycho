@@ -320,7 +320,10 @@ fn _khash(cs: inout C, k: string, e: string) -> string:
 fn _kmatch(cs: inout C, k: string, ek: string, q: string) -> string:
     c := _kclass(&cs, k)
     if c == "str":
-        return "(strcmp(" + ek + ", " + q + ") == 0)"
+        # strcmp stops at the first NUL, so "a" and "a\0b" compared EQUAL
+        # whenever the seed put them in one bucket -- tests/strbytes.ty failed
+        # about one run in five. tycho_str_cmp carries the length.
+        return "(tycho_str_cmp(" + ek + ", " + q + ") == 0)"
     if c == "int" or c == "enum":
         return "(" + ek + " == " + q + ")"
     return _eq(&cs, ek, q, k)
@@ -1186,6 +1189,24 @@ fn _hoist_legs(cs: inout C, e: ast.Expr, ind: string, pre: inout string, tmps: i
             return ast.Index(l, [r, k[1]])
         ast.Field(l, k, f):
             return ast.Field(l, [_hoist_legs(&cs, k[0], ind, &pre, &tmps)], f)
+        ast.Call(l, q, n, ts, args):
+            # A user subscript is a CALL in the place spine, and `p += e` copies
+            # the whole place onto the right: without this its argument runs
+            # twice (tests/compound_subscript_eval.ty reads one slot and writes
+            # another).
+            na := []ast.Expr
+            for a2 in args:
+                if _simple(a2):
+                    push(na, a2)
+                    continue
+                ac, at := _ex(&cs, a2)
+                cs.tmp += 1
+                an := "_mk" + str(cs.tmp)
+                acn := _push(&cs, an, at)
+                pre = pre + ind + _cty(&cs, at) + " " + acn + " = " + ac + ";\n"
+                push(tmps, an)
+                push(na, ast.Name(l, an))
+            return ast.Call(l, q, n, ts, na)
         _: pass
     return e
 
@@ -1202,6 +1223,15 @@ fn _subst_legs(e: ast.Expr, tmps: [string], i: inout int) -> ast.Expr:
             return ast.Index(l, [r, k[1]])
         ast.Field(l, k, f):
             return ast.Field(l, [_subst_legs(k[0], tmps, &i)], f)
+        ast.Call(l, q, n, ts, args):
+            na := []ast.Expr
+            for a2 in args:
+                if _simple(a2) or i >= len(tmps):
+                    push(na, a2)
+                    continue
+                push(na, ast.Name(l, tmps[i]))
+                i += 1
+            return ast.Call(l, q, n, ts, na)
         _: pass
     return e
 
@@ -1817,9 +1847,12 @@ fn _lambda(cs: inout C, ps: [ast.Param], ret: [ast.Ty], body: ast.Expr) -> (stri
     pre := ""
     if len(caps) > 0:
         pre = "    Env" + id + " *_ec = (Env" + id + " *)_env;\n"
-    ret2 := "    return " + _copy(&cs, bc, rt, "_parent") + ";\n"
+    # The thunk's own scope must be released, exactly as a named fn's is: the
+    # result is copied into _parent first, so the copy outlives the free.
+    ret2 := "    " + _cty(&cs, rt) + " _lr = " + _copy(&cs, bc, rt, "_parent") +
+        ";\n    arena_free(&_scope);\n    return _lr;\n"
     if rt == "void":
-        ret2 = "    " + bc + ";\n"
+        ret2 = "    " + bc + ";\n    arena_free(&_scope);\n"
     d := ""
     if len(caps) > 0:
         d = "typedef struct { \n" + env + "} Env" + id + ";\n" +
