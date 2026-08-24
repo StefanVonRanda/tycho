@@ -4322,7 +4322,13 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                     push(cns, _vcname(&cs, ns[i]))
             for i := 0; i < len(ns); i += 1:
                 v := "(" + tv + ".f" + str(i) + ")"
-                if _heap(&cs, es[i]):
+                # A tuple that came from a CALL was built in this arena already
+                # -- the call was handed cs.arena as its _parent -- so reading a
+                # field out of it needs no copy. `a, b := f(...)` is the shape
+                # every recursive-descent function in this compiler returns, and
+                # each one was copying both results back into the arena they were
+                # already in. A PLACE on the right still belongs to someone else.
+                if _heap(&cs, es[i]) and (_place(r[0]) or cs.arena != "&_scope"):
                     v = _copy(&cs, v, es[i], "&_scope")
                 if d:
                     cn := _push(&cs, ns[i], es[i])
