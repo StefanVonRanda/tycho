@@ -565,6 +565,15 @@ fn _fstring_uses(rs: inout R, body: string):
                 _note(&rs, "fstring.pkg")
             else:
                 _note(&rs, "fstring.name")
+                # A call inside an interpolation is a real use, and report_dead
+                # counts uses: `apply(sq, 7)` written only inside an f-string
+                # had every one of its callers invisible.
+                if i == 0 or body[i - 1] != 46:
+                    if _kindof(&rs, w) == "fn" or _kindof(&rs, w) == "generic":
+                        _note(&rs, "call:" + w)
+                    if len(rs.prefix) > 0 and (_kindof(&rs, rs.prefix + w) == "fn" or
+                            _kindof(&rs, rs.prefix + w) == "generic"):
+                        _note(&rs, "call:" + rs.prefix + w)
             i = j
             continue
         i += 1

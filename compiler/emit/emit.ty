@@ -1168,6 +1168,43 @@ fn _eq(cs: inout C, a: string, b: string, t: string) -> string:
 # together and returned as a tuple so an expression is walked once.
 
 # A key that can be evaluated twice with no observable difference.
+# Every side-effecting leg of a place, hoisted into a temp in SOURCE order:
+# `grid[f()][g()] = e()` must call f before g, and building the C subscript
+# expression leaves that order to the C compiler, which chose g first.
+fn _hoist_legs(cs: inout C, e: ast.Expr, ind: string, pre: inout string, tmps: inout [string]) -> ast.Expr:
+    match e:
+        ast.Index(l, k):
+            r := _hoist_legs(&cs, k[0], ind, &pre, &tmps)
+            if not _simple(k[1]):
+                kc, kt := _ex(&cs, k[1])
+                cs.tmp += 1
+                kn := "_mk" + str(cs.tmp)
+                cn := _push(&cs, kn, kt)
+                pre = pre + ind + _cty(&cs, kt) + " " + cn + " = " + kc + ";\n"
+                push(tmps, kn)
+                return ast.Index(l, [r, ast.Name(l, kn)])
+            return ast.Index(l, [r, k[1]])
+        ast.Field(l, k, f):
+            return ast.Field(l, [_hoist_legs(&cs, k[0], ind, &pre, &tmps)], f)
+        _: pass
+    return e
+
+# The compound form `p += e` carries a structural COPY of the place on the
+# right; it must read the same temps, or every leg runs twice.
+fn _subst_legs(e: ast.Expr, tmps: [string], i: inout int) -> ast.Expr:
+    match e:
+        ast.Index(l, k):
+            r := _subst_legs(k[0], tmps, &i)
+            if not _simple(k[1]) and i < len(tmps):
+                nm := tmps[i]
+                i += 1
+                return ast.Index(l, [r, ast.Name(l, nm)])
+            return ast.Index(l, [r, k[1]])
+        ast.Field(l, k, f):
+            return ast.Field(l, [_subst_legs(k[0], tmps, &i)], f)
+        _: pass
+    return e
+
 fn _simple(e: ast.Expr) -> bool:
     match e:
         ast.Name(l, n): return true
@@ -2967,29 +3004,18 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             return ind + _vcname(&cs, n) + " = " + rc + ";\n"
         ast.PlaceSet(l, k):
             # `m[f()] += 1` desugars to `m[f()] = m[f()] + 1` with the SAME key
-            # node on both sides; hoist a side-effecting key into a temp so it
-            # is evaluated exactly once, as src/tychoc.c does.
-            lhs := k[0]
+            # node on both sides; hoist every side-effecting leg into a temp so
+            # each is evaluated exactly once, in source order, as src/tychoc.c does.
             rhs := k[1]
             pre := ""
-            match lhs:
-                ast.Index(l2, ix):
-                    if not _simple(ix[1]):
-                        kc0, kt0 := _ex(&cs, ix[1])
-                        cs.tmp += 1
-                        kn := "_mk" + str(cs.tmp)
-                        cn3 := _push(&cs, kn, kt0)
-                        pre = ind + _cty(&cs, kt0) + " " + cn3 + " = " + kc0 + ";\n"
-                        nk := ast.Name(l2, kn)
-                        lhs = ast.Index(l2, [ix[0], nk])
-                        match rhs:
-                            ast.Binop(l3, op3, bk):
-                                match bk[0]:
-                                    ast.Index(l4, ix2):
-                                        rhs = ast.Binop(l3, op3, [ast.Index(l4, [ix2[0], nk]), bk[1]])
-                                    _: pass
-                            _: pass
-                _: pass
+            tmps := []string
+            lhs := _hoist_legs(&cs, k[0], ind, &pre, &tmps)
+            if len(tmps) > 0:
+                match rhs:
+                    ast.Binop(l3, op3, bk):
+                        n3 := 0
+                        rhs = ast.Binop(l3, op3, [_subst_legs(bk[0], tmps, &n3), bk[1]])
+                    _: pass
             k = [lhs, rhs]
             match k[0]:
                 ast.Index(l5, k5):
@@ -3217,10 +3243,13 @@ fn _match(cs: inout C, subj: ast.Expr, arms: [ast.Arm], ind: string) -> string:
                 if nt >= 0:
                     nulsub = str(nt)
                     continue
+                # BY VALUE, deep-copied: ./tychoc binds a payload as a copy, so
+                # `xs[0] = 50` inside the arm leaves the matched value alone
+                # (tests/match_payload_mut.out). A pointer binding aliased it.
                 bcn := _push(&cs, a.binds[i], pay[i])
-                cs.vcn[len(cs.vcn) - 1] = "(*" + bcn + ")"
-                binds = binds + ind + "        " + _cty(&cs, pay[i]) + " *" + bcn +
-                    " = &" + v + "->u." + a.name + ".f" + str(i) + ";\n"
+                psrc := v + "->u." + a.name + ".f" + str(i)
+                binds = binds + ind + "        " + _cty(&cs, pay[i]) + " " + bcn +
+                    " = " + _copy(&cs, psrc, pay[i], cs.arena) + ";\n"
             # A NESTED pattern -- `Err(TooBig(n))`. The Arm has carried
             # sub/subbinds since the parser, and nothing read them until now, so
             # the inner binding was simply never in scope. The payload is itself
@@ -3242,9 +3271,8 @@ fn _match(cs: inout C, subj: ast.Expr, arms: [ast.Arm], ind: string) -> string:
                     if j >= len(ipay):
                         _bad("variant " + a.sub + " binds more than its payload")
                     scn := _push(&cs, a.subbinds[j], ipay[j])
-                    cs.vcn[len(cs.vcn) - 1] = "(*" + scn + ")"
-                    binds = binds + ind + "        " + _cty(&cs, ipay[j]) + " *" + scn +
-                        " = &(" + iv + ")->u." + a.sub + ".f" + str(j) + ";\n"
+                    binds = binds + ind + "        " + _cty(&cs, ipay[j]) + " " + scn +
+                        " = " + _copy(&cs, "(" + iv + ")->u." + a.sub + ".f" + str(j), ipay[j], cs.arena) + ";\n"
             body := _block(&cs, a.body, ind + "        ")
             _restore(&cs, m)
             out = out + head + " (" + cond + ") {\n" + binds + body +
