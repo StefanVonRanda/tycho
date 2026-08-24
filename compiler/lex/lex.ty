@@ -94,9 +94,11 @@ fn postfixable(kind: string, text: string) -> bool:
 # A lexer error names its FILE when one is known, in the same shape the parser
 # uses: without it, a broken sibling in a package was reported as `tychoc1: line
 # 1`, which names no file at all and sent the reader to the entry file.
-fn _die(file: string, src: string, line: int, msg: string):
+# `file:line: error: msg`, with the source line under it -- the shape parse.ty's
+# `_where` produces, so a lexer error reads like every other diagnostic.
+fn _at_line(file: string, src: string, line: int, msg: string) -> string:
     if len(file) == 0:
-        die("tychoc1: line " + str(line) + ": " + msg)
+        return "tychoc1: line " + str(line) + ": " + msg
     out := file + ":" + str(line) + ": error: " + msg
     ls := split(src, "\n")
     if line >= 1 and line <= len(ls):
@@ -105,7 +107,10 @@ fn _die(file: string, src: string, line: int, msg: string):
         for k := len(num); k < 6; k += 1:
             pad = pad + " "
         out = out + "\n" + pad + num + " | " + ls[line - 1]
-    die(out)
+    return out
+
+fn _die(file: string, src: string, line: int, msg: string):
+    die(_at_line(file, src, line, msg))
 
 # --- `# deprecated:` doc notes ----------------------------------------------
 # src/tychoc.c@dnote_scan runs during lexing and only on a comment-ONLY line, so
@@ -348,6 +353,7 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
     toks := []Tok
     notes := []DNote
     errs := []string
+    errl := []int                      # the line each recorded error names
     stack := []int
     push(stack, 0)
     n := len(src)
@@ -414,7 +420,8 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
                 # Recorded, not fatal: src/tychoc.c pushes the diagnostic and puts
                 # bracket_depth back to 0 so real layout resumes and the rest of
                 # the file still lexes, which is what makes error batching work.
-                push(errs, "line " + str(bracket_line) + ": unclosed '(' or '[' opened on line " +
+                push(errl, bracket_line)
+                push(errs, "unclosed '(' or '[' opened on line " +
                     str(bracket_line) + " -- `" + w +
                     "` here can only start a declaration, so the bracket was never closed")
                 bracket_depth = 0
@@ -595,11 +602,17 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
             p += 1
 
     if bracket_depth > 0:
-        push(errs, "line " + str(bracket_line) + ": unclosed '(' or '[' opened on line " + str(bracket_line))
+        push(errl, bracket_line)
+        push(errs, "unclosed '(' or '[' opened on line " + str(bracket_line))
     if len(errs) > 0:
+        # Every recorded error, in source order, in the shape the rest of the
+        # compiler uses -- `file:line: error: ...` and the source line. They were
+        # BATCHED already; only the format was the lexer's own.
         msg := ""
         for i := 0; i < len(errs); i += 1:
-            msg = msg + "tychoc1: " + errs[i] + "\n"
+            if i > 0:
+                msg = msg + "\n"
+            msg = msg + _at_line(file, src, errl[i], errs[i])
         die(msg)
     for len(stack) > 1:
         pop(stack)

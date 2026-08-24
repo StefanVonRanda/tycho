@@ -16,6 +16,17 @@ import "../lex"
 
 # --- token helpers ----------------------------------------------------------
 
+# Declaration-level error recovery. src/tychoc.c longjmps out of a failed
+# declaration and resumes at the next one; Tycho has no unwind, so the failure
+# is carried instead: the shapes that can be recognised WITHOUT parsing further
+# record their message here, `func` returns immediately, and `unit` resyncs to
+# the next declaration.
+# gap: only a malformed RETURN TYPE recovers. Any other parse error is still
+# fatal at the first one, so a second error later in the file is not reported.
+struct PS:
+    errs: [string]
+    failed: bool
+
 fn _at(toks: [lex.Tok], i: int) -> lex.Tok:
     if i >= len(toks):
         return toks[len(toks) - 1]
@@ -1496,7 +1507,7 @@ fn _collect_sizeparams_ty(t: ast.Ty, acc: [string]) -> [string]:
         _: return out
     return out
 
-fn func(toks: [lex.Tok], i0: int, notes: [lex.DNote]) -> (ast.Fn, int):
+fn func(ps0: inout PS, toks: [lex.Tok], i0: int, notes: [lex.DNote]) -> (ast.Fn, int):
     i := _expect(toks, i0, "kw", "fn")
     nm, j := _ident(toks, i, "a procedure name")
     dn := lex.dnote_above(notes, _at(toks, i).line)
@@ -1505,6 +1516,16 @@ fn func(toks: [lex.Tok], i0: int, notes: [lex.DNote]) -> (ast.Fn, int):
     i = k
     ret := []ast.Ty
     if _isop(toks, i, "->"):
+        # `_starts_type_lit`, not `_starts_type`: a RETURN type may be a
+        # function type, which starts with the `fn` keyword.
+        if not _starts_type_lit(toks, i + 1):
+            # RECORDED, not fatal: the declaration is abandoned and `unit`
+            # resyncs, so a second malformed declaration is reported too.
+            push(ps0.errs, _where(_at(toks, i + 1),
+                "expected a type (int, float, bool, string, [int], or a struct)", false))
+            ps0.failed = true
+            return (ast.Fn(nm, ps, ret, []string, []string, []ast.Stmt, false, "", dn,
+                _at(toks, i0).line), i)
         r, m := ty(toks, i + 1)
         push(ret, r)
         i = m
@@ -1846,7 +1867,27 @@ fn _const_fold(e: ast.Expr, cs: [ast.ConstD], t: lex.Tok) -> ast.Expr:
         _: return e
     return e
 
+# The resync point: the next token in COLUMN 1 at bracket depth 0, which is
+# where a new declaration can start. Tracking INDENT/DEDENT matters -- those
+# carry column 0 and would otherwise stop the scan on the first body line.
+fn _resync(toks: [lex.Tok], i0: int) -> int:
+    i := i0
+    depth := 0
+    for i < len(toks) and _k(toks, i) != "eof":
+        k := _k(toks, i)
+        if k == "indent":
+            depth += 1
+        elif k == "dedent":
+            if depth > 0:
+                depth -= 1
+        elif depth == 0 and _at(toks, i).col == 1 and i > i0:
+            if k == "kw" or k == "ident":
+                return i
+        i += 1
+    return i
+
 fn unit(toks: [lex.Tok], notes: [lex.DNote]) -> ast.Unit:
+    ps0 := PS([]string, false)
     pkg := ""
     imports := []ast.ImportD
     fns := []ast.Fn
@@ -1923,7 +1964,18 @@ fn unit(toks: [lex.Tok], notes: [lex.DNote]) -> ast.Unit:
             push(nts, n)
             i = j
             continue
-        f, j := func(toks, i, notes)
+        f, j := func(&ps0, toks, i, notes)
+        if ps0.failed:
+            ps0.failed = false
+            i = _resync(toks, j)
+            continue
         push(fns, f)
         i = j
+    if len(ps0.errs) > 0:
+        msg := ""
+        for e in ps0.errs:
+            if len(msg) > 0:
+                msg = msg + "\n"
+            msg = msg + e
+        die(msg)
     return ast.Unit(pkg, imports, fns, sts, ens, nts, hds, cts, sbs)
