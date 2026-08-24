@@ -1829,29 +1829,40 @@ retaining it must copy -- core:io was handing back a pointer into the frame it
 had just freed. Shipped compiler 341 ms -> 279 ms.
 
 MEASURE WITH CALLGRIND, NOT THE CLOCK. This machine drifts +/-5% between runs,
-which is the size of the wins being chased; `valgrind --tool=callgrind` gives a
-deterministic instruction count. Baseline for the self-built compiler: 2.820e9
-instructions, 30.2M allocations, 940 MiB bumped, 6.91M arenas created of which
-5.80M never allocate.
+which is the size of most of these wins; `valgrind --tool=callgrind` gives a
+deterministic instruction count.
 
-RULED OUT, both measured against that baseline:
+WHERE IT STANDS on compiler/main.ty (tychoc 90 ms alongside):
+
+    5.0x   at the start of this work
+    3.8x   341 ms
+    3.1x   279 ms   two-stage bootstrap (e4e0abbe), unblocked by 82aae400
+    2.8x   254 ms   concat chains flattened (c7f6ed37)
+    2.7x   242 ms   arena bump inlined (cb76f804)
+
+    instructions   2.820e9 -> 2.383e9
+
+PROFILE NOW (callgrind, exclusive): memcpy 11.9%, tycho_str_copy 11.2%,
+tycho_copy_E_ast__Expr 8.4%, the Expr-array copy 7.6%, arena_alloc_slow 7.5%,
+arena_alloc_i 6.9%. The allocator is no longer one hot symbol; what is left is
+the DEEP-COPY TAX -- roughly 40% of the profile is copying values that the
+caller could have been handed. That is move-on-last-use, and it is the only
+remaining lever of the right size.
+
+arena_alloc_slow at 7.5% is worth a look first: the guard falls through
+whenever an arena has no block yet, so every arena's FIRST allocation is slow
+(~1.1M of them).
+
+RULED OUT, each measured against the baseline:
   - the full return-only escape analysis (src/tychoc.c@collect_ret_alias) --
-    +7.7% (3.038e9). The name census is linear and still costs more than the
-    copies it removes, and promoting locals to _parent defers every free.
+    +7.7%. The name census is linear and still costs more than the copies it
+    removes, and promoting locals to _parent defers every free.
   - the cheap half of it (promote a local returned BY NAME) -- the SELF-BUILT
-    compiler fails 24 fixtures and dies on its own source. Something else in
-    this codegen assumes a local lives in _scope; the string accumulator's
-    in-place append is the first suspect, since it needs its buffer to be the
-    last allocation in its own arena.
-Both are reverted. Do not re-port them without first finding what the promotion
+    compiler fails 24 fixtures. Something else in this codegen assumes a local
+    lives in _scope; the string accumulator's in-place append is the first
+    suspect, since it needs its buffer to be the last allocation in its arena.
+Both reverted. Do not re-port them without first finding what the promotion
 breaks.
-
-WHERE THE TIME IS (callgrind, self-built): arena_alloc 34%, memcpy 12%,
-tycho_copy_E_ast__Expr 7%, tycho_str_copy 6%, the Expr-array copy 5%. Two
-untried levers: 5.80M arenas that never allocate (elide _scope for a body that
-never mentions it), and inlining arena_alloc's bump path -- it is ~20
-instructions behind a call, and tychoc does not pay it because src/tychoc.c has
-its own allocator.
 
 Done when: the ratio is <= 1.0 on compiler/main.ty and tycho-db.
 Verify: best-of-three wall clock, both compilers, same input, --emit-c.
