@@ -4638,11 +4638,18 @@ fn _soa_defs(cs: inout C) -> (string, string):
     return (sb, fb)
 
 fn _arr_defs(cs: inout C) -> (string, string, string):
+    return _arr_defs_from(&cs, 0)
+
+# Only the kinds from `start` on. Emitting one array kind can stamp another, so
+# the caller loops until the count stops moving -- regenerating every kind each
+# time made this the single most expensive function in a compile (callgrind:
+# 5.9% in memcpy under its string building alone).
+fn _arr_defs_from(cs: inout C, start: int) -> (string, string, string):
     # (typedefs, struct bodies, function bodies) for every stamped array kind.
     td := ""
     sb := ""
     fb := ""
-    i := 0
+    i := start
     for i < len(cs.akinds):
         e := cs.akinds[i]
         k := "K" + str(i)
@@ -5375,11 +5382,17 @@ fn program(pfx: [string], us: [ast.Unit]) -> string:
     for no != len(cs.oks):
         no = len(cs.oks)
         osb, ofb = _soa_defs(&cs)
-    atd, asb, afb := _arr_defs(&cs)
+    atd := ""
+    asb := ""
+    afb := ""
     nk := 0
     for nk != len(cs.akinds):
+        st9 := nk
         nk = len(cs.akinds)
-        atd, asb, afb = _arr_defs(&cs)
+        t9, s9, f9 := _arr_defs_from(&cs, st9)
+        atd = atd + t9
+        asb = asb + s9
+        afb = afb + f9
     htd = htd + mtd
     # `extern double strx_parse_double(char *, tycho_int *);` -- the foreign
     # symbol's prototype, matching ./tychoc. An inout parameter is a pointer.

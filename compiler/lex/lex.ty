@@ -45,25 +45,31 @@ fn is_ident(c: int) -> bool:
 # src/tychoc.c@keyword, verbatim. Every name here becomes kind "kw"; everything
 # else -- `soa`, `count`, `print`, `where`, `const`, `import`, `package`,
 # `extern`, `sink`, `subscript`, `yield`, `zero` -- stays an identifier.
+# Length first, then one comparison per candidate of that length: every
+# identifier in the source reaches here, and the 38-way `or` chain compared the
+# text against each in turn -- callgrind put str_cmp from here at 3% of a
+# compile.
 fn is_keyword(s: string) -> bool:
-    if s == "fn" or s == "return" or s == "if" or s == "elif" or s == "else":
-        return true
-    if s == "and" or s == "or_return" or s == "or" or s == "not" or s == "match":
-        return true
-    if s == "break" or s == "continue" or s == "spawn" or s == "parallel" or s == "select":
-        return true
-    if s == "for" or s == "in" or s == "is" or s == "struct" or s == "enum":
-        return true
-    if s == "handle" or s == "type" or s == "inout":
-        return true
-    if s == "true" or s == "false" or s == "null":
-        return true
-    if s == "int" or s == "bool" or s == "string" or s == "float" or s == "ptr" or s == "bytes":
-        return true
-    if s == "u32" or s == "u64" or s == "f32":
-        return true
-    if s == "u8" or s == "u16" or s == "i8" or s == "i16" or s == "i32" or s == "i64":
-        return true
+    n := len(s)
+    if n < 2 or n > 9:
+        return false
+    if n == 2:
+        return s == "fn" or s == "if" or s == "or" or s == "in" or s == "is" or s == "u8" or s == "i8"
+    if n == 3:
+        return s == "and" or s == "not" or s == "for" or s == "int" or s == "ptr" or
+            s == "u16" or s == "u32" or s == "u64" or s == "i16" or s == "i32" or s == "i64" or s == "f32"
+    if n == 4:
+        return s == "elif" or s == "else" or s == "true" or s == "null" or s == "bool" or
+            s == "enum" or s == "type"
+    if n == 5:
+        return s == "match" or s == "break" or s == "spawn" or s == "false" or s == "float" or
+            s == "bytes" or s == "inout"
+    if n == 6:
+        return s == "return" or s == "struct" or s == "handle" or s == "string" or s == "select"
+    if n == 8:
+        return s == "continue" or s == "parallel"
+    if n == 9:
+        return s == "or_return"
     return false
 
 # src/tychoc.c@tok_continues_line. A line ending on one of these cannot be a
