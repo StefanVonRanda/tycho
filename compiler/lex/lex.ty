@@ -15,9 +15,11 @@ struct Tok:
     ival: int         # int literal value, char literal byte, or 1 on an f-string
     fval: float       # float literal value
     raw: string       # the exact source slice, for the round-trip control
+    file: string      # the path this token was lexed from, for diagnostics
+    src: string       # that file's whole source, for the diagnostic excerpt
 
 fn _t(kind: string, text: string, line: int, col: int, raw: string) -> Tok:
-    return Tok(kind, text, line, col, 0, 0.0, raw)
+    return Tok(kind, text, line, col, 0, 0.0, raw, "", "")
 
 fn is_digit(c: int) -> bool:
     return c >= 48 and c <= 57
@@ -307,6 +309,15 @@ fn tokenize(src: string) -> [Tok]:
 fn tokenize_ex(src: string, keep_trivia: bool) -> [Tok]:
     return tokenize_all(src, keep_trivia).0
 
+# The path-carrying entry. `tokenize_all` keeps its old shape so the token dump,
+# round-trip and census modes are untouched.
+fn tokenize_file(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNote]):
+    ts, ns := tokenize_all(src, keep_trivia)
+    for i := 0; i < len(ts); i += 1:
+        ts[i].file = file
+        ts[i].src = src
+    return (ts, ns)
+
 # The `# deprecated:` notes this file's comments carry, in source order. They are
 # a SIDE TABLE rather than tokens for the same reason src/tychoc.c keeps them in
 # one: a note is not a syntactic element, and putting it in the stream would make
@@ -465,7 +476,7 @@ fn tokenize_all(src: string, keep_trivia: bool) -> ([Tok], [DNote]):
                         Err(strings.Underflow): fv = 0.0
                         Err(strings.Empty): fv = 0.0
                         Err(strings.Syntax): fv = 0.0
-                    push(toks, Tok("float", raw, line, tcol, 0, fv, raw))
+                    push(toks, Tok("float", raw, line, tcol, 0, fv, raw, "", ""))
                     last_kind = "float"
                     last_text = raw
                 else:
@@ -476,7 +487,7 @@ fn tokenize_all(src: string, keep_trivia: bool) -> ([Tok], [DNote]):
                         if v > (imax - d) / litbase:
                             _die(line, "integer literal out of range")
                         v = v * litbase + d
-                    push(toks, Tok("int", raw, line, tcol, v, 0.0, raw))
+                    push(toks, Tok("int", raw, line, tcol, v, 0.0, raw, "", ""))
                     last_kind = "int"
                     last_text = raw
                 continue
@@ -504,7 +515,7 @@ fn tokenize_all(src: string, keep_trivia: bool) -> ([Tok], [DNote]):
                 flag := 0
                 if fstr:
                     flag = 1
-                push(toks, Tok("str", body, line, tcol, flag, 0.0, src[s:e]))
+                push(toks, Tok("str", body, line, tcol, flag, 0.0, src[s:e], "", ""))
                 p = e
                 last_kind = "str"
                 last_text = body
@@ -512,7 +523,7 @@ fn tokenize_all(src: string, keep_trivia: bool) -> ([Tok], [DNote]):
 
             if c == 96:
                 e, body, nl := scan_raw(src, p, line)
-                push(toks, Tok("str", body, line, tcol, 0, 0.0, src[s:e]))
+                push(toks, Tok("str", body, line, tcol, 0, 0.0, src[s:e], "", ""))
                 p = e
                 line += nl
                 last_kind = "str"
@@ -521,7 +532,7 @@ fn tokenize_all(src: string, keep_trivia: bool) -> ([Tok], [DNote]):
 
             if c == 39:
                 e, cv := scan_char(src, p, line)
-                push(toks, Tok("char", src[s:e], line, tcol, cv, 0.0, src[s:e]))
+                push(toks, Tok("char", src[s:e], line, tcol, cv, 0.0, src[s:e], "", ""))
                 p = e
                 last_kind = "char"
                 last_text = src[s:e]

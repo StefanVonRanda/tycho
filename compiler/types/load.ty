@@ -155,7 +155,7 @@ fn _merge(ld: inout Loader, dir: string, pkgname: string, prefix: string):
     for f in files:
         one := read_file(f)
         push(srcs, one)
-        toks, notes := lex.tokenize_all(one, false)
+        toks, notes := lex.tokenize_file(one, false, f)
         push(units, parse.unit(toks, notes))
 
     # Post-order: every imported package is merged before this one, so a symbol
@@ -181,7 +181,7 @@ fn _merge(ld: inout Loader, dir: string, pkgname: string, prefix: string):
 
 fn load(entry: string, argv0: string) -> Program:
     src := read_file(entry)
-    toks, notes := lex.tokenize_all(src, false)
+    toks, notes := lex.tokenize_file(src, false, entry)
     u := parse.unit(toks, notes)
     root := corelib_root(argv0)
     dir := dir_of(entry)

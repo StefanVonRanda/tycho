@@ -46,12 +46,34 @@ fn _isid(toks: [lex.Tok], i: int, s: string) -> bool:
     t := _at(toks, i)
     return t.kind == "ident" and t.text == s
 
+# A parse error reads like every other diagnostic: `file:line: error: msg` with
+# the offending source line beneath it. The path and the source ride on the
+# TOKEN (lex.Tok.file/.src) rather than being threaded through the parser --
+# there are 73 _die call sites and Tycho has no package-level mutable state, so
+# a parameter would have touched every one of them.
+# gap: a token lexed through tokenize()/tokenize_ex() carries no file, so those
+# paths still print the bare `tychoc1: line N:` form. Only the compile path,
+# which goes through lex.tokenize_file, is covered.
+fn _where(t: lex.Tok, msg: string) -> string:
+    if len(t.file) == 0:
+        return "tychoc1: line " + str(t.line) + ": " + msg
+    out := t.file + ":" + str(t.line) + ": error: " + msg
+    if t.line <= 0:
+        return out
+    ls := split(t.src, "\n")
+    if t.line > len(ls):
+        return out
+    num := str(t.line)
+    pad := ""
+    for k := len(num); k < 6; k += 1:
+        pad = pad + " "
+    return out + "\n" + pad + num + " | " + ls[t.line - 1]
+
 fn _fail(t: lex.Tok, want: string):
-    die("tychoc1: line " + str(t.line) + ": expected " + want + ", found " +
-        t.kind + " '" + t.text + "'")
+    die(_where(t, "expected " + want + ", found " + t.kind + " '" + t.text + "'"))
 
 fn _die(t: lex.Tok, msg: string):
-    die("tychoc1: line " + str(t.line) + ": " + msg)
+    die(_where(t, msg))
 
 fn _expect(toks: [lex.Tok], i: int, kind: string, text: string) -> int:
     t := _at(toks, i)
