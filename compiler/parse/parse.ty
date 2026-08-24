@@ -71,14 +71,13 @@ fn _where(t: lex.Tok, msg: string, caret: bool) -> string:
     out := t.file + ":" + str(t.line) + ": error: " + msg
     if t.line <= 0:
         return out
-    ls := split(t.src, "\n")
-    if t.line > len(ls):
+    if len(t.src) == 0 and t.line > 0:
         return out
     num := str(t.line)
     pad := ""
     for k := len(num); k < 6; k += 1:
         pad = pad + " "
-    src := ls[t.line - 1]
+    src := t.src
     out = out + "\n" + pad + num + " | " + src
     # The caret sits under the offending token (src/tychoc.c@src_snippet), and
     # ONLY where ./tychoc sets g_err_col: a token-shape mismatch in eat(), a

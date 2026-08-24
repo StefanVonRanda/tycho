@@ -331,9 +331,15 @@ fn tokenize_ex(src: string, keep_trivia: bool) -> [Tok]:
 # round-trip and census modes are untouched.
 fn tokenize_file(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNote]):
     ts, ns := tokenize_named(src, keep_trivia, file)
+    # The token carries its OWN LINE, not the whole file. Stamping the source
+    # into every token deep-copied it per token (Tycho value semantics): peak
+    # live for a 6k-line program was 110.9 MiB, and 3.9 MiB without it -- which
+    # is why tychoc1 could not resolve its own 35k-line source at 16 GB.
+    ls := split(src, "\n")
     for i := 0; i < len(ts); i += 1:
         ts[i].file = file
-        ts[i].src = src
+        if ts[i].line >= 1 and ts[i].line <= len(ls):
+            ts[i].src = ls[ts[i].line - 1]
     return (ts, ns)
 
 # The `# deprecated:` notes this file's comments carry, in source order. They are
