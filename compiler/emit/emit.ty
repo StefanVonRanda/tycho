@@ -1275,6 +1275,11 @@ fn _acc_rooted(cs: inout C, e: ast.Expr) -> bool:
             return len(cs.vacc[i]) > 0
     return false
 
+# The same rule as the declaration path: a string already in the destination
+# arena, not rooted in an accumulator, is shared rather than copied.
+fn _shares(cs: inout C, e: ast.Expr, t: string, arena: string) -> bool:
+    return t == "string" and _ownerof(&cs, e) == arena and not _acc_rooted(&cs, e)
+
 fn _ownerof(cs: inout C, e: ast.Expr) -> string:
     n := _rootname(e)
     if len(n) == 0:
@@ -2407,7 +2412,7 @@ fn _variant(cs: inout C, ei: int, vn: string, args: [ast.Expr]) -> (string, stri
         cs.want = sw
         if pay[i] == "float" and at == "int":
             ac = "(double)(" + ac + ")"
-        if _place(args[i]) and _heap(&cs, pay[i]):
+        if _place(args[i]) and _heap(&cs, pay[i]) and not _shares(&cs, args[i], pay[i], cs.arena):
             ac = _copy(&cs, ac, pay[i], cs.arena)
         out = out + v + "->u." + vn + ".f" + str(i) + " = " + ac + "; "
     return (out + v + "; })", "E~" + en)
@@ -2482,7 +2487,7 @@ fn _arrlit(cs: inout C, k: [ast.Expr]) -> (string, string):
             at2 = at3
         if at2 != et and not _heap(&cs, et):
             ac = "((" + _cty(&cs, et) + ")(" + ac + "))"
-        if _place(k[i]) and _heap(&cs, et):
+        if _place(k[i]) and _heap(&cs, et) and not _shares(&cs, k[i], et, cs.arena):
             ac = _copy(&cs, ac, et, cs.arena)
         out = out + v + ".data[" + str(i) + "] = " + ac + "; "
     cs.want = sw
@@ -2851,7 +2856,7 @@ fn _call(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], args: [ast.Ex
             cs.want = ft
             ac, at := _ex_scope(&cs, args[i])
             cs.want = sw
-            if _place(args[i]) and _heap(&cs, ft):
+            if _place(args[i]) and _heap(&cs, ft) and not _shares(&cs, args[i], ft, cs.arena):
                 ac = _copy(&cs, ac, ft, cs.arena)
             if i > 0:
                 out = out + ", "
