@@ -1127,6 +1127,8 @@ fn resolve(p: Program) -> R:
             continue
         push(rs.late, rs.all_imp_file[i] + ":" + str(im.line) +
              ": error: `" + im.path + "` imported and not used in this file")
+    # CC-6, at the end of resolution, exactly where src/tychoc.c calls it.
+    check_channels(&rs, p)
     # src/tychoc.c runs report_dead_procs AFTER codegen, so a build that dies
     # never reaches it: a never-called warning is suppressed by a failed build,
     # while a collision warning (raised during resolution) is not.

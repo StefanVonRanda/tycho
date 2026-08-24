@@ -1,0 +1,214 @@
+package types
+
+import "../ast"
+
+# CC-6, the channel-liveness lint (src/tychoc.c@check_channel_liveness). For
+# every `ch := channel(T, n)` the whole program is scanned for what is done to
+# that handle -- following it into callees under the parameter name it arrives
+# as -- and three shapes are reported: a receive with no sender anywhere, a send
+# with no receiver, and a `closed:` arm (which is what `parallel for x in ch`
+# desugars to) on a channel nothing closes.
+#
+# Anything the scan cannot follow (a builtin, an extern, a generic template, a
+# variadic) makes the channel OPAQUE and silences it: a warning that fires on a
+# handle whose uses were not all seen would be a guess.
+#
+# This file sorts after resolve.ty on purpose -- it uses that file's `R`.
+
+struct CU:
+    send: bool
+    recv: bool
+    recv_block: bool
+    close: bool
+    closed_line: int
+    opaque: bool
+
+fn _cis(e: ast.Expr, nm: string) -> bool:
+    match e:
+        ast.Name(l, n): return n == nm
+        _: return false
+    return false
+
+fn _cfn(fns: [ast.Fn], n: string) -> int:
+    for i := 0; i < len(fns); i += 1:
+        if fns[i].name == n and not fns[i].is_extern and len(fns[i].typarams) == 0:
+            return i
+    return -1
+
+fn _cwalk(fns: [ast.Fn], fi: int, nm: string, u: inout CU, seen: inout [string: bool]):
+    k := fns[fi].name + "|" + nm
+    if k in seen:
+        return
+    seen[k] = true
+    _cbody(fns, fns[fi].body, nm, &u, &seen)
+
+fn _ccall(fns: [ast.Fn], l: int, q: string, n: string, args: [ast.Expr], nm: string,
+        u: inout CU, seen: inout [string: bool]):
+    # `ch.send(v)` parses with the channel as the QUALIFIER; `send(ch, v)` has it
+    # as the first argument. Both are the same operation.
+    if q == nm or (len(args) >= 1 and _cis(args[0], nm) and len(q) == 0):
+        if n == "send":
+            u.send = true
+            return
+        if n == "recv":
+            u.recv = true
+            u.recv_block = true
+            return
+        if n == "close":
+            u.close = true
+            return
+    passes := false
+    for a in args:
+        if _cis(a, nm):
+            passes = true
+    if not passes:
+        return
+    fi := _cfn(fns, n)
+    if fi < 0 or len(args) > len(fns[fi].params):
+        u.opaque = true
+        return
+    for i := 0; i < len(args); i += 1:
+        if _cis(args[i], nm):
+            if fns[fi].params[i].is_variadic:
+                u.opaque = true
+                return
+            _cwalk(fns, fi, fns[fi].params[i].name, &u, &seen)
+
+fn _cexpr(fns: [ast.Fn], e: ast.Expr, nm: string, u: inout CU, seen: inout [string: bool]):
+    match e:
+        ast.Call(l, q, n, ts, args): _ccall(fns, l, q, n, args, nm, &u, &seen)
+        _: pass
+    for c in ast.kids(e):
+        _cexpr(fns, c, nm, &u, &seen)
+
+fn _cexprs(fns: [ast.Fn], es: [ast.Expr], nm: string, u: inout CU, seen: inout [string: bool]):
+    for e in es:
+        _cexpr(fns, e, nm, &u, &seen)
+
+fn _csel(fns: [ast.Fn], l: int, arms: [ast.Arm], nm: string, u: inout CU, seen: inout [string: bool]):
+    mine := false
+    closed_arm := false
+    dflt := false
+    for a in arms:
+        if len(a.ch) > 0:
+            _cexprs(fns, a.ch, nm, &u, &seen)
+            if _cis(a.ch[0], nm):
+                u.recv = true
+                mine = true
+        if a.kind == "closed":
+            closed_arm = true
+        if a.kind == "default":
+            dflt = true
+    if mine and not dflt:
+        u.recv_block = true
+    if mine and closed_arm and u.closed_line == 0:
+        u.closed_line = l
+
+fn _cbody(fns: [ast.Fn], body: [ast.Stmt], nm: string, u: inout CU, seen: inout [string: bool]):
+    for s in body:
+        match s:
+            ast.ExprStmt(l, k): _cexprs(fns, k, nm, &u, &seen)
+            ast.Decl(l, n, t, r, v):
+                _cexprs(fns, r, nm, &u, &seen)
+                _cbody(fns, v, nm, &u, &seen)
+            ast.MDecl(l, d, ns, r): _cexprs(fns, r, nm, &u, &seen)
+            ast.Assign(l, n, r): _cexprs(fns, r, nm, &u, &seen)
+            ast.PlaceSet(l, k): _cexprs(fns, k, nm, &u, &seen)
+            ast.ConstS(l, n, k): _cexprs(fns, k, nm, &u, &seen)
+            ast.ReturnS(l, k): _cexprs(fns, k, nm, &u, &seen)
+            ast.IfS(l, c, b, e):
+                _cexprs(fns, c, nm, &u, &seen)
+                _cbody(fns, b, nm, &u, &seen)
+                _cbody(fns, e, nm, &u, &seen)
+            ast.WhileS(l, c, b):
+                _cexprs(fns, c, nm, &u, &seen)
+                _cbody(fns, b, nm, &u, &seen)
+            ast.For3(l, ip, c, b):
+                _cbody(fns, ip, nm, &u, &seen)
+                _cexprs(fns, c, nm, &u, &seen)
+                _cbody(fns, b, nm, &u, &seen)
+            ast.ForIn(l, n, coll, b):
+                # `for x in ch:` is a blocking drain, and the parallel form ends
+                # only on close -- which is the `closed:` arm src/tychoc.c
+                # desugars it into.
+                if len(coll) > 0 and _cis(coll[0], nm):
+                    u.recv = true
+                    u.recv_block = true
+                _cexprs(fns, coll, nm, &u, &seen)
+                _cbody(fns, b, nm, &u, &seen)
+            ast.ForRange(l, n, k, b):
+                _cexprs(fns, k, nm, &u, &seen)
+                _cbody(fns, b, nm, &u, &seen)
+            ast.ParallelS(l, w, b):
+                _cexprs(fns, w, nm, &u, &seen)
+                for st in b:
+                    match st:
+                        ast.ForIn(l2, n2, coll, b2):
+                            if len(coll) > 0 and _cis(coll[0], nm) and u.closed_line == 0:
+                                u.closed_line = l
+                        _: pass
+                _cbody(fns, b, nm, &u, &seen)
+            ast.MatchS(l, c, arms):
+                _cexprs(fns, c, nm, &u, &seen)
+                for a in arms:
+                    _cbody(fns, a.body, nm, &u, &seen)
+            ast.SelectS(l, arms):
+                _csel(fns, l, arms, nm, &u, &seen)
+                for a in arms:
+                    _cbody(fns, a.body, nm, &u, &seen)
+            ast.DeleteS(l, k): _cexprs(fns, k, nm, &u, &seen)
+            _: pass
+
+fn _cdecls(rs: inout R, fns: [ast.Fn], owner: int, body: [ast.Stmt], file: string):
+    for s in body:
+        match s:
+            ast.Decl(l, n, t, r, v):
+                if len(r) > 0 and (r[0] is ast.ChanE):
+                    u := CU(false, false, false, false, 0, false)
+                    seen := []string: bool
+                    _cbody(fns, fns[owner].body, n, &u, &seen)
+                    if not u.opaque:
+                        sf := rs.file
+                        sl := rs.line
+                        rs.file = file
+                        rs.line = l
+                        if u.recv_block and not u.send:
+                            _warn(&rs, "nothing ever sends on channel '" + n +
+                                "', so a receive on it parks forever")
+                        elif u.send and not u.recv:
+                            _warn(&rs, "nothing ever receives from channel '" + n +
+                                "', so a send parks once its buffer fills")
+                        if u.closed_line > 0 and not u.close:
+                            rs.line = u.closed_line
+                            _warn(&rs, "close(" + n + ") is never called, so this `closed:` arm can never run " +
+                                "(a `parallel for` over a channel ends only when it is closed)")
+                        rs.file = sf
+                        rs.line = sl
+                _cdecls(&rs, fns, owner, v, file)
+            ast.IfS(l, c, b, e):
+                _cdecls(&rs, fns, owner, b, file)
+                _cdecls(&rs, fns, owner, e, file)
+            ast.WhileS(l, c, b): _cdecls(&rs, fns, owner, b, file)
+            ast.For3(l, ip, c, b): _cdecls(&rs, fns, owner, b, file)
+            ast.ForIn(l, n, coll, b): _cdecls(&rs, fns, owner, b, file)
+            ast.ForRange(l, n, k, b): _cdecls(&rs, fns, owner, b, file)
+            ast.ParallelS(l, w, b): _cdecls(&rs, fns, owner, b, file)
+            ast.MatchS(l, c, arms):
+                for a in arms:
+                    _cdecls(&rs, fns, owner, a.body, file)
+            ast.SelectS(l, arms):
+                for a in arms:
+                    _cdecls(&rs, fns, owner, a.body, file)
+            _: pass
+
+fn check_channels(rs: inout R, p: Program):
+    fns := []ast.Fn
+    files := []string
+    for f in p.files:
+        for fd in f.unit.fns:
+            push(fns, fd)
+            push(files, f.path)
+    for i := 0; i < len(fns); i += 1:
+        if fns[i].is_extern or len(fns[i].typarams) > 0:
+            continue
+        _cdecls(&rs, fns, i, fns[i].body, files[i])
