@@ -92,6 +92,8 @@ struct C:
     vacc: [string]
     exn: [string]
     fnbase: int                        # first local slot; params below it are BORROWS
+    hdn: [string]                      # handle type names, and the free fn each names
+    hdf: [string]
     ckinds: [string]                   # channel ELEMENT types, one helper family each
     spawnd: [string]                   # per-spawn-site thunk + arg struct
     subn: [string]
@@ -99,7 +101,7 @@ struct C:
     sube: [ast.Expr]
 
 fn _new() -> C:
-    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], 0, [], [], [], [][ast.Param], []ast.Expr)
+    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], 0, [], [], [], [], [], [][ast.Param], []ast.Expr)
 
 fn _bad(msg: string):
     die("tychoc1: " + msg)
@@ -278,6 +280,22 @@ fn _dec2(s: string) -> int:
             return v
         v = v * 10 + (s[i] - 48)
     return v
+
+fn _is_handle(t: string) -> bool:
+    return len(t) > 2 and t[0:2] == "H~"
+
+fn _hfree(cs: inout C, t: string) -> string:
+    n := t[2:]
+    for i := 0; i < len(cs.hdn); i += 1:
+        if cs.hdn[i] == n:
+            return cs.hdf[i]
+    return ""
+
+fn _hidx(cs: inout C, n: string) -> int:
+    for i := 0; i < len(cs.hdn); i += 1:
+        if cs.hdn[i] == n:
+            return i
+    return -1
 
 fn _is_chan(t: string) -> bool:
     return len(t) > 5 and t[0:5] == "chan("
@@ -949,6 +967,8 @@ fn _cty(cs: inout C, t: string) -> string:
         return "float"
     if t == "void":
         return "void"
+    if _is_handle(t):
+        return "void *"
     if _is_chan(t):
         return "HChan *"
     if _is_task(t):
@@ -997,6 +1017,8 @@ fn _ty(cs: inout C, t: ast.Ty) -> string:
                 return _opt_of(&cs, _ty(&cs, targs[0]))
             if len(q) == 0 and n == "Result" and len(targs) == 2:
                 return _res_of(&cs, _ty(&cs, targs[0]), _ty(&cs, targs[1]))
+            if len(targs) == 0 and _hidx(&cs, n0) >= 0:
+                return "H~" + n0
             if len(q) == 0 and n == "Channel" and len(targs) == 1:
                 et := _ty(&cs, targs[0])
                 _ckind(&cs, et)
@@ -1645,7 +1667,10 @@ fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
             ot := _soa_of(&cs, _ty(&cs, t[0]))
             return ("(" + _cty(&cs, ot) + "){0}", ot)
         ast.SpawnE(l, k): return _spawn(&cs, k[0])
-        ast.Spread(l, k): _bad("expr:Spread -- Phase 8")
+        ast.Spread(l, k):
+            # `xs...` IS the array; the packer passes it straight through, and
+            # this arm is what lets the generic inference see its type at all.
+            return _ex(&cs, k[0])
         ast.Addr(l, k):
             # `&x` reaching the EXPRESSION path. An inout ARGUMENT never gets
             # here -- `_addr_of` handles that -- so this is the residual case,
@@ -2649,7 +2674,12 @@ fn _call(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], args: [ast.Ex
             ats := _argtypes(&cs, args)
             for j := 0; j < len(cs.gf[gfi].params) and j < len(ats); j += 1:
                 if len(cs.gf[gfi].params[j].ty) > 0:
-                    _unify(&cs, cs.gf[gfi].params[j].ty[0], ats[j], tps, &bs)
+                    aj := ats[j]
+                    # `f(xs...)` at a `...$T` parameter binds $T to the
+                    # ELEMENT, not to the array the spread names.
+                    if cs.gf[gfi].params[j].is_variadic and (args[j] is ast.Spread) and _is_arr(aj):
+                        aj = _elem(aj)
+                    _unify(&cs, cs.gf[gfi].params[j].ty[0], aj, tps, &bs)
         for j := 0; j < len(bs); j += 1:
             if len(bs[j]) == 0:
                 _bad("cannot infer '$" + tps[j] + "' at a call to '" + n + "'")
@@ -3118,6 +3148,11 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
         c, t := _ex(&cs, args[0])
         if _is_chan(t):
             return ("tycho_chan_close(" + c + ")", "void")
+        if _is_handle(t):
+            # an explicit close runs the destructor NOW and clears the slot, so
+            # the scope-exit finalizer does not run it twice
+            fr := _hfree(&cs, t)
+            return ("({ if (" + c + ") { " + fr + "(" + c + "); " + c + " = 0; } })", "void")
     if n == "wait" and len(args) == 1:
         c, t := _ex(&cs, args[0])
         rt := _cinner(t)
@@ -3347,7 +3382,11 @@ fn _finalizers(cs: inout C, m: int, ind: string) -> string:
     for i > m:
         i -= 1
         t := cs.vtypes[i]
-        if _is_task(t):
+        if _is_handle(t):
+            fr := _hfree(&cs, t)
+            if len(fr) > 0:
+                out = out + ind + "if (" + cs.vcn[i] + ") " + fr + "(" + cs.vcn[i] + ");\n"
+        elif _is_task(t):
             out = out + ind + "tycho_task_finish(" + cs.vcn[i] + ");\n"
         elif _is_chan(t):
             out = out + ind + "tycho_chan_free(" + cs.vcn[i] + ");\n"
@@ -5017,8 +5056,12 @@ fn program(pfx: [string], us: [ast.Unit]) -> string:
     for x in pfx:
         push(cs.fpfx, x)
     for u0 in us:
-        if len(u0.handles) > 0:
-            _bad("handle declarations -- Phase 8")
+        for hd in u0.handles:
+            # A handle is an opaque `void *` whose free fn runs at every scope
+            # exit; the destructor call is emitted by _finalizers, exactly as a
+            # task's join and a channel's free are.
+            push(cs.hdn, hd.name)
+            push(cs.hdf, hd.free_fn)
         for sd in u0.subscripts:
             push(cs.subn, sd.name)
             push(cs.subp, sd.params)
