@@ -4877,13 +4877,21 @@ fn program(pfx: [string], us: [ast.Unit]) -> string:
     head = htd + ttd + ftd + head + tsb + edefs + "\n" + _arr_protos(&cs) + sproto + eproto +
         tpr + mpr + hpr + "\n" + afb + sbody + ebody + tfb + hfb + mfb + ofb + "\n"
 
+    # `fn main() -> Result(void, string)`: an Err reaching the entry point is
+    # PRINTED and exits 1 -- the error type is the message (src/tychoc.c:9311).
+    mfi := _fidx(&cs, "main")
+    mcall := "    h_main(&_root);\n"
+    mtail := "    arena_free(&_root);\n    return 0;\n"
+    if mfi >= 0 and _is_resT(&cs, cs.fds[mfi].ret):
+        mcall = "    " + _cty(&cs, cs.fds[mfi].ret) + " _r = h_main(&_root);\n" +
+            "    int _st = 0;\n" +
+            "    if (_r->tag == 1) { tycho_eprint(_r->u.Err.f0); tycho_eprint(\"\\n\"); _st = 1; }\n"
+        mtail = "    arena_free(&_root);\n    return _st;\n"
     entry := "\nint main(int argc, char **argv) {\n" +
         "    tycho_hash_seed_init();  /* random per-process map-hash seed, before any map use */\n" +
         "    tycho_argc = argc; tycho_argv = argv;  /* exposed to the program via args() */\n" +
         "    Arena _root = arena_new(0);  /* root arena; default block size */\n" +
-        "    h_main(&_root);\n" +
-        "    arena_free(&_root);\n" +
-        "    return 0;\n}\n"
+        mcall + mtail + "}\n"
     chd := _chan_defs(&cs)
     spd := ""
     for x in cs.spawnd:

@@ -136,6 +136,7 @@ struct VBind:
 
 struct C:
     cwarns: [string]                   # non-fatal, drained by the driver
+    errbase: int                       # errs at the current proc's entry; -1 outside one
     srcp: [string]                     # file paths, parallel to srct
     srct: [string]                     # their source, for the diagnostic excerpt
     tds: [TDecl]
@@ -271,7 +272,13 @@ fn _nt_note(cs: inout C, a: string, b: string):
                     _show(&cs, d.ftypes[0]) + ", declared here -- it does not accept its underlying type implicitly")
                 return
 
+# ONE error per STATEMENT. src/tychoc.c's die_at longjmps to a recovery point
+# and the walk resumes at the next statement; collecting every error within one
+# reports consequences of the first (`return "x" + 1` is both a bad
+# concatenation and a bad return type).
 fn _cerr(cs: inout C, msg: string):
+    if cs.errbase >= 0 and len(cs.errs) > cs.errbase:
+        return
     push(cs.errs, cs.file + ":" + str(cs.line) + ": error: " + msg +
         _cexcerpt(&cs, cs.file, cs.line))
 
@@ -1965,6 +1972,10 @@ fn _const_int(cs: inout C, name: string) -> [int]:
 fn _tblock(cs: inout C, body: [ast.Stmt]):
     m := _vmark(&cs)
     for s in body:
+        # The recovery boundary is the STATEMENT (tests/diag/multi_error_one_fn):
+        # the first error in one ends it, and the next statement starts clean.
+        if cs.errbase >= 0:
+            cs.errbase = len(cs.errs)
         _tstmt(&cs, s)
     _vrestore(&cs, m)
 
@@ -2388,7 +2399,7 @@ fn _infinite_check(cs: inout C):
         _cerr(&cs, "infinite type: " + cs.tds[best].name + " contains itself by value -- use an array ([" + cs.tds[best].name + "]) or Option([" + cs.tds[best].name + "]) for indirection")
 
 fn check(p: Program) -> C:
-    cs := C([]string, []string, []string, []TDecl, []string: int, []FSig, []string: int, []string: string, []string: string,
+    cs := C([]string, -1, []string, []string, []TDecl, []string: int, []FSig, []string: int, []string: string, []string: string,
             []string: string, []string: int, []string: bool, []string: string, []string: bool, []VBind, 0, []string, []string,
             []string: int, "", 0, "", "?", false, false, []ast.ImportD, []ast.ImportD, false, 0, 0, false, 0, []string: int, []string: bool, []string: bool, 0, 0, false)
     for f in p.files:
@@ -2429,7 +2440,9 @@ fn check(p: Program) -> C:
                 _vpush(&cs, fd.params[i].name, t, false)
             cs.ret = cs.sg[si].ret
             _tnote(&cs, "r:" + cs.ret)
+            cs.errbase = len(cs.errs)
             _tblock(&cs, fd.body)
+            cs.errbase = -1
             _vrestore(&cs, m)
             cs.ret = "?"
     # `main`: src/tychoc.c:9310 and :9313, a whole-program rule like `no 'main'`.
