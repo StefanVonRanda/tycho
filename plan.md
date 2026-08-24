@@ -1832,25 +1832,25 @@ MEASURE WITH CALLGRIND, NOT THE CLOCK. This machine drifts +/-5% between runs,
 which is the size of most of these wins; `valgrind --tool=callgrind` gives a
 deterministic instruction count.
 
-WHERE IT STANDS on compiler/main.ty (tychoc 89 ms alongside):
+WHERE IT STANDS on compiler/main.ty (tychoc 88-91 ms alongside):
 
     5.0x   at the start of this work
     3.8x   341 ms
     3.1x   279 ms   two-stage bootstrap (e4e0abbe), unblocked by 82aae400
     2.8x   254 ms   concat chains flattened (c7f6ed37)
     2.7x   242 ms   arena bump inlined (cb76f804)
-    2.6x   239 ms   same-arena strings shared (f1d14147)
-    2.6x   230 ms   same-arena ENUMS shared (the AST copies)
+    2.6x   230 ms   same-arena strings and ENUMS shared (f1d14147 and after)
     2.4x   217 ms   push keeps a temporary already in the array's arena
+    2.2x   201 ms   destructuring a call result (b957b857) + for-in snapshot
 
-    instructions   2.820e9 -> 2.173e9
+    instructions   2.820e9 -> 1.962e9
 
-The sharing rule that did most of it: a value that is IMMUTABLE (string, enum)
-and already lives in the destination arena is stored, not copied -- there is
-nothing a later write could corrupt and no lifetime to extend. Arrays and maps
-are excluded because push and element assignment write them in place, and a
-place rooted in a live string ACCUMULATOR is excluded because that buffer is
-written past its own end (tests/value_semantics.ty catches it).
+THE RULE that did most of it: a value already in the destination arena is stored
+rather than copied, when nothing can write through it -- strings and enums are
+immutable, and a value built by a CALL was built in this arena to begin with,
+since the call is handed cs.arena as its _parent. Arrays and maps are excluded
+(push and element assignment write in place), and so is a place rooted in a live
+string ACCUMULATOR (tests/value_semantics.ty).
 
 PROFILE NOW (exclusive): memcpy 11.8%, tycho_str_copy 11.5%,
 tycho_copy_E_ast__Expr 8.0%, the Expr-array copy 7.4%, arena_alloc_slow 6.9%,
@@ -1885,6 +1885,17 @@ breaks.
     returns, and containers built in another arena -- which no last-use rule can
     elide. Reverted; the diff is recoverable from this commit's parent if the
     census is ever made free.
+  - returning an IMMUTABLE value read out of a PARAMETER without copying it --
+    12 fixtures. The premise is wrong: a parameter's buffer is not always in an
+    arena that outlives the caller's _parent. `f(g())` passes g's result out of
+    the caller's per-statement scratch, and f returning it lets the caller store
+    into &_scope something that dies with that statement.
+  - extending the same-arena sharing to STRUCTS with no array or map field
+    (sound -- assigning a struct copies it by value and writing a field replaces
+    the pointer) -- measured neutral, 1.9648e9 against 1.9625e9, because the
+    struct copies that cost are inside array copies and at returns, neither of
+    which the rule reaches. Not kept: a generalisation with no measured win is
+    still code.
 
 Done when: the ratio is <= 1.0 on compiler/main.ty and tycho-db.
 Verify: best-of-three wall clock, both compilers, same input, --emit-c.
