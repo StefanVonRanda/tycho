@@ -4289,8 +4289,15 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             fi := _fresh(&cs, "_fi")
             m := _mark(&cs)
             fcn := _push(&cs, n, et)
+            # The snapshot is what lets the body push to the array it is walking
+            # without the walk following. A collection that came from a CALL is
+            # already a private temporary in this arena, so there is nothing for
+            # anyone else to mutate and nothing to snapshot.
+            cc2 := cc
+            if _place(c[0]):
+                cc2 = _copy(&cs, cc, ct, "&_scope")
             out := ind + "{\n" + ind + "    " + _cty(&cs, "[" + et + "]") + " " + fc +
-                " = " + _copy(&cs, cc, ct, "&_scope") + ";\n" +
+                " = " + cc2 + ";\n" +
                 ind + "    for (tycho_int " + fi + " = 0; " + fi + " < " + fc +
                 ".len; " + fi + " += 1) {\n" +
                 ind + "        " + _cty(&cs, et) + " " + fcn + " = " + fc + ".data[" + fi + "];\n" +
