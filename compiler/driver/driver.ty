@@ -51,6 +51,10 @@ fn check_or_die(src_path: string, argv0: string) -> types.Program:
         wl = wl + w + "\n"
     eprint(wl)
     cs := types.check(p)
+    cwl := ""
+    for w in types.check_warns(cs):
+        cwl = cwl + w + "\n"
+    eprint(cwl)
     errs := types.check_errs(cs)
     if len(errs) > 0:
         out2 := ""

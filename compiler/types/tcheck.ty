@@ -135,6 +135,7 @@ struct VBind:
     mutable: bool
 
 struct C:
+    cwarns: [string]                   # non-fatal, drained by the driver
     srcp: [string]                     # file paths, parallel to srct
     srct: [string]                     # their source, for the diagnostic excerpt
     tds: [TDecl]
@@ -249,6 +250,10 @@ fn _tycands(cs: inout C) -> [string]:
     for td in cs.tds:
         push(out, _short(td.name))
     return out
+
+fn _cwarn(cs: inout C, msg: string):
+    push(cs.cwarns, cs.file + ":" + str(cs.line) + ": warning: " + msg +
+        _cexcerpt(&cs, cs.file, cs.line))
 
 fn _cerr(cs: inout C, msg: string):
     push(cs.errs, cs.file + ":" + str(cs.line) + ": error: " + msg +
@@ -1996,6 +2001,11 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
     match s:
         ast.ExprStmt(l, k):
             t := _ex(&cs, k[0])
+            # A Result used as a statement throws the error path away.
+            if len(t) > 4 and t[0:4] == "res(":
+                cs.line = l
+                _cwarn(&cs, "this Result is discarded, so its error is silently ignored;" +
+                    " handle it with `match`, propagate with `or_return`, or bind it (x := ...)")
             if (k[0] is ast.OrRet) and t != "void" and known(t):
                 cs.line = l
                 _cerr(&cs, "`or_return` here produces " + t + ", which this statement discards -- bind it (x := ... or_return)")
@@ -2312,7 +2322,7 @@ fn _infinite_check(cs: inout C):
         _cerr(&cs, "infinite type: " + cs.tds[best].name + " contains itself by value -- use an array ([" + cs.tds[best].name + "]) or Option([" + cs.tds[best].name + "]) for indirection")
 
 fn check(p: Program) -> C:
-    cs := C([]string, []string, []TDecl, []string: int, []FSig, []string: int, []string: string, []string: string,
+    cs := C([]string, []string, []string, []TDecl, []string: int, []FSig, []string: int, []string: string, []string: string,
             []string: string, []string: int, []string: bool, []string: string, []string: bool, []VBind, 0, []string, []string,
             []string: int, "", 0, "", "?", false, false, []ast.ImportD, []ast.ImportD, false, 0, 0, false, 0, []string: int, []string: bool, []string: bool, 0, 0, false)
     for f in p.files:
@@ -2375,6 +2385,9 @@ fn check(p: Program) -> C:
 
 fn check_errs(cs: C) -> [string]:
     return cs.errs
+
+fn check_warns(cs: C) -> [string]:
+    return cs.cwarns
 
 fn check_census(cs: C) -> [string]:
     names := keys(cs.counts)

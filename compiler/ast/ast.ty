@@ -257,3 +257,33 @@ struct Unit:
     handles: [HandleD]
     consts: [ConstD]
     subscripts: [SubscriptD]
+
+# Every sub-expression, for a walker that does not care which node it is in.
+# src/tychoc.c reaches these through lhs/rhs/args on one struct; here the shape
+# differs per variant, so the flattening happens once, here.
+fn kids(e: Expr) -> [Expr]:
+    match e:
+        Field(l, k, f): return k
+        TupIdx(l, k, i): return k
+        Index(l, k): return k
+        Slice(l, a, b, k): return k
+        Call(l, q, n, t, a): return a
+        CallVal(l, k): return k
+        Named(l, n, k): return k
+        Binop(l, o, k): return k
+        Unop(l, o, k): return k
+        IsVar(l, k, q, v): return k
+        ArrLit(l, k): return k
+        MapLit(l, k): return k
+        Tuple(l, k): return k
+        SomeE(l, k): return k
+        OkE(l, k): return k
+        ErrE(l, k): return k
+        SpawnE(l, k): return k
+        OrRet(l, k): return k
+        Spread(l, k): return k
+        Addr(l, k): return k
+        ChanE(l, t, k): return k
+        Lambda(l, p, t, b): return b
+        _: return []Expr
+    return []Expr

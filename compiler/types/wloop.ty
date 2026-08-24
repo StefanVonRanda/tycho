@@ -1,0 +1,147 @@
+package types
+
+import "../ast"
+
+# The loop-progress lint, ported from src/tychoc.c@wl_check. The rules are
+# deliberately shallow and every one of them silences the warning rather than
+# raising it: a call in the condition, a break/return/die anywhere in the body,
+# or any mutation of a name the condition reads.
+#
+# This file sorts after resolve.ty on purpose -- it uses that file's `R`.
+
+fn _wl_root(e: ast.Expr) -> string:
+    match e:
+        ast.Name(l, n): return n
+        ast.Index(l, k): return _wl_root(k[0])
+        ast.Field(l, k, f): return _wl_root(k[0])
+        ast.TupIdx(l, k, i): return _wl_root(k[0])
+        _: return ""
+    return ""
+
+fn _wl_add(v: inout [string], name: string):
+    if len(name) > 0:
+        push(v, name)
+
+# Names the condition reads. A call makes the whole analysis unsound (it may
+# mutate anything), so it reports that instead.
+fn _wl_cond(e: ast.Expr, v: inout [string], has_call: inout bool):
+    match e:
+        ast.Call(l, q, n, t, a): 
+            has_call = true
+            return
+        ast.CallVal(l, k):
+            has_call = true
+            return
+        ast.SpawnE(l, k):
+            has_call = true
+            return
+        ast.Name(l, n):
+            push(v, n)
+            return
+        _: pass
+    for c in ast.kids(e):
+        _wl_cond(c, &v, &has_call)
+
+# Mutations and exits hiding in an expression: &v (inout), push/pop(v, ...),
+# die(...).
+fn _wl_expr(e: ast.Expr, muts: inout [string], ex: inout bool):
+    match e:
+        ast.Addr(l, k): _wl_add(&muts, _wl_root(k[0]))
+        ast.Call(l, q, n, t, a):
+            if n == "die":
+                ex = true
+            if (n == "push" or n == "pop") and len(a) >= 1:
+                _wl_add(&muts, _wl_root(a[0]))
+        _: pass
+    for c in ast.kids(e):
+        _wl_expr(c, &muts, &ex)
+
+fn _wl_exprs(es: [ast.Expr], muts: inout [string], ex: inout bool):
+    for e in es:
+        _wl_expr(e, &muts, &ex)
+
+fn _wl_body(b: [ast.Stmt], muts: inout [string], ex: inout bool):
+    for s in b:
+        match s:
+            ast.ExprStmt(l, k): _wl_exprs(k, &muts, &ex)
+            ast.Decl(l, n, t, r, v):
+                _wl_add(&muts, n)
+                _wl_exprs(r, &muts, &ex)
+                _wl_body(v, &muts, &ex)
+            ast.MDecl(l, d, ns, r):
+                for n in ns:
+                    _wl_add(&muts, n)
+                _wl_exprs(r, &muts, &ex)
+            ast.Assign(l, n, r):
+                _wl_add(&muts, n)
+                _wl_exprs(r, &muts, &ex)
+            ast.PlaceSet(l, k):
+                if len(k) > 0:
+                    _wl_add(&muts, _wl_root(k[0]))
+                _wl_exprs(k, &muts, &ex)
+            ast.ConstS(l, n, k):
+                _wl_add(&muts, n)
+                _wl_exprs(k, &muts, &ex)
+            ast.PassS(l): pass
+            ast.ReturnS(l, k):
+                ex = true
+                _wl_exprs(k, &muts, &ex)
+            ast.BreakS(l): ex = true
+            ast.ContinueS(l): pass
+            ast.IfS(l, c, b2, e2):
+                _wl_exprs(c, &muts, &ex)
+                _wl_body(b2, &muts, &ex)
+                _wl_body(e2, &muts, &ex)
+            ast.WhileS(l, c, b2):
+                _wl_exprs(c, &muts, &ex)
+                _wl_body(b2, &muts, &ex)
+            ast.For3(l, ip, c, b2):
+                _wl_body(ip, &muts, &ex)
+                _wl_exprs(c, &muts, &ex)
+                _wl_body(b2, &muts, &ex)
+            ast.ForIn(l, n, coll, b2):
+                _wl_add(&muts, n)
+                _wl_exprs(coll, &muts, &ex)
+                _wl_body(b2, &muts, &ex)
+            ast.ForRange(l, n, k, b2):
+                _wl_add(&muts, n)
+                _wl_exprs(k, &muts, &ex)
+                _wl_body(b2, &muts, &ex)
+            ast.ParallelS(l, w, b2):
+                _wl_exprs(w, &muts, &ex)
+                _wl_body(b2, &muts, &ex)
+            ast.MatchS(l, c, arms):
+                _wl_exprs(c, &muts, &ex)
+                for a in arms:
+                    _wl_body(a.body, &muts, &ex)
+            ast.SelectS(l, arms):
+                for a in arms:
+                    _wl_exprs(a.ch, &muts, &ex)
+                    _wl_body(a.body, &muts, &ex)
+            ast.DeleteS(l, k):
+                if len(k) > 0:
+                    _wl_add(&muts, _wl_root(k[0]))
+                _wl_exprs(k, &muts, &ex)
+
+fn _wl_check(rs: inout R, line: int, cond: [ast.Expr], body: [ast.Stmt]):
+    if len(cond) == 0:
+        return                          # `for:` -- a constant condition
+    cv := []string
+    has_call := false
+    _wl_cond(cond[0], &cv, &has_call)
+    if len(cv) == 0 or has_call:
+        return
+    muts := []string
+    ex := false
+    _wl_body(body, &muts, &ex)
+    if ex:
+        return
+    for a in cv:
+        for b in muts:
+            if a == b:
+                return
+    sl := rs.line
+    rs.line = line
+    _warn(&rs, "loop condition never changes; this `for` may run forever " +
+        "(forgot to advance a variable? consider `for i := 0; i < n; i += 1:`)")
+    rs.line = sl

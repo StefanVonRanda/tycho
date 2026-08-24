@@ -222,7 +222,28 @@ fn _scands(rs: inout R, kind: string) -> [string]:
 
 # A warning is never fatal: it is collected and printed to stderr after the
 # build succeeds, which is what the tests/warn goldens capture.
+# Fall-off-the-end lint (src/tychoc.c@block_ends_in_return). Deliberately shallow:
+# only the LAST statement is examined, `die()` does not count, and a body ending
+# in an infinite loop warns -- matching the C compiler exactly.
+fn _ends_ret(body: [ast.Stmt]) -> bool:
+    if len(body) == 0:
+        return false
+    match body[len(body) - 1]:
+        ast.ReturnS(l, k): return true
+        ast.MatchS(l, c, arms):
+            for a in arms:
+                if not _ends_ret(a.body):
+                    return false
+            return len(arms) > 0
+        ast.IfS(l, c, b, e):
+            return len(e) > 0 and _ends_ret(b) and _ends_ret(e)
+        _: return false
+    return false
+
 fn _warn(rs: inout R, msg: string):
+    # A dependency under corelib is not the caller's to fix (src/tychoc.c:14097).
+    if not rs.entry_in_corelib and strings.contains(rs.file, "corelib/"):
+        return
     push(rs.warns, rs.file + ":" + str(rs.line) + ": warning: " + msg +
         _excerpt(&rs, rs.file, rs.line))
 
@@ -891,6 +912,7 @@ fn _stmt(rs: inout R, bi: [string: bool], ctors: [string: bool], s: ast.Stmt):
         ast.WhileS(l, c, b):
             _exprs(&rs, bi, ctors, c)
             _block(&rs, bi, ctors, b)
+            _wl_check(&rs, l, c, b)
         ast.For3(l, init, c, b):
             m := _mark(&rs)
             for st in init:
@@ -1036,6 +1058,10 @@ fn resolve(p: Program) -> R:
             _params(&rs, fd.params)
             rs.dup_base = pbase
             _block(&rs, bi, ctors, fd.body)
+            if len(fd.ret) > 0 and not _ends_ret(fd.body):
+                rs.line = fd.line
+                _warn(&rs, "not all paths of '" + fd.name +
+                    "' return a value (a fall-off-the-end yields a zero value)")
             _restore(&rs, m)
             rs.in_generic = false
         for sd in f.unit.structs:
