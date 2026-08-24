@@ -1617,7 +1617,7 @@ fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
                 ".len || " + sv + "lo > " + sv + "hi) { fprintf(stderr, \"tycho: slice [%\" TY_PRId \":%\" TY_PRId \"] out of bounds (len %\" TY_PRId \")\\n\", " +
                 sv + "lo, " + sv + "hi, " + sv + ".len); exit(1); } (" + act + "){ " + sv +
                 ".data + " + sv + "lo, " + sv + "hi - " + sv + "lo, 0 }; })"
-            return (_copy(&cs, sl, rt, "&_scope"), rt)
+            return (_copy(&cs, sl, rt, cs.arena), rt)
         ast.Unop(l, op, k):
             c, t := _ex(&cs, k[0])
             if op == "not":
