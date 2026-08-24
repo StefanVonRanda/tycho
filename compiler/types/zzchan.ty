@@ -305,3 +305,148 @@ fn corelib_hint(root: string, name: string) -> (string, bool):
         return ("core:" + lv_pkg + " has `" + lv_best + "` -- add `import \"core:" + lv_pkg +
             "\"` and call `" + lv_pkg + "." + lv_best + "(...)`", false)
     return ("", false)
+
+# --- copy_live (src/tychoc.c@arg_into) ---------------------------------------
+# A heap local put INTO an aggregate that is itself a call argument must be
+# deep-copied when the local is still live afterwards -- move-on-last-use cannot
+# hand off a buffer someone still reads. The copy is correct, just invisible, so
+# it is a warning and not an error.
+#
+# Deliberately narrow, matching the C compiler's own gates: only a BARE local
+# (not a parameter, which borrows the caller's buffer), only outside a loop
+# (where even a last use must copy every iteration), and only when the aggregate
+# is a call ARGUMENT (at a plain declaration the copy is the assignment the user
+# wrote).
+
+fn _heapish(t: string) -> bool:
+    if t == "string" or t == "bytes":
+        return true
+    h := _head(t)
+    return h == "arr" or h == "map" or h == "soa" or h == "tup" or h == "fix" or h == "bnd"
+
+fn _agg_names(e: ast.Expr, out: inout [string]):
+    match e:
+        ast.Tuple(l, k): _agg_elems(k, &out)
+        ast.ArrLit(l, k): _agg_elems(k, &out)
+        ast.MapLit(l, k): _agg_elems(k, &out)
+        ast.SomeE(l, k): _agg_elems(k, &out)
+        ast.OkE(l, k): _agg_elems(k, &out)
+        ast.ErrE(l, k): _agg_elems(k, &out)
+        _: pass
+
+fn _agg_elems(k: [ast.Expr], out: inout [string]):
+    for e in k:
+        match e:
+            ast.Name(l, n): push(out, n)
+            _: pass
+
+# Every name READ anywhere in a statement -- the liveness question is only ever
+# "does any LATER statement mention it".
+fn _reads(e: ast.Expr, out: inout [string]):
+    match e:
+        ast.Name(l, n): push(out, n)
+        _: pass
+    for c in ast.kids(e):
+        _reads(c, &out)
+
+fn _reads_stmt(s: ast.Stmt, out: inout [string]):
+    match s:
+        ast.ExprStmt(l, k): _reads_all(k, &out)
+        ast.Decl(l, n, t, r, v):
+            _reads_all(r, &out)
+            _reads_body(v, &out)
+        ast.MDecl(l, d, ns, r): _reads_all(r, &out)
+        ast.Assign(l, n, r):
+            push(out, n)
+            _reads_all(r, &out)
+        ast.PlaceSet(l, k): _reads_all(k, &out)
+        ast.ConstS(l, n, k): _reads_all(k, &out)
+        ast.ReturnS(l, k): _reads_all(k, &out)
+        ast.IfS(l, c, b, e):
+            _reads_all(c, &out)
+            _reads_body(b, &out)
+            _reads_body(e, &out)
+        ast.WhileS(l, c, b):
+            _reads_all(c, &out)
+            _reads_body(b, &out)
+        ast.For3(l, ip, c, b):
+            _reads_body(ip, &out)
+            _reads_all(c, &out)
+            _reads_body(b, &out)
+        ast.ForIn(l, n, coll, b):
+            _reads_all(coll, &out)
+            _reads_body(b, &out)
+        ast.ForRange(l, n, k, b):
+            _reads_all(k, &out)
+            _reads_body(b, &out)
+        ast.ParallelS(l, w, b):
+            _reads_all(w, &out)
+            _reads_body(b, &out)
+        ast.MatchS(l, c, arms):
+            _reads_all(c, &out)
+            for a in arms:
+                _reads_body(a.body, &out)
+        ast.SelectS(l, arms):
+            for a in arms:
+                _reads_all(a.ch, &out)
+                _reads_body(a.body, &out)
+        ast.DeleteS(l, k): _reads_all(k, &out)
+        _: pass
+
+fn _reads_all(k: [ast.Expr], out: inout [string]):
+    for e in k:
+        _reads(e, &out)
+
+fn _reads_body(b: [ast.Stmt], out: inout [string]):
+    for s in b:
+        _reads_stmt(s, &out)
+
+# The aggregates that are ARGUMENTS of a call inside this expression.
+fn _call_aggs(e: ast.Expr, out: inout [string]):
+    match e:
+        ast.Call(l, q, n, ts, args):
+            for a in args:
+                _agg_names(a, &out)
+        ast.CallVal(l, k):
+            for i := 1; i < len(k); i += 1:
+                _agg_names(k[i], &out)
+        _: pass
+    for c in ast.kids(e):
+        _call_aggs(c, &out)
+
+fn _copylive_stmt(cs: inout C, body: [ast.Stmt], i: int):
+    if cs.loopd > 0:
+        return
+    cand := []string
+    match body[i]:
+        ast.ExprStmt(l, k):
+            for e in k:
+                _call_aggs(e, &cand)
+        ast.Decl(l, n, t, r, v):
+            for e in r:
+                _call_aggs(e, &cand)
+        ast.Assign(l, n, r):
+            for e in r:
+                _call_aggs(e, &cand)
+        ast.ReturnS(l, k): return       # a return has no `afterwards`
+        _: pass
+    if len(cand) == 0:
+        return
+    later := []string
+    for j := i + 1; j < len(body); j += 1:
+        _reads_stmt(body[j], &later)
+    for nm in cand:
+        if nm in cs.paramset:
+            continue                    # a parameter borrows the caller's buffer
+        if not _heapish(_vtype(&cs, nm)):
+            continue
+        live := false
+        for r in later:
+            if r == nm:
+                live = true
+        if live:
+            cs.line = ast.sline_of(body[i])
+            _cwarn(&cs, "'" + nm + "' is copied into this aggregate because it is still live " +
+                "afterwards; if you do not need it after this, make this its last use and the " +
+                "copy goes away")
+            return

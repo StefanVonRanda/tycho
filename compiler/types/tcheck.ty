@@ -138,6 +138,7 @@ struct VBind:
 struct C:
     cwarns: [string]                   # non-fatal, drained by the driver
     errbase: int                       # errs at the current proc's entry; -1 outside one
+    paramset: [string: bool]           # the current proc's parameters, a borrow
     instd: [string: bool]              # (template, bindings) already body-checked
     instdepth: int                     # nesting guard for a recursive template
     srcp: [string]                     # file paths, parallel to srct
@@ -1974,12 +1975,15 @@ fn _const_int(cs: inout C, name: string) -> [int]:
 
 fn _tblock(cs: inout C, body: [ast.Stmt]):
     m := _vmark(&cs)
+    _ix9 := 0
     for s in body:
         # The recovery boundary is the STATEMENT (tests/diag/multi_error_one_fn):
         # the first error in one ends it, and the next statement starts clean.
         if cs.errbase >= 0:
             cs.errbase = len(cs.errs)
         _tstmt(&cs, s)
+        _copylive_stmt(&cs, body, _ix9)
+        _ix9 += 1
     _vrestore(&cs, m)
 
 # The type an if/match VALUE block produces, and the rule that its branches must
@@ -2402,7 +2406,7 @@ fn _infinite_check(cs: inout C):
         _cerr(&cs, "infinite type: " + cs.tds[best].name + " contains itself by value -- use an array ([" + cs.tds[best].name + "]) or Option([" + cs.tds[best].name + "]) for indirection")
 
 fn check(p: Program) -> C:
-    cs := C([]string, -1, []string: bool, 0, []string, []string, []TDecl, []string: int, []FSig, []string: int, []string: string, []string: string,
+    cs := C([]string, -1, []string: bool, []string: bool, 0, []string, []string, []TDecl, []string: int, []FSig, []string: int, []string: string, []string: string,
             []string: string, []string: int, []string: bool, []string: string, []string: bool, []VBind, 0, []string, []string,
             []string: int, "", 0, "", "?", false, false, []ast.ImportD, []ast.ImportD, false, 0, 0, false, 0, []string: int, []string: bool, []string: bool, 0, 0, false)
     for f in p.files:
@@ -2443,6 +2447,9 @@ fn check(p: Program) -> C:
                 _vpush(&cs, fd.params[i].name, t, false)
             cs.ret = cs.sg[si].ret
             _tnote(&cs, "r:" + cs.ret)
+            cs.paramset = []string: bool
+            for pnm in cs.sg[si].pnames:
+                cs.paramset[pnm] = true
             cs.errbase = len(cs.errs)
             _tblock(&cs, fd.body)
             cs.errbase = -1
