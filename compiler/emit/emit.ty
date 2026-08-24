@@ -89,6 +89,7 @@ struct C:
     accs: [string]
     vacc: [string]
     exn: [string]
+    fnbase: int                        # first local slot; params below it are BORROWS
     ckinds: [string]                   # channel ELEMENT types, one helper family each
     spawnd: [string]                   # per-spawn-site thunk + arg struct
     subn: [string]
@@ -96,7 +97,7 @@ struct C:
     sube: [ast.Expr]
 
 fn _new() -> C:
-    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], [], [], [], [][ast.Param], []ast.Expr)
+    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], 0, [], [], [], [][ast.Param], []ast.Expr)
 
 fn _bad(msg: string):
     die("tychoc1: " + msg)
@@ -764,6 +765,12 @@ fn _unify(cs: inout C, t: ast.Ty, a: string, tps: [string], bs: inout [string]):
             if n == "Option" and _is_optT(&cs, a):
                 ei := _eidx(&cs, _tname(a))
                 _unify(&cs, targs[0], cs.eds[ei].vpay[1].ptypes[0], tps, &bs)
+                return
+            if n == "Channel" and _is_chan(a):
+                _unify(&cs, targs[0], _cinner(a), tps, &bs)
+                return
+            if n == "Task" and _is_task(a):
+                _unify(&cs, targs[0], _cinner(a), tps, &bs)
                 return
             if n == "Result" and _is_resT(&cs, a):
                 ei2 := _eidx(&cs, _tname(a))
@@ -2990,14 +2997,22 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
         c, t := _ex(&cs, args[0])
         rt := _cinner(t)
         v := _fresh(&cs, "_tk")
+        # A task BOUND to a name is finished at its scope's exit, so wait only
+        # releases its arena; an unbound `wait(spawn f(x))` has no scope exit to
+        # reach it, so wait frees the handle too (src/tychoc.c does both).
+        rel := "tycho_task_free(" + v + ")"
+        if args[0] is ast.Name:
+            rel = "arena_free(&" + v + "->root)"
         if rt == "void":
-            return ("({ HTask *" + v + " = " + c + "; tycho_task_join(" + v +
-                "); arena_free(&" + v + "->root); })", "void")
+            return ("({ HTask *" + v + " = " + c + "; tycho_task_join(" + v + "); " + rel + "; })", "void")
         w := _fresh(&cs, "_w")
-        # the value lives in the TASK's arena, which is freed here -- copy first
+        # the value lives in the TASK's arena, which is released here -- copy first
         val := _copy(&cs, "(*(" + _cty(&cs, rt) + " *)" + v + "->ret)", rt, cs.arena)
         return ("({ HTask *" + v + " = " + c + "; tycho_task_join(" + v + "); " +
-            _cty(&cs, rt) + " " + w + " = " + val + "; arena_free(&" + v + "->root); " + w + "; })", rt)
+            _cty(&cs, rt) + " " + w + " = " + val + "; " + rel + "; " + w + "; })", rt)
+    if n == "hash" and len(args) == 1:
+        c, t := _ex(&cs, args[0])
+        return (_hash(&cs, t, c), "int")
     if n == "clock" and len(args) == 0:
         return ("tycho_clock()", "int")
     _bad("unsupported call '" + n + "' with " + str(len(args)) + " argument(s)")
@@ -3138,6 +3153,25 @@ fn _spawn(cs: inout C, e: ast.Expr) -> (string, string):
             if len(q) > 0:
                 nm = _qpfx(&cs, q) + n
             fi := _fidx(&cs, nm)
+            if fi < 0:
+                # `spawn get(Box(11))` on a GENERIC: instantiate it first, the
+                # same way _call does, and spawn the instance.
+                gfi := _gfidx(&cs, nm)
+                if gfi >= 0:
+                    tps := cs.gf[gfi].typarams
+                    bs := []string
+                    for i := 0; i < len(ts); i += 1:
+                        push(bs, _ty(&cs, ts[i]))
+                    if len(bs) < len(tps):
+                        bs = _blank(len(tps))
+                        ats := _argtypes(&cs, args)
+                        for j := 0; j < len(cs.gf[gfi].params) and j < len(ats); j += 1:
+                            if len(cs.gf[gfi].params[j].ty) > 0:
+                                _unify(&cs, cs.gf[gfi].params[j].ty[0], ats[j], tps, &bs)
+                    for j := 0; j < len(bs); j += 1:
+                        if len(bs[j]) == 0:
+                            _bad("cannot infer '$" + tps[j] + "' at a spawn of '" + nm + "'")
+                    fi = _inst_fn(&cs, nm, bs)
             if fi < 0:
                 _bad("spawn requires a direct call to a declared procedure")
             fd := cs.fds[fi]
@@ -3629,8 +3663,12 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             cs.arena = sav2
             return pre + ind + lc + " = " + rc2 + ";\n"
         ast.ReturnS(l, k):
+            # An early return leaves the scope too, so every live channel and
+            # task must be released HERE -- the block's own finalizers sit after
+            # the return and are unreachable.
+            fin := _finalizers(&cs, cs.fnbase, "")
             if len(k) == 0:
-                return ind + "{ arena_free(&_scope); return; }\n"
+                return ind + "{ " + _oneline(fin) + "arena_free(&_scope); return; }\n"
             sw := cs.want
             cs.want = cs.cur_ret
             c, t := _ex(&cs, k[0])
@@ -3640,8 +3678,8 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                 c = "(double)(" + c + ")"
             c = _copy(&cs, c, rt, "_parent")
             v := _fresh(&cs, "_ret")
-            return ind + "{ " + _cty(&cs, rt) + " " + v + " = " + c +
-                "; arena_free(&_scope); return " + v + "; }\n"
+            return ind + "{ " + _cty(&cs, rt) + " " + v + " = " + c + "; " +
+                _oneline(fin) + "arena_free(&_scope); return " + v + "; }\n"
         ast.BreakS(l):
             return ind + "break;\n"
         ast.ContinueS(l):
@@ -3775,6 +3813,16 @@ fn _tail_expr(s: ast.Stmt) -> [ast.Expr]:
 # A for-3 post clause has to run on `continue`, so the loop is a real C `for`
 # and the post statement becomes its third clause -- an expression, not a
 # statement. tests/for3.ty documents why: `i` advances only there.
+# The finalizer block, folded onto one line for a `{ ... return x; }` statement.
+fn _oneline(s: string) -> string:
+    out := ""
+    for i := 0; i < len(s); i += 1:
+        if s[i] == 10:
+            out = out + " "
+        else:
+            out = out + s[i:i + 1]
+    return out
+
 fn _strip_semi(s: string) -> string:
     e := len(s)
     for e > 0 and (s[e - 1] == 10 or s[e - 1] == 59 or s[e - 1] == 32):
@@ -4634,8 +4682,11 @@ fn _fnbody(cs: inout C, fi: int, body: [ast.Stmt]) -> (string, string):
         else:
             sig = sig + ", " + _cty(&cs, pt) + " " + cn
     sig = sig + ")"
+    sfb := cs.fnbase
+    cs.fnbase = len(cs.vnames)
     pm := len(cs.pk)
     b := _block(&cs, body, "    ")
+    cs.fnbase = sfb
     for i := pm; i < len(cs.pk); i += 1:
         if len(cs.ptv[i]) == 0:
             _bad("a bare [] with nothing to type it")
