@@ -1800,3 +1800,25 @@ self-built twice, the two emitted `.c` identical.
     and it needs solving as one.
   - Done when: `tests` `link` equals `compile` in the sweep, with MATCH >= 230.
   - Verify: `sh scripts/tychoc1_sweep.sh` only. Never an unbounded `make test`.
+
+## Phase: close the compile-speed gap to ./tychoc
+
+Scope: tychoc1 compiles 2.0-4.5x slower than ./tychoc (best-of-three, --emit-c:
+compiler/main.ty 327ms vs 90ms, tycho-sheet 45 vs 10, mandelbrot 4 vs 2). The
+cheap wins are taken (86dc4329, 822ad009, cb133eb0, 5d25b6d0: 663ms -> 327ms on
+the self-compile). What is left is not a hot spot -- callgrind shows no caller
+above 3.1% and nothing in the type checker above 0.25%, with ~48% of
+instructions in arena_alloc + memcpy.
+
+Two measured causes, both architectural:
+  - 1,341,342 temp arenas per tycho-db compile, 1,134,759 of which never
+    allocate: one per statement, from the codegen model.
+  - Value-semantics AST: constructing a node copies its children, and every
+    walker that binds a payload copies the subtree (22,032 Expr deep copies in
+    one tycho-db typecheck). tychoc1 also runs ~2x the passes ./tychoc does.
+
+Done when: the ratio is <= 1.0 on compiler/main.ty and tycho-db.
+Verify: best-of-three wall clock, both compilers, same input, --emit-c.
+Gates: TYCHOC=./tychoc1 make test (752), make parse-check.
+Not this: --native (measured slower, 341ms), -O3 (already used), per-token
+field trimming (probe showed <1%).
