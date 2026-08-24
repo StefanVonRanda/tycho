@@ -1817,17 +1817,36 @@ Two measured causes, both architectural:
     walker that binds a payload copies the subtree (22,032 Expr deep copies in
     one tycho-db typecheck). tychoc1 also runs ~2x the passes ./tychoc does.
 
-PROGRESS: the return-slot move (fa8ce3bb) took a SELF-BUILT tychoc1 from 331ms
-to 255ms on compiler/main.ty, which proves the elision passes compound into
-tychoc1's own speed. The two-stage build that would ship that gain is BLOCKED:
-with tychoc1 built by tychoc1, three fixtures fail (combinator,
-compound_index_eval, fnval_generic_wrap) with "tychoc1: unsupported assignment
-target" -- an internal error, so the self-built compiler's own AST is corrupt.
-Narrowed: --parse-census is IDENTICAL between the two builds, so the parser is
-fine and the fault is in emit, in a construction whose interior still lands in
-the wrong arena. Reproduce with:
-    ./tychoc compiler/main.ty -o /tmp/s1 && ./tmp/s1 compiler/main.ty -o /tmp/s2
-    TYCHOC=/tmp/s2 make test
+PROGRESS. The self-host bug is FIXED and the two-stage bootstrap is green:
+tychoc1 built by tychoc1 passes 752/752 (d313844e, 39593d65 -- a container
+literal's elements and a returned slice were still pinned to the dying scope).
+The match-arm payload borrow landed (1730220d). Ratio on compiler/main.ty is
+~3.1x, from 5.0x.
+
+MEASURE WITH CALLGRIND, NOT THE CLOCK. This machine drifts +/-5% between runs,
+which is the size of the wins being chased; `valgrind --tool=callgrind` gives a
+deterministic instruction count. Baseline for the self-built compiler: 2.820e9
+instructions, 30.2M allocations, 940 MiB bumped, 6.91M arenas created of which
+5.80M never allocate.
+
+RULED OUT, both measured against that baseline:
+  - the full return-only escape analysis (src/tychoc.c@collect_ret_alias) --
+    +7.7% (3.038e9). The name census is linear and still costs more than the
+    copies it removes, and promoting locals to _parent defers every free.
+  - the cheap half of it (promote a local returned BY NAME) -- the SELF-BUILT
+    compiler fails 24 fixtures and dies on its own source. Something else in
+    this codegen assumes a local lives in _scope; the string accumulator's
+    in-place append is the first suspect, since it needs its buffer to be the
+    last allocation in its own arena.
+Both are reverted. Do not re-port them without first finding what the promotion
+breaks.
+
+WHERE THE TIME IS (callgrind, self-built): arena_alloc 34%, memcpy 12%,
+tycho_copy_E_ast__Expr 7%, tycho_str_copy 6%, the Expr-array copy 5%. Two
+untried levers: 5.80M arenas that never allocate (elide _scope for a body that
+never mentions it), and inlining arena_alloc's bump path -- it is ~20
+instructions behind a call, and tychoc does not pay it because src/tychoc.c has
+its own allocator.
 
 Done when: the ratio is <= 1.0 on compiler/main.ty and tycho-db.
 Verify: best-of-three wall clock, both compilers, same input, --emit-c.
