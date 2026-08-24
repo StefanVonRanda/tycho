@@ -1817,11 +1817,30 @@ Two measured causes, both architectural:
     walker that binds a payload copies the subtree (22,032 Expr deep copies in
     one tycho-db typecheck). tychoc1 also runs ~2x the passes ./tychoc does.
 
-PROGRESS. The self-host bug is FIXED and the two-stage bootstrap is green:
-tychoc1 built by tychoc1 passes 752/752 (d313844e, 39593d65 -- a container
-literal's elements and a returned slice were still pinned to the dying scope).
-The match-arm payload borrow landed (1730220d). Ratio on compiler/main.ty is
-~3.1x, from 5.0x.
+PROGRESS. Two self-host miscompiles are fixed (d313844e, 39593d65 -- a
+container literal's elements and a returned slice were still pinned to the
+dying scope) and the self-built compiler now passes the whole 752-fixture
+corpus. The match-arm payload borrow landed (1730220d). Ratio on
+compiler/main.ty is ~3.1x, from 5.0x.
+
+THE TWO-STAGE BUILD IS STILL OFF, and the corpus is not what blocks it --
+`make parse-check` is. A tychoc1 built by tychoc1 fails `--parse` on EVERY file:
+
+    ./tychoc compiler/main.ty -o s1 && ./s1 compiler/main.ty -o s2
+    ./s2 /tmp/p3.ty --parse      # fn main(): / pass
+    tychoc1: line 1: unexpected character ''
+
+`--resolve` on the same file is fine, and so is a normal compile, which is why
+tests/run.sh is green either way. The one thing `--parse` does differently is
+driver.parse_only: `lex.tokenize_all(_read(src_path), false)` -- the only caller
+that reads the file itself and tokenizes with NO file name. The reported
+character is EMPTY, so the lexer is reading at or past len(src). Suspect the
+string handed back by `_read`, whose whole body is a match arm returning its
+payload. PREDATES today's work: reproduced with emit.ty from adcf6712, and
+fa8ce3bb (before the payload borrow) cannot self-host at all.
+
+Fixing this is worth 19%: the self-built compiler is 277 ms against the shipped
+341 ms, and the Makefile change is three lines.
 
 MEASURE WITH CALLGRIND, NOT THE CLOCK. This machine drifts +/-5% between runs,
 which is the size of the wins being chased; `valgrind --tool=callgrind` gives a
