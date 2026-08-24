@@ -4253,10 +4253,16 @@ fn _match(cs: inout C, subj: ast.Expr, arms: [ast.Arm], ind: string) -> string:
         if a.kind == "default" or a.name == "_":
             deflt2 = _block(&cs, a.body, ind + "        ")
             continue
-        if a.kind != "scalar":
+        # A bare NAME arm on a scalar subject parses as a `variant` -- nothing
+        # in the syntax separates `OP_LOAD:` (an int const) from an enum
+        # variant. On a scalar it is the const's value.
+        pats := a.pats
+        if a.kind == "variant" and len(pats) == 0 and len(a.name) > 0:
+            push(pats, ast.Pat("name", 0, 0, a.name, "", false))
+        elif a.kind != "scalar":
             _bad("unsupported match arm on a scalar")
         cond := ""
-        for p in a.pats:
+        for p in pats:
             one := ""
             if p.ranged:
                 one = "(" + v + " >= " + _patv(&cs, p.kind, p.lo, p.loname) + " && " + v +
