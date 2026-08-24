@@ -1262,6 +1262,19 @@ fn _rootname(e: ast.Expr) -> string:
         _: return ""
     return ""
 
+# Is this place rooted in a live in-place string ACCUMULATOR? Such a buffer is
+# written through (tycho_str_append grows it past its own end once it owns it),
+# so sharing it would make a snapshot follow the accumulator instead of freezing
+# -- tests/value_semantics.ty checks exactly that.
+fn _acc_rooted(cs: inout C, e: ast.Expr) -> bool:
+    n := _rootname(e)
+    if len(n) == 0:
+        return false
+    for i := len(cs.vnames) - 1; i >= 0; i -= 1:
+        if cs.vnames[i] == n:
+            return len(cs.vacc[i]) > 0
+    return false
+
 fn _ownerof(cs: inout C, e: ast.Expr) -> string:
     n := _rootname(e)
     if len(n) == 0:
@@ -3403,7 +3416,15 @@ fn _rhs2(cs: inout C, e: ast.Expr, want: string, arena: string) -> (string, stri
     c, t := _ex(&cs, e)
     cs.want = sw
     if _place(e) and _heap(&cs, t):
-        c = _copy(&cs, c, t, arena)
+        # A STRING already in the destination arena is shared, not copied. The
+        # copy exists so a later write to the destination cannot be seen through
+        # the source, and a string has no in-place write: `s = s + x` concatenates
+        # into a fresh buffer, and the accumulator starts at cap 0 ("not yet
+        # owned") so its first append reallocates too. Same arena means the two
+        # also die together, so there is no lifetime to extend. Arrays and maps
+        # ARE mutable and still copy.
+        if t != "string" or _ownerof(&cs, e) != arena or _acc_rooted(&cs, e):
+            c = _copy(&cs, c, t, arena)
     if len(want) > 0 and want == "float" and t == "int":
         c = "(double)(" + c + ")"
         t = "float"
