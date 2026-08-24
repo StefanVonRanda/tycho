@@ -3983,6 +3983,8 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             c, t := _ex(&cs, es[0])
             cs.arena = sav
             cs.want = sw
+            if not _uses_t(c):
+                return ind + c + ";\n"
             return ind + "{ Arena _t = arena_new(0); " + c + "; arena_free(&_t); }\n"
         ast.Decl(l, n, ann, rhs, vv):
             if len(vv) > 0:
@@ -4113,6 +4115,8 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                                         ", &" + cn9 + ", &_len" + cn9 + ", &_cap" + cn9 + ", " +
                                         tc9 + "); "
                                 cs.arena = sav9
+                                if not _uses_t(out9):
+                                    return ind + out9 + "\n"
                                 return ind + "{ Arena _t = arena_new(0); " + out9 +
                                     "arena_free(&_t); }\n"
                     _: pass
@@ -5109,6 +5113,24 @@ fn _tostr_a(cs: inout C, code: string, t: string) -> string:
 # every byte of every function body, and _fnbody calls this on each body it
 # patches -- it was 27% of the compile on its own, measured with callgrind.
 # The `s[i] == f0` guard is what keeps the scan from slicing at every position.
+# Does this statement's code actually allocate in its scratch arena? Most do
+# not: the arena was emitted around every expression statement and then freed
+# unused, which is an arena_new + arena_free (and a block_get/release) per
+# statement. Matching "&_t" alone would also match "&_tp462", so the byte after
+# it must not continue an identifier.
+fn _uses_t(s: string) -> bool:
+    i := 0
+    n := len(s)
+    for i + 3 <= n:
+        if s[i] == 38 and s[i + 1] == 95 and s[i + 2] == 116:
+            if i + 3 >= n:
+                return true
+            c := s[i + 3]
+            if not (c == 95 or (c >= 48 and c <= 57) or (c >= 65 and c <= 90) or (c >= 97 and c <= 122)):
+                return true
+        i += 1
+    return false
+
 fn _replace(s: string, from: string, to: string) -> string:
     n := len(from)
     if n == 0:
