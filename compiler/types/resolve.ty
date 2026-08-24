@@ -448,7 +448,10 @@ fn build_table(p: Program) -> R:
             if fd.is_extern:
                 # A C symbol is global: src/tychoc.c does not mangle it.
                 _add(&rs, fd.name, "extern", f.path, f.pkg)
-            elif len(fd.typarams) > 0:
+            elif len(fd.typarams) > 0 or len(_sig_sizeparams(fd.params, fd.ret)) > 0:
+                # A `[$N]T` size parameter makes the fn a TEMPLATE as surely as a
+                # `$T` does: it has no Sig in src/tychoc.c either, which is what
+                # keeps report_dead_procs off it.
                 _add(&rs, f.prefix + fd.name, "generic", f.path, f.pkg)
             else:
                 _addl(&rs, f.prefix + fd.name, "fn", f.path, f.pkg, fd.dnote, fd.line)

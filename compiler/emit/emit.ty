@@ -36,6 +36,7 @@ struct FD:
     pinout: [bool]
     pvar: bool
     ret: string
+    psize: [string]                    # the `$N` this parameter's `[$N]T` names
 
 struct C:
     sds: [SD]
@@ -222,6 +223,20 @@ fn _tup_of(cs: inout C, es: [string]) -> string:
 # the registry key is "K|V" and the type string is "M~<index>". The emitted C
 # mirrors src/tychoc.c:12894's compact indexed dict -- an int32 index table over
 # dense insertion-ordered entries -- so keys() order and str() form agree.
+# The `$N` a parameter's written type names, if it is `[$N]T`. Emit lowers every
+# array to the dynamic one, so N is not a monomorphisation key here: inside the
+# body it is the argument's own length, which for a fixed array IS N.
+fn _sizep_of(t: [ast.Ty]) -> string:
+    if len(t) == 0:
+        return ""
+    match t[0]:
+        ast.TFix(sz, e):
+            if len(sz) > 1 and sz[0] == 36:
+                return sz[1:]
+            return ""
+        _: return ""
+    return ""
+
 fn _is_chan(t: string) -> bool:
     return len(t) > 5 and t[0:5] == "chan("
 
@@ -734,6 +749,13 @@ fn _unify(cs: inout C, t: ast.Ty, a: string, tps: [string], bs: inout [string]):
             if _is_arr(a):
                 _unify(&cs, es[0], _elem(a), tps, &bs)
             return
+        ast.TFix(nn2, es):
+            # `[$N]$T` -- the SIZE is not a type parameter (emit lowers every
+            # array to the dynamic one and reads N as the argument's length),
+            # but the ELEMENT still is.
+            if _is_arr(a):
+                _unify(&cs, es[0], _elem(a), tps, &bs)
+            return
         ast.TFn(hr, es):
             if _is_fn(a):
                 aps := _fps(&cs, a)
@@ -818,6 +840,7 @@ fn _inst_fn(cs: inout C, n: string, targs: [string]) -> int:
     pn := []string
     pt := []string
     pio := []bool
+    psz := []string
     pv := false
     for prm in cs.gf[gi].params:
         if len(prm.ty) == 0:
@@ -829,10 +852,11 @@ fn _inst_fn(cs: inout C, n: string, targs: [string]) -> int:
         push(pn, prm.name)
         push(pt, one)
         push(pio, prm.is_inout)
+        push(psz, _sizep_of(prm.ty))
     rt := _tyo(&cs, cs.gf[gi].ret)
     cs.cf = save
     _unbind(&cs, m)
-    push(cs.fds, FD(mang, pn, pt, pio, pv, rt))
+    push(cs.fds, FD(mang, pn, pt, pio, pv, rt, psz))
     cs.pendk[ii] = len(cs.fds) - 1
     return len(cs.fds) - 1
 
@@ -4036,6 +4060,7 @@ fn _collect2(cs: inout C, u: ast.Unit):
         pn := []string
         pt := []string
         pio := []bool
+        psz := []string
         pv := false
         for pp in f.params:
             if len(pp.ty) == 0:
@@ -4047,10 +4072,11 @@ fn _collect2(cs: inout C, u: ast.Unit):
             push(pn, pp.name)
             push(pt, one)
             push(pio, pp.is_inout)
+            push(psz, _sizep_of(pp.ty))
         nmf := p + f.name
         if f.is_extern:
             nmf = f.name
-        push(cs.fds, FD(nmf, pn, pt, pio, pv, _tyo(&cs, f.ret)))
+        push(cs.fds, FD(nmf, pn, pt, pio, pv, _tyo(&cs, f.ret), psz))
     for c in u.consts:
         cc, ct := _ex(&cs, c.value)
         push(cs.cnames, p + c.name)
@@ -4682,6 +4708,15 @@ fn _fnbody(cs: inout C, fi: int, body: [ast.Stmt]) -> (string, string):
         else:
             sig = sig + ", " + _cty(&cs, pt) + " " + cn
     sig = sig + ")"
+    # A `[$N]T` parameter makes N an int CONST in the body: for a fixed array
+    # the runtime length is N, so it needs no monomorphisation over sizes.
+    cm := len(cs.cnames)
+    for j := 0; j < len(cs.fds[fi].psize) and j < len(cs.fds[fi].pnames); j += 1:
+        sn := cs.fds[fi].psize[j]
+        if len(sn) > 0 and _cidx(&cs, sn) < 0:
+            push(cs.cnames, sn)
+            push(cs.ctypes, "int")
+            push(cs.ccode, "((" + _vcname(&cs, cs.fds[fi].pnames[j]) + ").len)")
     sfb := cs.fnbase
     cs.fnbase = len(cs.vnames)
     pm := len(cs.pk)
@@ -4694,6 +4729,11 @@ fn _fnbody(cs: inout C, fi: int, body: [ast.Stmt]) -> (string, string):
         b = _replace(b, "_PE" + str(cs.pk[i]),
             _apfx(&cs, _elem(cs.ptv[i])) + "_with_cap(&_scope, 0)")
     _restore(&cs, m)
+    # the `$N` bindings are this function's, not the module's
+    for len(cs.cnames) > cm:
+        pop(cs.cnames)
+        pop(cs.ctypes)
+        pop(cs.ccode)
     out := sig + " {\n" +
         "    Arena _scope = arena_child(_parent); _scope.name = \"" + nm + "\";\n" + b
     if rt == "void":
