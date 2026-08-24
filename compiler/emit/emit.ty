@@ -4326,6 +4326,120 @@ fn _trim_nl(s: string) -> string:
 
 # A scalar pattern is a literal or the NAME of a const, which src/tychoc.c has
 # already folded to one literal by the time it reaches here.
+# --- match-arm payload borrow (deep-copy elision) ---------------------------
+# Binding a heap payload deep-copies its whole subtree into the arm's arena. But
+# the scrutinee's payload already outlives the match and an enum value is
+# immutable, so the binding can BORROW it -- the same handoff an array parameter
+# makes. The exception is an arm that WRITES THROUGH the binding: that write
+# would reach into the matched value (tests/match_payload_mut.ty), so a mutated
+# binding keeps its owning copy. ./tychoc does this in can_move_from's
+# neighbourhood (src/tychoc.c@block_mutates); this is the same rule.
+fn _ekids(e: ast.Expr) -> [ast.Expr]:
+    match e:
+        ast.Field(l, k, f): return k
+        ast.TupIdx(l, k, n): return k
+        ast.Index(l, k): return k
+        ast.Slice(l, a, b, k): return k
+        ast.Call(l, q, n, ts, k): return k
+        ast.CallVal(l, k): return k
+        ast.Named(l, n, k): return k
+        ast.Binop(l, o, k): return k
+        ast.Unop(l, o, k): return k
+        ast.IsVar(l, k, q, n): return k
+        ast.ArrLit(l, k): return k
+        ast.MapLit(l, k): return k
+        ast.Tuple(l, k): return k
+        ast.SomeE(l, k): return k
+        ast.OkE(l, k): return k
+        ast.ErrE(l, k): return k
+        ast.SpawnE(l, k): return k
+        ast.OrRet(l, k): return k
+        ast.Spread(l, k): return k
+        ast.Addr(l, k): return k
+        ast.ChanE(l, t, k): return k
+        ast.Lambda(l, pr, r, k): return k
+        _: return []ast.Expr
+    return []ast.Expr
+
+fn _mroot(e: ast.Expr) -> string:
+    match e:
+        ast.Name(l, n): return n
+        ast.Field(l, k, f): return _mroot(k[0])
+        ast.TupIdx(l, k, n): return _mroot(k[0])
+        ast.Index(l, k): return _mroot(k[0])
+        ast.Slice(l, a, b, k): return _mroot(k[0])
+        ast.Addr(l, k): return _mroot(k[0])
+        _: return ""
+    return ""
+
+fn _mut_e(e: ast.Expr, nm: string) -> bool:
+    match e:
+        ast.Addr(l, k):
+            if _mroot(k[0]) == nm:
+                return true
+        ast.Call(l, q, n, ts, args):
+            # every receiver-writing builtin takes its subject first, so one
+            # conservative test covers push/pop/reserve/sort and any future one.
+            if len(q) == 0 and len(args) > 0 and _mroot(args[0]) == nm:
+                return true
+        _: pass
+    for c in _ekids(e):
+        if _mut_e(c, nm):
+            return true
+    return false
+
+fn _mut_es(k: [ast.Expr], nm: string) -> bool:
+    for e in k:
+        if _mut_e(e, nm):
+            return true
+    return false
+
+fn _mut_arms(arms: [ast.Arm], nm: string) -> bool:
+    for a in arms:
+        if _mut_b(a.body, nm):
+            return true
+    return false
+
+fn _mut_s(s: ast.Stmt, nm: string) -> bool:
+    match s:
+        ast.ExprStmt(l, k): return _mut_es(k, nm)
+        ast.Decl(l, n, t, k, vb): return _mut_es(k, nm) or _mut_b(vb, nm)
+        ast.MDecl(l, d, ns, k):
+            for n2 in ns:
+                if n2 == nm:
+                    return true
+            return _mut_es(k, nm)
+        ast.Assign(l, n, k):
+            if n == nm:
+                return true
+            return _mut_es(k, nm)
+        ast.PlaceSet(l, k):
+            if len(k) > 0 and _mroot(k[0]) == nm:
+                return true
+            return _mut_es(k, nm)
+        ast.ConstS(l, n, k): return _mut_es(k, nm)
+        ast.ReturnS(l, k): return _mut_es(k, nm)
+        ast.IfS(l, c, b, e2): return _mut_es(c, nm) or _mut_b(b, nm) or _mut_b(e2, nm)
+        ast.WhileS(l, c, b): return _mut_es(c, nm) or _mut_b(b, nm)
+        ast.For3(l, i2, c, b): return _mut_b(i2, nm) or _mut_es(c, nm) or _mut_b(b, nm)
+        ast.ForIn(l, n, k, b): return _mut_es(k, nm) or _mut_b(b, nm)
+        ast.ForRange(l, n, k, b): return _mut_es(k, nm) or _mut_b(b, nm)
+        ast.ParallelS(l, k, b): return _mut_es(k, nm) or _mut_b(b, nm)
+        ast.MatchS(l, k, arms): return _mut_es(k, nm) or _mut_arms(arms, nm)
+        ast.SelectS(l, arms): return _mut_arms(arms, nm)
+        ast.DeleteS(l, k):
+            if len(k) > 0 and _mroot(k[0]) == nm:
+                return true
+            return _mut_es(k, nm)
+        _: return false
+    return false
+
+fn _mut_b(b: [ast.Stmt], nm: string) -> bool:
+    for s in b:
+        if _mut_s(s, nm):
+            return true
+    return false
+
 fn _patv(cs: inout C, kind: string, v: int, nm: string) -> string:
     if kind == "name":
         ci := _cidx(&cs, nm)
@@ -4379,8 +4493,11 @@ fn _match(cs: inout C, subj: ast.Expr, arms: [ast.Arm], ind: string) -> string:
                 # (tests/match_payload_mut.out). A pointer binding aliased it.
                 bcn := _push(&cs, a.binds[i], pay[i])
                 psrc := v + "->u." + a.name + ".f" + str(i)
+                pv := psrc
+                if _mut_b(a.body, a.binds[i]):
+                    pv = _copy(&cs, psrc, pay[i], cs.arena)
                 binds = binds + ind + "        " + _cty(&cs, pay[i]) + " " + bcn +
-                    " = " + _copy(&cs, psrc, pay[i], cs.arena) + ";\n"
+                    " = " + pv + ";\n"
             # A NESTED pattern -- `Err(TooBig(n))`. The Arm has carried
             # sub/subbinds since the parser, and nothing read them until now, so
             # the inner binding was simply never in scope. The payload is itself
@@ -4402,8 +4519,12 @@ fn _match(cs: inout C, subj: ast.Expr, arms: [ast.Arm], ind: string) -> string:
                     if j >= len(ipay):
                         _bad("variant " + a.sub + " binds more than its payload")
                     scn := _push(&cs, a.subbinds[j], ipay[j])
+                    ssrc := "(" + iv + ")->u." + a.sub + ".f" + str(j)
+                    sv2 := ssrc
+                    if _mut_b(a.body, a.subbinds[j]):
+                        sv2 = _copy(&cs, ssrc, ipay[j], cs.arena)
                     binds = binds + ind + "        " + _cty(&cs, ipay[j]) + " " + scn +
-                        " = " + _copy(&cs, "(" + iv + ")->u." + a.sub + ".f" + str(j), ipay[j], cs.arena) + ";\n"
+                        " = " + sv2 + ";\n"
             body := _block(&cs, a.body, ind + "        ")
             _restore(&cs, m)
             out = out + head + " (" + cond + ") {\n" + binds + body +
