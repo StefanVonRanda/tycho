@@ -1683,10 +1683,12 @@ fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
                 else:
                     cs.want = ""
                 ti += 1
-                xc, xt := _ex_scope(&cs, x)
+                sar8 := cs.arena
+                xc, xt := _ex(&cs, x)
+                cs.arena = sar8
                 cs.want = swt
                 if _place(x) and _heap(&cs, xt):
-                    xc = _copy(&cs, xc, xt, "&_scope")
+                    xc = _copy(&cs, xc, xt, cs.arena)
                 push(ecs, xc)
                 push(ets, xt)
             tt := _tup_of(&cs, ets)
@@ -2366,17 +2368,19 @@ fn _variant(cs: inout C, ei: int, vn: string, args: [ast.Expr]) -> (string, stri
     if len(pay) == 0:
         return ("(&_sing_" + en + "_" + str(tag) + ")", "E~" + en)
     v := _fresh(&cs, "_v")
-    out := "({ E_" + en + " *" + v + " = (E_" + en + " *)arena_alloc(&_scope, offsetof(E_" +
+    out := "({ E_" + en + " *" + v + " = (E_" + en + " *)arena_alloc(" + cs.arena + ", offsetof(E_" +
         en + ", u) + sizeof(E_" + en + "_" + vn + ")); " + v + "->tag = " + str(tag) + "; "
     for i := 0; i < len(args); i += 1:
         sw := cs.want
         cs.want = pay[i]
-        ac, at := _ex_scope(&cs, args[i])
+        sar9 := cs.arena
+        ac, at := _ex(&cs, args[i])
+        cs.arena = sar9
         cs.want = sw
         if pay[i] == "float" and at == "int":
             ac = "(double)(" + ac + ")"
         if _place(args[i]) and _heap(&cs, pay[i]):
-            ac = _copy(&cs, ac, pay[i], "&_scope")
+            ac = _copy(&cs, ac, pay[i], cs.arena)
         out = out + v + "->u." + vn + ".f" + str(i) + " = " + ac + "; "
     return (out + v + "; })", "E~" + en)
 
@@ -2439,7 +2443,7 @@ fn _arrlit(cs: inout C, k: [ast.Expr]) -> (string, string):
     cs.want = et
     v := _fresh(&cs, "_l")
     ct := _cty(&cs, "[" + et + "]")
-    out := "({ " + ct + " " + v + " = " + _apfx(&cs, et) + "_with_cap(&_scope, " +
+    out := "({ " + ct + " " + v + " = " + _apfx(&cs, et) + "_with_cap(" + cs.arena + ", " +
         str(len(k)) + "LL); "
     for i := 0; i < len(k); i += 1:
         ac := c0
@@ -2451,7 +2455,7 @@ fn _arrlit(cs: inout C, k: [ast.Expr]) -> (string, string):
         if at2 != et and not _heap(&cs, et):
             ac = "((" + _cty(&cs, et) + ")(" + ac + "))"
         if _place(k[i]) and _heap(&cs, et):
-            ac = _copy(&cs, ac, et, "&_scope")
+            ac = _copy(&cs, ac, et, cs.arena)
         out = out + v + ".data[" + str(i) + "] = " + ac + "; "
     cs.want = sw
     return (out + v + ".len = " + str(len(k)) + "LL; " + v + "; })", "[" + et + "]")
@@ -2807,7 +2811,7 @@ fn _call(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], args: [ast.Ex
             ac, at := _ex_scope(&cs, args[i])
             cs.want = sw
             if _place(args[i]) and _heap(&cs, ft):
-                ac = _copy(&cs, ac, ft, "&_scope")
+                ac = _copy(&cs, ac, ft, cs.arena)
             if i > 0:
                 out = out + ", "
             out = out + ac
@@ -4144,13 +4148,25 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             if len(k) == 0:
                 return ind + "{ " + _oneline(fin) + "arena_free(&_scope); return; }\n"
             sw := cs.want
+            sa := cs.arena
+            # RETURN-SLOT MOVE: a returned TEMPORARY is built straight in the
+            # caller's arena, so it needs no copy on the way out. A place (a
+            # local, a field, an element) still copies -- it belongs to this
+            # scope and the scope is about to die. src/tychoc.c does the same;
+            # tychoc1 copied unconditionally, which allocated every returned
+            # value twice.
+            tmpret := not _place(k[0])
+            if tmpret:
+                cs.arena = "_parent"
             cs.want = cs.cur_ret
             c, t := _ex(&cs, k[0])
             cs.want = sw
+            cs.arena = sa
             rt := cs.cur_ret
             if rt == "float" and t == "int":
                 c = "(double)(" + c + ")"
-            c = _copy(&cs, c, rt, "_parent")
+            if not tmpret:
+                c = _copy(&cs, c, rt, "_parent")
             v := _fresh(&cs, "_ret")
             return ind + "{ " + _cty(&cs, rt) + " " + v + " = " + c + "; " +
                 _oneline(fin) + "arena_free(&_scope); return " + v + "; }\n"
