@@ -3182,7 +3182,13 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
         # scope, and pushing the struct by value leaves them dangling once that
         # scope is reused. Observed in the self-compile as an FD whose `name`
         # pointed into generated C text.
-        if _heap(&cs, et):
+        # ...but only when the value is NOT already whole in that same arena.
+        # _ex_scope built it in &_scope, so a constructed value pushed into an
+        # array that also lives there is already where it belongs; a place is
+        # still somebody else's and copies. Narrow on purpose: evaluating the
+        # value in `ow` instead reddened 190 fixtures.
+        if _heap(&cs, et) and (_place(args[1]) or ow != "&_scope") and
+                not _shares(&cs, args[1], et, ow):
             vc = _copy(&cs, vc, et, ow)
         pc9 := _apfx(&cs, et) + "_push(" + ow + ", &(" + rc + "), " + vc + ")"
         if cap9 > 0:
