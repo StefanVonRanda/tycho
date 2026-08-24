@@ -1,4 +1,5 @@
 package types
+import "core:strings"
 
 import "core:sort"
 import "../ast"
@@ -41,6 +42,7 @@ struct Sym:
     file: string
     pkg: string
     dnote: string                      # the `# deprecated:` note, "" if none
+    line: int                          # declaration line, for the never-called warning
 
 struct Binding:
     name: string
@@ -61,6 +63,7 @@ struct R:
     pkg_used: [string: bool]
     file: string
     line: int                          # the line of the node being walked
+    shadow: [string: bool]             # names the builtin wins an unqualified call for
     warns: [string]                    # deferred, printed to stderr, never fatal
     srcp: [string]                     # file paths, parallel to srct
     srct: [string]                     # their source, for the diagnostic excerpt
@@ -99,6 +102,25 @@ fn _builtins() -> [string: bool]:
 # `fn pow` is unprefixed there) and the same file compiled as a dependency is
 # not (`bignum__pow` collides with nothing). The shape-directed builtins above
 # are not in that table and do not collide.
+# src/tychoc.c:4246@shadows_builtin, copied name for name. A user fn by one of
+# these names does NOT win an unqualified call -- the builtin does -- so the
+# declaration warns and the procedure is unreachable by that name. The two
+# exclusions are deliberate there and kept here: no `eprintln` (not a builtin,
+# FRICTION #6) and no `zero` (core:bignum's, not a builtin).
+fn _shadowable() -> [string: bool]:
+    m := []string: bool
+    for n in ["str", "substr", "chr", "split", "keys", "find", "char_at", "len",
+              "push", "pop", "reserve", "map_get", "map_has", "map_set", "map_del",
+              "sqrt", "pow", "floor", "fabs", "to_float", "to_int", "to_str", "to_bool",
+              "to_bytes", "to_ptr", "to_u8", "to_u16", "to_u32", "to_u64",
+              "to_i8", "to_i16", "to_i32", "to_i64", "to_f32", "is_null",
+              "to_char", "hash",
+              "print", "println", "eprint", "input", "read_all",
+              "write_file", "list_dir", "getenv", "args", "die", "now", "clock",
+              "ncpu", "channel", "send", "recv", "close"]:
+        m[n] = true
+    return m
+
 fn _builtin_sigs() -> [string: bool]:
     m := []string: bool
     for n in ["args", "char_at", "chr", "clock", "die", "eprint", "exit", "fabs",
@@ -204,6 +226,35 @@ fn _warn(rs: inout R, msg: string):
     push(rs.warns, rs.file + ":" + str(rs.line) + ": warning: " + msg +
         _excerpt(&rs, rs.file, rs.line))
 
+# A function nothing ever resolved BY NAME. src/tychoc.c@report_dead_procs is
+# the authority and its exemptions are copied, not guessed: `main`, anything
+# under corelib/ (a dependency exports what it likes), extern and builtin. It
+# is a WARNING because this is name-based reachability rather than a call
+# graph -- an indirect call the resolver never saw by name would otherwise be
+# a false ERROR.
+fn report_dead(rs: inout R):
+    for i := 0; i < len(rs.syms); i += 1:
+        sy := rs.syms[i]
+        if sy.kind != "fn":
+            continue
+        short := _short(sy.name)
+        if short == "main":
+            continue
+        if strings.contains(sy.file, "corelib/"):
+            continue
+        # every spelling that RESOLVES the name counts as a use: a bare call,
+        # a package-qualified one, and taking it as a value.
+        if ("call:" + sy.name) in rs.counts or ("fnval:" + sy.name) in rs.counts or
+                ("pkgcall:" + sy.name) in rs.counts:
+            continue
+        sf := rs.file
+        sl := rs.line
+        rs.file = sy.file
+        rs.line = sy.line
+        _warn(&rs, "'" + short + "' is never called")
+        rs.file = sf
+        rs.line = sl
+
 fn warn_lines(rs: R) -> [string]:
     return rs.warns
 
@@ -239,23 +290,54 @@ fn _add(rs: inout R, name: string, kind: string, file: string, pkg: string):
     _addn(&rs, name, kind, file, pkg, "")
 
 fn _addn(rs: inout R, name: string, kind: string, file: string, pkg: string, dn: string):
+    _addl(&rs, name, kind, file, pkg, dn, 0)
+
+fn _addl(rs: inout R, name: string, kind: string, file: string, pkg: string, dn: string, ln: int):
+    # src/tychoc.c:4276 makes a builtin collision a WARNING, not an error: the
+    # builtin wins every unqualified call, so the procedure is merely
+    # unreachable by that name. A CONSTRUCTOR collision stays fatal there
+    # (is_builtin_ctor, :4275), which is the branch below.
+    # ORDER MATTERS. A name with a builtin SIGNATURE (rs.bsigs -- die, pow,
+    # find, ...) stays a hard error, which is what ./tychoc does: measured as
+    # leg8 disagreements on corelib/bignum.ty@pow, corelib/regex.ty@find and
+    # tests/diag/shadow_builtin_main.ty@die when this branch ran first. Only a
+    # name that is shadowable WITHOUT being one of those (len, hash, push, ...)
+    # downgrades to the warning.
     if name in rs.bsigs:
         _err(&rs, "'" + name + "' is already defined")
         return
+    if _short(name) in rs.shadow and kind == "fn":
+        short := _short(name)
+        sf := rs.file
+        sl := rs.line
+        rs.file = file
+        rs.line = ln
+        if len(rs.prefix) > 0:
+            _warn(&rs, "`" + short + "` collides with the builtin of the same name -- every unqualified `" +
+                short + "(...)` calls the BUILTIN, so this procedure is unreachable by that name (§3.7)." +
+                " Rename it, or call it qualified as `pkg." + short + "(...)`.")
+        else:
+            _warn(&rs, "`" + short + "` collides with the builtin of the same name -- every unqualified `" +
+                short + "(...)` calls the BUILTIN, so this procedure is unreachable by that name (§3.7)." +
+                " `package main` has no package prefix to qualify with, so rename it.")
+        rs.file = sf
+        rs.line = sl
+
     if name in rs.index:
         prev := rs.syms[rs.index[name]]
         _err(&rs, "'" + name + "' is already defined (" + prev.kind + " in " + prev.file + ")")
         return
     rs.index[name] = len(rs.syms)
-    push(rs.syms, Sym(name, kind, file, pkg, dn))
+    push(rs.syms, Sym(name, kind, file, pkg, dn, ln))
 
 fn build_table(p: Program) -> R:
     rs := R([]Sym, []string: int, []Binding, 0, []string: int, []ast.ImportD, []string,
-            []ast.ImportD, []string: bool, "", 0, []string, []string, []string, "", p.root, false, false, false, -1, []string: bool, []string, []string, []string)
+            []ast.ImportD, []string: bool, "", 0, []string: bool, []string, []string, []string, "", p.root, false, false, false, -1, []string: bool, []string, []string, []string)
     for f in p.files:
         push(rs.srcp, f.path)
         push(rs.srct, f.src)
     rs.bsigs = _builtin_sigs()
+    rs.shadow = _shadowable()
     rs.entry_in_corelib = under_corelib(p.root, p.entry_dir)
     ctors := _builtin_ctors()
     for f in p.files:
@@ -341,7 +423,7 @@ fn build_table(p: Program) -> R:
             elif len(fd.typarams) > 0:
                 _add(&rs, f.prefix + fd.name, "generic", f.path, f.pkg)
             else:
-                _addn(&rs, f.prefix + fd.name, "fn", f.path, f.pkg, fd.dnote)
+                _addl(&rs, f.prefix + fd.name, "fn", f.path, f.pkg, fd.dnote, fd.line)
     return rs
 
 # --- scopes -----------------------------------------------------------------
@@ -694,6 +776,12 @@ fn _dwarn(rs: inout R, mangled: string):
     _dwarnq(&rs, mangled, _short(mangled))
 
 fn _call_bare(rs: inout R, bi: [string: bool], ctors: [string: bool], n: string):
+    # A shadowable name resolves to the BUILTIN, never to the user's fn of that
+    # name (src/tychoc.c:4276's whole premise). Checked before either package
+    # lookup, so the user's `len` stays unreachable and report_dead sees it.
+    if n in rs.shadow and (n in bi or n in ctors):
+        _note(&rs, "builtin:" + n)
+        return
     if len(rs.prefix) > 0 and _callable(_kindof(&rs, rs.prefix + n)):
         _dwarn(&rs, rs.prefix + n)
         _note(&rs, "call:" + rs.prefix + n)
@@ -987,6 +1075,7 @@ fn resolve(p: Program) -> R:
             continue
         push(rs.late, rs.all_imp_file[i] + ":" + str(im.line) +
              ": error: `" + im.path + "` imported and not used in this file")
+    report_dead(&rs)
     # Parse-phase diagnostics come first, whenever the walk happened to find them.
     for e in rs.errs:
         push(rs.perrs, e)
