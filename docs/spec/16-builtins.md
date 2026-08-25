@@ -131,7 +131,7 @@ only spelling — `n.to_char()` is not.
 > `is_null`/`to_ptr` `Sig` `:4994-4995`. `to_i32` (and the rest of
 > `to_u8`..`to_f32`) is **not** a `Sig`: it is `is_sized_conv` `:1260-1264` /
 > `sized_conv_target` `:1249-1259`, resolved inline at `:6545-6551`. The abort
-> both share is `runtime/tycho_rt.c:1485@out of byte range`. Conformance:
+> both share is `runtime/tycho_rt.c:1492@out of byte range`. Conformance:
 > `tests/char_to_char.ty`, `tests/abort/chr_oob.ty`.
 
 ## 29.5 Strings

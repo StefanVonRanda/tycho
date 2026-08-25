@@ -1853,6 +1853,27 @@ WHERE IT STANDS on compiler/main.ty (tychoc 89-91 ms alongside):
     1.19x  106 ms   string equality checks one byte first (ad604f7a)
     1.18x  106 ms   the hottest token sites build their Tok inline (cc3a9d03)
     1.18x  105 ms   an ENUM out of an inout parameter returns uncopied (d99bc633)
+    1.03x   94 ms   the binary parse levels write through an out parameter (622c4951)
+    1.00x   92 ms   primary/postfix/unary and every expr() call site too (6588f1b9)
+    0.99x   91 ms   unit and each function built into the slot that holds it (c89ec1bd)
+    0.99x   91 ms   the Program written into the caller's own, not returned twice (0aa7fc11)
+    0.98x   89 ms   short string equality without memcmp (fae3bfc4)
+
+GOAL MET. 21 interleaved rounds, one session: ./tychoc min 91.0 / median 92.3 /
+mean 96.9 ms, ./tychoc1 min 89.0 / median 91.2 / mean 94.8 -- 0.977 / 0.988 /
+0.979. All three statistics agree, which the 1.00x row's did not (1.004 / 0.997
+/ 0.994) and is why that row is not the finish line. Instructions 850.0e6 ->
+789.6e6; tychoc still executes only 681.6e6, so the parity is bought by cheaper
+instructions, not fewer.
+
+THE RULE, in its final form. An out parameter pays where ONE tree is built up
+and would otherwise be re-homed at every level; it LOSES where many small
+values accumulate, because each push then pays an individual retention copy
+instead of one bulk copy at the return. Measured both ways: the binary levels
+and primary/postfix/unary win, tokenize_named's token array loses (830.8e6 ->
+833.6e6), unary as a pass-through is flat, and postfix on top of a
+tuple-returning primary is worse. The same rule read the other way is what the
+slot-building wins are: push a placeholder, let the callee build in place.
 
 A SHAPE WORTH KNOWING, since three of the wins above are instances of it:
 passing a value through a small helper LOSES ITS ARENA IDENTITY and costs a
