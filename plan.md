@@ -1851,6 +1851,19 @@ WHERE IT STANDS on compiler/main.ty (tychoc 89-91 ms alongside):
     1.24x  110 ms   the scope-elision test scans once (5d4122c1)
     1.21x  108 ms   the parser compares a token's kind in place (a6ecc1ba)
     1.19x  106 ms   string equality checks one byte first (ad604f7a)
+    1.18x  106 ms   the hottest token sites build their Tok inline (cc3a9d03)
+
+A SHAPE WORTH KNOWING, since three of the wins above are instances of it:
+passing a value through a small helper LOSES ITS ARENA IDENTITY and costs a
+copy. A literal handed to _tk is a place once it is a parameter; a token read by
+_expect is copied whole to look at two fields; `return cs.vcn[i]` duplicates a
+field of a caller-owned struct into the caller's own arena. Building or
+comparing in place at the call site is what removes them.
+
+The general form of the last one does NOT work: teaching _shares that a place
+rooted in an INOUT parameter may be returned without a copy (its arena is the
+caller's, which is what _parent names) fires nowhere measurable on its own, and
+wiring it into the RETURN path reddens 15 fixtures for ~1%. Reverted.
 
     instructions   2.820e9 -> 1.016e9
 
