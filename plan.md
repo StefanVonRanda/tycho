@@ -1911,10 +1911,37 @@ STANDING: 1.15-1.18x. The gap is ONE problem, and it is scoped: 1.9M of the
 of those crosses an arena boundary at a RETURN. That is ~17% of the profile,
 which is the whole remaining gap. Four routes to it are closed with numbers:
 
-    promotion / escape analysis   7 attempts; best +2% and a red fixture
+    promotion / escape analysis   8 attempts; the 8th WORKS -- see below
     scope adoption                green, -4% instructions, +12% WALL
     push-value arena              190 fixtures, then 254
     alias scope to caller's arena 19 fixtures; the accumulator guard made it 35
+
+THE EIGHTH PROMOTION ATTEMPT WORKS, IS GREEN, AND IS STILL A LOSS -- and what
+it measures is the useful part. Three gaps had to be closed:
+  - a name declared by `l, i := mul(...)` (an MDecl) was never a candidate, and
+    that is how every recursive-descent function declares the local it returns;
+  - a read inside `l = ast.Binop(ln, op, [l, r])` -- the tree accumulator -- was
+    counted as "outside a return", which disqualified exactly the target;
+  - or_return pinned its subject to &_scope, so a promoted declaration took its
+    Ok payload out of a scope the return then freed (tests/calc died on a
+    non-exhaustive match, reading a tag out of released memory). Moving the
+    subject to the current arena unconditionally leaks the statement's own
+    scratch on the early-return path -- ASan caught one block in
+    tests/result_void -- so it moves only for a promoted declaration.
+
+With all three: 752/752, parse-check, corelib green, and
+
+    tycho_str_copy   4,038,215 -> 3,707,039   (-331k, -8%)
+    instructions     0.996e9 -> 1.020e9       (+2.4%)
+
+The rule fires and removes copies; the census costs about three times what they
+save. AND THE ASSUMPTION UNDERNEATH ALL EIGHT ATTEMPTS IS WRONG: the AST copies
+did NOT move (tycho_copy_E_ast__Expr 1,488,864 -> 1,484,873). The parser's
+`return (l, i)` is not where they come from. Tracing the callers again puts the
+roots in tycho_arr_K3_copy -- STATEMENT BODY arrays -- which this rule excludes,
+because promoting arrays reddened every pkg_* fixture in an earlier attempt.
+That is where a ninth attempt should start, and it should confirm the root by
+call count BEFORE writing any analysis.
 
 The FBIP recycling that aliasing would disturb is worth 2.5% on its own
 (measured by making arena_recycle a no-op: 0.996e9 -> 1.021e9, 105 -> 109 ms),
