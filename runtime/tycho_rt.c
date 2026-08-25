@@ -1227,9 +1227,30 @@ void tycho_str_append_char(Arena *a, char **s, tycho_int *len, tycho_int *cap, t
  * variable is returned or assigned to an outer scope: the variable is only
  * a pointer into a scope about to be freed, so the bytes must be copied
  * into the destination arena to survive (cf. tycho_arr_int_copy). */
+/* Short strings copy inline. A compiler copies names, keywords and operators by
+ * the million and they are almost all under 16 bytes, where the call into the
+ * AVX memcpy costs more than the move. The 8- and 4-byte forms OVERLAP their
+ * two halves rather than reading past the end, so nothing outside [s, s+n) is
+ * touched. */
 char *tycho_str_copy(Arena *a, const char *s) {
     tycho_int n = ((const tycho_int *)s)[-1];   /* header length: a value-semantic copy of a Tycho string preserves every byte */
     char *r = tycho_str_alloc(a, n);
+    if (n >= 8) {
+        if (n <= 16) {
+            uint64_t h, t;
+            memcpy(&h, s, 8); memcpy(&t, s + n - 8, 8);
+            memcpy(r, &h, 8); memcpy(r + n - 8, &t, 8);
+            return r;
+        }
+    } else if (n >= 4) {
+        uint32_t h, t;
+        memcpy(&h, s, 4); memcpy(&t, s + n - 4, 4);
+        memcpy(r, &h, 4); memcpy(r + n - 4, &t, 4);
+        return r;
+    } else {
+        for (tycho_int i = 0; i < n; i++) r[i] = s[i];
+        return r;
+    }
     memcpy(r, s, (size_t)n);
     return r;
 }
