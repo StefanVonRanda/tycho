@@ -4,6 +4,10 @@ CC      ?= cc
 # arithmetic honours the same contract it gives generated programs.
 CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 
+# Which compiler the bench lanes build and measure. Override to point the suite
+# at the second compiler: make bench-guard TYCHOC=./tychoc1
+TYCHOC  ?= ./tychoc
+
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
@@ -129,32 +133,32 @@ locale-check: tychoc
 test-update: tychoc
 	@RECORD=1 sh tests/run.sh
 
-bench: tychoc entrypoints
-	@sh bench/run.sh
+bench: $(TYCHOC) entrypoints
+	@TYCHOC=$(TYCHOC) sh bench/run.sh
 
-bench-prongB: tychoc
-	@sh bench/prongB/run.sh
+bench-prongB: $(TYCHOC)
+	@TYCHOC=$(TYCHOC) sh bench/prongB/run.sh
 
-bench-dbquery: tychoc
-	@sh bench/dbquery/run.sh
+bench-dbquery: $(TYCHOC)
+	@TYCHOC=$(TYCHOC) sh bench/dbquery/run.sh
 
-bench-conc: tychoc
-	@sh bench/conc/run.sh
+bench-conc: $(TYCHOC)
+	@TYCHOC=$(TYCHOC) sh bench/conc/run.sh
 
-bench-indexer: tychoc
-	@sh bench/indexer/run.sh
+bench-indexer: $(TYCHOC)
+	@TYCHOC=$(TYCHOC) sh bench/indexer/run.sh
 
-bench-site: tychoc
-	@sh bench/site/run.sh
+bench-site: $(TYCHOC)
+	@TYCHOC=$(TYCHOC) sh bench/site/run.sh
 
-bench-window: tychoc
-	@sh bench/window/run.sh
+bench-window: $(TYCHOC)
+	@TYCHOC=$(TYCHOC) sh bench/window/run.sh
 
-bench-latency: tychoc
-	@sh bench/latency/run.sh
+bench-latency: $(TYCHOC)
+	@TYCHOC=$(TYCHOC) sh bench/latency/run.sh
 
-bench-gcscan: tychoc
-	@sh bench/gcscan/run.sh
+bench-gcscan: $(TYCHOC)
+	@TYCHOC=$(TYCHOC) sh bench/gcscan/run.sh
 
 corelib: tychoc
 	@sh corelib/run.sh
@@ -336,8 +340,8 @@ fuzz-reject: tychoc
 fuzz-leak: tychoc
 	@python3 fuzz/run_leak.py $(N)
 
-bench-guard: tychoc
-	@sh bench/guard.sh
+bench-guard: $(TYCHOC)
+	@TYCHOC=$(TYCHOC) sh bench/guard.sh
 
 ci:
 	@sh scripts/ci.sh $(N)
