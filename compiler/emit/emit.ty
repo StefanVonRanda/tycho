@@ -5569,9 +5569,31 @@ fn _fnbody(cs: inout C, fi: int, body: [ast.Stmt]) -> (string, string):
     # compiler/main.ty, 5.80M never had a single allocation. The test is that
     # the emitted body mentions _scope nowhere except in the frees themselves,
     # which is exact -- an allocation, a copy or an inout hand-off all name it.
-    bare := _replace(b, "arena_free(&_scope); ", "")
-    bare = _replace(bare, "arena_free(&_scope);\n", "")
-    if not strings.contains(bare, "_scope"):
+    # One pass: every mention of _scope is either a free (dropped) or a real use
+    # (which ends the scan). Two _replace passes over every body were 3% of the
+    # whole compile.
+    bare := ""
+    keep := true
+    bi := 0
+    blast := 0
+    bn := len(b)
+    for bi + 6 <= bn:
+        if b[bi] == 95 and b[bi + 1] == 115 and b[bi:bi + 6] == "_scope":
+            if bi >= 12 and b[bi - 12:bi] == "arena_free(&":
+                bare = bare + b[blast:bi - 12]
+                bi += 7                              # past "_scope)"
+                if bi < bn and b[bi] == 59:
+                    bi += 1                          # and the ';'
+                if bi < bn and (b[bi] == 32 or b[bi] == 10):
+                    bi += 1                          # and the space or newline
+                blast = bi
+                continue
+            keep = false
+            bi = bn
+            continue
+        bi += 1
+    bare = bare + b[blast:]
+    if keep:
         out0 := sig + " {\n" + bare
         if rt != "void":
             out0 = out0 + "    { fprintf(stderr, \"tycho: fell off the end of " + nm + "\\n\"); exit(1); }\n"
