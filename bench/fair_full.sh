@@ -1,4 +1,5 @@
 cd "$(dirname "$0")/.." || exit 1            # repo root (portable; was a hardcoded Linux path)
+TYCHOC="${TYCHOC:-./tychoc}"
 T=$(mktemp -d); cc -O2 -o "$T/pk" bench/peakrss.c || exit 1
 P=bench/prongB
 # ru_maxrss is KB on Linux, bytes on macOS/BSD — normalize to KB so $bkb/1024 is MB on both.
@@ -28,12 +29,12 @@ best() { bms=9999999; bkb=0; rc=0
   awk "BEGIN{printf \"%5.1fMB/%-6s\", $bkb/1024.0, \"${bms}ms\"}"
 }
 # json doc
-./tychoc "$P/json_gen.ty" --emit-c -o "$T/jg" >/dev/null 2>&1 && cc -O3 -o "$T/jg" "$T/jg.c" -lm 2>/dev/null && "$T/jg" > "$T/doc.json" 2>/dev/null
+"$TYCHOC" "$P/json_gen.ty" --emit-c -o "$T/jg" >/dev/null 2>&1 && cc -O3 -o "$T/jg" "$T/jg.c" -lm 2>/dev/null && "$T/jg" > "$T/doc.json" 2>/dev/null
 
 row() { # label hi c rs go kk [input] [koka-input-mode: stdin|arg]
   rm -f "$T/ref.out"                          # output-identity reference, per row
   printf "| %-14s" "$1"
-  if [ -f "$2" ] && ./tychoc "$2" --emit-c -o "$T/h" >/dev/null 2>&1 && cc -O3 -o "$T/h" "$T/h.c" -lm 2>/dev/null; then printf "| %-14s" "$(best "$T/h" "$7")"; else printf "| %-14s" "-"; fi
+  if [ -f "$2" ] && "$TYCHOC" "$2" --emit-c -o "$T/h" >/dev/null 2>&1 && cc -O3 -o "$T/h" "$T/h.c" -lm 2>/dev/null; then printf "| %-14s" "$(best "$T/h" "$7")"; else printf "| %-14s" "-"; fi
   if [ -f "$3" ] && cc -O3 -o "$T/c" "$3" -lm 2>/dev/null; then printf "| %-14s" "$(best "$T/c" "$7")"; else printf "| %-14s" "-"; fi
   if [ -f "$4" ] && rustc -C opt-level=3 -o "$T/r" "$4" 2>/dev/null; then printf "| %-14s" "$(best "$T/r" "$7")"; else printf "| %-14s" "-"; fi
   if [ -f "$5" ] && ( cd "$(dirname "$5")" && go build -o "$T/g" "$(basename "$5")" 2>/dev/null ); then printf "| %-14s" "$(best "$T/g" "$7")"; else printf "| %-14s" "-"; fi

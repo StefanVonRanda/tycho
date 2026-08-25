@@ -1,5 +1,5 @@
 cd "$(dirname "$0")/.." || exit 1            # repo root (portable; was a hardcoded Linux path)
-TYCHOC=./tychoc
+TYCHOC="${TYCHOC:-./tychoc}"
 T=$(mktemp -d); cc -O2 -o "$T/pk" bench/peakrss.c || exit 1
 # ru_maxrss is KB on Linux, bytes on macOS/BSD — normalize to KB so $bkb/1024 is MB on both.
 to_kb() { case "$(uname)" in Darwin) echo $(( $1 / 1024 ));; *) echo "$1";; esac; }

@@ -1,5 +1,6 @@
 set -eu
 cd "$(dirname "$0")/.."
+TYCHOC="${TYCHOC:-./tychoc}"
 case "$(uname -s)" in *MSYS*|*MINGW*|*CYGWIN*)
     echo "bench-guard: SKIP (Windows: bench/peakrss.c is fork/wait4/getrusage-based, and a wall-clock ratio gate does not survive a VM anyway)"
     exit 0 ;;
@@ -20,7 +21,7 @@ best() { # binary -> best-of-3 wall ms
 
 rc=0
 for w in binary_trees maptree; do
-  ./tychoc "bench/prongB/$w.ty" --emit-c -o "$T/h" >/dev/null 2>&1
+  "$TYCHOC" "bench/prongB/$w.ty" --emit-c -o "$T/h" >/dev/null 2>&1
   cc -O3 -o "$T/h" "$T/h.c" -lm
   cc -O3 -o "$T/c" "bench/prongB/$w.c" -lm
   h=$(best "$T/h"); c=$(best "$T/c")
@@ -33,7 +34,7 @@ for w in binary_trees maptree; do
   fi
 done
 
-./tychoc bench/prongB/arr_pipeline.ty --emit-c -o "$T/ap" >/dev/null 2>&1
+"$TYCHOC" bench/prongB/arr_pipeline.ty --emit-c -o "$T/ap" >/dev/null 2>&1
 el=$(grep -c '\.data\[h_i\]' "$T/ap.c" || true)
 ck=$(grep -c 'tycho_arr_int_get(h_' "$T/ap.c" || true)
 if [ "$el" -ge 2 ] && [ "$ck" -eq 0 ]; then

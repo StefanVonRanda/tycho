@@ -1,7 +1,7 @@
 set -u
 cd "$(dirname "$0")/../.." || exit 2                  # repo root
-TYCHOC=./tychoc
-[ -x "$TYCHOC" ] || { echo "no ./tychoc -- run 'make' first"; exit 2; }
+TYCHOC="${TYCHOC:-./tychoc}"
+[ -x "$TYCHOC" ] || { echo "no $TYCHOC -- run 'make' first"; exit 2; }
 CC="${CC:-cc}"
 # Detect sqlite3 portably. Prefer pkg-config (Linux); on macOS Apple ships
 # libsqlite3 + sqlite3.h in the SDK but NO .pc file, so fall back to a bare

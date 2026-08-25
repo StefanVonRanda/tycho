@@ -1,8 +1,8 @@
 set -u
 cd "$(dirname "$0")/.." || exit 2
 
-TYCHOC=./tychoc
-[ -x "$TYCHOC" ] || { echo "no ./tychoc — run 'make' first"; exit 2; }
+TYCHOC="${TYCHOC:-./tychoc}"
+[ -x "$TYCHOC" ] || { echo "no $TYCHOC — run 'make' first"; exit 2; }
 CC="${CC:-cc}"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
