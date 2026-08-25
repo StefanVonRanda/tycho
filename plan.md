@@ -1953,6 +1953,29 @@ breaks.
     ALREADY walks the body -- resolve or tcheck -- and hand emit a set to look
     up. Every failure here has been the cost of the walk, never the rule.
 
+## The idea worth taking up next: ADOPT the scope instead of copying out of it
+
+What is left of the copying is all at the RETURN boundary. Traced: the AST deep
+copies are now almost entirely self-recursive (an Expr copy pulling its child
+array, which pulls each child), and the ROOTS are the parser's own returns --
+h_parse__mul, __postfix, __isexp -- handing a node up through the grammar. Each
+level copies the whole subtree it just built.
+
+Copying is the wrong instrument there. The scope is ABOUT TO DIE and the value
+lives in it, so splicing the scope's blocks into the parent is O(1) where the
+copy is O(the value), and every pointer stays valid. Sketched as
+`arena_adopt(Arena *p, Arena *c)` in the runtime plus an `adopt` flag threaded
+through the return's expression emit so tuple elements and payloads skip their
+copies too.
+
+It does not work yet: 14 fixtures, and the failure is that TYCHOC1 ITSELF dies
+compiling tests/slices.ty (`index 0 out of bounds (len 0)`), so the adoption is
+unsound somewhere in its own code. The suspect is arena_reset: a loop's scratch
+arena retains its head block and releases the rest to the pool, so an arena that
+has ADOPTED another's blocks would hand back memory a live value still points
+into. Any attempt should start there -- and should measure peak memory as well
+as time, since the trade is retention.
+
 ## The biggest measured prize, and why it is not shipped
 
 NARROWING THE ARM-MUTATION TEST IS WORTH 21%. `_mut_e` is conservative at ANY
