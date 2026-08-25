@@ -11,15 +11,11 @@ import "core:strings"
 # into the CALLER's arena before the scope is freed, which is the unoptimised
 # form of src/tychoc.c's return-only-escape pass -- correct, and slower.
 #
-# Three of src/tychoc.c's optimisation passes are ported: the match-arm payload
+# Four of src/tychoc.c's optimisation passes are ported: the match-arm payload
 # borrow (`compiler/emit/emit.ty@_mroot`), the string self-append accumulator
-# (`compiler/emit/emit.ty@_acc_scan`) and a weak return-slot move. The rest are
-# not, and the cost is measured, not guessed: benchmarks built by this compiler
-# run 1-4x slower than the same source built by ./tychoc, and PEAK RSS is
-# 100-400x higher -- bench strarr_build 1 MB -> 360 MB, prongB iter-transform
-# 4 MB -> 1536 MB. The dominant missing pass is the per-iteration loop scratch
-# arena (`src/tychoc.c:12272-12287`); every allocation here lives in the
-# function scope instead. plan.md ranks the rest.
+# (`compiler/emit/emit.ty@_acc_scan`), a weak return-slot move, and the
+# per-iteration loop scratch arena (`compiler/emit/emit.ty@_curown`). The rest
+# are not, and the cost is measured, not guessed. plan.md ranks them.
 #
 # Scope is the core language: scalars, strings, arrays, structs, enums, control
 # flow, functions.
@@ -112,9 +108,10 @@ struct C:
     subn: [string]
     subp: [[ast.Param]]
     sube: [ast.Expr]
+    ascope: [string]                   # enclosing loop scratch arenas, innermost last
 
 fn _new() -> C:
-    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr)
+    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [])
 
 fn _bad(msg: string):
     die("tychoc1: " + msg)
@@ -1234,7 +1231,7 @@ fn _push(cs: inout C, n: string, t: string) -> string:
     push(cs.vnames, n)
     push(cs.vtypes, t)
     push(cs.vcn, cn)
-    push(cs.vown, "&_scope")
+    push(cs.vown, _curown(&cs))
     push(cs.vacc, "")
     return cn
 
@@ -1324,6 +1321,65 @@ fn _ownerof(cs: inout C, e: ast.Expr) -> string:
 fn _fresh(cs: inout C, p: string) -> string:
     cs.tmp += 1
     return p + str(cs.tmp)
+
+# --- the per-iteration loop scratch arena (src/tychoc.c:12269-12289) ---------
+#
+# A loop opens `Arena _scrN = arena_child(<enclosing>)`, resets it as the FIRST
+# statement of every iteration and frees it after. Correctness comes from the
+# arena hierarchy, not from escape analysis: anything that must outlive an
+# iteration is written through its variable's OWNING arena (_ownerof), which is
+# never a scratch, and a value DECLARED inside the loop records the scratch as
+# its owner -- which is what makes _shares copy it out instead of aliasing it.
+# arena_child is a plain arena_new (runtime/tycho_rt.c@arena_child): freeing the
+# parent does not free it, so every exit path frees it by hand.
+
+# The arena a value created at this point lives in.
+fn _curown(cs: inout C) -> string:
+    if len(cs.ascope) > 0:
+        return cs.ascope[len(cs.ascope) - 1]
+    return "&_scope"
+
+# The frees an early `return` (or an `or_return`) must run before it frees
+# _scope, innermost first -- src/tychoc.c@return_frees.
+fn _scr_frees(cs: inout C) -> string:
+    out := ""
+    for i := len(cs.ascope) - 1; i >= 0; i -= 1:
+        out = out + "arena_free(" + cs.ascope[i] + "); "
+    return out
+
+# Does this emitted body name scratch `id` for anything but its own free, and
+# does it name it at ALL? A loop whose body allocates nothing gets no scratch,
+# which is what keeps the whole-body _scope elision in _fn reachable for an
+# allocation-free loop; the second answer says whether the _replace that strips
+# the dead frees is worth running, and most bodies have no early return.
+#
+# The `_scr` prefix is tested byte by byte rather than by slicing: this runs
+# over every loop body once per enclosing loop, and `_scope` alone would have
+# made a substring at every occurrence -- 17% of the self-compile.
+fn _uses_scr(s: string, id: string) -> (bool, bool):
+    n := len(s)
+    m := len(id)
+    i := 0
+    used := false
+    seen := false
+    for i + m <= n:
+        if s[i] == 95 and s[i + 1] == 115 and s[i + 2] == 99 and s[i + 3] == 114:
+            ok := true
+            j := 4
+            for j < m:
+                if s[i + j] != id[j]:
+                    ok = false
+                    j = m
+                else:
+                    j += 1
+            if ok and i + m < n and s[i + m] >= 48 and s[i + m] <= 57:
+                ok = false                    # _scr1 is not _scr10
+            if ok:
+                seen = true
+                if not (i >= 12 and s[i - 12:i] == "arena_free(&"):
+                    return (true, true)
+        i += 1
+    return (used, seen)
 
 # --- deep copy / str / eq ---------------------------------------------------
 
@@ -2194,6 +2250,8 @@ fn _lambda(cs: inout C, ps: [ast.Param], ret: [ast.Ty], body: ast.Expr) -> (stri
     cs.vtypes = []string
     cs.vcn = []string
     cs.vown = []string
+    sas := cs.ascope
+    cs.ascope = []string
     cs.arena = "&_scope"
     env := ""
     for i := 0; i < len(caps); i += 1:
@@ -2221,6 +2279,7 @@ fn _lambda(cs: inout C, ps: [ast.Param], ret: [ast.Ty], body: ast.Expr) -> (stri
     cs.vown = svo
     cs.cur_ret = scr
     cs.arena = sar
+    cs.ascope = sas
     ft := _fn_of(&cs, rt, pts)
     fid := _tname(ft)
     pre := ""
@@ -2492,7 +2551,8 @@ fn _orret(cs: inout C, e: ast.Expr) -> (string, string):
         gt = ok[0]
     return ("({ E_" + _tname(t) + " *" + v + " = " + c + "; if (" + v + "->tag == " +
         str(bad) + ") { E_" + rn + " *_orr = " + mk +
-        "; if (_scope.head) arena_free(&_scope); return _orr; } " + got + "; })", gt)
+        "; " + _scr_frees(&cs) + "if (_scope.head) arena_free(&_scope); return _orr; } " +
+        got + "; })", gt)
 
 fn _arrlit(cs: inout C, k: [ast.Expr]) -> (string, string):
     if len(k) == 0:
@@ -3665,6 +3725,8 @@ fn _parfor(cs: inout C, b: [ast.Stmt], ind: string) -> string:
             cs.vcn = []string
             cs.vown = []string
             cs.vacc = []string
+            sas := cs.ascope
+            cs.ascope = []string
             cs.arena = "&_scope"
             cs.cur_ret = rt
             for i := 0; i < len(caps); i += 1:
@@ -3693,6 +3755,7 @@ fn _parfor(cs: inout C, b: [ast.Stmt], ind: string) -> string:
             cs.vown = svo
             cs.vacc = sva
             cs.arena = sar
+            cs.ascope = sas
             cs.cur_ret = scr
             push(cs.lamp, sig + ";\n")
             push(cs.lamd, wbody)
@@ -3795,6 +3858,8 @@ fn _pararr(cs: inout C, cc: string, ct: string, v: string, body: [ast.Stmt], ind
     cs.vcn = []string
     cs.vown = []string
     cs.vacc = []string
+    sas := cs.ascope
+    cs.ascope = []string
     cs.arena = "&_scope"
     cs.cur_ret = rt
     for i := 0; i < len(caps); i += 1:
@@ -3824,6 +3889,7 @@ fn _pararr(cs: inout C, cc: string, ct: string, v: string, body: [ast.Stmt], ind
     cs.vown = svo
     cs.vacc = sva
     cs.arena = sar
+    cs.ascope = sas
     cs.cur_ret = scr
     sid := str(len(cs.spawnd))
     fields := "HTask *t; " + _cty(&cs, ct) + " a0; tycho_int a1; tycho_int a2;"
@@ -3915,6 +3981,8 @@ fn _parchan(cs: inout C, l: int, v: string, coll: [ast.Expr], body: [ast.Stmt], 
     cs.vcn = []string
     cs.vown = []string
     cs.vacc = []string
+    sas := cs.ascope
+    cs.ascope = []string
     cs.arena = "&_scope"
     cs.cur_ret = rt
     for i := 0; i < len(caps); i += 1:
@@ -3946,6 +4014,7 @@ fn _parchan(cs: inout C, l: int, v: string, coll: [ast.Expr], body: [ast.Stmt], 
     cs.vown = svo
     cs.vacc = sva
     cs.arena = sar
+    cs.ascope = sas
     cs.cur_ret = scr
     sid := str(len(cs.spawnd))
     fields := "HTask *t; HChan *a0;"
@@ -4207,7 +4276,12 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             # and any perturbation of emit.ty could expose it.
             ow4 := _ownerof(&cs, ast.Name(l, n))
             sa4 := cs.arena
-            cs.arena = ow4
+            # ...but only a HEAP target owns anything. `sum = sum + f(x)` at an
+            # int target has nothing to place in sum's arena, and hoisting the
+            # whole right-hand side out of the loop scratch is what kept every
+            # transient f() built alive for the rest of the function.
+            if len(t) == 0 or _heap(&cs, t):
+                cs.arena = ow4
             rc, rt := _rhs2(&cs, k[0], t, ow4)
             cs.arena = sa4
             if len(t) == 0:
@@ -4254,7 +4328,8 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             # the return and are unreachable.
             fin := _finalizers(&cs, cs.fnbase, "")
             if len(k) == 0:
-                return ind + "{ " + _oneline(fin) + "if (_scope.head) arena_free(&_scope); return; }\n"
+                return ind + "{ " + _oneline(fin) + _scr_frees(&cs) +
+                    "if (_scope.head) arena_free(&_scope); return; }\n"
             sw := cs.want
             sa := cs.arena
             # RETURN-SLOT MOVE: a returned TEMPORARY is built straight in the
@@ -4277,7 +4352,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                 c = _copy(&cs, c, rt, "_parent")
             v := _fresh(&cs, "_ret")
             return ind + "{ " + _cty(&cs, rt) + " " + v + " = " + c + "; " +
-                _oneline(fin) + "arena_free(&_scope); return " + v + "; }\n"
+                _oneline(fin) + _scr_frees(&cs) + "arena_free(&_scope); return " + v + "; }\n"
         ast.BreakS(l):
             return ind + "break;\n"
         ast.ContinueS(l):
@@ -4289,19 +4364,61 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                 out = out + " else {\n" + _block(&cs, e, ind + "    ") + ind + "}"
             return out + "\n"
         ast.WhileS(l, c, b):
+            # the condition is re-evaluated every iteration but belongs to the
+            # ENCLOSING arena, exactly as src/tychoc.c:12275 generates it
             cc := "1"
             if len(c) > 0:
                 c2, ct2 := _ex(&cs, c[0])
                 cc = c2
-            return ind + "while (" + cc + ") {\n" + _block(&cs, b, ind + "    ") + ind + "}\n"
+            svw := cs.arena
+            idw := _fresh(&cs, "_scr")
+            push(cs.ascope, "&" + idw)
+            cs.arena = "&" + idw
+            bdw := _block(&cs, b, ind + "        ")
+            pop(cs.ascope)
+            cs.arena = svw
+            openw := ""
+            resw := ""
+            closw := ""
+            uidw, fidw := _uses_scr(bdw, idw)
+            if uidw:
+                openw = ind + "    Arena " + idw + " = arena_child(" + svw + ");\n"
+                resw = ind + "        arena_reset(&" + idw + ");\n"
+                closw = ind + "    arena_free(&" + idw + ");\n"
+            elif fidw:
+                bdw = _replace(bdw, "arena_free(&" + idw + "); ", "")
+            return ind + "{\n" + openw + ind + "    while (" + cc + ") {\n" + resw +
+                bdw + ind + "    }\n" + closw + ind + "}\n"
         ast.For3(l, ip, c, b):
             m := _mark(&cs)
+            # init runs once and the loop variable is written by the post clause
+            # and by the body, so its storage must NOT be the scratch a reset
+            # recycles -- src/tychoc.c:12293-12300 says exactly this.
             init := _stmt(&cs, ip[0], "")
             cc, ct := _ex(&cs, c[0])
+            sv3 := cs.arena
+            id3 := _fresh(&cs, "_scr")
+            push(cs.ascope, "&" + id3)
+            cs.arena = "&" + id3
             post := _stmt(&cs, ip[1], "")
-            out := ind + "{\n" + ind + "    " + _trim_nl(init) +
-                ind + "    for (; " + cc + "; " + _strip_semi(post) + ") {\n" +
-                _block(&cs, b, ind + "        ") + ind + "    }\n" + ind + "}\n"
+            bd3 := _block(&cs, b, ind + "        ")
+            pop(cs.ascope)
+            cs.arena = sv3
+            open3 := ""
+            res3 := ""
+            clos3 := ""
+            u3, f3 := _uses_scr(bd3, id3)
+            up3, fp3 := _uses_scr(post, id3)
+            if u3 or up3:
+                open3 = ind + "    Arena " + id3 + " = arena_child(" + sv3 + ");\n"
+                res3 = ind + "        arena_reset(&" + id3 + ");\n"
+                clos3 = ind + "    arena_free(&" + id3 + ");\n"
+            elif f3 or fp3:
+                bd3 = _replace(bd3, "arena_free(&" + id3 + "); ", "")
+                post = _replace(post, "arena_free(&" + id3 + "); ", "")
+            out := ind + "{\n" + ind + "    " + _trim_nl(init) + open3 +
+                ind + "    for (; " + cc + "; " + _strip_semi(post) + ") {\n" + res3 +
+                bd3 + ind + "    }\n" + clos3 + ind + "}\n"
             _restore(&cs, m)
             return out
         ast.ForIn(l, n, c, b):
@@ -4311,11 +4428,28 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                 fj := _fresh(&cs, "_fj")
                 ms := _mark(&cs)
                 scn := _push(&cs, n, "char")
-                outs := ind + "{\n" + ind + "    char *" + fs + " = " + cc + ";\n" +
+                svs := cs.arena
+                ids := _fresh(&cs, "_scr")
+                push(cs.ascope, "&" + ids)
+                cs.arena = "&" + ids
+                bds := _block(&cs, b, ind + "        ")
+                pop(cs.ascope)
+                cs.arena = svs
+                opens := ""
+                ress := ""
+                closs := ""
+                uids, fids := _uses_scr(bds, ids)
+                if uids:
+                    opens = ind + "    Arena " + ids + " = arena_child(" + svs + ");\n"
+                    ress = ind + "        arena_reset(&" + ids + ");\n"
+                    closs = ind + "    arena_free(&" + ids + ");\n"
+                elif fids:
+                    bds = _replace(bds, "arena_free(&" + ids + "); ", "")
+                outs := ind + "{\n" + ind + "    char *" + fs + " = " + cc + ";\n" + opens +
                     ind + "    for (tycho_int " + fj + " = 0; " + fj +
-                    " < tycho_str_len(" + fs + "); " + fj + " += 1) {\n" +
+                    " < tycho_str_len(" + fs + "); " + fj + " += 1) {\n" + ress +
                     ind + "        tycho_int " + scn + " = tycho_str_get(" + fs + ", " + fj + ");\n" +
-                    _block(&cs, b, ind + "        ") + ind + "    }\n" + ind + "}\n"
+                    bds + ind + "    }\n" + closs + ind + "}\n"
                 _restore(&cs, ms)
                 return outs
             if not _is_arr(ct):
@@ -4337,12 +4471,29 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             # every node under it at each level. Same test as the match arm's.
             if _place(c[0]) and _mut_b(b, _rootname(c[0])):
                 cc2 = _copy(&cs, cc, ct, "&_scope")
+            sva := cs.arena
+            ida := _fresh(&cs, "_scr")
+            push(cs.ascope, "&" + ida)
+            cs.arena = "&" + ida
+            bda := _block(&cs, b, ind + "        ")
+            pop(cs.ascope)
+            cs.arena = sva
+            opena := ""
+            resa := ""
+            closa := ""
+            uida, fida := _uses_scr(bda, ida)
+            if uida:
+                opena = ind + "    Arena " + ida + " = arena_child(" + sva + ");\n"
+                resa = ind + "        arena_reset(&" + ida + ");\n"
+                closa = ind + "    arena_free(&" + ida + ");\n"
+            elif fida:
+                bda = _replace(bda, "arena_free(&" + ida + "); ", "")
             out := ind + "{\n" + ind + "    " + _cty(&cs, "[" + et + "]") + " " + fc +
-                " = " + cc2 + ";\n" +
+                " = " + cc2 + ";\n" + opena +
                 ind + "    for (tycho_int " + fi + " = 0; " + fi + " < " + fc +
-                ".len; " + fi + " += 1) {\n" +
+                ".len; " + fi + " += 1) {\n" + resa +
                 ind + "        " + _cty(&cs, et) + " " + fcn + " = " + fc + ".data[" + fi + "];\n" +
-                _block(&cs, b, ind + "        ") + ind + "    }\n" + ind + "}\n"
+                bda + ind + "    }\n" + closa + ind + "}\n"
             _restore(&cs, m)
             return out
         ast.MatchS(l, subj, arms):
@@ -5567,6 +5718,7 @@ fn _fnbody(cs: inout C, fi: int, body: [ast.Stmt]) -> (string, string):
             push(cs.ctypes, "int")
             push(cs.ccode, "((" + _vcname(&cs, cs.fds[fi].pnames[j]) + ").len)")
     sfb := cs.fnbase
+    cs.ascope = []string
     cs.fnbase = len(cs.vnames)
     pm := len(cs.pk)
     b := _block(&cs, body, "    ")
