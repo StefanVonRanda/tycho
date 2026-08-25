@@ -23,6 +23,11 @@ struct Tok:
 fn _t(kind: string, text: string, line: int, col: int, raw: string) -> Tok:
     return Tok(kind, text, line, col, 0, 0.0, raw, "")
 
+# The three hottest token sites build their Tok INLINE rather than through this,
+# because a literal kind is not a place (no copy at all) and a local text is in
+# the same arena as the array it is pushed into (shared, not copied) -- both of
+# which are lost once the fields become parameters of a function that returns
+# its Tok into the caller's arena.
 fn _tk(keep: bool, kind: string, text: string, line: int, col: int, raw: string, fl: string) -> Tok:
     if keep:
         return Tok(kind, text, line, col, 0, 0.0, raw, fl)
@@ -533,7 +538,10 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
                 kind := "ident"
                 if is_keyword(name):
                     kind = "kw"
-                push(toks, _tk(keep_trivia, kind, name, line, tcol, name, file))
+                raw9 := ""
+                if keep_trivia:
+                    raw9 = name
+                push(toks, Tok(kind, name, line, tcol, 0, 0.0, raw9, file))
                 last_kind = kind
                 last_text = name
                 continue
@@ -584,7 +592,10 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
                 bracket_depth += 1
             elif (text == ")" or text == "]") and bracket_depth > 0:
                 bracket_depth -= 1
-            push(toks, _tk(keep_trivia, "op", text, line, tcol, text, file))
+            raw8 := ""
+            if keep_trivia:
+                raw8 = text
+            push(toks, Tok("op", text, line, tcol, 0, 0.0, raw8, file))
             p += l
             last_kind = "op"
             last_text = text
@@ -599,7 +610,7 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
         # A comment tail is not a token, so it must not defeat the trailing-
         # operator join: the candidate is recorded from the last REAL token.
         if bracket_depth == 0:
-            push(toks, _tk(keep_trivia, "newline", "", line, nlcol, "", file))
+            push(toks, Tok("newline", "", line, nlcol, 0, 0.0, "", file))
             pend = continues_line(last_kind, last_text)
         else:
             pend = false
