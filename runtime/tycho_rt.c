@@ -1307,6 +1307,8 @@ void tycho_str_append_char(Arena *a, char **s, tycho_int *len, tycho_int *cap, t
     ((tycho_int *)(*s))[-1] = *len;
 }
 
+static const struct { tycho_int n; char z[8]; } ty_str_empty = { 0, { 0 } };
+
 /* value-semantic copy of a string into arena `a`. Used when a bare string
  * variable is returned or assigned to an outer scope: the variable is only
  * a pointer into a scope about to be freed, so the bytes must be copied
@@ -1323,13 +1325,21 @@ char *tycho_str_copy(Arena *a, const char *s) {
      * round8(8 + n + 1) bytes -- exactly 16 here -- so 8 data bytes are addressable
      * at BOTH ends; the slack past n stays inside the same allocation. Widening it
      * to n <= 16 measured 12.2e6 Ir WORSE: the longer body stops callers inlining it. */
-    if ((uint64_t)n <= 7u) {
-        char *base = (char *)arena_alloc(a, 16u);   /* round8(8 + n + 1), constant for n <= 7 */
+    /* 1..7, so the 16.9% that carry NO bytes fall out of the SAME compare rather
+     * than costing the short path a branch (844.5e6 Ir this way, 853.8e6 nested). */
+    if ((uint64_t)(n - 1) <= 6u) {
+        char *base = (char *)arena_alloc(a, 16u);   /* round8(8 + n + 1), constant for 1 <= n <= 7 */
         *(tycho_int *)base = n;
         char *r = base + 8;
         uint64_t w; memcpy(&w, s, 8); memcpy(r, &w, 8);   /* n <= 7, so the source's own terminator at s[n] rides along */
         return r;
     }
+    /* A zero-byte string owns nothing, so it shares one immortal object -- the
+     * status an interned literal already has, which is why arena_recycle's
+     * arena_owns guard copes with a pointer no arena owns. const on purpose: the
+     * in-place writers (tycho_str_append/_append_char) reach an accumulator at
+     * cap 0 and grow into their own buffer before any store. */
+    if (n == 0) return (char *)ty_str_empty.z;
     char *r = tycho_str_alloc(a, n);
     tycho_mcpy(r, s, n);
     return r;
