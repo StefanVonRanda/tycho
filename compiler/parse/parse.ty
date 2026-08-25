@@ -46,6 +46,14 @@ fn _cl(toks: [lex.Tok], i: int) -> int:
         return 0
     return i
 
+# Comparing a token's kind or text WITHOUT materialising it: returning the field
+# copies the string, and the parser asks these questions once per token per rule.
+fn _kis(toks: [lex.Tok], i: int, s: string) -> bool:
+    return toks[_cl(toks, i)].kind == s
+
+fn _xis(toks: [lex.Tok], i: int, s: string) -> bool:
+    return toks[_cl(toks, i)].text == s
+
 fn _k(toks: [lex.Tok], i: int) -> string:
     return toks[_cl(toks, i)].kind
 
@@ -66,7 +74,7 @@ fn _iskw(toks: [lex.Tok], i: int, s: string) -> bool:
     return toks[j].kind == "kw" and toks[j].text == s
 
 fn _isid(toks: [lex.Tok], i: int, s: string) -> bool:
-    return _k(toks, i) == "ident" and _x(toks, i) == s
+    return _kis(toks, i, "ident") and _x(toks, i) == s
 
 # A parse error reads like every other diagnostic: `file:line: error: msg` with
 # the offending source line beneath it. The path and the source ride on the
@@ -241,7 +249,7 @@ fn ty(toks: [lex.Tok], i0: int) -> (ast.Ty, int):
         i += 1
         # [$N]T -- a size parameter. `where` is excluded so a `[$T]` return type
         # followed by a where-clause is not read as a fixed-size array.
-        if _isop(toks, i, "$") and _k(toks, i + 1) == "ident" and _isop(toks, i + 2, "]") and
+        if _isop(toks, i, "$") and _kis(toks, i + 1, "ident") and _isop(toks, i + 2, "]") and
                 _starts_type(toks, i + 3) and not _isid(toks, i + 3, "where"):
             nm := _x(toks, i + 1)
             el, j := ty(toks, i + 3)
@@ -250,15 +258,15 @@ fn ty(toks: [lex.Tok], i0: int) -> (ast.Ty, int):
         # is told from a dynamic [Foo] only by a type FOLLOWING the ']'.
         fixed := false
         sz := ""
-        if _k(toks, i) == "int" and _isop(toks, i + 1, "]"):
+        if _kis(toks, i, "int") and _isop(toks, i + 1, "]"):
             fixed = true
             sz = _x(toks, i)
-        elif _k(toks, i) == "ident" and _isop(toks, i + 1, "]") and
+        elif _kis(toks, i, "ident") and _isop(toks, i + 1, "]") and
                 _starts_type(toks, i + 2) and not _isid(toks, i + 2, "where"):
             fixed = true
             sz = _x(toks, i)
         if fixed:
-            if _k(toks, i) == "int" and _at(toks, i).ival <= 0:
+            if _kis(toks, i, "int") and _at(toks, i).ival <= 0:
                 _die(t, "a fixed-size array length must be positive")
             el, j := ty(toks, i + 2)
             return (ast.TFix(sz, [el]), j)
@@ -275,7 +283,7 @@ fn ty(toks: [lex.Tok], i0: int) -> (ast.Ty, int):
         nm := t.text
         qual := ""
         i += 1
-        if _isop(toks, i, ".") and _k(toks, i + 1) == "ident":
+        if _isop(toks, i, ".") and _kis(toks, i + 1, "ident"):
             qual = nm
             nm = _x(toks, i + 1)
             i += 2
@@ -322,7 +330,7 @@ fn _args(toks: [lex.Tok], i0: int) -> ([ast.Expr], int):
     i := i0
     out := []ast.Expr
     for not _isop(toks, i, ")"):
-        if _k(toks, i) == "ident" and _isop(toks, i + 1, ":"):
+        if _kis(toks, i, "ident") and _isop(toks, i + 1, ":"):
             nm := _x(toks, i)
             a, j := expr(toks, i + 2)
             push(out, ast.Named(_ln(toks, i), nm, [a]))
@@ -402,7 +410,7 @@ fn primary(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
             return (ast.FStrLit(t.line, t.text), i + 1)
         s := t.text
         i += 1
-        for _k(toks, i) == "str" and _at(toks, i).ival != 1:
+        for _kis(toks, i, "str") and _at(toks, i).ival != 1:
             s = s + _x(toks, i)
             i += 1
         return (ast.StrLit(t.line, s), i)
@@ -598,7 +606,7 @@ fn postfix(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
             continue
         if _isop(toks, i, "."):
             i += 1
-            if _k(toks, i) == "int":
+            if _kis(toks, i, "int"):
                 e = ast.TupIdx(ast.line_of(e), [e], _at(toks, i).ival)
                 i += 1
                 continue
@@ -655,7 +663,7 @@ fn unary(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
 
 fn _mul_op(toks: [lex.Tok], i: int) -> bool:
     s := _x(toks, i)
-    if _k(toks, i) != "op":
+    if not _kis(toks, i, "op"):
         return false
     return s == "*" or s == "/" or s == "%" or s == "<<" or s == ">>" or s == "&"
 
@@ -670,7 +678,7 @@ fn mul(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
 
 fn _add_op(toks: [lex.Tok], i: int) -> bool:
     s := _x(toks, i)
-    if _k(toks, i) != "op":
+    if not _kis(toks, i, "op"):
         return false
     return s == "+" or s == "-" or s == "|" or s == "^"
 
@@ -702,7 +710,7 @@ fn isexp(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
 fn _cmp_op(toks: [lex.Tok], i: int) -> bool:
     if _iskw(toks, i, "in"):
         return true
-    if _k(toks, i) != "op":
+    if not _kis(toks, i, "op"):
         return false
     s := _x(toks, i)
     return s == "==" or s == "!=" or s == "<" or s == ">" or s == "<=" or s == ">="
@@ -744,22 +752,22 @@ fn expr(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
 # the LAST logical line; a line that opens its own block is never the tail.
 fn _at_tail(toks: [lex.Tok], i0: int) -> bool:
     i := i0
-    for _k(toks, i) != "newline" and _k(toks, i) != "eof" and _k(toks, i) != "dedent":
+    for not _kis(toks, i, "newline") and not _kis(toks, i, "eof") and not _kis(toks, i, "dedent"):
         i += 1
-    if _k(toks, i) != "newline":
+    if not _kis(toks, i, "newline"):
         return true
     j := i + 1
-    for _k(toks, j) == "newline":
+    for _kis(toks, j, "newline"):
         j += 1
-    if _k(toks, j) == "indent":
+    if _kis(toks, j, "indent"):
         return false
-    return _k(toks, j) == "dedent"
+    return _kis(toks, j, "dedent")
 
 fn value_block(toks: [lex.Tok], i0: int) -> ([ast.Stmt], int):
     i := _expect(toks, i0, "indent", "")
     out := []ast.Stmt
-    for _k(toks, i) != "dedent" and _k(toks, i) != "eof":
-        if _k(toks, i) == "newline":
+    for not _kis(toks, i, "dedent") and not _kis(toks, i, "eof"):
+        if _kis(toks, i, "newline"):
             i += 1
             continue
         if _at_tail(toks, i):
@@ -860,7 +868,7 @@ fn _scalar_arm_ahead(toks: [lex.Tok], i: int) -> bool:
         return true
     if _iskw(toks, i, "true") or _iskw(toks, i, "false"):
         return true
-    if _isop(toks, i, "-") and _k(toks, i + 1) == "int":
+    if _isop(toks, i, "-") and _kis(toks, i + 1, "int"):
         return true
     return k == "ident" and (_isop(toks, i + 1, "..") or _isop(toks, i + 1, "|"))
 
@@ -914,7 +922,7 @@ fn _scalar_arm(toks: [lex.Tok], i0: int) -> ([ast.Pat], int):
     return (pats, i)
 
 fn _arm_body(toks: [lex.Tok], i0: int, value: bool) -> ([ast.Stmt], int):
-    if _k(toks, i0) == "newline":
+    if _kis(toks, i0, "newline"):
         i := i0 + 1
         if value:
             return value_block(toks, i)
@@ -932,8 +940,8 @@ fn matchs(toks: [lex.Tok], i0: int, value: bool) -> (ast.Stmt, int):
     i = _expect(toks, i, "newline", "")
     i = _expect(toks, i, "indent", "")
     arms := []ast.Arm
-    for _k(toks, i) != "dedent" and _k(toks, i) != "eof":
-        if _k(toks, i) == "newline":
+    for not _kis(toks, i, "dedent") and not _kis(toks, i, "eof"):
+        if _kis(toks, i, "newline"):
             i += 1
             continue
         aln := _ln(toks, i)
@@ -952,7 +960,7 @@ fn matchs(toks: [lex.Tok], i0: int, value: bool) -> (ast.Stmt, int):
             pats = p
             i = j
         else:
-            if _k(toks, i) == "str":
+            if _kis(toks, i, "str"):
                 _die(_at(toks, i), "`match` does not take a string arm -- int, char, bool, a range and a const name do; for strings use an if/elif chain on `==`")
             v, j := _ident(toks, i, "a match arm `Variant(bindings):` or `Variant:`")
             nm = v
@@ -964,7 +972,7 @@ fn matchs(toks: [lex.Tok], i0: int, value: bool) -> (ast.Stmt, int):
                 i = k
             if _isop(toks, i, "("):
                 i += 1
-                if _k(toks, i) == "ident" and (_isop(toks, i + 1, ".") or _isop(toks, i + 1, "(")):
+                if _kis(toks, i, "ident") and (_isop(toks, i + 1, ".") or _isop(toks, i + 1, "(")):
                     s1, j2 := _ident(toks, i, "a nested variant name")
                     sub = s1
                     i = j2
@@ -1006,8 +1014,8 @@ fn selects(toks: [lex.Tok], i0: int) -> (ast.Stmt, int):
     i = _expect(toks, i, "newline", "")
     i = _expect(toks, i, "indent", "")
     arms := []ast.Arm
-    for _k(toks, i) != "dedent" and _k(toks, i) != "eof":
-        if _k(toks, i) == "newline":
+    for not _kis(toks, i, "dedent") and not _kis(toks, i, "eof"):
+        if _kis(toks, i, "newline"):
             i += 1
             continue
         aln := _ln(toks, i)
@@ -1038,7 +1046,7 @@ fn selects(toks: [lex.Tok], i0: int) -> (ast.Stmt, int):
 # --- statements -------------------------------------------------------------
 
 fn _is_compound(toks: [lex.Tok], i: int) -> bool:
-    if _k(toks, i) != "op":
+    if not _kis(toks, i, "op"):
         return false
     s := _x(toks, i)
     if s == "+" or s == "-" or s == "*" or s == "/" or s == "%":
@@ -1192,13 +1200,13 @@ fn forstmt(toks: [lex.Tok], i0: int, par: bool) -> (ast.Stmt, int):
             _die(t, "the post clause of a three-clause `for` is an assignment")
         b, n := block(toks, i)
         return (ast.For3(t.line, [init, post], [cond], b), n)
-    if _k(toks, i) == "ident" and _iskw(toks, i + 1, "in"):
+    if _kis(toks, i, "ident") and _iskw(toks, i + 1, "in"):
         v := _x(toks, i)
         i += 2
         if _dotlt_ahead(toks, i):
             if not par:
                 _die(t, "`0..<N` counts only in a `parallel for` -- write `for idx := 0; idx < N; idx += 1:` for a sequential count")
-            if not (_k(toks, i) == "int" and _at(toks, i).ival == 0 and _isop(toks, i + 1, "..<")):
+            if not (_kis(toks, i, "int") and _at(toks, i).ival == 0 and _isop(toks, i + 1, "..<")):
                 _die(t, "`parallel for` counts from zero: write `0..<N`")
             hi, j := expr(toks, i + 2)
             i = _op(toks, j, ":")
@@ -1253,12 +1261,12 @@ fn stmt(toks: [lex.Tok], i0: int) -> (ast.Stmt, int):
         bad := false
         if n.kind == "op" and (n.text == ":=" or n.text == "=" or n.text == ","):
             bad = true
-        if n.kind == "op" and n.text == ":" and _k(toks, i + 2) != "newline":
+        if n.kind == "op" and n.text == ":" and not _kis(toks, i + 2, "newline"):
             bad = true
         if bad:
             _diec(t, "'" + kw + "' is a reserved keyword and cannot be used as a variable name")
 
-    if t.kind == "ident" and t.text == "const" and _k(toks, i + 1) == "ident":
+    if t.kind == "ident" and t.text == "const" and _kis(toks, i + 1, "ident"):
         nm, j := _ident(toks, i + 1, "a constant name after 'const'")
         i = _op(toks, j, "=")
         e, k := expr(toks, i)
@@ -1271,13 +1279,13 @@ fn stmt(toks: [lex.Tok], i0: int) -> (ast.Stmt, int):
         return (ast.ConstS(t.line, nm, [v]), i)
 
     if t.kind == "ident" and t.text == "pass" and
-            (_k(toks, i + 1) == "newline" or _k(toks, i + 1) == "dedent" or _k(toks, i + 1) == "eof"):
+            (_kis(toks, i + 1, "newline") or _kis(toks, i + 1, "dedent") or _kis(toks, i + 1, "eof")):
         i += 1
-        if _k(toks, i) == "newline":
+        if _kis(toks, i, "newline"):
             i += 1
         return (ast.PassS(t.line), i)
 
-    if t.kind == "ident" and t.text == "delete" and _k(toks, i + 1) == "ident":
+    if t.kind == "ident" and t.text == "delete" and _kis(toks, i + 1, "ident"):
         e, j := postfix(toks, i + 1)
         if not (e is ast.Index):
             _die(t, "`delete` removes a map element: `delete m[k]`")
@@ -1289,7 +1297,7 @@ fn stmt(toks: [lex.Tok], i0: int) -> (ast.Stmt, int):
         if _iskw(toks, i, "if") or _iskw(toks, i, "match"):
             c, j := value_ctrl(toks, i)
             return (rewrite_tails(c, "return", "", []ast.Expr), j)
-        if _k(toks, i) == "newline":
+        if _kis(toks, i, "newline"):
             return (ast.ReturnS(t.line, []ast.Expr), i + 1)
         first, j := expr(toks, i)
         i = j
@@ -1353,8 +1361,8 @@ fn stmt(toks: [lex.Tok], i0: int) -> (ast.Stmt, int):
 fn block(toks: [lex.Tok], i0: int) -> ([ast.Stmt], int):
     i := _expect(toks, i0, "indent", "")
     out := []ast.Stmt
-    for _k(toks, i) != "dedent" and _k(toks, i) != "eof":
-        if _k(toks, i) == "newline":
+    for not _kis(toks, i, "dedent") and not _kis(toks, i, "eof"):
+        if _kis(toks, i, "newline"):
             i += 1
             continue
         s, j := stmt(toks, i)
@@ -1575,7 +1583,7 @@ fn func(ps0: inout PS, toks: [lex.Tok], i0: int, notes: [lex.DNote]) -> (ast.Fn,
 fn externfn(toks: [lex.Tok], i0: int) -> (ast.Fn, int):
     i := i0 + 1
     lib := ""
-    if _k(toks, i) == "str":
+    if _kis(toks, i, "str"):
         lib = _x(toks, i)
         i += 1
     i = _expect(toks, i, "kw", "fn")
@@ -1612,8 +1620,8 @@ fn structd(toks: [lex.Tok], i0: int) -> (ast.StructD, int):
     i = _expect(toks, i, "newline", "")
     i = _expect(toks, i, "indent", "")
     fs := []ast.FieldD
-    for _k(toks, i) != "dedent" and _k(toks, i) != "eof":
-        if _k(toks, i) == "newline":
+    for not _kis(toks, i, "dedent") and not _kis(toks, i, "eof"):
+        if _kis(toks, i, "newline"):
             i += 1
             continue
         fln := _ln(toks, i)
@@ -1651,8 +1659,8 @@ fn enumd(toks: [lex.Tok], i0: int) -> (ast.EnumD, int):
     i = _expect(toks, i, "newline", "")
     i = _expect(toks, i, "indent", "")
     vs := []ast.Variant
-    for _k(toks, i) != "dedent" and _k(toks, i) != "eof":
-        if _k(toks, i) == "newline":
+    for not _kis(toks, i, "dedent") and not _kis(toks, i, "eof"):
+        if _kis(toks, i, "newline"):
             i += 1
             continue
         vln := _ln(toks, i)
@@ -1763,7 +1771,7 @@ fn subscriptd(toks: [lex.Tok], i0: int) -> (ast.SubscriptD, int):
     i = _op(toks, m, ":")
     i = _expect(toks, i, "newline", "")
     i = _expect(toks, i, "indent", "")
-    for _k(toks, i) == "newline":
+    for _kis(toks, i, "newline"):
         i += 1
     if not _isid(toks, i, "yield"):
         _die(_at(toks, i), "a subscript body must be a single `yield &<place>`")
@@ -1771,7 +1779,7 @@ fn subscriptd(toks: [lex.Tok], i0: int) -> (ast.SubscriptD, int):
     i = n
     if not (y is ast.Addr):
         _die(_at(toks, i0), "a subscript must yield a place: `yield &<place>`")
-    for _k(toks, i) == "newline":
+    for _kis(toks, i, "newline"):
         i += 1
     i = _expect(toks, i, "dedent", "")
     # The two rules src/tychoc.c@parse_subscript checks structurally, right here:
@@ -1895,7 +1903,7 @@ fn _const_fold(e: ast.Expr, cs: [ast.ConstD], t: lex.Tok) -> ast.Expr:
 fn _resync(toks: [lex.Tok], i0: int) -> int:
     i := i0
     depth := 0
-    for i < len(toks) and _k(toks, i) != "eof":
+    for i < len(toks) and not _kis(toks, i, "eof"):
         k := _k(toks, i)
         if k == "indent":
             depth += 1
@@ -1920,29 +1928,29 @@ fn unit(toks: [lex.Tok], notes: [lex.DNote]) -> ast.Unit:
     cts := []ast.ConstD
     sbs := []ast.SubscriptD
     i := 0
-    for _k(toks, i) != "eof":
-        if _k(toks, i) == "newline":
+    for not _kis(toks, i, "eof"):
+        if _kis(toks, i, "newline"):
             i += 1
             continue
         if _isid(toks, i, "package"):
             p, j := _ident(toks, i + 1, "a package name after `package`")
             pkg = p
             i = j
-            if _k(toks, i) == "newline":
+            if _kis(toks, i, "newline"):
                 i += 1
             continue
         if _isid(toks, i, "import"):
             iln := _ln(toks, i)
             i += 1
             alias := ""
-            if _k(toks, i) == "ident":
+            if _kis(toks, i, "ident"):
                 alias = _x(toks, i)
                 i += 1
-            if _k(toks, i) != "str":
+            if not _kis(toks, i, "str"):
                 _fail(_at(toks, i), "an import path string")
             push(imports, ast.ImportD(alias, _x(toks, i), iln))
             i += 1
-            if _k(toks, i) == "newline":
+            if _kis(toks, i, "newline"):
                 i += 1
             continue
         if _isid(toks, i, "extern") and not _isop(toks, i + 1, "("):
