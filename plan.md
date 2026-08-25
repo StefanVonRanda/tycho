@@ -1906,6 +1906,26 @@ since the call is handed cs.arena as its _parent. Arrays and maps are excluded
 (push and element assignment write in place), and so is a place rooted in a live
 string ACCUMULATOR (tests/value_semantics.ty).
 
+STANDING: 1.15-1.18x. The gap is ONE problem, and it is scoped: 1.9M of the
+4.0M string copies in a self-compile sit inside AST deep copies, and every one
+of those crosses an arena boundary at a RETURN. That is ~17% of the profile,
+which is the whole remaining gap. Four routes to it are closed with numbers:
+
+    promotion / escape analysis   7 attempts; best +2% and a red fixture
+    scope adoption                green, -4% instructions, +12% WALL
+    push-value arena              190 fixtures, then 254
+    alias scope to caller's arena 19 fixtures; the accumulator guard made it 35
+
+The FBIP recycling that aliasing would disturb is worth 2.5% on its own
+(measured by making arena_recycle a no-op: 0.996e9 -> 1.021e9, 105 -> 109 ms),
+so it cannot simply be dropped to make room.
+
+What is left is not a patch. It is a decision about how the compiler assigns
+arenas -- whether a callee can be told to build its result where the caller
+wants it, rather than building it locally and copying. Everything above is an
+attempt to infer that after the fact, and all four inferences are unsound,
+too expensive, or both.
+
 WHERE THE TIME IS BY PHASE, which reframes all of the above -- measured with the
 compiler's own front-end modes on compiler/main.ty:
 
