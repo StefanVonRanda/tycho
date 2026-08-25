@@ -37,9 +37,14 @@ TYCHOC1_SRC := compiler/main.ty $(wildcard compiler/*/*.ty)
 # TWO-STAGE. Stage 1 is built by ./tychoc; stage 2 is built by stage 1, so the
 # shipped compiler carries its OWN elisions. Stage 1 lives in the repo root, not
 # under build/, because the corelib is located relative to the binary.
+# TYCHOC1_CFLAGS picks the COMPILER BINARY's own cc flags, the way -O2 above
+# picks ./tychoc's. It is not the default for user programs: driver.ty stays
+# -O3, because inline-unit-growth costs bench/transient 3-5%. On this one
+# translation unit it is worth 1051.3e6 -> 864.2e6 Ir.
+TYCHOC1_CFLAGS ?= --param inline-unit-growth=150
 tychoc1: tychoc $(TYCHOC1_SRC)
 	./tychoc compiler/main.ty -o tychoc1-stage1
-	./tychoc1-stage1 compiler/main.ty -o tychoc1
+	TYCHO_CFLAGS="$(TYCHOC1_CFLAGS)" ./tychoc1-stage1 compiler/main.ty -o tychoc1
 	@rm -f tychoc1-stage1
 
 tycho: tychoc tools/tycho.ty tools/tycho_shim.c

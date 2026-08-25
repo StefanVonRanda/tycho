@@ -167,7 +167,13 @@ fn build(src_path: string, runtime_path: string, base: string, argv0: string):
     # +4.5% at 100), the regression scaling with the budget. `sh bench/run.sh`
     # cannot see any of this -- it compiles with its own `cc -O2 -std=c11` line
     # and never reads this one, so it is green for a flag change either way.
+    # TYCHO_CFLAGS appends to the cc line. It exists so the MAKEFILE can pick
+    # the compiler binary's own flags, exactly as it picks ./tychoc's -O2,
+    # without changing what every other Tycho program is built with.
     argv := ["cc", "-O3", "-fwrapv", "-pthread"]
+    for f in split(getenv("TYCHO_CFLAGS"), " "):
+        if len(f) > 0:
+            push(argv, f)
     root := types.corelib_root(argv0)
     if len(root) > 0:
         push(argv, "-I" + root)
