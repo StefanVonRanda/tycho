@@ -1906,6 +1906,27 @@ since the call is handed cs.arena as its _parent. Arrays and maps are excluded
 (push and element assignment write in place), and so is a place rooted in a live
 string ACCUMULATOR (tests/value_semantics.ty).
 
+WHERE THE TIME IS BY PHASE, which reframes all of the above -- measured with the
+compiler's own front-end modes on compiler/main.ty:
+
+    --parse       2 ms   (one file)
+    --resolve    78 ms   (load: read + lex + parse EVERY file, then resolve)
+    --typecheck  79 ms   (+1)
+    --emit-c    105 ms   (+26)
+
+The BACK END IS 26 ms of 105. Everything above was aimed at emit's copies, and
+emit is a quarter of the compile; the front end is three times it. A callgrind
+of --resolve alone puts tycho_str_copy at 15.1%, tycho_str_eq 6.4%,
+arena_alloc_i 5.9%, the Expr copy 5.4%, and -- the one that stands out --
+tycho_arr_K17_copy at 5.1%: the whole TOKEN ARRAY, deep-copied once per file
+with all four strings of every token, at tokenize_named's return.
+
+That last one looks like the next lever and is NOT: rewriting tokenize_named to
+fill an `inout` array moves the copy rather than removing it, because push into
+an array owned by another arena copies each element anyway. It only pays if the
+token is BUILT in the destination arena, which is the push-value-arena change
+that reddened 190 fixtures.
+
 PROFILE NOW (exclusive): tycho_str_copy 13.1%, memcpy 11.7%, arena_alloc_i
 7.4%, tycho_copy_E_ast__Expr 7.0%, the Expr-array copy 6.7%, memcmp 5.6%.
 
