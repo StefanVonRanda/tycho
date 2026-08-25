@@ -1677,7 +1677,9 @@ fn _collect_sizeparams_ty(t: ast.Ty, acc: [string]) -> [string]:
         _: return out
     return out
 
-fn func(ps0: inout PS, toks: [lex.Tok], i0: int, notes: [lex.DNote]) -> (ast.Fn, int):
+# The function is parsed straight into the array slot that will hold it:
+# returning it and pushing copies the whole body once per function.
+fn _func_into(ps0: inout PS, toks: [lex.Tok], i0: int, notes: [lex.DNote], out: inout ast.Fn) -> int:
     i := _expect(toks, i0, "kw", "fn")
     nm, j := _ident(toks, i, "a procedure name")
     dn := lex.dnote_above(notes, _at(toks, i).line)
@@ -1694,8 +1696,9 @@ fn func(ps0: inout PS, toks: [lex.Tok], i0: int, notes: [lex.DNote]) -> (ast.Fn,
             push(ps0.errs, _where(_at(toks, i + 1),
                 "expected a type (int, float, bool, string, [int], or a struct)", false))
             ps0.failed = true
-            return (ast.Fn(nm, ps, ret, []string, []string, []ast.Stmt, false, "", dn,
-                _at(toks, i0).line), i)
+            out = ast.Fn(nm, ps, ret, []string, []string, []ast.Stmt, false, "", dn,
+                _at(toks, i0).line)
+            return i
         r, m := ty(toks, i + 1)
         push(ret, r)
         i = m
@@ -1718,7 +1721,8 @@ fn func(ps0: inout PS, toks: [lex.Tok], i0: int, notes: [lex.DNote]) -> (ast.Fn,
     i = _op(toks, i, ":")
     i = _expect(toks, i, "newline", "")
     body, m2 := block(toks, i)
-    return (ast.Fn(nm, ps, ret, tps, wh, body, false, "", dn, _ln(toks, i0)), m2)
+    out = ast.Fn(nm, ps, ret, tps, wh, body, false, "", dn, _ln(toks, i0))
+    return m2
 
 fn externfn(toks: [lex.Tok], i0: int) -> (ast.Fn, int):
     i := i0 + 1
@@ -2057,6 +2061,9 @@ fn _resync(toks: [lex.Tok], i0: int) -> int:
         i += 1
     return i
 
+fn _empty_fn() -> ast.Fn:
+    return ast.Fn("", []ast.Param, []ast.Ty, []string, []string, []ast.Stmt, false, "", "", 0)
+
 fn unit(toks: [lex.Tok], notes: [lex.DNote]) -> ast.Unit:
     ps0 := PS([]string, false)
     pkg := ""
@@ -2136,12 +2143,13 @@ fn unit(toks: [lex.Tok], notes: [lex.DNote]) -> ast.Unit:
             push(nts, n)
             i = j
             continue
-        f, j := func(&ps0, toks, i, notes)
+        push(fns, _empty_fn())
+        j := _func_into(&ps0, toks, i, notes, &fns[len(fns) - 1])
         if ps0.failed:
             ps0.failed = false
+            pop(fns)
             i = _resync(toks, j)
             continue
-        push(fns, f)
         i = j
     if len(ps0.errs) > 0:
         msg := ""

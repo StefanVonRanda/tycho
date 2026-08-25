@@ -135,6 +135,10 @@ fn _pkg_files(dir: string) -> [string]:
     sort.asc(out)
     return out
 
+fn _empty_unit() -> ast.Unit:
+    return ast.Unit("", []ast.ImportD, []ast.Fn, []ast.StructD, []ast.EnumD,
+        []ast.NewtypeD, []ast.HandleD, []ast.ConstD, []ast.SubscriptD)
+
 fn _merge(ld: inout Loader, dir: string, pkgname: string, prefix: string):
     key := norm(dir)
     for a in ld.active:
@@ -170,7 +174,12 @@ fn _merge(ld: inout Loader, dir: string, pkgname: string, prefix: string):
             _merge(&ld, _resolve_pkg_dir(&ld, dir, im.path), child, child + "__")
 
     for i := 0; i < len(units); i += 1:
-        push(ld.files, File(files[i], dir, pkgname, prefix, units[i], srcs[i]))
+        # The unit is moved in by assignment rather than through the literal:
+        # naming it in the constructor copies the whole tree into this scope,
+        # and the push then copies the File -- and the tree again -- into
+        # ld.files' arena. The assignment builds straight in that arena.
+        push(ld.files, File(files[i], dir, pkgname, prefix, _empty_unit(), srcs[i]))
+        ld.files[len(ld.files) - 1].unit = units[i]
 
     # Pop the DFS path, then mark merged.
     na := []string
