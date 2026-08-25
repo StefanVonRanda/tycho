@@ -1,0 +1,13 @@
+# An open-ended string slice `f(...)[a:]` must evaluate its SUBJECT once. The
+# omitted high bound is len(subject), and emitting the subject's code a second
+# time inside that len() ran a side-effecting subject twice.
+fn subj(n: inout int) -> string:
+    n += 1
+    return "abcdef"
+
+fn main():
+    calls := 0
+    t := subj(&calls)[2:]
+    println(t + " calls=" + str(calls))              # cdef calls=1
+    u := subj(&calls)[1:4]
+    println(u + " calls=" + str(calls))              # bcd calls=2

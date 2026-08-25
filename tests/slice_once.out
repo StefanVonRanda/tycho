@@ -1,0 +1,2 @@
+cdef calls=1
+bcd calls=2

@@ -1859,8 +1859,11 @@ fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
                 return ("(" + rc + ").data[" + ic + "]", et)
             return (_apfx(&cs, et) + "_get(" + rc + ", " + ic + ")", et)
         ast.Slice(l, hl, hh, k):
+            # src/tychoc.c:11002-11050 -- the block id is taken BEFORE the subject
+            # is generated, and one id serves whichever of the three branches runs.
+            sid9 := _fresh(&cs, "")
             rc, rt := _ex(&cs, k[0])
-            lo := "0LL"
+            lo := "0L"
             hi := ""
             j := 1
             if hl:
@@ -1871,15 +1874,20 @@ fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
                 hc, ht := _ex(&cs, k[j])
                 hi = hc
             if rt == "string" or rt == "bytes":
+                # The subject is bound to a temp so it is evaluated EXACTLY ONCE:
+                # with `hi` omitted it is read a second time by tycho_str_len, and
+                # a subject with a side effect ran twice (tests/slice_once.ty).
+                ssn := "_ss" + sid9
                 if len(hi) == 0:
-                    hi = "tycho_str_len(" + rc + ")"
-                return ("tycho_str_substr(" + cs.arena + ", " + rc + ", " + lo + ", " + hi + ")", rt)
+                    hi = "tycho_str_len(" + ssn + ")"
+                return ("({ const char *" + ssn + " = " + rc + "; tycho_str_substr(" +
+                    cs.arena + ", " + ssn + ", " + lo + ", " + hi + "); })", rt)
             # A soa slice offsets EVERY field pointer by lo and carries cap 0,
             # so it is a view; the copy-on-bind comes from _heap, as for arrays.
             if _is_soa(rt):
-                ss := _fresh(&cs, "_sv")
-                sl := _fresh(&cs, "_lo")
-                sh := _fresh(&cs, "_hi")
+                ss := "_sv" + sid9
+                sl := "_lo" + sid9
+                sh := "_hi" + sid9
                 if len(hi) == 0:
                     hi = ss + ".len"
                 st2 := _selem(&cs, rt)
@@ -1898,15 +1906,17 @@ fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
                     offs + sh + " - " + sl + ", 0 }; }))", rt)
             if not _is_arr(rt):
                 _bad("slicing '" + rt + "'")
-            sv := _fresh(&cs, "_sv")
+            sv := "_sv" + sid9
             act := _cty(&cs, rt)
             if len(hi) == 0:
-                hi = "(" + sv + ".len)"
-            sl := "({ " + act + " " + sv + " = " + rc + "; tycho_int " + sv + "lo = " + lo +
-                ", " + sv + "hi = " + hi + "; if (" + sv + "lo < 0 || " + sv + "hi > " + sv +
-                ".len || " + sv + "lo > " + sv + "hi) { fprintf(stderr, \"tycho: slice [%\" TY_PRId \":%\" TY_PRId \"] out of bounds (len %\" TY_PRId \")\\n\", " +
-                sv + "lo, " + sv + "hi, " + sv + ".len); exit(1); } (" + act + "){ " + sv +
-                ".data + " + sv + "lo, " + sv + "hi - " + sv + "lo, 0 }; })"
+                hi = sv + ".len"
+            alo := "_lo" + sid9
+            ahi := "_hi" + sid9
+            sl := "({ " + act + " " + sv + " = " + rc + "; tycho_int " + alo + " = " + lo +
+                ", " + ahi + " = " + hi + "; if (" + alo + " < 0 || " + ahi + " > " + sv +
+                ".len || " + alo + " > " + ahi + ") { fprintf(stderr, \"tycho: slice [%\" TY_PRId \":%\" TY_PRId \"] out of bounds (len %\" TY_PRId \")\\n\", " +
+                alo + ", " + ahi + ", " + sv + ".len); exit(1); } (" + act + "){ " + sv +
+                ".data + " + alo + ", " + ahi + " - " + alo + ", 0 }; })"
             return (_copy(&cs, sl, rt, cs.arena), rt)
         ast.Unop(l, op, k):
             c, t := _ex(&cs, k[0])
@@ -3016,11 +3026,27 @@ fn _binop(cs: inout C, op: string, ea: ast.Expr, eb: ast.Expr) -> (string, strin
     _bad("unsupported operator '" + op + "'")
     return ("", "")
 
+# src/tychoc.c widens an int operand in a float context at TYPECHECK time, so an
+# int LITERAL reaches codegen already a float and prints as `0.0`, never as a cast.
+fn _tofloat(c: string) -> string:
+    n := len(c)
+    if n > 2 and c[n - 2] == 76 and c[n - 1] == 76:
+        ok := n > 2
+        for i := 0; i < n - 2; i += 1:
+            d := c[i]
+            if d == 45 and i == 0:
+                continue
+            if d < 48 or d > 57:
+                ok = false
+        if ok:
+            return c[0:n - 2] + ".0"
+    return "(double)(" + c + ")"
+
 fn _widen(a: string, at: string, b: string, bt: string) -> (string, string):
     if at == "float" and bt != "float":
-        return (a, "(double)(" + b + ")")
+        return (a, _tofloat(b))
     if bt == "float" and at != "float":
-        return ("(double)(" + a + ")", b)
+        return (_tofloat(a), b)
     return (a, b)
 
 # --- calls ------------------------------------------------------------------
@@ -3639,7 +3665,7 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
             _ctyz(&cs, rt) + "" + w + " = " + val + "; " + rel + "; " + w + "; })", rt)
     if n == "hash" and len(args) == 1:
         c, t := _ex(&cs, args[0])
-        return ("(tycho_int)(" + _hash_det(&cs, t, c) + ")", "int")
+        return ("((tycho_int)(" + _hash_det(&cs, t, c) + "))", "int")
     if n == "ncpu" and len(args) == 0:
         return ("tycho_ncpu()", "int")
     if n == "clock" and len(args) == 0:
@@ -4051,7 +4077,7 @@ fn _rhs3(cs: inout C, e: ast.Expr, want: string, arena: string, mv: bool) -> (st
         if not _shares(&cs, e, t, arena) and not (mv and _canmove(&cs, e, arena)):
             c = _copy(&cs, c, t, arena)
     if len(want) > 0 and want == "float" and t == "int":
-        c = "(double)(" + c + ")"
+        c = _tofloat(c)
         t = "float"
     return (c, t)
 
@@ -4794,9 +4820,13 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                     cn + ")[-1]; tycho_int _cap_" + cn + " = 0;\n"
             return out9
         ast.ConstS(l, n, k):
+            # src/tychoc.c:12247 -- a local const emits NO runtime storage; each
+            # use folds to the literal. Binding the C "name" to the literal code
+            # itself makes _vcname do the folding at every read.
             c, t := _ex(&cs, k[0])
-            cn2 := _push(&cs, n, t)
-            return ind + _ctyz(&cs, t) + "" + cn2 + " = " + c + ";\n"
+            _push(&cs, n, t)
+            cs.vcn[len(cs.vcn) - 1] = c
+            return ""
         ast.Assign(l, n, k):
             t := _vtype(&cs, n)
             if len(t) == 0:
@@ -6555,6 +6585,10 @@ fn program(pfx: [string], us: [ast.Unit]) -> string:
     htd = htd + mtd
     # `extern double strx_parse_double(char *, tycho_int *);` -- the foreign
     # symbol's prototype, matching ./tychoc. An inout parameter is a pointer.
+    # ./tychoc emits these INTERLEAVED with the ordinary prototypes (one loop
+    # over the whole proc list, src/tychoc.c:13804), so the block lands directly
+    # in front of them -- not up in the type header.
+    xpro := ""
     for xi := 0; xi < len(cs.fds); xi += 1:
         # The name is bound FIRST. Passing `cs.fds[xi].name` straight into a
         # call that also takes `&cs` reads a field of the very value being
@@ -6579,10 +6613,10 @@ fn program(pfx: [string], us: [ast.Unit]) -> string:
                 else:
                     xps = xps + "const " + _ctyz(&cs, el) + "*, tycho_int"
                 continue
-            xps = xps + _cty(&cs, cs.fds[xi].ptypes[xj])
+            xps = xps + _ctyz(&cs, cs.fds[xi].ptypes[xj])
             if cs.fds[xi].pinout[xj]:
-                xps = xps + " *"
-        xrt := _cty(&cs, cs.fds[xi].ret)
+                xps = xps + "*"
+        xrt := _ctyz(&cs, cs.fds[xi].ret)
         # An `Option(string)` return crosses as a plain `char *`: NULL is None.
         # Declaring it as the Option ENUM pointer made the caller read a tag out
         # of a C string -- "tycho: non-exhaustive match" in core:io's line
@@ -6599,13 +6633,13 @@ fn program(pfx: [string], us: [ast.Unit]) -> string:
             # 4 -- which is why io.read_text answered NotFound for a file that
             # exists, and why dropping the argument copy turned it into a
             # segfault. A `string` return does NOT use this form.
-            xrt = "void"
+            xrt = "void "
             if len(xps) > 0:
                 xps = xps + ", "
             xps = xps + "unsigned char **, tycho_int *"
         if len(xps) == 0:
             xps = "void"
-        head = head + "extern " + xrt + " " + cs.fds[xi].name +
+        xpro = xpro + "extern " + xrt + cs.fds[xi].name +
             "(" + xps + ");\n"
     head = head + atd + asb + msb + osb + "\n"
     for i in _struct_order(&cs):
@@ -6656,4 +6690,4 @@ fn program(pfx: [string], us: [ast.Unit]) -> string:
     spd := ""
     for x in cs.spawnd:
         spd = spd + x
-    return head + protos + cpr + lpr + "\n" + chd + spd + cbd + lbd + fns + entry
+    return head + xpro + protos + cpr + lpr + "\n" + chd + spd + cbd + lbd + fns + entry
