@@ -10570,7 +10570,7 @@ static char *gen_call(Expr *e, const char *arena) {
     if (!strcmp(e->sval, "args")) {
         return sfmt("tycho_args(%s)", arena);
     }
-    if (!strcmp(e->sval, "chr") || !strcmp(e->sval, "to_char")) {   /* int -> byte. Both route through tycho_chr so both inherit its 0..255 ABORT (`runtime/tycho_rt.c:1169`) rather than masking -- the established answer for an out-of-range conversion here, the same one to_int(float) takes at `runtime/tycho_rt.c:163-165`. to_char then reads the byte back out; the sized to_u8 family wraps instead, but those are documented as total reinterpretations (docs/spec/06-conversions.md:40), not conversions with a domain. */
+    if (!strcmp(e->sval, "chr") || !strcmp(e->sval, "to_char")) {   /* int -> byte. Both route through tycho_chr so both inherit its 0..255 ABORT (`runtime/tycho_rt.c:1225`) rather than masking -- the established answer for an out-of-range conversion here, the same one to_int(float) takes at `runtime/tycho_rt.c:163-165`. to_char then reads the byte back out; the sized to_u8 family wraps instead, but those are documented as total reinterpretations (docs/spec/06-conversions.md:40), not conversions with a domain. */
         return sfmt(e->sval[0] == 'c' ? "tycho_chr(%s, %s)" : "((tycho_int)(unsigned char)tycho_chr(%s, %s)[0])", arena, gen_expr(e->args[0], arena));
     }
     if (!strcmp(e->sval, "die")) {   /* print to stderr and exit(1); never returns */

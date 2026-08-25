@@ -2056,7 +2056,7 @@ fn _fvs(cs: inout C, k: [ast.Expr], bs: [string], out: inout [string]):
 
 # The free variables of a STATEMENT body, and the ones it ASSIGNS. A parallel
 # for outlines its body into a worker taking [lo, hi) plus every capture, and
-# returning the reduction (src/tychoc.c@__par0): a captured variable that is
+# returning the reduction (src/tychoc.c@__plo): a captured variable that is
 # written is a reduction, one that is only read is passed by value.
 fn _fv_body(cs: inout C, body: [ast.Stmt], bs0: [string], out: inout [string], wr: inout [string]):
     bs := bs0
@@ -3591,7 +3591,7 @@ fn _block(cs: inout C, body: [ast.Stmt], ind: string) -> string:
 
 # `parallel for i in lo..<hi:` -- the body is OUTLINED into a worker taking the
 # half-open slice and every capture, started on min(ncpu, hi-lo) tasks and
-# joined in order, the reduction summed on the way out (src/tychoc.c@__par0).
+# joined in order, the reduction summed on the way out (src/tychoc.c@__plo).
 # One reduction variable is supported; the corpus has no program with two.
 # gap: two or more reductions want a tuple return, which ./tychoc emits.
 fn _parfor(cs: inout C, b: [ast.Stmt], ind: string) -> string:

@@ -131,7 +131,7 @@ only spelling — `n.to_char()` is not.
 > `is_null`/`to_ptr` `Sig` `:4994-4995`. `to_i32` (and the rest of
 > `to_u8`..`to_f32`) is **not** a `Sig`: it is `is_sized_conv` `:1260-1264` /
 > `sized_conv_target` `:1249-1259`, resolved inline at `:6545-6551`. The abort
-> both share is `runtime/tycho_rt.c:1411@out of byte range`. Conformance:
+> both share is `runtime/tycho_rt.c:1485@out of byte range`. Conformance:
 > `tests/char_to_char.ty`, `tests/abort/chr_oob.ty`.
 
 ## 29.5 Strings
@@ -260,7 +260,7 @@ likewise as `t.wait()`. `close` is overloaded across a channel and an FFI handle
 > Provenance: `wait` `src/tychoc.c:6419-6426`; `channel` `:6427-6442`; `send`
 > `:6443-6451`; `recv` `:6452-6457`; `close` `:6433-6477`; `ncpu` `Sig` `:5407@.name="ncpu"`;
 > task/channel method sugar `:6037-6051`. `ncpu()`'s value is
-> `runtime/tycho_rt.c:930-945` (`TYCHO_THREADS` first, else
+> `runtime/tycho_rt.c:962-977` (`TYCHO_THREADS` first, else
 > `sysconf(_SC_NPROCESSORS_ONLN)`); the fan-out that does **not** follow it above
 > 64 is `src/tychoc.c:11476@_pk > 64`.
 

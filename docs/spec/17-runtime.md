@@ -12,8 +12,8 @@ diagnostic to standard error. The *presence* of the abort is normative; the
 diagnostic text is not ([§1.1](00-conventions.md)).
 
 > Provenance: `tycho_idiv`/`imod` `runtime/tycho_rt.c:85-94`, bounds
-> `:1299-1305`,`:1012-1019`, `pop` `:1293-1297`, `substr` `:1033-1043`, string
-> header `:937-955`, map hashing `:1839-1842`, channels/tasks `:577-924`.
+> `:1373-1379`,`:1044-1051`, `pop` `:1293-1297`, `substr` `:1065-1075`, string
+> header `:969-987`, map hashing `:1913-1916`, channels/tasks `:577-956`.
 > Behaviors marked *(probed)* were
 > confirmed against the implementation.
 

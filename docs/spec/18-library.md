@@ -368,8 +368,8 @@ state. Source `corelib/signal/signal.ty`, `corelib/signal/signal_shim.c`.
 `signal.on(sig, handler)`, and an implementation **MUST NOT** run Tycho code in
 handler context. Every Tycho value lives in a bump-allocated arena (§31.1,
 [§9](07-memory-model.md)) whose allocator is not re-entrant, and channel
-operations park behind a mutex (`runtime/tycho_rt.c:915@mu`,
-`runtime/tycho_rt.c:915@pthread_mutex_lock`); a handler that interrupts the
+operations park behind a mutex (`runtime/tycho_rt.c:947@mu`,
+`runtime/tycho_rt.c:947@pthread_mutex_lock`); a handler that interrupts the
 allocator or a lock holder and then allocates or touches a channel corrupts or
 deadlocks the process it was invoked to shut down. A wider surface is therefore a
 language feature rather than a library one, and would need at minimum: an
