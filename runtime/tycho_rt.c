@@ -1321,7 +1321,11 @@ tycho_int tycho_str_len(const char *s) { return ((const tycho_int *)s)[-1]; }   
 int tycho_str_eq(const char *a, const char *b) {
     tycho_int la = ((const tycho_int *)a)[-1], lb = ((const tycho_int *)b)[-1];
     if (la != lb) return 0;
-    return la == 0 || a == b || memcmp(a, b, (size_t)la) == 0;
+    if (la == 0 || a == b) return 1;
+    /* one byte settles most of what the lengths did not: a compiler's
+     * equal-length comparisons are things like "op" against "kw". */
+    if (a[0] != b[0]) return 0;
+    return la == 1 || memcmp(a + 1, b + 1, (size_t)(la - 1)) == 0;
 }
 int tycho_str_cmp(const char *a, const char *b) {
     tycho_int la = ((const tycho_int *)a)[-1], lb = ((const tycho_int *)b)[-1];
