@@ -109,9 +109,10 @@ struct C:
     subp: [[ast.Param]]
     sube: [ast.Expr]
     ascope: [string]                   # enclosing loop scratch arenas, innermost last
+    uid: int                           # src/tychoc.c@g_forin_uid -- a SECOND counter, not g_blk
 
 fn _new() -> C:
-    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [])
+    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0)
 
 fn _bad(msg: string):
     die("tychoc1: " + msg)
@@ -408,7 +409,7 @@ fn _kslot(cs: inout C, k: string) -> string:
         return "char *"
     if c == "int" or c == "enum":
         return "tycho_int "
-    return _cty(&cs, k) + " "
+    return _ctyz(&cs, k) + ""
 
 # The key as the generated functions take it, from a Tycho-level value.
 fn _keyrt(cs: inout C, k: string, code: string) -> string:
@@ -1010,6 +1011,14 @@ fn _inst_fn(cs: inout C, n: string, targs: [string]) -> int:
     cs.pendk[ii] = len(cs.fds) - 1
     return len(cs.fds) - 1
 
+# src/tychoc.c@c_type returns a value type WITH a trailing space and a pointer
+# type ending in `*`, which is visible in every `(T){0}` it prints.
+fn _ctyz(cs: inout C, t: string) -> string:
+    c := _cty(&cs, t)
+    if strings.ends_with(c, "*"):
+        return c
+    return c + " "
+
 fn _cty(cs: inout C, t: string) -> string:
     if t == "int" or t == "char":
         return "tycho_int"
@@ -1319,8 +1328,10 @@ fn _ownerof(cs: inout C, e: ast.Expr) -> string:
     return "&_scope"
 
 fn _fresh(cs: inout C, p: string) -> string:
+    # src/tychoc.c@g_blk is post-incremented: the first block temp is _l0.
+    n := cs.tmp
     cs.tmp += 1
-    return p + str(cs.tmp)
+    return p + str(n)
 
 # --- the per-iteration loop scratch arena (src/tychoc.c:12269-12289) ---------
 #
@@ -1388,7 +1399,7 @@ fn _copy(cs: inout C, code: string, t: string, arena: string) -> string:
         return "tycho_str_copy(" + arena + ", " + code + ")"
     if _is_fn(t):
         # re-home a returned closure's captures; a plain fn ref has env == 0
-        return "({ " + _cty(&cs, t) + " _fcp = (" + code + "); if (_fcp.env) _fcp.env = _fcp.copyenv(" +
+        return "({ " + _ctyz(&cs, t) + "_fcp = (" + code + "); if (_fcp.env) _fcp.env = _fcp.copyenv(" +
             arena + ", _fcp.env); _fcp; })"
     if _is_arr(t):
         return _apfx(&cs, _elem(t)) + "_copy(" + arena + ", " + code + ")"
@@ -1466,7 +1477,7 @@ fn _zero(cs: inout C, t: string) -> string:
         return "0.0"
     if t == "int" or t == "char" or t == "bool":
         return "0LL"
-    return "(" + _cty(&cs, t) + "){0}"
+    return "(" + _ctyz(&cs, t) + "){0}"
 
 fn _eq(cs: inout C, a: string, b: string, t: string) -> string:
     if _is_fn(t):
@@ -1505,7 +1516,7 @@ fn _hoist_legs(cs: inout C, e: ast.Expr, ind: string, pre: inout string, tmps: i
                 cs.tmp += 1
                 kn := "_mk" + str(cs.tmp)
                 cn := _push(&cs, kn, kt)
-                pre = pre + ind + _cty(&cs, kt) + " " + cn + " = " + kc + ";\n"
+                pre = pre + ind + _ctyz(&cs, kt) + "" + cn + " = " + kc + ";\n"
                 push(tmps, kn)
                 return ast.Index(l, [r, ast.Name(l, kn)])
             return ast.Index(l, [r, k[1]])
@@ -1525,7 +1536,7 @@ fn _hoist_legs(cs: inout C, e: ast.Expr, ind: string, pre: inout string, tmps: i
                 cs.tmp += 1
                 an := "_mk" + str(cs.tmp)
                 acn := _push(&cs, an, at)
-                pre = pre + ind + _cty(&cs, at) + " " + acn + " = " + ac + ";\n"
+                pre = pre + ind + _ctyz(&cs, at) + "" + acn + " = " + ac + ";\n"
                 push(tmps, an)
                 push(na, ast.Name(l, an))
             return ast.Call(l, q, n, ts, na)
@@ -1605,8 +1616,148 @@ fn _num2(a: string, b: string) -> string:
         return "char"
     return "int"
 
+# src/tychoc.c@c_dtoa prints a float literal with `%.17g`, NOT the shortest
+# round-trip form `str()` gives. The 17 significant digits are computed from the
+# EXACT decimal expansion of the double -- m * 2^e is a finite decimal, so
+# multiplying the mantissa by 2^e or 5^-e gives every digit -- because rounding
+# 17 digits off an approximate scaling gets the last one wrong.
+fn _g17_mul(ds: [int], f: int) -> [int]:
+    out := []int
+    carry := 0
+    for i := len(ds) - 1; i >= 0; i -= 1:
+        pd := ds[i] * f + carry
+        push(out, pd % 10)
+        carry = pd / 10
+    for carry > 0:
+        push(out, carry % 10)
+        carry = carry / 10
+    r := []int
+    for i := len(out) - 1; i >= 0; i -= 1:
+        push(r, out[i])
+    return r
+
+# |v| = D * 10^-k, with D's digits most significant first. v must be non-zero.
+fn _g17_exact(v: float) -> ([int], int):
+    a := v
+    if a < 0.0:
+        a = -a
+    e2 := 0
+    for a >= 2.0:
+        a /= 2.0
+        e2 += 1
+    for a < 1.0:
+        a *= 2.0
+        e2 -= 1
+    for i := 0; i < 52; i += 1:
+        a *= 2.0
+    m := to_int(a)
+    e := e2 - 52
+    rev := []int
+    t := m
+    for t > 0:
+        push(rev, t % 10)
+        t = t / 10
+    ds := []int
+    for i := len(rev) - 1; i >= 0; i -= 1:
+        push(ds, rev[i])
+    k := 0
+    if e >= 0:
+        for i := 0; i < e; i += 1:
+            ds = _g17_mul(ds, 2)
+    else:
+        k = -e
+        for i := 0; i < k; i += 1:
+            ds = _g17_mul(ds, 5)
+    return (ds, k)
+
+fn _g17_digs(ds: [int], a: int, b: int) -> string:
+    s := ""
+    for i := a; i < b; i += 1:
+        s = s + str(ds[i])
+    return s
+
+fn _g17_rstrip0(s: string) -> string:
+    n := len(s)
+    for n > 0 and s[n - 1] == 48:
+        n -= 1
+    return s[:n]
+
+fn _g17(v: float) -> string:
+    sign := ""
+    if v < 0.0:
+        sign = "-"
+    if v == 0.0:
+        if 1.0 / v < 0.0:
+            return "-0"
+        return "0"
+    ds, k := _g17_exact(v)
+    lz := len(ds)
+    x := lz - 1 - k
+    p := 17
+    sig := []int
+    n := lz
+    if n > p:
+        n = p
+    for i := 0; i < n; i += 1:
+        push(sig, ds[i])
+    if lz > p:
+        up := false
+        if ds[p] > 5:
+            up = true
+        elif ds[p] == 5:
+            rest := false
+            for i := p + 1; i < lz; i += 1:
+                if ds[i] != 0:
+                    rest = true
+            if rest or sig[p - 1] % 2 == 1:
+                up = true
+        if up:
+            i := n - 1
+            for i >= 0:
+                sig[i] += 1
+                if sig[i] < 10:
+                    i = -1
+                else:
+                    sig[i] = 0
+                    i -= 1
+            if sig[0] == 0:
+                sig[0] = 1
+                x += 1
+    if x < -4 or x >= p:
+        frac := _g17_rstrip0(_g17_digs(sig, 1, n))
+        out := sign + str(sig[0])
+        if len(frac) > 0:
+            out = out + "." + frac
+        es := "+"
+        ax := x
+        if x < 0:
+            es = "-"
+            ax = -x
+        xs := str(ax)
+        if len(xs) < 2:
+            xs = "0" + xs
+        return out + "e" + es + xs
+    if x >= 0:
+        ip := ""
+        for i := 0; i <= x; i += 1:
+            if i < n:
+                ip = ip + str(sig[i])
+            else:
+                ip = ip + "0"
+        fr := ""
+        if x + 1 < n:
+            fr = _g17_rstrip0(_g17_digs(sig, x + 1, n))
+        if len(fr) > 0:
+            return sign + ip + "." + fr
+        return sign + ip
+    fr2 := ""
+    for i := 0; i < -x - 1; i += 1:
+        fr2 = fr2 + "0"
+    fr2 = _g17_rstrip0(fr2 + _g17_digs(sig, 0, n))
+    return sign + "0." + fr2
+
 fn _lit_float(v: float) -> string:
-    s := str(v)
+    s := _g17(v)
     has := false
     for i := 0; i < len(s); i += 1:
         if s[i] == 46 or s[i] == 101 or s[i] == 69:
@@ -1721,7 +1872,7 @@ fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
                 # Copied, not returned as a view: the sliced Soa's field
                 # pointers alias the SOURCE buffers, so `sl[0].x = -1` would
                 # write through to q[1].x. ./tychoc wraps the same way.
-                return (_spfx(&cs, rt) + "_copy(" + cs.arena + ", ({ " + _cty(&cs, rt) + " " + ss + " = " + rc + "; tycho_int " +
+                return (_spfx(&cs, rt) + "_copy(" + cs.arena + ", ({ " + _ctyz(&cs, rt) + "" + ss + " = " + rc + "; tycho_int " +
                     sl + " = " + lo + ", " + sh + " = " + hi + "; if (" + sl + " < 0 || " +
                     sh + " > " + ss + ".len || " + sl + " > " + sh + ") { fprintf(stderr, " +
                     "\"tycho: slice [%\" TY_PRId \":%\" TY_PRId \"] out of bounds (len %\" TY_PRId \")\\n\", " +
@@ -1760,7 +1911,7 @@ fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
                 # `m: [K: V] = []` -- a bare [] under a map annotation is the
                 # empty map, not an empty array.
                 mv2 := _fresh(&cs, "_mp")
-                return ("({ " + _cty(&cs, cs.want) + " " + mv2 + " = " +
+                return ("({ " + _ctyz(&cs, cs.want) + "" + mv2 + " = " +
                     _mpfx(&cs, cs.want) + "_with_cap(&_scope, 0); " + mv2 + "; })", cs.want)
             if len(ts) > 0:
                 et = _ty(&cs, ts[0])
@@ -1814,7 +1965,7 @@ fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
                 push(ets, xt)
             tt := _tup_of(&cs, ets)
             v := _fresh(&cs, "_tp")
-            out := "({ " + _cty(&cs, tt) + " " + v + "; "
+            out := "({ " + _ctyz(&cs, tt) + "" + v + "; "
             for i := 0; i < len(ecs); i += 1:
                 out = out + v + ".f" + str(i) + " = " + ecs[i] + "; "
             return (out + v + "; })", tt)
@@ -1853,11 +2004,11 @@ fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
         ast.EmptyMap(l, t):
             mt := _map_of(&cs, _ty(&cs, t[0]), _ty(&cs, t[1]))
             mv := _fresh(&cs, "_mp")
-            return ("({ " + _cty(&cs, mt) + " " + mv + " = " + _mpfx(&cs, mt) +
+            return ("({ " + _ctyz(&cs, mt) + "" + mv + " = " + _mpfx(&cs, mt) +
                 "_with_cap(&_scope, 0); " + mv + "; })", mt)
         ast.SoaLit(l, t):
             ot := _soa_of(&cs, _ty(&cs, t[0]))
-            return ("(" + _cty(&cs, ot) + "){0}", ot)
+            return ("(" + _ctyz(&cs, ot) + "){0}", ot)
         ast.SpawnE(l, k): return _spawn(&cs, k[0])
         ast.Spread(l, k):
             # `xs...` IS the array; the packer passes it straight through, and
@@ -1966,11 +2117,13 @@ fn _fstr(cs: inout C, body: string) -> (string, string):
         return ("TYCHO_LIT(\"\")", "string")
     sw := cs.want
     cs.want = ""
-    # One statement per piece, so the holes run LEFT TO RIGHT (spec 13.4).
-    # Folding them into one concat call would leave the order unspecified --
-    # exactly the defect tests/fstring_eval_order.ty pins.
-    v := _fresh(&cs, "_fs")
-    out := "({ char *" + v + "; "
+    # src/tychoc.c desugars an f-string into a left-nested `+` chain marked
+    # `fstr`, then folds 3..6 string pieces into one tycho_str_concatN. Every
+    # hole is wrapped in a `str()` call, so `expr_has_call` is always true for a
+    # chain with a hole and the `fseq` arm always fires: each piece BUT THE LAST
+    # binds to a `_fi<n>` temp, which is what pins the left-to-right evaluation
+    # order 13.4 requires (tests/fstring_eval_order.ty).
+    ps := []string
     for i := 0; i < len(txt); i += 1:
         piece := "TYCHO_LIT(\"" + txt[i] + "\")"
         if kind[i] == 1:
@@ -1978,12 +2131,36 @@ fn _fstr(cs: inout C, body: string) -> (string, string):
             he, _hp := parse.expr(toks, 0)
             hc, ht := _ex(&cs, he)
             piece = _tostr(&cs, hc, ht)
-        if i == 0:
-            out = out + v + " = " + piece + "; "
-        else:
-            out = out + v + " = tycho_str_concat(" + cs.arena + ", " + v + ", " + piece + "); "
+        push(ps, piece)
     cs.want = sw
-    return (out + v + "; })", "string")
+    return (_fchain(&cs, ps, len(ps)), "string")
+
+# The emission for the leftmost `n` of `ps`, mirroring gen_expr's E_BINOP arm:
+# 2..6 pieces fold to one concatN inside a braced group, and a longer chain is
+# the fold of its first n-1 wrapped in one more pairwise concat.
+fn _fchain(cs: inout C, ps: [string], n: int) -> string:
+    if n == 1:
+        return ps[0]
+    if n > 6:
+        inner := _fchain(&cs, ps, n - 1)
+        v := "_fi" + str(cs.uid)
+        cs.uid += 1
+        return "({ char *" + v + " = " + inner + "; tycho_str_concat(" + cs.arena +
+            ", " + v + ", " + ps[n - 1] + "); })"
+    pre := ""
+    out := "tycho_str_concat"
+    if n > 2:
+        out = out + str(n)
+    out = out + "(" + cs.arena
+    for i := 0; i < n; i += 1:
+        a := ps[i]
+        if i < n - 1:
+            v := "_fi" + str(cs.uid)
+            cs.uid += 1
+            pre = pre + "char *" + v + " = " + a + "; "
+            a = v
+        out = out + ", " + a
+    return "({ " + pre + out + "); })"
 
 # --- function values --------------------------------------------------------
 # A fn value is the same 3-word FAT POINTER src/tychoc.c:13007 emits:
@@ -2033,10 +2210,10 @@ fn _clo_defs(cs: inout C) -> (string, string):
     for nm in cs.clos:
         fi := _fidx(&cs, nm)
         rt := cs.fds[fi].ret
-        sig := _cty(&cs, rt) + " " + nm + "__clo(void *_env, Arena *_parent"
+        sig := _ctyz(&cs, rt) + "" + nm + "__clo(void *_env, Arena *_parent"
         call := "h_" + nm + "(_parent"
         for j := 0; j < len(cs.fds[fi].ptypes); j += 1:
-            sig = sig + ", " + _cty(&cs, cs.fds[fi].ptypes[j]) + " _a" + str(j)
+            sig = sig + ", " + _ctyz(&cs, cs.fds[fi].ptypes[j]) + "_a" + str(j)
             call = call + ", _a" + str(j)
         sig = sig + ")"
         call = call + ")"
@@ -2051,7 +2228,7 @@ fn _fn_defs(cs: inout C) -> string:
     out := ""
     for i := 0; i < len(cs.fks); i += 1:
         ps := split(cs.fks[i], "|")
-        s := "typedef struct { void *env; " + _cty(&cs, ps[0]) + " (*call)(void *, Arena *"
+        s := "typedef struct { void *env; " + _ctyz(&cs, ps[0]) + "(*call)(void *, Arena *"
         for j := 1; j < len(ps); j += 1:
             s = s + ", " + _cty(&cs, ps[j])
         out = out + s + "); void *(*copyenv)(Arena *, void *); } FnC" + str(i) + ";\n"
@@ -2257,11 +2434,11 @@ fn _lambda(cs: inout C, ps: [ast.Param], ret: [ast.Ty], body: ast.Expr) -> (stri
     for i := 0; i < len(caps); i += 1:
         _push(&cs, caps[i], capt[i])
         cs.vcn[len(cs.vcn) - 1] = "(_ec->c" + str(i) + ")"
-        env = env + "    " + _cty(&cs, capt[i]) + " c" + str(i) + ";\n"
+        env = env + "    " + _ctyz(&cs, capt[i]) + "c" + str(i) + ";\n"
     sig := "(void *_env, Arena *_parent"
     for i := 0; i < len(ps); i += 1:
         cn := _push(&cs, ps[i].name, pts[i])
-        sig = sig + ", " + _cty(&cs, pts[i]) + " " + cn
+        sig = sig + ", " + _ctyz(&cs, pts[i]) + "" + cn
     sig = sig + ")"
     rt := wr
     if len(ret) > 0:
@@ -2287,7 +2464,7 @@ fn _lambda(cs: inout C, ps: [ast.Param], ret: [ast.Ty], body: ast.Expr) -> (stri
         pre = "    Env" + id + " *_ec = (Env" + id + " *)_env;\n"
     # The thunk's own scope must be released, exactly as a named fn's is: the
     # result is copied into _parent first, so the copy outlives the free.
-    ret2 := "    " + _cty(&cs, rt) + " _lr = " + _copy(&cs, bc, rt, "_parent") +
+    ret2 := "    " + _ctyz(&cs, rt) + "_lr = " + _copy(&cs, bc, rt, "_parent") +
         ";\n    arena_free(&_scope);\n    return _lr;\n"
     if rt == "void":
         ret2 = "    " + bc + ";\n    arena_free(&_scope);\n"
@@ -2300,10 +2477,10 @@ fn _lambda(cs: inout C, ps: [ast.Param], ret: [ast.Ty], body: ast.Expr) -> (stri
         for i := 0; i < len(caps); i += 1:
             d = d + "    _d->c" + str(i) + " = " + _copy(&cs, "(_s->c" + str(i) + ")", capt[i], "_a") + ";\n"
         d = d + "    return _d;\n}\n"
-    d = d + _cty(&cs, rt) + " __lam" + id + "__clo" + sig + " {\n" + pre +
+    d = d + _ctyz(&cs, rt) + "__lam" + id + "__clo" + sig + " {\n" + pre +
         "    Arena _scope = arena_child(_parent);\n" + ret2 + "}\n"
     push(cs.lamd, d)
-    push(cs.lamp, _cty(&cs, rt) + " __lam" + id + "__clo" + sig + ";\n")
+    push(cs.lamp, _ctyz(&cs, rt) + "__lam" + id + "__clo" + sig + ";\n")
     if len(caps) == 0:
         return ("(FnC" + fid + "){0, __lam" + id + "__clo, 0}", ft)
     mk := "({ Env" + id + " *_e = (Env" + id + " *)arena_alloc(" + cs.arena + ", sizeof(Env" + id + "));"
@@ -2557,6 +2734,7 @@ fn _orret(cs: inout C, e: ast.Expr) -> (string, string):
 fn _arrlit(cs: inout C, k: [ast.Expr]) -> (string, string):
     if len(k) == 0:
         _bad("an empty array literal needs a type")
+    v := _fresh(&cs, "_l")
     c0, et0 := _ex(&cs, k[0])
     et := et0
     # `a: [u32] = [1, 2]` -- the elements adapt to the ANNOTATED element type,
@@ -2566,10 +2744,9 @@ fn _arrlit(cs: inout C, k: [ast.Expr]) -> (string, string):
         et = _elem(cs.want)
     sw := cs.want
     cs.want = et
-    v := _fresh(&cs, "_l")
     ct := _cty(&cs, "[" + et + "]")
     out := "({ " + ct + " " + v + " = " + _apfx(&cs, et) + "_with_cap(" + cs.arena + ", " +
-        str(len(k)) + "LL); "
+        str(len(k)) + "L); "
     for i := 0; i < len(k); i += 1:
         ac := c0
         at2 := et0
@@ -2583,7 +2760,7 @@ fn _arrlit(cs: inout C, k: [ast.Expr]) -> (string, string):
             ac = _copy(&cs, ac, et, cs.arena)
         out = out + v + ".data[" + str(i) + "] = " + ac + "; "
     cs.want = sw
-    return (out + v + ".len = " + str(len(k)) + "LL; " + v + "; })", "[" + et + "]")
+    return (out + v + ".len = " + str(len(k)) + "L; " + v + "; })", "[" + et + "]")
 
 fn _maplit(cs: inout C, k: [ast.Expr]) -> (string, string):
     if len(k) < 2:
@@ -2593,7 +2770,7 @@ fn _maplit(cs: inout C, k: [ast.Expr]) -> (string, string):
     mt := _map_of(&cs, kt, vt)
     v := _fresh(&cs, "_mp")
     n := len(k) / 2
-    out := "({ " + _cty(&cs, mt) + " " + v + " = " + _mpfx(&cs, mt) +
+    out := "({ " + _ctyz(&cs, mt) + "" + v + " = " + _mpfx(&cs, mt) +
         "_with_cap(" + cs.arena + ", " + str(n) + "LL); "
     for i := 0; i < len(k); i += 2:
         sw := cs.want
@@ -2670,7 +2847,7 @@ fn _callfv(cs: inout C, k: [ast.Expr]) -> (string, string):
     if not _is_fn(ft):
         _bad("call of a value that is not a function")
     fv := _fresh(&cs, "_fv")
-    out := "({ " + _cty(&cs, ft) + " " + fv + " = " + fc + "; " + fv + ".call(" + fv +
+    out := "({ " + _ctyz(&cs, ft) + "" + fv + " = " + fc + "; " + fv + ".call(" + fv +
         ".env, " + cs.arena
     fps := _fps(&cs, ft)
     sw := cs.want
@@ -2781,9 +2958,9 @@ fn _binop(cs: inout C, op: string, ea: ast.Expr, eb: ast.Expr) -> (string, strin
         a, b = _widen(a, at, b, bt)
         if rt == "char":
             # char is one byte, so its arithmetic stays 0..255 -- src/tychoc.c:10709
-            return ("((tycho_int)(unsigned char)(" + a + " " + op + " " + b + "))", rt)
+            return ("((tycho_int)(unsigned char)((" + a + " " + op + " " + b + ")))", rt)
         if _is_sized(rt):
-            return ("((" + _cty(&cs, rt) + ")(" + a + " " + op + " " + b + "))", rt)
+            return ("(" + _cty(&cs, rt) + ")((" + a + " " + op + " " + b + "))", rt)
         return ("(" + a + " " + op + " " + b + ")", rt)
     if op == "<<" or op == ">>":
         # A count >= the operand's width is 0 and a negative one aborts, neither
@@ -2798,15 +2975,15 @@ fn _binop(cs: inout C, op: string, ea: ast.Expr, eb: ast.Expr) -> (string, strin
             f = "tycho_shl_" + st
             if op == ">>":
                 f = "tycho_shr_" + st
-            return ("(" + f + "(" + a + ", " + b + "))", st)
+            return (f + "(" + a + ", " + b + ")", st)
         if _is_sized(st):
             sg := "0"
             if _is_sint(st):
                 sg = "1"
             if op == "<<":
-                return ("((" + _cty(&cs, st) + ")tycho_shln(" + a + ", " + b + ", " + str(_width(st)) + "))", st)
-            return ("((" + _cty(&cs, st) + ")tycho_shrn(" + a + ", " + b + ", " + str(_width(st)) + ", " + sg + "))", st)
-        return ("(" + f + "(" + a + ", " + b + "))", "int")
+                return ("(" + _cty(&cs, st) + ")(tycho_shln(" + a + ", " + b + ", " + str(_width(st)) + "))", st)
+            return ("(" + _cty(&cs, st) + ")(tycho_shrn(" + a + ", " + b + ", " + str(_width(st)) + ", " + sg + "))", st)
+        return (f + "(" + a + ", " + b + ")", "int")
     if op == "&" or op == "|" or op == "^":
         bt2 := "int"
         if _is_sized(at):
@@ -2814,7 +2991,7 @@ fn _binop(cs: inout C, op: string, ea: ast.Expr, eb: ast.Expr) -> (string, strin
         elif _is_sized(bt):
             bt2 = bt
         if _is_sized(bt2):
-            return ("((" + _cty(&cs, bt2) + ")(" + a + " " + op + " " + b + "))", bt2)
+            return ("(" + _cty(&cs, bt2) + ")((" + a + " " + op + " " + b + "))", bt2)
         return ("(" + a + " " + op + " " + b + ")", "int")
     _bad("unsupported operator '" + op + "'")
     return ("", "")
@@ -2993,11 +3170,11 @@ fn _call(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], args: [ast.Ex
             # through a bogus status pointer: SIGSEGV in core:io and core:os.
             if xtn and _is_arr(pt):
                 xa := _fresh(&cs, "_xa")
-                cast9 := "(const " + _cty(&cs, _elem(pt)) + " *)"
+                cast9 := "(const " + _ctyz(&cs, _elem(pt)) + "*)"
                 if _elem(pt) == "string":
                     cast9 = "(const char *const *)"
-                out2 = out2 + ", ({ " + _cty(&cs, pt) + " " + xa + " = " + ac + "; " +
-                    cast9 + xa + ".data; })" + ", ({ " + _cty(&cs, pt) + " " + xa +
+                out2 = out2 + ", ({ " + _ctyz(&cs, pt) + "" + xa + " = " + ac + "; " +
+                    cast9 + xa + ".data; })" + ", ({ " + _ctyz(&cs, pt) + "" + xa +
                     "b = " + ac + "; " + xa + "b.len; })"
                 continue
             if xtn and pt == "bytes":
@@ -3143,7 +3320,7 @@ fn _pack(cs: inout C, et: string, args: [ast.Expr], from: int) -> string:
             _: pass
     v := _fresh(&cs, "_va")
     n := len(args) - from
-    out := "({ " + _cty(&cs, "[" + et + "]") + " " + v + " = " + _apfx(&cs, et) +
+    out := "({ " + _ctyz(&cs, "[" + et + "]") + "" + v + " = " + _apfx(&cs, et) +
         "_with_cap(&_scope, " + str(n) + "LL); "
     for i := from; i < len(args); i += 1:
         sw := cs.want
@@ -3431,9 +3608,9 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
             return ("({ HTask *" + v + " = " + c + "; tycho_task_join(" + v + "); " + rel + "; })", "void")
         w := _fresh(&cs, "_w")
         # the value lives in the TASK's arena, which is released here -- copy first
-        val := _copy(&cs, "(*(" + _cty(&cs, rt) + " *)" + v + "->ret)", rt, cs.arena)
+        val := _copy(&cs, "(*(" + _ctyz(&cs, rt) + "*)" + v + "->ret)", rt, cs.arena)
         return ("({ HTask *" + v + " = " + c + "; tycho_task_join(" + v + "); " +
-            _cty(&cs, rt) + " " + w + " = " + val + "; " + rel + "; " + w + "; })", rt)
+            _ctyz(&cs, rt) + "" + w + " = " + val + "; " + rel + "; " + w + "; })", rt)
     if n == "hash" and len(args) == 1:
         c, t := _ex(&cs, args[0])
         return ("(tycho_int)(" + _hash_det(&cs, t, c) + ")", "int")
@@ -3570,7 +3747,7 @@ fn _recv_expr(cs: inout C, chc: string, et: string, fname: string) -> (string, s
     k := str(_ckind(&cs, et))
     v := _fresh(&cs, "_rv")
     tv := _fresh(&cs, "_rt")
-    code := "({ E_" + en + " *" + v + "; " + _cty(&cs, et) + " " + tv + "; " +
+    code := "({ E_" + en + " *" + v + "; " + _ctyz(&cs, et) + "" + tv + "; " +
         "if (" + fname + k + "(" + chc + ", &_scope, &" + tv + ")) { " +
         v + " = (E_" + en + " *)arena_alloc(&_scope, offsetof(E_" + en + ", u) + sizeof(E_" + en + "_Some)); " +
         v + "->tag = " + str(st) + "; " + v + "->u.Some.f0 = " + tv + "; } else { " +
@@ -3625,7 +3802,7 @@ fn _spawn(cs: inout C, e: ast.Expr) -> (string, string):
                 cs.arena = sa
                 if pt == "float" and at == "int":
                     ac = "(double)(" + ac + ")"
-                fields = fields + " " + _cty(&cs, pt) + " a" + str(i) + ";"
+                fields = fields + " " + _ctyz(&cs, pt) + "a" + str(i) + ";"
                 init = init + "_sa->a" + str(i) + " = " + ac + "; "
                 call = call + ", _a->a" + str(i)
             call = call + ")"
@@ -3634,8 +3811,8 @@ fn _spawn(cs: inout C, e: ast.Expr) -> (string, string):
             if rt == "void":
                 body = body + call + "; _a->t->ret = 0; "
             else:
-                body = body + _cty(&cs, rt) + " _r = " + call + "; " + _cty(&cs, rt) +
-                    " *_s = (" + _cty(&cs, rt) + " *)arena_alloc(&_a->t->root, sizeof(" +
+                body = body + _ctyz(&cs, rt) + "_r = " + call + "; " + _cty(&cs, rt) +
+                    " *_s = (" + _ctyz(&cs, rt) + "*)arena_alloc(&_a->t->root, sizeof(" +
                     _cty(&cs, rt) + ")); *_s = _r; _a->t->ret = _s; "
             body = body + "tycho_pool_flush(); return 0; }\n"
             push(cs.spawnd, "typedef struct { " + fields + " } HSpawnA_" + id + ";\n" + body)
@@ -3708,9 +3885,9 @@ fn _parfor(cs: inout C, b: [ast.Stmt], ind: string) -> string:
             id := str(len(cs.lamd))
             wnm := "h___par" + id
             # the worker's signature
-            sig := _cty(&cs, rt) + " " + wnm + "(Arena *_parent, tycho_int h___plo, tycho_int h___phi"
+            sig := _ctyz(&cs, rt) + "" + wnm + "(Arena *_parent, tycho_int h___plo, tycho_int h___phi"
             for i := 0; i < len(caps); i += 1:
-                sig = sig + ", " + _cty(&cs, capt[i]) + " h_" + caps[i]
+                sig = sig + ", " + _ctyz(&cs, capt[i]) + "h_" + caps[i]
             sig = sig + ")"
             # the worker's body, in a scope holding only its parameters
             sv := cs.vnames
@@ -3734,17 +3911,17 @@ fn _parfor(cs: inout C, b: [ast.Stmt], ind: string) -> string:
             decl := ""
             for j9 := 0; j9 < len(wr); j9 += 1:
                 cnr := _push(&cs, wr[j9], rts[j9])
-                decl = decl + "    " + _cty(&cs, rts[j9]) + " " + cnr + " = " +
+                decl = decl + "    " + _ctyz(&cs, rts[j9]) + "" + cnr + " = " +
                     _zero(&cs, rts[j9]) + ";\n"
             iv := _push(&cs, v, "int")
             loop := "    for (tycho_int " + iv + " = h___plo; " + iv + " < h___phi; " + iv + " += 1) {\n" +
                 _block(&cs, body, "        ") + "    }\n"
             ret := "    arena_free(&_scope); return 0;\n"
             if len(wr) == 1:
-                ret = "    { " + _cty(&cs, rt) + " _r = " + _vcname(&cs, wr[0]) +
+                ret = "    { " + _ctyz(&cs, rt) + "_r = " + _vcname(&cs, wr[0]) +
                     "; arena_free(&_scope); return _r; }\n"
             elif len(wr) > 1:
-                mk9 := "    { " + _cty(&cs, rt) + " _r;"
+                mk9 := "    { " + _ctyz(&cs, rt) + "_r;"
                 for j9 := 0; j9 < len(wr); j9 += 1:
                     mk9 = mk9 + " _r.f" + str(j9) + " = " + _vcname(&cs, wr[j9]) + ";"
                 ret = mk9 + " arena_free(&_scope); return _r; }\n"
@@ -3764,7 +3941,7 @@ fn _parfor(cs: inout C, b: [ast.Stmt], ind: string) -> string:
             fields := "HTask *t; tycho_int a0; tycho_int a1;"
             call := wnm + "(&_a->t->root, _a->a0, _a->a1"
             for i := 0; i < len(caps); i += 1:
-                fields = fields + " " + _cty(&cs, capt[i]) + " c" + str(i) + ";"
+                fields = fields + " " + _ctyz(&cs, capt[i]) + "c" + str(i) + ";"
                 call = call + ", _a->c" + str(i)
             call = call + ")"
             ct := _cty(&cs, rt)
@@ -3841,10 +4018,10 @@ fn _pararr(cs: inout C, cc: string, ct: string, v: string, body: [ast.Stmt], ind
         rt = _tup_of(&cs, rts)
     id := str(len(cs.lamd))
     wnm := "h___par" + id
-    sig := _cty(&cs, rt) + " " + wnm + "(Arena *_parent, " + _cty(&cs, ct) +
+    sig := _ctyz(&cs, rt) + "" + wnm + "(Arena *_parent, " + _cty(&cs, ct) +
         " _parr, tycho_int h___plo, tycho_int h___phi"
     for i := 0; i < len(caps); i += 1:
-        sig = sig + ", " + _cty(&cs, capt[i]) + " h_" + caps[i]
+        sig = sig + ", " + _ctyz(&cs, capt[i]) + "h_" + caps[i]
     sig = sig + ")"
     sv := cs.vnames
     svt := cs.vtypes
@@ -3867,17 +4044,17 @@ fn _pararr(cs: inout C, cc: string, ct: string, v: string, body: [ast.Stmt], ind
     decl := ""
     for j := 0; j < len(wr); j += 1:
         cnr := _push(&cs, wr[j], rts[j])
-        decl = decl + "    " + _cty(&cs, rts[j]) + " " + cnr + " = " + _zero(&cs, rts[j]) + ";\n"
+        decl = decl + "    " + _ctyz(&cs, rts[j]) + "" + cnr + " = " + _zero(&cs, rts[j]) + ";\n"
     ecn := _push(&cs, v, et)
     loop := "    for (tycho_int _pi = h___plo; _pi < h___phi; _pi += 1) {\n" +
-        "        " + _cty(&cs, et) + " " + ecn + " = " + _apfx(&cs, et) + "_get(_parr, _pi);\n" +
+        "        " + _ctyz(&cs, et) + "" + ecn + " = " + _apfx(&cs, et) + "_get(_parr, _pi);\n" +
         _block(&cs, body, "        ") + "    }\n"
     ret := "    arena_free(&_scope); return 0;\n"
     if len(wr) == 1:
-        ret = "    { " + _cty(&cs, rt) + " _r = " + _vcname(&cs, wr[0]) +
+        ret = "    { " + _ctyz(&cs, rt) + "_r = " + _vcname(&cs, wr[0]) +
             "; arena_free(&_scope); return _r; }\n"
     elif len(wr) > 1:
-        mk := "    { " + _cty(&cs, rt) + " _r;"
+        mk := "    { " + _ctyz(&cs, rt) + "_r;"
         for j := 0; j < len(wr); j += 1:
             mk = mk + " _r.f" + str(j) + " = " + _vcname(&cs, wr[j]) + ";"
         ret = mk + " arena_free(&_scope); return _r; }\n"
@@ -3892,10 +4069,10 @@ fn _pararr(cs: inout C, cc: string, ct: string, v: string, body: [ast.Stmt], ind
     cs.ascope = sas
     cs.cur_ret = scr
     sid := str(len(cs.spawnd))
-    fields := "HTask *t; " + _cty(&cs, ct) + " a0; tycho_int a1; tycho_int a2;"
+    fields := "HTask *t; " + _ctyz(&cs, ct) + "a0; tycho_int a1; tycho_int a2;"
     call := wnm + "(&_a->t->root, _a->a0, _a->a1, _a->a2"
     for i := 0; i < len(caps); i += 1:
-        fields = fields + " " + _cty(&cs, capt[i]) + " c" + str(i) + ";"
+        fields = fields + " " + _ctyz(&cs, capt[i]) + "c" + str(i) + ";"
         call = call + ", _a->c" + str(i)
     call = call + ")"
     ctt := _cty(&cs, rt)
@@ -3905,7 +4082,7 @@ fn _pararr(cs: inout C, cc: string, ct: string, v: string, body: [ast.Stmt], ind
         " *)arena_alloc(&_a->t->root, sizeof(" + ctt + ")); *_s = _r; _a->t->ret = _s; " +
         "tycho_pool_flush(); return 0; }\n")
     out := ind + "{\n" +
-        ind + "    " + _cty(&cs, ct) + " _parr = " + cc + ";\n" +
+        ind + "    " + _ctyz(&cs, ct) + "_parr = " + cc + ";\n" +
         ind + "    tycho_int _plo = 0, _phi = (_parr).len;\n" +
         ind + "    tycho_int _pk = tycho_ncpu();\n" +
         ind + "    if (_pk > _phi - _plo) _pk = _phi - _plo;\n" +
@@ -3965,9 +4142,9 @@ fn _parchan(cs: inout C, l: int, v: string, coll: [ast.Expr], body: [ast.Stmt], 
         rt = _vtype(&cs, rn)
     id := str(len(cs.lamd))
     wnm := "h___par" + id
-    sig := _cty(&cs, rt) + " " + wnm + "(Arena *_parent, HChan *_pch"
+    sig := _ctyz(&cs, rt) + "" + wnm + "(Arena *_parent, HChan *_pch"
     for i := 0; i < len(caps); i += 1:
-        sig = sig + ", " + _cty(&cs, capt[i]) + " h_" + caps[i]
+        sig = sig + ", " + _ctyz(&cs, capt[i]) + "h_" + caps[i]
     sig = sig + ")"
     sv := cs.vnames
     svt := cs.vtypes
@@ -3990,10 +4167,10 @@ fn _parchan(cs: inout C, l: int, v: string, coll: [ast.Expr], body: [ast.Stmt], 
     decl := ""
     if len(rn) > 0:
         _push(&cs, rn, rt)
-        decl = "    " + _cty(&cs, rt) + " h_" + rn + " = " + _zero(&cs, rt) + ";\n"
+        decl = "    " + _ctyz(&cs, rt) + "h_" + rn + " = " + _zero(&cs, rt) + ";\n"
     ecn := _push(&cs, v, et)
     loop := "    for (;;) {\n" +
-        "        " + _cty(&cs, et) + " " + ecn + "; int _ssp = 0, _got = 0;\n" +
+        "        " + _ctyz(&cs, et) + "" + ecn + "; int _ssp = 0, _got = 0;\n" +
         "        for (;;) {\n" +
         "            int _st = tycho_chan_tryrecv_" + ck + "(_pch, &_scope, &" + ecn + ");\n" +
         "            if (_st == 1) { _got = 1; break; }\n" +
@@ -4005,7 +4182,7 @@ fn _parchan(cs: inout C, l: int, v: string, coll: [ast.Expr], body: [ast.Stmt], 
         "    }\n"
     ret := "    arena_free(&_scope); return 0;\n"
     if len(rn) > 0:
-        ret = "    { " + _cty(&cs, rt) + " _r = h_" + rn + "; arena_free(&_scope); return _r; }\n"
+        ret = "    { " + _ctyz(&cs, rt) + "_r = h_" + rn + "; arena_free(&_scope); return _r; }\n"
     push(cs.lamp, sig + ";\n")
     push(cs.lamd, sig + " {\n    Arena _scope = arena_child(_parent);\n" + decl + loop + ret + "}\n")
     cs.vnames = sv
@@ -4020,7 +4197,7 @@ fn _parchan(cs: inout C, l: int, v: string, coll: [ast.Expr], body: [ast.Stmt], 
     fields := "HTask *t; HChan *a0;"
     call := wnm + "(&_a->t->root, _a->a0"
     for i := 0; i < len(caps); i += 1:
-        fields = fields + " " + _cty(&cs, capt[i]) + " c" + str(i) + ";"
+        fields = fields + " " + _ctyz(&cs, capt[i]) + "c" + str(i) + ";"
         call = call + ", _a->c" + str(i)
     call = call + ")"
     ctt := _cty(&cs, rt)
@@ -4086,10 +4263,10 @@ fn _select(cs: inout C, arms: [ast.Arm], ind: string) -> string:
         bind := ""
         if len(a.binds) > 0:
             bcn := _push(&cs, a.binds[0], et)
-            bind = ind + "        " + _cty(&cs, et) + " " + bcn + " = _v" + id + ";\n"
+            bind = ind + "        " + _ctyz(&cs, et) + "" + bcn + " = _v" + id + ";\n"
         body := _block(&cs, a.body, ind + "        ")
         _restore(&cs, m)
-        out = out + ind + "    { " + _cty(&cs, et) + " _v" + id + "; int _st" + id +
+        out = out + ind + "    { " + _ctyz(&cs, et) + "_v" + id + "; int _st" + id +
             " = tycho_chan_tryrecv_" + str(_ckind(&cs, et)) + "(" + chs[i] + ", " + cs.arena + ", &_v" + id + ");\n" +
             ind + "      if (_st" + id + " == 1) {\n" + bind + body +
             ind + "        goto _sel_done_" + id + ";\n" + ind + "      }\n" +
@@ -4205,7 +4382,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                 body := _stmt(&cs, parse.rewrite_tails(vv[0], "assign", n, []ast.Expr), ind)
                 if cs.vtypes[slot] == "?":
                     _bad("a value-if/value-match with no value tail to type it")
-                return ind + _cty(&cs, cs.vtypes[slot]) + " " + cn0 + ";\n" + body
+                return ind + _ctyz(&cs, cs.vtypes[slot]) + "" + cn0 + ";\n" + body
             want := ""
             if len(ann) > 0:
                 want = _ty(&cs, ann[0])
@@ -4250,9 +4427,9 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                 uset = false
                 c = _replace(c, "&_t", sav5)
             cn := _push(&cs, n, t)
-            out9 := ind + _cty(&cs, t) + " " + cn + " = " + c + ";\n"
+            out9 := ind + _ctyz(&cs, t) + "" + cn + " = " + c + ";\n"
             if uset:
-                out9 = ind + _cty(&cs, t) + " " + cn + "; { Arena _t = arena_new(0); " +
+                out9 = ind + _ctyz(&cs, t) + "" + cn + "; { Arena _t = arena_new(0); " +
                     cn + " = " + c + "; arena_free(&_t); }\n"
             if t == "string" and _isacc(&cs, n):
                 cs.vacc[len(cs.vacc) - 1] = cn
@@ -4265,7 +4442,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
         ast.ConstS(l, n, k):
             c, t := _ex(&cs, k[0])
             cn2 := _push(&cs, n, t)
-            return ind + _cty(&cs, t) + " " + cn2 + " = " + c + ";\n"
+            return ind + _ctyz(&cs, t) + "" + cn2 + " = " + c + ";\n"
         ast.Assign(l, n, k):
             t := _vtype(&cs, n)
             if len(t) == 0:
@@ -4423,7 +4600,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             if not tmpret and not _shares(&cs, k[0], rt, "_parent"):
                 c = _copy(&cs, c, rt, "_parent")
             v := "_ret"
-            return ind + "{ " + _cty(&cs, rt) + " " + v + " = " + c + "; " +
+            return ind + "{ " + _ctyz(&cs, rt) + "" + v + " = " + c + "; " +
                 _oneline(fin) + _scr_frees(&cs) + "arena_free(&_scope); return " + v + "; }\n"
         ast.BreakS(l):
             return ind + "break;\n"
@@ -4562,11 +4739,11 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                 closa = ind + "    arena_free(&" + ida + ");\n"
             elif fida:
                 bda = _replace(bda, "arena_free(&" + ida + "); ", "")
-            out := ind + "{\n" + ind + "    " + _cty(&cs, "[" + et + "]") + " " + fc +
+            out := ind + "{\n" + ind + "    " + _ctyz(&cs, "[" + et + "]") + "" + fc +
                 " = " + cc2 + ";\n" + opena +
                 ind + "    for (tycho_int " + fi + " = 0; " + fi + " < " + fc +
                 ".len; " + fi + " += 1) {\n" + resa +
-                ind + "        " + _cty(&cs, et) + " " + fcn + " = " + fc + ".data[" + fi + "];\n" +
+                ind + "        " + _ctyz(&cs, et) + "" + fcn + " = " + fc + ".data[" + fi + "];\n" +
                 bda + ind + "    }\n" + closa + ind + "}\n"
             _restore(&cs, m)
             return out
@@ -4581,7 +4758,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                 _bad("destructuring " + str(len(ns)) + " names from a " +
                     str(len(es)) + "-element tuple")
             tv := _fresh(&cs, "_ds")
-            out := ind + _cty(&cs, rt) + " " + tv + " = " + rc + ";\n"
+            out := ind + _ctyz(&cs, rt) + "" + tv + " = " + rc + ";\n"
             # every target is read out of the temporary FIRST, so `a, b = b, a`
             # swaps rather than clobbering.
             cns := []string
@@ -4605,7 +4782,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                     v = _copy(&cs, v, es[i], "&_scope")
                 if d:
                     cn := _push(&cs, ns[i], es[i])
-                    out = out + ind + _cty(&cs, es[i]) + " " + cn + " = " + v + ";\n"
+                    out = out + ind + _ctyz(&cs, es[i]) + "" + cn + " = " + v + ";\n"
                 else:
                     out = out + ind + cns[i] + " = " + v + ";\n"
             return out
@@ -4862,7 +5039,7 @@ fn _match(cs: inout C, subj: ast.Expr, arms: [ast.Arm], ind: string) -> string:
                 if _mut_b(a.body, a.binds[i]):
                     pv = _copy(&cs, psrc, pay[i], cs.arena)
                     cs.vown[len(cs.vown) - 1] = cs.arena
-                binds = binds + ind + "        " + _cty(&cs, pay[i]) + " " + bcn +
+                binds = binds + ind + "        " + _ctyz(&cs, pay[i]) + "" + bcn +
                     " = " + pv + ";\n"
             # A NESTED pattern -- `Err(TooBig(n))`. The Arm has carried
             # sub/subbinds since the parser, and nothing read them until now, so
@@ -4891,7 +5068,7 @@ fn _match(cs: inout C, subj: ast.Expr, arms: [ast.Arm], ind: string) -> string:
                     if _mut_b(a.body, a.subbinds[j]):
                         sv2 = _copy(&cs, ssrc, ipay[j], cs.arena)
                         cs.vown[len(cs.vown) - 1] = cs.arena
-                    binds = binds + ind + "        " + _cty(&cs, ipay[j]) + " " + scn +
+                    binds = binds + ind + "        " + _ctyz(&cs, ipay[j]) + "" + scn +
                         " = " + sv2 + ";\n"
             body := _block(&cs, a.body, ind + "        ")
             _restore(&cs, m)
@@ -4905,7 +5082,7 @@ fn _match(cs: inout C, subj: ast.Expr, arms: [ast.Arm], ind: string) -> string:
             out = out + ind + "    else { fprintf(stderr, \"tycho: non-exhaustive match\\n\"); exit(1); }\n"
         return out + ind + "}\n"
     # scalar subject
-    out2 := ind + "{\n" + ind + "    " + _cty(&cs, st) + " " + v + " = " + sc + ";\n"
+    out2 := ind + "{\n" + ind + "    " + _ctyz(&cs, st) + "" + v + " = " + sc + ";\n"
     first2 := true
     deflt2 := ""
     for a in arms:
@@ -5086,7 +5263,7 @@ fn _soa_defs(cs: inout C) -> (string, string):
         fts := cs.sds[si].ftypes
         flds := ""
         for j := 0; j < len(fns); j += 1:
-            flds = flds + _cty(&cs, fts[j]) + " *f" + str(j) + "; "
+            flds = flds + _ctyz(&cs, fts[j]) + "*f" + str(j) + "; "
         sb = sb + "typedef struct { " + flds + "tycho_int len; tycho_int cap; } " + ct + ";\n"
         sb = sb + "static tycho_int " + ct + "_bound(" + ct + " *s, tycho_int i) { " +
             "if (i < 0 || i >= s->len) { fprintf(stderr, \"tycho: index %\" TY_PRId " +
@@ -5241,7 +5418,7 @@ fn _tup_defs(cs: inout C) -> (string, string, string, string):
         ct := "TychoTup" + str(i)
         fl := ""
         for j := 0; j < len(es); j += 1:
-            fl = fl + " " + _cty(&cs, es[j]) + " f" + str(j) + ";"
+            fl = fl + " " + _ctyz(&cs, es[j]) + "f" + str(j) + ";"
         td = td + "typedef struct " + ct + "_ " + ct + ";\n"
         if _tup_plain(&cs, i):
             td = td + "struct " + ct + "_ {" + fl + " };\n"
@@ -5291,7 +5468,7 @@ fn _map_defs(cs: inout C) -> (string, string, string, string):
         ct := "TychoMapM" + str(i)
         p := "tycho_mapM" + str(i)
         ks := _kslot(&cs, kt)
-        vc := _cty(&cs, vt) + " "
+        vc := _ctyz(&cs, vt) + ""
         kp := ks + "k"
         kcp := _kcopy(&cs, kt)
         vcp := _copy(&cs, "v", vt, "a")
@@ -5600,7 +5777,7 @@ fn _enum_support(cs: inout C) -> (string, string, string):
                 continue
             fl := ""
             for j := 0; j < len(ps); j += 1:
-                fl = fl + " " + _cty(&cs, ps[j]) + " f" + str(j) + ";"
+                fl = fl + " " + _ctyz(&cs, ps[j]) + "f" + str(j) + ";"
             defs = defs + "typedef struct {" + fl + " } E_" + n + "_" + vn + ";\n"
             un = un + " E_" + n + "_" + vn + " " + vn + ";"
         defs = defs + "struct E_" + n + " { int tag; union {" + un + " } u; };\n"
@@ -5781,19 +5958,19 @@ fn _fnbody(cs: inout C, fi: int, body: [ast.Stmt]) -> (string, string):
                 bad = true
         if not bad:
             push(cs.accs, a)
-    sig := _cty(&cs, rt) + " h_" + nm + "(Arena *_parent"
+    sig := _ctyz(&cs, rt) + "h_" + nm + "(Arena *_parent"
     m := _mark(&cs)
     for j := 0; j < len(cs.fds[fi].pnames); j += 1:
         pt := cs.fds[fi].ptypes[j]
         cn := _push(&cs, cs.fds[fi].pnames[j], pt)
         if cs.fds[fi].pinout[j]:
-            sig = sig + ", " + _cty(&cs, pt) + " *" + cn
+            sig = sig + ", " + _ctyz(&cs, pt) + "*" + cn
             cs.vcn[len(cs.vcn) - 1] = "(*" + cn + ")"
             if _heap(&cs, pt):
                 sig = sig + ", Arena *_ina_" + cn
                 cs.vown[len(cs.vown) - 1] = "_ina_" + cn
         else:
-            sig = sig + ", " + _cty(&cs, pt) + " " + cn
+            sig = sig + ", " + _ctyz(&cs, pt) + "" + cn
     sig = sig + ")"
     # A `[$N]T` parameter makes N an int CONST in the body: for a fixed array
     # the runtime length is N, so it needs no monomorphisation over sizes.
@@ -5836,7 +6013,7 @@ fn _fnbody(cs: inout C, fi: int, body: [ast.Stmt]) -> (string, string):
         if rt == "void":
             out = out + "    arena_free(&_scope);\n"
         else:
-            out = out + "    arena_free(&_scope); return (" + _cty(&cs, rt) + "){0};\n"
+            out = out + "    arena_free(&_scope); return (" + _ctyz(&cs, rt) + "){0};\n"
     return (sig + ";\n", out + "}\n\n")
 
 # src/tychoc.c@block_ends_in_return -- whether the last statement of a block
@@ -6004,7 +6181,7 @@ fn program(pfx: [string], us: [ast.Unit]) -> string:
                 if el == "string":
                     xps = xps + "const char *const *, tycho_int"
                 else:
-                    xps = xps + "const " + _cty(&cs, el) + " *, tycho_int"
+                    xps = xps + "const " + _ctyz(&cs, el) + "*, tycho_int"
                 continue
             xps = xps + _cty(&cs, cs.fds[xi].ptypes[xj])
             if cs.fds[xi].pinout[xj]:
@@ -6038,7 +6215,7 @@ fn program(pfx: [string], us: [ast.Unit]) -> string:
     for i in _struct_order(&cs):
         head = head + "struct S_" + cs.sds[i].name + "_ {\n"
         for j := 0; j < len(cs.sds[i].fnames); j += 1:
-            head = head + "    " + _cty(&cs, cs.sds[i].ftypes[j]) + " f_" +
+            head = head + "    " + _ctyz(&cs, cs.sds[i].ftypes[j]) + "f_" +
                 cs.sds[i].fnames[j] + ";\n"
         if len(cs.sds[i].fnames) == 0:
             head = head + "    char _empty;\n"
@@ -6070,7 +6247,7 @@ fn program(pfx: [string], us: [ast.Unit]) -> string:
     mcall := "    h_main(&_root);\n"
     mtail := "    arena_free(&_root);\n    return 0;\n"
     if mfi >= 0 and _is_resT(&cs, cs.fds[mfi].ret):
-        mcall = "    " + _cty(&cs, cs.fds[mfi].ret) + " _r = h_main(&_root);\n" +
+        mcall = "    " + _ctyz(&cs, cs.fds[mfi].ret) + "_r = h_main(&_root);\n" +
             "    int _st = 0;\n" +
             "    if (_r->tag == 1) { tycho_eprint(_r->u.Err.f0); tycho_eprint(\"\\n\"); _st = 1; }\n"
         mtail = "    arena_free(&_root);\n    return _st;\n"
