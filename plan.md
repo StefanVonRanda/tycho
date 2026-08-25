@@ -1920,17 +1920,44 @@ Addr and is caught separately) gives:
     instructions   1.924e9 -> 1.521e9   (-21%)
     wall           200 ms -> 156 ms     -- a ratio of 1.7x, the best seen
 
-It is NOT shipped because it reddens tests/int_maps and tests/maps. What is
-known, and it is a lot:
+It is NOT shipped because it reddens tests/int_maps and tests/maps -- but that
+is NOT the borrow's fault, and finding that out is the real result of this
+round. A SEMANTICALLY INERT perturbation of emit.ty reddens the same two
+fixtures:
+
+    add a `curfn: string` field to struct C, set it in _fnbody around the body
+    emit, add
+
+        fn _bor_ok(cs: inout C) -> bool:
+            return len(cs.curfn) > 0 and strings.starts_with(cs.curfn, "zzz__")
+
+    and gate the two arm-binding copies on `not _bor_ok(&cs) or _mut_b(...)`.
+    No function is named zzz__, so _bor_ok is always false and every binding
+    copies exactly as it does at HEAD -- and tests/maps FAILS.
+
+Controls, each observed: HEAD passes; the field ALONE passes; the field plus the
+assignment passes. It takes the extra function and the two gated conditions --
+still behaviourally identical -- to break it. So there is a LATENT,
+LAYOUT-SENSITIVE miscompile in the self-built compiler, and the tree is green by
+luck rather than by construction.
+
+That reframes everything below it: the borrow narrowing was probably innocent
+all along, and the 21% is blocked by this bug rather than by unsoundness.
+
+What is known about the latent bug:
   - Stage 1 (built by ./tychoc) compiles both fixtures cleanly. Only the
     SELF-BUILT stage 2 fails, so the unsound borrow is somewhere in tychoc1's
     own source, not in the fixtures.
   - The symptom is a hoisted temp DECLARATION going missing: the emitted C says
     `h__mk4 undeclared`, so the `pre` accumulator in emit@_hoist_legs lost text
     it had appended. Once it emitted raw heap bytes into the middle of a line.
-  - Restricting the borrow to ENUM payloads only (strings, maps and arrays keep
-    their copies) does NOT fix it, and neither does additionally requiring the
-    match SUBJECT to be a place. Both were tried.
+  - Restricting the borrow to ENUM payloads only does NOT fix it, and neither
+    does requiring the match SUBJECT to be a place. Both were tried -- and both
+    are explained by the perturbation result above.
+  - Ruled out as the mechanism: the in-place string accumulator's length/cap
+    shadow going stale across the recursive _hoist_legs call. `pre` is a
+    parameter there, and accumulators are locals only, so that path never
+    applies.
   - The 21% survives those restrictions largely intact, because copying an enum
     copies its payload arrays too -- tycho_arr_K0_copy is called BY
     tycho_copy_E_ast__Expr.
