@@ -1905,6 +1905,39 @@ breaks.
     THE WAY OUT, if anyone takes this up: compute the escape set in a pass that
     ALREADY walks the body -- resolve or tcheck -- and hand emit a set to look
     up. Every failure here has been the cost of the walk, never the rule.
+
+## The biggest measured prize, and why it is not shipped
+
+NARROWING THE ARM-MUTATION TEST IS WORTH 21%. `_mut_e` is conservative at ANY
+unqualified call taking the binding first (emit.ty, the _mut_e Call arm). That
+is exactly the shape of every recursive AST walker -- `_cn_es(k, nm)`,
+`_mut_es(k, nm)`, `_names_in(kk, &out)` -- so every walker deep-copies its
+payload at every node, and so does every analysis anyone writes on top of one.
+Restricting it to the three builtins that really write their receiver
+(push/pop/reserve; an `inout` parameter needs `&x` at the call site, which is an
+Addr and is caught separately) gives:
+
+    instructions   1.924e9 -> 1.521e9   (-21%)
+    wall           200 ms -> 156 ms     -- a ratio of 1.7x, the best seen
+
+It is NOT shipped because it reddens tests/int_maps and tests/maps. What is
+known, and it is a lot:
+  - Stage 1 (built by ./tychoc) compiles both fixtures cleanly. Only the
+    SELF-BUILT stage 2 fails, so the unsound borrow is somewhere in tychoc1's
+    own source, not in the fixtures.
+  - The symptom is a hoisted temp DECLARATION going missing: the emitted C says
+    `h__mk4 undeclared`, so the `pre` accumulator in emit@_hoist_legs lost text
+    it had appended. Once it emitted raw heap bytes into the middle of a line.
+  - Restricting the borrow to ENUM payloads only (strings, maps and arrays keep
+    their copies) does NOT fix it, and neither does additionally requiring the
+    match SUBJECT to be a place. Both were tried.
+  - The 21% survives those restrictions largely intact, because copying an enum
+    copies its payload arrays too -- tycho_arr_K0_copy is called BY
+    tycho_copy_E_ast__Expr.
+
+Next step for whoever picks this up: find which enum-payload binding in emit or
+parse is written through. `_hoist_legs` and the compound-index-assign path are
+where the corruption surfaces; the write itself is elsewhere.
   - MOVE-ON-LAST-USE itself, written and gated green (752/752, parse-check,
     corelib): a local read exactly once and not from inside a loop hands over
     its buffer instead of copying. It is a NET LOSS of 8% -- 217 ms -> 234 ms --
