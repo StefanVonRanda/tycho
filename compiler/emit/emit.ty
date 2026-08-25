@@ -2551,7 +2551,7 @@ fn _orret(cs: inout C, e: ast.Expr) -> (string, string):
         gt = ok[0]
     return ("({ E_" + _tname(t) + " *" + v + " = " + c + "; if (" + v + "->tag == " +
         str(bad) + ") { E_" + rn + " *_orr = " + mk +
-        "; " + _scr_frees(&cs) + "if (_scope.head) arena_free(&_scope); return _orr; } " +
+        "; " + _scr_frees(&cs) + "arena_free(&_scope); return _orr; } " +
         got + "; })", gt)
 
 fn _arrlit(cs: inout C, k: [ast.Expr]) -> (string, string):
@@ -4117,21 +4117,80 @@ fn _select(cs: inout C, arms: [ast.Arm], ind: string) -> string:
             ind + "    goto _sel_retry_" + id + ";\n"
     return out + ind + "    _sel_done_" + id + ": ;\n" + ind + "}\n"
 
+# src/tychoc.c@cond_unwrap -- an if/while condition drops ONE redundant outer
+# paren pair, so `if ((a > b))` reads `if (a > b)`.
+# src/tychoc.c@expr_has_orreturn
+fn _hasorr(e: ast.Expr) -> bool:
+    match e:
+        ast.OrRet(l, k): return true
+        _: pass
+    for c in ast.kids(e):
+        if _hasorr(c):
+            return true
+    return false
+
+# src/tychoc.c@expr_has_call
+fn _hascall(e: ast.Expr) -> bool:
+    match e:
+        ast.Call(l, q, n, t, a): return true
+        ast.CallVal(l, k): return true
+        _: pass
+    for c in ast.kids(e):
+        if _hascall(c):
+            return true
+    return false
+
+fn _cunwrap(s: string) -> string:
+    n := len(s)
+    if n < 3 or s[0] != 40:
+        return s
+    if s[1] == 123:
+        return s
+    d := 0
+    i := 0
+    for i < n:
+        c := s[i]
+        if c == 34 or c == 39:
+            i += 1
+            for i < n and s[i] != c:
+                if s[i] == 92 and i + 1 < n:
+                    i += 1
+                i += 1
+            if i >= n:
+                return s
+            i += 1
+            continue
+        if c == 40:
+            d += 1
+        elif c == 41:
+            d -= 1
+            if d == 0:
+                if i + 1 != n:
+                    return s
+                return s[1:n - 1]
+        i += 1
+    return s
+
 fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
     match s:
         ast.PassS(l):
             return ind + ";\n"
         ast.ExprStmt(l, es):
+            # src/tychoc.c@S_EXPR: a top-level statement's transients live in a
+            # per-statement arena. Only at the proc top level, and never around
+            # an or_return (which leaves the block).
             sav := cs.arena
             sw := cs.want
             cs.want = ""
-            cs.arena = "&_t"
+            if sav == "&_scope" and not _hasorr(es[0]):
+                cs.arena = "&_t"
+                c2, t2 := _ex(&cs, es[0])
+                cs.arena = sav
+                cs.want = sw
+                return ind + "{ Arena _t = arena_new(0); " + c2 + "; arena_free(&_t); }\n"
             c, t := _ex(&cs, es[0])
-            cs.arena = sav
             cs.want = sw
-            if not _uses_t(c):
-                return ind + c + ";\n"
-            return ind + "{ Arena _t = arena_new(0); " + c + "; arena_free(&_t); }\n"
+            return ind + c + ";\n"
         ast.Decl(l, n, ann, rhs, vv):
             if len(vv) > 0:
                 # `x := if c: a else: b` -- declare the variable, then run the
@@ -4177,11 +4236,24 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                         cnn := _push(&cs, n, "?A" + str(len(cs.pk) - 1))
                         return ind + "_PT" + str(kn) + " " + cnn + " = _PE" + str(kn) + ";\n"
                     _: pass
+            # src/tychoc.c@S_DECL: a NON-heap top-level local whose RHS calls
+            # something builds that call's transients in a per-statement arena.
+            sav5 := cs.arena
+            uset := sav5 == "&_scope" and _hascall(rhs[0]) and not _hasorr(rhs[0])
+            if uset:
+                cs.arena = "&_t"
             c, t := _rhs(&cs, rhs[0], want)
+            cs.arena = sav5
             if len(want) > 0:
                 t = want
+            if uset and _heap(&cs, t):
+                uset = false
+                c = _replace(c, "&_t", sav5)
             cn := _push(&cs, n, t)
             out9 := ind + _cty(&cs, t) + " " + cn + " = " + c + ";\n"
+            if uset:
+                out9 = ind + _cty(&cs, t) + " " + cn + "; { Arena _t = arena_new(0); " +
+                    cn + " = " + c + "; arena_free(&_t); }\n"
             if t == "string" and _isacc(&cs, n):
                 cs.vacc[len(cs.vacc) - 1] = cn
                 # the shadow length/capacity the in-place append maintains;
@@ -4329,7 +4401,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             fin := _finalizers(&cs, cs.fnbase, "")
             if len(k) == 0:
                 return ind + "{ " + _oneline(fin) + _scr_frees(&cs) +
-                    "if (_scope.head) arena_free(&_scope); return; }\n"
+                    "arena_free(&_scope); return; }\n"
             sw := cs.want
             sa := cs.arena
             # RETURN-SLOT MOVE: a returned TEMPORARY is built straight in the
@@ -4350,7 +4422,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                 c = "(double)(" + c + ")"
             if not tmpret and not _shares(&cs, k[0], rt, "_parent"):
                 c = _copy(&cs, c, rt, "_parent")
-            v := _fresh(&cs, "_ret")
+            v := "_ret"
             return ind + "{ " + _cty(&cs, rt) + " " + v + " = " + c + "; " +
                 _oneline(fin) + _scr_frees(&cs) + "arena_free(&_scope); return " + v + "; }\n"
         ast.BreakS(l):
@@ -4358,7 +4430,8 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
         ast.ContinueS(l):
             return ind + "continue;\n"
         ast.IfS(l, c, b, e):
-            cc, ct := _ex(&cs, c[0])
+            cc0, ct := _ex(&cs, c[0])
+            cc := _cunwrap(cc0)
             out := ind + "if (" + cc + ") {\n" + _block(&cs, b, ind + "    ") + ind + "}"
             if len(e) > 0:
                 out = out + " else {\n" + _block(&cs, e, ind + "    ") + ind + "}"
@@ -4369,7 +4442,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             cc := "1"
             if len(c) > 0:
                 c2, ct2 := _ex(&cs, c[0])
-                cc = c2
+                cc = _cunwrap(c2)
             svw := cs.arena
             idw := _fresh(&cs, "_scr")
             push(cs.ascope, "&" + idw)
@@ -4395,7 +4468,8 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             # and by the body, so its storage must NOT be the scratch a reset
             # recycles -- src/tychoc.c:12293-12300 says exactly this.
             init := _stmt(&cs, ip[0], "")
-            cc, ct := _ex(&cs, c[0])
+            cc0, ct := _ex(&cs, c[0])
+            cc := _cunwrap(cc0)
             sv3 := cs.arena
             id3 := _fresh(&cs, "_scr")
             push(cs.ascope, "&" + id3)
@@ -5753,48 +5827,38 @@ fn _fnbody(cs: inout C, fi: int, body: [ast.Stmt]) -> (string, string):
         pop(cs.cnames)
         pop(cs.ctypes)
         pop(cs.ccode)
-    # A body that never allocates gets no scope arena. Every call still paid
-    # arena_child + arena_free for it: of 6.91M arenas created compiling
-    # compiler/main.ty, 5.80M never had a single allocation. The test is that
-    # the emitted body mentions _scope nowhere except in the frees themselves,
-    # which is exact -- an allocation, a copy or an inout hand-off all name it.
-    # One pass: every mention of _scope is either a free (dropped) or a real use
-    # (which ends the scan). Two _replace passes over every body were 3% of the
-    # whole compile.
-    bare := ""
-    keep := true
-    bi := 0
-    blast := 0
-    bn := len(b)
-    for bi + 6 <= bn:
-        if b[bi] == 95 and b[bi + 1] == 115 and b[bi:bi + 6] == "_scope":
-            if bi >= 12 and b[bi - 12:bi] == "arena_free(&":
-                bare = bare + b[blast:bi - 12]
-                bi += 7                              # past "_scope)"
-                if bi < bn and b[bi] == 59:
-                    bi += 1                          # and the ';'
-                if bi < bn and (b[bi] == 32 or b[bi] == 10):
-                    bi += 1                          # and the space or newline
-                blast = bi
-                continue
-            keep = false
-            bi = bn
-            continue
-        bi += 1
-    bare = bare + b[blast:]
-    if keep:
-        out0 := sig + " {\n" + bare
-        if rt != "void":
-            out0 = out0 + "    { fprintf(stderr, \"tycho: fell off the end of " + nm + "\\n\"); exit(1); }\n"
-        return (sig + ";\n", out0 + "}\n")
+    # ./tychoc opens a _scope in EVERY proc (src/tychoc.c@gen_proc) and closes
+    # it with a bare arena_free; the elision that used to live here is an
+    # optimisation the reference does not have, so it is gone.
     out := sig + " {\n" +
         "    Arena _scope = arena_child(_parent); _scope.name = \"" + nm + "\";\n" + b
-    if rt == "void":
-        out = out + "    arena_free(&_scope);\n}\n"
-    else:
-        out = out + "    if (_scope.head) arena_free(&_scope);\n" +
-            "    { fprintf(stderr, \"tycho: fell off the end of " + nm + "\\n\"); exit(1); }\n}\n"
-    return (sig + ";\n", out)
+    if not _ends_ret(body):
+        if rt == "void":
+            out = out + "    arena_free(&_scope);\n"
+        else:
+            out = out + "    arena_free(&_scope); return (" + _cty(&cs, rt) + "){0};\n"
+    return (sig + ";\n", out + "}\n\n")
+
+# src/tychoc.c@block_ends_in_return -- whether the last statement of a block
+# leaves on every path, which is what decides the proc's trailing free.
+fn _ends_ret(b: [ast.Stmt]) -> bool:
+    if len(b) == 0:
+        return false
+    match b[len(b) - 1]:
+        ast.ReturnS(l, k): return true
+        ast.MatchS(l, c, a):
+            for x in a:
+                if not _ends_ret(x.body):
+                    return false
+            return len(a) > 0
+        ast.IfS(l, c, t, e):
+            if len(e) == 0:
+                return false
+            if not _ends_ret(t):
+                return false
+            return _ends_ret(e)
+        _: pass
+    return false
 
 # --- the unit ---------------------------------------------------------------
 
@@ -5877,6 +5941,7 @@ fn program(pfx: [string], us: [ast.Unit]) -> string:
         htd = htd + "typedef struct S_" + sd.name + "_ S_" + sd.name + ";\n"
     for ed in cs.eds:
         htd = htd + "typedef struct E_" + ed.name + " E_" + ed.name + ";\n"
+    htd = htd + "\n"
     head := ""
     cs.arena = "&_scope"
     edefs, eproto, ebody := _enum_support(&cs)
@@ -5969,7 +6034,7 @@ fn program(pfx: [string], us: [ast.Unit]) -> string:
             xps = "void"
         head = head + "extern " + xrt + " " + cs.fds[xi].name +
             "(" + xps + ");\n"
-    head = head + atd + asb + msb + osb
+    head = head + atd + asb + msb + osb + "\n"
     for i in _struct_order(&cs):
         head = head + "struct S_" + cs.sds[i].name + "_ {\n"
         for j := 0; j < len(cs.sds[i].fnames); j += 1:
@@ -6009,7 +6074,7 @@ fn program(pfx: [string], us: [ast.Unit]) -> string:
             "    int _st = 0;\n" +
             "    if (_r->tag == 1) { tycho_eprint(_r->u.Err.f0); tycho_eprint(\"\\n\"); _st = 1; }\n"
         mtail = "    arena_free(&_root);\n    return _st;\n"
-    entry := "\nint main(int argc, char **argv) {\n" +
+    entry := "int main(int argc, char **argv) {\n" +
         "    tycho_hash_seed_init();  /* random per-process map-hash seed, before any map use */\n" +
         "    tycho_argc = argc; tycho_argv = argv;  /* exposed to the program via args() */\n" +
         "    Arena _root = arena_new(0);  /* root arena; default block size */\n" +
