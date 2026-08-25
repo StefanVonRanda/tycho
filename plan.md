@@ -1949,6 +1949,15 @@ because promoting arrays reddened every pkg_* fixture in an earlier attempt.
 That is where a ninth attempt should start, and it should confirm the root by
 call count BEFORE writing any analysis.
 
+ALSO MEASURED, both negative:
+  - returning a PARAMETER-rooted place without copying, on the theory that the
+    per-statement scratch arena is what makes a parameter's lifetime unknowable.
+    Removing that arena (a statement's expression evaluated in &_scope) is GREEN
+    on its own -- and costs 2.6%, 0.879e9 -> 0.902e9, 95 -> 97 ms: fewer arenas
+    but worse locality. And the sharing it was meant to enable still reddens 23
+    fixtures, so a parameter's buffer has other ways of being shorter-lived than
+    the _parent it returns into (a loop's scratch arena resets, for one).
+
 The FBIP recycling that aliasing would disturb is worth 2.5% on its own
 (measured by making arena_recycle a no-op: 0.996e9 -> 1.021e9, 105 -> 109 ms),
 so it cannot simply be dropped to make room.
