@@ -1885,12 +1885,26 @@ breaks.
     rule believes it has excluded. Worth resuming from that fixture: it is small
     and it is the only non-package one.
 
-    WHY IT IS WORTH RESUMING: the census told us where the copying is. 5.5M of
-    the 8.2M string copies in a self-compile are inside tycho_copy_E_ast__Expr,
-    and 5.5M of the 5.9M AST copies come from tycho_arr_K0_copy -- an array of
-    Exprs being deep-copied. Those are the parser returning `(node, i)` up
-    through the recursion, re-homing the whole subtree at every level. Promotion
-    is the only thing that removes them.
+    THIRD attempt, restricted to ENUM locals (arrays and maps still copy, which
+    is what the pkg_* failures were about): GREEN everywhere -- 752/752,
+    parse-check, corelib -- and 17% SLOWER. 1.924e9 -> 2.246e9, 200 ms -> 233 ms.
+
+    So the conclusion is not "the rule is wrong" but "the analysis cannot live
+    here". Three variants have now been measured: a full per-name census
+    (+7.7%), a bounded one restricted to the names the returns mention (+17%
+    with the enum restriction), and move-on-last-use (+8%). Every one of them
+    costs more in emit than the copies it removes, because emit runs the walk
+    per function on every compile.
+
+    WHERE THE COPYING IS, so the next attempt starts from evidence: 5.5M of the
+    8.2M string copies in a self-compile are inside tycho_copy_E_ast__Expr, and
+    5.5M of the 5.9M AST copies come from tycho_arr_K0_copy -- an Expr ARRAY
+    being deep-copied. That is the parser returning `(node, i)` up through its
+    recursion, re-homing the subtree at every level.
+
+    THE WAY OUT, if anyone takes this up: compute the escape set in a pass that
+    ALREADY walks the body -- resolve or tcheck -- and hand emit a set to look
+    up. Every failure here has been the cost of the walk, never the rule.
   - MOVE-ON-LAST-USE itself, written and gated green (752/752, parse-check,
     corelib): a local read exactly once and not from inside a loop hands over
     its buffer instead of copying. It is a NET LOSS of 8% -- 217 ms -> 234 ms --
