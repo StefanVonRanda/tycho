@@ -4,7 +4,7 @@
 # Four legs. The first three are counts; the fourth is the one that carries the
 # wrong-tree class, and it is the reason this lane is not two `wc -l`s:
 #
-#   [1]  every tests/*.ty that ./tychoc accepts must parse       274/274
+#   [1]  every tests/*.ty that ./tychoc accepts must parse       275/275
 #   [1b] every corelib/**.ty must parse                           91/91
 #   [2]  tests/reject/, SPLIT by the committed classifier table:
 #        a SYNTAX rejection must be rejected, a SEMANTIC one must be ACCEPTED.
@@ -82,7 +82,7 @@ n_lib=$(find corelib -name '*.ty' | wc -l)
 n_rej=$(ls tests/reject/*.ty | wc -l)
 n_tsv=$(wc -l < "$TSV")
 n_new=$(find tools examples server bench -name '*.ty' | wc -l)
-[ "$n_acc" = 274 ] || { echo "parse-check: tests/*.ty is $n_acc, expected 274"; rc=1; }
+[ "$n_acc" = 275 ] || { echo "parse-check: tests/*.ty is $n_acc, expected 275"; rc=1; }
 [ "$n_lib" = 91 ]  || { echo "parse-check: corelib/**.ty is $n_lib, expected 91"; rc=1; }
 [ "$n_new" = 179 ] || { echo "parse-check: tools+examples+server+bench .ty is $n_new, expected 179"; rc=1; }
 [ "$n_rej" = "$n_tsv" ] || { echo "parse-check: $n_rej reject fixtures but $n_tsv classified rows -- rerun scripts/classify_rejects.py"; rc=1; }
@@ -97,7 +97,7 @@ leg_accept() {
     echo "$1: files=$((ok+bad)) parse-ok=$ok fail=$bad"
     [ "$ok" = "$3" ] && [ "$bad" = 0 ] || { echo "parse-check: $1 expected $3 ok, 0 fail"; rc=1; }
 }
-leg_accept "leg1  tests/*.ty" "$(ls tests/*.ty)" 274
+leg_accept "leg1  tests/*.ty" "$(ls tests/*.ty)" 275
 leg_accept "leg1b corelib/**.ty" "$(find corelib -name '*.ty' | sort)" 91
 leg_accept "leg1c tools+examples+server+bench" "$(find tools examples server bench -name '*.ty' | sort)" 179
 
