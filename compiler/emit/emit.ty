@@ -2482,7 +2482,7 @@ fn _orret(cs: inout C, e: ast.Expr) -> (string, string):
         gt = ok[0]
     return ("({ E_" + _tname(t) + " *" + v + " = " + c + "; if (" + v + "->tag == " +
         str(bad) + ") { E_" + rn + " *_orr = " + mk +
-        "; arena_free(&_scope); return _orr; } " + got + "; })", gt)
+        "; if (_scope.head) arena_free(&_scope); return _orr; } " + got + "; })", gt)
 
 fn _arrlit(cs: inout C, k: [ast.Expr]) -> (string, string):
     if len(k) == 0:
@@ -4244,7 +4244,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             # the return and are unreachable.
             fin := _finalizers(&cs, cs.fnbase, "")
             if len(k) == 0:
-                return ind + "{ " + _oneline(fin) + "arena_free(&_scope); return; }\n"
+                return ind + "{ " + _oneline(fin) + "if (_scope.head) arena_free(&_scope); return; }\n"
             sw := cs.want
             sa := cs.arena
             # RETURN-SLOT MOVE: a returned TEMPORARY is built straight in the
@@ -5617,7 +5617,7 @@ fn _fnbody(cs: inout C, fi: int, body: [ast.Stmt]) -> (string, string):
     if rt == "void":
         out = out + "    arena_free(&_scope);\n}\n"
     else:
-        out = out + "    arena_free(&_scope);\n" +
+        out = out + "    if (_scope.head) arena_free(&_scope);\n" +
             "    { fprintf(stderr, \"tycho: fell off the end of " + nm + "\\n\"); exit(1); }\n}\n"
     return (sig + ";\n", out)
 
