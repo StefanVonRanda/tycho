@@ -23,10 +23,10 @@ struct Tok:
 fn _t(kind: string, text: string, line: int, col: int, raw: string) -> Tok:
     return Tok(kind, text, line, col, 0, 0.0, raw, "")
 
-fn _tk(keep: bool, kind: string, text: string, line: int, col: int, raw: string) -> Tok:
+fn _tk(keep: bool, kind: string, text: string, line: int, col: int, raw: string, fl: string) -> Tok:
     if keep:
-        return Tok(kind, text, line, col, 0, 0.0, raw, "")
-    return Tok(kind, text, line, col, 0, 0.0, "", "")
+        return Tok(kind, text, line, col, 0, 0.0, raw, fl)
+    return Tok(kind, text, line, col, 0, 0.0, "", fl)
 
 fn is_digit(c: int) -> bool:
     return c >= 48 and c <= 57
@@ -342,17 +342,8 @@ fn tokenize_ex(src: string, keep_trivia: bool) -> [Tok]:
 
 # The path-carrying entry. `tokenize_all` keeps its old shape so the token dump,
 # round-trip and census modes are untouched.
-# gap: the file is stamped in a second pass over the token array, which costs
-# one extra copy of it at the return boundary.
 fn tokenize_file(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNote]):
-    ts, ns := tokenize_named(src, keep_trivia, file)
-    # The token carries its OWN LINE, not the whole file. Stamping the source
-    # into every token deep-copied it per token (Tycho value semantics): peak
-    # live for a 6k-line program was 110.9 MiB, and 3.9 MiB without it -- which
-    # is why tychoc1 could not resolve its own 35k-line source at 16 GB.
-    for i := 0; i < len(ts); i += 1:
-        ts[i].file = file
-    return (ts, ns)
+    return tokenize_named(src, keep_trivia, file)
 
 # The `# deprecated:` notes this file's comments carry, in source order. They are
 # a SIDE TABLE rather than tokens for the same reason src/tychoc.c keeps them in
@@ -421,7 +412,7 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
                 if len(dn) > 0:
                     push(notes, DNote(line, dn))
             if keep_trivia and p > cs:
-                push(toks, _tk(keep_trivia, "comment", src[cs:p], line, cs - ls + 1, src[cs:p]))
+                push(toks, _tk(keep_trivia, "comment", src[cs:p], line, cs - ls + 1, src[cs:p], file))
             if p < n:
                 p += 1
             continue
@@ -448,11 +439,11 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
         if bracket_depth == 0 and not cont:
             if col > stack[len(stack) - 1]:
                 push(stack, col)
-                push(toks, _tk(keep_trivia, "indent", "", line, col + 1, ""))
+                push(toks, _tk(keep_trivia, "indent", "", line, col + 1, "", file))
             else:
                 for col < stack[len(stack) - 1]:
                     pop(stack)
-                    push(toks, _tk(keep_trivia, "dedent", "", line, col + 1, ""))
+                    push(toks, _tk(keep_trivia, "dedent", "", line, col + 1, "", file))
                 if col != stack[len(stack) - 1]:
                     _die(file, src, line, "inconsistent indentation")
 
@@ -517,7 +508,7 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
                         Err(strings.Underflow): fv = 0.0
                         Err(strings.Empty): fv = 0.0
                         Err(strings.Syntax): fv = 0.0
-                    push(toks, Tok("float", raw, line, tcol, 0, fv, raw, ""))
+                    push(toks, Tok("float", raw, line, tcol, 0, fv, raw, file))
                     last_kind = "float"
                     last_text = raw
                 else:
@@ -528,7 +519,7 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
                         if v > (imax - d) / litbase:
                             _die(file, src, line, "integer literal out of range")
                         v = v * litbase + d
-                    push(toks, Tok("int", raw, line, tcol, v, 0.0, raw, ""))
+                    push(toks, Tok("int", raw, line, tcol, v, 0.0, raw, file))
                     last_kind = "int"
                     last_text = raw
                 continue
@@ -542,7 +533,7 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
                 kind := "ident"
                 if is_keyword(name):
                     kind = "kw"
-                push(toks, _tk(keep_trivia, kind, name, line, tcol, name))
+                push(toks, _tk(keep_trivia, kind, name, line, tcol, name, file))
                 last_kind = kind
                 last_text = name
                 continue
@@ -556,7 +547,7 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
                 flag := 0
                 if fstr:
                     flag = 1
-                push(toks, Tok("str", body, line, tcol, flag, 0.0, src[s:e], ""))
+                push(toks, Tok("str", body, line, tcol, flag, 0.0, src[s:e], file))
                 p = e
                 last_kind = "str"
                 last_text = body
@@ -564,7 +555,7 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
 
             if c == 96:
                 e, body, nl := scan_raw(src, p, line, file)
-                push(toks, Tok("str", body, line, tcol, 0, 0.0, src[s:e], ""))
+                push(toks, Tok("str", body, line, tcol, 0, 0.0, src[s:e], file))
                 p = e
                 line += nl
                 last_kind = "str"
@@ -573,7 +564,7 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
 
             if c == 39:
                 e, cv := scan_char(src, p, line, file)
-                push(toks, Tok("char", src[s:e], line, tcol, cv, 0.0, src[s:e], ""))
+                push(toks, Tok("char", src[s:e], line, tcol, cv, 0.0, src[s:e], file))
                 p = e
                 last_kind = "char"
                 last_text = src[s:e]
@@ -593,7 +584,7 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
                 bracket_depth += 1
             elif (text == ")" or text == "]") and bracket_depth > 0:
                 bracket_depth -= 1
-            push(toks, _tk(keep_trivia, "op", text, line, tcol, text))
+            push(toks, _tk(keep_trivia, "op", text, line, tcol, text, file))
             p += l
             last_kind = "op"
             last_text = text
@@ -604,11 +595,11 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
             for p < n and src[p] != 10:
                 p += 1
             if keep_trivia:
-                push(toks, _tk(keep_trivia, "comment", src[cs:p], line, cs - ls + 1, src[cs:p]))
+                push(toks, _tk(keep_trivia, "comment", src[cs:p], line, cs - ls + 1, src[cs:p], file))
         # A comment tail is not a token, so it must not defeat the trailing-
         # operator join: the candidate is recorded from the last REAL token.
         if bracket_depth == 0:
-            push(toks, _tk(keep_trivia, "newline", "", line, nlcol, ""))
+            push(toks, _tk(keep_trivia, "newline", "", line, nlcol, "", file))
             pend = continues_line(last_kind, last_text)
         else:
             pend = false
@@ -634,6 +625,6 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
         die(msg)
     for len(stack) > 1:
         pop(stack)
-        push(toks, _tk(keep_trivia, "dedent", "", line, 1, ""))
-    push(toks, _tk(keep_trivia, "eof", "", line, 1, ""))
+        push(toks, _tk(keep_trivia, "dedent", "", line, 1, "", file))
+    push(toks, _tk(keep_trivia, "eof", "", line, 1, "", file))
     return (toks, notes)
