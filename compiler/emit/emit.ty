@@ -4452,12 +4452,19 @@ fn _mut_e(e: ast.Expr, nm: string) -> bool:
                 return true
             return _mut_es(k, nm)
         ast.Call(l, q, n, ts, k):
-            # Conservative at ANY unqualified call taking the binding first:
-            # that covers push/pop/reserve without a list, and a sink parameter,
-            # which adopts its argument and is invisible from here. Naming only
-            # the three builtins left the compiler's own source miscompiled.
-            if len(q) == 0 and len(k) > 0 and _mroot(k[0]) == nm:
-                return true
+            # The three builtins that WRITE their receiver, which they take
+            # first. Nothing else here can: an `inout` parameter needs `&x` at
+            # the call site, and that is an Addr, caught above.
+            #
+            # This was once conservative at ANY unqualified call, which is the
+            # shape of every recursive AST walker -- _mut_es(k, nm),
+            # _names_in(kk, &out) -- so every walker deep-copied its payload at
+            # every node, and so did every analysis written on top of one. The
+            # two fixtures that made the conservative form look necessary were
+            # the assignment-arena bug in 8fc08efc, not a mutation missed here.
+            if len(q) == 0 and len(k) > 0 and (n == "push" or n == "pop" or n == "reserve"):
+                if _mroot(k[0]) == nm:
+                    return true
             return _mut_es(k, nm)
         ast.Field(l, k, f): return _mut_es(k, nm)
         ast.TupIdx(l, k, n): return _mut_es(k, nm)
