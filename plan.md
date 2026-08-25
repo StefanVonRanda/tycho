@@ -1832,7 +1832,7 @@ MEASURE WITH CALLGRIND, NOT THE CLOCK. This machine drifts +/-5% between runs,
 which is the size of most of these wins; `valgrind --tool=callgrind` gives a
 deterministic instruction count.
 
-WHERE IT STANDS on compiler/main.ty (tychoc 88-91 ms alongside):
+WHERE IT STANDS on compiler/main.ty (tychoc 89-91 ms alongside):
 
     5.0x   at the start of this work
     3.8x   341 ms
@@ -1841,10 +1841,10 @@ WHERE IT STANDS on compiler/main.ty (tychoc 88-91 ms alongside):
     2.7x   242 ms   arena bump inlined (cb76f804)
     2.6x   230 ms   same-arena strings and ENUMS shared (f1d14147 and after)
     2.4x   217 ms   push keeps a temporary already in the array's arena
-    2.2x   201 ms   destructuring a call result (b957b857) + for-in snapshot
-    2.2x   200 ms   arena fast path tests the size class (9fbe9f35)
+    2.2x   200 ms   destructuring a call result, for-in snapshot, size-class guard
+    2.0x   182 ms   arm-mutation test narrowed (05d0a710), after 8fc08efc
 
-    instructions   2.820e9 -> 1.924e9
+    instructions   2.820e9 -> 1.765e9
 
 THE RULE that did most of it: a value already in the destination arena is stored
 rather than copied, when nothing can write through it -- strings and enums are
@@ -1885,6 +1885,11 @@ breaks.
     rule believes it has excluded. Worth resuming from that fixture: it is small
     and it is the only non-package one.
 
+    FOURTH attempt, after 05d0a710 made every AST walker cheap -- the reason
+    the earlier ones were assumed to have failed. Still a loss: 1.765e9 ->
+    1.976e9, 182 ms -> 199 ms. Four measurements now say the same thing, and the
+    walkers being cheap does not change it. Stop trying this in emit.
+
     THIRD attempt, restricted to ENUM locals (arrays and maps still copy, which
     is what the pkg_* failures were about): GREEN everywhere -- 752/752,
     parse-check, corelib -- and 17% SLOWER. 1.924e9 -> 2.246e9, 200 ms -> 233 ms.
@@ -1920,9 +1925,10 @@ Addr and is caught separately) gives:
     instructions   1.924e9 -> 1.521e9   (-21%)
     wall           200 ms -> 156 ms     -- a ratio of 1.7x, the best seen
 
-It is NOT shipped because it reddens tests/int_maps and tests/maps -- but that
-is NOT the borrow's fault, and finding that out is the real result of this
-round. A SEMANTICALLY INERT perturbation of emit.ty reddens the same two
+SHIPPED as 05d0a710, once the real cause of the two map failures was found and
+fixed (8fc08efc: an assignment built its value in &_scope and wrote the pointer
+through an inout parameter, handing the caller memory the callee then freed).
+The record of how it was found is kept below because the method is the lesson. A SEMANTICALLY INERT perturbation of emit.ty reddens the same two
 fixtures:
 
     add a `curfn: string` field to struct C, set it in _fnbody around the body
