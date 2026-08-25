@@ -609,6 +609,28 @@ Arena arena_child(Arena *parent) {   /* inherit the label: a block/loop arena re
     return a;
 }
 
+/* Every statement in reference-shaped emitted code opens a scratch arena, so
+ * this runs 6.3M times compiling compiler/main.ty and reaching it through a
+ * call -- which returns a 48-byte struct through memory, twice, once out of
+ * arena_new and once out of arena_child -- cost 15 Ir for six field stores.
+ * Inlined the fields are built in place. arena_new's blocksz ternary folds
+ * away: a parent's blocksz is ALWAYS non-zero (arena_new resolves 0 to the
+ * override or the default and children inherit it), so the two global loads
+ * were dead. */
+static inline Arena arena_child_i(Arena *parent) {
+    if (__builtin_expect(g_arena_stats != 0, 0))
+        atomic_fetch_add_explicit(&st_arenas, 1, memory_order_relaxed);
+    Arena a;
+    a.head = NULL;
+    a.blocksz = parent->blocksz;
+    a.bkt = NULL;
+    a.freelist = NULL;
+    a.nfree = 0;
+    a.name = parent->name;
+    return a;
+}
+#define arena_child(p) arena_child_i((p))
+
 /* Does `p` point inside one of this arena's blocks? Used by element-overwrite
  * recycling (MM-9) to recycle ONLY buffers this arena owns -- an interned string
  * literal (malloc'd, immortal, possibly shared) or a buffer from another arena
@@ -767,6 +789,20 @@ void arena_free(Arena *a) {
     if (g_arena_stats) { arena_free_stats(a); return; }
     arena_free_hot(a);
 }
+
+/* The mirror of arena_child_i: 6.3M of the 7.2M arena_free calls compiling
+ * compiler/main.ty are on a per-statement scratch arena that was never
+ * allocated into, so there is nothing to release and the whole 16.7 Ir is call
+ * overhead. With no head block there are no chunks, hence no free lists -- they
+ * are cleared anyway so the struct is left exactly as arena_free_hot leaves it. */
+static inline void arena_free_i(Arena *a) {
+    if (__builtin_expect(a->head == NULL && a->bkt == NULL && !g_arena_stats, 1)) {
+        a->freelist = NULL; a->nfree = 0;
+        return;
+    }
+    arena_free(a);
+}
+#define arena_free(a) arena_free_i((a))
 
 /* ---- tasks (CC-1: `spawn f(args)` / `wait(t)`) --------------------------
  * A task is one OS thread running one tycho function call against a private
@@ -1337,7 +1373,18 @@ int tycho_str_eq(const char *a, const char *b) {
 int tycho_str_cmp(const char *a, const char *b) {
     tycho_int la = ((const tycho_int *)a)[-1], lb = ((const tycho_int *)b)[-1];
     tycho_int n = la < lb ? la : lb;
-    int c = n ? memcmp(a, b, (size_t)n) : 0;
+    /* Same trade as tycho_str_eq above, and it applies to the ORDER too: an
+     * order still has to compare the common prefix when the lengths differ, but
+     * at these lengths memcmp's own setup costs more than the bytes. Unsigned,
+     * because that is how memcmp orders and this must agree with it exactly. */
+    if (n <= 8) {
+        for (tycho_int i = 0; i < n; i++) {
+            unsigned char ca = (unsigned char)a[i], cb = (unsigned char)b[i];
+            if (ca != cb) return ca < cb ? -1 : 1;
+        }
+        return la < lb ? -1 : (la > lb ? 1 : 0);
+    }
+    int c = memcmp(a, b, (size_t)n);
     if (c != 0) return c < 0 ? -1 : 1;
     return la < lb ? -1 : (la > lb ? 1 : 0);
 }
