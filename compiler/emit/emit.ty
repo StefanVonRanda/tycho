@@ -11,8 +11,18 @@ import "core:strings"
 # into the CALLER's arena before the scope is freed, which is the unoptimised
 # form of src/tychoc.c's return-only-escape pass -- correct, and slower.
 #
-# None of src/tychoc.c's eight optimisation passes are ported. Scope is the core
-# language: scalars, strings, arrays, structs, enums, control flow, functions.
+# Three of src/tychoc.c's optimisation passes are ported: the match-arm payload
+# borrow (`compiler/emit/emit.ty@_mroot`), the string self-append accumulator
+# (`compiler/emit/emit.ty@_acc_scan`) and a weak return-slot move. The rest are
+# not, and the cost is measured, not guessed: benchmarks built by this compiler
+# run 1-4x slower than the same source built by ./tychoc, and PEAK RSS is
+# 100-400x higher -- bench strarr_build 1 MB -> 360 MB, prongB iter-transform
+# 4 MB -> 1536 MB. The dominant missing pass is the per-iteration loop scratch
+# arena (`src/tychoc.c:12272-12287`); every allocation here lives in the
+# function scope instead. plan.md ranks the rest.
+#
+# Scope is the core language: scalars, strings, arrays, structs, enums, control
+# flow, functions.
 # Everything else dies by name so a fixture fails loudly rather than silently.
 
 struct SD:

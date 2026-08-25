@@ -2298,3 +2298,99 @@ per-function scratch reset per statement (307 fixtures: values DO outlive their
 statement, and a reset reissues the same block). That last one is the useful
 negative: the per-statement arena_new/arena_free is not removable without the
 move-on-last-use liveness analysis that decides which values escape.
+
+## Phase: the emitted-code performance gap to ./tychoc
+
+Measured 2026-08-24, after `170f587c` and `67cd912c` made `bench/` honour
+`TYCHOC`: benchmarks compiled by `./tychoc1` were run against the same source
+compiled by `./tychoc` for the first time. Wall time is 1-4x worse; **peak RSS
+is 100-400x worse** — strarr_build 1 MB -> 360 MB, inout_fill 1 MB -> 392 MB,
+prongB iter-transform 4 MB -> 1536 MB, latency 4.5 MB -> 1533.7 MB, prongB
+binary-trees 13 MB -> 767 MB, maptree 6 MB -> 504 MB. Two workloads are FASTER
+under tychoc1: treewalk 38 ms -> 7 ms, prongB json-parse 1405 ms -> 1135 ms.
+strarr_build, inout_fill and treewalk were reproduced independently.
+
+**What is NOT established, stated before the ranking:**
+
+- **No pass was isolated by rebuilding `./tychoc` without it.** The item-1
+  ranking is inference from the shape of the emitted C, not measurement.
+- **Items 6-9 have no measured workload at all** — they are gaps read out of
+  `src/tychoc.c`, with no bench row attributable to them.
+- **dbquery has no tychoc1 number**: `tychoc1: unknown option '--pkg'`, a CLI
+  gap, not a codegen one.
+- **The ms figures are best-of-1 on a non-quiesced box.** The RSS figures are
+  deterministic and are the ones to trust.
+
+The phases below are ranked by expected size of win. Each names the
+`src/tychoc.c` pass and the emit site that stands in for it.
+
+- [ ] **Perf 1 — per-iteration loop scratch arena**
+  - `src/tychoc.c:12272` opens an `_scr<N> = arena_child(...)` per loop,
+    `src/tychoc.c:12276` resets it at the top of each iteration and
+    `src/tychoc.c:12287` frees it after. `compiler/emit/` has **zero**
+    `arena_reset` and zero `_scr`: every transient goes to `&_scope`
+    (`compiler/emit/emit.ty:2250`), which lives for the whole function, so a
+    loop's garbage accumulates until the function returns.
+  - Evidence: dominant cause. Every 100x+ RSS row above is a loop building
+    transients — strarr_build, inout_fill, iter-transform, latency.
+  - Known hazard, already measured under "close the compile-speed gap": a naive
+    per-loop reset leaked 3 fixtures because an early `return` escapes the
+    scratch. The escape analysis is the work, not the arena.
+  - Done when: a loop's transients are freed per iteration and peak RSS on
+    strarr_build is within 2x of `./tychoc`'s.
+  - Verify: `TYCHOC=./tychoc1 make test` at 752, `make parse-check`, and the
+    RSS of the four named benchmarks before and after.
+
+- [ ] **Perf 2 — bounds-check elision for monotone indices**
+  - `src/tychoc.c:9351-9540` proves an index in range, gated at
+    `src/tychoc.c:9450`. `compiler/emit/` always emits the checked accessor
+    (`compiler/emit/emit.ty:1625`).
+  - Evidence: wall time only; no RSS component. Unquantified — no benchmark
+    isolates it.
+
+- [ ] **Perf 3 — nullary-variant singleton returned by copy**
+  - `src/tychoc.c:9793-9806` returns a shared singleton for a payload-free enum
+    variant. `compiler/emit/emit.ty:4256` copies one out.
+  - Evidence: allocation count on any Option/Result-heavy loop; no isolated
+    measurement.
+
+- [ ] **Perf 4 — move-on-last-use**
+  - `src/tychoc.c:9543-9713` hands a buffer over at its last read instead of
+    copying. `compiler/emit/emit.ty:1320` (`_copy`) always copies.
+  - Evidence: a standalone attempt on tychoc1's OWN compile speed was a net 8%
+    LOSS (recorded above), because the census cost more than the moves saved.
+    That is a cost measurement of the analysis, not of the win on the emitted
+    programs, and it does not settle this item either way.
+
+- [ ] **Perf 5 — construction-argument move**
+  - `src/tychoc.c:10029-10050` moves an argument into the aggregate being built.
+    `compiler/emit/emit.ty:2437` and `compiler/emit/emit.ty:3084` copy.
+  - Evidence: binary-trees (13 MB -> 767 MB) is the shape; not isolated.
+
+- [ ] **Perf 6 — map accumulator rewritten in place**
+  - `src/tychoc.c:9928` and `src/tychoc.c:9938` recognise `m[k] = ...` /
+    `delete` on the map being folded and write in place. `compiler/emit/` has
+    **no** `map_set` fast path at all.
+  - Evidence: **none measured.** maptree (6 MB -> 504 MB) is the plausible
+    workload; nothing attributes it.
+
+- [ ] **Perf 7 — push-cursor caching**
+  - `src/tychoc.c:9643`, `:9671`, `:9698` (`fuse_gather`/`fuse_open`/
+    `fuse_close`) hoist the destination cursor out of a push loop.
+    `compiler/emit/emit.ty:3166` emits an independent push per iteration.
+  - Evidence: **none measured.**
+
+- [ ] **Perf 8 — loop-carried spine recycling**
+  - `src/tychoc.c:11792` reuses a container's spine across iterations when the
+    name is not an accumulator.
+  - Evidence: **none measured.**
+
+- [ ] **Perf 9 — sink-argument adopt**
+  - `src/tychoc.c:9714-9733` adopts a `sink` argument's buffer instead of
+    copying it. `is_sink` is parsed (`compiler/ast/ast.ty:30`) and **never read
+    by `compiler/emit/`**.
+  - Evidence: **none measured.**
+
+- [ ] **Perf 0 — `tychoc1` has no `--pkg`, so dbquery cannot be scored**
+  - `tychoc1: unknown option '--pkg'`. A CLI gap, not codegen; it is here
+    because it is why one benchmark row is blank.
