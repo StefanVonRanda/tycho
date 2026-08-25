@@ -2028,7 +2028,22 @@ breaks.
     ALREADY walks the body -- resolve or tcheck -- and hand emit a set to look
     up. Every failure here has been the cost of the walk, never the rule.
 
-## The idea worth taking up next: ADOPT the scope instead of copying out of it
+## Tried and failed: ALIAS the scope to the caller's arena
+
+The cheapest possible form of adoption: for a function that returns a PLACE --
+which is exactly the set whose returns copy -- give it no scope arena at all and
+let its body allocate directly in _parent. No blocks to splice, no teardown
+walk, and the return copy vanishes because the value is already there. The
+qualifying test needs no types: a return whose expression is a place.
+
+19 fixtures. Guarding it further -- never alias a body with an in-place string
+accumulator, whose buffer must grow where it sits -- makes it WORSE, 35, so the
+accumulator is not the (only) cause. Reverted, and this is the third shape of
+"stop copying at the return" to fail after adoption (green but slower) and
+promotion (seven attempts). The failures cluster on or_return, map parameters
+and value_semantics, which is where to start if anyone tries a fourth.
+
+## Tried and failed: ADOPT the scope instead of copying out of it
 
 What is left of the copying is all at the RETURN boundary. Traced: the AST deep
 copies are now almost entirely self-recursive (an Expr copy pulling its child
