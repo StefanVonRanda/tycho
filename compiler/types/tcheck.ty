@@ -803,12 +803,12 @@ fn _field_ty(cs: inout C, t: string, f: string) -> string:
     i := _tdecl(&cs, _base(&cs, t))
     if i < 0:
         return "?"
-    d := cs.tds[i]
-    if d.kind != "struct":
+    # read in place: a TDecl copy is a whole declaration, and this wants one field
+    if cs.tds[i].kind != "struct":
         return "?"
-    for k := 0; k < len(d.fnames); k += 1:
-        if d.fnames[k] == f:
-            return d.ftypes[k]
+    for k := 0; k < len(cs.tds[i].fnames); k += 1:
+        if cs.tds[i].fnames[k] == f:
+            return cs.tds[i].ftypes[k]
     return "?"
 
 fn _elem_of(cs: inout C, t: string) -> string:
@@ -1740,12 +1740,12 @@ fn _variant_payload(cs: inout C, et: string, name: string) -> [string]:
     i := _tdecl(&cs, et)
     if i < 0:
         return []string
-    d := cs.tds[i]
-    for k := 0; k < len(d.fnames); k += 1:
-        if d.fnames[k] == name:
-            if len(d.ftypes[k]) == 0:
+    # read in place: a TDecl copy is a whole declaration (see _field_ty)
+    for k := 0; k < len(cs.tds[i].fnames); k += 1:
+        if cs.tds[i].fnames[k] == name:
+            if len(cs.tds[i].ftypes[k]) == 0:
                 return []string
-            return split(d.ftypes[k], "|")
+            return split(cs.tds[i].ftypes[k], "|")
     return []string
 
 fn _arm_binds(cs: inout C, a: ast.Arm, tys: [string]):
