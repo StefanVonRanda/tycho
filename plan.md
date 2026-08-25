@@ -1911,7 +1911,8 @@ STANDING: 1.15-1.18x. The gap is ONE problem, and it is scoped: 1.9M of the
 of those crosses an arena boundary at a RETURN. That is ~17% of the profile,
 which is the whole remaining gap. Four routes to it are closed with numbers:
 
-    promotion / escape analysis   10 attempts; the 8th WORKS -- see below
+    promotion / escape analysis   11 attempts; DEAD, and not for the reason
+                                  everything above says -- see the last one
     scope adoption                green, -4% instructions, +12% WALL
     push-value arena              190 fixtures, then 254
     alias scope to caller's arena 19 fixtures; the accumulator guard made it 35
@@ -1958,6 +1959,20 @@ traffic and reddens 3 fixtures with ASan reporting STACK-USE-AFTER-RETURN. The
 reason is deliberate: to_under aliases its argument, ./tychoc does too and
 tests/newtype_agg records that answer, so a value can legitimately outlive the
 frame whose arena holds it. Arena storage must stay off the stack.
+
+THE ELEVENTH ATTEMPT SETTLES IT, AND CORRECTS THE DIAGNOSIS ABOVE. Promote
+EVERY top-level local of a function that returns something heap -- no census, no
+walk, no analysis cost whatsoever, just a mark. Green everywhere, and:
+
+    instructions   0.879e9 -> 0.942e9   (+7%)
+    allocations    7.59M -> 8.84M, bump 285 MiB -> 315 MiB
+    wall           95 ms -> 107 ms
+
+Allocations go UP. So the cost was never the census: building locals in the
+caller's arena is itself a pessimisation here, because a promoted local's own
+assignments then copy INTO _parent and nothing is freed until the caller
+returns. Every earlier attempt blamed its walk; the walk was not the problem.
+The family is dead.
 
 ALSO MEASURED, both negative:
   - returning a PARAMETER-rooted place without copying, on the theory that the
