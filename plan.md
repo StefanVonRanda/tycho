@@ -1924,8 +1924,12 @@ with all four strings of every token, at tokenize_named's return.
 That last one looks like the next lever and is NOT: rewriting tokenize_named to
 fill an `inout` array moves the copy rather than removing it, because push into
 an array owned by another arena copies each element anyway. It only pays if the
-token is BUILT in the destination arena, which is the push-value-arena change
-that reddened 190 fixtures.
+token is BUILT in the destination arena -- the push-value-arena change, now
+tried TWICE and worse the second time: 190 fixtures the first way, 254 the
+second (computing the target's owner before evaluating the value, so a pending
+`?A` element type and a nested place both read the wrong arena). Do not try a
+third shape of it without first understanding what _ownerof answers for a push
+target that is a field, an element, or an inout parameter.
 
 PROFILE NOW (exclusive): tycho_str_copy 13.1%, memcpy 11.7%, arena_alloc_i
 7.4%, tycho_copy_E_ast__Expr 7.0%, the Expr-array copy 6.7%, memcmp 5.6%.
