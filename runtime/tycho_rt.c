@@ -1325,7 +1325,14 @@ int tycho_str_eq(const char *a, const char *b) {
     /* one byte settles most of what the lengths did not: a compiler's
      * equal-length comparisons are things like "op" against "kw". */
     if (a[0] != b[0]) return 0;
-    return la == 1 || memcmp(a + 1, b + 1, (size_t)(la - 1)) == 0;
+    /* Short and equal-length is the parser's whole diet ("op", "kw", every
+     * operator): a byte loop beats the call into memcmp, whose own setup costs
+     * more than the comparison at these lengths. */
+    if (la <= 8) {
+        for (tycho_int i = 1; i < la; i++) if (a[i] != b[i]) return 0;
+        return 1;
+    }
+    return memcmp(a + 1, b + 1, (size_t)(la - 1)) == 0;
 }
 int tycho_str_cmp(const char *a, const char *b) {
     tycho_int la = ((const tycho_int *)a)[-1], lb = ((const tycho_int *)b)[-1];
