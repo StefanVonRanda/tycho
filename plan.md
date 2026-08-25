@@ -1860,10 +1860,15 @@ _expect is copied whole to look at two fields; `return cs.vcn[i]` duplicates a
 field of a caller-owned struct into the caller's own arena. Building or
 comparing in place at the call site is what removes them.
 
-The general form of the last one does NOT work: teaching _shares that a place
-rooted in an INOUT parameter may be returned without a copy (its arena is the
-caller's, which is what _parent names) fires nowhere measurable on its own, and
-wiring it into the RETURN path reddens 15 fixtures for ~1%. Reverted.
+The general form of the last one does NOT work, and the reason is worth keeping:
+teaching _shares that a place rooted in an INOUT parameter may be returned
+without a copy -- its arena is the caller's, which is what _parent names -- is
+right about LIFETIME and wrong about MUTATION. It reddens 15 fixtures for ~1%,
+and const_local fails with `tycho: out of memory`, not a wrong value: the shared
+string is a FIELD of the inout struct that its owner appends to IN PLACE, and
+the in-place append grows a buffer the returned value still aliases.
+_acc_rooted cannot see that -- it tests the root LOCAL, and here the accumulator
+is cs.ccode[i]. Reverted.
 
     instructions   2.820e9 -> 1.016e9
 
