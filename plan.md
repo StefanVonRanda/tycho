@@ -1950,6 +1950,18 @@ because promoting arrays reddened every pkg_* fixture in an earlier attempt.
 That is where a ninth attempt should start, and it should confirm the root by
 call count BEFORE writing any analysis.
 
+OUT PARAMETERS PAY WHERE A TREE ACCUMULATES, AND NOWHERE ELSE. The binary parse
+levels (mul/add/isexp/cmp/notexp/andexp/expr) each returned their node, which
+copies it into the caller's arena at EVERY precedence step -- O(depth x size)
+for a deep expression. Writing through an `out: inout ast.Expr` builds the tree
+where it will live: -3.3%, 95 -> 93 ms (622c4951).
+
+The same transformation applied to levels that do NOT accumulate is a LOSS:
+unary is a pass-through (0.850e9 -> 0.851e9) and postfix, which does accumulate
+but whose base comes from primary through a shim, is worse still (-> 0.865e9,
+93 -> 95 ms). The rule is: convert a level only where the node it returns is
+built up across iterations from what the level below produced.
+
 AN ARENA'S MEMORY IS NOT FRAME-SCOPED, and that is worth knowing before anyone
 tries to make it so. Compiling compiler/main.ty asks the pool for 842k blocks to
 bump 285 MiB -- about 350 bytes per block acquired -- so most arenas take a
