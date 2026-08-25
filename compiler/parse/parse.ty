@@ -334,11 +334,13 @@ fn _args(toks: [lex.Tok], i0: int) -> ([ast.Expr], int):
     for not _isop(toks, i, ")"):
         if _kis(toks, i, "ident") and _isop(toks, i + 1, ":"):
             nm := _x(toks, i)
-            a, j := expr(toks, i + 2)
+            a := ast.NullLit(0)
+            j := _expr_into(toks, i + 2, &a)
             push(out, ast.Named(_ln(toks, i), nm, [a]))
             i = j
         else:
-            a, j := expr(toks, i)
+            a := ast.NullLit(0)
+            j := _expr_into(toks, i, &a)
             push(out, a)
             i = j
         if not _isop(toks, i, ","):
@@ -392,56 +394,71 @@ fn _lambda(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
         push(ret, r)
         i = j
     i = _op(toks, i, ":")
-    b, j := expr(toks, i)
+    b := ast.NullLit(0)
+    j := _expr_into(toks, i, &b)
     return (ast.Lambda(ln, ps, ret, [b]), j)
 
-fn primary(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
+fn _primary_into(toks: [lex.Tok], i0: int, out: inout ast.Expr) -> int:
     t := _at(toks, i0)
     i := i0
 
     if t.kind == "kw" and t.text == "fn":
-        return _lambda(toks, i + 1)
+        el2, jl2 := _lambda(toks, i + 1)
+        out = el2
+        return jl2
     if t.kind == "int":
-        return (ast.IntLit(t.line, t.ival), i + 1)
+        out = ast.IntLit(t.line, t.ival)
+        return i + 1
     if t.kind == "char":
-        return (ast.CharLit(t.line, t.ival), i + 1)
+        out = ast.CharLit(t.line, t.ival)
+        return i + 1
     if t.kind == "float":
-        return (ast.FloatLit(t.line, t.fval), i + 1)
+        out = ast.FloatLit(t.line, t.fval)
+        return i + 1
     if t.kind == "str":
         if t.ival == 1:
-            return (ast.FStrLit(t.line, t.text), i + 1)
+            out = ast.FStrLit(t.line, t.text)
+            return i + 1
         s := t.text
         i += 1
         for _kis(toks, i, "str") and _at(toks, i).ival != 1:
             s = s + _x(toks, i)
             i += 1
-        return (ast.StrLit(t.line, s), i)
+        out = ast.StrLit(t.line, s)
+        return i
     if t.kind == "kw" and t.text == "true":
-        return (ast.BoolLit(t.line, true), i + 1)
+        out = ast.BoolLit(t.line, true)
+        return i + 1
     if t.kind == "kw" and t.text == "false":
-        return (ast.BoolLit(t.line, false), i + 1)
+        out = ast.BoolLit(t.line, false)
+        return i + 1
     if t.kind == "kw" and t.text == "null":
-        return (ast.NullLit(t.line), i + 1)
+        out = ast.NullLit(t.line)
+        return i + 1
 
     if t.kind == "op" and t.text == "(":
-        first, j := expr(toks, i + 1)
+        first := ast.NullLit(0)
+        j := _expr_into(toks, i + 1, &first)
         i = j
         if not _isop(toks, i, ","):
             i = _op(toks, i, ")")
-            return (first, i)
+            out = first
+            return i
         xs := []ast.Expr
         push(xs, first)
         for _isop(toks, i, ","):
             i += 1
             if _isop(toks, i, ")"):
                 break
-            a, k := expr(toks, i)
+            a := ast.NullLit(0)
+            k := _expr_into(toks, i, &a)
             push(xs, a)
             i = k
         i = _op(toks, i, ")")
         if len(xs) > 8:
             _die(t, "a tuple has at most 8 elements")
-        return (ast.Tuple(t.line, xs), i)
+        out = ast.Tuple(t.line, xs)
+        return i
 
     if t.kind == "op" and t.text == "[":
         i += 1
@@ -462,50 +479,62 @@ fn primary(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
         if _isop(toks, i, "]"):
             i += 1
             if not _starts_type_lit(toks, i):
-                return (ast.EmptyArr(t.line, []ast.Ty), i)
+                out = ast.EmptyArr(t.line, []ast.Ty)
+                return i
             el, j := ty(toks, i)
             i = j
             if _isop(toks, i, ":"):
                 v, k := ty(toks, i + 1)
-                return (ast.EmptyMap(t.line, [el, v]), k)
-            return (ast.EmptyArr(t.line, [el]), i)
-        first, j := expr(toks, i)
+                out = ast.EmptyMap(t.line, [el, v])
+                return k
+            out = ast.EmptyArr(t.line, [el])
+            return i
+        first := ast.NullLit(0)
+        j := _expr_into(toks, i, &first)
         i = j
         if _isop(toks, i, ":"):
             kv := []ast.Expr
             push(kv, first)
-            v, k := expr(toks, i + 1)
+            v := ast.NullLit(0)
+            k := _expr_into(toks, i + 1, &v)
             push(kv, v)
             i = k
             for _isop(toks, i, ","):
                 i += 1
                 if _isop(toks, i, "]"):
                     break
-                a, k2 := expr(toks, i)
+                a := ast.NullLit(0)
+                k2 := _expr_into(toks, i, &a)
                 push(kv, a)
                 i = _op(toks, k2, ":")
-                b, k3 := expr(toks, i)
+                b := ast.NullLit(0)
+                k3 := _expr_into(toks, i, &b)
                 push(kv, b)
                 i = k3
             i = _op(toks, i, "]")
-            return (ast.MapLit(t.line, kv), i)
+            out = ast.MapLit(t.line, kv)
+            return i
         xs := []ast.Expr
         push(xs, first)
         for _isop(toks, i, ","):
             i += 1
             if _isop(toks, i, "]"):
                 break
-            a, k := expr(toks, i)
+            a := ast.NullLit(0)
+            k := _expr_into(toks, i, &a)
             push(xs, a)
             i = k
         i = _op(toks, i, "]")
-        return (ast.ArrLit(t.line, xs), i)
+        out = ast.ArrLit(t.line, xs)
+        return i
 
     if t.kind == "kw" and t.text == "spawn":
-        c, j := postfix(toks, i + 1)
+        c := ast.NullLit(0)
+        j := _postfix_into(toks, i + 1, &c)
         if not (c is ast.Call) and not (c is ast.CallVal):
             _die(t, "spawn requires a direct call: spawn f(args)")
-        return (ast.SpawnE(t.line, [c]), j)
+        out = ast.SpawnE(t.line, [c])
+        return j
 
     if t.kind == "ident":
         nm := t.text
@@ -514,33 +543,43 @@ fn primary(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
             i = _op(toks, i, "[")
             i = _op(toks, i, "]")
             el, j := ty(toks, i)
-            return (ast.SoaLit(t.line, [el]), j)
+            out = ast.SoaLit(t.line, [el])
+            return j
         if nm == "channel" and _isop(toks, i, "("):
             el, j := ty(toks, i + 1)
             i = _op(toks, j, ",")
-            c, k := expr(toks, i)
+            c := ast.NullLit(0)
+            k := _expr_into(toks, i, &c)
             i = _op(toks, k, ")")
-            return (ast.ChanE(t.line, [el], [c]), i)
+            out = ast.ChanE(t.line, [el], [c])
+            return i
         if nm == "None":
-            return (ast.NoneE(t.line), i)
+            out = ast.NoneE(t.line)
+            return i
         if not _isop(toks, i, "(") and (nm == "Some" or nm == "Ok" or nm == "Err"):
             _die(t, "'" + nm + "' cannot name a binding -- as a value it is a constructor: " + nm + "(x)")
         if nm == "Some":
             i = _op(toks, i, "(")
-            a, j := expr(toks, i)
+            a := ast.NullLit(0)
+            j := _expr_into(toks, i, &a)
             i = _op(toks, j, ")")
-            return (ast.SomeE(t.line, [a]), i)
+            out = ast.SomeE(t.line, [a])
+            return i
         if nm == "Ok" or nm == "Err":
             i = _op(toks, i, "(")
             if _isop(toks, i, ")"):
                 if nm == "Err":
                     _die(t, "Err() carries no value -- a Result's error type cannot be void")
-                return (ast.OkE(t.line, []ast.Expr), i + 1)
-            a, j := expr(toks, i)
+                out = ast.OkE(t.line, []ast.Expr)
+                return i + 1
+            a := ast.NullLit(0)
+            j := _expr_into(toks, i, &a)
             i = _op(toks, j, ")")
             if nm == "Ok":
-                return (ast.OkE(t.line, [a]), i)
-            return (ast.ErrE(t.line, [a]), i)
+                out = ast.OkE(t.line, [a])
+                return i
+            out = ast.ErrE(t.line, [a])
+            return i
         if _isop(toks, i, "$"):
             tas, j := _typeargs(toks, i + 1, nm)
             i = j
@@ -549,7 +588,8 @@ fn primary(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
                 a, k := _args(toks, i + 1)
                 vargs = a
                 i = k
-            return (ast.Call(t.line, "", nm, tas, vargs), i)
+            out = ast.Call(t.line, "", nm, tas, vargs)
+            return i
         if _isop(toks, i, "("):
             if nm == "map_set":
                 _die(t, "map_set was removed; use `m[k] = v`")
@@ -560,16 +600,19 @@ fn primary(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
             if nm == "map_get":
                 _die(t, "map_get was removed; use `m.get(k, default)`")
             a, j := _args(toks, i + 1)
-            return (ast.Call(t.line, "", nm, []ast.Ty, a), j)
-        return (ast.Name(t.line, nm), i)
+            out = ast.Call(t.line, "", nm, []ast.Ty, a)
+            return j
+        out = ast.Name(t.line, nm)
+        return i
 
     if t.kind == "indent":
         _die(t, "unexpected indentation: this line is indented further than the block it belongs to")
     _diec(t, "expected an expression")
-    return (ast.IntLit(t.line, 0), i0)
+    out = ast.IntLit(t.line, 0)
+    return i0
 
-fn postfix(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
-    e, i := primary(toks, i0)
+fn _postfix_into(toks: [lex.Tok], i0: int, out: inout ast.Expr) -> int:
+    i := _primary_into(toks, i0, &out)
     for true:
         if _isop(toks, i, "["):
             i += 1
@@ -580,43 +623,46 @@ fn postfix(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
                 slice = true
                 i += 1
                 if not _isop(toks, i, "]"):
-                    a, j := expr(toks, i)
+                    a := ast.NullLit(0)
+                    j := _expr_into(toks, i, &a)
                     push(hi, a)
                     i = j
             else:
-                a, j := expr(toks, i)
+                a := ast.NullLit(0)
+                j := _expr_into(toks, i, &a)
                 push(lo, a)
                 i = j
                 if _isop(toks, i, ":"):
                     slice = true
                     i += 1
                     if not _isop(toks, i, "]"):
-                        b, k := expr(toks, i)
+                        b := ast.NullLit(0)
+                        k := _expr_into(toks, i, &b)
                         push(hi, b)
                         i = k
             i = _op(toks, i, "]")
             if slice:
                 kids := []ast.Expr
-                push(kids, e)
+                push(kids, out)
                 for x in lo:
                     push(kids, x)
                 for x in hi:
                     push(kids, x)
-                e = ast.Slice(ast.line_of(e), len(lo) == 1, len(hi) == 1, kids)
+                out = ast.Slice(ast.line_of(out), len(lo) == 1, len(hi) == 1, kids)
             else:
-                e = ast.Index(ast.line_of(e), [e, lo[0]])
+                out = ast.Index(ast.line_of(out), [out, lo[0]])
             continue
         if _isop(toks, i, "."):
             i += 1
             if _kis(toks, i, "int"):
-                e = ast.TupIdx(ast.line_of(e), [e], _at(toks, i).ival)
+                out = ast.TupIdx(ast.line_of(out), [out], _at(toks, i).ival)
                 i += 1
                 continue
             fname, j := _ident(toks, i, "a field name or tuple index after '.'")
             i = j
-            if (_isop(toks, i, "(") or _isop(toks, i, "$")) and (e is ast.Name):
+            if (_isop(toks, i, "(") or _isop(toks, i, "$")) and (out is ast.Name):
                 q := ""
-                match e:
+                match out:
                     ast.Name(l, n): q = n
                     _: q = ""
                 tas := []ast.Ty
@@ -629,45 +675,66 @@ fn postfix(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
                     a, k := _args(toks, i + 1)
                     vargs = a
                     i = k
-                e = ast.Call(ast.line_of(e), q, fname, tas, vargs)
+                out = ast.Call(ast.line_of(out), q, fname, tas, vargs)
                 continue
-            e = ast.Field(ast.line_of(e), [e], fname)
+            out = ast.Field(ast.line_of(out), [out], fname)
             continue
         if _isop(toks, i, "("):
             a, j := _args(toks, i + 1)
             kids := []ast.Expr
-            push(kids, e)
+            push(kids, out)
             for x in a:
                 push(kids, x)
-            e = ast.CallVal(ast.line_of(e), kids)
+            out = ast.CallVal(ast.line_of(out), kids)
             i = j
             continue
         break
     if _iskw(toks, i, "or_return"):
-        e = ast.OrRet(ast.line_of(e), [e])
+        out = ast.OrRet(ast.line_of(out), [out])
         i += 1
     if _isop(toks, i, "..."):
-        e = ast.Spread(ast.line_of(e), [e])
+        out = ast.Spread(ast.line_of(out), [out])
         i += 1
+    return i
+
+fn _unary_into(toks: [lex.Tok], i0: int, out: inout ast.Expr) -> int:
+    if _isop(toks, i0, "-"):
+        a := ast.NullLit(0)
+        j := _unary_into(toks, i0 + 1, &a)
+        out = ast.Unop(_ln(toks, i0), "-", [a])
+        return j
+    if _isop(toks, i0, "&"):
+        a := ast.NullLit(0)
+        j := _unary_into(toks, i0 + 1, &a)
+        out = ast.Addr(_ln(toks, i0), [a])
+        return j
+    if _isop(toks, i0, "~"):
+        a := ast.NullLit(0)
+        j := _unary_into(toks, i0 + 1, &a)
+        out = ast.Unop(_ln(toks, i0), "~", [a])
+        return j
+    return _postfix_into(toks, i0, &out)
+
+fn primary(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
+    e := ast.NullLit(0)
+    i := _primary_into(toks, i0, &e)
+    return (e, i)
+
+fn postfix(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
+    e := ast.NullLit(0)
+    i := _postfix_into(toks, i0, &e)
     return (e, i)
 
 fn unary(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
-    if _isop(toks, i0, "-"):
-        a, j := unary(toks, i0 + 1)
-        return (ast.Unop(_ln(toks, i0), "-", [a]), j)
-    if _isop(toks, i0, "&"):
-        a, j := unary(toks, i0 + 1)
-        return (ast.Addr(_ln(toks, i0), [a]), j)
-    if _isop(toks, i0, "~"):
-        a, j := unary(toks, i0 + 1)
-        return (ast.Unop(_ln(toks, i0), "~", [a]), j)
-    return postfix(toks, i0)
+    e := ast.NullLit(0)
+    i := _unary_into(toks, i0, &e)
+    return (e, i)
 
 fn _mul_op(toks: [lex.Tok], i: int) -> bool:
-    s := _x(toks, i)
-    if not _kis(toks, i, "op"):
+    j := _cl(toks, i)
+    if toks[j].kind != "op":
         return false
-    return s == "*" or s == "/" or s == "%" or s == "<<" or s == ">>" or s == "&"
+    return toks[j].text == "*" or toks[j].text == "/" or toks[j].text == "%" or toks[j].text == "<<" or toks[j].text == ">>" or toks[j].text == "&"
 
 # The binary levels write THROUGH an out parameter. Returning the node instead
 # copies it into the caller's arena at every level of the grammar, so a deep
@@ -675,11 +742,13 @@ fn _mul_op(toks: [lex.Tok], i: int) -> bool:
 # into the caller's variable means the accumulating tree is built where it will
 # live, and only the small right-hand operand of each operator is copied.
 fn _mul_into(toks: [lex.Tok], i0: int, out: inout ast.Expr) -> int:
-    l, i := unary(toks, i0)
+    l := ast.NullLit(0)
+    i := _unary_into(toks, i0, &l)
     out = l
     for _mul_op(toks, i):
         o := _x(toks, i)
-        r, j := unary(toks, i + 1)
+        r := ast.NullLit(0)
+        j := _unary_into(toks, i + 1, &r)
         out = ast.Binop(ast.line_of(out), o, [out, r])
         i = j
     return i
@@ -690,10 +759,10 @@ fn mul(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
     return (e, i)
 
 fn _add_op(toks: [lex.Tok], i: int) -> bool:
-    s := _x(toks, i)
-    if not _kis(toks, i, "op"):
+    j := _cl(toks, i)
+    if toks[j].kind != "op":
         return false
-    return s == "+" or s == "-" or s == "|" or s == "^"
+    return toks[j].text == "+" or toks[j].text == "-" or toks[j].text == "|" or toks[j].text == "^"
 
 fn _add_into(toks: [lex.Tok], i0: int, out: inout ast.Expr) -> int:
     i := _mul_into(toks, i0, &out)
@@ -734,10 +803,10 @@ fn isexp(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
 fn _cmp_op(toks: [lex.Tok], i: int) -> bool:
     if _iskw(toks, i, "in"):
         return true
-    if not _kis(toks, i, "op"):
+    j := _cl(toks, i)
+    if toks[j].kind != "op":
         return false
-    s := _x(toks, i)
-    return s == "==" or s == "!=" or s == "<" or s == ">" or s == "<=" or s == ">="
+    return toks[j].text == "==" or toks[j].text == "!=" or toks[j].text == "<" or toks[j].text == ">" or toks[j].text == "<=" or toks[j].text == ">="
 
 fn _cmp_into(toks: [lex.Tok], i0: int, out: inout ast.Expr) -> int:
     i := _isexp_into(toks, i0, &out)
@@ -820,7 +889,8 @@ fn value_block(toks: [lex.Tok], i0: int) -> ([ast.Stmt], int):
             i += 1
             continue
         if _at_tail(toks, i):
-            e, j := expr(toks, i)
+            e := ast.NullLit(0)
+            j := _expr_into(toks, i, &e)
             i = _expect(toks, j, "newline", "")
             push(out, ast.ExprStmt(ast.line_of(e), [e]))
             continue
@@ -835,7 +905,8 @@ fn value_block(toks: [lex.Tok], i0: int) -> ([ast.Stmt], int):
     return (out, i)
 
 fn value_if(toks: [lex.Tok], i0: int) -> (ast.Stmt, int):
-    c, i := expr(toks, i0)
+    c := ast.NullLit(0)
+    i := _expr_into(toks, i0, &c)
     i = _op(toks, i, ":")
     i = _expect(toks, i, "newline", "")
     body, j := value_block(toks, i)
@@ -978,13 +1049,15 @@ fn _arm_body(toks: [lex.Tok], i0: int, value: bool) -> ([ast.Stmt], int):
         return block(toks, i)
     # F7: a one-line arm body
     if value:
-        e, j := expr(toks, i0)
+        e := ast.NullLit(0)
+        j := _expr_into(toks, i0, &e)
         return ([ast.ExprStmt(ast.line_of(e), [e])], j)
     s, j := stmt(toks, i0)
     return ([s], j)
 
 fn matchs(toks: [lex.Tok], i0: int, value: bool) -> (ast.Stmt, int):
-    subj, i := expr(toks, i0)
+    subj := ast.NullLit(0)
+    i := _expr_into(toks, i0, &subj)
     i = _op(toks, i, ":")
     i = _expect(toks, i, "newline", "")
     i = _expect(toks, i, "indent", "")
@@ -1074,7 +1147,8 @@ fn selects(toks: [lex.Tok], i0: int) -> (ast.Stmt, int):
         chs := []ast.Expr
         if an == "recv":
             i = _op(toks, i, "(")
-            c, k := expr(toks, i)
+            c := ast.NullLit(0)
+            k := _expr_into(toks, i, &c)
             push(chs, c)
             i = _op(toks, k, ",")
             b, k2 := _ident(toks, i, "a binding name")
@@ -1126,7 +1200,8 @@ fn simple(toks: [lex.Tok], i0: int) -> (ast.Stmt, int, bool):
         else:
             i = _op(toks, i, "=")
             isdecl = false
-        e, k2 := expr(toks, i)
+        e := ast.NullLit(0)
+        k2 := _expr_into(toks, i, &e)
         return (ast.MDecl(t.line, isdecl, names, [e]), k2, true)
 
     if t.kind == "ident" and (_isop(toks, i + 1, ":=") or _isop(toks, i + 1, ":") or
@@ -1138,7 +1213,8 @@ fn simple(toks: [lex.Tok], i0: int) -> (ast.Stmt, int, bool):
             if _iskw(toks, i, "if") or _iskw(toks, i, "match"):
                 c, j := value_ctrl(toks, i)
                 return (ast.Decl(t.line, name, []ast.Ty, []ast.Expr, [c]), j, false)
-            e, j := expr(toks, i)
+            e := ast.NullLit(0)
+            j := _expr_into(toks, i, &e)
             return (ast.Decl(t.line, name, []ast.Ty, [e], []ast.Stmt), j, true)
         if _isop(toks, i, ":"):
             a, j := ty(toks, i + 1)
@@ -1146,16 +1222,19 @@ fn simple(toks: [lex.Tok], i0: int) -> (ast.Stmt, int, bool):
             if _iskw(toks, i, "if") or _iskw(toks, i, "match"):
                 c, k := value_ctrl(toks, i)
                 return (ast.Decl(t.line, name, [a], []ast.Expr, [c]), k, false)
-            e, k := expr(toks, i)
+            e := ast.NullLit(0)
+            k := _expr_into(toks, i, &e)
             return (ast.Decl(t.line, name, [a], [e], []ast.Stmt), k, true)
         i = _op(toks, i, "=")
         if _iskw(toks, i, "if") or _iskw(toks, i, "match"):
             c, j := value_ctrl(toks, i)
             return (rewrite_tails(c, "assign", name, []ast.Expr), j, false)
-        e, j := expr(toks, i)
+        e := ast.NullLit(0)
+        j := _expr_into(toks, i, &e)
         return (ast.Assign(t.line, name, [e]), j, true)
 
-    e, i2 := postfix(toks, i0)
+    e := ast.NullLit(0)
+    i2 := _postfix_into(toks, i0, &e)
     i = i2
     if _isop(toks, i, "="):
         i += 1
@@ -1167,11 +1246,13 @@ fn simple(toks: [lex.Tok], i0: int) -> (ast.Stmt, int, bool):
         if _iskw(toks, i, "if") or _iskw(toks, i, "match"):
             c, j := value_ctrl(toks, i)
             return (rewrite_tails(c, "place", "", [e]), j, false)
-        v, j := expr(toks, i)
+        v := ast.NullLit(0)
+        j := _expr_into(toks, i, &v)
         return (ast.PlaceSet(t.line, [e, v]), j, true)
     if _is_compound(toks, i) and _isop(toks, i + 1, "="):
         o := _x(toks, i)
-        v, j := expr(toks, i + 2)
+        v := ast.NullLit(0)
+        j := _expr_into(toks, i + 2, &v)
         b := ast.Binop(t.line, o, [e, v])
         match e:
             ast.Name(l, n): return (ast.Assign(t.line, n, [b]), j, true)
@@ -1238,7 +1319,8 @@ fn forstmt(toks: [lex.Tok], i0: int, par: bool) -> (ast.Stmt, int):
     if _for3_semi(toks, i) >= 0:
         init, j, nl1 := simple(toks, i)
         i = _op(toks, j, ";")
-        cond, k := expr(toks, i)
+        cond := ast.NullLit(0)
+        k := _expr_into(toks, i, &cond)
         i = _op(toks, k, ";")
         post, m, nl2 := simple(toks, i)
         i = _op(toks, m, ":")
@@ -1257,14 +1339,16 @@ fn forstmt(toks: [lex.Tok], i0: int, par: bool) -> (ast.Stmt, int):
                 _die(t, "`0..<N` counts only in a `parallel for` -- write `for idx := 0; idx < N; idx += 1:` for a sequential count")
             if not (_kis(toks, i, "int") and _at(toks, i).ival == 0 and _isop(toks, i + 1, "..<")):
                 _die(t, "`parallel for` counts from zero: write `0..<N`")
-            hi, j := expr(toks, i + 2)
+            hi := ast.NullLit(0)
+            j := _expr_into(toks, i + 2, &hi)
             i = _op(toks, j, ":")
             i = _expect(toks, i, "newline", "")
             b, k := block(toks, i)
             return (ast.ForRange(t.line, v, [ast.IntLit(t.line, 0), hi], b), k)
         if _isid(toks, i, "range") and _isop(toks, i + 1, "("):
             _die(t, "`range()` was removed: write `for idx := 0; idx < N; idx += 1:` to count, or `parallel for idx in 0..<N:` to count in parallel")
-        coll, j := expr(toks, i)
+        coll := ast.NullLit(0)
+        j := _expr_into(toks, i, &coll)
         # src/tychoc.c:4024 -- an array and a channel source are both scalar
         # handles, so the source must NAME one; a temp could alias a channel.
         if par and not (coll is ast.Name):
@@ -1274,14 +1358,16 @@ fn forstmt(toks: [lex.Tok], i0: int, par: bool) -> (ast.Stmt, int):
         b, k := block(toks, i)
         return (ast.ForIn(t.line, v, [coll], b), k)
     # condition form `for cond:`
-    c, j := expr(toks, i)
+    c := ast.NullLit(0)
+    j := _expr_into(toks, i, &c)
     i = _op(toks, j, ":")
     i = _expect(toks, i, "newline", "")
     b, k := block(toks, i)
     return (ast.WhileS(t.line, [c], b), k)
 
 fn ifstmt(toks: [lex.Tok], i0: int) -> (ast.Stmt, int):
-    c, i := expr(toks, i0)
+    c := ast.NullLit(0)
+    i := _expr_into(toks, i0, &c)
     i = _op(toks, i, ":")
     i = _expect(toks, i, "newline", "")
     body, j := block(toks, i)
@@ -1318,7 +1404,8 @@ fn stmt(toks: [lex.Tok], i0: int) -> (ast.Stmt, int):
     if t.kind == "ident" and t.text == "const" and _kis(toks, i + 1, "ident"):
         nm, j := _ident(toks, i + 1, "a constant name after 'const'")
         i = _op(toks, j, "=")
-        e, k := expr(toks, i)
+        e := ast.NullLit(0)
+        k := _expr_into(toks, i, &e)
         i = _expect(toks, k, "newline", "")
         # src/tychoc.c:3752 folds a LOCAL const with refs off -- no sibling-const
         # refs -- so `const D = K * 2` is refused here and accepted at top level.
@@ -1335,7 +1422,8 @@ fn stmt(toks: [lex.Tok], i0: int) -> (ast.Stmt, int):
         return (ast.PassS(t.line), i)
 
     if t.kind == "ident" and t.text == "delete" and _kis(toks, i + 1, "ident"):
-        e, j := postfix(toks, i + 1)
+        e := ast.NullLit(0)
+        j := _postfix_into(toks, i + 1, &e)
         if not (e is ast.Index):
             _die(t, "`delete` removes a map element: `delete m[k]`")
         i = _expect(toks, j, "newline", "")
@@ -1348,13 +1436,15 @@ fn stmt(toks: [lex.Tok], i0: int) -> (ast.Stmt, int):
             return (rewrite_tails(c, "return", "", []ast.Expr), j)
         if _kis(toks, i, "newline"):
             return (ast.ReturnS(t.line, []ast.Expr), i + 1)
-        first, j := expr(toks, i)
+        first := ast.NullLit(0)
+        j := _expr_into(toks, i, &first)
         i = j
         if _isop(toks, i, ","):
             xs := []ast.Expr
             push(xs, first)
             for _isop(toks, i, ","):
-                a, k := expr(toks, i + 1)
+                a := ast.NullLit(0)
+                k := _expr_into(toks, i + 1, &a)
                 push(xs, a)
                 i = k
             i = _expect(toks, i, "newline", "")
@@ -1382,7 +1472,8 @@ fn stmt(toks: [lex.Tok], i0: int) -> (ast.Stmt, int):
         i += 1
         w := []ast.Expr
         if _isop(toks, i, "("):
-            a, j := expr(toks, i + 1)
+            a := ast.NullLit(0)
+            j := _expr_into(toks, i + 1, &a)
             push(w, a)
             i = _op(toks, j, ")")
             # src/tychoc.c:3883 -- range-checked only when the width is a literal.
@@ -1824,7 +1915,8 @@ fn subscriptd(toks: [lex.Tok], i0: int) -> (ast.SubscriptD, int):
         i += 1
     if not _isid(toks, i, "yield"):
         _die(_at(toks, i), "a subscript body must be a single `yield &<place>`")
-    y, n := expr(toks, i + 1)
+    y := ast.NullLit(0)
+    n := _expr_into(toks, i + 1, &y)
     i = n
     if not (y is ast.Addr):
         _die(_at(toks, i0), "a subscript must yield a place: `yield &<place>`")
@@ -2011,7 +2103,8 @@ fn unit(toks: [lex.Tok], notes: [lex.DNote]) -> ast.Unit:
             ct := _at(toks, i)
             nm, j := _ident(toks, i + 1, "a constant name after 'const'")
             i = _op(toks, j, "=")
-            e, k := expr(toks, i)
+            e := ast.NullLit(0)
+            k := _expr_into(toks, i, &e)
             i = _expect(toks, k, "newline", "")
             v := _const_fold(e, cts, ct)
             if not _is_lit(v):
