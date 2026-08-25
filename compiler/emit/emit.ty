@@ -1286,7 +1286,21 @@ fn _shares(cs: inout C, e: ast.Expr, t: string, arena: string) -> bool:
     # NOT here: push and element assignment write them in place.
     if t != "string" and not _is_enum(t):
         return false
-    return _ownerof(&cs, e) == arena and not _acc_rooted(&cs, e)
+    if _acc_rooted(&cs, e):
+        return false
+    ow6 := _ownerof(&cs, e)
+    if ow6 == arena:
+        return true
+    # A place rooted in an INOUT parameter lives in the arena the caller handed
+    # down with it, which is the caller's own -- the same one _parent names, or
+    # an ancestor. So returning one needs no copy. ENUMS only: the same rule for
+    # a string is unsound, because a string field of that struct can be an
+    # accumulator its owner appends to IN PLACE, and _acc_rooted tests the root
+    # LOCAL so it cannot see one living at cs.ccode[i]. An enum has no in-place
+    # write at all.
+    if arena == "_parent" and _is_enum(t) and strings.starts_with(ow6, "_ina_"):
+        return true
+    return false
 
 fn _ownerof(cs: inout C, e: ast.Expr) -> string:
     n := _rootname(e)
@@ -4249,7 +4263,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             rt := cs.cur_ret
             if rt == "float" and t == "int":
                 c = "(double)(" + c + ")"
-            if not tmpret:
+            if not tmpret and not _shares(&cs, k[0], rt, "_parent"):
                 c = _copy(&cs, c, rt, "_parent")
             v := _fresh(&cs, "_ret")
             return ind + "{ " + _cty(&cs, rt) + " " + v + " = " + c + "; " +
