@@ -47,8 +47,8 @@ fn compile_str(p: types.Program, runtime: string) -> string:
 # Refuse what the front end refuses, before emitting anything. Until Phase 7d
 # this ran lex -> parse -> emit and never called resolve or check, so 120 of the
 # 337 reject fixtures compiled to C in silence while `--typecheck` refused them.
-fn check_or_die(src_path: string, argv0: string) -> types.Program:
-    p := types.load(src_path, argv0)
+fn check_into(src_path: string, argv0: string, p: inout types.Program):
+    types.load_into(src_path, argv0, &p)
     rs := types.resolve(p)
     # Warnings come FIRST, even on a build that dies: ./tychoc writes each one
     # to stderr as it is raised, so `fn die(...)` in tests/diag prints the
@@ -75,7 +75,7 @@ fn check_or_die(src_path: string, argv0: string) -> types.Program:
             out2 = out2 + e + "\n"
         eprint(out2)
         exit(1)
-    return p
+    return
 
 
 # --- the build path ------------------------------------------------------------
@@ -152,7 +152,8 @@ fn _pkgflags(p: types.Program) -> [string]:
 fn build(src_path: string, runtime_path: string, base: string, argv0: string):
     c_path := base + ".c"
     _guard_c(c_path)
-    p := check_or_die(src_path, argv0)
+    p := types.Program([]types.File, "", "", "", "")
+    check_into(src_path, argv0, &p)
     c := compile_str(p, read_runtime(runtime_path, argv0))
     if not io.write(c_path, c):
         die("tychoc1: cannot write '" + c_path + "'")
@@ -201,7 +202,8 @@ fn _as_main(src: string) -> string:
     return src
 
 fn bundle(src_path: string, argv0: string):
-    p := types.load(src_path, argv0)
+    p := types.Program([]types.File, "", "", "", "")
+    types.load_into(src_path, argv0, &p)
     out := ""
     for f in p.files:
         if f.dir == p.entry_dir:
@@ -215,14 +217,16 @@ fn bundle(src_path: string, argv0: string):
 # both -- one to link, the other to decide whether a missing library is a SKIP
 # rather than a failure (src/tychoc.c's own comment beside print_deps).
 fn print_shims(src_path: string, argv0: string):
-    p := types.load(src_path, argv0)
+    p := types.Program([]types.File, "", "", "", "")
+    types.load_into(src_path, argv0, &p)
     out := ""
     for c in _shims(p):
         out = out + c + "\n"
     print(out)
 
 fn print_deps(src_path: string, argv0: string):
-    p := types.load(src_path, argv0)
+    p := types.Program([]types.File, "", "", "", "")
+    types.load_into(src_path, argv0, &p)
     seen := []string: bool
     out := ""
     for f in p.files:
@@ -240,7 +244,8 @@ fn print_deps(src_path: string, argv0: string):
     print(out)
 
 fn compile(src_path: string, runtime_path: string, out_c: string, argv0: string):
-    p := check_or_die(src_path, argv0)
+    p := types.Program([]types.File, "", "", "", "")
+    check_into(src_path, argv0, &p)
     c := compile_str(p, read_runtime(runtime_path, argv0))
     if not io.write(out_c, c):
         die("tychoc1: cannot write '" + out_c + "'")
@@ -352,7 +357,8 @@ fn parse_census(src_path: string):
 # counted line. `--dump-symbols` is the table itself.
 
 fn resolve_only(src_path: string, argv0: string):
-    p := types.load(src_path, argv0)
+    p := types.Program([]types.File, "", "", "", "")
+    types.load_into(src_path, argv0, &p)
     rs := types.resolve(p)
     if len(rs.errs) > 0:
         out := ""
@@ -368,7 +374,8 @@ fn resolve_only(src_path: string, argv0: string):
         " late=" + str(len(types.late_lines(rs))) + "\n")
 
 fn resolve_census(src_path: string, argv0: string):
-    p := types.load(src_path, argv0)
+    p := types.Program([]types.File, "", "", "", "")
+    types.load_into(src_path, argv0, &p)
     rs := types.resolve(p)
     out := ""
     for l in types.census_lines(rs):
@@ -376,7 +383,8 @@ fn resolve_census(src_path: string, argv0: string):
     print(out)
 
 fn dump_symbols(src_path: string, argv0: string):
-    p := types.load(src_path, argv0)
+    p := types.Program([]types.File, "", "", "", "")
+    types.load_into(src_path, argv0, &p)
     rs := types.resolve(p)
     out := ""
     for l in types.symbol_lines(rs):
@@ -390,7 +398,8 @@ fn dump_symbols(src_path: string, argv0: string):
 # only ever reached on a file that resolves cleanly.
 
 fn typecheck_only(src_path: string, argv0: string):
-    p := types.load(src_path, argv0)
+    p := types.Program([]types.File, "", "", "", "")
+    types.load_into(src_path, argv0, &p)
     rs := types.resolve(p)
     if len(rs.errs) > 0:
         out := ""
@@ -412,7 +421,8 @@ fn typecheck_only(src_path: string, argv0: string):
     print("TYPECHECK-OK files=" + str(len(p.files)) + " sixb=" + sixb + "\n")
 
 fn type_census(src_path: string, argv0: string):
-    p := types.load(src_path, argv0)
+    p := types.Program([]types.File, "", "", "", "")
+    types.load_into(src_path, argv0, &p)
     rs := types.resolve(p)
     if len(rs.errs) > 0:
         exit(1)

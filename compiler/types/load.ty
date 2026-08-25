@@ -188,7 +188,10 @@ fn _merge(ld: inout Loader, dir: string, pkgname: string, prefix: string):
     ld.active = na
     ld.seen[key] = true
 
-fn load(entry: string, argv0: string) -> Program:
+# The Program is written into the caller's own: returning it copies the whole
+# [File] array -- every unit, every function body -- once here and once more
+# at check_or_die's return.
+fn load_into(entry: string, argv0: string, outp: inout Program):
     src := read_file(entry)
     toks, notes := lex.tokenize_file(src, false, entry)
     u := parse.unit(toks, notes)
@@ -201,7 +204,8 @@ fn load(entry: string, argv0: string) -> Program:
             die(entry + ":" + str(u.imports[0].line) + ": error: to `import` a package, this file must declare its own package first -- add `package main` (or another name) as the first line")
         fs := []File
         push(fs, File(entry, dir, "", "", u, src))
-        return Program(fs, dir, "", entry, root)
+        outp = Program(fs, dir, "", entry, root)
+        return
     ld := Loader([]File, []string: bool, []string, root, under_corelib(root, dir))
     _merge(&ld, dir, u.pkg, "")
-    return Program(ld.files, dir, u.pkg, entry, root)
+    outp = Program(ld.files, dir, u.pkg, entry, root)

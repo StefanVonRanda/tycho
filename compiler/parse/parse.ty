@@ -715,21 +715,6 @@ fn _unary_into(toks: [lex.Tok], i0: int, out: inout ast.Expr) -> int:
         return j
     return _postfix_into(toks, i0, &out)
 
-fn primary(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
-    e := ast.NullLit(0)
-    i := _primary_into(toks, i0, &e)
-    return (e, i)
-
-fn postfix(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
-    e := ast.NullLit(0)
-    i := _postfix_into(toks, i0, &e)
-    return (e, i)
-
-fn unary(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
-    e := ast.NullLit(0)
-    i := _unary_into(toks, i0, &e)
-    return (e, i)
-
 fn _mul_op(toks: [lex.Tok], i: int) -> bool:
     j := _cl(toks, i)
     if toks[j].kind != "op":
@@ -753,11 +738,6 @@ fn _mul_into(toks: [lex.Tok], i0: int, out: inout ast.Expr) -> int:
         i = j
     return i
 
-fn mul(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
-    e := ast.NullLit(0)
-    i := _mul_into(toks, i0, &e)
-    return (e, i)
-
 fn _add_op(toks: [lex.Tok], i: int) -> bool:
     j := _cl(toks, i)
     if toks[j].kind != "op":
@@ -774,11 +754,6 @@ fn _add_into(toks: [lex.Tok], i0: int, out: inout ast.Expr) -> int:
         i = j
     return i
 
-fn add(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
-    e := ast.NullLit(0)
-    i := _add_into(toks, i0, &e)
-    return (e, i)
-
 fn _isexp_into(toks: [lex.Tok], i0: int, out: inout ast.Expr) -> int:
     i := _add_into(toks, i0, &out)
     if _iskw(toks, i, "is"):
@@ -794,11 +769,6 @@ fn _isexp_into(toks: [lex.Tok], i0: int, out: inout ast.Expr) -> int:
             _die(_at(toks, i), "`is` does not chain -- write `a is X and a is Y`")
         out = ast.IsVar(ast.line_of(out), [out], q, nm)
     return i
-
-fn isexp(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
-    e := ast.NullLit(0)
-    i := _isexp_into(toks, i0, &e)
-    return (e, i)
 
 fn _cmp_op(toks: [lex.Tok], i: int) -> bool:
     if _iskw(toks, i, "in"):
@@ -818,11 +788,6 @@ fn _cmp_into(toks: [lex.Tok], i0: int, out: inout ast.Expr) -> int:
         i = j
     return i
 
-fn cmp(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
-    e := ast.NullLit(0)
-    i := _cmp_into(toks, i0, &e)
-    return (e, i)
-
 fn _notexp_into(toks: [lex.Tok], i0: int, out: inout ast.Expr) -> int:
     if _iskw(toks, i0, "not"):
         a := ast.NullLit(0)
@@ -830,11 +795,6 @@ fn _notexp_into(toks: [lex.Tok], i0: int, out: inout ast.Expr) -> int:
         out = ast.Unop(_ln(toks, i0), "not", [a])
         return j
     return _cmp_into(toks, i0, &out)
-
-fn notexp(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
-    e := ast.NullLit(0)
-    i := _notexp_into(toks, i0, &e)
-    return (e, i)
 
 fn _andexp_into(toks: [lex.Tok], i0: int, out: inout ast.Expr) -> int:
     i := _notexp_into(toks, i0, &out)
@@ -844,11 +804,6 @@ fn _andexp_into(toks: [lex.Tok], i0: int, out: inout ast.Expr) -> int:
         out = ast.Binop(ast.line_of(out), "and", [out, r])
         i = j
     return i
-
-fn andexp(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
-    e := ast.NullLit(0)
-    i := _andexp_into(toks, i0, &e)
-    return (e, i)
 
 fn _expr_into(toks: [lex.Tok], i0: int, out: inout ast.Expr) -> int:
     i := _andexp_into(toks, i0, &out)
