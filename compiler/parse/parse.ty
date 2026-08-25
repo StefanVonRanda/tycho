@@ -143,15 +143,18 @@ fn _op(toks: [lex.Tok], i: int, s: string) -> int:
     return _expect(toks, i, "op", s)
 
 fn _ident(toks: [lex.Tok], i: int, what: string) -> (string, int):
+    # The accepting path -- every name the parser reads -- takes the text and
+    # nothing else. The whole token is only built to report.
+    if _kis(toks, i, "ident"):
+        return (_x(toks, i), i + 1)
     t := _at(toks, i)
-    if t.kind != "ident":
-        # One arm names them all, as in src/tychoc.c@eat: a keyword written
-        # where a name belongs is reported as the keyword, not as a parse shape.
-        kw := _kwname(t)
-        if len(kw) > 0:
-            _diec(t, "'" + kw + "' is a reserved keyword and cannot be used as " + what)
-        _fail(t, what)
-    return (t.text, i + 1)
+    # One arm names them all, as in src/tychoc.c@eat: a keyword written where a
+    # name belongs is reported as the keyword, not as a parse shape.
+    kw := _kwname(t)
+    if len(kw) > 0:
+        _diec(t, "'" + kw + "' is a reserved keyword and cannot be used as " + what)
+    _fail(t, what)
+    return ("", i + 1)
 
 # src/tychoc.c@reserved_kw: a keyword where a name was written.
 fn _kwname(t: lex.Tok) -> string:
@@ -172,13 +175,12 @@ fn _is_prim(s: string) -> bool:
 # The empty-ARRAY-literal path in parse_primary has its own list that DOES
 # include `fn` (`[]fn(int) -> int`), which is what _starts_type_lit is.
 fn _starts_type(toks: [lex.Tok], i: int) -> bool:
-    t := _at(toks, i)
-    if t.kind == "ident":
+    if _kis(toks, i, "ident"):
         return true
-    if t.kind == "op":
-        return t.text == "[" or t.text == "$" or t.text == "("
-    if t.kind == "kw":
-        return _is_prim(t.text)
+    if _kis(toks, i, "op"):
+        return _xis(toks, i, "[") or _xis(toks, i, "$") or _xis(toks, i, "(")
+    if _kis(toks, i, "kw"):
+        return _is_prim(_x(toks, i))
     return false
 
 fn _starts_type_lit(toks: [lex.Tok], i: int) -> bool:
