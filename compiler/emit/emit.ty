@@ -4735,6 +4735,15 @@ fn _patv(cs: inout C, kind: string, v: int, nm: string) -> string:
 fn _match(cs: inout C, subj: ast.Expr, arms: [ast.Arm], ind: string) -> string:
     sc, st := _ex(&cs, subj)
     v := _fresh(&cs, "_m")
+    # A payload binding that is NOT deep-copied is a BORROW into the subject's
+    # own storage, so it lives in the SUBJECT's arena -- not in whichever loop
+    # scratch happens to be open. Recording the scratch made `sp = bk[0]`
+    # (walking a spine by rebinding an outer local) deep-copy the subtree once
+    # per iteration: 36e6 Ir in _acc_scan alone. A subject with no root name is
+    # a temporary built in cs.arena, which is the honest answer for it.
+    sown := cs.arena
+    if len(_rootname(subj)) > 0:
+        sown = _ownerof(&cs, subj)
     if _is_enum(st):
         ei := _eidx(&cs, _tname(st))
         out := ind + "{\n" + ind + "    E_" + _tname(st) + " *" + v + " = " + sc + ";\n"
@@ -4775,8 +4784,10 @@ fn _match(cs: inout C, subj: ast.Expr, arms: [ast.Arm], ind: string) -> string:
                 bcn := _push(&cs, a.binds[i], pay[i])
                 psrc := v + "->u." + a.name + ".f" + str(i)
                 pv := psrc
+                cs.vown[len(cs.vown) - 1] = sown
                 if _mut_b(a.body, a.binds[i]):
                     pv = _copy(&cs, psrc, pay[i], cs.arena)
+                    cs.vown[len(cs.vown) - 1] = cs.arena
                 binds = binds + ind + "        " + _cty(&cs, pay[i]) + " " + bcn +
                     " = " + pv + ";\n"
             # A NESTED pattern -- `Err(TooBig(n))`. The Arm has carried
@@ -4802,8 +4813,10 @@ fn _match(cs: inout C, subj: ast.Expr, arms: [ast.Arm], ind: string) -> string:
                     scn := _push(&cs, a.subbinds[j], ipay[j])
                     ssrc := "(" + iv + ")->u." + a.sub + ".f" + str(j)
                     sv2 := ssrc
+                    cs.vown[len(cs.vown) - 1] = sown
                     if _mut_b(a.body, a.subbinds[j]):
                         sv2 = _copy(&cs, ssrc, ipay[j], cs.arena)
+                        cs.vown[len(cs.vown) - 1] = cs.arena
                     binds = binds + ind + "        " + _cty(&cs, ipay[j]) + " " + scn +
                         " = " + sv2 + ";\n"
             body := _block(&cs, a.body, ind + "        ")
