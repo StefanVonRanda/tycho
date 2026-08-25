@@ -1285,6 +1285,15 @@ tycho_int tycho_str_len(const char *s) { return ((const tycho_int *)s)[-1]; }   
  * termination) so a string with an interior '\0' (e.g. from read_file of a binary
  * file) compares by its true bytes. Replaces strcmp everywhere a Tycho string is
  * compared (==, !=, <, >, <=, >=, map keys, array equality). */
+/* EQUALITY, which is most of what a compiler asks: the lengths settle it
+ * without touching the bytes, and unequal lengths are the common case (every
+ * `k == "op"` against a keyword of a different size). tycho_str_cmp has to
+ * memcmp the common prefix even then, because it must return an ORDER. */
+int tycho_str_eq(const char *a, const char *b) {
+    tycho_int la = ((const tycho_int *)a)[-1], lb = ((const tycho_int *)b)[-1];
+    if (la != lb) return 0;
+    return la == 0 || a == b || memcmp(a, b, (size_t)la) == 0;
+}
 int tycho_str_cmp(const char *a, const char *b) {
     tycho_int la = ((const tycho_int *)a)[-1], lb = ((const tycho_int *)b)[-1];
     tycho_int n = la < lb ? la : lb;

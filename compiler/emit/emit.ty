@@ -423,7 +423,7 @@ fn _kmatch(cs: inout C, k: string, ek: string, q: string) -> string:
         # strcmp stops at the first NUL, so "a" and "a\0b" compared EQUAL
         # whenever the seed put them in one bucket -- tests/strbytes.ty failed
         # about one run in five. tycho_str_cmp carries the length.
-        return "(tycho_str_cmp(" + ek + ", " + q + ") == 0)"
+        return "tycho_str_eq(" + ek + ", " + q + ")"
     if c == "int" or c == "enum":
         return "(" + ek + " == " + q + ")"
     return _eq(&cs, ek, q, k)
@@ -1393,7 +1393,7 @@ fn _eq(cs: inout C, a: string, b: string, t: string) -> string:
         # identity: same thunk and same env -- src/tychoc.c:10214
         return "((" + a + ").call == (" + b + ").call && (" + a + ").env == (" + b + ").env)"
     if t == "string" or t == "bytes":
-        return "(tycho_str_cmp(" + a + ", " + b + ") == 0)"
+        return "tycho_str_eq(" + a + ", " + b + ")"
     if _is_struct(t):
         return "tycho_eq_S_" + _tname(t) + "(" + a + ", " + b + ")"
     if _is_tup(t):
