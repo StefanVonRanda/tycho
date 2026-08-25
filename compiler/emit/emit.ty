@@ -115,9 +115,11 @@ struct C:
     lbl: int                           # src/tychoc.c@g_loop_lbl -- per-proc, counts EVERY loop
     lpost: [int]                       # src/tychoc.c@g_loop_post -- -1, or the `continue` target
     pbody: [ast.Stmt]                  # src/tychoc.c@g_proc_body -- the move-on-last-use read scan
+    elv: [string]                      # src/tychoc.c@g_elide -- monotone loop var,
+    ela: [string]                      # and the array its index is proven against
 
 fn _new() -> C:
-    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt)
+    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt, [], [])
 
 fn _bad(msg: string):
     die("tychoc1: " + msg)
@@ -1853,6 +1855,8 @@ fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
             if not _is_arr(rt):
                 _bad("indexing a non-array")
             et := _elem(rt)
+            if _in_range(&cs, k[0], k[1]):   # monotone loop index: skip the bounds check
+                return ("(" + rc + ").data[" + ic + "]", et)
             return (_apfx(&cs, et) + "_get(" + rc + ", " + ic + ")", et)
         ast.Slice(l, hl, hh, k):
             rc, rt := _ex(&cs, k[0])
@@ -3686,6 +3690,8 @@ fn _lvalue(cs: inout C, e: ast.Expr) -> (string, string):
             if not _is_arr(rt):
                 _bad("indexed assignment on a non-array")
             et := _elem(rt)
+            if _in_range(&cs, k[0], k[1]):   # monotone loop index: project without the check
+                return ("((" + rc + ").data[" + ic + "])", et)
             return ("(*" + _apfx(&cs, et) + "_ptr(&(" + rc + "), " + ic + "))", et)
         ast.Call(l, q, n, tas, args):
             # A subscript call IS a place: `g.edge(1).weight = 99` writes
@@ -3721,6 +3727,194 @@ fn _lvalue(cs: inout C, e: ast.Expr) -> (string, string):
 # is one dynamic read; and the source's arena equals the destination's, so the
 # handed-off buffer's lifetime matches. A parameter borrows the caller's buffer
 # and is never moved.
+
+# --- bounds-check elision for monotone loop indices -------------------------
+# src/tychoc.c:9351-9455. Inside `for i := 0; i < len(A); i += 1:` the access
+# `A[i]` is provably in [0, len(A)): `len` is an un-redefinable builtin over the
+# true length, Tycho has no in-place array-shrink op, and the body is verified
+# below never to reassign or shadow A or i and never to pass A whole to a call
+# (a possibly-`inout` callee, or `push`, could move the buffer). Every refusal
+# is the reference's -- an index wrongly proved in range is an out-of-bounds
+# read, not a slow program. Escape hatch: TYCHOC_NO_BOUNDS_ELISION=1.
+# The one reference refusal NOT ported is IS_BOUNDED: src/tychoc.c keeps a
+# bounded array in `.v`, where `.data[i]` would be wrong, while tychoc1 lowers
+# `bounded[N]T` to the dynamic array (compiler/emit/emit.ty:1176) whose storage
+# IS `.data`.
+fn _elision_on() -> bool:
+    return len(getenv("TYCHOC_NO_BOUNDS_ELISION")) == 0
+
+# does `e` pass the whole array `arr` as a direct call argument?
+fn _pass_l(es: [ast.Expr], arr: string) -> bool:
+    for i := 0; i < len(es); i += 1:
+        if _pass_e(es[i], arr):
+            return true
+    return false
+
+fn _bare(es: [ast.Expr], arr: string) -> bool:
+    for i := 0; i < len(es); i += 1:
+        match es[i]:
+            ast.Name(l, n):
+                if n == arr:
+                    return true
+            _: pass
+    return false
+
+fn _pass_e(e: ast.Expr, arr: string) -> bool:
+    match e:
+        ast.Call(l, q, n, ts, k): return _bare(k, arr) or _pass_l(k, arr)
+        ast.CallVal(l, k): return _bare(k, arr) or _pass_l(k, arr)
+        ast.Field(l, k, f): return _pass_l(k, arr)
+        ast.TupIdx(l, k, i): return _pass_l(k, arr)
+        ast.Index(l, k): return _pass_l(k, arr)
+        ast.Slice(l, a, b, k): return _pass_l(k, arr)
+        ast.Named(l, n, k): return _pass_l(k, arr)
+        ast.Binop(l, o, k): return _pass_l(k, arr)
+        ast.Unop(l, o, k): return _pass_l(k, arr)
+        ast.IsVar(l, k, q, n): return _pass_l(k, arr)
+        ast.ArrLit(l, k): return _pass_l(k, arr)
+        ast.MapLit(l, k): return _pass_l(k, arr)
+        ast.Tuple(l, k): return _pass_l(k, arr)
+        ast.SomeE(l, k): return _pass_l(k, arr)
+        ast.OkE(l, k): return _pass_l(k, arr)
+        ast.ErrE(l, k): return _pass_l(k, arr)
+        ast.SpawnE(l, k): return _pass_l(k, arr)
+        ast.OrRet(l, k): return _pass_l(k, arr)
+        ast.Spread(l, k): return _pass_l(k, arr)
+        ast.Addr(l, k): return _pass_l(k, arr)
+        ast.ChanE(l, t, k): return _pass_l(k, arr)
+        # a lambda body runs later and can call anything with what it captured;
+        # a parameter of its own named iv or arr shadows, which the reference's
+        # stmt_unsafe does not see and this refuses
+        ast.Lambda(l, ps, r, b): return true
+        _: return false
+    return false
+
+fn _uns_ns(ns: [string], iv: string, arr: string) -> bool:
+    for i := 0; i < len(ns); i += 1:
+        if ns[i] == iv or ns[i] == arr:
+            return true
+    return false
+
+fn _uns_a(ar: [ast.Arm], iv: string, arr: string) -> bool:
+    for i := 0; i < len(ar); i += 1:
+        if _uns_ns(ar[i].binds, iv, arr) or _uns_ns(ar[i].subbinds, iv, arr):
+            return true
+        for j := 0; j < len(ar[i].pats); j += 1:
+            if _uns_ns([ar[i].pats[j].loname, ar[i].pats[j].hiname], iv, arr):
+                return true
+        if _pass_l(ar[i].ch, arr) or _uns_b(ar[i].body, iv, arr):
+            return true
+    return false
+
+# could this statement invalidate `arr[iv] in range`?
+fn _uns_s(s: ast.Stmt, iv: string, arr: string) -> bool:
+    match s:
+        ast.ExprStmt(l, k): return _pass_l(k, arr)
+        ast.Decl(l, n, t, r, v):
+            return n == iv or n == arr or _pass_l(r, arr) or _uns_b(v, iv, arr)
+        ast.MDecl(l, d, ns, r): return _uns_ns(ns, iv, arr) or _pass_l(r, arr)
+        ast.Assign(l, n, r): return n == iv or n == arr or _pass_l(r, arr)
+        ast.PlaceSet(l, k): return _pass_l(k, arr)
+        ast.ConstS(l, n, k): return n == iv or n == arr or _pass_l(k, arr)
+        ast.ReturnS(l, k): return _pass_l(k, arr)
+        ast.IfS(l, c, b, e):
+            return _pass_l(c, arr) or _uns_b(b, iv, arr) or _uns_b(e, iv, arr)
+        ast.WhileS(l, c, b): return _pass_l(c, arr) or _uns_b(b, iv, arr)
+        ast.For3(l, ip, c, b):
+            return _uns_b(ip, iv, arr) or _pass_l(c, arr) or _uns_b(b, iv, arr)
+        ast.ForIn(l, n, c, b):
+            return n == iv or n == arr or _pass_l(c, arr) or _uns_b(b, iv, arr)
+        ast.ForRange(l, n, c, b):
+            return n == iv or n == arr or _pass_l(c, arr) or _uns_b(b, iv, arr)
+        ast.ParallelS(l, w, b): return _pass_l(w, arr) or _uns_b(b, iv, arr)
+        ast.MatchS(l, c, a): return _pass_l(c, arr) or _uns_a(a, iv, arr)
+        ast.SelectS(l, a): return _uns_a(a, iv, arr)
+        ast.DeleteS(l, k): return _pass_l(k, arr)
+        _: return false
+    return false
+
+fn _uns_b(b: [ast.Stmt], iv: string, arr: string) -> bool:
+    for i := 0; i < len(b); i += 1:
+        if _uns_s(b[i], iv, arr):
+            return true
+    return false
+
+# src/tychoc.c@for3_elidable_arr -- the loop variable and the array it indexes,
+# or two empty strings. init `i := 0` with no value-if tail, cond `i < len(A)`,
+# post exactly `i += 1`, and a body that survives _uns_b.
+fn _for3_elide(ip: [ast.Stmt], c: [ast.Expr], b: [ast.Stmt]) -> (string, string):
+    no := ("", "")
+    if not _elision_on() or len(b) == 0:
+        return no
+    iv := ""
+    match ip[0]:
+        ast.Decl(l, n, t, r, v):
+            if len(v) > 0 or len(r) != 1:
+                return no
+            match r[0]:
+                ast.IntLit(l2, x):
+                    if x != 0:
+                        return no
+                _: return no
+            iv = n
+        _: return no
+    arr := ""
+    match c[0]:
+        ast.Binop(l, op, k):
+            if op != "<" or len(k) != 2:
+                return no
+            match k[0]:
+                ast.Name(l2, n2):
+                    if n2 != iv:
+                        return no
+                _: return no
+            match k[1]:
+                ast.Call(l3, q, fnm, ts, args):
+                    if len(q) > 0 or fnm != "len" or len(ts) > 0 or len(args) != 1:
+                        return no
+                    match args[0]:
+                        ast.Name(l4, an): arr = an
+                        _: return no
+                _: return no
+        _: return no
+    match ip[1]:
+        ast.Assign(l, n, r):
+            if n != iv or len(r) != 1:
+                return no
+            match r[0]:
+                ast.Binop(l2, op2, k2):
+                    if op2 != "+" or len(k2) != 2:
+                        return no
+                    match k2[0]:
+                        ast.Name(l3, n3):
+                            if n3 != iv:
+                                return no
+                        _: return no
+                    match k2[1]:
+                        ast.IntLit(l4, one):
+                            if one != 1:
+                                return no
+                        _: return no
+                _: return no
+        _: return no
+    if arr == iv or _uns_b(b, iv, arr):
+        return no
+    return (iv, arr)
+
+# src/tychoc.c@index_in_range -- is `base[idx]` a loop index proven in range?
+fn _in_range(cs: inout C, base: ast.Expr, idx: ast.Expr) -> bool:
+    bn := ""
+    ix := ""
+    match base:
+        ast.Name(l, n): bn = n
+        _: return false
+    match idx:
+        ast.Name(l, n): ix = n
+        _: return false
+    for k := len(cs.elv) - 1; k >= 0; k -= 1:
+        if cs.elv[k] == ix and cs.ela[k] == bn:
+            return true
+    return false
 
 fn _creads_l(es: [ast.Expr], nm: string) -> int:
     c := 0
@@ -4822,10 +5016,18 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             cs.loopdepth += 1   # src/tychoc.c@g_loop_depth -- moves are unsafe inside a loop
             push(cs.lpost, k3)
             cs.arena = "&" + id3
+            # `for i := 0; i < len(A); i += 1:` proves A[i] in range for the body
+            ev3, ea3 := _for3_elide(ip, c, b)
+            if len(ea3) > 0:
+                push(cs.elv, ev3)
+                push(cs.ela, ea3)
             # the post clause is the LAST statement of the body, not a C for
             # header -- src/tychoc.c:12291-12325 -- and it is generated after it
             bd3 := _block(&cs, b, ind + "        ")
             post := _stmt(&cs, ip[1], ind + "        ")
+            if len(ea3) > 0:
+                pop(cs.elv)
+                pop(cs.ela)
             pop(cs.lpost)
             pop(cs.ascope)
             cs.loopdepth -= 1
@@ -6168,6 +6370,10 @@ fn _fnbody(cs: inout C, fi: int, body: [ast.Stmt]) -> (string, string):
     spb := cs.pbody
     cs.pbody = body
     cs.fnbase = len(cs.vnames)
+    sel := cs.elv
+    sea := cs.ela
+    cs.elv = []string
+    cs.ela = []string
     pm := len(cs.pk)
     cs.pname = nm
     cs.lbl = 0
@@ -6175,6 +6381,8 @@ fn _fnbody(cs: inout C, fi: int, body: [ast.Stmt]) -> (string, string):
     b := _block(&cs, body, "    ")
     cs.pbody = spb
     cs.fnbase = sfb
+    cs.elv = sel
+    cs.ela = sea
     for i := pm; i < len(cs.pk); i += 1:
         if len(cs.ptv[i]) == 0:
             _bad("a bare [] or None with nothing to type it")
