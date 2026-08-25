@@ -110,9 +110,12 @@ struct C:
     sube: [ast.Expr]
     ascope: [string]                   # enclosing loop scratch arenas, innermost last
     uid: int                           # src/tychoc.c@g_forin_uid -- a SECOND counter, not g_blk
+    pname: string                      # src/tychoc.c@g_cur_proc_name -- the scratch-arena label
+    lbl: int                           # src/tychoc.c@g_loop_lbl -- per-proc, counts EVERY loop
+    lpost: [int]                       # src/tychoc.c@g_loop_post -- -1, or the `continue` target
 
 fn _new() -> C:
-    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0)
+    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int)
 
 fn _bad(msg: string):
     die("tychoc1: " + msg)
@@ -1484,7 +1487,7 @@ fn _eq(cs: inout C, a: string, b: string, t: string) -> string:
         # identity: same thunk and same env -- src/tychoc.c:10214
         return "((" + a + ").call == (" + b + ").call && (" + a + ").env == (" + b + ").env)"
     if t == "string" or t == "bytes":
-        return "tycho_str_eq(" + a + ", " + b + ")"
+        return "(tycho_str_cmp(" + a + ", " + b + ") == 0)"
     if _is_struct(t):
         return "tycho_eq_S_" + _tname(t) + "(" + a + ", " + b + ")"
     if _is_tup(t):
@@ -1766,10 +1769,17 @@ fn _lit_float(v: float) -> string:
         return s
     return s + ".0"
 
+# src/tychoc.c@c_int_lit -- INT64_MIN has no C literal: -9223372036854775808LL
+# is a unary minus on a value that does not fit, so it is written as a subtraction.
+fn _ilit(v: int) -> string:
+    if v == -9223372036854775807 - 1:
+        return "(-9223372036854775807LL - 1)"
+    return str(v) + "LL"
+
 fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
     match e:
         ast.IntLit(l, v):
-            return (str(v) + "LL", "int")
+            return (_ilit(v), "int")
         ast.FloatLit(l, v):
             return (_lit_float(v), "float")
         ast.CharLit(l, v):
@@ -3499,7 +3509,7 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
         c, t := _ex(&cs, args[0])
         if t == "float" or t == "f32":
             return ("tycho_f2i(" + c + ")", "int")
-        return ("((tycho_int)(" + c + "))", "int")
+        return ("((tycho_int)" + c + ")", "int")
     if len(n) > 3 and n[0:3] == "to_" and _is_sized(n[3:]) and len(args) == 1:
         c, t := _ex(&cs, args[0])
         w := n[3:]
@@ -4436,8 +4446,8 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                 # the shadow length/capacity the in-place append maintains;
                 # the length starts as the initialiser's own, cap 0 meaning
                 # "not yet owned", exactly as src/tychoc.c does it.
-                out9 = out9 + ind + "tycho_int _len" + cn + " = ((const tycho_int *)" +
-                    cn + ")[-1]; tycho_int _cap" + cn + " = 0;\n"
+                out9 = out9 + ind + "tycho_int _len_" + cn + " = ((const tycho_int *)" +
+                    cn + ")[-1]; tycho_int _cap_" + cn + " = 0;\n"
             return out9
         ast.ConstS(l, n, k):
             c, t := _ex(&cs, k[0])
@@ -4499,21 +4509,23 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                                 # intermediates die with the statement -- in the
                                 # function's arena they lived to the end of the
                                 # run (bench/json: 5.7 GiB).
+                                # src/tychoc.c:11704-11710 -- the appended terms
+                                # are built in the ACCUMULATOR'S arena, one plain
+                                # statement each. The `_t` scratch this used was
+                                # an optimisation the reference does not have.
+                                ow9 := _ownerof(&cs, ast.Name(l, n))
                                 sav9 := cs.arena
-                                cs.arena = "&_t"
+                                cs.arena = ow9
                                 for q9 := len(terms) - 1; q9 >= 0; q9 -= 1:
                                     tc9, tt9 := _ex(&cs, terms[q9])
                                     fnq := "tycho_str_append"
                                     if tt9 != "string" and tt9 != "bytes":
                                         fnq = "tycho_str_append_char"
-                                    out9 = out9 + "    " + fnq + "(" + _ownerof(&cs, ast.Name(l, n)) +
-                                        ", &" + cn9 + ", &_len" + cn9 + ", &_cap" + cn9 + ", " +
-                                        tc9 + "); "
+                                    out9 = out9 + ind + fnq + "(" + ow9 +
+                                        ", &" + cn9 + ", &_len_" + cn9 + ", &_cap_" + cn9 + ", " +
+                                        tc9 + ");\n"
                                 cs.arena = sav9
-                                if not _uses_t(out9):
-                                    return ind + out9 + "\n"
-                                return ind + "{ Arena _t = arena_new(0); " + out9 +
-                                    "arena_free(&_t); }\n"
+                                return out9
                     _: pass
             # The value is built in the TARGET's arena. For an `inout` string
             # or array parameter that is the caller's arena, not this scope --
@@ -4605,6 +4617,10 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
         ast.BreakS(l):
             return ind + "break;\n"
         ast.ContinueS(l):
+            # src/tychoc.c:12263 -- inside a three-clause `for` the post clause
+            # sits at the body's end, so `continue` must jump TO it, not over it.
+            if len(cs.lpost) > 0 and cs.lpost[len(cs.lpost) - 1] >= 0:
+                return ind + "goto _post" + str(cs.lpost[len(cs.lpost) - 1]) + ";\n"
             return ind + "continue;\n"
         ast.IfS(l, c, b, e):
             cc0, ct := _ex(&cs, c[0])
@@ -4616,27 +4632,25 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
         ast.WhileS(l, c, b):
             # the condition is re-evaluated every iteration but belongs to the
             # ENCLOSING arena, exactly as src/tychoc.c:12275 generates it
+            svw := cs.arena
+            idw := _fresh(&cs, "_scr")
+            lw := cs.lbl
+            cs.lbl += 1
             cc := "1"
             if len(c) > 0:
                 c2, ct2 := _ex(&cs, c[0])
                 cc = _cunwrap(c2)
-            svw := cs.arena
-            idw := _fresh(&cs, "_scr")
             push(cs.ascope, "&" + idw)
+            push(cs.lpost, -1)
             cs.arena = "&" + idw
             bdw := _block(&cs, b, ind + "        ")
+            pop(cs.lpost)
             pop(cs.ascope)
             cs.arena = svw
-            openw := ""
-            resw := ""
-            closw := ""
-            uidw, fidw := _uses_scr(bdw, idw)
-            if uidw:
-                openw = ind + "    Arena " + idw + " = arena_child(" + svw + ");\n"
-                resw = ind + "        arena_reset(&" + idw + ");\n"
-                closw = ind + "    arena_free(&" + idw + ");\n"
-            elif fidw:
-                bdw = _replace(bdw, "arena_free(&" + idw + "); ", "")
+            openw := ind + "    Arena " + idw + " = arena_child(" + svw + "); " +
+                idw + ".name = \"" + cs.pname + ":" + str(lw) + "\";\n"
+            resw := ind + "        arena_reset(&" + idw + ");\n"
+            closw := ind + "    arena_free(&" + idw + ");\n"
             return ind + "{\n" + openw + ind + "    while (" + cc + ") {\n" + resw +
                 bdw + ind + "    }\n" + closw + ind + "}\n"
         ast.For3(l, ip, c, b):
@@ -4644,32 +4658,35 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             # init runs once and the loop variable is written by the post clause
             # and by the body, so its storage must NOT be the scratch a reset
             # recycles -- src/tychoc.c:12293-12300 says exactly this.
+            sv3 := cs.arena
+            k3 := cs.tmp
+            id3 := _fresh(&cs, "_scr")
             init := _stmt(&cs, ip[0], "")
+            l3 := cs.lbl
+            cs.lbl += 1
             cc0, ct := _ex(&cs, c[0])
             cc := _cunwrap(cc0)
-            sv3 := cs.arena
-            id3 := _fresh(&cs, "_scr")
             push(cs.ascope, "&" + id3)
+            push(cs.lpost, k3)
             cs.arena = "&" + id3
-            post := _stmt(&cs, ip[1], "")
+            # the post clause is the LAST statement of the body, not a C for
+            # header -- src/tychoc.c:12291-12325 -- and it is generated after it
             bd3 := _block(&cs, b, ind + "        ")
+            post := _stmt(&cs, ip[1], ind + "        ")
+            pop(cs.lpost)
             pop(cs.ascope)
             cs.arena = sv3
-            open3 := ""
-            res3 := ""
-            clos3 := ""
-            u3, f3 := _uses_scr(bd3, id3)
-            up3, fp3 := _uses_scr(post, id3)
-            if u3 or up3:
-                open3 = ind + "    Arena " + id3 + " = arena_child(" + sv3 + ");\n"
-                res3 = ind + "        arena_reset(&" + id3 + ");\n"
-                clos3 = ind + "    arena_free(&" + id3 + ");\n"
-            elif f3 or fp3:
-                bd3 = _replace(bd3, "arena_free(&" + id3 + "); ", "")
-                post = _replace(post, "arena_free(&" + id3 + "); ", "")
+            lab3 := ""
+            gt3 := "goto _post" + str(k3) + ";"
+            if len(_replace(bd3, gt3, "")) != len(bd3):
+                lab3 = ind + "        _post" + str(k3) + ": ;\n"
+            open3 := ind + "    Arena " + id3 + " = arena_child(" + sv3 + "); " +
+                id3 + ".name = \"" + cs.pname + ":" + str(l3) + "\";\n"
+            res3 := ind + "        arena_reset(&" + id3 + ");\n"
+            clos3 := ind + "    arena_free(&" + id3 + ");\n"
             out := ind + "{\n" + ind + "    " + _trim_nl(init) + open3 +
-                ind + "    for (; " + cc + "; " + _strip_semi(post) + ") {\n" + res3 +
-                bd3 + ind + "    }\n" + clos3 + ind + "}\n"
+                ind + "    while (" + cc + ") {\n" + res3 +
+                bd3 + lab3 + post + ind + "    }\n" + clos3 + ind + "}\n"
             _restore(&cs, m)
             return out
         ast.ForIn(l, n, c, b):
@@ -4682,8 +4699,10 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                 svs := cs.arena
                 ids := _fresh(&cs, "_scr")
                 push(cs.ascope, "&" + ids)
+                push(cs.lpost, -1)
                 cs.arena = "&" + ids
                 bds := _block(&cs, b, ind + "        ")
+                pop(cs.lpost)
                 pop(cs.ascope)
                 cs.arena = svs
                 opens := ""
@@ -4725,8 +4744,10 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             sva := cs.arena
             ida := _fresh(&cs, "_scr")
             push(cs.ascope, "&" + ida)
+            push(cs.lpost, -1)
             cs.arena = "&" + ida
             bda := _block(&cs, b, ind + "        ")
+            pop(cs.lpost)
             pop(cs.ascope)
             cs.arena = sva
             opena := ""
@@ -4981,7 +5002,7 @@ fn _patv(cs: inout C, kind: string, v: int, nm: string) -> string:
         if len(t) > 0:
             return _vcname(&cs, nm)
         _bad("unknown name '" + nm + "' in a match pattern")
-    return str(v) + "LL"
+    return _ilit(v)
 
 fn _match(cs: inout C, subj: ast.Expr, arms: [ast.Arm], ind: string) -> string:
     sc, st := _ex(&cs, subj)
@@ -5985,6 +6006,9 @@ fn _fnbody(cs: inout C, fi: int, body: [ast.Stmt]) -> (string, string):
     cs.ascope = []string
     cs.fnbase = len(cs.vnames)
     pm := len(cs.pk)
+    cs.pname = nm
+    cs.lbl = 0
+    cs.lpost = []int
     b := _block(&cs, body, "    ")
     cs.fnbase = sfb
     for i := pm; i < len(cs.pk); i += 1:
