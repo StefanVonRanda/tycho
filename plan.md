@@ -1973,6 +1973,15 @@ breaks.
     rule believes it has excluded. Worth resuming from that fixture: it is small
     and it is the only non-package one.
 
+    SEVENTH attempt, aimed squarely at why the rule never fires. The parser
+    builds its tree with `l = ast.Binop(ln, op, [l, r])`, and that read of l is
+    not inside a return, so "every read is inside a return" excludes it. Extended
+    the rule to count a read inside an assignment BACK TO THE SAME NAME as
+    return-only. It still does not pay -- 0.996e9 -> 1.019e9, +2% -- and it
+    reddens tests/calc, whose own parser is that exact shape: the compiled
+    program dies with "non-exhaustive match", so the promoted local holds the
+    wrong value at run time. Seven attempts, seven negatives.
+
     SIXTH attempt, and the one that explains all the others. Counting the calls
     it removes: tycho_str_copy 4,398,272 without it and 4,473,320 WITH it;
     tycho_copy_E_ast__Expr 578,719 -> 586,274. It removes NOTHING -- the counts
