@@ -1844,8 +1844,11 @@ WHERE IT STANDS on compiler/main.ty (tychoc 89-91 ms alongside):
     2.2x   200 ms   destructuring a call result, for-in snapshot, size-class guard
     2.0x   182 ms   arm-mutation test narrowed (05d0a710), after 8fc08efc
     1.95x  172 ms   string equality settles on the lengths (aa5d0909)
+    1.87x  166 ms   short string copies move inline (23e2d69e)
+    1.84x  164 ms   the short move shared by concat/substr (e1b2809b)
+    1.81x  161 ms   the lexer stamps a token's file at creation (94add001)
 
-    instructions   2.820e9 -> 1.642e9
+    instructions   2.820e9 -> 1.569e9
 
 THE RULE that did most of it: a value already in the destination arena is stored
 rather than copied, when nothing can write through it -- strings and enums are
@@ -1866,6 +1869,12 @@ then wraps it in ast.IfS), arrays are mutable so the sharing rule cannot touch
 it, and the copy takes every statement, every expression and every string under
 it. Eliding that needs the source array to be built in the destination arena,
 which is the escape analysis -- measured four times, a loss every time.
+
+ALSO RULED OUT: returning a shared singleton for an EMPTY string copy. Sound --
+there are no bytes to alias and every write path reallocates -- but it measured
++1.6% (1.642e9 -> 1.669e9): the branch on every copy costs more than the
+allocations it saves, so empty strings are not as common in copies as the AST's
+shape suggests. Reverted.
 
 RULED OUT, each measured against the baseline:
   - the full return-only escape analysis (src/tychoc.c@collect_ret_alias) --
