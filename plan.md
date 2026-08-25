@@ -1911,7 +1911,7 @@ STANDING: 1.15-1.18x. The gap is ONE problem, and it is scoped: 1.9M of the
 of those crosses an arena boundary at a RETURN. That is ~17% of the profile,
 which is the whole remaining gap. Four routes to it are closed with numbers:
 
-    promotion / escape analysis   8 attempts; the 8th WORKS -- see below
+    promotion / escape analysis   10 attempts; the 8th WORKS -- see below
     scope adoption                green, -4% instructions, +12% WALL
     push-value arena              190 fixtures, then 254
     alias scope to caller's arena 19 fixtures; the accumulator guard made it 35
@@ -1935,7 +1935,13 @@ With all three: 752/752, parse-check, corelib green, and
     instructions     0.996e9 -> 1.020e9       (+2.4%)
 
 The rule fires and removes copies; the census costs about three times what they
-save. AND THE ASSUMPTION UNDERNEATH ALL EIGHT ATTEMPTS IS WRONG: the AST copies
+save. Two more attempts to make the census cheap: folding its four walks into
+one (0.882e9 -> 0.947e9) and then removing the 4-tuple its recursion returned,
+which allocates per node (-> 0.943e9). Neither helps, and together they measure
+the thing worth knowing: ONE FULL AST WALK COSTS ABOUT 30M INSTRUCTIONS HERE,
+3.4% of a whole compile. Any per-function analysis in emit starts 60M in debt.
+That is the number a future attempt has to beat, and it is why the answer is
+not a better census. AND THE ASSUMPTION UNDERNEATH ALL EIGHT ATTEMPTS IS WRONG: the AST copies
 did NOT move (tycho_copy_E_ast__Expr 1,488,864 -> 1,484,873). The parser's
 `return (l, i)` is not where they come from. Tracing the callers again puts the
 roots in tycho_arr_K3_copy -- STATEMENT BODY arrays -- which this rule excludes,
