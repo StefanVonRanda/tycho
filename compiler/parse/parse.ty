@@ -669,14 +669,25 @@ fn _mul_op(toks: [lex.Tok], i: int) -> bool:
         return false
     return s == "*" or s == "/" or s == "%" or s == "<<" or s == ">>" or s == "&"
 
-fn mul(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
+# The binary levels write THROUGH an out parameter. Returning the node instead
+# copies it into the caller's arena at every level of the grammar, so a deep
+# expression was re-homed once per precedence step -- O(depth x size). Writing
+# into the caller's variable means the accumulating tree is built where it will
+# live, and only the small right-hand operand of each operator is copied.
+fn _mul_into(toks: [lex.Tok], i0: int, out: inout ast.Expr) -> int:
     l, i := unary(toks, i0)
+    out = l
     for _mul_op(toks, i):
         o := _x(toks, i)
         r, j := unary(toks, i + 1)
-        l = ast.Binop(ast.line_of(l), o, [l, r])
+        out = ast.Binop(ast.line_of(out), o, [out, r])
         i = j
-    return (l, i)
+    return i
+
+fn mul(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
+    e := ast.NullLit(0)
+    i := _mul_into(toks, i0, &e)
+    return (e, i)
 
 fn _add_op(toks: [lex.Tok], i: int) -> bool:
     s := _x(toks, i)
@@ -684,17 +695,23 @@ fn _add_op(toks: [lex.Tok], i: int) -> bool:
         return false
     return s == "+" or s == "-" or s == "|" or s == "^"
 
-fn add(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
-    l, i := mul(toks, i0)
+fn _add_into(toks: [lex.Tok], i0: int, out: inout ast.Expr) -> int:
+    i := _mul_into(toks, i0, &out)
     for _add_op(toks, i):
         o := _x(toks, i)
-        r, j := mul(toks, i + 1)
-        l = ast.Binop(ast.line_of(l), o, [l, r])
+        r := ast.NullLit(0)
+        j := _mul_into(toks, i + 1, &r)
+        out = ast.Binop(ast.line_of(out), o, [out, r])
         i = j
-    return (l, i)
+    return i
 
-fn isexp(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
-    l, i := add(toks, i0)
+fn add(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
+    e := ast.NullLit(0)
+    i := _add_into(toks, i0, &e)
+    return (e, i)
+
+fn _isexp_into(toks: [lex.Tok], i0: int, out: inout ast.Expr) -> int:
+    i := _add_into(toks, i0, &out)
     if _iskw(toks, i, "is"):
         nm, j := _ident(toks, i + 1, "a variant name after `is`")
         i = j
@@ -706,8 +723,13 @@ fn isexp(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
             i = k
         if _iskw(toks, i, "is"):
             _die(_at(toks, i), "`is` does not chain -- write `a is X and a is Y`")
-        return (ast.IsVar(ast.line_of(l), [l], q, nm), i)
-    return (l, i)
+        out = ast.IsVar(ast.line_of(out), [out], q, nm)
+    return i
+
+fn isexp(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
+    e := ast.NullLit(0)
+    i := _isexp_into(toks, i0, &e)
+    return (e, i)
 
 fn _cmp_op(toks: [lex.Tok], i: int) -> bool:
     if _iskw(toks, i, "in"):
@@ -717,36 +739,61 @@ fn _cmp_op(toks: [lex.Tok], i: int) -> bool:
     s := _x(toks, i)
     return s == "==" or s == "!=" or s == "<" or s == ">" or s == "<=" or s == ">="
 
-fn cmp(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
-    l, i := isexp(toks, i0)
+fn _cmp_into(toks: [lex.Tok], i0: int, out: inout ast.Expr) -> int:
+    i := _isexp_into(toks, i0, &out)
     for _cmp_op(toks, i):
         o := _x(toks, i)
-        r, j := isexp(toks, i + 1)
-        l = ast.Binop(ast.line_of(l), o, [l, r])
+        r := ast.NullLit(0)
+        j := _isexp_into(toks, i + 1, &r)
+        out = ast.Binop(ast.line_of(out), o, [out, r])
         i = j
-    return (l, i)
+    return i
+
+fn cmp(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
+    e := ast.NullLit(0)
+    i := _cmp_into(toks, i0, &e)
+    return (e, i)
+
+fn _notexp_into(toks: [lex.Tok], i0: int, out: inout ast.Expr) -> int:
+    if _iskw(toks, i0, "not"):
+        a := ast.NullLit(0)
+        j := _notexp_into(toks, i0 + 1, &a)
+        out = ast.Unop(_ln(toks, i0), "not", [a])
+        return j
+    return _cmp_into(toks, i0, &out)
 
 fn notexp(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
-    if _iskw(toks, i0, "not"):
-        a, j := notexp(toks, i0 + 1)
-        return (ast.Unop(_ln(toks, i0), "not", [a]), j)
-    return cmp(toks, i0)
+    e := ast.NullLit(0)
+    i := _notexp_into(toks, i0, &e)
+    return (e, i)
+
+fn _andexp_into(toks: [lex.Tok], i0: int, out: inout ast.Expr) -> int:
+    i := _notexp_into(toks, i0, &out)
+    for _iskw(toks, i, "and"):
+        r := ast.NullLit(0)
+        j := _notexp_into(toks, i + 1, &r)
+        out = ast.Binop(ast.line_of(out), "and", [out, r])
+        i = j
+    return i
 
 fn andexp(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
-    l, i := notexp(toks, i0)
-    for _iskw(toks, i, "and"):
-        r, j := notexp(toks, i + 1)
-        l = ast.Binop(ast.line_of(l), "and", [l, r])
+    e := ast.NullLit(0)
+    i := _andexp_into(toks, i0, &e)
+    return (e, i)
+
+fn _expr_into(toks: [lex.Tok], i0: int, out: inout ast.Expr) -> int:
+    i := _andexp_into(toks, i0, &out)
+    for _iskw(toks, i, "or"):
+        r := ast.NullLit(0)
+        j := _andexp_into(toks, i + 1, &r)
+        out = ast.Binop(ast.line_of(out), "or", [out, r])
         i = j
-    return (l, i)
+    return i
 
 fn expr(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
-    l, i := andexp(toks, i0)
-    for _iskw(toks, i, "or"):
-        r, j := andexp(toks, i + 1)
-        l = ast.Binop(ast.line_of(l), "or", [l, r])
-        i = j
-    return (l, i)
+    e := ast.NullLit(0)
+    i := _expr_into(toks, i0, &e)
+    return (e, i)
 
 # --- value blocks (expression-valued if / match) ----------------------------
 
