@@ -113,9 +113,10 @@ struct C:
     pname: string                      # src/tychoc.c@g_cur_proc_name -- the scratch-arena label
     lbl: int                           # src/tychoc.c@g_loop_lbl -- per-proc, counts EVERY loop
     lpost: [int]                       # src/tychoc.c@g_loop_post -- -1, or the `continue` target
+    pbody: [ast.Stmt]                  # src/tychoc.c@g_proc_body -- the move-on-last-use read scan
 
 fn _new() -> C:
-    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int)
+    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt)
 
 fn _bad(msg: string):
     die("tychoc1: " + msg)
@@ -3697,10 +3698,116 @@ fn _lvalue(cs: inout C, e: ast.Expr) -> (string, string):
 
 # --- statements -------------------------------------------------------------
 
-fn _rhs(cs: inout C, e: ast.Expr, want: string) -> (string, string):
-    return _rhs2(&cs, e, want, "&_scope")
+# --- move-on-last-use (deep-copy elision) -----------------------------------
+#
+# src/tychoc.c@can_move_from, and the read-count scan src/tychoc.c@count_reads_b.
+# `b := a` / `b = a` normally deep-copies a heap value so the two are
+# independent. If `a` is a uniquely-owned local whose ONLY read is this one, the
+# copy is waste -- `b` takes over `a`'s buffer. The rule is conservative and
+# static: the source is a bare variable of heap type; it is read exactly once in
+# the whole function, so this read is its last use on every path INCLUDING loop
+# back-edges; the move is not lexically inside a loop, so that one textual read
+# is one dynamic read; and the source's arena equals the destination's, so the
+# handed-off buffer's lifetime matches. A parameter borrows the caller's buffer
+# and is never moved.
+
+fn _creads_l(es: [ast.Expr], nm: string) -> int:
+    c := 0
+    for i := 0; i < len(es); i += 1:
+        c += _creads_e(es[i], nm)
+    return c
+
+fn _creads_e(e: ast.Expr, nm: string) -> int:
+    match e:
+        ast.Name(l, n):
+            if n == nm:
+                return 1
+            return 0
+        ast.Field(l, k, f): return _creads_l(k, nm)
+        ast.TupIdx(l, k, i): return _creads_l(k, nm)
+        ast.Index(l, k): return _creads_l(k, nm)
+        ast.Slice(l, a, b, k): return _creads_l(k, nm)
+        ast.Call(l, q, n, ts, k): return _creads_l(k, nm)
+        ast.CallVal(l, k): return _creads_l(k, nm)
+        ast.Named(l, n, k): return _creads_l(k, nm)
+        ast.Binop(l, o, k): return _creads_l(k, nm)
+        ast.Unop(l, o, k): return _creads_l(k, nm)
+        ast.IsVar(l, k, q, n): return _creads_l(k, nm)
+        ast.ArrLit(l, k): return _creads_l(k, nm)
+        ast.MapLit(l, k): return _creads_l(k, nm)
+        ast.Tuple(l, k): return _creads_l(k, nm)
+        ast.SomeE(l, k): return _creads_l(k, nm)
+        ast.OkE(l, k): return _creads_l(k, nm)
+        ast.ErrE(l, k): return _creads_l(k, nm)
+        ast.SpawnE(l, k): return _creads_l(k, nm)
+        ast.OrRet(l, k): return _creads_l(k, nm)
+        ast.Spread(l, k): return _creads_l(k, nm)
+        ast.Addr(l, k): return _creads_l(k, nm)
+        ast.ChanE(l, t, k): return _creads_l(k, nm)
+        # a lambda's env is built from its captures at creation, so a name its
+        # body reads is read HERE (src/tychoc.c counts the capture list; walking
+        # the body counts a name read twice in it twice, which only refuses more)
+        ast.Lambda(l, ps, r, b): return _creads_l(b, nm)
+        _: return 0
+    return 0
+
+fn _creads_a(ar: [ast.Arm], nm: string) -> int:
+    c := 0
+    for i := 0; i < len(ar); i += 1:
+        c += _creads_l(ar[i].ch, nm) + _creads_b(ar[i].body, nm)
+    return c
+
+fn _creads_s(s: ast.Stmt, nm: string) -> int:
+    match s:
+        ast.ExprStmt(l, k): return _creads_l(k, nm)
+        ast.Decl(l, n, t, r, v): return _creads_l(r, nm) + _creads_b(v, nm)
+        ast.MDecl(l, d, ns, r): return _creads_l(r, nm)
+        ast.Assign(l, n, r): return _creads_l(r, nm)
+        ast.PlaceSet(l, k): return _creads_l(k, nm)
+        ast.ConstS(l, n, k): return _creads_l(k, nm)
+        ast.ReturnS(l, k): return _creads_l(k, nm)
+        ast.IfS(l, c2, b, e): return _creads_l(c2, nm) + _creads_b(b, nm) + _creads_b(e, nm)
+        ast.WhileS(l, c2, b): return _creads_l(c2, nm) + _creads_b(b, nm)
+        ast.For3(l, ip, c2, b): return _creads_b(ip, nm) + _creads_l(c2, nm) + _creads_b(b, nm)
+        ast.ForIn(l, n, c2, b): return _creads_l(c2, nm) + _creads_b(b, nm)
+        ast.ForRange(l, n, c2, b): return _creads_l(c2, nm) + _creads_b(b, nm)
+        ast.ParallelS(l, w, b): return _creads_l(w, nm) + _creads_b(b, nm)
+        ast.MatchS(l, c2, a): return _creads_l(c2, nm) + _creads_a(a, nm)
+        ast.SelectS(l, a): return _creads_a(a, nm)
+        ast.DeleteS(l, k): return _creads_l(k, nm)
+        _: return 0
+    return 0
+
+fn _creads_b(b: [ast.Stmt], nm: string) -> int:
+    c := 0
+    for i := 0; i < len(b); i += 1:
+        c += _creads_s(b[i], nm)
+    return c
+
+# may `b := rhs` / `b = rhs` take rhs's buffer instead of deep-copying it, given
+# the destination lives in arena `owner`?
+fn _canmove(cs: inout C, e: ast.Expr, owner: string) -> bool:
+    if cs.loopdepth != 0:
+        return false
+    n := ""
+    match e:
+        ast.Name(l, nm): n = nm
+        _: return false
+    for i := len(cs.vnames) - 1; i >= 0; i -= 1:
+        if cs.vnames[i] == n:
+            if i < cs.fnbase:
+                return false          # a parameter borrows the caller's buffer
+            if cs.vown[i] != owner:
+                return false
+            return _creads_b(cs.pbody, n) == 1
+    return false
 
 fn _rhs2(cs: inout C, e: ast.Expr, want: string, arena: string) -> (string, string):
+    return _rhs3(&cs, e, want, arena, false)
+
+# `mv`: this is a `b := rhs` / `b = rhs` site, where a dead same-arena local may
+# be MOVED rather than copied (src/tychoc.c@can_move_from).
+fn _rhs3(cs: inout C, e: ast.Expr, want: string, arena: string, mv: bool) -> (string, string):
     sw := cs.want
     cs.want = want
     c, t := _ex(&cs, e)
@@ -3713,7 +3820,7 @@ fn _rhs2(cs: inout C, e: ast.Expr, want: string, arena: string) -> (string, stri
         # owned") so its first append reallocates too. Same arena means the two
         # also die together, so there is no lifetime to extend. Arrays and maps
         # ARE mutable and still copy.
-        if not _shares(&cs, e, t, arena):
+        if not _shares(&cs, e, t, arena) and not (mv and _canmove(&cs, e, arena)):
             c = _copy(&cs, c, t, arena)
     if len(want) > 0 and want == "float" and t == "int":
         c = "(double)(" + c + ")"
@@ -3914,6 +4021,8 @@ fn _parfor(cs: inout C, b: [ast.Stmt], ind: string) -> string:
             cs.vacc = []string
             sas := cs.ascope
             cs.ascope = []string
+            sldp := cs.loopdepth
+            cs.loopdepth = sldp + 1   # a parallel loop body: one textual read runs N times
             cs.arena = "&_scope"
             cs.cur_ret = rt
             for i := 0; i < len(caps); i += 1:
@@ -3943,6 +4052,7 @@ fn _parfor(cs: inout C, b: [ast.Stmt], ind: string) -> string:
             cs.vacc = sva
             cs.arena = sar
             cs.ascope = sas
+            cs.loopdepth = sldp
             cs.cur_ret = scr
             push(cs.lamp, sig + ";\n")
             push(cs.lamd, wbody)
@@ -4047,6 +4157,8 @@ fn _pararr(cs: inout C, cc: string, ct: string, v: string, body: [ast.Stmt], ind
     cs.vacc = []string
     sas := cs.ascope
     cs.ascope = []string
+    sldp := cs.loopdepth
+    cs.loopdepth = sldp + 1   # a parallel loop body: one textual read runs N times
     cs.arena = "&_scope"
     cs.cur_ret = rt
     for i := 0; i < len(caps); i += 1:
@@ -4077,6 +4189,7 @@ fn _pararr(cs: inout C, cc: string, ct: string, v: string, body: [ast.Stmt], ind
     cs.vacc = sva
     cs.arena = sar
     cs.ascope = sas
+    cs.loopdepth = sldp
     cs.cur_ret = scr
     sid := str(len(cs.spawnd))
     fields := "HTask *t; " + _ctyz(&cs, ct) + "a0; tycho_int a1; tycho_int a2;"
@@ -4170,6 +4283,8 @@ fn _parchan(cs: inout C, l: int, v: string, coll: [ast.Expr], body: [ast.Stmt], 
     cs.vacc = []string
     sas := cs.ascope
     cs.ascope = []string
+    sldp := cs.loopdepth
+    cs.loopdepth = sldp + 1   # a parallel loop body: one textual read runs N times
     cs.arena = "&_scope"
     cs.cur_ret = rt
     for i := 0; i < len(caps); i += 1:
@@ -4202,6 +4317,7 @@ fn _parchan(cs: inout C, l: int, v: string, coll: [ast.Expr], body: [ast.Stmt], 
     cs.vacc = sva
     cs.arena = sar
     cs.ascope = sas
+    cs.loopdepth = sldp
     cs.cur_ret = scr
     sid := str(len(cs.spawnd))
     fields := "HTask *t; HChan *a0;"
@@ -4429,7 +4545,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             uset := sav5 == "&_scope" and _hascall(rhs[0]) and not _hasorr(rhs[0])
             if uset:
                 cs.arena = "&_t"
-            c, t := _rhs(&cs, rhs[0], want)
+            c, t := _rhs3(&cs, rhs[0], want, "&_scope", true)
             cs.arena = sav5
             if len(want) > 0:
                 t = want
@@ -4543,7 +4659,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             # transient f() built alive for the rest of the function.
             if len(t) == 0 or _heap(&cs, t):
                 cs.arena = ow4
-            rc, rt := _rhs2(&cs, k[0], t, ow4)
+            rc, rt := _rhs3(&cs, k[0], t, ow4, true)
             cs.arena = sa4
             if len(t) == 0:
                 _vset(&cs, n, rt)
@@ -4641,11 +4757,13 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                 c2, ct2 := _ex(&cs, c[0])
                 cc = _cunwrap(c2)
             push(cs.ascope, "&" + idw)
+            cs.loopdepth += 1   # src/tychoc.c@g_loop_depth -- moves are unsafe inside a loop
             push(cs.lpost, -1)
             cs.arena = "&" + idw
             bdw := _block(&cs, b, ind + "        ")
             pop(cs.lpost)
             pop(cs.ascope)
+            cs.loopdepth -= 1
             cs.arena = svw
             openw := ind + "    Arena " + idw + " = arena_child(" + svw + "); " +
                 idw + ".name = \"" + cs.pname + ":" + str(lw) + "\";\n"
@@ -4667,6 +4785,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             cc0, ct := _ex(&cs, c[0])
             cc := _cunwrap(cc0)
             push(cs.ascope, "&" + id3)
+            cs.loopdepth += 1   # src/tychoc.c@g_loop_depth -- moves are unsafe inside a loop
             push(cs.lpost, k3)
             cs.arena = "&" + id3
             # the post clause is the LAST statement of the body, not a C for
@@ -4675,6 +4794,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             post := _stmt(&cs, ip[1], ind + "        ")
             pop(cs.lpost)
             pop(cs.ascope)
+            cs.loopdepth -= 1
             cs.arena = sv3
             lab3 := ""
             gt3 := "goto _post" + str(k3) + ";"
@@ -4699,11 +4819,13 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                 svs := cs.arena
                 ids := _fresh(&cs, "_scr")
                 push(cs.ascope, "&" + ids)
+                cs.loopdepth += 1   # src/tychoc.c@g_loop_depth -- moves are unsafe inside a loop
                 push(cs.lpost, -1)
                 cs.arena = "&" + ids
                 bds := _block(&cs, b, ind + "        ")
                 pop(cs.lpost)
                 pop(cs.ascope)
+                cs.loopdepth -= 1
                 cs.arena = svs
                 opens := ""
                 ress := ""
@@ -4744,11 +4866,13 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             sva := cs.arena
             ida := _fresh(&cs, "_scr")
             push(cs.ascope, "&" + ida)
+            cs.loopdepth += 1   # src/tychoc.c@g_loop_depth -- moves are unsafe inside a loop
             push(cs.lpost, -1)
             cs.arena = "&" + ida
             bda := _block(&cs, b, ind + "        ")
             pop(cs.lpost)
             pop(cs.ascope)
+            cs.loopdepth -= 1
             cs.arena = sva
             opena := ""
             resa := ""
@@ -6004,12 +6128,16 @@ fn _fnbody(cs: inout C, fi: int, body: [ast.Stmt]) -> (string, string):
             push(cs.ccode, "((" + _vcname(&cs, cs.fds[fi].pnames[j]) + ").len)")
     sfb := cs.fnbase
     cs.ascope = []string
+    cs.loopdepth = 0
+    spb := cs.pbody
+    cs.pbody = body
     cs.fnbase = len(cs.vnames)
     pm := len(cs.pk)
     cs.pname = nm
     cs.lbl = 0
     cs.lpost = []int
     b := _block(&cs, body, "    ")
+    cs.pbody = spb
     cs.fnbase = sfb
     for i := pm; i < len(cs.pk); i += 1:
         if len(cs.ptv[i]) == 0:
