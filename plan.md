@@ -1968,13 +1968,31 @@ copy is O(the value), and every pointer stays valid. Sketched as
 through the return's expression emit so tuple elements and payloads skip their
 copies too.
 
-It does not work yet: 14 fixtures, and the failure is that TYCHOC1 ITSELF dies
-compiling tests/slices.ty (`index 0 out of bounds (len 0)`), so the adoption is
-unsound somewhere in its own code. The suspect is arena_reset: a loop's scratch
-arena retains its head block and releases the rest to the pool, so an arena that
-has ADOPTED another's blocks would hand back memory a live value still points
-into. Any attempt should start there -- and should measure peak memory as well
-as time, since the trade is retention.
+BUILT AND GATED GREEN, AND STILL NOT WORTH IT. Two bugs had to be fixed first:
+
+  - arena_reset pools every block after the head, which would hand back memory
+    an adopted value still points into. Fixed with a `pinned` flag on HBlock
+    that a reset keeps and only arena_free releases.
+  - _ownerof answers "&_scope" for anything it cannot find, PARAMETERS included,
+    so `return toks` adopted a buffer that belongs to the caller and handed the
+    caller an alias of its own array. That is what reddened 14 fixtures, all of
+    them slice/value-semantics ones. Fixed by requiring the root to be a local
+    of the function being emitted.
+
+With both fixed: 752/752, parse-check, corelib, conc all green, and
+
+    instructions   1.016e9 -> 0.977e9   (-4%)
+    allocations    11.1M -> 9.6M, bump 940 MiB -> 329 MiB
+    wall           108 ms -> 121 ms     (+12%)
+
+The instruction count improves and the WALL CLOCK gets worse, which is the whole
+lesson. TYCHO_ARENA_STATS says where it goes: teardown is 19% of the run. Every
+adopting scope hands its parent a whole block that is mostly empty, so the block
+chains grow long and arena_free walks them. Adoption trades O(value) copying for
+O(blocks) teardown plus the cache cost of a working set that no longer shrinks.
+
+Reverted. Anyone taking it up needs a way to adopt only a scope whose live bytes
+are worth a block -- which is a RUNTIME property, not a compile-time one.
 
 ## The biggest measured prize, and why it is not shipped
 
