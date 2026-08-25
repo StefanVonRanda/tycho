@@ -464,7 +464,7 @@ fn _generic_call(cs: inout C, l: int, si: int, spelt: string, ts: [ast.Ty], args
     return r
 
 fn _generic_call2(cs: inout C, l: int, si: int, spelt: string, ts: [ast.Ty], args: [ast.Expr]) -> string:
-    s := cs.sg[si]
+    # read in place: this is a whole declaration, and only fields are wanted
     ats := []string
     keep := cs.in_arg
     cs.in_arg = true
@@ -478,16 +478,16 @@ fn _generic_call2(cs: inout C, l: int, si: int, spelt: string, ts: [ast.Ty], arg
         if a is ast.Spread:
             return "?"                 # a spread feeds a variadic elementwise
     cs.typarams = []string: bool
-    for n in s.tps:
+    for n in cs.sg[si].tps:
         cs.typarams[n] = true
-    cs.prefix = s.pfx                  # every NAME in the signature resolves in
+    cs.prefix = cs.sg[si].pfx                  # every NAME in the signature resolves in
                                        # the callee's package, not the caller's
     b := []string: string
     for i := 0; i < len(ts); i += 1:
-        if i < len(s.tps):
-            b[s.tps[i]] = _enc(&cs, ts[i])
-    variadic := len(s.pflags) > 0 and s.pflags[len(s.pflags) - 1] == "var"
-    np := len(s.pty)
+        if i < len(cs.sg[si].tps):
+            b[cs.sg[si].tps[i]] = _enc(&cs, ts[i])
+    variadic := len(cs.sg[si].pflags) > 0 and cs.sg[si].pflags[len(cs.sg[si].pflags) - 1] == "var"
+    np := len(cs.sg[si].pty)
     if variadic:
         np = np - 1
     if len(args) < np:
@@ -495,33 +495,33 @@ fn _generic_call2(cs: inout C, l: int, si: int, spelt: string, ts: [ast.Ty], arg
     if not variadic and len(args) != np:
         return "?"
     for i := 0; i < np; i += 1:
-        if not _unify(&cs, s.pty[i], ats[i], &b):
+        if not _unify(&cs, cs.sg[si].pty[i], ats[i], &b):
             _cerr(&cs, "argument " + str(i + 1) + " of '" + spelt + "' is " + ats[i] + ", which does not fit the parameter pattern")
             return "?"
     if variadic:
-        vp := s.pty[len(s.pty) - 1]
+        vp := cs.sg[si].pty[len(cs.sg[si].pty) - 1]
         for i := np; i < len(args); i += 1:
             if not _unify(&cs, vp, ats[i], &b):
                 _cerr(&cs, "argument " + str(i + 1) + " of '" + spelt + "' is " + ats[i] + ", which does not fit the parameter pattern")
                 return "?"
         if len(args) == np:
-            for tp in _pat_params(vp, s.tps, []string):
+            for tp in _pat_params(vp, cs.sg[si].tps, []string):
                 if not (tp in b):
                     _cerr(&cs, "cannot infer the element type of an empty variadic call to generic '" + spelt + "'; pass at least one argument, or name the type: " + spelt + "$(<type>)()")
                     return "?"
-    if len(s.pty) > 16:
-        cs.line = s.line               # src/tychoc.c names the DECLARATION
+    if len(cs.sg[si].pty) > 16:
+        cs.line = cs.sg[si].line               # src/tychoc.c names the DECLARATION
         _cerr(&cs, "too many parameters (max 16)")
         return "?"
-    for sp in s.szs:
-        if not (sp in b) and not _sp_in_params(s, sp):
+    for sp in cs.sg[si].szs:
+        if not (sp in b) and not _sp_in_params(cs.sg[si], sp):
             _cerr(&cs, "the return type of '" + spelt + "' has a type parameter not fixed by any argument; pass it explicitly, e.g. " + spelt + "$(int)")
             return "?"
-    for tp in s.tps:
-        if not (tp in b) and not _tp_in_params(&cs, s, tp):
+    for tp in cs.sg[si].tps:
+        if not (tp in b) and not _tp_in_params(&cs, cs.sg[si], tp):
             _cerr(&cs, "no argument fixes '" + spelt + "''s type parameter $" + tp + " -- it appears only in the return type. Give it explicitly: " + spelt + "$(<the type for $T>)(...)")
             return "?"
-    for w in s.whs:
+    for w in cs.sg[si].whs:
         ci := 0
         for ci < len(w) and w[ci] != 58:
             ci += 1
@@ -558,19 +558,19 @@ fn _generic_call2(cs: inout C, l: int, si: int, spelt: string, ts: [ast.Ty], arg
     # The instance's SUBSTITUTED parameter types, which is where the affine
     # rules bite: `inout $T` is legal until `$T` is bound at a channel
     # (src/tychoc.c:8997, and the note beside check_inout_param_type).
-    for i := 0; i < len(s.pty) and i < len(s.pflags); i += 1:
-        if s.pflags[i] == "inout" or s.pflags[i] == "sink":
-            pt := _subst(&cs, s, s.pty[i], b)
+    for i := 0; i < len(cs.sg[si].pty) and i < len(cs.sg[si].pflags); i += 1:
+        if cs.sg[si].pflags[i] == "inout" or cs.sg[si].pflags[i] == "sink":
+            pt := _subst(&cs, cs.sg[si], cs.sg[si].pty[i], b)
             if len(_aff_kind(&cs, pt)) > 0:
                 cs.line = l
-                _cerr(&cs, "'" + s.pnames[i] + "' is " + s.pflags[i] + ", which an affine type cannot be -- '" + spelt + "' was instantiated at one. Pass it plainly: that is already a borrow")
+                _cerr(&cs, "'" + cs.sg[si].pnames[i] + "' is " + cs.sg[si].pflags[i] + ", which an affine type cannot be -- '" + spelt + "' was instantiated at one. Pass it plainly: that is already a borrow")
                 return "?"
-            if s.pflags[i] == "inout" and _head(pt) == "fun":
+            if cs.sg[si].pflags[i] == "inout" and _head(pt) == "fun":
                 cs.line = l
-                _cerr(&cs, "inout parameter '" + s.pnames[i] + "': a function value can't be inout (a callee could write a closure back into the caller and it would dangle)")
+                _cerr(&cs, "inout parameter '" + cs.sg[si].pnames[i] + "': a function value can't be inout (a callee could write a closure back into the caller and it would dangle)")
                 return "?"
-    if len(s.rty) == 1:
-        r := _subst(&cs, s, s.rty[0], b)
+    if len(cs.sg[si].rty) == 1:
+        r := _subst(&cs, cs.sg[si], cs.sg[si].rty[0], b)
         if not known(r):
             cs.uses6b = true
         cs.line = l
@@ -581,9 +581,9 @@ fn _generic_call2(cs: inout C, l: int, si: int, spelt: string, ts: [ast.Ty], arg
         if k == "chan":
             _cerr(&cs, "a function cannot return a channel -- create it in the owning scope and pass it down")
             return "?"
-        _inst_body(&cs, s, b, l, spelt)
+        _inst_body(&cs, cs.sg[si], b, l, spelt)
         return r
-    _inst_body(&cs, s, b, l, spelt)
+    _inst_body(&cs, cs.sg[si], b, l, spelt)
     return "void"
 
 # The template's BODY, checked once per distinct instantiation. Until this ran,
@@ -820,14 +820,14 @@ fn _inst_named(cs: inout C, q: string, n: string, targs: [ast.Ty], enc: [string]
     if len(m) == 0 or not (m in cs.tindex):
         return "?"
     ti := cs.tindex[m]
-    d := cs.tds[ti]
-    if not d.generic or (d.kind != "struct" and d.kind != "enum"):
+    # read in place: this is a whole declaration, and only fields are wanted
+    if not cs.tds[ti].generic or (cs.tds[ti].kind != "struct" and cs.tds[ti].kind != "enum"):
         cs.uses6b = true
         return "?"
-    selfref := len(targs) == len(d.tps)
+    selfref := len(targs) == len(cs.tds[ti].tps)
     concrete := true
     for i := 0; i < len(targs); i += 1:
-        if not _is_self_param(targs[i], d.tps, i):
+        if not _is_self_param(targs[i], cs.tds[ti].tps, i):
             selfref = false
         if _has_param(targs[i]):
             concrete = false
@@ -835,7 +835,7 @@ fn _inst_named(cs: inout C, q: string, n: string, targs: [ast.Ty], enc: [string]
         return "?"                     # a recursive reference to the template
     if not concrete:
         kind := "struct"
-        if d.kind == "enum":
+        if cs.tds[ti].kind == "enum":
             kind = "enum"
         _cperr(&cs, "generic " + kind + " '" + n + "': its type arguments must be EITHER exactly its own parameters, in order (a recursive reference), OR all concrete -- a list mixing the two is not supported, even where each argument alone would be legal")
         return "?"
@@ -884,50 +884,50 @@ fn _has_param(t: ast.Ty) -> bool:
 # The 1024 cap is src/tychoc.c's own, and it is what stops a recursive generic
 # at a growing type from running this pass forever rather than reporting.
 fn _inst_agg(cs: inout C, ti: int, enc: [string]) -> string:
-    d := cs.tds[ti]
-    if len(enc) != len(d.tps):
+    # read in place: this is a whole declaration, and only fields are wanted
+    if len(enc) != len(cs.tds[ti].tps):
         return "?"
     for e in enc:
         if not known(e):
             cs.uses6b = true
             return "?"                 # nothing to stamp yet
-    key := _inst_key(d.name, enc)
+    key := _inst_key(cs.tds[ti].name, enc)
     if key in cs.tindex:
         return "@" + key
     if len(cs.tds) > 1024 + cs.ntd0:
         _cperr(&cs, "too many generic instantiations (> 1024) -- a recursive generic at a growing type?")
         return "?"
     b := []string: string
-    for i := 0; i < len(d.tps); i += 1:
-        b[d.tps[i]] = enc[i]
+    for i := 0; i < len(cs.tds[ti].tps); i += 1:
+        b[cs.tds[ti].tps[i]] = enc[i]
     cs.tindex[key] = len(cs.tds)
-    push(cs.tds, TDecl(key, d.kind, false, d.fnames, []string, d.file, d.line,
+    push(cs.tds, TDecl(key, cs.tds[ti].kind, false, cs.tds[ti].fnames, []string, cs.tds[ti].file, cs.tds[ti].line,
                        []ast.Ty, []int, []string, ""))
     ni := cs.tindex[key]
     keepb := cs.tbind
     keepp := cs.prefix
     keept := cs.typarams
     cs.tbind = b
-    cs.prefix = d.pfx
+    cs.prefix = cs.tds[ti].pfx
     cs.typarams = []string: bool
-    for nm in d.tps:
+    for nm in cs.tds[ti].tps:
         cs.typarams[nm] = true
     out := []string
     at := 0
-    for v := 0; v < len(d.pcnt); v += 1:
+    for v := 0; v < len(cs.tds[ti].pcnt); v += 1:
         pay := ""
-        for c := 0; c < d.pcnt[v]; c += 1:
-            e := _enc(&cs, d.pats[at])
+        for c := 0; c < cs.tds[ti].pcnt[v]; c += 1:
+            e := _enc(&cs, cs.tds[ti].pats[at])
             at += 1
             if c > 0:
                 pay = pay + "|"
             pay = pay + e
             k := _aff_kind(&cs, e)
             if len(k) > 0:
-                if d.kind == "enum":
-                    _cperr(&cs, "an enum payload cannot be a " + _aff_word(k) + " -- '" + _short(d.name) + "' was instantiated at one")
+                if cs.tds[ti].kind == "enum":
+                    _cperr(&cs, "an enum payload cannot be a " + _aff_word(k) + " -- '" + _short(cs.tds[ti].name) + "' was instantiated at one")
                 else:
-                    _cperr(&cs, "a struct field cannot be a " + _aff_word(k) + " -- '" + _short(d.name) + "' was instantiated at one")
+                    _cperr(&cs, "a struct field cannot be a " + _aff_word(k) + " -- '" + _short(cs.tds[ti].name) + "' was instantiated at one")
         push(out, pay)
     cs.tds[ni].ftypes = out
     cs.tbind = keepb
@@ -955,7 +955,7 @@ fn _short(m: string) -> string:
 # (or payload) pattern against the argument, which is src/tychoc.c's own
 # inference for a struct literal at a generic type.
 fn _inst_ctor(cs: inout C, l: int, ti: int, args: [ast.Expr], at0: int, npay: int) -> string:
-    d := cs.tds[ti]
+    # read in place: this is a whole declaration, and only fields are wanted
     ats := []string
     keep := cs.in_arg
     cs.in_arg = true
@@ -968,22 +968,22 @@ fn _inst_ctor(cs: inout C, l: int, ti: int, args: [ast.Expr], at0: int, npay: in
     ktp := cs.typarams
     kp := cs.prefix
     cs.typarams = []string: bool
-    for nm in d.tps:
+    for nm in cs.tds[ti].tps:
         cs.typarams[nm] = true
-    cs.prefix = d.pfx
+    cs.prefix = cs.tds[ti].pfx
     b := []string: string
     ok := true
     for i := 0; i < npay; i += 1:
-        if not _unify(&cs, d.pats[at0 + i], ats[i], &b):
+        if not _unify(&cs, cs.tds[ti].pats[at0 + i], ats[i], &b):
             ok = false
     cs.typarams = ktp
     cs.prefix = kp
     cs.line = l
     if not ok:
-        _cerr(&cs, "argument " + str(1) + " of '" + _short(d.name) + "' does not fit the field pattern")
+        _cerr(&cs, "argument " + str(1) + " of '" + _short(cs.tds[ti].name) + "' does not fit the field pattern")
         return "?"
     enc := []string
-    for nm in d.tps:
+    for nm in cs.tds[ti].tps:
         if nm in b:
             push(enc, b[nm])
         else:
@@ -1135,14 +1135,14 @@ fn _is_heap(cs: inout C, t: string) -> bool:
     i := _tdecl(&cs, b)
     if i < 0:
         return false
-    d := cs.tds[i]
-    if d.kind == "enum":
-        for pay in d.ftypes:
+    # read in place: this is a whole declaration, and only fields are wanted
+    if cs.tds[i].kind == "enum":
+        for pay in cs.tds[i].ftypes:
             if len(pay) > 0:
                 return true
         return false
-    if d.kind == "struct":
-        for ft in d.ftypes:
+    if cs.tds[i].kind == "struct":
+        for ft in cs.tds[i].ftypes:
             if _is_heap(&cs, ft):
                 return true
     return false

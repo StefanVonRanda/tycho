@@ -1401,34 +1401,34 @@ fn _check_args(cs: inout C, name: string, si: int, args: [ast.Expr], line: int):
     cs.line = line
 
 fn _check_fields(cs: inout C, ti: int, args: [ast.Expr], line: int) -> string:
-    d := cs.tds[ti]
-    if _any_named(args) or d.generic:
+    # read in place: this is a whole declaration, and only fields are wanted
+    if _any_named(args) or cs.tds[ti].generic:
         keep := cs.in_arg
         cs.in_arg = true
         for a in args:
             _ex(&cs, a)
         cs.in_arg = keep
-        if d.generic:
+        if cs.tds[ti].generic:
             return "?"
-        return "@" + d.name
+        return "@" + cs.tds[ti].name
     keep2 := cs.in_arg
     cs.in_arg = true
-    if len(args) != len(d.fnames):
+    if len(args) != len(cs.tds[ti].fnames):
         for a in args:
             _ex(&cs, a)
         cs.in_arg = keep2
         cs.line = line
-        _cerr(&cs, d.name + " takes " + str(len(d.fnames)) + " field value(s), got " + str(len(args)))
-        return "@" + d.name
+        _cerr(&cs, cs.tds[ti].name + " takes " + str(len(cs.tds[ti].fnames)) + " field value(s), got " + str(len(args)))
+        return "@" + cs.tds[ti].name
     for i := 0; i < len(args); i += 1:
-        at := _ex2(&cs, args[i], d.ftypes[i])
+        at := _ex2(&cs, args[i], cs.tds[ti].ftypes[i])
         cs.line = line
-        if not compat(at, d.ftypes[i]):
-            _cerr(&cs, "field '" + d.fnames[i] + "' of " + d.name + " is " + d.ftypes[i] + ", got " + at)
+        if not compat(at, cs.tds[ti].ftypes[i]):
+            _cerr(&cs, "field '" + cs.tds[ti].fnames[i] + "' of " + cs.tds[ti].name + " is " + cs.tds[ti].ftypes[i] + ", got " + at)
         cs.line = ast.line_of(args[i])
     cs.in_arg = keep2
     cs.line = line
-    return "@" + d.name
+    return "@" + cs.tds[ti].name
 
 fn _check_variant(cs: inout C, m: string, args: [ast.Expr], line: int) -> string:
     owner := cs.vowner[m]
@@ -2382,10 +2382,10 @@ fn _contains(cs: inout C, t: string, target: string, seen: [string: bool]) -> bo
         return false
     s2 := seen
     s2[t] = true
-    d := cs.tds[i]
-    if d.kind != "struct" and d.kind != "newtype":
+    # read in place: this is a whole declaration, and only fields are wanted
+    if cs.tds[i].kind != "struct" and cs.tds[i].kind != "newtype":
         return false
-    for ft in d.ftypes:
+    for ft in cs.tds[i].ftypes:
         if _contains(&cs, ft, target, s2):
             return true
     return false
@@ -2393,15 +2393,15 @@ fn _contains(cs: inout C, t: string, target: string, seen: [string: bool]) -> bo
 fn _infinite_check(cs: inout C):
     best := -1
     for i := 0; i < len(cs.tds); i += 1:
-        d := cs.tds[i]
-        if d.kind != "struct" or d.generic:
+        # read in place: this is a whole declaration, and only fields are wanted
+        if cs.tds[i].kind != "struct" or cs.tds[i].generic:
             continue
-        for ft in d.ftypes:
-            if _contains(&cs, ft, "@" + d.name, []string: bool):
+        for ft in cs.tds[i].ftypes:
+            if _contains(&cs, ft, "@" + cs.tds[i].name, []string: bool):
                 # A MUTUAL cycle makes every struct in it infinite; src/tychoc.c
                 # dies on the declaration that CLOSES the cycle, which is the
                 # last one read (tests/reject/struct_mutual_by_value.ty:6).
-                if best < 0 or d.line > cs.tds[best].line:
+                if best < 0 or cs.tds[i].line > cs.tds[best].line:
                     best = i
                 break
     if best >= 0:
