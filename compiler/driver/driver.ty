@@ -157,6 +157,16 @@ fn build(src_path: string, runtime_path: string, base: string, argv0: string):
     c := compile_str(p, read_runtime(runtime_path, argv0))
     if not io.write(c_path, c):
         die("tychoc1: cannot write '" + c_path + "'")
+    # -O2 and -fno-semantic-interposition were measured here and neither pays:
+    # compiling compiler/main.ty is 1181.3e6 Ir at -O2 against 1051.3e6 at -O3,
+    # and -fno-semantic-interposition moves nothing (one static TU, nothing to
+    # interpose). `--param inline-unit-growth=150` DOES -- 1051.3e6 -> 864.2e6 Ir
+    # and a wall ratio vs ./tychoc of 1.134 -> 0.984 -- and is deliberately NOT
+    # taken: this line builds EVERY Tycho program, and bench/transient is 3-5%
+    # SLOWER under it at every growth value tested (+1.3% at 40, +4.3% at 60,
+    # +4.5% at 100), the regression scaling with the budget. `sh bench/run.sh`
+    # cannot see any of this -- it compiles with its own `cc -O2 -std=c11` line
+    # and never reads this one, so it is green for a flag change either way.
     argv := ["cc", "-O3", "-fwrapv", "-pthread"]
     root := types.corelib_root(argv0)
     if len(root) > 0:

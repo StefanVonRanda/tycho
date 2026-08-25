@@ -702,6 +702,30 @@ static void *arena_alloc_slow(Arena *a, size_t n) {
  * are exactly the conditions under which the slow path would have bumped
  * anyway: a head block with room, no free list of either kind on this arena,
  * and stats off. */
+/* The caller below has already rounded n, already proven this size class has
+ * nothing to recycle and already tested the stats flag -- so when its fast path
+ * fails, the ONLY reason left is a head block that is absent or full. Re-entering
+ * the full routine repeats all of that: round8, the size class, both free lists
+ * and two stats branches were 8.6e6 of arena_alloc_slow's 31.1e6 Ir, measured.
+ * Inlining the refill instead was tried in 983a5fad and LOST (+38.1e6), because
+ * arena_alloc_i is inlined at ~30M sites and stops fitting; this keeps the body
+ * the same size and only re-points its tail call. */
+static void *arena_alloc_refill(Arena *a, size_t n) {
+    size_t k = n >> 3;
+    int reusable = (k < TYCHO_NBKT) ? (a->bkt != NULL && a->bkt[k] != NULL)
+                                    : (a->freelist != NULL);
+    if (__builtin_expect(!reusable && !g_arena_stats, 1)) {
+        size_t cap = n > a->blocksz ? n : a->blocksz;
+        HBlock *b = block_get(cap);
+        b->next = a->head;
+        a->head = b;
+        void *p = (char *)(a->head + 1) + a->head->off;
+        a->head->off += n;
+        return p;
+    }
+    return arena_alloc_slow(a, n);
+}
+
 static inline void *arena_alloc_i(Arena *a, size_t n) {
     n = (n + 7u) & ~(size_t)7u;
     HBlock *h = a->head;
@@ -718,7 +742,7 @@ static inline void *arena_alloc_i(Arena *a, size_t n) {
         h->off += n;
         return p;
     }
-    return arena_alloc_slow(a, n);
+    return arena_alloc_refill(a, n);
 }
 
 /* Kept as a real symbol: a corelib shim is compiled standalone by make
@@ -1303,8 +1327,7 @@ char *tycho_str_copy(Arena *a, const char *s) {
         char *base = (char *)arena_alloc(a, 16u);   /* round8(8 + n + 1), constant for n <= 7 */
         *(tycho_int *)base = n;
         char *r = base + 8;
-        uint64_t w; memcpy(&w, s, 8); memcpy(r, &w, 8);
-        r[n] = '\0';
+        uint64_t w; memcpy(&w, s, 8); memcpy(r, &w, 8);   /* n <= 7, so the source's own terminator at s[n] rides along */
         return r;
     }
     char *r = tycho_str_alloc(a, n);
