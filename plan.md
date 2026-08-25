@@ -1850,8 +1850,28 @@ WHERE IT STANDS on compiler/main.ty (tychoc 89-91 ms alongside):
     1.26x  113 ms   for-in snapshots only a collection the body WRITES (5a8df4e7)
     1.24x  110 ms   the scope-elision test scans once (5d4122c1)
     1.21x  108 ms   the parser compares a token's kind in place (a6ecc1ba)
+    1.19x  106 ms   string equality checks one byte first (ad604f7a)
 
-    instructions   2.820e9 -> 1.018e9
+    instructions   2.820e9 -> 1.016e9
+
+WHAT IS LEFT, and why the two clean ways out are both measured losses: half the
+remaining tycho_str_copy calls are inside AST deep copies, and those happen at
+the RETURN boundary -- the parser handing a node up through its recursion. The
+two ways to remove them are promotion (build the local in the caller's arena;
+removes ZERO copies here, the rule never fires on this code shape) and adoption
+(give the parent the scope's blocks; green and -4% instructions, +12% WALL).
+Both are written up below with their numbers.
+
+Also ruled out this round, each measured:
+  - inlining arena_free's empty-arena case (1.87M of 2.75M arenas are freed
+    empty) -- 1.016e9 -> 1.086e9 and 106 -> 111 ms. The call-site bloat costs
+    more than the call.
+  - raising the emitted C's optimisation level: it is ALREADY -O3
+    (driver.ty@build) while ./tychoc itself is built -O2, so tychoc1 is the more
+    aggressively compiled of the two. There is no free win there.
+  - a cheaper map hash (siphash13 is 2.9%): rejected rather than measured. The
+    seed is randomised per process on purpose and a weaker hash reopens HashDoS
+    for 2%.
 
 THE ONE THAT MATTERED: for-in was snapshotting its collection defensively, so
 every AST walker in every pass deep-copied the child list AND every node under
