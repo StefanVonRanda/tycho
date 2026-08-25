@@ -4306,7 +4306,12 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             # already a private temporary in this arena, so there is nothing for
             # anyone else to mutate and nothing to snapshot.
             cc2 := cc
-            if _place(c[0]):
+            # The snapshot is what lets the body push to the array it is walking
+            # without the walk following. A body that never writes the collection
+            # needs none -- and every AST walker in this compiler is that shape,
+            # `for e in k:` over a child list, which was deep-copying the list and
+            # every node under it at each level. Same test as the match arm's.
+            if _place(c[0]) and _mut_b(b, _rootname(c[0])):
                 cc2 = _copy(&cs, cc, ct, "&_scope")
             out := ind + "{\n" + ind + "    " + _cty(&cs, "[" + et + "]") + " " + fc +
                 " = " + cc2 + ";\n" +
