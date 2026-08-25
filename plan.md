@@ -1843,8 +1843,9 @@ WHERE IT STANDS on compiler/main.ty (tychoc 89-91 ms alongside):
     2.4x   217 ms   push keeps a temporary already in the array's arena
     2.2x   200 ms   destructuring a call result, for-in snapshot, size-class guard
     2.0x   182 ms   arm-mutation test narrowed (05d0a710), after 8fc08efc
+    1.95x  172 ms   string equality settles on the lengths (aa5d0909)
 
-    instructions   2.820e9 -> 1.765e9
+    instructions   2.820e9 -> 1.642e9
 
 THE RULE that did most of it: a value already in the destination arena is stored
 rather than copied, when nothing can write through it -- strings and enums are
@@ -1853,10 +1854,18 @@ since the call is handed cs.arena as its _parent. Arrays and maps are excluded
 (push and element assignment write in place), and so is a place rooted in a live
 string ACCUMULATOR (tests/value_semantics.ty).
 
-PROFILE NOW (exclusive): memcpy 11.8%, tycho_str_copy 11.5%,
-tycho_copy_E_ast__Expr 8.0%, the Expr-array copy 7.4%, arena_alloc_slow 6.9%,
-arena_alloc_i 6.9%. Still roughly a third in copying. The array copies are what
-is left, and arrays cannot use the sharing rule -- that needs move-on-last-use.
+PROFILE NOW (exclusive): tycho_str_copy 13.1%, memcpy 11.7%, arena_alloc_i
+7.4%, tycho_copy_E_ast__Expr 7.0%, the Expr-array copy 6.7%, memcmp 5.6%.
+
+WHERE THE REST OF THE COPYING IS, traced through the call graph rather than
+guessed: 4.6M of the 7.1M string copies are inside tycho_copy_E_ast__Expr; those
+Expr copies come from tycho_arr_K0_copy; and 687k of THOSE come from
+tycho_copy_E_ast__Stmt, which comes from tycho_arr_K3_copy -- copying an
+[ast.Stmt] BODY. So the chain is: a body array is retained (parse builds `body`
+then wraps it in ast.IfS), arrays are mutable so the sharing rule cannot touch
+it, and the copy takes every statement, every expression and every string under
+it. Eliding that needs the source array to be built in the destination arena,
+which is the escape analysis -- measured four times, a loss every time.
 
 RULED OUT, each measured against the baseline:
   - the full return-only escape analysis (src/tychoc.c@collect_ret_alias) --
