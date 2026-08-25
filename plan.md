@@ -1852,6 +1852,7 @@ WHERE IT STANDS on compiler/main.ty (tychoc 89-91 ms alongside):
     1.21x  108 ms   the parser compares a token's kind in place (a6ecc1ba)
     1.19x  106 ms   string equality checks one byte first (ad604f7a)
     1.18x  106 ms   the hottest token sites build their Tok inline (cc3a9d03)
+    1.18x  105 ms   an ENUM out of an inout parameter returns uncopied (d99bc633)
 
 A SHAPE WORTH KNOWING, since three of the wins above are instances of it:
 passing a value through a small helper LOSES ITS ARENA IDENTITY and costs a
@@ -1868,7 +1869,9 @@ and const_local fails with `tycho: out of memory`, not a wrong value: the shared
 string is a FIELD of the inout struct that its owner appends to IN PLACE, and
 the in-place append grows a buffer the returned value still aliases.
 _acc_rooted cannot see that -- it tests the root LOCAL, and here the accumulator
-is cs.ccode[i]. Reverted.
+is cs.ccode[i]. Shipped for ENUMS only (d99bc633), which have no in-place write
+at all: green everywhere, instructions flat because it fires rarely, 105 ms
+against 106 over two runs of eleven each way.
 
     instructions   2.820e9 -> 1.016e9
 
