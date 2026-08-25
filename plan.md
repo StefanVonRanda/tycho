@@ -1949,6 +1949,16 @@ because promoting arrays reddened every pkg_* fixture in an earlier attempt.
 That is where a ninth attempt should start, and it should confirm the root by
 call count BEFORE writing any analysis.
 
+AN ARENA'S MEMORY IS NOT FRAME-SCOPED, and that is worth knowing before anyone
+tries to make it so. Compiling compiler/main.ty asks the pool for 842k blocks to
+bump 285 MiB -- about 350 bytes per block acquired -- so most arenas take a
+64 KiB block, use a few hundred bytes and hand it back. Giving Arena a 256-byte
+inline buffer (on the C stack for a scope arena) removes almost all of that
+traffic and reddens 3 fixtures with ASan reporting STACK-USE-AFTER-RETURN. The
+reason is deliberate: to_under aliases its argument, ./tychoc does too and
+tests/newtype_agg records that answer, so a value can legitimately outlive the
+frame whose arena holds it. Arena storage must stay off the stack.
+
 ALSO MEASURED, both negative:
   - returning a PARAMETER-rooted place without copying, on the theory that the
     per-statement scratch arena is what makes a parameter's lifetime unknowable.
