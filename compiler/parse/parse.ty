@@ -66,8 +66,7 @@ fn _iskw(toks: [lex.Tok], i: int, s: string) -> bool:
     return toks[j].kind == "kw" and toks[j].text == s
 
 fn _isid(toks: [lex.Tok], i: int, s: string) -> bool:
-    t := _at(toks, i)
-    return t.kind == "ident" and t.text == s
+    return _k(toks, i) == "ident" and _x(toks, i) == s
 
 # A parse error reads like every other diagnostic: `file:line: error: msg` with
 # the offending source line beneath it. The path and the source ride on the
@@ -122,8 +121,11 @@ fn _diec(t: lex.Tok, msg: string):
     die(_where(t, msg, true))
 
 fn _expect(toks: [lex.Tok], i: int, kind: string, text: string) -> int:
-    t := _at(toks, i)
-    if t.kind != kind or (len(text) > 0 and t.text != text):
+    # The whole token is only needed to REPORT. Reading the two fields directly
+    # keeps the accepting path -- which is every token the parser consumes --
+    # from copying a Tok and all four of its strings.
+    if _k(toks, i) != kind or (len(text) > 0 and _x(toks, i) != text):
+        t := _at(toks, i)
         if len(text) > 0:
             _fail(t, "'" + text + "'")
         _fail(t, kind)
