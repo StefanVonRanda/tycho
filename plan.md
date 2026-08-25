@@ -1847,8 +1847,16 @@ WHERE IT STANDS on compiler/main.ty (tychoc 89-91 ms alongside):
     1.87x  166 ms   short string copies move inline (23e2d69e)
     1.84x  164 ms   the short move shared by concat/substr (e1b2809b)
     1.81x  161 ms   the lexer stamps a token's file at creation (94add001)
+    1.26x  113 ms   for-in snapshots only a collection the body WRITES (5a8df4e7)
+    1.24x  110 ms   the scope-elision test scans once (5d4122c1)
+    1.21x  108 ms   the parser compares a token's kind in place (a6ecc1ba)
 
-    instructions   2.820e9 -> 1.569e9
+    instructions   2.820e9 -> 1.018e9
+
+THE ONE THAT MATTERED: for-in was snapshotting its collection defensively, so
+every AST walker in every pass deep-copied the child list AND every node under
+it on entry. The snapshot only exists so a body can push to the array it walks;
+the same mutation test the match arm already used decides it. -32% on its own.
 
 THE RULE that did most of it: a value already in the destination arena is stored
 rather than copied, when nothing can write through it -- strings and enums are
@@ -1902,6 +1910,22 @@ breaks.
     promotion introduces aliasing somewhere the "every read is inside a return"
     rule believes it has excluded. Worth resuming from that fixture: it is small
     and it is the only non-package one.
+
+    SIXTH attempt, and the one that explains all the others. Counting the calls
+    it removes: tycho_str_copy 4,398,272 without it and 4,473,320 WITH it;
+    tycho_copy_E_ast__Expr 578,719 -> 586,274. It removes NOTHING -- the counts
+    go up, by the analysis's own allocations. The rule never fires on this
+    codebase, and the shape says why:
+
+        l, i := mul(toks, i)
+        l = ast.Binop(ln, op, [l, r])
+        return (l, i)
+
+    `l` is read in the Binop construction, which is not inside a return, so
+    "every read is inside a return" excludes exactly the pattern the whole idea
+    was aimed at. Dropping the census entirely (promote any local a return
+    mentions) is still +1.4% AND reddens tests/calc. Six measurements: this line
+    is closed, and it is closed on MECHANISM, not on cost.
 
     FOURTH attempt, after 05d0a710 made every AST walker cheap -- the reason
     the earlier ones were assumed to have failed. Still a loss: 1.765e9 ->
