@@ -1130,11 +1130,35 @@ static char *tycho_str_alloc(Arena *a, tycho_int n) {
     return data;
 }
 
+/* The short move every string builder here uses: at these sizes -- and a
+ * compiler's pieces are almost all under 16 bytes -- the call into glibc's AVX
+ * memcpy costs more than the move. The 8- and 4-byte forms OVERLAP their halves
+ * rather than reading past the end, so nothing outside [s, s+n) is touched. */
+static inline void tycho_mcpy(char *d, const char *s, tycho_int n) {
+    if (n >= 8) {
+        if (n <= 16) {
+            uint64_t h, t;
+            memcpy(&h, s, 8); memcpy(&t, s + n - 8, 8);
+            memcpy(d, &h, 8); memcpy(d + n - 8, &t, 8);
+            return;
+        }
+    } else if (n >= 4) {
+        uint32_t h, t;
+        memcpy(&h, s, 4); memcpy(&t, s + n - 4, 4);
+        memcpy(d, &h, 4); memcpy(d + n - 4, &t, 4);
+        return;
+    } else {
+        for (tycho_int i = 0; i < n; i++) d[i] = s[i];
+        return;
+    }
+    memcpy(d, s, (size_t)n);
+}
+
 char *tycho_str_concat(Arena *a, const char *x, const char *y) {
     tycho_int lx = ((const tycho_int *)x)[-1], ly = ((const tycho_int *)y)[-1];   /* header lengths: byte-safe (interior NUL preserved) */
     char *r = tycho_str_alloc(a, lx + ly);
-    memcpy(r, x, (size_t)lx);
-    memcpy(r + lx, y, (size_t)ly);
+    tycho_mcpy(r, x, lx);
+    tycho_mcpy(r + lx, y, ly);
     return r;
 }
 
@@ -1146,25 +1170,25 @@ char *tycho_str_concat(Arena *a, const char *x, const char *y) {
 char *tycho_str_concat3(Arena *a, const char *s0, const char *s1, const char *s2) {
     tycho_int n0 = TYCHO_SLEN(s0), n1 = TYCHO_SLEN(s1), n2 = TYCHO_SLEN(s2);
     char *r = tycho_str_alloc(a, n0 + n1 + n2), *p = r;
-    memcpy(p, s0, (size_t)n0); p += n0; memcpy(p, s1, (size_t)n1); p += n1; memcpy(p, s2, (size_t)n2);
+    tycho_mcpy(p, s0, n0); p += n0; tycho_mcpy(p, s1, n1); p += n1; tycho_mcpy(p, s2, n2);
     return r;
 }
 char *tycho_str_concat4(Arena *a, const char *s0, const char *s1, const char *s2, const char *s3) {
     tycho_int n0 = TYCHO_SLEN(s0), n1 = TYCHO_SLEN(s1), n2 = TYCHO_SLEN(s2), n3 = TYCHO_SLEN(s3);
     char *r = tycho_str_alloc(a, n0 + n1 + n2 + n3), *p = r;
-    memcpy(p, s0, (size_t)n0); p += n0; memcpy(p, s1, (size_t)n1); p += n1; memcpy(p, s2, (size_t)n2); p += n2; memcpy(p, s3, (size_t)n3);
+    tycho_mcpy(p, s0, n0); p += n0; tycho_mcpy(p, s1, n1); p += n1; tycho_mcpy(p, s2, n2); p += n2; tycho_mcpy(p, s3, n3);
     return r;
 }
 char *tycho_str_concat5(Arena *a, const char *s0, const char *s1, const char *s2, const char *s3, const char *s4) {
     tycho_int n0 = TYCHO_SLEN(s0), n1 = TYCHO_SLEN(s1), n2 = TYCHO_SLEN(s2), n3 = TYCHO_SLEN(s3), n4 = TYCHO_SLEN(s4);
     char *r = tycho_str_alloc(a, n0 + n1 + n2 + n3 + n4), *p = r;
-    memcpy(p, s0, (size_t)n0); p += n0; memcpy(p, s1, (size_t)n1); p += n1; memcpy(p, s2, (size_t)n2); p += n2; memcpy(p, s3, (size_t)n3); p += n3; memcpy(p, s4, (size_t)n4);
+    tycho_mcpy(p, s0, n0); p += n0; tycho_mcpy(p, s1, n1); p += n1; tycho_mcpy(p, s2, n2); p += n2; tycho_mcpy(p, s3, n3); p += n3; tycho_mcpy(p, s4, n4);
     return r;
 }
 char *tycho_str_concat6(Arena *a, const char *s0, const char *s1, const char *s2, const char *s3, const char *s4, const char *s5) {
     tycho_int n0 = TYCHO_SLEN(s0), n1 = TYCHO_SLEN(s1), n2 = TYCHO_SLEN(s2), n3 = TYCHO_SLEN(s3), n4 = TYCHO_SLEN(s4), n5 = TYCHO_SLEN(s5);
     char *r = tycho_str_alloc(a, n0 + n1 + n2 + n3 + n4 + n5), *p = r;
-    memcpy(p, s0, (size_t)n0); p += n0; memcpy(p, s1, (size_t)n1); p += n1; memcpy(p, s2, (size_t)n2); p += n2; memcpy(p, s3, (size_t)n3); p += n3; memcpy(p, s4, (size_t)n4); p += n4; memcpy(p, s5, (size_t)n5);
+    tycho_mcpy(p, s0, n0); p += n0; tycho_mcpy(p, s1, n1); p += n1; tycho_mcpy(p, s2, n2); p += n2; tycho_mcpy(p, s3, n3); p += n3; tycho_mcpy(p, s4, n4); p += n4; tycho_mcpy(p, s5, n5);
     return r;
 }
 
@@ -1235,23 +1259,7 @@ void tycho_str_append_char(Arena *a, char **s, tycho_int *len, tycho_int *cap, t
 char *tycho_str_copy(Arena *a, const char *s) {
     tycho_int n = ((const tycho_int *)s)[-1];   /* header length: a value-semantic copy of a Tycho string preserves every byte */
     char *r = tycho_str_alloc(a, n);
-    if (n >= 8) {
-        if (n <= 16) {
-            uint64_t h, t;
-            memcpy(&h, s, 8); memcpy(&t, s + n - 8, 8);
-            memcpy(r, &h, 8); memcpy(r + n - 8, &t, 8);
-            return r;
-        }
-    } else if (n >= 4) {
-        uint32_t h, t;
-        memcpy(&h, s, 4); memcpy(&t, s + n - 4, 4);
-        memcpy(r, &h, 4); memcpy(r + n - 4, &t, 4);
-        return r;
-    } else {
-        for (tycho_int i = 0; i < n; i++) r[i] = s[i];
-        return r;
-    }
-    memcpy(r, s, (size_t)n);
+    tycho_mcpy(r, s, n);
     return r;
 }
 
@@ -1352,7 +1360,7 @@ char *tycho_str_substr(Arena *a, const char *s, tycho_int start, tycho_int end) 
     if (end < start) end = start;
     tycho_int m = end - start;
     char *r = tycho_str_alloc(a, m);
-    memcpy(r, s + start, (size_t)m);
+    tycho_mcpy(r, s + start, m);
     return r;
 }
 
