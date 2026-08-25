@@ -41,6 +41,7 @@ struct FD:
     pnames: [string]
     ptypes: [string]
     pinout: [bool]
+    psink: [bool]                      # src/tychoc.c@g_param_sink -- a `sink` (owned) parameter
     pvar: bool
     ret: string
     psize: [string]                    # the `$N` this parameter's `[$N]T` names
@@ -995,6 +996,7 @@ fn _inst_fn(cs: inout C, n: string, targs: [string]) -> int:
     pn := []string
     pt := []string
     pio := []bool
+    psk := []bool
     psz := []string
     pv := false
     for prm in cs.gf[gi].params:
@@ -1007,11 +1009,12 @@ fn _inst_fn(cs: inout C, n: string, targs: [string]) -> int:
         push(pn, prm.name)
         push(pt, one)
         push(pio, prm.is_inout)
+        push(psk, prm.is_sink)
         push(psz, _sizep_of(prm.ty))
     rt := _tyo(&cs, cs.gf[gi].ret)
     cs.cf = save
     _unbind(&cs, m)
-    push(cs.fds, FD(mang, pn, pt, pio, pv, rt, psz))
+    push(cs.fds, FD(mang, pn, pt, pio, psk, pv, rt, psz))
     cs.pendk[ii] = len(cs.fds) - 1
     return len(cs.fds) - 1
 
@@ -1970,7 +1973,7 @@ fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
                 xc, xt := _ex(&cs, x)
                 cs.arena = sar8
                 cs.want = swt
-                if _place(x) and _heap(&cs, xt):
+                if _place(x) and _heap(&cs, xt) and not _canmove(&cs, x, cs.arena):
                     xc = _copy(&cs, xc, xt, cs.arena)
                 push(ecs, xc)
                 push(ets, xt)
@@ -2691,7 +2694,8 @@ fn _variant(cs: inout C, ei: int, vn: string, args: [ast.Expr]) -> (string, stri
         cs.want = sw
         if pay[i] == "float" and at == "int":
             ac = "(double)(" + ac + ")"
-        if _place(args[i]) and _heap(&cs, pay[i]) and not _shares(&cs, args[i], pay[i], cs.arena):
+        if _place(args[i]) and _heap(&cs, pay[i]) and not _shares(&cs, args[i], pay[i], cs.arena) and
+                not _canmove(&cs, args[i], cs.arena):
             ac = _copy(&cs, ac, pay[i], cs.arena)
         out = out + v + "->u." + vn + ".f" + str(i) + " = " + ac + "; "
     return (out + v + "; })", "E~" + en)
@@ -2767,7 +2771,8 @@ fn _arrlit(cs: inout C, k: [ast.Expr]) -> (string, string):
             at2 = at3
         if at2 != et and not _heap(&cs, et):
             ac = "((" + _cty(&cs, et) + ")(" + ac + "))"
-        if _place(k[i]) and _heap(&cs, et) and not _shares(&cs, k[i], et, cs.arena):
+        if _place(k[i]) and _heap(&cs, et) and not _shares(&cs, k[i], et, cs.arena) and
+                not _canmove(&cs, k[i], cs.arena):
             ac = _copy(&cs, ac, et, cs.arena)
         out = out + v + ".data[" + str(i) + "] = " + ac + "; "
     cs.want = sw
@@ -3136,7 +3141,8 @@ fn _call(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], args: [ast.Ex
             cs.want = ft
             ac, at := _ex_scope(&cs, args[i])
             cs.want = sw
-            if _place(args[i]) and _heap(&cs, ft) and not _shares(&cs, args[i], ft, cs.arena):
+            if _place(args[i]) and _heap(&cs, ft) and not _shares(&cs, args[i], ft, cs.arena) and
+                    not _canmove(&cs, args[i], cs.arena):
                 ac = _copy(&cs, ac, ft, cs.arena)
             if i > 0:
                 out = out + ", "
@@ -3206,7 +3212,12 @@ fn _call(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], args: [ast.Ex
             # whatever RETAINS it copies at the retention point. Copying strings
             # here deep-copied core:json's 3.5 MB document on every one of
             # 50,000 parse_value calls -- 5.7 GiB live, and the benchmark died.
-            if false:
+            # ...but a `sink` parameter is the exception: the callee OWNS it and
+            # may mutate it in place, so it must NOT alias the caller's value
+            # (src/tychoc.c@sink_arg_into). A place that cannot be adopted is
+            # copied; a fresh value already owns its bytes.
+            if cs.fds[fi].psink[i] and _heap(&cs, pt) and _place(args[i]) and
+                    not _canmove_sink(&cs, args[i]):
                 ac = _copy(&cs, ac, pt, "&_scope")
             out2 = out2 + ", " + ac
         if xtn:
@@ -3340,7 +3351,7 @@ fn _pack(cs: inout C, et: string, args: [ast.Expr], from: int) -> string:
         cs.want = sw
         if et == "float" and at == "int":
             ac = "(double)(" + ac + ")"
-        if _place(args[i]) and _heap(&cs, et):
+        if _place(args[i]) and _heap(&cs, et) and not _canmove(&cs, args[i], "&_scope"):
             ac = _copy(&cs, ac, et, "&_scope")
         out = out + v + ".data[" + str(i - from) + "] = " + ac + "; "
     return out + v + ".len = " + str(n) + "LL; " + v + "; })"
@@ -3799,6 +3810,29 @@ fn _canmove(cs: inout C, e: ast.Expr, owner: string) -> bool:
                 return false          # a parameter borrows the caller's buffer
             if cs.vown[i] != owner:
                 return false
+            return _creads_b(cs.pbody, n) == 1
+    return false
+
+# src/tychoc.c@can_move_into_sink -- move-on-last-use minus the same-arena
+# requirement. A `sink` parameter is CONSUMED by the callee, which owns and may
+# mutate it, so the argument must be independent of the caller. A tracked local
+# read exactly once outside any loop can be handed off instead: its arena
+# strictly encloses the per-call argument scratch, so the buffer outlives the
+# call, and the one read is its last on every path. Anything else -- a param
+# (it borrows the caller's buffer), a field or element (no part moves out of a
+# value), a read inside a loop -- copies. src/tychoc.c's four die arms are not
+# repeated here: compiler/types/zsema.ty rejects those before emission.
+fn _canmove_sink(cs: inout C, e: ast.Expr) -> bool:
+    if cs.loopdepth != 0:
+        return false
+    n := ""
+    match e:
+        ast.Name(l, nm): n = nm
+        _: return false
+    for i := len(cs.vnames) - 1; i >= 0; i -= 1:
+        if cs.vnames[i] == n:
+            if i < cs.fnbase:
+                return false          # a parameter borrows the caller's buffer
             return _creads_b(cs.pbody, n) == 1
     return false
 
@@ -5344,6 +5378,7 @@ fn _collect2(cs: inout C, u: ast.Unit):
         pn := []string
         pt := []string
         pio := []bool
+        psk := []bool
         psz := []string
         pv := false
         for pp in f.params:
@@ -5356,11 +5391,12 @@ fn _collect2(cs: inout C, u: ast.Unit):
             push(pn, pp.name)
             push(pt, one)
             push(pio, pp.is_inout)
+            push(psk, pp.is_sink)
             push(psz, _sizep_of(pp.ty))
         nmf := p + f.name
         if f.is_extern:
             nmf = f.name
-        push(cs.fds, FD(nmf, pn, pt, pio, pv, _tyo(&cs, f.ret), psz))
+        push(cs.fds, FD(nmf, pn, pt, pio, psk, pv, _tyo(&cs, f.ret), psz))
     for c in u.consts:
         cc, ct := _ex(&cs, c.value)
         push(cs.cnames, p + c.name)
