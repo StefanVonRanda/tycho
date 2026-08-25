@@ -1345,11 +1345,14 @@ fn _walk_args(cs: inout C, args: [ast.Expr]):
 # type, and the two `&` rules. Skipped whole when a variadic or a named argument
 # is in play -- `?` is the answer to anything this pass cannot ground.
 fn _check_args(cs: inout C, name: string, si: int, args: [ast.Expr], line: int):
-    s := cs.sg[si]
-    _alias_check(&cs, name, s, args, line)
-    _sink_check(&cs, name, s, args, line)
+    # NOT `s := cs.sg[si]`: an FSig carries the generic TEMPLATE's body, so that
+    # local copied a whole function body 4,217 times in a self-compile. The two
+    # checks below take it as an argument, which is a borrow, and the rest of
+    # this function reads two of its fields.
+    _alias_check(&cs, name, cs.sg[si], args, line)
+    _sink_check(&cs, name, cs.sg[si], args, line)
     variadic := false
-    for f in s.pflags:
+    for f in cs.sg[si].pflags:
         if f == "var":
             variadic = true
     if _any_named(args):
@@ -1359,18 +1362,18 @@ fn _check_args(cs: inout C, name: string, si: int, args: [ast.Expr], line: int):
             _ex(&cs, a)
         cs.in_arg = keep
         return
-    if not variadic and len(args) != len(s.ptypes):
+    if not variadic and len(args) != len(cs.sg[si].ptypes):
         keep2 := cs.in_arg
         cs.in_arg = true
         for a in args:
             _ex(&cs, a)
         cs.in_arg = keep2
         cs.line = line
-        _cerr(&cs, "'" + name + "' takes " + str(len(s.ptypes)) + " argument(s), got " + str(len(args)))
+        _cerr(&cs, "'" + name + "' takes " + str(len(cs.sg[si].ptypes)) + " argument(s), got " + str(len(args)))
         return
     n := len(args)
-    if variadic and len(s.ptypes) - 1 < n:
-        n = len(s.ptypes) - 1
+    if variadic and len(cs.sg[si].ptypes) - 1 < n:
+        n = len(cs.sg[si].ptypes) - 1
         for i := n; i < len(args); i += 1:
             if (args[i] is ast.Spread) and len(args) - n > 1:
                 cs.line = line
@@ -1381,11 +1384,11 @@ fn _check_args(cs: inout C, name: string, si: int, args: [ast.Expr], line: int):
     for i := 0; i < len(args); i += 1:
         want := "?"
         if i < n:
-            want = s.ptypes[i]
+            want = cs.sg[si].ptypes[i]
         at := _ex2(&cs, args[i], want)
         cs.line = line
         if i < n:
-            if s.pflags[i] == "inout":
+            if cs.sg[si].pflags[i] == "inout":
                 if not (args[i] is ast.Addr):
                     _cerr(&cs, "argument " + str(i + 1) + " of '" + name + "' is inout; pass it as '&variable'")
             elif args[i] is ast.Addr:
