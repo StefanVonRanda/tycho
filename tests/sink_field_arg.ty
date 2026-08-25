@@ -1,0 +1,15 @@
+# A `sink` argument taken from a STRUCT FIELD must be adopted by copy, not
+# aliased: emit.ty passed every argument down uncopied, so the callee's write
+# landed in the caller's field and this printed 101. src/tychoc.c@sink_arg_into
+# is the reference.
+struct B:
+    xs: [int]
+
+fn dbl(v: sink [int]):
+    v[0] = 101
+
+fn main():
+    b := B([1, 2])
+    dbl(b.xs)
+    println(str(b.xs[0]))
+    println(str(b.xs[1]))
