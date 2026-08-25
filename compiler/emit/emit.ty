@@ -4173,7 +4173,19 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                                 return ind + "{ Arena _t = arena_new(0); " + out9 +
                                     "arena_free(&_t); }\n"
                     _: pass
-            rc, rt := _rhs(&cs, k[0], t)
+            # The value is built in the TARGET's arena. For an `inout` string
+            # or array parameter that is the caller's arena, not this scope --
+            # `pre = pre + "..."` inside emit@_hoist_legs was allocating the new
+            # string in the callee's _scope and writing the pointer through, so
+            # the caller was left holding freed memory the moment the callee
+            # returned. It reads correctly whenever the freed block still holds
+            # the bytes, which is why it survived: the tree was green by luck,
+            # and any perturbation of emit.ty could expose it.
+            ow4 := _ownerof(&cs, ast.Name(l, n))
+            sa4 := cs.arena
+            cs.arena = ow4
+            rc, rt := _rhs2(&cs, k[0], t, ow4)
+            cs.arena = sa4
             if len(t) == 0:
                 _vset(&cs, n, rt)
             return ind + _vcname(&cs, n) + " = " + rc + ";\n"
