@@ -164,7 +164,7 @@ fn _merge(ld: inout Loader, dir: string, pkgname: string, prefix: string):
         one := read_file(f)
         toks, notes := lex.tokenize_file(one, false, f)
         push(ld.files, File(f, dir, pkgname, prefix, _empty_unit(), one))
-        ld.files[len(ld.files) - 1].unit = parse.unit(toks, notes)
+        parse.unit_into(toks, notes, &ld.files[len(ld.files) - 1].unit)
     hi := len(ld.files)
 
     # Post-order: every imported package is merged before this one, so a symbol

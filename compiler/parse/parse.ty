@@ -2026,17 +2026,11 @@ fn _resync(toks: [lex.Tok], i0: int) -> int:
 fn _empty_fn() -> ast.Fn:
     return ast.Fn("", []ast.Param, []ast.Ty, []string, []string, []ast.Stmt, false, "", "", 0)
 
-fn unit(toks: [lex.Tok], notes: [lex.DNote]) -> ast.Unit:
+# The Unit is written into the CALLER's own. Returning it copied every
+# declaration -- every function body -- out of this scope, and _merge then
+# copied the whole tree again on the way into ld.files.
+fn unit_into(toks: [lex.Tok], notes: [lex.DNote], out: inout ast.Unit):
     ps0 := PS([]string, false)
-    pkg := ""
-    imports := []ast.ImportD
-    fns := []ast.Fn
-    sts := []ast.StructD
-    ens := []ast.EnumD
-    nts := []ast.NewtypeD
-    hds := []ast.HandleD
-    cts := []ast.ConstD
-    sbs := []ast.SubscriptD
     i := 0
     for not _kis(toks, i, lex.K_EOF):
         if _kis(toks, i, lex.K_NEWLINE):
@@ -2044,7 +2038,7 @@ fn unit(toks: [lex.Tok], notes: [lex.DNote]) -> ast.Unit:
             continue
         if _isid(toks, i, "package"):
             p, j := _ident(toks, i + 1, "a package name after `package`")
-            pkg = p
+            out.pkg = p
             i = j
             if _kis(toks, i, lex.K_NEWLINE):
                 i += 1
@@ -2058,14 +2052,14 @@ fn unit(toks: [lex.Tok], notes: [lex.DNote]) -> ast.Unit:
                 i += 1
             if not _kis(toks, i, lex.K_STR):
                 _fail(_at(toks, i), "an import path string")
-            push(imports, ast.ImportD(alias, _x(toks, i), iln))
+            push(out.imports, ast.ImportD(alias, _x(toks, i), iln))
             i += 1
             if _kis(toks, i, lex.K_NEWLINE):
                 i += 1
             continue
         if _isid(toks, i, "extern") and not _isop(toks, i + 1, lex.OP_LPAREN):
             f, j := externfn(toks, i)
-            push(fns, f)
+            push(out.fns, f)
             i = j
             continue
         if _isid(toks, i, "const"):
@@ -2075,41 +2069,41 @@ fn unit(toks: [lex.Tok], notes: [lex.DNote]) -> ast.Unit:
             e := ast.NullLit(0)
             k := _expr_into(toks, i, &e)
             i = _expect(toks, k, lex.K_NEWLINE, "")
-            v := _const_fold(e, cts, ct)
+            v := _const_fold(e, out.consts, ct)
             if not _is_lit(v):
                 _die(ct, "a `const` must be a single scalar literal -- an int, float, string, bool or char. Arrays, maps and struct literals are not allowed, and neither is an expression")
-            push(cts, ast.ConstD(nm, v, ct.line))
+            push(out.consts, ast.ConstD(nm, v, ct.line))
             continue
         if _isid(toks, i, "subscript"):
             s, j := subscriptd(toks, i)
-            push(sbs, s)
+            push(out.subscripts, s)
             i = j
             continue
         if _iskw(toks, i, lex.KW_STRUCT):
             s, j := structd(toks, i)
-            push(sts, s)
+            push(out.structs, s)
             i = j
             continue
         if _iskw(toks, i, lex.KW_ENUM):
             e, j := enumd(toks, i)
-            push(ens, e)
+            push(out.enums, e)
             i = j
             continue
         if _iskw(toks, i, lex.KW_HANDLE):
             h, j := handled(toks, i)
-            push(hds, h)
+            push(out.handles, h)
             i = j
             continue
         if _iskw(toks, i, lex.KW_TYPE):
             n, j := newtyped(toks, i)
-            push(nts, n)
+            push(out.newtypes, n)
             i = j
             continue
-        push(fns, _empty_fn())
-        j := _func_into(&ps0, toks, i, notes, &fns[len(fns) - 1])
+        push(out.fns, _empty_fn())
+        j := _func_into(&ps0, toks, i, notes, &out.fns[len(out.fns) - 1])
         if ps0.failed:
             ps0.failed = false
-            pop(fns)
+            pop(out.fns)
             i = _resync(toks, j)
             continue
         i = j
@@ -2120,4 +2114,10 @@ fn unit(toks: [lex.Tok], notes: [lex.DNote]) -> ast.Unit:
                 msg = msg + "\n"
             msg = msg + e
         die(msg)
-    return ast.Unit(pkg, imports, fns, sts, ens, nts, hds, cts, sbs)
+
+# The by-value form, for the two callers that want a fresh tree.
+fn unit(toks: [lex.Tok], notes: [lex.DNote]) -> ast.Unit:
+    u := ast.Unit("", []ast.ImportD, []ast.Fn, []ast.StructD, []ast.EnumD,
+        []ast.NewtypeD, []ast.HandleD, []ast.ConstD, []ast.SubscriptD)
+    unit_into(toks, notes, &u)
+    return u
