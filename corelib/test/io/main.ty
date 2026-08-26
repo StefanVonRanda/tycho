@@ -459,7 +459,31 @@ fn main():
     rmsf := io.remove(sf)
     rmsd := io.remove(sd)
     println(f"sync_cleanup={fswhy(rmsf)}|{fswhy(rmsd)}")
+    copy_checks()
     nul_checks()
+
+# copy/append_text stream through the shim -- no byte becomes a Tycho value -- so
+# the only way to see them work is on the filesystem. The load-bearing case is
+# copy_miss: `dst` must still hold its old bytes after a copy whose SOURCE was
+# never there, because a caller walking candidate paths would otherwise destroy
+# its own output on the first miss (compiler/driver/driver.ty@write_runtime).
+fn copy_checks():
+    src := "/tmp/tycho_corelib_io_copy_src"
+    dst := "/tmp/tycho_corelib_io_copy_dst"
+    io.write(src, "one" + chr(0) + "two")
+    io.write(dst, "LONGER-THAN-THE-SOURCE-CONTENT")
+    ok := io.copy(src, dst)
+    println(f"copy={vwhy(ok)} copied=[{io.read(dst)}] len={len(io.read(dst))}")
+    miss := io.copy("/tmp/tycho_corelib_io_no_such_src_xyz", dst)
+    println(f"copy_miss={vwhy(miss)} dst_intact=[{io.read(dst)}]")
+    println(f"copy_dir={vwhy(io.copy("/tmp", dst))} copy_nul={vwhy(io.copy(src + chr(0), dst))}")
+    ap := "/tmp/tycho_corelib_io_append"
+    io.write(ap, "")          # truncate, not remove: an absent file makes the verdict host-dependent
+    a1 := io.append_text(ap, "ab")
+    a2 := io.append_text(ap, chr(0) + "cd")
+    println(f"append={vwhy(a1)}|{vwhy(a2)} got=[{io.read(ap)}] len={len(io.read(ap))}")
+    println(f"append_bool={io.append(ap, "!")} len2={len(io.read(ap))} append_nul={vwhy(io.append_text(ap + chr(0), "z"))}")
+    println(f"copy_cleanup={fswhy(io.remove(src))}|{fswhy(io.remove(dst))}|{fswhy(io.remove(ap))}")
 
 fn nul_checks():
     nt := "/tmp/tycho_corelib_io_nul_target"

@@ -139,7 +139,16 @@ void iox_read_file(const char *path, tycho_int *status,
     errno = 0;
     FILE *f = fopen(path, "rb");
     if (!f) { *status = ty_rf_errno(path); return; }      /* fail closed: empty result */
+    /* Size the buffer from fstat, so a whole-file read costs ONE allocation and
+     * no memcpy. The doubling below still runs -- a pipe, a /proc file or a file
+     * that grew under us all report 0 or too little -- but it is the fallback,
+     * not the normal path. cap is size+1 because the loop exits on a short
+     * fread, and a buffer exactly the file's length would grow once to notice
+     * EOF, copying every byte to learn nothing. */
     size_t cap = 4096, len = 0, n;
+    struct stat rst;
+    if (fstat(fileno(f), &rst) == 0 && S_ISREG(rst.st_mode) && rst.st_size > 0)
+        cap = (size_t)rst.st_size + 1;
     unsigned char *buf = malloc(cap);
     if (!buf) { fclose(f); return; }
     errno = 0;
@@ -386,6 +395,59 @@ void iox_write_bytes(const char *path, const unsigned char *data,
     if (!f) { *status = ty_rf_errno(path); return; }       /* fail closed: nothing written */
     if (datalen > 0 && data && fwrite(data, 1, (size_t)datalen, f) != (size_t)datalen) {
         *status = ty_rf_errno(path);                        /* partial write: an error */
+        fclose(f);
+        return;
+    }
+    if (fclose(f) != 0) { *status = ty_rf_errno(path); return; }
+    *status = TY_RF_OK;
+}
+
+/* Copy `src` over `dst` (truncating it), STREAMING through a fixed buffer: peak
+ * memory is the buffer, not the file. The whole reason it exists is that the
+ * alternative -- read the file into a string and write the string -- costs a
+ * copy of the file at every hop, and tychoc1 was paying six of them for the
+ * 140 KB runtime source on every compile.
+ *
+ * SRC IS OPENED FIRST AND DST IS NOT TOUCHED UNTIL IT SUCCEEDS. A caller trying
+ * a list of candidate sources (driver.write_runtime does) must not have its
+ * destination truncated by a candidate that was never there. */
+void iox_copy_file(const char *src, const char *dst, tycho_int *status) {
+    *status = TY_RF_ERR;
+    errno = 0;
+    FILE *in = fopen(src, "rb");
+    if (!in) { *status = ty_rf_errno(src); return; }       /* dst untouched */
+    struct stat cst;
+    if (fstat(fileno(in), &cst) == 0 && S_ISDIR(cst.st_mode)) {
+        *status = TY_RF_DIR; fclose(in); return;           /* glibc opens a dir, reads fail */
+    }
+    errno = 0;
+    FILE *out = fopen(dst, "wb");
+    if (!out) { *status = ty_rf_errno(dst); fclose(in); return; }
+    char buf[65536];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof buf, in)) > 0) {
+        if (fwrite(buf, 1, n, out) != n) {                 /* partial: an error */
+            *status = ty_rf_errno(dst); fclose(in); fclose(out); return;
+        }
+    }
+    if (ferror(in)) { *status = ty_rf_errno(src); fclose(in); fclose(out); return; }
+    fclose(in);
+    if (fclose(out) != 0) { *status = ty_rf_errno(dst); return; }
+    *status = TY_RF_OK;
+}
+
+/* Append `n` bytes of `data` to `path`, creating it if absent. `data` is a Tycho
+ * string passed as a bare pointer with its length alongside, so an embedded NUL
+ * survives and nothing is copied on the way in -- the point of the call. */
+void iox_append_str(const char *path, const char *data, tycho_int n,
+                    tycho_int *status) {
+    *status = TY_RF_ERR;
+    if (n < 0) return;                                     /* fail closed */
+    errno = 0;
+    FILE *f = fopen(path, "ab");
+    if (!f) { *status = ty_rf_errno(path); return; }
+    if (n > 0 && data && fwrite(data, 1, (size_t)n, f) != (size_t)n) {
+        *status = ty_rf_errno(path);
         fclose(f);
         return;
     }

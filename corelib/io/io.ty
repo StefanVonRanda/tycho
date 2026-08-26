@@ -76,12 +76,44 @@ fn write(p: string, s: string) -> bool:
         return false
     return write_file(p, s)
 
-# Append `s` to `p` (creating it if absent). Reads the whole file and rewrites
-# it -- NOT atomic, and the file is held in memory; fine for small files.
+# Append `s` to `p` (creating it if absent). O_APPEND, so nothing is read back
+# and the existing content is never held in memory.
 fn append(p: string, s: string) -> bool:
+    match append_text(p, s):
+        Ok: return true
+        Err(e): return false
+    return false
+
+# Append with the error channel append() lacks. The string is NOT copied on the
+# way to the shim -- it travels as a pointer and a length -- which is what makes
+# this the cheap way to assemble a large file from parts.
+fn append_text(p: string, s: string) -> Result(void, IoErr):
     if has_nul(p):
-        return false
-    return write_file(p, read_file(p) + s)
+        return Err(BadPath)
+    st := 0
+    iox_append_str(p, s, len(s), &st)
+    return _status(st)
+
+# Copy `src` over `dst`, truncating dst. Streaming: peak memory is the shim's
+# buffer, not the file, and no byte ever becomes a Tycho value. `dst` IS NOT
+# TOUCHED when `src` cannot be opened, so a caller walking a list of candidate
+# sources cannot destroy its own destination with a miss.
+fn copy(src: string, dst: string) -> Result(void, IoErr):
+    if has_nul(src) or has_nul(dst):
+        return Err(BadPath)
+    st := 0
+    iox_copy_file(src, dst, &st)
+    return _status(st)
+
+# The shim's status code -> the Err this package reports, in one place.
+fn _status(st: int) -> Result(void, IoErr):
+    if st == RF_OK:
+        return Ok()
+    if st == RF_MISS:
+        return Err(NotFound)
+    if st == RF_DIR:
+        return Err(IsDir)
+    return Err(Failed)
 
 # File split into lines (core:strings.lines: CRLF-aware, a trailing newline
 # adds no empty line). A missing file yields one empty line, like lines("").
@@ -119,6 +151,11 @@ extern fn iox_read_at(path: string, off: int, n: int, status: inout int) -> byte
 # error, never a short success.
 extern fn iox_write_bytes(path: string, data: bytes, status: inout int)
 extern fn iox_write_at(path: string, off: int, data: bytes, status: inout int)
+# Same status space again. Neither call brings the payload into a Tycho value:
+# copy streams the file through a fixed buffer, and append_str hands the shim the
+# string's pointer and length. See copy/append_text below.
+extern fn iox_copy_file(src: string, dst: string, status: inout int)
+extern fn iox_append_str(path: string, data: string, n: int, status: inout int)
 # stat(2): the same status codes, with 1 meaning "exists and is not a directory".
 # A plain scalar return -- no `inout` needed, because nothing else occupies it.
 extern fn iox_stat_kind(path: string) -> int
