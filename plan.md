@@ -2728,8 +2728,7 @@ section. What is left is the fixed 1.05 ms and the single-pass shape -- not
 building a full AST for a single-file compile -- not another pass over the
 current one.
 
-Also found on the way, unrelated and unfixed: tests/strbytes.ty dies under
--fsanitize=address,undefined with EVERY compiler in the tree, ./tychoc included.
+
 
 ### Emit-time dead-body elimination: independent re-measurement
 
@@ -2813,3 +2812,16 @@ of two passes with ordering dependencies.
 That is the end of the analysis. The gap is not one hot spot; it is an AST-based
 five-pass compiler against a single-pass one, and closing it needs a different
 front-end shape, which would mean two code paths in a one-person project.
+
+
+### RETRACTED: tests/strbytes.ty does NOT fail under ASan
+
+Two agents reported it dying under -fsanitize=address,undefined with every
+compiler including ./tychoc, and I relayed that three times without running it.
+Checked: `TYCHO_CFLAGS="-fsanitize=address,undefined -g" ./tychoc
+tests/strbytes.ty` then running it gives **exit 0, zero bytes on stderr, output
+matching the golden**. There is no pre-existing memory error here.
+Whatever those runs hit was environmental -- most likely the `Permission denied`
+and truncated-binary interference documented above, when two sessions were
+rebuilding tychoc1 concurrently. A failure seen once during a contended run is
+not a defect until it is reproduced on a quiet box.
