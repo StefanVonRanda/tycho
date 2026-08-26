@@ -1307,14 +1307,11 @@ fn _restore(cs: inout C, m: int):
         pop(cs.vown)
         pop(cs.vacc)
 
-# A nested `x := x + 1` shadows the outer x, and in C the new declarator is
-# already in scope inside its own initialiser -- so the inner read would see
-# the uninitialised copy. A shadowing binding gets a fresh C name instead.
+# src/tychoc.c@cv_push: a shadowing binding keeps the C name `h_<n>` and leans
+# on C's own block scoping. Only a SELF-referential decl (`x := x + 1`) needs
+# help, and it gets the `_sh_` temp at the decl site, not a rename here.
 fn _push(cs: inout C, n: string, t: string) -> string:
     cn := "h_" + n
-    if len(_vtype(&cs, n)) > 0:
-        cs.tmp += 1
-        cn = "h_" + n + "_s" + str(cs.tmp)
     push(cs.vnames, n)
     push(cs.vtypes, t)
     push(cs.vcn, cn)
@@ -4773,6 +4770,25 @@ fn _hascall(e: ast.Expr) -> bool:
             return true
     return false
 
+# src/tychoc.c@expr_refs_local: does this initialiser read the name it binds?
+# A lambda contributes only its CAPTURES, so a parameter of the same name is
+# not a reference to the enclosing binding.
+fn _refslocal(e: ast.Expr, n: string) -> bool:
+    match e:
+        ast.Name(l, v): return v == n
+        ast.Call(l, q, cn, t, a):
+            if len(q) == 0 and cn == n:      # calling the fn value it rebinds
+                return true
+        ast.Lambda(l, p, r, b):
+            for q in p:
+                if q.name == n:
+                    return false
+        _: pass
+    for c in ast.kids(e):
+        if _refslocal(c, n):
+            return true
+    return false
+
 fn _cunwrap(s: string) -> string:
     n := len(s)
     if n < 3 or s[0] != 40:
@@ -4882,11 +4898,22 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             if uset and _heap(&cs, t):
                 uset = false
                 c = _replace(c, "&_t", sav5)
+            # src/tychoc.c:11582 -- `y := f(y)` must land in a temp declared
+            # BEFORE the new C local, or the initialiser reads the inner
+            # uninitialised one.
+            sh := len(_vtype(&cs, n)) > 0 and _refslocal(rhs[0], n)
             cn := _push(&cs, n, t)
             out9 := ind + _ctyz(&cs, t) + "" + cn + " = " + c + ";\n"
+            if sh:
+                out9 = ind + _ctyz(&cs, t) + "_sh_" + n + " = " + c + "; " +
+                    _ctyz(&cs, t) + cn + " = _sh_" + n + ";\n"
             if uset:
                 out9 = ind + _ctyz(&cs, t) + "" + cn + "; { Arena _t = arena_new(0); " +
                     cn + " = " + c + "; arena_free(&_t); }\n"
+                if sh:
+                    out9 = ind + _ctyz(&cs, t) + "_sh_" + n +
+                        "; { Arena _t = arena_new(0); _sh_" + n + " = " + c +
+                        "; arena_free(&_t); } " + _ctyz(&cs, t) + cn + " = _sh_" + n + ";\n"
             if t == "string" and _isacc(&cs, n):
                 cs.vacc[len(cs.vacc) - 1] = cn
                 # the shadow length/capacity the in-place append maintains;
@@ -5519,6 +5546,11 @@ fn _match(cs: inout C, subj: ast.Expr, arms: [ast.Arm], ind: string) -> string:
                 # BY VALUE, deep-copied: ./tychoc binds a payload as a copy, so
                 # `xs[0] = 50` inside the arm leaves the matched value alone
                 # (tests/match_payload_mut.out). A pointer binding aliased it.
+                # src/tychoc.c@bind_is_discard: `_` fills a payload slot and
+                # binds nothing -- two of them in one pattern would otherwise
+                # emit two C locals named h__.
+                if a.binds[i] == "_":
+                    continue
                 bcn := _push(&cs, a.binds[i], pay[i])
                 psrc := v + "->u." + a.name + ".f" + str(i)
                 pv := psrc
@@ -5548,6 +5580,8 @@ fn _match(cs: inout C, subj: ast.Expr, arms: [ast.Arm], ind: string) -> string:
                 for j := 0; j < len(a.subbinds); j += 1:
                     if j >= len(ipay):
                         _bad("variant " + a.sub + " binds more than its payload")
+                    if a.subbinds[j] == "_":
+                        continue
                     scn := _push(&cs, a.subbinds[j], ipay[j])
                     ssrc := "(" + iv + ")->u." + a.sub + ".f" + str(j)
                     sv2 := ssrc
