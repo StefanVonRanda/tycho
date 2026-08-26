@@ -2453,6 +2453,16 @@ which reads a 1 ms input as 1.04 when it is really 1.20.
 
 The session took the worst case from 2.74 to 1.20 and compiler/main.ty to 0.673.
 
+CORRECTION, measured across ALL 55 real entry points (examples/*.ty,
+tools/*/main.ty, server, compiler) rather than the eight ad-hoc inputs above:
+tychoc1 is at or under 1.000 on **4 of 55**. Geomean 1.1376, median 1.1600.
+The four wins are the LARGEST compiles -- tycho-fetch 0.621, compiler/main.ty
+0.684, tycho-ar 0.803, tycho-snap 0.808 -- and the 51 losses run 1.056 to 1.371
+(worst: invindex 1.371, tycho-chess 1.360, tycho-grid 1.298).
+So the eight-input set was FLATTERING tychoc1, not representative, and the
+crossover is a function of compile size: tychoc1 wins only where the variable
+work is large enough to amortise its ~1.05 ms of fixed cost per compile.
+
 ### Why the rest is not another optimisation pass
 
 raytrace needs ~40% of tychoc1's instructions gone to reach 1.000 and the
