@@ -3165,7 +3165,13 @@ fn _call(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], args: [ast.Ex
         else:
             if len(args) != np:
                 _bad("'" + n + "' takes " + str(np) + " argument(s)")
-        out2 := "h_" + cs.fds[fi].name + "(" + cs.arena
+        # A callee whose RESULT is not heap puts nothing in the arena it is
+        # handed, so the caller's own _parent serves and the statement scratch
+        # (&_t) stays unmentioned -- which is what lets _uses_t elide it.
+        pa := cs.arena
+        if not _heap(&cs, cs.fds[fi].ret):
+            pa = "_parent"
+        out2 := "h_" + cs.fds[fi].name + "(" + pa
         xtn := _isext(&cs, cs.fds[fi].name)
         if xtn:
             out2 = cs.fds[fi].name + "(@"
