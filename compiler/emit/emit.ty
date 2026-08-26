@@ -6512,17 +6512,45 @@ fn _fnbody(cs: inout C, fi: int, body: [ast.Stmt]) -> (string, string):
         pop(cs.cnames)
         pop(cs.ctypes)
         pop(cs.ccode)
-    # ./tychoc opens a _scope in EVERY proc (src/tychoc.c@gen_proc) and closes
-    # it with a bare arena_free; the elision that used to live here is an
-    # optimisation the reference does not have, so it is gone.
-    out := sig + " {\n" +
-        "    Arena _scope = arena_child(_parent); _scope.name = \"" + nm + "\";\n" + b
-    if not _ends_ret(body):
-        if rt == "void":
-            out = out + "    arena_free(&_scope);\n"
-        else:
-            out = out + "    arena_free(&_scope); return (" + _ctyz(&cs, rt) + "){0};\n"
-    return (sig + ";\n", out + "}\n\n")
+    # A body that never allocates gets no scope arena. Every call still paid
+    # arena_child + arena_free for it: of 6.91M arenas created compiling
+    # compiler/main.ty, 5.80M never had a single allocation. The test is that
+    # the emitted body mentions _scope nowhere except in the frees themselves,
+    # which is exact -- an allocation, a copy or an inout hand-off all name it.
+    bare := ""
+    keep := true
+    bi := 0
+    blast := 0
+    bn := len(b)
+    for bi + 6 <= bn:
+        if b[bi] == 95 and b[bi + 1] == 115 and b[bi:bi + 6] == "_scope":
+            if bi >= 12 and b[bi - 12:bi] == "arena_free(&":
+                bare = bare + b[blast:bi - 12]
+                bi += 7                              # past "_scope)"
+                if bi < bn and b[bi] == 59:
+                    bi += 1                          # and the ';'
+                if bi < bn and (b[bi] == 32 or b[bi] == 10):
+                    bi += 1                          # and the space or newline
+                blast = bi
+                continue
+            keep = false
+            bi = bn
+            continue
+        bi += 1
+    bare = bare + b[blast:]
+    if not keep:
+        out := sig + " {\n" +
+            "    Arena _scope = arena_child(_parent); _scope.name = \"" + nm + "\";\n" + b
+        if not _ends_ret(body):
+            if rt == "void":
+                out = out + "    arena_free(&_scope);\n"
+            else:
+                out = out + "    arena_free(&_scope); return (" + _ctyz(&cs, rt) + "){0};\n"
+        return (sig + ";\n", out + "}\n\n")
+    out0 := sig + " {\n" + bare
+    if not _ends_ret(body) and rt != "void":
+        out0 = out0 + "    return (" + _ctyz(&cs, rt) + "){0};\n"
+    return (sig + ";\n", out0 + "}\n\n")
 
 # src/tychoc.c@block_ends_in_return -- whether the last statement of a block
 # leaves on every path, which is what decides the proc's trailing free.
