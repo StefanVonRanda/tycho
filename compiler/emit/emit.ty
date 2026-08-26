@@ -5255,18 +5255,21 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                 # every recursive-descent function in this compiler returns, and
                 # each one was copying both results back into the arena they were
                 # already in. A PLACE on the right still belongs to someone else.
-                cpd := false
-                if _heap(&cs, es[i]) and (_place(r[0]) or cs.arena != "&_scope"):
+                # A single `x := f()` leaves the result wherever the call
+                # built it and lets each USE copy; a destructuring one forced a
+                # copy into &_scope too, which inside a loop body meant TWO deep
+                # copies of every parser node -- one out of the scratch and one
+                # at the push. The scratch is reset at the top of the NEXT
+                # iteration, after the last read, so the value is good for the
+                # whole iteration exactly as the single-name form assumes.
+                # ...and only for a DECLARATION. An ASSIGNMENT writes a name
+                # declared further out, which outlives this arena: `h_mtd =
+                # (_ds.f0)` read after arena_free(&_scr) hands str_append a
+                # garbage length header and it doubles nc until it overflows.
+                if _heap(&cs, es[i]) and (_place(r[0]) or not d):
                     v = _copy(&cs, v, es[i], "&_scope")
-                    cpd = true
                 if d:
                     cn := _push(&cs, ns[i], es[i])
-                    # The copy above landed it in &_scope. _push recorded
-                    # _curown, which INSIDE A LOOP is the body scratch -- a
-                    # lie that made every later _shares/_canmove say "somebody
-                    # else's arena" and deep-copy a value already at home.
-                    if cpd:
-                        cs.vown[len(cs.vown) - 1] = "&_scope"
                     out = out + ind + _ctyz(&cs, es[i]) + "" + cn + " = " + v + ";\n"
                 else:
                     out = out + ind + cns[i] + " = " + v + ";\n"
