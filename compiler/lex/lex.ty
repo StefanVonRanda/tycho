@@ -16,10 +16,6 @@ struct Tok:
                       # K_OP/K_KW token the OP_*/KW_* tag, which nothing else reads
     fval: float       # float literal value
     raw: string       # the exact source slice, for the round-trip control
-    file: string      # the path, set on the K_EOF token ONLY -- one token array
-                      # is one file, so lex.file_of() reads it from there. It was
-                      # on every token until 2026-08-26 and cost a string copy per
-                      # token for a field read on one cold diagnostic path.
 
 # `raw` is read by ONE caller, the round-trip control, which lexes with
 # keep_trivia set. On the normal path storing it allocated a second string per
@@ -50,7 +46,7 @@ const K_COMMENT = 12
 fn file_of(toks: [Tok]) -> string:
     if len(toks) == 0:
         return ""
-    return toks[len(toks) - 1].file
+    return toks[len(toks) - 1].text
 
 fn kname(k: int) -> string:
     if k == K_KW:
@@ -87,8 +83,8 @@ fn kname(k: int) -> string:
 # its Tok into the caller's arena.
 fn _tk(keep: bool, kind: int, text: string, line: int, col: int, raw: string) -> Tok:
     if keep:
-        return Tok(kind, text, line, col, 0, 0.0, raw, "")
-    return Tok(kind, text, line, col, 0, 0.0, "", "")
+        return Tok(kind, text, line, col, 0, 0.0, raw)
+    return Tok(kind, text, line, col, 0, 0.0, "")
 
 fn is_digit(c: int) -> bool:
     return c >= 48 and c <= 57
@@ -231,6 +227,9 @@ fn opspell(oid: int) -> string:
 fn spell(t: Tok) -> string:
     if t.k == K_OP:
         return opspell(t.ival)
+    # K_EOF carries the FILE in `text` (see file_of); it has never had a spelling.
+    if t.k == K_EOF:
+        return ""
     return t.text
 
 # The keyword's identity as an int, in the order `kwid` tests them.
@@ -600,8 +599,11 @@ fn scan_char(src: string, i0: int, line: int, file: string) -> (int, int):
 # --- operators --------------------------------------------------------------
 
 fn op_len(src: string, i: int) -> int:
-    n := len(src)
     c := src[i]
+    d := c - 33
+    if d < 0 or d > 29 or ((973090817 >> d) & 1) == 0:
+        return 1
+    n := len(src)
     c2 := 0
     c3 := 0
     if i + 1 < n:
@@ -815,7 +817,7 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
                         Err(strings.Underflow): fv = 0.0
                         Err(strings.Empty): fv = 0.0
                         Err(strings.Syntax): fv = 0.0
-                    push(toks, Tok(K_FLOAT, raw, line, tcol, 0, fv, raw, ""))
+                    push(toks, Tok(K_FLOAT, raw, line, tcol, 0, fv, raw))
                     last_ix = len(toks) - 1
                 else:
                     v := 0
@@ -825,7 +827,7 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
                         if v > (imax - d) / litbase:
                             _die(file, src, line, "integer literal out of range")
                         v = v * litbase + d
-                    push(toks, Tok(K_INT, raw, line, tcol, v, 0.0, raw, ""))
+                    push(toks, Tok(K_INT, raw, line, tcol, v, 0.0, raw))
                     last_ix = len(toks) - 1
                 continue
 
@@ -839,10 +841,10 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
                 kid := kwid(name)
                 if kid != 0:
                     kind = K_KW
-                raw9 := ""
                 if keep_trivia:
-                    raw9 = name
-                push(toks, Tok(kind, name, line, tcol, kid, 0.0, raw9, ""))
+                    push(toks, Tok(kind, name, line, tcol, kid, 0.0, name))
+                else:
+                    push(toks, Tok(kind, name, line, tcol, kid, 0.0, ""))
                 last_ix = len(toks) - 1
                 continue
 
@@ -855,14 +857,14 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
                 flag := 0
                 if fstr:
                     flag = 1
-                push(toks, Tok(K_STR, body, line, tcol, flag, 0.0, src[s:e], ""))
+                push(toks, Tok(K_STR, body, line, tcol, flag, 0.0, src[s:e]))
                 p = e
                 last_ix = len(toks) - 1
                 continue
 
             if c == 96:
                 e, body, nl := scan_raw(src, p, line, file)
-                push(toks, Tok(K_STR, body, line, tcol, 0, 0.0, src[s:e], ""))
+                push(toks, Tok(K_STR, body, line, tcol, 0, 0.0, src[s:e]))
                 p = e
                 line += nl
                 last_ix = len(toks) - 1
@@ -870,7 +872,7 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
 
             if c == 39:
                 e, cv := scan_char(src, p, line, file)
-                push(toks, Tok(K_CHAR, src[s:e], line, tcol, cv, 0.0, src[s:e], ""))
+                push(toks, Tok(K_CHAR, src[s:e], line, tcol, cv, 0.0, src[s:e]))
                 p = e
                 last_ix = len(toks) - 1
                 continue
@@ -895,13 +897,14 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
                 bracket_depth += 1
             elif (oid == OP_RPAREN or oid == OP_RBRACK) and bracket_depth > 0:
                 bracket_depth -= 1
-            raw8 := ""
-            if keep_trivia:
-                raw8 = src[p:p + l]
+
             # No `text`: the tag above IS the spelling, and lex.opspell decodes
             # it on the diagnostic path. This is the substring the lexer used to
             # allocate for every operator, and the copy `push` then made of it.
-            push(toks, Tok(K_OP, "", line, tcol, oid, 0.0, raw8, ""))
+            if keep_trivia:
+                push(toks, Tok(K_OP, "", line, tcol, oid, 0.0, src[p:p + l]))
+            else:
+                push(toks, Tok(K_OP, "", line, tcol, oid, 0.0, ""))
             p += l
             last_ix = len(toks) - 1
 
@@ -915,7 +918,7 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
         # A comment tail is not a token, so it must not defeat the trailing-
         # operator join: the candidate is recorded from the last REAL token.
         if bracket_depth == 0:
-            push(toks, Tok(K_NEWLINE, "", line, nlcol, 0, 0.0, "", ""))
+            push(toks, Tok(K_NEWLINE, "", line, nlcol, 0, 0.0, ""))
             pend = last_ix >= 0 and continues_line(toks[last_ix].k, toks[last_ix].ival)
         else:
             pend = false
@@ -942,5 +945,5 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
     for len(stack) > 1:
         pop(stack)
         push(toks, _tk(keep_trivia, K_DEDENT, "", line, 1, ""))
-    push(toks, Tok(K_EOF, "", line, 1, 0, 0.0, "", file))
+    push(toks, Tok(K_EOF, file, line, 1, 0, 0.0, ""))
     return (toks, notes)
