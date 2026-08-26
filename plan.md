@@ -2634,19 +2634,33 @@ NOT adopted: it needs a two-stage instrumented build and stored .gcda profile
 data in the Makefile, and 1.2% does not change the standing when the gap is 14%.
 Revisit only if the gap is otherwise closed to within ~2%.
 
-### The lexer at 54 instructions per byte: measured, and tightening it LOSES
+### The lexer at 54 instructions per byte -- 214 per TOKEN, and it pays
 
-compiler/lex/lex.ty's own code is ~54 Ir per source byte (5,079,635 for the
-93,961 bytes of corelib that `--resolve server/main.ty` reads), against 5-15 for
-a tight hand-written lexer, so it looked like the last non-architectural lever.
-A 25-line tightening took resolve 28.29e6 -> 27.32e6 Ir (-3.4%) and the lexer's
-own self cost 5.08e6 -> 4.74e6 (-6.6%, 54 -> 50 per byte), with every gate green
-including the AST census. Wall: **geomean 1.0459 -- 4.6% SLOWER**, and slower on
-six of six inputs bar compiler/main.ty. Reverted, not committed.
+54 Ir/byte was the wrong framing: 23,764 tokens from 93,961 bytes is 3.95
+bytes/token, so it is **214 Ir per TOKEN**. The scanning loops are ~11 Ir/byte;
+the cost is per-token materialisation -- an 8-field value-semantic Tok built on
+the stack, deep-copied into the array's arena, at **3.88 tycho_str_copy calls
+per token**, two of them copying "".
+f0b22716 fixed three defects: Tok.file was copied on all 23,763 non-EOF tokens
+though only K_EOF uses it; `raw` went through tycho_str_copy because a VARIABLE
+is copied where a literal is emitted bare; op_len did two bounds-checked reads
+and an eleven-test chain for the ~70% of operators that are one byte.
+Result: 3.88 -> 2.11 str_copy per token, lexer self 5.08e6 -> 4.74e6, program
+27.32e6 (-3.44%), **wall geomean 0.9846 over seven inputs**.
 
-That is the FIFTH Ir-vs-wall inversion here. Instruction count does not predict
-time in this compiler; only a two-way interleaved wall A/B against a rebuilt
-HEAD binary does.
+MEASUREMENT INCIDENT, worth more than the patch. I first measured this change
+at wall 1.0459 -- 4.6% SLOWER -- and wrote it up as a loss. That reading was
+taken while the agent that authored it was still running: its `make parse-check`
+had reverted the worktree edit and truncated `tychoc1` to 0 bytes mid-run, so I
+timed a binary that was being rebuilt underneath me. Re-measured on a quiet box
+with both binaries built from committed trees: 0.9846. **Never measure while
+another process can touch the worktree or the binary**, and check
+`pgrep -fa 'tychoc|make|valgrind'` before timing.
+It converted at ~0.4 wall-% per Ir-%, four times the ~0.1 this session's other
+Ir cuts managed, because these are call+allocate costs rather than linear copy.
+The residue is `text` and `raw` genuinely crossing arenas -- the deep-copy
+family already closed. The lexer is only ~6% of a small compile, so there is no
+second win of this size in lex.ty.
 
 ### A COMPILE CACHE IS REFUSED
 
