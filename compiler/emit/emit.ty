@@ -2711,7 +2711,7 @@ fn _orret(cs: inout C, e: ast.Expr) -> (string, string):
         gt = ok[0]
     return ("({ E_" + _tname(t) + " *" + v + " = " + c + "; if (" + v + "->tag == " +
         str(bad) + ") { E_" + rn + " *_orr = " + mk +
-        "; " + _scr_frees(&cs) + "arena_free(&_scope); return _orr; } " +
+        "; " + _scr_frees(&cs) + "if (_scope.head) arena_free(&_scope); return _orr; } " +
         got + "; })", gt)
 
 fn _arrlit(cs: inout C, k: [ast.Expr]) -> (string, string):
@@ -4993,7 +4993,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             fin := _finalizers(&cs, cs.fnbase, "")
             if len(k) == 0:
                 return ind + "{ " + _oneline(fin) + _scr_frees(&cs) +
-                    "arena_free(&_scope); return; }\n"
+                    "if (_scope.head) arena_free(&_scope); return; }\n"
             sw := cs.want
             sa := cs.arena
             # RETURN-SLOT MOVE: a returned TEMPORARY is built straight in the
@@ -6550,6 +6550,16 @@ fn _fnbody(cs: inout C, fi: int, body: [ast.Stmt]) -> (string, string):
     bn := len(b)
     for bi + 6 <= bn:
         if b[bi] == 95 and b[bi + 1] == 115 and b[bi:bi + 6] == "_scope":
+            # the guarded teardown is one unit; its leading `if (_scope.head)`
+            # would otherwise read as a real use and defeat the elision
+            if bi >= 4 and bi + 33 <= bn and b[bi - 4:bi] == "if (" and
+                    b[bi:bi + 33] == "_scope.head) arena_free(&_scope);":
+                bare = bare + b[blast:bi - 4]
+                bi += 33
+                if bi < bn and (b[bi] == 32 or b[bi] == 10):
+                    bi += 1
+                blast = bi
+                continue
             if bi >= 12 and b[bi - 12:bi] == "arena_free(&":
                 bare = bare + b[blast:bi - 12]
                 bi += 7                              # past "_scope)"
@@ -6569,9 +6579,9 @@ fn _fnbody(cs: inout C, fi: int, body: [ast.Stmt]) -> (string, string):
             "    Arena _scope = arena_child(_parent); _scope.name = \"" + nm + "\";\n" + b
         if not _ends_ret(body):
             if rt == "void":
-                out = out + "    arena_free(&_scope);\n"
+                out = out + "    if (_scope.head) arena_free(&_scope);\n"
             else:
-                out = out + "    arena_free(&_scope); return (" + _ctyz(&cs, rt) + "){0};\n"
+                out = out + "    if (_scope.head) arena_free(&_scope); return (" + _ctyz(&cs, rt) + "){0};\n"
         return (sig + ";\n", out + "}\n\n")
     out0 := sig + " {\n" + bare
     if not _ends_ret(body) and rt != "void":
