@@ -1401,12 +1401,15 @@ tycho_int tycho_str_len(const char *s) { return ((const tycho_int *)s)[-1]; }   
  * `k == "op"` against a keyword of a different size). tycho_str_cmp has to
  * memcmp the common prefix even then, because it must return an ORDER. */
 int tycho_str_eq(const char *a, const char *b) {
+    /* Byte 0 BEFORE the lengths, mirroring tycho_str_cmp (983a5fad): it settles
+     * 75% of a compile's compares off one load pair, while the length headers
+     * sit at a negative offset and cost two. Measured: length-first here was
+     * 91.1e6 Ir on server/main.ty against 90.2e6 for str_cmp; byte-0-first is
+     * what makes str_eq actually beat it. Byte 0 is readable even when empty. */
+    if (a[0] != b[0]) return 0;
     tycho_int la = ((const tycho_int *)a)[-1], lb = ((const tycho_int *)b)[-1];
     if (la != lb) return 0;
     if (la == 0 || a == b) return 1;
-    /* one byte settles most of what the lengths did not: a compiler's
-     * equal-length comparisons are things like "op" against "kw". */
-    if (a[0] != b[0]) return 0;
     /* Short and equal-length is the parser's whole diet ("op", "kw", every
      * operator): a byte loop beats the call into memcmp, whose own setup costs
      * more than the comparison at these lengths. */

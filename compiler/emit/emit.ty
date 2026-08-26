@@ -1576,7 +1576,11 @@ fn _eq(cs: inout C, a: string, b: string, t: string) -> string:
         # identity: same thunk and same env -- src/tychoc.c:10214
         return "((" + a + ").call == (" + b + ").call && (" + a + ").env == (" + b + ").env)"
     if t == "string" or t == "bytes":
-        return "(tycho_str_cmp(" + a + ", " + b + ") == 0)"
+        # EQUALITY, not order: tycho_str_eq settles on the length headers and
+        # never touches the bytes when they differ, which is the common case.
+        # tycho_str_cmp must memcmp the common prefix even then -- it owes an
+        # ORDER. `!=` routes through here too.
+        return "tycho_str_eq(" + a + ", " + b + ")"
     if _is_struct(t):
         return "tycho_eq_S_" + _tname(t) + "(" + a + ", " + b + ")"
     if _is_tup(t):
