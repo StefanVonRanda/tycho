@@ -4814,6 +4814,13 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             cn := _push(&cs, n, t)
             if own5 == "_parent" and _heap(&cs, t):
                 cs.vown[len(cs.vown) - 1] = "_parent"
+            elif _place(rhs[0]) and _heap(&cs, t):
+                # A PLACE right-hand side lands in own5 whichever way _rhs3
+                # took it -- copied, shared, or moved, all three leave the value
+                # there. _push recorded _curown instead, which inside a loop is
+                # the body scratch, so `h_text = tycho_str_copy(&_scope, ...)`
+                # was then copied AGAIN into every Tok built from it.
+                cs.vown[len(cs.vown) - 1] = own5
             out9 := ind + _ctyz(&cs, t) + "" + cn + " = " + c + ";\n"
             if sh:
                 out9 = ind + _ctyz(&cs, t) + "_sh_" + n + " = " + c + "; " +
