@@ -776,6 +776,75 @@ fn _inst_cap(n: int):
     if n > 1024:
         _bad("too many generic instantiations (> 1024) -- a recursive generic at a growing type?")
 
+# src/tychoc.c@type_mangle_ident: an instance is named by its type ARGUMENTS,
+# not by a serial, so the name is stable across unrelated edits. "" means this
+# type has no spelling here (a sized int, bytes, a handle) and the caller falls
+# back to the serial, which stays unique.
+fn _tmang(cs: inout C, t: string) -> string:
+    if t == "int" or t == "float" or t == "string" or t == "bool" or t == "char" or t == "void":
+        return t
+    if _is_arr(t):
+        e := _tmang(&cs, _elem(t))
+        if len(e) == 0:
+            return ""
+        return "arr_" + e
+    if _is_map(t):
+        k := _tmang(&cs, _mkey(&cs, t))
+        v := _tmang(&cs, _mval(&cs, t))
+        if len(k) == 0 or len(v) == 0:
+            return ""
+        return "map_" + k + "_" + v
+    if _is_chan(t):
+        c := _tmang(&cs, _cinner(t))
+        if len(c) == 0:
+            return ""
+        return "chan_" + c
+    if _is_soa(t):
+        st := _tmang(&cs, cs.oks[strings.parse_int(_tname(t))])
+        if len(st) == 0:
+            return ""
+        return "soa_" + st
+    if _is_tup(t):
+        es := _telems(&cs, t)
+        out := "tup"
+        for i := 0; i < len(es); i += 1:
+            one := _tmang(&cs, es[i])
+            if len(one) == 0:
+                return ""
+            out = out + "_" + one
+        return out
+    if _is_optT(&cs, t):
+        inr := _tmang(&cs, _opt_inner(&cs, t))
+        if len(inr) == 0:
+            return ""
+        return "opt_" + inr
+    if _is_resT(&cs, t):
+        ei := _eidx(&cs, _tname(t))
+        ok := "void"
+        op := cs.eds[ei].vpay[_tag(&cs, ei, "Ok")].ptypes
+        if len(op) > 0:
+            ok = _tmang(&cs, op[0])
+        ep := cs.eds[ei].vpay[_tag(&cs, ei, "Err")].ptypes
+        er := ""
+        if len(ep) > 0:
+            er = _tmang(&cs, ep[0])
+        if len(ok) == 0 or len(er) == 0:
+            return ""
+        return "res_" + ok + "_" + er
+    if _is_struct(t) or _is_enum(t):
+        return _tname(t)
+    return ""
+
+# src/tychoc.c:2235 and :2273 append one `__<type>` per type PARAMETER.
+fn _instname(cs: inout C, gn: string, targs: [string]) -> string:
+    out := gn
+    for i := 0; i < len(targs); i += 1:
+        one := _tmang(&cs, targs[i])
+        if len(one) == 0:
+            return gn + "__" + str(len(cs.ikey))
+        out = out + "__" + one
+    return out
+
 fn _inst_struct(cs: inout C, n: string, targs: [string]) -> string:
     gi := _gsidx(&cs, n)
     gn := cs.gs[gi].name
@@ -784,7 +853,7 @@ fn _inst_struct(cs: inout C, n: string, targs: [string]) -> string:
     if ex >= 0:
         return "S~" + cs.iname[ex]
     _inst_cap(len(cs.ikey))
-    mang := gn + "__" + str(len(cs.ikey))
+    mang := _instname(&cs, gn, targs)
     push(cs.ikey, key)
     push(cs.iname, mang)
     push(cs.iarg, _tjoin(targs))
@@ -810,7 +879,7 @@ fn _inst_enum(cs: inout C, n: string, targs: [string]) -> string:
     if ex >= 0:
         return "E~" + cs.iname[ex]
     _inst_cap(len(cs.ikey))
-    mang := gn + "__" + str(len(cs.ikey))
+    mang := _instname(&cs, gn, targs)
     push(cs.ikey, key)
     push(cs.iname, mang)
     push(cs.iarg, _tjoin(targs))
@@ -986,7 +1055,7 @@ fn _inst_fn(cs: inout C, n: string, targs: [string]) -> int:
     if ex >= 0:
         return _fidx(&cs, cs.iname[ex])
     _inst_cap(len(cs.ikey))
-    mang := gn + "__" + str(len(cs.ikey))
+    mang := _instname(&cs, gn, targs)
     push(cs.ikey, key)
     push(cs.iname, mang)
     push(cs.iarg, _tjoin(targs))
