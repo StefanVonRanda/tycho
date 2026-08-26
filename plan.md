@@ -2546,6 +2546,35 @@ the 1.081 on `tiny`); the 1.199 on raytrace is 1.46x on the VARIABLE part alone.
 Reaching 1.000 there needs ~32% of the variable time gone, which at the measured
 conversion is most of the instruction stream. No front-end change buys that.
 
+### The cause, measured directly (cachegrind, examples/invindex.ty, worst ratio 1.371)
+
+|            | ./tychoc | ./tychoc1 | ratio |
+|------------|---------|----------|-------|
+| I refs     | 1,993,780 | 3,039,560 | 1.52x |
+| **D refs** | 694,746 | **1,312,166** | **1.89x** |
+| LL misses  | 8,284 | 16,321 | 1.97x |
+| minor flt  | 135 | 207 | 1.53x |
+| LL miss RATE | 0.3% | 0.4% | same |
+
+The miss RATE is identical: locality is not worse, tychoc1 simply TOUCHES TWICE
+THE DATA. That is an AST built with value semantics, and it is the same
+quantity the deep-copy work proved cannot be removed profitably.
+
+INSTRUCTION COUNT IS NEARLY MEANINGLESS FOR THIS COMPARISON. Three separate
+large Ir reductions produced NO wall win: the escape/promotion pass (-5.0% Ir,
+wall 1.0041), the siphash proxy (-4.08% Ir, -0.57% wall), and
+-fno-asynchronous-unwind-tables (-19% Ir on an empty compile, wall geomean
+1.0030 over six inputs). tychoc1's excess instructions are high-IPC linear work
+-- arena copies, and the pre-main FDE scan which is 63% of an EMPTY compile
+(201,044 of 319,103 Ir) -- that the prefetcher absorbs. ./tychoc's time is
+cache-missing pointer chasing instead: 30% __strcmp_avx2, 10% _int_malloc.
+
+Also measured: tychoc1's process startup is FASTER than ./tychoc's (--version
+1262 us vs 1344 us over 200 execs). The whole per-compile difference is setup
+work, not exec: an empty-file compile is 1481 us vs 1337 us. Reading the 140 KB
+runtime rather than embedding it, as ./tychoc does, is 22 us of that
+(read+write 112.8 us vs write-only 91.2 us).
+
 ### If this is picked up again
 
 The remaining items on raytrace are all under 10%: str_copy 9.4% (already 13
