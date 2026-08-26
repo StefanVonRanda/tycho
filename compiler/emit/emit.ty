@@ -4993,6 +4993,33 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                                 ow9 := _ownerof(&cs, ast.Name(l, n))
                                 sav9 := cs.arena
                                 cs.arena = ow9
+                                # src/tychoc.c:11692-11702 -- two or more pieces
+                                # are pre-evaluated into `_ap<n>` temps against
+                                # the accumulator's ORIGINAL value, THEN appended
+                                # in source order. The first append grows the
+                                # buffer, so an operand read afterwards would see
+                                # the grown value. The ids are reserved before any
+                                # operand is generated, because generating one can
+                                # itself take numbers off the same counter.
+                                if len(terms) >= 2:
+                                    id0 := cs.tmp
+                                    cs.tmp += len(terms)
+                                    aps := []string
+                                    for q8 := len(terms) - 1; q8 >= 0; q8 -= 1:
+                                        tc8, tt8 := _ex(&cs, terms[q8])
+                                        cty8 := "char*"
+                                        fn8 := "tycho_str_append"
+                                        if tt8 != "string" and tt8 != "bytes":
+                                            cty8 = "char"
+                                            fn8 = "tycho_str_append_char"
+                                        nm8 := "_ap" + str(id0 + len(aps))
+                                        push(aps, fn8 + "(" + ow9 + ", &" + cn9 +
+                                            ", &_len_" + cn9 + ", &_cap_" + cn9 + ", " + nm8 + ");\n")
+                                        out9 = out9 + ind + cty8 + " " + nm8 + " = " + tc8 + ";\n"
+                                    for a8 in aps:
+                                        out9 = out9 + ind + a8
+                                    cs.arena = sav9
+                                    return out9
                                 for q9 := len(terms) - 1; q9 >= 0; q9 -= 1:
                                     tc9, tt9 := _ex(&cs, terms[q9])
                                     fnq := "tycho_str_append"
