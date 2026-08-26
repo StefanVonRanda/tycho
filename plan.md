@@ -2463,6 +2463,14 @@ So the eight-input set was FLATTERING tychoc1, not representative, and the
 crossover is a function of compile size: tychoc1 wins only where the variable
 work is large enough to amortise its ~1.05 ms of fixed cost per compile.
 
+SUPERSEDED by commit e539f781, which stopped emitting the ~33% of functions
+nothing in the unit reaches. Re-measured over the same 55 entry points, min of
+2 alternating rounds against ./tychoc on a quiet box: **12 of 55** at or under
+1.000, geomean **1.0239**, median **1.0507**, worst 1.339 (was 1.372). The
+eight-input geomean is **0.9849**. The size crossover above still holds --
+every win is still a large compile -- but a program that imports a package for
+two symbols no longer pays for the rest of it.
+
 ### Why the rest is not another optimisation pass
 
 raytrace needs ~40% of tychoc1's instructions gone to reach 1.000 and the
