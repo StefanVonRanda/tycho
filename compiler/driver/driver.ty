@@ -285,7 +285,7 @@ fn dump_tokens(src_path: string):
     out := ""
     for k := 0; k < len(toks); k += 1:
         t := toks[k]
-        out = out + str(t.line) + ":" + str(t.col) + " " + lex.kname(t.k) + " " + t.text + "\n"
+        out = out + str(t.line) + ":" + str(t.col) + " " + lex.kname(t.k) + " " + lex.spell(t) + "\n"
     print(out)
 
 # The `# deprecated:` notes the lexer kept, one per line, so the fn each one

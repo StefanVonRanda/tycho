@@ -5385,11 +5385,6 @@ fn _oneline(s: string) -> string:
             out = out + s[i:i + 1]
     return out
 
-fn _strip_semi(s: string) -> string:
-    e := len(s)
-    for e > 0 and (s[e - 1] == 10 or s[e - 1] == 59 or s[e - 1] == 32):
-        e -= 1
-    return s[0:e]
 
 fn _trim_nl(s: string) -> string:
     if len(s) > 0 and s[len(s) - 1] == 10:
@@ -5890,8 +5885,6 @@ fn _soa_defs(cs: inout C) -> (string, string):
         i += 1
     return (sb, fb)
 
-fn _arr_defs(cs: inout C) -> (string, string, string):
-    return _arr_defs_from(&cs, 0)
 
 # Only the kinds from `start` on. Emitting one array kind can stamp another, so
 # the caller loops until the count stops moving -- regenerating every kind each

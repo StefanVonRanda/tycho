@@ -79,8 +79,6 @@ fn kname(k: int) -> string:
         return "comment"
     return "?"
 
-fn _t(kind: int, text: string, line: int, col: int, raw: string) -> Tok:
-    return Tok(kind, text, line, col, 0, 0.0, raw, "")
 
 # The three hottest token sites build their Tok INLINE rather than through this,
 # because a literal kind is not a place (no copy at all) and a local text is in
@@ -138,6 +136,102 @@ const OP_DOTDOT    = 11822    # `..`
 const OP_ELLIPSIS  = 3026478  # `...`
 const OP_DOTDOTLT  = 3943982  # `..<`
 const OP_DECL      = 15674    # `:=`
+const OP_PCT       = 37       # `%`
+const OP_STAR      = 42       # `*`
+const OP_PLUS      = 43       # `+`
+const OP_SLASH     = 47       # `/`
+const OP_SEMI      = 59       # `;`
+const OP_LT        = 60       # `<`
+const OP_GT        = 62       # `>`
+const OP_CARET     = 94       # `^`
+const OP_COLONCOLON = 14906   # `::`
+const OP_SHL       = 15420    # `<<`
+const OP_NE        = 15649    # `!=`
+const OP_LE        = 15676    # `<=`
+const OP_EQEQ      = 15677    # `==`
+const OP_GE        = 15678    # `>=`
+const OP_SHR       = 15934    # `>>`
+
+# An operator token carries no `text`: its spelling IS its tag, so a diagnostic
+# decodes it here instead of the lexer allocating a one-byte string 43% of the
+# time (measured over compiler/emit/emit.ty: 28,527 op tokens of 66,174). Every
+# arm returns a literal, which is immortal -- storing one in a node costs no
+# allocation at all, where the old `text` cost two.
+fn opspell(oid: int) -> string:
+    if oid == OP_LPAREN:
+        return "("
+    if oid == OP_RPAREN:
+        return ")"
+    if oid == OP_COLON:
+        return ":"
+    if oid == OP_COMMA:
+        return ","
+    if oid == OP_DOT:
+        return "."
+    if oid == OP_EQ:
+        return "="
+    if oid == OP_LBRACK:
+        return "["
+    if oid == OP_RBRACK:
+        return "]"
+    if oid == OP_DECL:
+        return ":="
+    if oid == OP_ARROW:
+        return "->"
+    if oid == OP_PLUS:
+        return "+"
+    if oid == OP_MINUS:
+        return "-"
+    if oid == OP_STAR:
+        return "*"
+    if oid == OP_SLASH:
+        return "/"
+    if oid == OP_PCT:
+        return "%"
+    if oid == OP_EQEQ:
+        return "=="
+    if oid == OP_NE:
+        return "!="
+    if oid == OP_LT:
+        return "<"
+    if oid == OP_GT:
+        return ">"
+    if oid == OP_LE:
+        return "<="
+    if oid == OP_GE:
+        return ">="
+    if oid == OP_AMP:
+        return "&"
+    if oid == OP_PIPE:
+        return "|"
+    if oid == OP_CARET:
+        return "^"
+    if oid == OP_TILDE:
+        return "~"
+    if oid == OP_SHL:
+        return "<<"
+    if oid == OP_SHR:
+        return ">>"
+    if oid == OP_DOLLAR:
+        return "$"
+    if oid == OP_SEMI:
+        return ";"
+    if oid == OP_DOTDOT:
+        return ".."
+    if oid == OP_DOTDOTLT:
+        return "..<"
+    if oid == OP_ELLIPSIS:
+        return "..."
+    if oid == OP_COLONCOLON:
+        return "::"
+    return "?"
+
+# What a diagnostic prints for a token. Only an operator needs decoding; every
+# other kind either carries its own text or has none.
+fn spell(t: Tok) -> string:
+    if t.k == K_OP:
+        return opspell(t.ival)
+    return t.text
 
 # The keyword's identity as an int, in the order `kwid` tests them.
 const KW_FN         = 1
@@ -293,27 +387,27 @@ fn kwid(s: string) -> int:
 
 # src/tychoc.c@tok_continues_line. A line ending on one of these cannot be a
 # complete statement, so the next physical line joins it.
-fn continues_line(kind: int, text: string) -> bool:
+fn continues_line(kind: int, tag: int) -> bool:
     if kind == K_KW:
-        return text == "and" or text == "or" or text == "is"
+        return tag == KW_AND or tag == KW_OR or tag == KW_IS
     if kind != K_OP:
         return false
-    if text == "+" or text == "-" or text == "*" or text == "/" or text == "%":
+    if tag == OP_PLUS or tag == OP_MINUS or tag == OP_STAR or tag == OP_SLASH or tag == OP_PCT:
         return true
-    if text == "|" or text == "^" or text == "<<" or text == ">>":
+    if tag == OP_PIPE or tag == OP_CARET or tag == OP_SHL or tag == OP_SHR:
         return true
-    if text == "=" or text == "==" or text == "!=":
+    if tag == OP_EQ or tag == OP_EQEQ or tag == OP_NE:
         return true
-    if text == "<" or text == ">" or text == "<=" or text == ">=":
+    if tag == OP_LT or tag == OP_GT or tag == OP_LE or tag == OP_GE:
         return true
-    return text == "," or text == ":="
+    return tag == OP_COMMA or tag == OP_DECL
 
 # src/tychoc.c@tok_postfixable. After a value-producing token a '.' is field or
 # tuple access, so `t.0` is DOT + INT and never a leading-dot float.
-fn postfixable(kind: int, text: string) -> bool:
+fn postfixable(kind: int, tag: int) -> bool:
     if kind == K_IDENT or kind == K_INT or kind == K_FLOAT or kind == K_STR or kind == K_CHAR:
         return true
-    return kind == K_OP and (text == ")" or text == "]")
+    return kind == K_OP and (tag == OP_RPAREN or tag == OP_RBRACK)
 
 # A lexer error names its FILE when one is known, in the same shape the parser
 # uses: without it, a broken sibling in a package was reported as `tychoc1: line
@@ -669,7 +763,7 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
             tcol := p - ls + 1
 
             lead_dot := c == 46 and p + 1 < n and is_digit(src[p + 1]) and
-                (last_ix < 0 or not postfixable(toks[last_ix].k, toks[last_ix].text))
+                (last_ix < 0 or not postfixable(toks[last_ix].k, toks[last_ix].ival))
             if is_digit(c) or lead_dot:
                 for p < n and is_digit(src[p]):
                     p += 1
@@ -795,17 +889,19 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
                 oid = oid + src[p + 1] * 256
             if l > 2:
                 oid = oid + src[p + 2] * 65536
-            text := src[p:p + l]
-            if text == "(" or text == "[":
+            if oid == OP_LPAREN or oid == OP_LBRACK:
                 if bracket_depth == 0:
                     bracket_line = line
                 bracket_depth += 1
-            elif (text == ")" or text == "]") and bracket_depth > 0:
+            elif (oid == OP_RPAREN or oid == OP_RBRACK) and bracket_depth > 0:
                 bracket_depth -= 1
             raw8 := ""
             if keep_trivia:
-                raw8 = text
-            push(toks, Tok(K_OP, text, line, tcol, oid, 0.0, raw8, ""))
+                raw8 = src[p:p + l]
+            # No `text`: the tag above IS the spelling, and lex.opspell decodes
+            # it on the diagnostic path. This is the substring the lexer used to
+            # allocate for every operator, and the copy `push` then made of it.
+            push(toks, Tok(K_OP, "", line, tcol, oid, 0.0, raw8, ""))
             p += l
             last_ix = len(toks) - 1
 
@@ -820,7 +916,7 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
         # operator join: the candidate is recorded from the last REAL token.
         if bracket_depth == 0:
             push(toks, Tok(K_NEWLINE, "", line, nlcol, 0, 0.0, "", ""))
-            pend = last_ix >= 0 and continues_line(toks[last_ix].k, toks[last_ix].text)
+            pend = last_ix >= 0 and continues_line(toks[last_ix].k, toks[last_ix].ival)
         else:
             pend = false
         # The anchor is the indent of the LOGICAL line and stays put while the

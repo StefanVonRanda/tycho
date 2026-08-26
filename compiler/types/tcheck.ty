@@ -48,17 +48,7 @@ fn _targs(q: string) -> [string]:
             start = j + 1
     return out
 
-fn _arg0(q: string) -> string:
-    a := _targs(q)
-    if len(a) == 0:
-        return "?"
-    return a[0]
 
-fn _arg1(q: string) -> string:
-    a := _targs(q)
-    if len(a) < 2:
-        return "?"
-    return a[1]
 
 fn known(t: string) -> bool:
     return find(t, "?") < 0
@@ -90,12 +80,6 @@ fn _is_int(t: string) -> bool:
 fn _is_num(t: string) -> bool:
     return _is_int(t) or t == "float" or t == "f32"
 
-fn _is_prim_name(s: string) -> bool:
-    if s == "int" or s == "float" or s == "bool" or s == "string":
-        return true
-    if s == "ptr" or s == "bytes" or s == "u32" or s == "u64" or s == "f32":
-        return true
-    return s == "u8" or s == "u16" or s == "i8" or s == "i16" or s == "i32" or s == "i64"
 
 # ---------------------------------------------------------------- the tables
 
