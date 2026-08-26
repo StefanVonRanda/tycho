@@ -1382,6 +1382,11 @@ fn _shares(cs: inout C, e: ast.Expr, t: string, arena: string) -> bool:
         return false
     if _acc_rooted(&cs, e):
         return false
+    # A slice is a FRESH buffer, not the root's own, so _ownerof(root) says
+    # nothing about it. src/tychoc.c@is_place copies one unconditionally.
+    match e:
+        ast.Slice(l9, a9, b9, k9): return false
+        _: pass
     ow6 := _ownerof(&cs, e)
     if ow6 == arena:
         return true
@@ -1663,6 +1668,8 @@ fn _place(e: ast.Expr) -> bool:
         ast.Field(l, r, f): return true
         ast.Index(l, k): return true
         ast.TupIdx(l, k, n): return true
+        # a slice aliases its source, so binding one copies (src/tychoc.c@is_place)
+        ast.Slice(l, a, b, k): return true
         ast.Call(l, q, n, ts, k):
             # to_str/to_bool lower to their ARGUMENT unchanged (there is no
             # conversion to make -- the representations are identical), so the
