@@ -5177,7 +5177,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             cs.arena = sv3
             lab3 := ""
             gt3 := "goto _post" + str(k3) + ";"
-            if len(_replace(bd3, gt3, "")) != len(bd3):
+            if _hassub(bd3, gt3):
                 lab3 = ind + "        _post" + str(k3) + ": ;\n"
             open3 := ""
             res3 := ""
@@ -6251,6 +6251,27 @@ fn _one_call(s: string) -> bool:
         i += 1
     return d == 0
 
+# Whether `sub` occurs in `s`, answered without building anything. The one
+# caller used to ask `len(_replace(s, sub, "")) != len(s)`, which allocated a
+# whole second copy of a function body to learn one bit -- 4.4% of the Ir
+# compiling bench/raytrace/raytrace.ty.
+fn _hassub(s: string, sub: string) -> bool:
+    n := len(sub)
+    if n == 0:
+        return true
+    f0 := sub[0]
+    ls := len(s)
+    i := 0
+    for i + n <= ls:
+        if s[i] == f0:
+            j := 1
+            for j < n and s[i + j] == sub[j]:
+                j += 1
+            if j == n:
+                return true
+        i += 1
+    return false
+
 fn _replace(s: string, from: string, to: string) -> string:
     n := len(from)
     if n == 0:
@@ -6259,13 +6280,20 @@ fn _replace(s: string, from: string, to: string) -> string:
     out := ""
     i := 0
     last := 0
-    for i + n <= len(s):
+    ls := len(s)
+    hit := false
+    for i + n <= ls:
         if s[i] == f0 and s[i:i + n] == from:
             out = out + s[last:i] + to
             i += n
             last = i
+            hit = true
         else:
             i += 1
+    # No match is the common case at every scratch-arena site; returning `s`
+    # itself skips a full copy of the body.
+    if not hit:
+        return s
     return out + s[last:]
 
 fn _struct_order(cs: inout C) -> [int]:
