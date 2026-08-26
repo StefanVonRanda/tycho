@@ -2787,3 +2787,24 @@ assuming the last token is K_EOF, which is false on any early-exit path -- but
 making it search for K_EOF does NOT fix this symptom, so the cause is elsewhere
 and the change was reverted rather than shipped unproven. Worth a proper hunt if
 anyone sees a wrong filename in a diagnostic.
+
+
+### The closing arithmetic: no phase dominates
+
+tools/tycho-vm/main.ty, cumulative Ir by phase (./tychoc totals 34.6e6):
+  --parse       6.48e6   16%
+  --resolve    21.72e6   +15.2e6, 37%
+  --typecheck  31.14e6    +9.4e6, 23%
+  --emit-c     41.33e6   +10.2e6, 25%
+tychoc1 is 1.19x on instructions here and every phase carries part of it. To
+reach wall 1.000 needs roughly 16% of instructions removed ACROSS ALL FOUR, and
+this session's Ir cuts converted to wall at 0.1-0.4x, so it is nearer 40% of
+instructions in practice.
+Merging resolve and typecheck -- the only remaining structural idea that does
+not add a second code path -- would save the duplicate traversal, perhaps
+2-3e6 (5-7% Ir, so ~1% wall), against a 19% gap. Not worth a high-risk refactor
+of two passes with ordering dependencies.
+
+That is the end of the analysis. The gap is not one hot spot; it is an AST-based
+five-pass compiler against a single-pass one, and closing it needs a different
+front-end shape, which would mean two code paths in a one-person project.
