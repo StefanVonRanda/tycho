@@ -181,6 +181,15 @@ fn parse_float(s: string) -> Result(float, FloatErr):
         return Err(Underflow)
     return Err(Syntax)                           # shim disagreed with the scan above
 
+extern fn strx_format_g17(v: float) -> string
+
+fn format_g17(v: float) -> string:
+    # C-locale `%.17g`: 17 significant digits, which round-trip a binary64 exactly.
+    # NOT the shortest form `str(float)` gives -- format_g17(0.1) is
+    # "0.10000000000000001". inf/nan come back as the C library spells them.
+    return strx_format_g17(v)
+
+
 # (split(s, sep) and find(s, sub) are language builtins -- not duplicated here.)
 
 fn lines(s: string) -> [string]:

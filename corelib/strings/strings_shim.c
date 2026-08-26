@@ -1,6 +1,7 @@
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE          /* strtod_l: a GNU/musl extension, NOT POSIX 2008 */
 #endif
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
@@ -108,6 +109,44 @@ double strx_parse_double(const char *s, tycho_int *status) {
     }
     *status = TY_PF_OK;
     return v;
+}
+
+/* Rewrite the running locale's decimal separator (which may be several bytes)
+ * to a single '.' in place; returns the new length. Fallback leg only -- %g
+ * emits at most one separator, so one rewrite is enough. Twin of
+ * runtime/tycho_rt.c@ty_fix_decimal_point. */
+static int ty_fix_decimal_point(char *s, int n) {
+    struct lconv *lc = localeconv();
+    const char *dp   = (lc && lc->decimal_point && lc->decimal_point[0]) ? lc->decimal_point : ".";
+    size_t dplen     = strlen(dp);
+    if (dplen == 1 && dp[0] == '.') return n;        /* already C-like */
+    char *at = strstr(s, dp);
+    if (!at) return n;                               /* integral, or inf/nan */
+    *at = '.';
+    memmove(at + 1, at + dplen, (size_t)((s + n) - (at + dplen)) + 1);   /* +1 carries the NUL */
+    return n - (int)dplen + 1;
+}
+
+/* WRITE, the mirror of strx_parse_double above and the twin of
+ * src/tychoc.c@c_dtoa: v as C-locale `%.17g`. The buffer is thread-local and
+ * the next call overwrites it, which is safe because tychoc copies an extern's
+ * string return (`src/tychoc.c@tycho_str_copy`). */
+const char *strx_format_g17(double v) {
+    static _Thread_local char b[64];                 /* %.17g of a double is <= 24 bytes */
+    int m;
+
+#ifdef TY_HAVE_STRTOD_L
+    pthread_once(&ty_c_numeric_once, ty_c_numeric_init);
+    if (ty_c_numeric) {
+        locale_t prev = uselocale(ty_c_numeric);
+        snprintf(b, sizeof b, "%.17g", v);
+        uselocale(prev);
+        return b;
+    }
+#endif
+    m = snprintf(b, sizeof b, "%.17g", v);
+    if (m > 0 && (size_t)m < sizeof b) ty_fix_decimal_point(b, m);
+    return b;
 }
 
 tycho_int strx_test_make_locale_hostile(void) {
