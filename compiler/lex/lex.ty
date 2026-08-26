@@ -378,8 +378,10 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
     pend := false
     pend_col := 0
     cont := false
-    last_kind := ""
-    last_text := ""
+    # The last REAL token's index, not copies of its kind and text: assigning
+    # those two strings allocated twice per token for a question asked twice
+    # per line. -1 until the first real token, which is what "" stood for.
+    last_ix := -1
 
     for p < n:
         line += 1
@@ -461,7 +463,7 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
             tcol := p - ls + 1
 
             lead_dot := c == 46 and p + 1 < n and is_digit(src[p + 1]) and
-                (len(toks) == 0 or not postfixable(last_kind, last_text))
+                (last_ix < 0 or not postfixable(toks[last_ix].kind, toks[last_ix].text))
             if is_digit(c) or lead_dot:
                 for p < n and is_digit(src[p]):
                     p += 1
@@ -514,8 +516,7 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
                         Err(strings.Empty): fv = 0.0
                         Err(strings.Syntax): fv = 0.0
                     push(toks, Tok("float", raw, line, tcol, 0, fv, raw, file))
-                    last_kind = "float"
-                    last_text = raw
+                    last_ix = len(toks) - 1
                 else:
                     v := 0
                     imax := 9223372036854775807     # INT64_MAX; tycho `int` is i64
@@ -525,8 +526,7 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
                             _die(file, src, line, "integer literal out of range")
                         v = v * litbase + d
                     push(toks, Tok("int", raw, line, tcol, v, 0.0, raw, file))
-                    last_kind = "int"
-                    last_text = raw
+                    last_ix = len(toks) - 1
                 continue
 
             # f"..." is an interpolated string, not an identifier named f.
@@ -542,8 +542,7 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
                 if keep_trivia:
                     raw9 = name
                 push(toks, Tok(kind, name, line, tcol, 0, 0.0, raw9, file))
-                last_kind = kind
-                last_text = name
+                last_ix = len(toks) - 1
                 continue
 
             if c == 34 or fstr:
@@ -557,8 +556,7 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
                     flag = 1
                 push(toks, Tok("str", body, line, tcol, flag, 0.0, src[s:e], file))
                 p = e
-                last_kind = "str"
-                last_text = body
+                last_ix = len(toks) - 1
                 continue
 
             if c == 96:
@@ -566,16 +564,14 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
                 push(toks, Tok("str", body, line, tcol, 0, 0.0, src[s:e], file))
                 p = e
                 line += nl
-                last_kind = "str"
-                last_text = body
+                last_ix = len(toks) - 1
                 continue
 
             if c == 39:
                 e, cv := scan_char(src, p, line, file)
                 push(toks, Tok("char", src[s:e], line, tcol, cv, 0.0, src[s:e], file))
                 p = e
-                last_kind = "char"
-                last_text = src[s:e]
+                last_ix = len(toks) - 1
                 continue
 
             if c == 47 and p + 1 < n and src[p + 1] == 47:
@@ -597,8 +593,7 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
                 raw8 = text
             push(toks, Tok("op", text, line, tcol, 0, 0.0, raw8, file))
             p += l
-            last_kind = "op"
-            last_text = text
+            last_ix = len(toks) - 1
 
         nlcol := p - ls + 1
         if p < n and src[p] == 35:
@@ -611,7 +606,7 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
         # operator join: the candidate is recorded from the last REAL token.
         if bracket_depth == 0:
             push(toks, Tok("newline", "", line, nlcol, 0, 0.0, "", file))
-            pend = continues_line(last_kind, last_text)
+            pend = last_ix >= 0 and continues_line(toks[last_ix].kind, toks[last_ix].text)
         else:
             pend = false
         # The anchor is the indent of the LOGICAL line and stays put while the
