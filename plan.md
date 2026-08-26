@@ -2575,6 +2575,54 @@ work, not exec: an empty-file compile is 1481 us vs 1337 us. Reading the 140 KB
 runtime rather than embedding it, as ./tychoc does, is 22 us of that
 (read+write 112.8 us vs write-only 91.2 us).
 
+### Shrinking the AST node types -- CLOSED by a sensitivity probe, 2026-08-26
+
+The lever the section above named as the last one short of not building an AST.
+It was PRICED before it was written, the way interning was, and it is dead.
+
+`compiler/ast/ast.ty`'s `Expr` union is 88 B against a 32 B median payload and
+`Stmt` is 96 B against 40 B, so the premise was that every node drags dead bytes
+through cache. The probe tests the SLOPE instead of assuming it: take the C that
+stage 1 emits for `compiler/main.ty`, append a padding array to `struct
+E_ast__Expr` and `struct E_ast__Stmt`, rebuild on the same cc line, measure.
+Growing a node cannot be worse than shrinking it is good.
+
+| every node grown by | D refs | LL misses | LLd write misses |
+|---|---|---|---|
+| +0 (HEAD, rebuilt) | 1,308,061 | 16,400 | 7,094 |
+| +32 B (Expr 120, Stmt 128) | 1,309,459 | 16,410 | 7,094 |
+| **+4096 B (Expr 4184, Stmt 4192)** | **1,309,196** | **16,400** | **7,090** |
+
+A 47x node is FREE: +0.09% D refs, zero change in LL misses, and wall geomean
+**0.9980** over invindex, raytrace, tiny, tycho-vm, tycho-chess and
+compiler/main.ty. The mechanism is that a bump allocator never touches the bytes
+nobody assigns, and `[Expr]` lowers to an array of `E_ast__Expr *` -- a push
+copies 8 bytes, and `tycho_copy_E_ast__Expr` copies the live variant's fields,
+not the union. Node size is not on the data path at all, so removing it removes
+nothing. Controls: all three binaries emit byte-identical C for invindex, and a
+first 4 KB run that read 73,232 D refs was a cwd mistake that died on `no 'main'
+procedure` -- the dying-compile trap, caught and discarded rather than reported.
+
+### The miss gap is half INSTRUCTION fetch, which no front-end change reaches
+
+Splitting the same cachegrind runs on `examples/invindex.ty` -- the number the
+section above reported only as a total:
+
+| | ./tychoc | ./tychoc1 | delta | share of gap |
+|---|---|---|---|---|
+| LLi (instruction) | 3,161 | 6,972 | +3,811 | **47%** |
+| LLd read | 1,561 | 2,382 | +821 | 10% |
+| LLd write | 3,558 | 6,966 | +3,408 | 42% |
+
+Nearly half the miss gap is code footprint, not data: 2.79 MB of static binary
+against 0.56 MB, and a compiler that makes several typed passes over a tree
+where `./tychoc` makes one. `-ffunction-sections -Wl,--gc-sections` already
+measured 3.7% SLOWER for -164 KB of text, so this is the executed code surface
+and not the file size. The write half is `__memcpy` 1,520 misses, an arena array
+push 1,077, `tycho_str_copy` 1,005, `tokenize_named` 920, `tycho_copy_E_ast__Expr`
+536, `__memset` 514 -- string copying and array growth, every one of which the
+deep-copy and interning work above already closed by measurement.
+
 ### If this is picked up again
 
 The remaining items on raytrace are all under 10%: str_copy 9.4% (already 13
