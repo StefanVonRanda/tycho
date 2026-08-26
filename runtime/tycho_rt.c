@@ -99,41 +99,36 @@ static uintptr_t tycho_hexrun(const char **pp, const char *end) {
  * Ir, 19% of a two-line compile. Same file, same two fields, same rlimit and
  * same clamp against the mapping below -- read once and scanned by hand. */
 static int tycho_main_stack_bounds(void) {
+    static char buf[64 * 1024];   /* main thread only, before any task exists */
     int fd = open("/proc/self/maps", O_RDONLY | O_CLOEXEC);
     if (fd < 0) return 0;
-    char buf[8192];
     size_t held = 0;
-    uintptr_t prev_to = 0, from = 0, to = 0;
-    int found = 0, done = 0;
-    while (!done) {
+    for (;;) {
         ssize_t n = read(fd, buf + held, sizeof buf - held);
         if (n <= 0) break;
         held += (size_t)n;
-        size_t off = 0;
-        for (;;) {
-            char *nl = (char *)memchr(buf + off, '\n', held - off);
-            if (!nl) break;
-            const char *p = buf + off;
-            uintptr_t f = tycho_hexrun(&p, nl);
-            if (p < nl && *p == '-') {
-                p++;
-                uintptr_t t = tycho_hexrun(&p, nl);
-                if ((size_t)(nl - (buf + off)) >= 7 && memcmp(nl - 7, "[stack]", 7) == 0) {
-                    from = f; to = t; found = 1; done = 1; break;
-                }
-                prev_to = t;
-            }
-            off = (size_t)(nl - buf) + 1;
-        }
-        if (done) break;
-        if (off == 0 && held == sizeof buf) break;   /* one line longer than the buffer: give up */
-        held -= off;
-        memmove(buf, buf + off, held);
+        if (held == sizeof buf) break;   /* truncated: the [stack] line may be past the end */
     }
     close(fd);
-    if (!found || to <= from) return 0;
+    /* the label ends its line, so a mapped FILE called "[stack]" cannot match */
+    char *hit = (char *)memmem(buf, held, "[stack]\n", 8);
+    if (!hit) return 0;
+    char *ls = hit; while (ls > buf && ls[-1] != '\n') ls--;
+    const char *p = ls;
+    uintptr_t from = tycho_hexrun(&p, hit);
+    if (p >= hit || *p != '-') return 0;
+    p++;
+    uintptr_t to = tycho_hexrun(&p, hit);
+    if (to <= from) return 0;
+    uintptr_t prev_to = 0;
+    if (ls > buf) {   /* the mapping below, for glibc's own clamp */
+        char *ps = ls - 1; while (ps > buf && ps[-1] != '\n') ps--;
+        const char *q = ps;
+        (void)tycho_hexrun(&q, ls);
+        if (q < ls && *q == '-') { q++; prev_to = tycho_hexrun(&q, ls); }
+    }
     struct rlimit rl;
-    size_t size = to - from;
+    size_t size;
     if (getrlimit(RLIMIT_STACK, &rl) == 0 && rl.rlim_cur != RLIM_INFINITY) size = (size_t)rl.rlim_cur;
     else size = (size_t)-1;
     if (prev_to && prev_to < to && size > (size_t)(to - prev_to)) size = (size_t)(to - prev_to);
