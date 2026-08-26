@@ -2623,6 +2623,17 @@ push 1,077, `tycho_str_copy` 1,005, `tokenize_named` 920, `tycho_copy_E_ast__Exp
 536, `__memset` 514 -- string copying and array growth, every one of which the
 deep-copy and interning work above already closed by measurement.
 
+### PGO: measured, real, and not adopted
+
+`-fprofile-generate` over four inputs then `-fprofile-use` on the same cc line:
+wall geomean **0.9876** over tiny/raytrace/invindex/tycho-vm/compiler -- tiny
+0.965, invindex 0.981, raytrace 0.988, neutral on the two largest. It does NOT
+reduce instruction-cache misses (LLi 7,068 vs 6,972 at HEAD), so the win is
+branch layout, not the I-cache footprint it was aimed at.
+NOT adopted: it needs a two-stage instrumented build and stored .gcda profile
+data in the Makefile, and 1.2% does not change the standing when the gap is 14%.
+Revisit only if the gap is otherwise closed to within ~2%.
+
 ### If this is picked up again
 
 The remaining items on raytrace are all under 10%: str_copy 9.4% (already 13
