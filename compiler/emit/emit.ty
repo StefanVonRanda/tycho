@@ -119,9 +119,11 @@ struct C:
     ela: [string]                      # and the array its index is proven against
     escs: [string]                     # src/tychoc.c@g_esc -- top-level locals returned by name
     retslot: bool                      # emitting the ELEMENTS of a tuple that is being returned
+    used: [string: bool]               # generated helper names the emitted text actually calls
+    hdone: [string: bool]              # already written, so a re-run adds only what is new
 
 fn _new() -> C:
-    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt, [], [], [], false)
+    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt, [], [], [], false, []string: bool, []string: bool)
 
 fn _bad(msg: string):
     die("tychoc1: " + msg)
@@ -493,6 +495,37 @@ fn _hashable_d(cs: inout C, t: string, d: int) -> bool:
 # The DETERMINISTIC twin of _hash: the `hash()` builtin must not depend on the
 # per-process map seed, so it uses the runtime's `_det` family and the generated
 # `dhash` bodies (src/tychoc.c emits the same pair).
+# ---------------------------------------------------------- dead helpers
+#
+# A generated helper family is emitted whole -- one [float] anywhere gives the
+# unit every operation on it -- and most of a unit's helpers are never called.
+# `_u` is threaded through the four funnels that FORM a helper's name (_copy,
+# _eq, _tostr, _hash/_hash_det), so a name is live exactly when something the
+# unit emits mentions it; `_need` answers "live, and not written yet".
+#
+# The closure is transitive because a helper's own generator goes through the
+# same funnels: writing tycho_str_S_x marks the str of every field type. That
+# only terminates if the generators are RE-RUN while the live set grows, which
+# is the fixpoint at the end of `program` -- `_need` is what keeps a re-run
+# from writing anything twice.
+fn _u(cs: inout C, n: string) -> string:
+    cs.used[n] = true
+    return n
+
+fn _once(cs: inout C, n: string) -> bool:
+    if n in cs.hdone:
+        return false
+    cs.hdone[n] = true
+    return true
+
+fn _need(cs: inout C, n: string) -> bool:
+    if not (n in cs.used):
+        return false
+    if n in cs.hdone:
+        return false
+    cs.hdone[n] = true
+    return true
+
 fn _hash_det(cs: inout C, t: string, v: string) -> string:
     if t == "string" or t == "bytes":
         return "tycho_si_hash_det(" + v + ")"
@@ -502,9 +535,11 @@ fn _hash_det(cs: inout C, t: string, v: string) -> string:
     if _is_enum(t):
         return "tycho_ik_hash_det((tycho_int)((" + v + ")->tag))"
     if _is_struct(t):
-        return "tycho_dhash_S_" + _tname(t) + "(" + v + ")"
+        dsn := _u(&cs, "tycho_dhash_S_" + _tname(t))
+        return dsn + "(" + v + ")"
     if _is_tup(t):
-        return "tycho_dhash_T" + _tname(t) + "(" + v + ")"
+        dtn := _u(&cs, "tycho_dhash_T" + _tname(t))
+        return dtn + "(" + v + ")"
     if _is_arr(t):
         e := _elem(t)
         if e == "int":
@@ -525,9 +560,11 @@ fn _hash(cs: inout C, t: string, v: string) -> string:
     if _is_enum(t):
         return "tycho_ik_hash((tycho_int)((" + v + ")->tag))"
     if _is_struct(t):
-        return "tycho_hash_S_" + _tname(t) + "(" + v + ")"
+        hsn := _u(&cs, "tycho_hash_S_" + _tname(t))
+        return hsn + "(" + v + ")"
     if _is_tup(t):
-        return "tycho_hash_T" + _tname(t) + "(" + v + ")"
+        htn := _u(&cs, "tycho_hash_T" + _tname(t))
+        return htn + "(" + v + ")"
     if _is_arr(t):
         e := _elem(t)
         if e == "int":
@@ -1518,15 +1555,18 @@ fn _copy(cs: inout C, code: string, t: string, arena: string) -> string:
     if _is_arr(t):
         return _apfx(&cs, _elem(t)) + "_copy(" + arena + ", " + code + ")"
     if _is_enum(t):
-        return "tycho_copy_E_" + _tname(t) + "(" + arena + ", " + code + ")"
+        cen := _u(&cs, "tycho_copy_E_" + _tname(t))
+        return cen + "(" + arena + ", " + code + ")"
     if _is_map(t):
         return _mpfx(&cs, t) + "_copy(" + arena + ", " + code + ")"
     if _is_soa(t):
         return _spfx(&cs, t) + "_copy(" + arena + ", " + code + ")"
     if _is_struct(t) and _heap(&cs, t):
-        return "tycho_copy_S_" + _tname(t) + "(" + arena + ", " + code + ")"
+        csn := _u(&cs, "tycho_copy_S_" + _tname(t))
+        return csn + "(" + arena + ", " + code + ")"
     if _is_tup(t) and _heap(&cs, t):
-        return "tycho_copy_T" + _tname(t) + "(" + arena + ", " + code + ")"
+        ctn := _u(&cs, "tycho_copy_T" + _tname(t))
+        return ctn + "(" + arena + ", " + code + ")"
     return code
 
 fn _tostr(cs: inout C, code: string, t: string) -> string:
@@ -1551,11 +1591,14 @@ fn _tostr(cs: inout C, code: string, t: string) -> string:
     if t == "bool":
         return "tycho_bool_to_str(" + cs.arena + ", " + code + ")"
     if _is_struct(t):
-        return "tycho_str_S_" + _tname(t) + "(" + cs.arena + ", " + code + ")"
+        ssn := _u(&cs, "tycho_str_S_" + _tname(t))
+        return ssn + "(" + cs.arena + ", " + code + ")"
     if _is_tup(t):
-        return "tycho_str_T" + _tname(t) + "(" + cs.arena + ", " + code + ")"
+        stn := _u(&cs, "tycho_str_T" + _tname(t))
+        return stn + "(" + cs.arena + ", " + code + ")"
     if _is_enum(t):
-        return "tycho_str_E_" + _tname(t) + "(" + cs.arena + ", " + code + ")"
+        sen := _u(&cs, "tycho_str_E_" + _tname(t))
+        return sen + "(" + cs.arena + ", " + code + ")"
     if _is_map(t):
         return "tycho_str_mapM" + _tname(t) + "(" + cs.arena + ", " + code + ")"
     if _is_soa(t):
@@ -1604,11 +1647,14 @@ fn _eq(cs: inout C, a: string, b: string, t: string) -> string:
         # ORDER. `!=` routes through here too.
         return "tycho_str_eq(" + a + ", " + b + ")"
     if _is_struct(t):
-        return "tycho_eq_S_" + _tname(t) + "(" + a + ", " + b + ")"
+        esn := _u(&cs, "tycho_eq_S_" + _tname(t))
+        return esn + "(" + a + ", " + b + ")"
     if _is_tup(t):
-        return "tycho_eq_T" + _tname(t) + "(" + a + ", " + b + ")"
+        etn := _u(&cs, "tycho_eq_T" + _tname(t))
+        return etn + "(" + a + ", " + b + ")"
     if _is_enum(t):
-        return "tycho_eq_E_" + _tname(t) + "(" + a + ", " + b + ")"
+        een := _u(&cs, "tycho_eq_E_" + _tname(t))
+        return een + "(" + a + ", " + b + ")"
     if _is_map(t):
         return _mpfx(&cs, t) + "_eq(" + a + ", " + b + ")"
     if _is_soa(t):
@@ -5980,31 +6026,47 @@ fn _tup_defs(cs: inout C) -> (string, string, string, string):
     for i < len(cs.tks):
         es := split(cs.tks[i], "|")
         ct := "TychoTup" + str(i)
-        fl := ""
-        for j := 0; j < len(es); j += 1:
-            fl = fl + " " + _ctyz(&cs, es[j]) + "f" + str(j) + ";"
-        td = td + "typedef struct " + ct + "_ " + ct + ";\n"
-        if _tup_plain(&cs, i):
-            td = td + "struct " + ct + "_ {" + fl + " };\n"
-        else:
-            sb = sb + "struct " + ct + "_ {" + fl + " };\n"
-        pr = pr + "static int tycho_eq_T" + str(i) + "(" + ct + ", " + ct + ");\n" +
-            "static char *tycho_str_T" + str(i) + "(Arena *, " + ct + ");\n"
+        if _once(&cs, "def_T" + str(i)):
+            fl := ""
+            for j := 0; j < len(es); j += 1:
+                fl = fl + " " + _ctyz(&cs, es[j]) + "f" + str(j) + ";"
+            td = td + "typedef struct " + ct + "_ " + ct + ";\n"
+            if _tup_plain(&cs, i):
+                td = td + "struct " + ct + "_ {" + fl + " };\n"
+            else:
+                sb = sb + "struct " + ct + "_ {" + fl + " };\n"
+        doeq := _need(&cs, "tycho_eq_T" + str(i))
+        dost := _need(&cs, "tycho_str_T" + str(i))
+        docp := false
+        if _heap(&cs, "T~" + str(i)):
+            docp = _need(&cs, "tycho_copy_T" + str(i))
+        if doeq:
+            pr = pr + "static int tycho_eq_T" + str(i) + "(" + ct + ", " + ct + ");\n"
+        if dost:
+            pr = pr + "static char *tycho_str_T" + str(i) + "(Arena *, " + ct + ");\n"
         eq := ""
         st := "    char *r = tycho_str_from_c(a, \"(\");\n"
         for j := 0; j < len(es); j += 1:
+            if not (doeq or dost):
+                continue
             if j > 0:
-                eq = eq + " && "
-                st = st + "    r = tycho_str_concat(a, r, tycho_str_from_c(a, \", \"));\n"
-            eq = eq + _eq(&cs, "x.f" + str(j), "y.f" + str(j), es[j])
-            st = st + "    r = tycho_str_concat(a, r, " + _tostr_a(&cs, "v.f" + str(j), es[j]) + ");\n"
+                if doeq:
+                    eq = eq + " && "
+                if dost:
+                    st = st + "    r = tycho_str_concat(a, r, tycho_str_from_c(a, \", \"));\n"
+            if doeq:
+                eq = eq + _eq(&cs, "x.f" + str(j), "y.f" + str(j), es[j])
+            if dost:
+                st = st + "    r = tycho_str_concat(a, r, " + _tostr_a(&cs, "v.f" + str(j), es[j]) + ");\n"
         if len(eq) == 0:
             eq = "1"
-        fb = fb + "static int tycho_eq_T" + str(i) + "(" + ct + " x, " + ct + " y) {\n" +
-            "    return " + eq + ";\n}\n" +
-            "static char *tycho_str_T" + str(i) + "(Arena *a, " + ct + " v) {\n" + st +
-            "    return tycho_str_concat(a, r, tycho_str_from_c(a, \")\"));\n}\n"
-        if _heap(&cs, "T~" + str(i)):
+        if doeq:
+            fb = fb + "static int tycho_eq_T" + str(i) + "(" + ct + " x, " + ct + " y) {\n" +
+                "    return " + eq + ";\n}\n"
+        if dost:
+            fb = fb + "static char *tycho_str_T" + str(i) + "(Arena *a, " + ct + " v) {\n" + st +
+                "    return tycho_str_concat(a, r, tycho_str_from_c(a, \")\"));\n}\n"
+        if docp:
             pr = pr + "static " + ct + " tycho_copy_T" + str(i) + "(Arena *, " + ct + ");\n"
             cp := "static " + ct + " tycho_copy_T" + str(i) + "(Arena *a, " + ct + " v) {\n" +
                 "    " + ct + " r = v;\n"
@@ -6015,10 +6077,6 @@ fn _tup_defs(cs: inout C) -> (string, string, string, string):
         i += 1
     return (td, sb, pr, fb)
 
-# One compact indexed dict per (key, value) kind: an int32 index table over a
-# dense insertion-ordered entry list, with tombstones, backward-shift index
-# delete and allocation-free compaction. Mirrors src/tychoc.c:13481 line for
-# line -- the shape is what makes keys() insertion-ordered.
 fn _map_defs(cs: inout C) -> (string, string, string, string):
     td := ""
     sb := ""
@@ -6167,6 +6225,10 @@ fn _hash_defs(cs: inout C) -> (string, string):
         n := cs.sds[i].name
         if not _hashable(&cs, "S~" + n):
             continue
+        h1 := _need(&cs, "tycho_hash_S_" + n)
+        h2 := _need(&cs, "tycho_dhash_S_" + n)
+        if not (h1 or h2):
+            continue
         pr = pr + "static uint64_t tycho_hash_S_" + n + "(S_" + n + ");\n" +
             "static uint64_t tycho_dhash_S_" + n + "(S_" + n + ");\n"
         b := "static uint64_t tycho_hash_S_" + n + "(S_" + n + " v) {\n" +
@@ -6181,6 +6243,10 @@ fn _hash_defs(cs: inout C) -> (string, string):
         fb = fb + b + "    return h;\n}\n" + d + "    return h;\n}\n"
     for i := 0; i < len(cs.tks); i += 1:
         if not _hashable(&cs, "T~" + str(i)):
+            continue
+        g1 := _need(&cs, "tycho_hash_T" + str(i))
+        g2 := _need(&cs, "tycho_dhash_T" + str(i))
+        if not (g1 or g2):
             continue
         pr = pr + "static uint64_t tycho_hash_T" + str(i) + "(TychoTup" + str(i) + ");\n" +
             "static uint64_t tycho_dhash_T" + str(i) + "(TychoTup" + str(i) + ");\n"
@@ -6325,25 +6391,40 @@ fn _struct_support(cs: inout C) -> (string, string):
     body := ""
     for i := 0; i < len(cs.sds); i += 1:
         n := cs.sds[i].name
-        proto = proto + "static int tycho_eq_S_" + n + "(S_" + n + ", S_" + n + ");\n"
-        proto = proto + "static char *tycho_str_S_" + n + "(Arena *, S_" + n + ");\n"
+        doeq := _need(&cs, "tycho_eq_S_" + n)
+        dost := _need(&cs, "tycho_str_S_" + n)
+        docp := false
+        if _heap(&cs, "S~" + n):
+            docp = _need(&cs, "tycho_copy_S_" + n)
+        if doeq:
+            proto = proto + "static int tycho_eq_S_" + n + "(S_" + n + ", S_" + n + ");\n"
+        if dost:
+            proto = proto + "static char *tycho_str_S_" + n + "(Arena *, S_" + n + ");\n"
         eq := ""
         st := "    char *r = tycho_str_from_c(a, \"" + n + "(\");\n"
         for j := 0; j < len(cs.sds[i].fnames); j += 1:
+            if not (doeq or dost):
+                continue
             f := cs.sds[i].fnames[j]
             ft := cs.sds[i].ftypes[j]
             if j > 0:
-                eq = eq + " && "
-                st = st + "    r = tycho_str_concat(a, r, tycho_str_from_c(a, \", \"));\n"
-            eq = eq + _eq(&cs, "x.f_" + f, "y.f_" + f, ft)
-            st = st + "    r = tycho_str_concat(a, r, " + _tostr_a(&cs, "v.f_" + f, ft) + ");\n"
+                if doeq:
+                    eq = eq + " && "
+                if dost:
+                    st = st + "    r = tycho_str_concat(a, r, tycho_str_from_c(a, \", \"));\n"
+            if doeq:
+                eq = eq + _eq(&cs, "x.f_" + f, "y.f_" + f, ft)
+            if dost:
+                st = st + "    r = tycho_str_concat(a, r, " + _tostr_a(&cs, "v.f_" + f, ft) + ");\n"
         if len(eq) == 0:
             eq = "1"
-        body = body + "static int tycho_eq_S_" + n + "(S_" + n + " x, S_" + n + " y) {\n" +
-            "    return " + eq + ";\n}\n" +
-            "static char *tycho_str_S_" + n + "(Arena *a, S_" + n + " v) {\n" + st +
-            "    return tycho_str_concat(a, r, tycho_str_from_c(a, \")\"));\n}\n"
-        if _heap(&cs, "S~" + n):
+        if doeq:
+            body = body + "static int tycho_eq_S_" + n + "(S_" + n + " x, S_" + n + " y) {\n" +
+                "    return " + eq + ";\n}\n"
+        if dost:
+            body = body + "static char *tycho_str_S_" + n + "(Arena *a, S_" + n + " v) {\n" + st +
+                "    return tycho_str_concat(a, r, tycho_str_from_c(a, \")\"));\n}\n"
+        if docp:
             proto = proto + "static S_" + n + " tycho_copy_S_" + n + "(Arena *, S_" + n + ");\n"
             cp := "static S_" + n + " tycho_copy_S_" + n + "(Arena *a, S_" + n + " v) {\n" +
                 "    S_" + n + " r = v;\n"
@@ -6361,37 +6442,46 @@ fn _enum_support(cs: inout C) -> (string, string, string):
     body := ""
     for i := 0; i < len(cs.eds); i += 1:
         n := cs.eds[i].name
-        un := ""
-        for t := 0; t < len(cs.eds[i].vnames); t += 1:
-            vn := cs.eds[i].vnames[t]
-            ps := cs.eds[i].vpay[t].ptypes
-            if len(ps) == 0:
-                continue
-            fl := ""
-            for j := 0; j < len(ps); j += 1:
-                fl = fl + " " + _ctyz(&cs, ps[j]) + "f" + str(j) + ";"
-            defs = defs + "typedef struct {" + fl + " } E_" + n + "_" + vn + ";\n"
-            un = un + " E_" + n + "_" + vn + " " + vn + ";"
-        defs = defs + "struct E_" + n + " { int tag; union {" + un + " } u; };\n"
-        allbare := true
-        for t := 0; t < len(cs.eds[i].vnames); t += 1:
-            if len(cs.eds[i].vpay[t].ptypes) == 0:
-                defs = defs + "static E_" + n + " _sing_" + n + "_" + str(t) +
-                    " = { " + str(t) + " };\n"
-            else:
-                allbare = false
-        # a fieldless enum is stored in a map's key table as its TAG, so keys()
-        # rebuilds the value through this table (src/tychoc.c:13100).
-        if allbare and len(cs.eds[i].vnames) > 0:
-            tab := "static E_" + n + " *const _sing_tab_" + n + "[] = {"
+        if _once(&cs, "def_E_" + n):
+            un := ""
             for t := 0; t < len(cs.eds[i].vnames); t += 1:
-                if t > 0:
-                    tab = tab + ", "
-                tab = tab + "&_sing_" + n + "_" + str(t)
-            defs = defs + tab + "};\n"
-        proto = proto + "static E_" + n + " *tycho_copy_E_" + n + "(Arena *, E_" + n + " *);\n" +
-            "static int tycho_eq_E_" + n + "(E_" + n + " *, E_" + n + " *);\n" +
-            "static char *tycho_str_E_" + n + "(Arena *, E_" + n + " *);\n"
+                vn := cs.eds[i].vnames[t]
+                ps := cs.eds[i].vpay[t].ptypes
+                if len(ps) == 0:
+                    continue
+                fl := ""
+                for j := 0; j < len(ps); j += 1:
+                    fl = fl + " " + _ctyz(&cs, ps[j]) + "f" + str(j) + ";"
+                defs = defs + "typedef struct {" + fl + " } E_" + n + "_" + vn + ";\n"
+                un = un + " E_" + n + "_" + vn + " " + vn + ";"
+            defs = defs + "struct E_" + n + " { int tag; union {" + un + " } u; };\n"
+            allbare := true
+            for t := 0; t < len(cs.eds[i].vnames); t += 1:
+                if len(cs.eds[i].vpay[t].ptypes) == 0:
+                    defs = defs + "static E_" + n + " _sing_" + n + "_" + str(t) +
+                        " = { " + str(t) + " };\n"
+                else:
+                    allbare = false
+            # a fieldless enum is stored in a map's key table as its TAG, so keys()
+            # rebuilds the value through this table (src/tychoc.c:13100).
+            if allbare and len(cs.eds[i].vnames) > 0:
+                tab := "static E_" + n + " *const _sing_tab_" + n + "[] = {"
+                for t := 0; t < len(cs.eds[i].vnames); t += 1:
+                    if t > 0:
+                        tab = tab + ", "
+                    tab = tab + "&_sing_" + n + "_" + str(t)
+                defs = defs + tab + "};\n"
+        docp := _need(&cs, "tycho_copy_E_" + n)
+        doeq := _need(&cs, "tycho_eq_E_" + n)
+        dost := _need(&cs, "tycho_str_E_" + n)
+        if not (docp or doeq or dost):
+            continue
+        if docp:
+            proto = proto + "static E_" + n + " *tycho_copy_E_" + n + "(Arena *, E_" + n + " *);\n"
+        if doeq:
+            proto = proto + "static int tycho_eq_E_" + n + "(E_" + n + " *, E_" + n + " *);\n"
+        if dost:
+            proto = proto + "static char *tycho_str_E_" + n + "(Arena *, E_" + n + " *);\n"
         cp := "static E_" + n + " *tycho_copy_E_" + n + "(Arena *a, E_" + n + " *v) {\n"
         eq := "static int tycho_eq_E_" + n + "(E_" + n + " *x, E_" + n + " *y) {\n" +
             "    if (x->tag != y->tag) return 0;\n"
@@ -6410,43 +6500,48 @@ fn _enum_support(cs: inout C) -> (string, string, string):
             ps := cs.eds[i].vpay[t].ptypes
             tg := str(t)
             if len(ps) == 0:
-                st = st + "    if (v->tag == " + tg + ") return tycho_str_from_c(a, \"" + shown + "\");\n"
-                eq = eq + "    if (x->tag == " + tg + ") return 1;\n"
+                if dost:
+                    st = st + "    if (v->tag == " + tg + ") return tycho_str_from_c(a, \"" + shown + "\");\n"
+                if doeq:
+                    eq = eq + "    if (x->tag == " + tg + ") return 1;\n"
                 continue
-            cp = cp + "    if (v->tag == " + tg + ") {\n" +
-                "        E_" + n + " *d = (E_" + n + " *)arena_alloc(a, offsetof(E_" + n +
-                ", u) + sizeof(E_" + n + "_" + vn + ")); d->tag = " + tg + ";\n"
+            if docp:
+                cp = cp + "    if (v->tag == " + tg + ") {\n" +
+                    "        E_" + n + " *d = (E_" + n + " *)arena_alloc(a, offsetof(E_" + n +
+                    ", u) + sizeof(E_" + n + "_" + vn + ")); d->tag = " + tg + ";\n"
             eqs := ""
-            st = st + "    if (v->tag == " + tg + ") {\n" +
-                "        char *r = tycho_str_from_c(a, \"" + shown + "(\");\n"
+            if dost:
+                st = st + "    if (v->tag == " + tg + ") {\n" +
+                    "        char *r = tycho_str_from_c(a, \"" + shown + "(\");\n"
             for j := 0; j < len(ps); j += 1:
                 fj := ".u." + vn + ".f" + str(j)
-                cp = cp + "        d->u." + vn + ".f" + str(j) + " = " +
-                    _copy(&cs, "v->u." + vn + ".f" + str(j), ps[j], "a") + ";\n"
+                if docp:
+                    cp = cp + "        d->u." + vn + ".f" + str(j) + " = " +
+                        _copy(&cs, "v->u." + vn + ".f" + str(j), ps[j], "a") + ";\n"
                 if j > 0:
-                    eqs = eqs + " && "
-                    st = st + "        r = tycho_str_concat(a, r, tycho_str_from_c(a, \", \"));\n"
-                eqs = eqs + _eq(&cs, "x->" + fj[1:], "y->" + fj[1:], ps[j])
-                st = st + "        r = tycho_str_concat(a, r, " +
-                    _tostr_a(&cs, "v->" + fj[1:], ps[j]) + ");\n"
-            cp = cp + "        return d;\n    }\n"
-            eq = eq + "    if (x->tag == " + tg + ") return " + eqs + ";\n"
-            st = st + "        return tycho_str_concat(a, r, tycho_str_from_c(a, \")\"));\n    }\n"
-        body = body + cp + "    return v;\n}\n" + eq + "    return 1;\n}\n" +
-            st + "    return tycho_str_from_c(a, \"<?>\");\n}\n"
+                    if doeq:
+                        eqs = eqs + " && "
+                    if dost:
+                        st = st + "        r = tycho_str_concat(a, r, tycho_str_from_c(a, \", \"));\n"
+                if doeq:
+                    eqs = eqs + _eq(&cs, "x->" + fj[1:], "y->" + fj[1:], ps[j])
+                if dost:
+                    st = st + "        r = tycho_str_concat(a, r, " +
+                        _tostr_a(&cs, "v->" + fj[1:], ps[j]) + ");\n"
+            if docp:
+                cp = cp + "        return d;\n    }\n"
+            if doeq:
+                eq = eq + "    if (x->tag == " + tg + ") return " + eqs + ";\n"
+            if dost:
+                st = st + "        return tycho_str_concat(a, r, tycho_str_from_c(a, \")\"));\n    }\n"
+        if docp:
+            body = body + cp + "    return v;\n}\n"
+        if doeq:
+            body = body + eq + "    return 1;\n}\n"
+        if dost:
+            body = body + st + "    return tycho_str_from_c(a, \"<?>\");\n}\n"
     return (defs, proto, body)
 
-# `out = out + x` in a loop is quadratic when each step allocates a fresh
-# string. src/tychoc.c:9885 turns it into an in-place append; this is the same
-# pass, and it is what the fixpoint needs -- tychoc1 emits a compiler that
-# wants >7 GB to compile the compiler where ./tychoc's wants under 300 MB.
-#
-# Conservative by design: a name qualifies only when EVERY assignment to it in
-# the whole body is a self-append. A single other assignment disqualifies it,
-# because the shadow length would then be stale.
-# The shadow base for the binding `n` resolves to RIGHT NOW. Rebuilding it
-# from the C name breaks under shadowing, because _push renames the second
-# binding (h_out_s3) and the two sites then disagree.
 fn _accof(cs: inout C, n: string) -> string:
     for i := len(cs.vnames) - 1; i >= 0; i -= 1:
         if cs.vnames[i] == n:
@@ -6941,33 +7036,48 @@ fn program(pfx: [string], us: [ast.Unit]) -> string:
     # Order matters in C: opaque typedefs, then the array structs (which name
     # element types only through pointers), then struct bodies in dependency
     # order, then the enum bodies (whose payloads may hold a struct by value).
-    htd := "\n/* ---- generated from Tycho source ---- */\n\n"
-    for sd in cs.sds:
-        htd = htd + "typedef struct S_" + sd.name + "_ S_" + sd.name + ";\n"
-    for ed in cs.eds:
-        htd = htd + "typedef struct E_" + ed.name + " E_" + ed.name + ";\n"
-    htd = htd + "\n"
     head := ""
     cs.arena = "&_scope"
-    edefs, eproto, ebody := _enum_support(&cs)
-    sproto, sbody := _struct_support(&cs)
+    edefs := ""
+    eproto := ""
+    ebody := ""
+    e0, ep0, eb0 := _enum_support(&cs)
+    edefs = edefs + e0
+    eproto = eproto + ep0
+    ebody = ebody + eb0
+    sproto := ""
+    sbody := ""
+    sp0, sb0 := _struct_support(&cs)
+    sproto = sproto + sp0
+    sbody = sbody + sb0
     mtd, msb, mpr, mfb := _map_defs(&cs)
     nm := 0
     for nm != len(cs.mks):
         nm = len(cs.mks)
         mtd, msb, mpr, mfb = _map_defs(&cs)
-    # DISCOVERY PRE-PASS. Each generator below has its own local fixpoint, run
-    # in sequence, and `_tup_defs` runs LAST -- so an array/map/soa kind that
-    # only a TUPLE introduces was registered after the array fixpoint had
-    # finished and never got a body. That is Phase 7f: `struct TychoTup3_ {
-    # TychoArrK17 f0; }` with no TychoArrK17 anywhere. Running the tuple
-    # generator first for its REGISTRATIONS alone (output discarded, it is
-    # regenerated in full below) lets the array fixpoint see those kinds.
-    _pt1, _pt2, _pt3, _pt4 := _tup_defs(&cs)
+    # The tuple generator runs FIRST, not as a discarded discovery pre-pass:
+    # an array/map/soa kind only a TUPLE introduces has to be registered before
+    # the array fixpoint or it never gets a body (Phase 7f: `struct TychoTup3_
+    # { TychoArrK17 f0; }` with no TychoArrK17 anywhere). It used to be
+    # generated twice for that -- once thrown away -- which `_need` makes
+    # unnecessary: every later call adds only what is newly live.
+    ttd := ""
+    tsb := ""
+    tpr := ""
+    tfb := ""
+    p1, p2, p3, p4 := _tup_defs(&cs)
+    ttd = ttd + p1
+    tsb = tsb + p2
+    tpr = tpr + p3
+    tfb = tfb + p4
     npre := 0
     for npre != len(cs.tks):
         npre = len(cs.tks)
-        _pt1, _pt2, _pt3, _pt4 = _tup_defs(&cs)
+        p1, p2, p3, p4 = _tup_defs(&cs)
+        ttd = ttd + p1
+        tsb = tsb + p2
+        tpr = tpr + p3
+        tfb = tfb + p4
     osb, ofb := _soa_defs(&cs)
     no := 0
     for no != len(cs.oks):
@@ -6984,7 +7094,6 @@ fn program(pfx: [string], us: [ast.Unit]) -> string:
         atd = atd + t9
         asb = asb + s9
         afb = afb + f9
-    htd = htd + mtd
     # `extern double strx_parse_double(char *, tycho_int *);` -- the foreign
     # symbol's prototype, matching ./tychoc. An inout parameter is a pointer.
     # ./tychoc emits these INTERLEAVED with the ordinary prototypes (one loop
@@ -7043,7 +7152,6 @@ fn program(pfx: [string], us: [ast.Unit]) -> string:
             xps = "void"
         xpro = xpro + "extern " + xrt + cs.fds[xi].name +
             "(" + xps + ");\n"
-    head = head + atd + asb + msb + osb + "\n"
     for i in _struct_order(&cs):
         head = head + "struct S_" + cs.sds[i].name + "_ {\n"
         for j := 0; j < len(cs.sds[i].fnames); j += 1:
@@ -7064,12 +7172,60 @@ fn program(pfx: [string], us: [ast.Unit]) -> string:
         lpr = lpr + x
     for x in cs.lamd:
         lbd = lbd + x
-    ttd, tsb, tpr, tfb := _tup_defs(&cs)
-    ntk := 0
-    for ntk != len(cs.tks):
-        ntk = len(cs.tks)
-        ttd, tsb, tpr, tfb = _tup_defs(&cs)
-    hpr, hfb := _hash_defs(&cs)
+    hpr := ""
+    hfb := ""
+    hp0, hf0 := _hash_defs(&cs)
+    hpr = hpr + hp0
+    hfb = hfb + hf0
+    chd := _chan_defs(&cs)
+    spd := ""
+    for x in cs.spawnd:
+        spd = spd + x
+    # THE CLOSURE. A helper's own body goes through the same funnels as ordinary
+    # emitted code, so writing one marks the ones it calls: a struct's str()
+    # marks the str of every field type, an array's copy marks the element's.
+    # Re-run every gated generator while the live set grows -- `_need` is what
+    # stops a re-run writing anything twice, so this costs one extra sweep over
+    # the registries and nothing else. Everything that can mark a name has run
+    # by here, channels and closures included.
+    nu := -1
+    for nu != len(cs.used):
+        nu = len(cs.used)
+        e2, ep2, eb2 := _enum_support(&cs)
+        edefs = edefs + e2
+        eproto = eproto + ep2
+        ebody = ebody + eb2
+        sp2, sb2 := _struct_support(&cs)
+        sproto = sproto + sp2
+        sbody = sbody + sb2
+        q1, q2, q3, q4 := _tup_defs(&cs)
+        ttd = ttd + q1
+        tsb = tsb + q2
+        tpr = tpr + q3
+        tfb = tfb + q4
+        hp2, hf2 := _hash_defs(&cs)
+        hpr = hpr + hp2
+        hfb = hfb + hf2
+        if nm != len(cs.mks):
+            nm = len(cs.mks)
+            mtd, msb, mpr, mfb = _map_defs(&cs)
+        if no != len(cs.oks):
+            no = len(cs.oks)
+            osb, ofb = _soa_defs(&cs)
+        for nk != len(cs.akinds):
+            sta := nk
+            nk = len(cs.akinds)
+            ta, sa, fa := _arr_defs_from(&cs, sta)
+            atd = atd + ta
+            asb = asb + sa
+            afb = afb + fa
+    htd := "\n/* ---- generated from Tycho source ---- */\n\n"
+    for sd in cs.sds:
+        htd = htd + "typedef struct S_" + sd.name + "_ S_" + sd.name + ";\n"
+    for ed in cs.eds:
+        htd = htd + "typedef struct E_" + ed.name + " E_" + ed.name + ";\n"
+    htd = htd + "\n" + mtd
+    head = atd + asb + msb + osb + "\n" + head
     head = htd + ttd + ftd + head + tsb + edefs + "\n" + _arr_protos(&cs) + sproto + eproto +
         tpr + mpr + hpr + "\n" + afb + sbody + ebody + tfb + hfb + mfb + ofb + "\n"
 
@@ -7088,8 +7244,4 @@ fn program(pfx: [string], us: [ast.Unit]) -> string:
         "    tycho_argc = argc; tycho_argv = argv;  /* exposed to the program via args() */\n" +
         "    Arena _root = arena_new(0);  /* root arena; default block size */\n" +
         mcall + mtail + "}\n"
-    chd := _chan_defs(&cs)
-    spd := ""
-    for x in cs.spawnd:
-        spd = spd + x
     return head + xpro + protos + cpr + lpr + "\n" + chd + spd + cbd + lbd + fns + entry
