@@ -71,7 +71,7 @@ RUNTIME = os.path.join(ROOT, "runtime", "tycho_rt.c")
 # capability disappearing, an entry appearing unlisted is a capability nobody
 # wrote down.
 
-# runtime/tycho_rt.c:342, :567, :848 -- the only literal getenv() names in the
+# runtime/tycho_rt.c:409, :567, :848 -- the only literal getenv() names in the
 # runtime. The wrapper Tycho code calls takes a runtime string (getenv(name)), so
 # a user program's own env reads cannot land here.
 EXPECT_ENV = {
@@ -81,7 +81,7 @@ EXPECT_ENV = {
     "TYCHO_THREADS",
 }
 
-# The TYCHO_ARENA_STATS report's row labels (runtime/tycho_rt.c:302-310).
+# The TYCHO_ARENA_STATS report's row labels (runtime/tycho_rt.c:369-377).
 EXPECT_ROWS = {
     "arenas",
     "block reuse",

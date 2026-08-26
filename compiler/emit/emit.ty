@@ -2981,7 +2981,7 @@ fn _binop(cs: inout C, op: string, ea: ast.Expr, eb: ast.Expr) -> (string, strin
         return ("(" + a + " " + op + " " + b + ")", rt)
     if op == "<<" or op == ">>":
         # A count >= the operand's width is 0 and a negative one aborts, neither
-        # of which C gives -- runtime/tycho_rt.c:250 onwards owns both.
+        # of which C gives -- runtime/tycho_rt.c:317 onwards owns both.
         st := "int"
         if _is_sized(at):
             st = at

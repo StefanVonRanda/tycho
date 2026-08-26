@@ -57,11 +57,11 @@ pointer enters Tycho's owned world — but it pushes real cost onto users:
 `docs/reference/concurrency.md:5-9`) is *true for pure Tycho values* and **false the
 moment FFI, process-global C state, or a panic is involved**. It is also
 heavy: every `spawn` is one OS thread via `pthread_create`
-(`runtime/tycho_rt.c:236-238`), `parallel for` fans out `ncpu` threads with a
+(`runtime/tycho_rt.c:303-305`), `parallel for` fans out `ncpu` threads with a
 full deep-copy of captures per chunk (`src/tychoc.c:4375-4388`), there is no
 thread pool or work-stealing (`docs/reference/concurrency.md:137-139`), spawning is
 unbounded, and a panic/abort in any task `exit(1)`s the whole process
-(`docs/reference/concurrency.md:141`, `runtime/tycho_rt.c:940-953`).
+(`docs/reference/concurrency.md:141`, `runtime/tycho_rt.c:1067-1080`).
 
 **Top recommendations (ranked, both areas):**
 
@@ -256,8 +256,8 @@ opt-out.**
 ### Why it is heavy
 
 - **One OS thread per `spawn`.** `tycho_task_start` calls `pthread_create`
-  directly with no pool (`runtime/tycho_rt.c:236-239`). Each task allocates a
-  fresh root arena (`tycho_task_new`, `:218-224`). Thread creation +
+  directly with no pool (`runtime/tycho_rt.c:303-306`). Each task allocates a
+  fresh root arena (`tycho_task_new`, `:285-291`). Thread creation +
   teardown + a fresh arena per task is the per-spawn cost.
 - **`parallel for` forks `ncpu` threads with full capture copy per chunk.** K =
   `tycho_ncpu()` chunk tasks (`src/tychoc.c:4476-4489`; runtime `:853-860`,
@@ -269,7 +269,7 @@ opt-out.**
   Fine for the benchmark shape (a fixed fan-out of long tasks), painful for
   many short tasks (each pays full thread create/destroy).
 - **Blocking is a parked OS thread.** A `recv`/`wait`/select waits on a
-  spin → `sched_yield` → 1ms timed-park ladder (`runtime/tycho_rt.c:372-392`,
+  spin → `sched_yield` → 1ms timed-park ladder (`runtime/tycho_rt.c:439-459`,
   `docs/reference/concurrency.md:114-117`). Mostly cheap on the fast path, but a blocked
   task holds a whole OS thread.
 
@@ -282,7 +282,7 @@ small or short-lived tasks.
 
 The claim "race-free by construction" (`README.md:35-37`,
 `docs/reference/concurrency.md:5-9`) holds for **pure Tycho values** — after copy-in a
-task shares zero bytes (`runtime/tycho_rt.c:257-266`). It does **not** hold in
+task shares zero bytes (`runtime/tycho_rt.c:324-333`). It does **not** hold in
 these cases, and the docs only partially flag them:
 
 1. **FFI into non-thread-safe or stateful C.** Tycho's value isolation says
@@ -303,25 +303,25 @@ these cases, and the docs only partially flag them:
      guarantee; a different library, or OpenSSL with an `ENGINE`/global config,
      would not be covered.
 2. **Channels are shared mutable state — by design.** The channel is "the ONE
-   intentionally shared object" (`runtime/tycho_rt.c:266-280`). It is
+   intentionally shared object" (`runtime/tycho_rt.c:333-347`). It is
    internally synchronized, so it is safe, but it *is* a shared-state mechanism,
    so "no shared state" is an overstatement; "the only shared state is the
    internally-synchronized channel" is the accurate phrasing.
 3. **Unbounded spawning / resource exhaustion.** Nothing caps the number of
    live threads. A `spawn` in a loop, or recursive spawning, creates threads
    until `pthread_create` fails, at which point the runtime prints and
-   `exit(1)`s (`runtime/tycho_rt.c:237-239`). That is a fail-stop, not memory
+   `exit(1)`s (`runtime/tycho_rt.c:304-306`). That is a fail-stop, not memory
    corruption, but it is a trivial fork-bomb / resource-exhaustion vector and is
    not mentioned as a limit.
 4. **Panic/abort in a task kills the whole process.** Any runtime error in a
    task — bounds check, `pop` from empty, OOM, divide, `exit(1)` paths
-   throughout `runtime/tycho_rt.c` (e.g. `:930-945`, `:87`, `:936-937`) — takes
+   throughout `runtime/tycho_rt.c` (e.g. `:1057-1072`, `:151`, `:1063-1064`) — takes
    down every other task with it. Documented (`docs/reference/concurrency.md:141`) but
    worth elevating: there is no task-level isolation of failure, unlike Erlang
    processes, which the intro compares Tycho to (`docs/reference/concurrency.md:8-9`).
 5. **Affine/implicit-join edge cases.** The affine rules are enforced and look
-   sound (double-wait dies loudly, `runtime/tycho_rt.c:247-250`; implicit join
-   at every scope exit, `:260-265`; `parallel for` rejects captured tasks /
+   sound (double-wait dies loudly, `runtime/tycho_rt.c:314-317`; implicit join
+   at every scope exit, `:327-332`; `parallel for` rejects captured tasks /
    inout captures / cross-chunk mutation, `src/tychoc.c:4447-4542`). No unsafety
    found here — call out as *verified sound*, not a gap.
 
@@ -344,7 +344,7 @@ these cases, and the docs only partially flag them:
 
 **R2. Bounded worker pool / thread cap for `spawn` and `parallel for`.**
 - *Design.* A runtime worker pool sized to `tycho_ncpu()` (reuse the existing
-  `tycho_ncpu` / `TYCHO_THREADS` knob, `runtime/tycho_rt.c:535-542`). `spawn`
+  `tycho_ncpu` / `TYCHO_THREADS` knob, `runtime/tycho_rt.c:602-609`). `spawn`
   submits a closure to the pool instead of `pthread_create` per call; `wait`
   blocks on that task's completion. `parallel for` already fans out exactly K
   chunks so it maps onto the pool directly. Keep the per-task root arena
@@ -353,11 +353,11 @@ these cases, and the docs only partially flag them:
   directly answers "very heavy" and the unbounded-spawn exhaustion vector.
 - *Incremental or fundamental.* Runtime-only; no language or codegen change if
   the pool presents the same `tycho_task_start` / `tycho_task_join` interface
-  (`runtime/tycho_rt.c:236-250`). Genuinely incremental.
+  (`runtime/tycho_rt.c:303-317`). Genuinely incremental.
 - *Risk to value semantics.* None — pooling threads does not change which bytes
   are shared; the copy-in/copy-out seam is untouched. One subtlety: a pooled
   worker must flush its thread-local block pool (`tycho_pool_flush`,
-  `:228-234`) between tasks or hand arenas back correctly, since the block pool
+  `:295-301`) between tasks or hand arenas back correctly, since the block pool
   is `__thread` (`:91`) and a pooled thread outlives a single task.
   *Caveat:* a blocking `recv`/`wait` inside a pooled task can starve the pool
   (classic pool-deadlock); needs either a "block creates a temporary extra

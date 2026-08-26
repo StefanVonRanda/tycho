@@ -2438,3 +2438,68 @@ The phases below are ranked by expected size of win. Each names the
     and callgrind Ir 847.7e6 -> 925.5e6 (+9.2%). Measured three-way interleaved,
     51 reps, `--emit-c compiler/main.ty`, every run asserted exit 0 and a >2 MB
     `.c`. Do not re-propose it without a replacement for the elision.
+
+## Compile-speed vs ./tychoc: where it stands and what is closed
+
+Measured on a QUIET box (load 1.53, after killing four runaway processes that
+had held load at 4-5 all session), fine-grained A/B alternating on every run --
+a block-interleaved harness gives contradictory answers when the rotation order
+is swapped, and a python subprocess.run wrapper charges ~0.5 ms per compile,
+which reads a 1 ms input as 1.04 when it is really 1.20.
+
+  compiler/main.ty 0.673 | tycho-db 1.033 | server 1.057 | tiny 1.081
+  tycho-sheet 1.095 | tycho-scheme 1.127 | tycho-vm 1.162 | raytrace 1.199
+  GEOMEAN 1.040
+
+The session took the worst case from 2.74 to 1.20 and compiler/main.ty to 0.673.
+
+### Why the rest is not another optimisation pass
+
+raytrace needs ~40% of tychoc1's instructions gone to reach 1.000 and the
+largest single remaining item is 9%. `./tychoc` is SINGLE-PASS and builds no
+AST; tychoc1 builds one. That is the gap on small compiles, and it is
+architectural.
+
+### Closed by measurement -- do not re-open without new evidence
+
+- **The AST deep-copy family.** Extending escape analysis so values are built in
+  the destination arena: -5.0% Ir, WALL-NEUTRAL (geomean 1.0041), because the
+  loop scratch is a cache-resident bump allocator and the long-lived arena is
+  cold -- LL misses +9.0%, all write-side. Ceiling: deleting EVERY deep copy
+  reaches 1.017x tychoc's Ir *before* the cache cost. Patch kept at
+  scratchpad/escape-push-promotion.patch.
+- **Ir is not the metric.** -5.0% Ir bought 0.4% wall; -1.8% Ir measured wall
+  NEGATIVE; static linking is +39% Ir and -8% wall. Decide on wall, always
+  against a rebuilt HEAD binary in the same rotation.
+- **Build flags**, all measured: current `-O3 --param inline-unit-growth=150
+  -static -flto` is best of ten. -Os 2.410, -O2 1.486, plain -O3 1.432, growth
+  300/600 no change, max-inline-insns-auto=60 worse, -fipa-pta 1.041,
+  `-ffunction-sections -Wl,--gc-sections` 3.7% SLOWER despite -164 KB of text
+  (so text size is not the mechanism; cross-TU inlining is),
+  -fno-unwind-tables inside noise and costs gdb backtraces.
+- **Link models**, all measured against -static: dynamic 1.086, -static-libgcc
+  1.081, -static-pie 0.9964 (inside noise, and loses on compiler/main.ty).
+  Dynamic has the LOWEST Ir and the WORST minor faults, 133/run vs 105.
+- **Other dead ends:** block_into at top level (Ir -0.11%, wall +3.2%);
+  self_rebuild_move (fires nowhere); building a push's call-result in the
+  destination arena (use-after-free in stage 2 -- the same wall as the
+  "reddened 190 fixtures" note in emit.ty); borrowing ld.files[i].unit.pkg
+  through a parameter (10k Ir worse); single-hash map insert (tiny -2.8%,
+  compiler +3.1%); index loops in _sig_of (7k Ir); the outp.files reorder
+  (1.67%); io.copy of the 140 KB runtime (~150 us on ext4 by EVERY method --
+  stdio, copy_file_range, sendfile, 1 MB read/write -- so ./tychoc pays it too).
+- **Cannot be touched cheaply:** swapping the runtime's siphash moves keys()
+  order and re-records goldens tree-wide for BOTH compilers.
+  `__register_frame_info` runs before main for 202,296 Ir, 6% of a raytrace
+  compile, out of crtbeginT.o; no flag disables it.
+
+### If this is picked up again
+
+The remaining items on raytrace are all under 10%: str_copy 9.4% (already 13
+instructions per call), tokenize_named 6.0%, pre-main FDE 6.0%, siphash13 5.7%,
+AST copies 4.8%. Closing the gap means giving tychoc1 a different front-end
+shape -- not building a full AST for a single-file compile, or interning
+identifiers at lex time -- not another pass over the current one.
+
+Also found on the way, unrelated and unfixed: tests/strbytes.ty dies under
+-fsanitize=address,undefined with EVERY compiler in the tree, ./tychoc included.
