@@ -196,20 +196,22 @@ fn _merge(ld: inout Loader, dir: string, pkgname: string, prefix: string):
 fn load_into(entry: string, argv0: string, outp: inout Program):
     src := read_file(entry)
     toks, notes := lex.tokenize_file(src, false, entry)
-    u := parse.unit(toks, notes)
     root := corelib_root(argv0)
     dir := dir_of(entry)
-    if len(u.pkg) == 0:
+    # Parse straight into the destination File. Taking the unit by value here
+    # copied every declaration twice -- once out of parse, once into the File.
+    outp = Program([]File, dir, "", entry, root)
+    push(outp.files, File(entry, dir, "", "", _empty_unit(), src))
+    parse.unit_into(toks, notes, &outp.files[0].unit)
+    if len(outp.files[0].unit.pkg) == 0:
         # src/tychoc.c: a package-less file is a single-file build, and an
         # `import` in one is a hard error rather than a silently unloaded package.
-        if len(u.imports) > 0:
-            die(entry + ":" + str(u.imports[0].line) + ": error: to `import` a package, this file must declare its own package first -- add `package main` (or another name) as the first line")
-        fs := []File
-        push(fs, File(entry, dir, "", "", u, src))
-        outp = Program(fs, dir, "", entry, root)
+        if len(outp.files[0].unit.imports) > 0:
+            die(entry + ":" + str(outp.files[0].unit.imports[0].line) + ": error: to `import` a package, this file must declare its own package first -- add `package main` (or another name) as the first line")
         return
+    upkg := outp.files[0].unit.pkg
     ld := Loader([]File, []int, []string: bool, []string, root, under_corelib(root, dir))
-    _merge(&ld, dir, u.pkg, "")
-    outp = Program([]File, dir, u.pkg, entry, root)
+    _merge(&ld, dir, upkg, "")
+    outp = Program([]File, dir, upkg, entry, root)
     for ix in ld.order:
         push(outp.files, ld.files[ix])
