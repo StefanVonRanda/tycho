@@ -33,6 +33,8 @@ struct Program:
 
 struct Loader:
     files: [File]
+    order: [int]                       # ld.files is filled in PARSE order; this
+                                       # is the post-order the Program wants
     seen: [string: bool]
     active: [string]
     root: string
@@ -154,32 +156,32 @@ fn _merge(ld: inout Loader, dir: string, pkgname: string, prefix: string):
     if len(files) == 0:
         die("tychoc1: package directory " + dir + " has no .ty files")
 
-    units := []ast.Unit
-    srcs := []string
+    # The File goes into ld.files' arena FIRST and the tree is parsed straight
+    # into it. Parsing into a local array and assigning the unit across cost a
+    # whole-AST deep copy per package -- three of them, 15% of a compile.
+    lo := len(ld.files)
     for f in files:
         one := read_file(f)
-        push(srcs, one)
         toks, notes := lex.tokenize_file(one, false, f)
-        push(units, parse.unit(toks, notes))
+        push(ld.files, File(f, dir, pkgname, prefix, _empty_unit(), one))
+        ld.files[len(ld.files) - 1].unit = parse.unit(toks, notes)
+    hi := len(ld.files)
 
     # Post-order: every imported package is merged before this one, so a symbol
     # this package names is already in the table by the time the resolver runs.
-    for i := 0; i < len(units); i += 1:
-        if units[i].pkg != pkgname:
-            if len(units[i].pkg) == 0:
-                die("tychoc1: " + files[i] + " is in package `" + pkgname + "` but has no `package` declaration")
-            die("tychoc1: " + files[i] + " declares `package " + units[i].pkg + "` but is in package `" + pkgname + "`")
-        for im in units[i].imports:
+    # ld.files itself cannot be reordered -- the recursion appends to it -- so
+    # the order is recorded separately and applied once, in load_into.
+    for i := lo; i < hi; i += 1:
+        if ld.files[i].unit.pkg != pkgname:
+            if len(ld.files[i].unit.pkg) == 0:
+                die("tychoc1: " + ld.files[i].path + " is in package `" + pkgname + "` but has no `package` declaration")
+            die("tychoc1: " + ld.files[i].path + " declares `package " + ld.files[i].unit.pkg + "` but is in package `" + pkgname + "`")
+        for im in ld.files[i].unit.imports:
             child := pkg_basename(im.path)
             _merge(&ld, _resolve_pkg_dir(&ld, dir, im.path), child, child + "__")
 
-    for i := 0; i < len(units); i += 1:
-        # The unit is moved in by assignment rather than through the literal:
-        # naming it in the constructor copies the whole tree into this scope,
-        # and the push then copies the File -- and the tree again -- into
-        # ld.files' arena. The assignment builds straight in that arena.
-        push(ld.files, File(files[i], dir, pkgname, prefix, _empty_unit(), srcs[i]))
-        ld.files[len(ld.files) - 1].unit = units[i]
+    for i := lo; i < hi; i += 1:
+        push(ld.order, i)
 
     # Pop the DFS path, then mark merged.
     na := []string
@@ -206,6 +208,8 @@ fn load_into(entry: string, argv0: string, outp: inout Program):
         push(fs, File(entry, dir, "", "", u, src))
         outp = Program(fs, dir, "", entry, root)
         return
-    ld := Loader([]File, []string: bool, []string, root, under_corelib(root, dir))
+    ld := Loader([]File, []int, []string: bool, []string, root, under_corelib(root, dir))
     _merge(&ld, dir, u.pkg, "")
-    outp = Program(ld.files, dir, u.pkg, entry, root)
+    outp = Program([]File, dir, u.pkg, entry, root)
+    for ix in ld.order:
+        push(outp.files, ld.files[ix])
