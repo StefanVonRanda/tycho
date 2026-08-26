@@ -4835,7 +4835,7 @@ fn _cunwrap(s: string) -> string:
 fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
     match s:
         ast.PassS(l):
-            return ind + ";\n"
+            return ""                  # src/tychoc.c:12248 -- the no-op emits none
         ast.ExprStmt(l, es):
             # src/tychoc.c@S_EXPR: a top-level statement's transients live in a
             # per-statement arena. Only at the proc top level, and never around
@@ -5552,6 +5552,12 @@ fn _patv(cs: inout C, kind: string, v: int, nm: string) -> string:
         _bad("unknown name '" + nm + "' in a match pattern")
     return _ilit(v)
 
+# src/tychoc.c:12163 prints the arm's resolved value with %lld -- no suffix.
+fn _pats(cs: inout C, kind: string, v: int, nm: string) -> string:
+    if kind == "name":
+        return _patv(&cs, kind, v, nm)
+    return str(v)
+
 fn _match(cs: inout C, subj: ast.Expr, arms: [ast.Arm], ind: string) -> string:
     sc, st := _ex(&cs, subj)
     v := _fresh(&cs, "_m")
@@ -5569,9 +5575,11 @@ fn _match(cs: inout C, subj: ast.Expr, arms: [ast.Arm], ind: string) -> string:
         out := ind + "{\n" + ind + "    E_" + _tname(st) + " *" + v + " = " + sc + ";\n"
         first := true
         deflt := ""
+        hasdef := false
         for a in arms:
             if a.kind == "default" or a.name == "_":
                 deflt = _block(&cs, a.body, ind + "        ")
+                hasdef = true
                 continue
             if a.kind != "variant":
                 _bad("unsupported match arm on an enum")
@@ -5652,7 +5660,7 @@ fn _match(cs: inout C, subj: ast.Expr, arms: [ast.Arm], ind: string) -> string:
                 ind + "    }\n"
         if first:
             return out + deflt + ind + "}\n"
-        if len(deflt) > 0:
+        if hasdef:
             out = out + ind + "    else {\n" + deflt + ind + "    }\n"
         else:
             out = out + ind + "    else { fprintf(stderr, \"tycho: non-exhaustive match\\n\"); exit(1); }\n"
@@ -5661,9 +5669,11 @@ fn _match(cs: inout C, subj: ast.Expr, arms: [ast.Arm], ind: string) -> string:
     out2 := ind + "{\n" + ind + "    " + _ctyz(&cs, st) + "" + v + " = " + sc + ";\n"
     first2 := true
     deflt2 := ""
+    hasdef2 := false
     for a in arms:
         if a.kind == "default" or a.name == "_":
             deflt2 = _block(&cs, a.body, ind + "        ")
+            hasdef2 = true
             continue
         # A bare NAME arm on a scalar subject parses as a `variant` -- nothing
         # in the syntax separates `OP_LOAD:` (an int const) from an enum
@@ -5673,14 +5683,18 @@ fn _match(cs: inout C, subj: ast.Expr, arms: [ast.Arm], ind: string) -> string:
             push(pats, ast.Pat("name", 0, 0, a.name, "", false))
         elif a.kind != "scalar":
             _bad("unsupported match arm on a scalar")
+        # src/tychoc.c:12162-12169 -- each piece is bare `_mN == K`, the
+        # literal in plain decimal (the subject is already its own C type, so
+        # the LL suffix an int expression carries is not written here), and the
+        # pieces are joined by `||` with no parentheses at all.
         cond := ""
         for p in pats:
             one := ""
             if p.ranged:
-                one = "(" + v + " >= " + _patv(&cs, p.kind, p.lo, p.loname) + " && " + v +
-                    " <= " + _patv(&cs, p.kind, p.hi, p.hiname) + ")"
+                one = v + " >= " + _pats(&cs, p.kind, p.lo, p.loname) + " && " + v +
+                    " <= " + _pats(&cs, p.kind, p.hi, p.hiname)
             else:
-                one = "(" + v + " == " + _patv(&cs, p.kind, p.lo, p.loname) + ")"
+                one = v + " == " + _pats(&cs, p.kind, p.lo, p.loname)
             if len(cond) > 0:
                 cond = cond + " || "
             cond = cond + one
@@ -5692,8 +5706,12 @@ fn _match(cs: inout C, subj: ast.Expr, arms: [ast.Arm], ind: string) -> string:
             ind + "    }\n"
     if first2:
         return out2 + deflt2 + ind + "}\n"
-    if len(deflt2) > 0:
+    if hasdef2:
         out2 = out2 + ind + "    else {\n" + deflt2 + ind + "    }\n"
+    else:
+        # src/tychoc.c:12187 -- unreachable, and emitted anyway so the generated
+        # C provably returns on every path.
+        out2 = out2 + ind + "    else { fprintf(stderr, \"tycho: non-exhaustive match\\n\"); exit(1); }\n"
     return out2 + ind + "}\n"
 
 # --- declaration collection -------------------------------------------------
