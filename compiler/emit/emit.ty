@@ -6574,6 +6574,120 @@ fn _acc_scan(ss: [ast.Stmt], selfapp: inout [string], other: inout [string],
                 _acc_scan(b, &selfapp, &other, &decl)
             _: pass
 
+# ---------------------------------------------------------------- dead code
+#
+# 33% of the functions in a typical emitted unit are never called anywhere in
+# it -- a package is imported for two symbols and every one it declares gets a
+# body. ./tychoc emits them too, so declining to is a straight win.
+#
+# The set is of SHORT names, unqualified and unresolved on purpose: a name kept
+# live by a same-named function in another package costs one function emitted
+# for nothing, where a missed reference is a link error. Every field name and
+# every bare identifier goes in as well, which covers a UFCS method and a
+# function taken as a value without having to tell them apart from a local.
+# Nothing here is CHECKED any differently -- this only declines to write a body.
+
+# An f-string's interpolation is DEFERRED -- ast.FStrLit carries the raw body
+# and emit parses it later -- so a `f"{a.dot(b)}"` has no Expr children to walk
+# and `dot` would be dropped. Every identifier-shaped run in the body goes in.
+fn _ref_idents(s: string, m: inout [string: bool]):
+    st := -1
+    for i := 0; i <= len(s); i += 1:
+        c := 0
+        if i < len(s):
+            c = s[i]
+        idc := (c >= 97 and c <= 122) or (c >= 65 and c <= 90) or c == 95 or
+            (st >= 0 and c >= 48 and c <= 57)
+        if idc:
+            if st < 0:
+                st = i
+        elif st >= 0:
+            m[s[st:i]] = true
+            st = -1
+    return
+
+fn _ref_e(e: ast.Expr, m: inout [string: bool]):
+    match e:
+        ast.Name(l, n): m[n] = true
+        ast.FStrLit(l, v): _ref_idents(v, &m)
+        ast.Field(l, k, f):
+            m[f] = true
+            _ref_es(k, &m)
+        ast.Call(l, q, n, ts, k):
+            m[n] = true
+            _ref_es(k, &m)
+        ast.TupIdx(l, k, i): _ref_es(k, &m)
+        ast.Index(l, k): _ref_es(k, &m)
+        ast.Slice(l, a, b, k): _ref_es(k, &m)
+        ast.CallVal(l, k): _ref_es(k, &m)
+        ast.Named(l, n, k): _ref_es(k, &m)
+        ast.Binop(l, o, k): _ref_es(k, &m)
+        ast.Unop(l, o, k): _ref_es(k, &m)
+        ast.IsVar(l, k, q, n): _ref_es(k, &m)
+        ast.ArrLit(l, k): _ref_es(k, &m)
+        ast.MapLit(l, k): _ref_es(k, &m)
+        ast.Tuple(l, k): _ref_es(k, &m)
+        ast.SomeE(l, k): _ref_es(k, &m)
+        ast.OkE(l, k): _ref_es(k, &m)
+        ast.ErrE(l, k): _ref_es(k, &m)
+        ast.SpawnE(l, k): _ref_es(k, &m)
+        ast.OrRet(l, k): _ref_es(k, &m)
+        ast.Spread(l, k): _ref_es(k, &m)
+        ast.Addr(l, k): _ref_es(k, &m)
+        ast.ChanE(l, t, k): _ref_es(k, &m)
+        ast.Lambda(l, ps, rt, k): _ref_es(k, &m)
+        _: pass
+
+fn _ref_es(es: [ast.Expr], m: inout [string: bool]):
+    for e in es:
+        _ref_e(e, &m)
+
+fn _ref_s(s: ast.Stmt, m: inout [string: bool]):
+    match s:
+        ast.ExprStmt(l, k): _ref_es(k, &m)
+        ast.Decl(l, n, ty, rhs, vb):
+            _ref_es(rhs, &m)
+            _ref_b(vb, &m)
+        ast.MDecl(l, isd, ns, rhs): _ref_es(rhs, &m)
+        ast.Assign(l, n, rhs): _ref_es(rhs, &m)
+        ast.PlaceSet(l, k): _ref_es(k, &m)
+        ast.ConstS(l, n, v): _ref_es(v, &m)
+        ast.ReturnS(l, k): _ref_es(k, &m)
+        ast.DeleteS(l, k): _ref_es(k, &m)
+        ast.IfS(l, c, b, e):
+            _ref_es(c, &m)
+            _ref_b(b, &m)
+            _ref_b(e, &m)
+        ast.WhileS(l, c, b):
+            _ref_es(c, &m)
+            _ref_b(b, &m)
+        ast.For3(l, i, c, b):
+            _ref_b(i, &m)
+            _ref_es(c, &m)
+            _ref_b(b, &m)
+        ast.ForIn(l, v, c, b):
+            _ref_es(c, &m)
+            _ref_b(b, &m)
+        ast.ForRange(l, v, bd, b):
+            _ref_es(bd, &m)
+            _ref_b(b, &m)
+        ast.ParallelS(l, w, b):
+            _ref_es(w, &m)
+            _ref_b(b, &m)
+        ast.MatchS(l, subj, arms):
+            _ref_es(subj, &m)
+            for a in arms:
+                _ref_b(a.body, &m)
+        ast.SelectS(l, arms):
+            for a in arms:
+                _ref_es(a.ch, &m)
+                _ref_b(a.body, &m)
+        _: pass
+
+fn _ref_b(b: [ast.Stmt], m: inout [string: bool]):
+    for s in b:
+        _ref_s(s, &m)
+
 fn _fnbody(cs: inout C, fi: int, body: [ast.Stmt]) -> (string, string):
     nm := cs.fds[fi].name
     rt := cs.fds[fi].ret
@@ -6773,12 +6887,29 @@ fn program(pfx: [string], us: [ast.Unit]) -> string:
     if _fidx(&cs, "main") < 0:
         _bad("no 'main' procedure")
 
+    # Every name any body, const initialiser or subscript place mentions. A
+    # generic's body is walked too: it is emitted only when instantiated, but
+    # whatever it calls has to survive whether or not it ever is.
+    used := []string: bool
+    used["main"] = true
+    for i := 0; i < len(us); i += 1:
+        for f in us[i].fns:
+            _ref_b(f.body, &used)
+        for c in us[i].consts:
+            _ref_e(c.value, &used)
+        for sd in us[i].subscripts:
+            _ref_e(sd.place, &used)
+        for hd in us[i].handles:
+            used[hd.free_fn] = true
+
     fns := ""
     protos := ""
     for i := 0; i < len(us); i += 1:
         cs.cf = i
         for f in us[i].fns:
             if len(f.typarams) > 0:
+                continue
+            if not (f.name in used):
                 continue
             # An extern has NO Tycho body; emitting one gives every extern a
             # second, empty `h_<name>` definition beside the real C symbol.
