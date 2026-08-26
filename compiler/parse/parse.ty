@@ -48,29 +48,65 @@ fn _cl(toks: [lex.Tok], i: int) -> int:
 
 # Comparing a token's kind or text WITHOUT materialising it: returning the field
 # copies the string, and the parser asks these questions once per token per rule.
+# The clamp is written out at each of these rather than calling _cl: a call
+# that returns an int still costs an arena_new/arena_free pair, and the parser
+# asks these questions once per token per rule.
 fn _kis(toks: [lex.Tok], i: int, s: int) -> bool:
-    return toks[_cl(toks, i)].k == s
+    j := i
+    if j >= len(toks):
+        j = len(toks) - 1
+    elif j < 0:
+        j = 0
+    return toks[j].k == s
 
 fn _xis(toks: [lex.Tok], i: int, s: string) -> bool:
-    return toks[_cl(toks, i)].text == s
+    j := i
+    if j >= len(toks):
+        j = len(toks) - 1
+    elif j < 0:
+        j = 0
+    return toks[j].text == s
 
 fn _k(toks: [lex.Tok], i: int) -> int:
-    return toks[_cl(toks, i)].k
+    j := i
+    if j >= len(toks):
+        j = len(toks) - 1
+    elif j < 0:
+        j = 0
+    return toks[j].k
 
 fn _x(toks: [lex.Tok], i: int) -> string:
-    return toks[_cl(toks, i)].text
+    j := i
+    if j >= len(toks):
+        j = len(toks) - 1
+    elif j < 0:
+        j = 0
+    return toks[j].text
 
 # The source line every node is stamped with: the line of the token the node
 # starts at, which is the line src/tychoc.c names in `file:line: error: ...`.
 fn _ln(toks: [lex.Tok], i: int) -> int:
-    return toks[_cl(toks, i)].line
+    j := i
+    if j >= len(toks):
+        j = len(toks) - 1
+    elif j < 0:
+        j = 0
+    return toks[j].line
 
 fn _isop(toks: [lex.Tok], i: int, s: int) -> bool:
-    j := _cl(toks, i)
+    j := i
+    if j >= len(toks):
+        j = len(toks) - 1
+    elif j < 0:
+        j = 0
     return toks[j].k == lex.K_OP and toks[j].ival == s
 
 fn _iskw(toks: [lex.Tok], i: int, s: int) -> bool:
-    j := _cl(toks, i)
+    j := i
+    if j >= len(toks):
+        j = len(toks) - 1
+    elif j < 0:
+        j = 0
     return toks[j].k == lex.K_KW and toks[j].ival == s
 
 fn _isid(toks: [lex.Tok], i: int, s: string) -> bool:
