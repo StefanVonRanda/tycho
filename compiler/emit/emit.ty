@@ -4045,8 +4045,21 @@ fn _rhs2(cs: inout C, e: ast.Expr, want: string, arena: string) -> (string, stri
 fn _rhs3(cs: inout C, e: ast.Expr, want: string, arena: string, mv: bool) -> (string, string):
     sw := cs.want
     cs.want = want
+    # A string or bytes slice lowers to tycho_str_substr, a FRESH allocation
+    # that aliases nothing -- so aimed at the destination arena it needs no
+    # copy-on-bind, and the lexer stopped allocating each identifier twice.
+    sa9 := cs.arena
+    sl9 := false
+    match e:
+        ast.Slice(l9, a9, b9, k9): sl9 = true
+        _: pass
+    if sl9:
+        cs.arena = arena
     c, t := _ex(&cs, e)
+    cs.arena = sa9
     cs.want = sw
+    if sl9 and (t == "string" or t == "bytes"):
+        return (c, t)
     if _place(e) and _heap(&cs, t):
         # A STRING already in the destination arena is shared, not copied. The
         # copy exists so a later write to the destination cannot be seen through
