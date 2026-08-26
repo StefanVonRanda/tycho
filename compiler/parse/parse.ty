@@ -74,7 +74,7 @@ fn _iskw(toks: [lex.Tok], i: int, s: string) -> bool:
     return toks[j].kind == "kw" and toks[j].text == s
 
 fn _isid(toks: [lex.Tok], i: int, s: string) -> bool:
-    return _kis(toks, i, "ident") and _x(toks, i) == s
+    return _kis(toks, i, "ident") and _xis(toks, i, s)
 
 # A parse error reads like every other diagnostic: `file:line: error: msg` with
 # the offending source line beneath it. The path and the source ride on the
@@ -132,7 +132,7 @@ fn _expect(toks: [lex.Tok], i: int, kind: string, text: string) -> int:
     # The whole token is only needed to REPORT. Reading the two fields directly
     # keeps the accepting path -- which is every token the parser consumes --
     # from copying a Tok and all four of its strings.
-    if _k(toks, i) != kind or (len(text) > 0 and _x(toks, i) != text):
+    if not _kis(toks, i, kind) or (len(text) > 0 and not _xis(toks, i, text)):
         t := _at(toks, i)
         if len(text) > 0:
             _fail(t, "'" + text + "'")
@@ -399,44 +399,47 @@ fn _lambda(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
     return (ast.Lambda(ln, ps, ret, [b]), j)
 
 fn _primary_into(toks: [lex.Tok], i0: int, out: inout ast.Expr) -> int:
-    t := _at(toks, i0)
+    # The clamped INDEX, not the token: `_at` returns a Tok by value and a Tok
+    # carries four strings, every one deep-copied on the way out -- paid once
+    # per primary expression parsed. The `_die` paths still take the token.
+    ti := _cl(toks, i0)
     i := i0
 
-    if t.kind == "kw" and t.text == "fn":
+    if toks[ti].kind == "kw" and toks[ti].text == "fn":
         el2, jl2 := _lambda(toks, i + 1)
         out = el2
         return jl2
-    if t.kind == "int":
-        out = ast.IntLit(t.line, t.ival)
+    if toks[ti].kind == "int":
+        out = ast.IntLit(toks[ti].line, toks[ti].ival)
         return i + 1
-    if t.kind == "char":
-        out = ast.CharLit(t.line, t.ival)
+    if toks[ti].kind == "char":
+        out = ast.CharLit(toks[ti].line, toks[ti].ival)
         return i + 1
-    if t.kind == "float":
-        out = ast.FloatLit(t.line, t.fval)
+    if toks[ti].kind == "float":
+        out = ast.FloatLit(toks[ti].line, toks[ti].fval)
         return i + 1
-    if t.kind == "str":
-        if t.ival == 1:
-            out = ast.FStrLit(t.line, t.text)
+    if toks[ti].kind == "str":
+        if toks[ti].ival == 1:
+            out = ast.FStrLit(toks[ti].line, toks[ti].text)
             return i + 1
-        s := t.text
+        s := toks[ti].text
         i += 1
         for _kis(toks, i, "str") and _at(toks, i).ival != 1:
             s = s + _x(toks, i)
             i += 1
-        out = ast.StrLit(t.line, s)
+        out = ast.StrLit(toks[ti].line, s)
         return i
-    if t.kind == "kw" and t.text == "true":
-        out = ast.BoolLit(t.line, true)
+    if toks[ti].kind == "kw" and toks[ti].text == "true":
+        out = ast.BoolLit(toks[ti].line, true)
         return i + 1
-    if t.kind == "kw" and t.text == "false":
-        out = ast.BoolLit(t.line, false)
+    if toks[ti].kind == "kw" and toks[ti].text == "false":
+        out = ast.BoolLit(toks[ti].line, false)
         return i + 1
-    if t.kind == "kw" and t.text == "null":
-        out = ast.NullLit(t.line)
+    if toks[ti].kind == "kw" and toks[ti].text == "null":
+        out = ast.NullLit(toks[ti].line)
         return i + 1
 
-    if t.kind == "op" and t.text == "(":
+    if toks[ti].kind == "op" and toks[ti].text == "(":
         first := ast.NullLit(0)
         j := _expr_into(toks, i + 1, &first)
         i = j
@@ -456,11 +459,11 @@ fn _primary_into(toks: [lex.Tok], i0: int, out: inout ast.Expr) -> int:
             i = k
         i = _op(toks, i, ")")
         if len(xs) > 8:
-            _die(t, "a tuple has at most 8 elements")
-        out = ast.Tuple(t.line, xs)
+            _die(_at(toks, i0), "a tuple has at most 8 elements")
+        out = ast.Tuple(toks[ti].line, xs)
         return i
 
-    if t.kind == "op" and t.text == "[":
+    if toks[ti].kind == "op" and toks[ti].text == "[":
         i += 1
         # `xs := [string]` -- the TYPE spelling where a value goes. "expected an
         # expression" is true and useless. Only for a primitive type KEYWORD,
@@ -469,25 +472,25 @@ fn _primary_into(toks: [lex.Tok], i0: int, out: inout ast.Expr) -> int:
         k0 := _at(toks, i)
         if k0.kind == "kw" and _is_prim(k0.text):
             if _isop(toks, i + 1, "]"):
-                _die(t, "`[" + k0.text + "]` is the TYPE, not a value -- for an empty array write " +
+                _die(_at(toks, i0), "`[" + k0.text + "]` is the TYPE, not a value -- for an empty array write " +
                     "`[]" + k0.text + "`, or annotate the declaration: `xs : [" + k0.text + "] = []`")
             k2 := _at(toks, i + 2)
             if _isop(toks, i + 1, ":") and k2.kind == "kw" and _is_prim(k2.text) and _isop(toks, i + 3, "]"):
-                _die(t, "`[" + k0.text + ": " + k2.text + "]` is the TYPE, not a value -- for an empty map write " +
+                _die(_at(toks, i0), "`[" + k0.text + ": " + k2.text + "]` is the TYPE, not a value -- for an empty map write " +
                     "`[]" + k0.text + ": " + k2.text + "`, or annotate the declaration: `m : [" +
                     k0.text + ": " + k2.text + "] = []`")
         if _isop(toks, i, "]"):
             i += 1
             if not _starts_type_lit(toks, i):
-                out = ast.EmptyArr(t.line, []ast.Ty)
+                out = ast.EmptyArr(toks[ti].line, []ast.Ty)
                 return i
             el, j := ty(toks, i)
             i = j
             if _isop(toks, i, ":"):
                 v, k := ty(toks, i + 1)
-                out = ast.EmptyMap(t.line, [el, v])
+                out = ast.EmptyMap(toks[ti].line, [el, v])
                 return k
-            out = ast.EmptyArr(t.line, [el])
+            out = ast.EmptyArr(toks[ti].line, [el])
             return i
         first := ast.NullLit(0)
         j := _expr_into(toks, i, &first)
@@ -512,7 +515,7 @@ fn _primary_into(toks: [lex.Tok], i0: int, out: inout ast.Expr) -> int:
                 push(kv, b)
                 i = k3
             i = _op(toks, i, "]")
-            out = ast.MapLit(t.line, kv)
+            out = ast.MapLit(toks[ti].line, kv)
             return i
         xs := []ast.Expr
         push(xs, first)
@@ -525,25 +528,25 @@ fn _primary_into(toks: [lex.Tok], i0: int, out: inout ast.Expr) -> int:
             push(xs, a)
             i = k
         i = _op(toks, i, "]")
-        out = ast.ArrLit(t.line, xs)
+        out = ast.ArrLit(toks[ti].line, xs)
         return i
 
-    if t.kind == "kw" and t.text == "spawn":
+    if toks[ti].kind == "kw" and toks[ti].text == "spawn":
         c := ast.NullLit(0)
         j := _postfix_into(toks, i + 1, &c)
         if not (c is ast.Call) and not (c is ast.CallVal):
-            _die(t, "spawn requires a direct call: spawn f(args)")
-        out = ast.SpawnE(t.line, [c])
+            _die(_at(toks, i0), "spawn requires a direct call: spawn f(args)")
+        out = ast.SpawnE(toks[ti].line, [c])
         return j
 
-    if t.kind == "ident":
-        nm := t.text
+    if toks[ti].kind == "ident":
+        nm := toks[ti].text
         i += 1
         if nm == "soa":
             i = _op(toks, i, "[")
             i = _op(toks, i, "]")
             el, j := ty(toks, i)
-            out = ast.SoaLit(t.line, [el])
+            out = ast.SoaLit(toks[ti].line, [el])
             return j
         if nm == "channel" and _isop(toks, i, "("):
             el, j := ty(toks, i + 1)
@@ -551,34 +554,34 @@ fn _primary_into(toks: [lex.Tok], i0: int, out: inout ast.Expr) -> int:
             c := ast.NullLit(0)
             k := _expr_into(toks, i, &c)
             i = _op(toks, k, ")")
-            out = ast.ChanE(t.line, [el], [c])
+            out = ast.ChanE(toks[ti].line, [el], [c])
             return i
         if nm == "None":
-            out = ast.NoneE(t.line)
+            out = ast.NoneE(toks[ti].line)
             return i
         if not _isop(toks, i, "(") and (nm == "Some" or nm == "Ok" or nm == "Err"):
-            _die(t, "'" + nm + "' cannot name a binding -- as a value it is a constructor: " + nm + "(x)")
+            _die(_at(toks, i0), "'" + nm + "' cannot name a binding -- as a value it is a constructor: " + nm + "(x)")
         if nm == "Some":
             i = _op(toks, i, "(")
             a := ast.NullLit(0)
             j := _expr_into(toks, i, &a)
             i = _op(toks, j, ")")
-            out = ast.SomeE(t.line, [a])
+            out = ast.SomeE(toks[ti].line, [a])
             return i
         if nm == "Ok" or nm == "Err":
             i = _op(toks, i, "(")
             if _isop(toks, i, ")"):
                 if nm == "Err":
-                    _die(t, "Err() carries no value -- a Result's error type cannot be void")
-                out = ast.OkE(t.line, []ast.Expr)
+                    _die(_at(toks, i0), "Err() carries no value -- a Result's error type cannot be void")
+                out = ast.OkE(toks[ti].line, []ast.Expr)
                 return i + 1
             a := ast.NullLit(0)
             j := _expr_into(toks, i, &a)
             i = _op(toks, j, ")")
             if nm == "Ok":
-                out = ast.OkE(t.line, [a])
+                out = ast.OkE(toks[ti].line, [a])
                 return i
-            out = ast.ErrE(t.line, [a])
+            out = ast.ErrE(toks[ti].line, [a])
             return i
         if _isop(toks, i, "$"):
             tas, j := _typeargs(toks, i + 1, nm)
@@ -588,27 +591,27 @@ fn _primary_into(toks: [lex.Tok], i0: int, out: inout ast.Expr) -> int:
                 a, k := _args(toks, i + 1)
                 vargs = a
                 i = k
-            out = ast.Call(t.line, "", nm, tas, vargs)
+            out = ast.Call(toks[ti].line, "", nm, tas, vargs)
             return i
         if _isop(toks, i, "("):
             if nm == "map_set":
-                _die(t, "map_set was removed; use `m[k] = v`")
+                _die(_at(toks, i0), "map_set was removed; use `m[k] = v`")
             if nm == "map_has":
-                _die(t, "map_has was removed; use `k in m`")
+                _die(_at(toks, i0), "map_has was removed; use `k in m`")
             if nm == "map_del":
-                _die(t, "map_del was removed; use `delete m[k]`")
+                _die(_at(toks, i0), "map_del was removed; use `delete m[k]`")
             if nm == "map_get":
-                _die(t, "map_get was removed; use `m.get(k, default)`")
+                _die(_at(toks, i0), "map_get was removed; use `m.get(k, default)`")
             a, j := _args(toks, i + 1)
-            out = ast.Call(t.line, "", nm, []ast.Ty, a)
+            out = ast.Call(toks[ti].line, "", nm, []ast.Ty, a)
             return j
-        out = ast.Name(t.line, nm)
+        out = ast.Name(toks[ti].line, nm)
         return i
 
-    if t.kind == "indent":
-        _die(t, "unexpected indentation: this line is indented further than the block it belongs to")
-    _diec(t, "expected an expression")
-    out = ast.IntLit(t.line, 0)
+    if toks[ti].kind == "indent":
+        _die(_at(toks, i0), "unexpected indentation: this line is indented further than the block it belongs to")
+    _diec(_at(toks, i0), "expected an expression")
+    out = ast.IntLit(toks[ti].line, 0)
     return i0
 
 fn _postfix_into(toks: [lex.Tok], i0: int, out: inout ast.Expr) -> int:
