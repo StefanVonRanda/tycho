@@ -2677,6 +2677,25 @@ covered by the same refusal -- it has the same staleness property and would cut
 across TYCHO_CORELIB.
 So the gap stands. Do not re-propose either without new information.
 
+### Why the crossover exists at all (./tychoc profiled, server/main.ty, 54.41e6 Ir)
+
+  __strcmp_avx2  19,254,418  35.39%   <- its symbol table is LINEAR string compare
+  _int_malloc     4,331,240   7.96%
+  lex             3,386,363   6.22%
+  sig_find        2,725,075   5.01%
+
+./tychoc burns 43% of its compile on symbol lookup and allocation. tychoc1
+replaced that with hash maps costing ~1e6, so it SAVES ~18e6 there -- and is
+still 7e6 behind in total, which means its AST construction and five-pass
+structure cost ~25e6 more than tychoc's single pass.
+That IS the crossover, and it is a property of the two designs rather than of
+any missing optimisation: ./tychoc's cost grows with SYMBOL COUNT, tychoc1's
+with a fixed per-compile AST overhead. So tychoc1 wins the large programs
+(compiler/main.ty 0.682, tycho-fetch 0.618, tycho-ar 0.771, tycho-snap 0.783)
+and loses the 51 small ones, where there is nothing for its overhead to
+amortise against. Its own lexer is now within 1.4x of ./tychoc's after
+f0b22716, so the lexer is no longer the difference.
+
 ### If this is picked up again
 
 The remaining items on raytrace are all under 10%: str_copy 9.4% (already 13
