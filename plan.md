@@ -2740,3 +2740,26 @@ timing sized to ~300 ms: **5 of 55 at or under 1.000, geomean 1.0809, median
 1.0239 from a min-of-3 harness; that does not reproduce. Take the conservative
 figures. The DIRECTION is not in doubt -- geomean 1.1262 -> 1.0809 and the
 median off 1.15 -- but the change is worth ~4%, not ~9%.
+
+
+### Emit-time reachability, both levels: what it actually bought
+
+e539f781 (function bodies, 222 -> 153 definitions on server) and 40f19a00 +
+a3079317 (generated helper families, per operation) are the largest wins after
+static linking. Emitted C shrinks 17% on tycho-vm, 13% on server, 9% on compiler.
+
+MEASURED THREE WAYS, and the spread is the lesson:
+ - the authoring agents' own sweeps: 12/55 then 7/55, geomean 1.0239 then 1.0563
+ - my independent 55-point sweeps: 5/55 then 6/55, geomean 1.0809 then 1.0833
+ - a DIRECT A/B of the two trees, both binaries rebuilt in one rotation, idle
+   box: **0.9840 for the helper pass** -- a real 1.6%
+Two independent whole-corpus sweeps differ by MORE than the effect being
+measured, so only the paired A/B against a rebuilt sibling is trustworthy. Quote
+the paired number for a change and the sweep only for the standing.
+
+Standing after both, my sweep on an idle box: **6 of 55 at or under 1.000,
+geomean 1.0833, median 1.1075**, worst invindex 1.407, hello 1.388.
+
+Further reachability is EXHAUSTED: after both passes the still-dead set is 0.3%
+of compiler/main.ty's output and 0.0% of server's, all of it the map family
+whose twelve operations cross-reference each other.
