@@ -2394,3 +2394,36 @@ The phases below are ranked by expected size of win. Each names the
 - [ ] **Perf 0 — `tychoc1` has no `--pkg`, so dbquery cannot be scored**
   - `tychoc1: unknown option '--pkg'`. A CLI gap, not codegen; it is here
     because it is why one benchmark row is blank.
+
+- [ ] **Emit parity — the classes measured 2026-08-26, in payoff order**
+  - Method: diff every differing fixture, bucket the changed lines. Parity is
+    byte-identity PER FIXTURE, so the count moves only when a fixture's LAST
+    class clears; the census below is "fixtures containing it", not "fixtures
+    it would clear".
+  - **Fixed-size `[N]T`** — 86 fixtures. `./tychoc` emits `TychoArrC<n>`
+    (`struct { tycho_int v[3]; }`); `compiler/emit/emit.ty` has no fixed-size
+    array kind and falls back to the dynamic `TychoArrK<n>`. The single largest
+    class by lines.
+  - **Accumulator arena** — 81 fixtures. `./tychoc` builds a returned
+    accumulator in `_parent` and returns it bare; emit.ty builds it in `&_scope`
+    and copies on return (`tests/saccum_typed.ty`, `tests/crlf_adjacent.ty`,
+    `tests/if_expr_block.ty` are each ONLY this).
+  - **`_set` vs `*_ptr`** — 106 fixtures. `tycho_arr_int_set(&xs, i, v)` vs
+    `(*tycho_arr_int_ptr(&xs, i)) = v` (`tests/sink.ty`).
+  - **Scratch arena sequence numbers** — 68 fixtures. `_scr1` vs `_scr2`: the
+    two compilers allocate temp numbers in a different order.
+  - **A string SLICE is not a place** — 4 fixtures, and the whole diff in each
+    (`str_index`, `string_slice`, `float_str_locale`, `slice_once`).
+    `compiler/emit/emit.ty@_place` has no `ast.Slice` arm, so `t := s[7:12]` is
+    retained with no `tycho_str_copy`. Not `_shares` — that path clears
+    `string_nul` alone.
+  - **Shadow rename** — 8 fixtures. `_sh_y` + a re-declared `h_y` vs `h_y_s1`.
+  - NOT a class: the generic-instance NAME, closed 2026-08-26 (commit 8e58f43a).
+    The census read it as "instances ./tychoc never makes"; it was the same
+    instance set under a serial name.
+  - **`_shares` removal is REFUSED on measurement, not on taste.** It buys
+    `string_nul` (+1) and costs wall 1.076/1.084/1.081 min/med/mean against
+    `./tychoc` — over 1.000 on all three, against 0.994/0.995/0.992 without it —
+    and callgrind Ir 847.7e6 -> 925.5e6 (+9.2%). Measured three-way interleaved,
+    51 reps, `--emit-c compiler/main.ty`, every run asserted exit 0 and a >2 MB
+    `.c`. Do not re-propose it without a replacement for the elision.
