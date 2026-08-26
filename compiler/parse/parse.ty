@@ -1500,16 +1500,22 @@ fn _stmt_into(toks: [lex.Tok], i0: int, out: inout ast.Stmt) -> int:
     return j
 
 fn block(toks: [lex.Tok], i0: int) -> ([ast.Stmt], int):
-    i := _expect(toks, i0, lex.K_INDENT, "")
     out := []ast.Stmt
+    i := block_into(toks, i0, &out)
+    return (out, i)
+
+# Statements go straight into the CALLER's array. A caller that owns the array
+# elsewhere -- a function's `body` field -- would otherwise pay a deep copy of
+# every statement in the block on the way out of `block`.
+fn block_into(toks: [lex.Tok], i0: int, out: inout [ast.Stmt]) -> int:
+    i := _expect(toks, i0, lex.K_INDENT, "")
     for not _kis(toks, i, lex.K_DEDENT) and not _kis(toks, i, lex.K_EOF):
         if _kis(toks, i, lex.K_NEWLINE):
             i += 1
             continue
         push(out, ast.PassS(0))
         i = _stmt_into(toks, i, &out[len(out) - 1])
-    i = _expect(toks, i, lex.K_DEDENT, "")
-    return (out, i)
+    return _expect(toks, i, lex.K_DEDENT, "")
 
 # --- declarations -----------------------------------------------------------
 
@@ -1720,9 +1726,8 @@ fn _func_into(ps0: inout PS, toks: [lex.Tok], i0: int, notes: [lex.DNote], out: 
         i = m
     i = _op(toks, i, ":")
     i = _expect(toks, i, lex.K_NEWLINE, "")
-    body, m2 := block(toks, i)
-    out = ast.Fn(nm, ps, ret, tps, wh, body, false, "", dn, _ln(toks, i0))
-    return m2
+    out = ast.Fn(nm, ps, ret, tps, wh, []ast.Stmt, false, "", dn, _ln(toks, i0))
+    return block_into(toks, i, &out.body)
 
 fn externfn(toks: [lex.Tok], i0: int) -> (ast.Fn, int):
     i := i0 + 1

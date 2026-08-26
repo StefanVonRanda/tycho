@@ -2349,16 +2349,17 @@ fn _fill_decls(cs: inout C, p: Program):
                     _cperr(&cs, "subscript '" + sb.name + "' is declared `-> inout " + rt2 + "` but yields a place of type " + pt2)
                 cs.skip = true
             else:
-                fd := f.unit.fns[d.idx]
-                cs.skip = len(fd.typarams) > 0
-                _addsig(&cs, _sig_of(&cs, f.prefix, fd))
-                cs.line = fd.line
-                if len(fd.params) > 16 and len(fd.typarams) == 0 and
-                        len(_sig_sizeparams(fd.params, fd.ret)) == 0:
+                # NOT `fd := f.unit.fns[d.idx]` -- binding the element deep-copies
+                # the whole Fn, body and all, once per declaration in the program.
+                cs.skip = len(f.unit.fns[d.idx].typarams) > 0
+                _addsig(&cs, _sig_of(&cs, f.prefix, f.unit.fns[d.idx]))
+                cs.line = f.unit.fns[d.idx].line
+                if len(f.unit.fns[d.idx].params) > 16 and len(f.unit.fns[d.idx].typarams) == 0 and
+                        len(_sig_sizeparams(f.unit.fns[d.idx].params, f.unit.fns[d.idx].ret)) == 0:
                     _cerr(&cs, "too many parameters (max 16)")
-                if len(_dedup6(fd.typarams)) > 16:
+                if len(_dedup6(f.unit.fns[d.idx].typarams)) > 16:
                     _cperr(&cs, "too many type parameters (max 16)")
-                if len(_sig_sizeparams(fd.params, fd.ret)) > 16:
+                if len(_sig_sizeparams(f.unit.fns[d.idx].params, f.unit.fns[d.idx].ret)) > 16:
                     _cperr(&cs, "too many size parameters (max 16)")
             cs.skip = false
             _typarams_of(&cs, []string)
