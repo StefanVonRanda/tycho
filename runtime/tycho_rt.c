@@ -58,6 +58,10 @@
 #endif
 #endif
 #include <unistd.h>    /* sysconf(_SC_NPROCESSORS_ONLN) for parallel-for chunking */
+#ifndef _WIN32
+#include <fcntl.h>        /* open(): the main thread's stack bounds are read straight out of /proc/self/maps */
+#include <sys/resource.h> /* getrlimit(RLIMIT_STACK), the size glibc itself pairs with that mapping */
+#endif
 #include <stdatomic.h> /* lock-free channel fast path (CC-5) */
 #include <sched.h>     /* sched_yield in the spin-escalation ladder */
 #include <time.h>      /* clock_gettime (clock()), time() (now()) */
@@ -76,9 +80,74 @@ _Static_assert(sizeof(tycho_int)==8, "tycho int must be 64 bits");
 typedef struct { uintptr_t hi; uintptr_t lo; } TychoStackBounds;
 static __thread TychoStackBounds g_stack_bounds = {0, 0};
 
-static void tycho_record_stack_bounds(void) {
+#if defined(__linux__)
+static uintptr_t tycho_hexrun(const char **pp, const char *end) {
+    uintptr_t v = 0; const char *p = *pp;
+    for (; p < end; p++) {
+        unsigned c = (unsigned char)*p, d;
+        if (c >= '0' && c <= '9') d = c - '0';
+        else if (c >= 'a' && c <= 'f') d = c - 'a' + 10;
+        else if (c >= 'A' && c <= 'F') d = c - 'A' + 10;
+        else break;
+        v = v * 16 + d;
+    }
+    *pp = p; return v;
+}
+
+/* glibc serves pthread_getattr_np for a SPAWNED thread out of the TCB, but for
+ * the MAIN thread it parses /proc/self/maps with fscanf: 41 scanf calls, 86.7k
+ * Ir, 19% of a two-line compile. Same file, same two fields, same rlimit and
+ * same clamp against the mapping below -- read once and scanned by hand. */
+static int tycho_main_stack_bounds(void) {
+    int fd = open("/proc/self/maps", O_RDONLY | O_CLOEXEC);
+    if (fd < 0) return 0;
+    char buf[8192];
+    size_t held = 0;
+    uintptr_t prev_to = 0, from = 0, to = 0;
+    int found = 0, done = 0;
+    while (!done) {
+        ssize_t n = read(fd, buf + held, sizeof buf - held);
+        if (n <= 0) break;
+        held += (size_t)n;
+        size_t off = 0;
+        for (;;) {
+            char *nl = (char *)memchr(buf + off, '\n', held - off);
+            if (!nl) break;
+            const char *p = buf + off;
+            uintptr_t f = tycho_hexrun(&p, nl);
+            if (p < nl && *p == '-') {
+                p++;
+                uintptr_t t = tycho_hexrun(&p, nl);
+                if ((size_t)(nl - (buf + off)) >= 7 && memcmp(nl - 7, "[stack]", 7) == 0) {
+                    from = f; to = t; found = 1; done = 1; break;
+                }
+                prev_to = t;
+            }
+            off = (size_t)(nl - buf) + 1;
+        }
+        if (done) break;
+        if (off == 0 && held == sizeof buf) break;   /* one line longer than the buffer: give up */
+        held -= off;
+        memmove(buf, buf + off, held);
+    }
+    close(fd);
+    if (!found || to <= from) return 0;
+    struct rlimit rl;
+    size_t size = to - from;
+    if (getrlimit(RLIMIT_STACK, &rl) == 0 && rl.rlim_cur != RLIM_INFINITY) size = (size_t)rl.rlim_cur;
+    else size = (size_t)-1;
+    if (prev_to && prev_to < to && size > (size_t)(to - prev_to)) size = (size_t)(to - prev_to);
+    if (size == (size_t)-1) size = to - from;
+    g_stack_bounds.hi = to;
+    g_stack_bounds.lo = to - size;
+    return 1;
+}
+#endif
+
+static void tycho_record_stack_bounds(int is_main) {
     /* stack grows DOWN: hi is the top, lo the bottom of the mapped region */
 #if defined(__linux__)
+    if (is_main && tycho_main_stack_bounds()) return;
     pthread_attr_t a;
     if (pthread_getattr_np(pthread_self(), &a) == 0) {
         void *addr; size_t size;
@@ -88,7 +157,10 @@ static void tycho_record_stack_bounds(void) {
         }
         pthread_attr_destroy(&a);
     }
-#elif defined(__APPLE__)
+#else
+    (void)is_main;
+#endif
+#if defined(__APPLE__)
     void *top = pthread_get_stackaddr_np(pthread_self());
     size_t size = pthread_get_stacksize_np(pthread_self());
     g_stack_bounds.hi = (uintptr_t)top;
@@ -138,8 +210,8 @@ static void tycho_fault_handler(int sig, siginfo_t *si, void *uctx) {
  * dies a second time. The constructor calls this for the main thread; the
  * task trampoline calls it for every spawned thread. sigaction itself is
  * process-wide, so it is installed once, here. */
-static void tycho_stack_guard_thread_init(void) {
-    tycho_record_stack_bounds();
+static void tycho_stack_guard_thread_init(int is_main) {
+    tycho_record_stack_bounds(is_main);
     stack_t ss; memset(&ss, 0, sizeof ss);
     ss.ss_sp = g_altstack; ss.ss_size = sizeof g_altstack;
     g_previous_altstack_valid = sigaltstack(&ss, &g_previous_altstack) == 0;
@@ -156,7 +228,7 @@ static void tycho_stack_guard_thread_fini(void) {
 }
 
 __attribute__((constructor)) static void tycho_stack_guard_init(void) {
-    tycho_stack_guard_thread_init();
+    tycho_stack_guard_thread_init(1);
     struct sigaction sa; memset(&sa, 0, sizeof sa);
     sa.sa_sigaction = tycho_fault_handler;
     sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
@@ -180,7 +252,7 @@ static LONG WINAPI tycho_veh_handler(PEXCEPTION_POINTERS ep) {
     }
     return EXCEPTION_CONTINUE_SEARCH;
 }
-static void tycho_stack_guard_thread_init(void) { }   /* no per-thread state: the exception code names the fault */
+static void tycho_stack_guard_thread_init(int is_main) { (void)is_main; }   /* no per-thread state: the exception code names the fault */
 static void tycho_stack_guard_thread_fini(void) { }
 __attribute__((constructor)) static void tycho_stack_guard_init(void) {
     /* Binary stdout/stderr: the CRT's text mode translates \n to \r\n, so
@@ -875,7 +947,7 @@ static tycho_int tycho_max_tasks(void) {
 static void *tycho_task_trampoline(void *p) {
     typedef struct { void *(*fn)(void *); void *arg; } TaskStart;
     TaskStart *start = (TaskStart *)p;
-    tycho_stack_guard_thread_init();   /* per-thread bounds + altstack (POSIX); no-op (Windows) */
+    tycho_stack_guard_thread_init(0);   /* per-thread bounds + altstack (POSIX); no-op (Windows) */
     void *r = start->fn(start->arg);
     tycho_stack_guard_thread_fini();   /* ASan: clear before thread destroy (POSIX); no-op (Windows) */
     return r;
