@@ -2471,6 +2471,21 @@ eight-input geomean is **0.9849**. The size crossover above still holds --
 every win is still a large compile -- but a program that imports a package for
 two symbols no longer pays for the rest of it.
 
+SUPERSEDED AGAIN by commits 40f19a0 and a307931, which take the same
+reachability idea down to the GENERATED helpers -- a type's eq/str/copy/hash
+and an array kind's eleven operations were emitted as a family whether or not
+anything called one. Re-measured over the same 55 entry points, min of 2
+alternating rounds against ./tychoc on a quiet box (load 0.84): **7 of 55** at
+or under 1.000, geomean **1.0563**, median **1.0814**, worst 1.295. The two
+commits are 0.9939 and 0.9753 against their own rebuilt predecessors.
+
+**This avenue is now exhausted, measured rather than assumed.** Closing
+reachability over the emitted C from its non-helper text, the dropped set is
+EXACTLY the unreachable set on server, tycho-vm, compiler and raytrace, and
+what is left dead is 0.3% of the output on compiler/main.ty and 0.0% on
+server -- all of it the map family, whose twelve operations cross-reference
+each other. There is no third level to take this to.
+
 ### Why the rest is not another optimisation pass
 
 raytrace needs ~40% of tychoc1's instructions gone to reach 1.000 and the
