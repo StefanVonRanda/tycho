@@ -3135,7 +3135,16 @@ fn _call(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], args: [ast.Ex
             ft := cs.sds[si].ftypes[i]
             sw := cs.want
             cs.want = ft
-            ac, at := _ex_scope(&cs, args[i])
+            # The field is built in cs.arena, not always &_scope: the copy
+            # decision below already reads cs.arena, and a struct built in
+            # _parent whose array field was built in &_scope holds a pointer
+            # into an arena that is freed on the way out.
+            ac := ""
+            at := ""
+            if cs.arena == "_parent":
+                ac, at = _ex(&cs, args[i])
+            else:
+                ac, at = _ex_scope(&cs, args[i])
             cs.want = sw
             if _place(args[i]) and _heap(&cs, ft) and not _shares(&cs, args[i], ft, cs.arena) and
                     not _canmove(&cs, args[i], cs.arena):
