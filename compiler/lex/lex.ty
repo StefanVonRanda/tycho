@@ -12,7 +12,8 @@ struct Tok:
     text: string      # name, operator spelling, or the ESCAPED string body
     line: int
     col: int          # 1-based, for the error caret
-    ival: int         # int literal value, char literal byte, or 1 on an f-string
+    ival: int         # int literal value, char byte, 1 on an f-string -- and on a
+                      # K_OP/K_KW token the OP_*/KW_* tag, which nothing else reads
     fval: float       # float literal value
     raw: string       # the exact source slice, for the round-trip control
     file: string      # the path this token was lexed from, for diagnostics
@@ -102,6 +103,74 @@ fn is_ident_start(c: int) -> bool:
 fn is_ident(c: int) -> bool:
     return is_ident_start(c) or is_digit(c)
 
+
+# The operator's spelling as an int: the bytes of the token packed low-first,
+# which the lexer computes with two shifts and no comparison at all. `_isop` was
+# 3.7% of a compile and `_iskw` 1.6%, both comparing `text` as a string. Every
+# operator is at most three bytes (`op_len` above returns 1, 2 or 3), so the
+# packing is exact, and these are the single source of truth for parse.ty.
+const OP_AMP       = 38       # `&`
+const OP_LPAREN    = 40       # `(`
+const OP_RPAREN    = 41       # `)`
+const OP_COMMA     = 44       # `,`
+const OP_MINUS     = 45       # `-`
+const OP_DOT       = 46       # `.`
+const OP_COLON     = 58       # `:`
+const OP_EQ        = 61       # `=`
+const OP_LBRACK    = 91       # `[`
+const OP_RBRACK    = 93       # `]`
+const OP_PIPE      = 124      # `|`
+const OP_TILDE     = 126      # `~`
+const OP_DOLLAR    = 36       # `$`
+const OP_ARROW     = 15917    # `->`
+const OP_DOTDOT    = 11822    # `..`
+const OP_ELLIPSIS  = 3026478  # `...`
+const OP_DOTDOTLT  = 3943982  # `..<`
+const OP_DECL      = 15674    # `:=`
+
+# The keyword's identity as an int, in the order `kwid` tests them.
+const KW_FN         = 1
+const KW_IF         = 2
+const KW_OR         = 3
+const KW_IN         = 4
+const KW_IS         = 5
+const KW_U8         = 6
+const KW_I8         = 7
+const KW_AND        = 8
+const KW_NOT        = 9
+const KW_FOR        = 10
+const KW_INT        = 11
+const KW_PTR        = 12
+const KW_U16        = 13
+const KW_U32        = 14
+const KW_U64        = 15
+const KW_I16        = 16
+const KW_I32        = 17
+const KW_I64        = 18
+const KW_F32        = 19
+const KW_ELIF       = 20
+const KW_ELSE       = 21
+const KW_TRUE       = 22
+const KW_NULL       = 23
+const KW_BOOL       = 24
+const KW_ENUM       = 25
+const KW_TYPE       = 26
+const KW_MATCH      = 27
+const KW_BREAK      = 28
+const KW_SPAWN      = 29
+const KW_FALSE      = 30
+const KW_FLOAT      = 31
+const KW_BYTES      = 32
+const KW_INOUT      = 33
+const KW_RETURN     = 34
+const KW_STRUCT     = 35
+const KW_HANDLE     = 36
+const KW_STRING     = 37
+const KW_SELECT     = 38
+const KW_CONTINUE   = 39
+const KW_PARALLEL   = 40
+const KW_OR_RETURN  = 41
+
 # src/tychoc.c@keyword, verbatim. Every name here becomes kind "kw"; everything
 # else -- `soa`, `count`, `print`, `where`, `const`, `import`, `package`,
 # `extern`, `sink`, `subscript`, `yield`, `zero` -- stays an identifier.
@@ -109,28 +178,107 @@ fn is_ident(c: int) -> bool:
 # identifier in the source reaches here, and the 38-way `or` chain compared the
 # text against each in turn -- callgrind put str_cmp from here at 3% of a
 # compile.
-fn is_keyword(s: string) -> bool:
+fn kwid(s: string) -> int:
     n := len(s)
     if n < 2 or n > 9:
-        return false
+        return 0
     if n == 2:
-        return s == "fn" or s == "if" or s == "or" or s == "in" or s == "is" or s == "u8" or s == "i8"
+        if s == "fn":
+            return KW_FN
+        if s == "if":
+            return KW_IF
+        if s == "or":
+            return KW_OR
+        if s == "in":
+            return KW_IN
+        if s == "is":
+            return KW_IS
+        if s == "u8":
+            return KW_U8
+        if s == "i8":
+            return KW_I8
+        return 0
     if n == 3:
-        return s == "and" or s == "not" or s == "for" or s == "int" or s == "ptr" or
-            s == "u16" or s == "u32" or s == "u64" or s == "i16" or s == "i32" or s == "i64" or s == "f32"
+        if s == "and":
+            return KW_AND
+        if s == "not":
+            return KW_NOT
+        if s == "for":
+            return KW_FOR
+        if s == "int":
+            return KW_INT
+        if s == "ptr":
+            return KW_PTR
+        if s == "u16":
+            return KW_U16
+        if s == "u32":
+            return KW_U32
+        if s == "u64":
+            return KW_U64
+        if s == "i16":
+            return KW_I16
+        if s == "i32":
+            return KW_I32
+        if s == "i64":
+            return KW_I64
+        if s == "f32":
+            return KW_F32
+        return 0
     if n == 4:
-        return s == "elif" or s == "else" or s == "true" or s == "null" or s == "bool" or
-            s == "enum" or s == "type"
+        if s == "elif":
+            return KW_ELIF
+        if s == "else":
+            return KW_ELSE
+        if s == "true":
+            return KW_TRUE
+        if s == "null":
+            return KW_NULL
+        if s == "bool":
+            return KW_BOOL
+        if s == "enum":
+            return KW_ENUM
+        if s == "type":
+            return KW_TYPE
+        return 0
     if n == 5:
-        return s == "match" or s == "break" or s == "spawn" or s == "false" or s == "float" or
-            s == "bytes" or s == "inout"
+        if s == "match":
+            return KW_MATCH
+        if s == "break":
+            return KW_BREAK
+        if s == "spawn":
+            return KW_SPAWN
+        if s == "false":
+            return KW_FALSE
+        if s == "float":
+            return KW_FLOAT
+        if s == "bytes":
+            return KW_BYTES
+        if s == "inout":
+            return KW_INOUT
+        return 0
     if n == 6:
-        return s == "return" or s == "struct" or s == "handle" or s == "string" or s == "select"
+        if s == "return":
+            return KW_RETURN
+        if s == "struct":
+            return KW_STRUCT
+        if s == "handle":
+            return KW_HANDLE
+        if s == "string":
+            return KW_STRING
+        if s == "select":
+            return KW_SELECT
+        return 0
     if n == 8:
-        return s == "continue" or s == "parallel"
+        if s == "continue":
+            return KW_CONTINUE
+        if s == "parallel":
+            return KW_PARALLEL
+        return 0
     if n == 9:
-        return s == "or_return"
-    return false
+        if s == "or_return":
+            return KW_OR_RETURN
+        return 0
+    return 0
 
 # src/tychoc.c@tok_continues_line. A line ending on one of these cannot be a
 # complete statement, so the next physical line joins it.
@@ -583,12 +731,13 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
                     p += 1
                 name := src[s:p]
                 kind := K_IDENT
-                if is_keyword(name):
+                kid := kwid(name)
+                if kid != 0:
                     kind = K_KW
                 raw9 := ""
                 if keep_trivia:
                     raw9 = name
-                push(toks, Tok(kind, name, line, tcol, 0, 0.0, raw9, file))
+                push(toks, Tok(kind, name, line, tcol, kid, 0.0, raw9, file))
                 last_ix = len(toks) - 1
                 continue
 
@@ -628,6 +777,13 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
             # exactly as in src/tychoc.c's operator chain.
             if not is_op_start(c) and not (c == 33 and l == 2):
                 _die(file, src, line, "unexpected character '" + src[p:p + 1] + "'")
+            # The tag is the bytes packed low-first -- no comparison at all, and
+            # it is what `_isop` reads instead of comparing `text`.
+            oid := src[p]
+            if l > 1:
+                oid = oid + src[p + 1] * 256
+            if l > 2:
+                oid = oid + src[p + 2] * 65536
             text := src[p:p + l]
             if text == "(" or text == "[":
                 if bracket_depth == 0:
@@ -638,7 +794,7 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
             raw8 := ""
             if keep_trivia:
                 raw8 = text
-            push(toks, Tok(K_OP, text, line, tcol, 0, 0.0, raw8, file))
+            push(toks, Tok(K_OP, text, line, tcol, oid, 0.0, raw8, file))
             p += l
             last_ix = len(toks) - 1
 
