@@ -4913,7 +4913,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                 t = want
             if uset and _heap(&cs, t):
                 uset = false
-                c = _replace(c, "&_t", own5)
+                c = _sub_t(c, own5)
             if uset and not _uses_t(c):
                 uset = false
             # src/tychoc.c:11582 -- `y := f(y)` must land in a temp declared
@@ -6290,6 +6290,29 @@ fn _tostr_a(cs: inout C, code: string, t: string) -> string:
 # unused, which is an arena_new + arena_free (and a block_get/release) per
 # statement. Matching "&_t" alone would also match "&_tp462", so the byte after
 # it must not continue an identifier.
+# Replace the scratch arena's name, but only where it is the WHOLE identifier.
+# A bare _replace(c, "&_t", ...) also rewrites `&_tk37`, the temp a wait() puts
+# in the caller's arena, and emits arena_free(_parentk37->root) -- which is why
+# tools/prunner and tools/tycho-kv did not build. Same boundary rule as _uses_t.
+fn _sub_t(s: string, to: string) -> string:
+    out := ""
+    i := 0
+    n := len(s)
+    for i < n:
+        if i + 3 <= n and s[i] == 38 and s[i + 1] == 95 and s[i + 2] == 116:
+            bnd := true
+            if i + 3 < n:
+                c := s[i + 3]
+                if c == 95 or (c >= 48 and c <= 57) or (c >= 65 and c <= 90) or (c >= 97 and c <= 122):
+                    bnd = false
+            if bnd:
+                out = out + to
+                i += 3
+                continue
+        out = out + s[i:i + 1]
+        i += 1
+    return out
+
 fn _uses_t(s: string) -> bool:
     i := 0
     n := len(s)

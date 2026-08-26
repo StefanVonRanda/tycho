@@ -1,0 +1,17 @@
+# A wait() result lands in a temp named `&_tk<uid>`. The scratch-arena elision
+# used a bare "&_t" replace, which also rewrote that temp and emitted
+# arena_free(_parentk<uid>->root) -- tools/prunner and tools/tycho-kv would not
+# build. The replace must stop at an identifier boundary, as _uses_t does.
+fn work(n: int) -> [int]:
+    out := []int
+    for i := 0; i < n; i += 1:
+        push(out, i * 2)
+    return out
+
+fn main():
+    t := spawn work(4)
+    got := wait(t)
+    total := 0
+    for v in got:
+        total = total + v
+    println(str(len(got)) + " " + str(total))
