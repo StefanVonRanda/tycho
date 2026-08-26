@@ -5055,10 +5055,18 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             pop(cs.ascope)
             cs.loopdepth -= 1
             cs.arena = svw
-            openw := ind + "    Arena " + idw + " = arena_child(" + svw + "); " +
-                idw + ".name = \"" + cs.pname + ":" + str(lw) + "\";\n"
-            resw := ind + "        arena_reset(&" + idw + ");\n"
-            closw := ind + "    arena_free(&" + idw + ");\n"
+            # a body that allocates nothing pays no child/reset/free per pass
+            openw := ""
+            resw := ""
+            closw := ""
+            uidw, fidw := _uses_scr(bdw, idw)
+            if uidw:
+                openw = ind + "    Arena " + idw + " = arena_child(" + svw + "); " +
+                    idw + ".name = \"" + cs.pname + ":" + str(lw) + "\";\n"
+                resw = ind + "        arena_reset(&" + idw + ");\n"
+                closw = ind + "    arena_free(&" + idw + ");\n"
+            elif fidw:
+                bdw = _replace(bdw, "arena_free(&" + idw + "); ", "")
             return ind + "{\n" + openw + ind + "    while (" + cc + ") {\n" + resw +
                 bdw + ind + "    }\n" + closw + ind + "}\n"
         ast.For3(l, ip, c, b):
@@ -5098,10 +5106,19 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             gt3 := "goto _post" + str(k3) + ";"
             if len(_replace(bd3, gt3, "")) != len(bd3):
                 lab3 = ind + "        _post" + str(k3) + ": ;\n"
-            open3 := ind + "    Arena " + id3 + " = arena_child(" + sv3 + "); " +
-                id3 + ".name = \"" + cs.pname + ":" + str(l3) + "\";\n"
-            res3 := ind + "        arena_reset(&" + id3 + ");\n"
-            clos3 := ind + "    arena_free(&" + id3 + ");\n"
+            open3 := ""
+            res3 := ""
+            clos3 := ""
+            u3, f3 := _uses_scr(bd3, id3)
+            up3, fp3 := _uses_scr(post, id3)
+            if u3 or up3:
+                open3 = ind + "    Arena " + id3 + " = arena_child(" + sv3 + "); " +
+                    id3 + ".name = \"" + cs.pname + ":" + str(l3) + "\";\n"
+                res3 = ind + "        arena_reset(&" + id3 + ");\n"
+                clos3 = ind + "    arena_free(&" + id3 + ");\n"
+            elif f3 or fp3:
+                bd3 = _replace(bd3, "arena_free(&" + id3 + "); ", "")
+                post = _replace(post, "arena_free(&" + id3 + "); ", "")
             out := ind + "{\n" + ind + "    " + _trim_nl(init) + open3 +
                 ind + "    while (" + cc + ") {\n" + res3 +
                 bd3 + lab3 + post + ind + "    }\n" + clos3 + ind + "}\n"
