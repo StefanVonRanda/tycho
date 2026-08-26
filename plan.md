@@ -2493,13 +2493,57 @@ architectural.
   `__register_frame_info` runs before main for 202,296 Ir, 6% of a raytrace
   compile, out of crtbeginT.o; no flag disables it.
 
+### Interning identifiers at lex time -- CLOSED, not attempted, 2026-08-26
+
+The last avenue the previous note called tractable. It was not written; it was
+PRICED first, with two probes that cost twenty minutes instead of a whole-tree
+refactor of lex/ast/parse/types/emit.
+
+- **The hashing half.** Replacing `tycho_si_hash`'s SipHash-1-3 with an O(1)
+  proxy for an int key (`runtime/tycho_rt.c@tycho_si_hash`, probe only, never
+  committed) is the upper bound on what keying the symbol tables by an id can
+  win: **-4.08% Ir on raytrace, -0.57% WALL geomean** over the eight inputs,
+  raytrace itself -0.43%. A first probe using a variable-length `memcpy` moved
+  Ir +0.4% and wall +0.48% and proved nothing -- the control that matters here
+  is that the Ir actually FELL, since a "cheaper" hash that inlines its cost
+  into `mapM0_find` reads as a fix and is not one.
+- **The copying half** cannot be probed the same way: `tycho_str_copy` as a
+  no-op breaks the stage-1 self-compile, so `make tychoc1` fails outright.
+  The AST deep-copy family above is its measured stand-in: -5.0% Ir,
+  wall-neutral.
+
+Both of the two largest items interning attacks therefore convert at about
+**0.1 wall-% per Ir-%**, and interning's whole theoretical ceiling (str_copy
+9.4% + siphash 5.7% + a slice of tokenize_named and mapM0_find, of which only
+the identifier-related part is reachable) is ~15% Ir. That is ~1.5% wall at a
+ceiling nobody reaches, against a 17k-line refactor. It does not pay.
+
+### Why: most of a small compile is not instructions at all
+
+Ir against wall, measured 2026-08-26 on the same binary:
+
+| input | Ir | wall |
+|---|---|---|
+| tiny | 412,579 | 1.11 ms |
+| raytrace | 3,331,700 | 1.78 ms |
+| tycho-vm | 45,500,559 | 8.08 ms |
+
+The fit through the two ends puts **~1.05 ms of fixed cost on every compile** --
+exec, the 2.8 MB static binary's page faults, the pre-main FDE registration, the
+emitted C and the 140 KB runtime copy -- which is 59% of a raytrace compile and
+94% of `tiny`. tychoc1's fixed cost is already within 8% of ./tychoc's (that IS
+the 1.081 on `tiny`); the 1.199 on raytrace is 1.46x on the VARIABLE part alone.
+Reaching 1.000 there needs ~32% of the variable time gone, which at the measured
+conversion is most of the instruction stream. No front-end change buys that.
+
 ### If this is picked up again
 
 The remaining items on raytrace are all under 10%: str_copy 9.4% (already 13
 instructions per call), tokenize_named 6.0%, pre-main FDE 6.0%, siphash13 5.7%,
-AST copies 4.8%. Closing the gap means giving tychoc1 a different front-end
-shape -- not building a full AST for a single-file compile, or interning
-identifiers at lex time -- not another pass over the current one.
+AST copies 4.8%. Interning is closed (above) and so is every avenue in this
+section. What is left is the fixed 1.05 ms and the single-pass shape -- not
+building a full AST for a single-file compile -- not another pass over the
+current one.
 
 Also found on the way, unrelated and unfixed: tests/strbytes.ty dies under
 -fsanitize=address,undefined with EVERY compiler in the tree, ./tychoc included.
