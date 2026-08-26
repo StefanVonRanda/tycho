@@ -4713,6 +4713,9 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                 c2, t2 := _ex(&cs, es[0])
                 cs.arena = sav
                 cs.want = sw
+                # no transient landed in it -- do not pay arena_new/arena_free
+                if not _uses_t(c2):
+                    return ind + c2 + ";\n"
                 return ind + "{ Arena _t = arena_new(0); " + c2 + "; arena_free(&_t); }\n"
             c, t := _ex(&cs, es[0])
             cs.want = sw
@@ -4786,6 +4789,8 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             if uset and _heap(&cs, t):
                 uset = false
                 c = _replace(c, "&_t", own5)
+            if uset and not _uses_t(c):
+                uset = false
             # src/tychoc.c:11582 -- `y := f(y)` must land in a temp declared
             # BEFORE the new C local, or the initialiser reads the inner
             # uninitialised one.
