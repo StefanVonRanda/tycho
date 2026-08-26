@@ -2634,6 +2634,35 @@ NOT adopted: it needs a two-stage instrumented build and stored .gcda profile
 data in the Makefile, and 1.2% does not change the standing when the gap is 14%.
 Revisit only if the gap is otherwise closed to within ~2%.
 
+### The lexer at 54 instructions per byte: measured, and tightening it LOSES
+
+compiler/lex/lex.ty's own code is ~54 Ir per source byte (5,079,635 for the
+93,961 bytes of corelib that `--resolve server/main.ty` reads), against 5-15 for
+a tight hand-written lexer, so it looked like the last non-architectural lever.
+A 25-line tightening took resolve 28.29e6 -> 27.32e6 Ir (-3.4%) and the lexer's
+own self cost 5.08e6 -> 4.74e6 (-6.6%, 54 -> 50 per byte), with every gate green
+including the AST census. Wall: **geomean 1.0459 -- 4.6% SLOWER**, and slower on
+six of six inputs bar compiler/main.ty. Reverted, not committed.
+
+That is the FIFTH Ir-vs-wall inversion here. Instruction count does not predict
+time in this compiler; only a two-way interleaved wall A/B against a rebuilt
+HEAD binary does.
+
+### A COMPILE CACHE IS REFUSED
+
+Corelib loading is the one lever measured with enough headroom to close the gap:
+`_merge` is 16.98e6 of the 28.29e6 resolve phase (60%), ~28% of the whole
+compile, re-deriving 11 corelib files totalling 93,961 bytes on EVERY compile.
+Caching that would put tychoc1 at roughly 44e6 against ./tychoc's 54.4e6 on
+server/main.ty -- a win rather than a 1.13 loss -- and would apply to most of
+the 51 entry points that currently lose.
+The user has refused it: a cache adds a stale-build failure mode this compiler
+does not have, and this is a one-person project that would carry that support
+surface forever. Embedding the PARSED corelib at build time is treated as
+covered by the same refusal -- it has the same staleness property and would cut
+across TYCHO_CORELIB.
+So the gap stands. Do not re-propose either without new information.
+
 ### If this is picked up again
 
 The remaining items on raytrace are all under 10%: str_copy 9.4% (already 13
