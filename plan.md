@@ -2715,3 +2715,13 @@ current one.
 
 Also found on the way, unrelated and unfixed: tests/strbytes.ty dies under
 -fsanitize=address,undefined with EVERY compiler in the tree, ./tychoc included.
+
+### Emit-time dead-body elimination: independent re-measurement
+
+
+INDEPENDENT RE-MEASUREMENT, idle box (load 1.79), best of 3 rounds with each
+timing sized to ~300 ms: **5 of 55 at or under 1.000, geomean 1.0809, median
+1.1046, worst invindex 1.354**. The authoring agent reported 12/55 and geomean
+1.0239 from a min-of-3 harness; that does not reproduce. Take the conservative
+figures. The DIRECTION is not in doubt -- geomean 1.1262 -> 1.0809 and the
+median off 1.15 -- but the change is worth ~4%, not ~9%.
