@@ -727,9 +727,9 @@ fn _mul_op(toks: [lex.Tok], i: int) -> bool:
 # into the caller's variable means the accumulating tree is built where it will
 # live, and only the small right-hand operand of each operator is copied.
 fn _mul_into(toks: [lex.Tok], i0: int, out: inout ast.Expr) -> int:
-    l := ast.NullLit(0)
-    i := _unary_into(toks, i0, &l)
-    out = l
+    # Parse straight into `out`, as every other precedence level does. Going via
+    # a temp cost one full deep copy of the unary subtree per expression parsed.
+    i := _unary_into(toks, i0, &out)
     for _mul_op(toks, i):
         o := _x(toks, i)
         r := ast.NullLit(0)
