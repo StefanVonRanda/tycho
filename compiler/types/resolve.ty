@@ -84,6 +84,7 @@ struct R:
 # list that quietly grew would hide it.
 fn _builtins() -> [string: bool]:
     m := []string: bool
+    reserve(m, 64)   # a fixed table: pre-size it, or the growth path re-hashes every name
     for n in ["args", "channel", "char_at", "chr", "clock", "close", "die", "eprint",
               "exit", "fabs", "find", "floor", "get", "getenv", "hash", "input",
               "is_null", "keys", "len", "list_dir", "ncpu", "now", "pop", "pow",
@@ -109,6 +110,7 @@ fn _builtins() -> [string: bool]:
 # FRICTION #6) and no `zero` (core:bignum's, not a builtin).
 fn _shadowable() -> [string: bool]:
     m := []string: bool
+    reserve(m, 64)
     for n in ["str", "substr", "chr", "split", "keys", "find", "char_at", "len",
               "push", "pop", "reserve", "map_get", "map_has", "map_set", "map_del",
               "sqrt", "pow", "floor", "fabs", "to_float", "to_int", "to_str", "to_bool",
@@ -123,6 +125,7 @@ fn _shadowable() -> [string: bool]:
 
 fn _builtin_sigs() -> [string: bool]:
     m := []string: bool
+    reserve(m, 32)
     for n in ["args", "char_at", "chr", "clock", "die", "eprint", "exit", "fabs",
               "find", "floor", "getenv", "input", "is_null", "list_dir", "ncpu",
               "now", "pow", "print", "println", "read_all", "read_file", "split",
@@ -132,6 +135,7 @@ fn _builtin_sigs() -> [string: bool]:
 
 fn _builtin_ctors() -> [string: bool]:
     m := []string: bool
+    reserve(m, 8)
     for n in ["Some", "None", "Ok", "Err"]:
         m[n] = true
     return m
