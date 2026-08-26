@@ -2304,11 +2304,25 @@ static uint64_t tycho_siphash13(const unsigned char *in, uint64_t inlen, uint64_
     uint64_t whole = inlen - (inlen % 8);
     const unsigned char *end = in + whole;
     for (; in != end; in += 8) {
+        /* one movq on a little-endian target; the byte-at-a-time spelling below
+         * is the same value and stays for anything else */
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+        uint64_t m; memcpy(&m, in, 8);
+#else
         uint64_t m = (uint64_t)in[0] | ((uint64_t)in[1] << 8) | ((uint64_t)in[2] << 16) | ((uint64_t)in[3] << 24)
                         | ((uint64_t)in[4] << 32) | ((uint64_t)in[5] << 40) | ((uint64_t)in[6] << 48) | ((uint64_t)in[7] << 56);
+#endif
         v3 ^= m; TYCHO_SIPROUND(v0, v1, v2, v3); v0 ^= m;
     }
-    for (uint64_t i = 0; i < inlen % 8; i++) b |= (uint64_t)in[i] << (8 * i);   /* tail bytes (no fallthrough switch) */
+    uint64_t left = inlen & 7;
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+    if (left >= 4) {   /* two overlapping loads cover 4..7 bytes without a per-byte loop */
+        uint32_t lo, hi; memcpy(&lo, in, 4); memcpy(&hi, in + left - 4, 4);
+        b |= (uint64_t)lo | ((uint64_t)hi << (8 * (left - 4)));
+    } else for (uint64_t i = 0; i < left; i++) b |= (uint64_t)in[i] << (8 * i);
+#else
+    for (uint64_t i = 0; i < left; i++) b |= (uint64_t)in[i] << (8 * i);   /* tail bytes (no fallthrough switch) */
+#endif
     v3 ^= b; TYCHO_SIPROUND(v0, v1, v2, v3); v0 ^= b;
     v2 ^= 0xff;
     TYCHO_SIPROUND(v0, v1, v2, v3); TYCHO_SIPROUND(v0, v1, v2, v3); TYCHO_SIPROUND(v0, v1, v2, v3);
