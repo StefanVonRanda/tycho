@@ -1487,8 +1487,29 @@ fn _uses_scr(s: string, id: string) -> (bool, bool):
 
 # --- deep copy / str / eq ---------------------------------------------------
 
+# A TYCHO_LIT is a `static const` object with program lifetime, so copying one
+# into an arena allocates a second copy of bytes that already outlive every
+# arena. The empty string takes this route today by another door -- _copy of a
+# zero-length string hands back the runtime's immortal singleton.
+fn _islit(s: string) -> bool:
+    n := len(s)
+    if n < 13 or not strings.starts_with(s, "TYCHO_LIT(\""):
+        return false
+    i := 11
+    for i < n:
+        c := s[i]
+        if c == 92:
+            i += 2
+            continue
+        if c == 34:
+            return i + 2 == n and s[i + 1] == 41
+        i += 1
+    return false
+
 fn _copy(cs: inout C, code: string, t: string, arena: string) -> string:
     if t == "string" or t == "bytes":
+        if _islit(code):
+            return code
         return "tycho_str_copy(" + arena + ", " + code + ")"
     if _is_fn(t):
         # re-home a returned closure's captures; a plain fn ref has env == 0
