@@ -118,9 +118,10 @@ struct C:
     elv: [string]                      # src/tychoc.c@g_elide -- monotone loop var,
     ela: [string]                      # and the array its index is proven against
     escs: [string]                     # src/tychoc.c@g_esc -- top-level locals returned by name
+    retslot: bool                      # emitting the ELEMENTS of a tuple that is being returned
 
 fn _new() -> C:
-    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt, [], [], [])
+    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt, [], [], [], false)
 
 fn _bad(msg: string):
     die("tychoc1: " + msg)
@@ -1938,10 +1939,21 @@ fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
                     cs.want = ""
                 ti += 1
                 sar8 := cs.arena
+                rs8 := cs.retslot
+                cs.retslot = false
                 xc, xt := _ex(&cs, x)
+                cs.retslot = rs8
                 cs.arena = sar8
                 cs.want = swt
-                if _place(x) and _heap(&cs, xt) and not _canmove(&cs, x, cs.arena):
+                # A tuple ELEMENT of a `return (a, b)` follows the same
+                # return-slot rule the bare `return a` already had: a local the
+                # escape pass built in _parent from birth is already where the
+                # caller wants it. Gated on cs.retslot, which only ReturnS sets
+                # and which is cleared for every nested expression -- a tuple
+                # built mid-function must still copy, since its source stays
+                # live and an array is written in place.
+                if _place(x) and _heap(&cs, xt) and not _canmove(&cs, x, cs.arena) and
+                        not (rs8 and _inparent(&cs, x)):
                     xc = _copy(&cs, xc, xt, cs.arena)
                 push(ecs, xc)
                 push(ets, xt)
@@ -5006,7 +5018,12 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             if tmpret:
                 cs.arena = "_parent"
             cs.want = cs.cur_ret
+            srs := cs.retslot
+            match k[0]:
+                ast.Tuple(l8, xs8): cs.retslot = tmpret
+                _: pass
             c, t := _ex(&cs, k[0])
+            cs.retslot = srs
             cs.want = sw
             cs.arena = sa
             rt := cs.cur_ret
@@ -5245,8 +5262,8 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                 if d:
                     cn := _push(&cs, ns[i], es[i])
                     # The copy above landed it in &_scope. _push recorded
-                    # _curown, which INSIDE A LOOP is the body scratch -- a lie
-                    # that made every later _shares/_canmove say "somebody
+                    # _curown, which INSIDE A LOOP is the body scratch -- a
+                    # lie that made every later _shares/_canmove say "somebody
                     # else's arena" and deep-copy a value already at home.
                     if cpd:
                         cs.vown[len(cs.vown) - 1] = "&_scope"
@@ -6382,22 +6399,35 @@ fn _mentions(e: ast.Expr, n: string) -> bool:
 # outlives this scope -- so the scan need not be exact. It recurses into
 # if/while/for bodies ONLY, exactly as the reference does: a `return` inside a
 # match or select arm does NOT mark its name.
-fn _escs_b(ss: [ast.Stmt], out: inout [string]):
+# `hv` is one flag per RETURN SLOT: is that slot's type heap? A tuple return
+# gets one entry per element, a scalar return exactly one. Only a heap slot is
+# worth promoting -- marking an int local "_parent" moves its call transients
+# into the caller's arena for nothing.
+fn _escs_b(ss: [ast.Stmt], hv: [bool], out: inout [string]):
     for st in ss:
         match st:
             ast.ReturnS(l, k):
                 if len(k) == 1:
                     match k[0]:
-                        ast.Name(l2, n): push(out, n)
+                        ast.Name(l2, n):
+                            if len(hv) == 1 and hv[0]:
+                                push(out, n)
+                        ast.Tuple(l3, xs):
+                            if len(xs) == len(hv):
+                                for ix9 := 0; ix9 < len(xs); ix9 += 1:
+                                    if hv[ix9]:
+                                        match xs[ix9]:
+                                            ast.Name(l4, n4): push(out, n4)
+                                            _: pass
                         _: pass
             ast.IfS(l, c, b, e):
-                _escs_b(b, &out)
-                _escs_b(e, &out)
-            ast.WhileS(l, c, b): _escs_b(b, &out)
-            ast.For3(l, i2, c, b): _escs_b(b, &out)
-            ast.ForIn(l, n, k, b): _escs_b(b, &out)
-            ast.ForRange(l, n, k, b): _escs_b(b, &out)
-            ast.ParallelS(l, k, b): _escs_b(b, &out)
+                _escs_b(b, hv, &out)
+                _escs_b(e, hv, &out)
+            ast.WhileS(l, c, b): _escs_b(b, hv, &out)
+            ast.For3(l, i2, c, b): _escs_b(b, hv, &out)
+            ast.ForIn(l, n, k, b): _escs_b(b, hv, &out)
+            ast.ForRange(l, n, k, b): _escs_b(b, hv, &out)
+            ast.ParallelS(l, k, b): _escs_b(b, hv, &out)
             _: pass
 
 fn _isesc(cs: inout C, n: string) -> bool:
@@ -6474,7 +6504,14 @@ fn _fnbody(cs: inout C, fi: int, body: [ast.Stmt]) -> (string, string):
     _acc_scan(body, &sa, &ot, &dc)
     es9 := []string
     if _heap(&cs, rt):
-        _escs_b(body, &es9)
+        hv9 := []bool
+        if _is_tup(rt):
+            et9 := _telems(&cs, rt)
+            for ix8 := 0; ix8 < len(et9); ix8 += 1:
+                push(hv9, _heap(&cs, et9[ix8]))
+        else:
+            push(hv9, true)
+        _escs_b(body, hv9, &es9)
     cs.escs = es9
     cs.accs = []string
     for a in sa:
