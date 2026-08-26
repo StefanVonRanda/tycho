@@ -117,9 +117,10 @@ struct C:
     pbody: [ast.Stmt]                  # src/tychoc.c@g_proc_body -- the move-on-last-use read scan
     elv: [string]                      # src/tychoc.c@g_elide -- monotone loop var,
     ela: [string]                      # and the array its index is proven against
+    escs: [string]                     # src/tychoc.c@g_esc -- top-level locals returned by name
 
 fn _new() -> C:
-    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt, [], [])
+    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt, [], [], [])
 
 fn _bad(msg: string):
     die("tychoc1: " + msg)
@@ -1396,6 +1397,17 @@ fn _shares(cs: inout C, e: ast.Expr, t: string, arena: string) -> bool:
     # write at all.
     if arena == "_parent" and _is_enum(t) and strings.starts_with(ow6, "_ina_"):
         return true
+    return false
+
+# src/tychoc.c@cv_in_parent: is this bare name's storage the caller's arena?
+fn _inparent(cs: inout C, e: ast.Expr) -> bool:
+    match e:
+        ast.Name(l, n):
+            for i := len(cs.vnames) - 1; i >= 0; i -= 1:
+                if cs.vnames[i] == n:
+                    return cs.vown[i] == "_parent"
+            return false
+        _: return false
     return false
 
 fn _ownerof(cs: inout C, e: ast.Expr) -> string:
@@ -4889,20 +4901,33 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             # something builds that call's transients in a per-statement arena.
             sav5 := cs.arena
             uset := sav5 == "&_scope" and _hascall(rhs[0]) and not _hasorr(rhs[0])
+            # src/tychoc.c:11541 -- the return-slot move. A local this function
+            # hands back by name is built in the caller's arena from birth, so
+            # the return copies nothing. Top level only (_curown is still the
+            # proc's own &_scope), never a loop or if-body scratch. The arena
+            # has to move with it: a literal is built through cs.arena, and
+            # recording _parent while building in &_scope returns freed memory.
+            own5 := "&_scope"
+            if _curown(&cs) == "&_scope" and _heap(&cs, cs.cur_ret) and _isesc(&cs, n):
+                own5 = "_parent"
             if uset:
                 cs.arena = "&_t"
-            c, t := _rhs3(&cs, rhs[0], want, "&_scope", true)
+            elif own5 == "_parent":
+                cs.arena = "_parent"
+            c, t := _rhs3(&cs, rhs[0], want, own5, true)
             cs.arena = sav5
             if len(want) > 0:
                 t = want
             if uset and _heap(&cs, t):
                 uset = false
-                c = _replace(c, "&_t", sav5)
+                c = _replace(c, "&_t", own5)
             # src/tychoc.c:11582 -- `y := f(y)` must land in a temp declared
             # BEFORE the new C local, or the initialiser reads the inner
             # uninitialised one.
             sh := len(_vtype(&cs, n)) > 0 and _refslocal(rhs[0], n)
             cn := _push(&cs, n, t)
+            if own5 == "_parent" and _heap(&cs, t):
+                cs.vown[len(cs.vown) - 1] = "_parent"
             out9 := ind + _ctyz(&cs, t) + "" + cn + " = " + c + ";\n"
             if sh:
                 out9 = ind + _ctyz(&cs, t) + "_sh_" + n + " = " + c + "; " +
@@ -5113,7 +5138,10 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             rt := cs.cur_ret
             if rt == "float" and t == "int":
                 c = "(double)(" + c + ")"
-            if not tmpret and not _shares(&cs, k[0], rt, "_parent"):
+            # src/tychoc.c:12023@cv_in_parent -- a return-slot local already
+            # lives in the caller's arena, so the copy would duplicate it.
+            if not tmpret and not _shares(&cs, k[0], rt, "_parent") and
+                    not _inparent(&cs, k[0]):
                 c = _copy(&cs, c, rt, "_parent")
             v := "_ret"
             return ind + "{ " + _ctyz(&cs, rt) + "" + v + " = " + c + "; " +
@@ -6431,6 +6459,36 @@ fn _mentions(e: ast.Expr, n: string) -> bool:
             return true
     return false
 
+# src/tychoc.c@collect_escapes: the names a bare `return <ident>` hands out.
+# A top-level heap local in this set is built in _parent from birth, so the
+# return is a move rather than a deep copy. Over-marking is safe -- the parent
+# outlives this scope -- so the scan need not be exact. It recurses into
+# if/while/for bodies ONLY, exactly as the reference does: a `return` inside a
+# match or select arm does NOT mark its name.
+fn _escs_b(ss: [ast.Stmt], out: inout [string]):
+    for st in ss:
+        match st:
+            ast.ReturnS(l, k):
+                if len(k) == 1:
+                    match k[0]:
+                        ast.Name(l2, n): push(out, n)
+                        _: pass
+            ast.IfS(l, c, b, e):
+                _escs_b(b, &out)
+                _escs_b(e, &out)
+            ast.WhileS(l, c, b): _escs_b(b, &out)
+            ast.For3(l, i2, c, b): _escs_b(b, &out)
+            ast.ForIn(l, n, k, b): _escs_b(b, &out)
+            ast.ForRange(l, n, k, b): _escs_b(b, &out)
+            ast.ParallelS(l, k, b): _escs_b(b, &out)
+            _: pass
+
+fn _isesc(cs: inout C, n: string) -> bool:
+    for a in cs.escs:
+        if a == n:
+            return true
+    return false
+
 fn _acc_scan(ss: [ast.Stmt], selfapp: inout [string], other: inout [string],
         decl: inout [string]):
     for st in ss:
@@ -6497,6 +6555,10 @@ fn _fnbody(cs: inout C, fi: int, body: [ast.Stmt]) -> (string, string):
     ot := []string
     dc := []string
     _acc_scan(body, &sa, &ot, &dc)
+    es9 := []string
+    if _heap(&cs, rt):
+        _escs_b(body, &es9)
+    cs.escs = es9
     cs.accs = []string
     for a in sa:
         bad := true
