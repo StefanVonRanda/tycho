@@ -2410,14 +2410,25 @@ The phases below are ranked by expected size of win. Each names the
     `tests/if_expr_block.ty` are each ONLY this).
   - **`_set` vs `*_ptr`** — 106 fixtures. `tycho_arr_int_set(&xs, i, v)` vs
     `(*tycho_arr_int_ptr(&xs, i)) = v` (`tests/sink.ty`).
-  - **Scratch arena sequence numbers** — 68 fixtures. `_scr1` vs `_scr2`: the
-    two compilers allocate temp numbers in a different order.
+  - **Scratch arena sequence numbers** — 70 fixtures, and **not a class of its
+    own.** It was read as a pure renaming; it is a SYMPTOM. Both compilers name
+    `_scr<N>` off one shared block counter, so the sequences diverge wherever
+    the reference takes a number emit.ty never asks for — the offsets are
+    downstream of every other class, and `sole diff` is empty for all 70. The
+    remaining shapes, measured 2026-08-26 by comparing the ordered `_scr`
+    sequence per fixture: an unequal COUNT (`bool_array`, `int_hex`,
+    `variadic` — a loop scratch the reference opens and emit.ty does not), and
+    an offset that tracks a missing temp elsewhere in the same function. Fix
+    the class that consumes the number; the sequence follows.
   - **A string SLICE is not a place** — 4 fixtures, and the whole diff in each
     (`str_index`, `string_slice`, `float_str_locale`, `slice_once`).
     `compiler/emit/emit.ty@_place` has no `ast.Slice` arm, so `t := s[7:12]` is
     retained with no `tycho_str_copy`. Not `_shares` — that path clears
     `string_nul` alone.
-  - **Shadow rename** — 8 fixtures. `_sh_y` + a re-declared `h_y` vs `h_y_s1`.
+  - NOT a class: the shadow rename, closed 2026-08-26 (commit 25e16469). It
+    was 4 fixtures, not 8; two were its sole diff and cleared.
+  - NOT a class: the multi-piece self-append `_ap` temps, closed 2026-08-26
+    (commit 01c0c363) — the largest single source of `_scr` offsets.
   - NOT a class: the generic-instance NAME, closed 2026-08-26 (commit 8e58f43a).
     The census read it as "instances ./tychoc never makes"; it was the same
     instance set under a serial name.
