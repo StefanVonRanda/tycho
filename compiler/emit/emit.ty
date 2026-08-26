@@ -5238,10 +5238,18 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                 # every recursive-descent function in this compiler returns, and
                 # each one was copying both results back into the arena they were
                 # already in. A PLACE on the right still belongs to someone else.
+                cpd := false
                 if _heap(&cs, es[i]) and (_place(r[0]) or cs.arena != "&_scope"):
                     v = _copy(&cs, v, es[i], "&_scope")
+                    cpd = true
                 if d:
                     cn := _push(&cs, ns[i], es[i])
+                    # The copy above landed it in &_scope. _push recorded
+                    # _curown, which INSIDE A LOOP is the body scratch -- a lie
+                    # that made every later _shares/_canmove say "somebody
+                    # else's arena" and deep-copy a value already at home.
+                    if cpd:
+                        cs.vown[len(cs.vown) - 1] = "&_scope"
                     out = out + ind + _ctyz(&cs, es[i]) + "" + cn + " = " + v + ";\n"
                 else:
                     out = out + ind + cns[i] + " = " + v + ";\n"
