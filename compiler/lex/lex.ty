@@ -8,7 +8,7 @@ import "core:strings"
 # as an identifier and the parser treats it contextually.
 
 struct Tok:
-    kind: string      # kw ident int float str char op newline indent dedent eof comment
+    k: int            # one of the K_* tags below
     text: string      # name, operator spelling, or the ESCAPED string body
     line: int
     col: int          # 1-based, for the error caret
@@ -20,7 +20,54 @@ struct Tok:
 # `raw` is read by ONE caller, the round-trip control, which lexes with
 # keep_trivia set. On the normal path storing it allocated a second string per
 # token for nothing.
-fn _t(kind: string, text: string, line: int, col: int, raw: string) -> Tok:
+
+# The token tag. It was a string until 2026-08-26: `_isop`/`_iskw` alone were
+# 5.6% of a compile comparing it, and every Tok deep-copied it at each arena
+# crossing. These twelve are the single source of truth -- parse.ty spells them
+# `lex.K_OP`, never a literal.
+const K_KW      = 1
+const K_IDENT   = 2
+const K_INT     = 3
+const K_FLOAT   = 4
+const K_STR     = 5
+const K_CHAR    = 6
+const K_OP      = 7
+const K_NEWLINE = 8
+const K_INDENT  = 9
+const K_DEDENT  = 10
+const K_EOF     = 11
+const K_COMMENT = 12
+
+# The spelling a diagnostic prints. Only error paths and `--dump-tokens` reach
+# here, so the chain costs nothing on the accepting path.
+fn kname(k: int) -> string:
+    if k == K_KW:
+        return "kw"
+    if k == K_IDENT:
+        return "ident"
+    if k == K_INT:
+        return "int"
+    if k == K_FLOAT:
+        return "float"
+    if k == K_STR:
+        return "str"
+    if k == K_CHAR:
+        return "char"
+    if k == K_OP:
+        return "op"
+    if k == K_NEWLINE:
+        return "newline"
+    if k == K_INDENT:
+        return "indent"
+    if k == K_DEDENT:
+        return "dedent"
+    if k == K_EOF:
+        return "eof"
+    if k == K_COMMENT:
+        return "comment"
+    return "?"
+
+fn _t(kind: int, text: string, line: int, col: int, raw: string) -> Tok:
     return Tok(kind, text, line, col, 0, 0.0, raw, "")
 
 # The three hottest token sites build their Tok INLINE rather than through this,
@@ -28,7 +75,7 @@ fn _t(kind: string, text: string, line: int, col: int, raw: string) -> Tok:
 # the same arena as the array it is pushed into (shared, not copied) -- both of
 # which are lost once the fields become parameters of a function that returns
 # its Tok into the caller's arena.
-fn _tk(keep: bool, kind: string, text: string, line: int, col: int, raw: string, fl: string) -> Tok:
+fn _tk(keep: bool, kind: int, text: string, line: int, col: int, raw: string, fl: string) -> Tok:
     if keep:
         return Tok(kind, text, line, col, 0, 0.0, raw, fl)
     return Tok(kind, text, line, col, 0, 0.0, "", fl)
@@ -87,10 +134,10 @@ fn is_keyword(s: string) -> bool:
 
 # src/tychoc.c@tok_continues_line. A line ending on one of these cannot be a
 # complete statement, so the next physical line joins it.
-fn continues_line(kind: string, text: string) -> bool:
-    if kind == "kw":
+fn continues_line(kind: int, text: string) -> bool:
+    if kind == K_KW:
         return text == "and" or text == "or" or text == "is"
-    if kind != "op":
+    if kind != K_OP:
         return false
     if text == "+" or text == "-" or text == "*" or text == "/" or text == "%":
         return true
@@ -104,10 +151,10 @@ fn continues_line(kind: string, text: string) -> bool:
 
 # src/tychoc.c@tok_postfixable. After a value-producing token a '.' is field or
 # tuple access, so `t.0` is DOT + INT and never a leading-dot float.
-fn postfixable(kind: string, text: string) -> bool:
-    if kind == "ident" or kind == "int" or kind == "float" or kind == "str" or kind == "char":
+fn postfixable(kind: int, text: string) -> bool:
+    if kind == K_IDENT or kind == K_INT or kind == K_FLOAT or kind == K_STR or kind == K_CHAR:
         return true
-    return kind == "op" and (text == ")" or text == "]")
+    return kind == K_OP and (text == ")" or text == "]")
 
 # A lexer error names its FILE when one is known, in the same shape the parser
 # uses: without it, a broken sibling in a package was reported as `tychoc1: line
@@ -378,7 +425,7 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
     pend := false
     pend_col := 0
     cont := false
-    # The last REAL token's index, not copies of its kind and text: assigning
+    # The last REAL token's index, not copies of its tag and text: assigning
     # those two strings allocated twice per token for a question asked twice
     # per line. -1 until the first real token, which is what "" stood for.
     last_ix := -1
@@ -401,7 +448,7 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
         if pend:
             blank := p >= n or src[p] == 10 or src[p] == 35
             if col > pend_col and not blank:
-                if len(toks) > 0 and toks[len(toks) - 1].kind == "newline":
+                if len(toks) > 0 and toks[len(toks) - 1].k == K_NEWLINE:
                     pop(toks)
                 cont = true
             pend = false
@@ -419,7 +466,7 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
                 if len(dn) > 0:
                     push(notes, DNote(line, dn))
             if keep_trivia and p > cs:
-                push(toks, _tk(keep_trivia, "comment", src[cs:p], line, cs - ls + 1, src[cs:p], file))
+                push(toks, _tk(keep_trivia, K_COMMENT, src[cs:p], line, cs - ls + 1, src[cs:p], file))
             if p < n:
                 p += 1
             continue
@@ -446,11 +493,11 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
         if bracket_depth == 0 and not cont:
             if col > stack[len(stack) - 1]:
                 push(stack, col)
-                push(toks, _tk(keep_trivia, "indent", "", line, col + 1, "", file))
+                push(toks, _tk(keep_trivia, K_INDENT, "", line, col + 1, "", file))
             else:
                 for col < stack[len(stack) - 1]:
                     pop(stack)
-                    push(toks, _tk(keep_trivia, "dedent", "", line, col + 1, "", file))
+                    push(toks, _tk(keep_trivia, K_DEDENT, "", line, col + 1, "", file))
                 if col != stack[len(stack) - 1]:
                     _die(file, src, line, "inconsistent indentation")
 
@@ -463,7 +510,7 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
             tcol := p - ls + 1
 
             lead_dot := c == 46 and p + 1 < n and is_digit(src[p + 1]) and
-                (last_ix < 0 or not postfixable(toks[last_ix].kind, toks[last_ix].text))
+                (last_ix < 0 or not postfixable(toks[last_ix].k, toks[last_ix].text))
             if is_digit(c) or lead_dot:
                 for p < n and is_digit(src[p]):
                     p += 1
@@ -515,7 +562,7 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
                         Err(strings.Underflow): fv = 0.0
                         Err(strings.Empty): fv = 0.0
                         Err(strings.Syntax): fv = 0.0
-                    push(toks, Tok("float", raw, line, tcol, 0, fv, raw, file))
+                    push(toks, Tok(K_FLOAT, raw, line, tcol, 0, fv, raw, file))
                     last_ix = len(toks) - 1
                 else:
                     v := 0
@@ -525,7 +572,7 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
                         if v > (imax - d) / litbase:
                             _die(file, src, line, "integer literal out of range")
                         v = v * litbase + d
-                    push(toks, Tok("int", raw, line, tcol, v, 0.0, raw, file))
+                    push(toks, Tok(K_INT, raw, line, tcol, v, 0.0, raw, file))
                     last_ix = len(toks) - 1
                 continue
 
@@ -535,9 +582,9 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
                 for p < n and is_ident(src[p]):
                     p += 1
                 name := src[s:p]
-                kind := "ident"
+                kind := K_IDENT
                 if is_keyword(name):
-                    kind = "kw"
+                    kind = K_KW
                 raw9 := ""
                 if keep_trivia:
                     raw9 = name
@@ -554,14 +601,14 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
                 flag := 0
                 if fstr:
                     flag = 1
-                push(toks, Tok("str", body, line, tcol, flag, 0.0, src[s:e], file))
+                push(toks, Tok(K_STR, body, line, tcol, flag, 0.0, src[s:e], file))
                 p = e
                 last_ix = len(toks) - 1
                 continue
 
             if c == 96:
                 e, body, nl := scan_raw(src, p, line, file)
-                push(toks, Tok("str", body, line, tcol, 0, 0.0, src[s:e], file))
+                push(toks, Tok(K_STR, body, line, tcol, 0, 0.0, src[s:e], file))
                 p = e
                 line += nl
                 last_ix = len(toks) - 1
@@ -569,7 +616,7 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
 
             if c == 39:
                 e, cv := scan_char(src, p, line, file)
-                push(toks, Tok("char", src[s:e], line, tcol, cv, 0.0, src[s:e], file))
+                push(toks, Tok(K_CHAR, src[s:e], line, tcol, cv, 0.0, src[s:e], file))
                 p = e
                 last_ix = len(toks) - 1
                 continue
@@ -591,7 +638,7 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
             raw8 := ""
             if keep_trivia:
                 raw8 = text
-            push(toks, Tok("op", text, line, tcol, 0, 0.0, raw8, file))
+            push(toks, Tok(K_OP, text, line, tcol, 0, 0.0, raw8, file))
             p += l
             last_ix = len(toks) - 1
 
@@ -601,12 +648,12 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
             for p < n and src[p] != 10:
                 p += 1
             if keep_trivia:
-                push(toks, _tk(keep_trivia, "comment", src[cs:p], line, cs - ls + 1, src[cs:p], file))
+                push(toks, _tk(keep_trivia, K_COMMENT, src[cs:p], line, cs - ls + 1, src[cs:p], file))
         # A comment tail is not a token, so it must not defeat the trailing-
         # operator join: the candidate is recorded from the last REAL token.
         if bracket_depth == 0:
-            push(toks, Tok("newline", "", line, nlcol, 0, 0.0, "", file))
-            pend = last_ix >= 0 and continues_line(toks[last_ix].kind, toks[last_ix].text)
+            push(toks, Tok(K_NEWLINE, "", line, nlcol, 0, 0.0, "", file))
+            pend = last_ix >= 0 and continues_line(toks[last_ix].k, toks[last_ix].text)
         else:
             pend = false
         # The anchor is the indent of the LOGICAL line and stays put while the
@@ -631,6 +678,6 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
         die(msg)
     for len(stack) > 1:
         pop(stack)
-        push(toks, _tk(keep_trivia, "dedent", "", line, 1, "", file))
-    push(toks, _tk(keep_trivia, "eof", "", line, 1, "", file))
+        push(toks, _tk(keep_trivia, K_DEDENT, "", line, 1, "", file))
+    push(toks, _tk(keep_trivia, K_EOF, "", line, 1, "", file))
     return (toks, notes)

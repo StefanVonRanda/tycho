@@ -285,7 +285,7 @@ fn dump_tokens(src_path: string):
     out := ""
     for k := 0; k < len(toks); k += 1:
         t := toks[k]
-        out = out + str(t.line) + ":" + str(t.col) + " " + t.kind + " " + t.text + "\n"
+        out = out + str(t.line) + ":" + str(t.col) + " " + lex.kname(t.k) + " " + t.text + "\n"
     print(out)
 
 # The `# deprecated:` notes the lexer kept, one per line, so the fn each one
@@ -301,7 +301,7 @@ fn dump_dnotes(src_path: string):
     for k := 0; k < len(notes); k += 1:
         out = out + str(notes[k].line) + " deprecated: " + notes[k].msg + "\n"
     for k := 0; k + 1 < len(toks); k += 1:
-        if toks[k].kind == "kw" and toks[k].text == "fn" and toks[k + 1].kind == "ident":
+        if toks[k].k == lex.K_KW and toks[k].text == "fn" and toks[k + 1].k == lex.K_IDENT:
             d := lex.dnote_above(notes, toks[k].line)
             if len(d) > 0:
                 out = out + "attached fn " + toks[k + 1].text + ": " + d + "\n"
