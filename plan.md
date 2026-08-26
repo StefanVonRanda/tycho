@@ -2776,17 +2776,22 @@ not -- so the blocker is escape handling, not size. A byte-array or chunked
 encoding could still work. At ~22 us against gaps of 300-400 us on the small
 inputs, it is not worth the build machinery on its own.
 
-**A real diagnostic defect, reproducible, NOT fixed.** Feeding tychoc1 a file
-whose body is the escaped runtime source makes it report
-`/tmp/lsp_bad.ty:2: error: expected an expression` -- an unrelated file that
-happens to exist, with a line and message from THAT file. ./tychoc reports
-correctly (`/tmp/embed_probe.ty:4: error: string too long`). So tychoc1 can
-attribute a diagnostic to a file it was never asked to compile.
-`lex.file_of` is unsound in the same area -- it returns `toks[len-1].text`
-assuming the last token is K_EOF, which is false on any early-exit path -- but
-making it search for K_EOF does NOT fix this symptom, so the cause is elsewhere
-and the change was reverted rather than shipped unproven. Worth a proper hunt if
-anyone sees a wrong filename in a diagnostic.
+**RETRACTED -- there was no diagnostic defect.** I reported that tychoc1 named
+a file it was never given (`/tmp/lsp_bad.ty`). It was given: `package main` makes
+the DIRECTORY a package, so the compiler loads every .ty in it, and /tmp held a
+broken file from an unrelated tool. ./tychoc does exactly the same -- both print
+`/tmp/pkgtest/b.ty:4: error: expected an expression` on a package directory with
+a broken sibling. Correct behaviour in both. `lex.file_of` returning the last
+token's text remains theoretically unsound on an early-exit path, but no input
+demonstrates it and the speculative fix was reverted.
+
+**And embedding IS feasible after all.** The escaped runtime -- 147,521
+characters -- compiles as a single Tycho string literal; my earlier "blocked by
+escape handling" note was measuring the package-loading failure above, not a
+literal-size limit. So embedding runtime/tycho_rt.c into tychoc1 the way the
+Makefile embeds it into ./tychoc is available, worth ~22 us per compile
+(read+write 143 KB is 112.8 us against 91.2 us write-only). It is small against
+gaps of 300-400 us, but it is real and it is symmetric with the reference.
 
 
 ### The closing arithmetic: no phase dominates
