@@ -2763,3 +2763,27 @@ geomean 1.0833, median 1.1075**, worst invindex 1.407, hello 1.388.
 Further reachability is EXHAUSTED: after both passes the still-dead set is 0.3%
 of compiler/main.ty's output and 0.0% of server's, all of it the map family
 whose twelve operations cross-reference each other.
+
+
+### Two findings from the last probe, neither shipped
+
+**Embedding runtime/tycho_rt.c into tychoc1 the way the Makefile embeds it into
+./tychoc is worth ~22 us per compile** (read+write 143 KB is 112.8 us against
+91.2 us write-only) and would remove an asymmetry with the reference rather than
+add a failure mode. It is NOT reachable through a Tycho string literal: a
+150,000-character line of 'a' compiles fine, but the escaped runtime source does
+not -- so the blocker is escape handling, not size. A byte-array or chunked
+encoding could still work. At ~22 us against gaps of 300-400 us on the small
+inputs, it is not worth the build machinery on its own.
+
+**A real diagnostic defect, reproducible, NOT fixed.** Feeding tychoc1 a file
+whose body is the escaped runtime source makes it report
+`/tmp/lsp_bad.ty:2: error: expected an expression` -- an unrelated file that
+happens to exist, with a line and message from THAT file. ./tychoc reports
+correctly (`/tmp/embed_probe.ty:4: error: string too long`). So tychoc1 can
+attribute a diagnostic to a file it was never asked to compile.
+`lex.file_of` is unsound in the same area -- it returns `toks[len-1].text`
+assuming the last token is K_EOF, which is false on any early-exit path -- but
+making it search for K_EOF does NOT fix this symptom, so the cause is elsewhere
+and the change was reverted rather than shipped unproven. Worth a proper hunt if
+anyone sees a wrong filename in a diagnostic.
