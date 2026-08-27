@@ -5170,8 +5170,20 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             # tychoc1 copied unconditionally, which allocated every returned
             # value twice.
             tmpret := not _place(k[0])
+            # _parent for a PLACE too. Its emission may insert a copy of its own
+            # (a map/array element does), and _shares then reads the SOURCE --
+            # which does live in the caller -- while the value actually returned
+            # is that copy, in a _scope this return is about to free.
             if tmpret:
                 cs.arena = "_parent"
+            # An INDEX read is the exception among places: its emission copies
+            # the element into cs.arena, while _shares below reads the SOURCE --
+            # which does live in the caller -- and so suppresses the retention
+            # copy on a value sitting in the _scope this return then frees
+            # (cell/fold.ty@env_get, `return e.vals[k]`, read back after free).
+            match k[0]:
+                ast.Index(li9, ki9): cs.arena = "_parent"
+                _: pass
             cs.want = cs.cur_ret
             srs := cs.retslot
             match k[0]:
