@@ -2566,6 +2566,16 @@ fn _lambda(cs: inout C, ps: [ast.Param], ret: [ast.Ty], body: ast.Expr) -> (stri
         mk = mk + " _e->c" + str(i) + " = " + cv + ";"
     return (mk + " (FnC" + fid + "){_e, __lam" + id + "__clo, Env" + id + "_copy}; })", ft)
 
+# As _ex_scope, but in the INNERMOST live scratch. A transient built for a push
+# inside a loop belongs to that iteration: &_scope is the function arena and is
+# freed once, so 2e6 iterations of bench/strarr_build.ty retained every piece.
+fn _ex_cur(cs: inout C, e: ast.Expr) -> (string, string):
+    sav := cs.arena
+    cs.arena = _curown(&cs)
+    c, t := _ex(&cs, e)
+    cs.arena = sav
+    return (c, t)
+
 fn _ex_scope(cs: inout C, e: ast.Expr) -> (string, string):
     sav := cs.arena
     cs.arena = "&_scope"
@@ -3220,12 +3230,11 @@ fn _call(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], args: [ast.Ex
             # decision below already reads cs.arena, and a struct built in
             # _parent whose array field was built in &_scope holds a pointer
             # into an arena that is freed on the way out.
-            ac := ""
-            at := ""
-            if cs.arena == "_parent":
-                ac, at = _ex(&cs, args[i])
-            else:
-                ac, at = _ex_scope(&cs, args[i])
+            # Both arms are cs.arena now: forcing &_scope here overrode the
+            # scratch a push had already selected for its value, so every
+            # field of a per-iteration struct outlived the iteration
+            # (bench/structarr_build.ty).
+            ac, at := _ex(&cs, args[i])
             cs.want = sw
             if _place(args[i]) and _heap(&cs, ft) and not _shares(&cs, args[i], ft, cs.arena) and
                     not _canmove(&cs, args[i], cs.arena):
@@ -3250,8 +3259,16 @@ fn _call(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], args: [ast.Ex
         # handed, so the caller's own _parent serves and the statement scratch
         # (&_t) stays unmentioned -- which is what lets _uses_t elide it.
         pa := cs.arena
+        sarg := cs.arena
         if not _heap(&cs, cs.fds[fi].ret):
             pa = "_parent"
+            # ...but inside a loop _parent is the caller's own arena and lives for
+            # the whole call, so a transient built for this callee survives every
+            # iteration. Hand it the innermost scratch, as src/tychoc.c does
+            # (bench/heap_transient.ty retained all 400 trees).
+            if len(cs.ascope) > 0:
+                pa = _curown(&cs)
+                cs.arena = pa
         out2 := "h_" + cs.fds[fi].name + "(" + pa
         xtn := _isext(&cs, cs.fds[fi].name)
         if xtn:
@@ -3312,6 +3329,7 @@ fn _call(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], args: [ast.Ex
                     not _canmove_sink(&cs, args[i]):
                 ac = _copy(&cs, ac, pt, "&_scope")
             out2 = out2 + ", " + ac
+        cs.arena = sarg
         if xtn:
             # drop the separator the arena would have needed
             out2 = strings.replace(out2, "(@, ", "(")
@@ -3535,7 +3553,19 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
             cs.want = _elem(rt)
         elif _is_soa(rt):
             cs.want = _selem(&cs, rt)
-        vc, vt := _ex_scope(&cs, args[1])
+        # Only when the ARRAY itself lives in the innermost scratch: pushing a
+        # scratch-built value into a longer-lived array leaves it dangling at
+        # the next arena_reset, and _shares cannot see that (examples/json.ty
+        # read ["arena","arena"] for ["systems","arena"]).
+        va := "&_scope"
+        if _ownerof(&cs, args[0]) == _curown(&cs):
+            va = _curown(&cs)
+        vc := ""
+        vt := ""
+        if va == "&_scope":
+            vc, vt = _ex_scope(&cs, args[1])
+        else:
+            vc, vt = _ex_cur(&cs, args[1])
         cs.want = swp
         if strings.starts_with(rt, "?A"):
             pi := strings.parse_int(rt[2:])
@@ -3562,7 +3592,7 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
         # array that also lives there is already where it belongs; a place is
         # still somebody else's and copies. Narrow on purpose: evaluating the
         # value in `ow` instead reddened 190 fixtures.
-        if _heap(&cs, et) and (_place(args[1]) or ow != "&_scope") and
+        if _heap(&cs, et) and (_place(args[1]) or ow != va) and
                 not _shares(&cs, args[1], et, ow):
             vc = _copy(&cs, vc, et, ow)
         pc9 := _arrf(&cs, et, "_push") + "(" + ow + ", &(" + rc + "), " + vc + ")"
