@@ -41,7 +41,11 @@ TYCHOC1_SRC := compiler/main.ty $(wildcard compiler/*/*.ty)
 # picks ./tychoc's. It is not the default for user programs: driver.ty stays
 # -O3, because inline-unit-growth costs bench/transient 3-5%. On this one
 # translation unit it is worth 1051.3e6 -> 864.2e6 Ir.
-TYCHOC1_CFLAGS ?= --param inline-unit-growth=150 -static -flto
+# -static-pie, not -static: a plain static link leaves the .eh_frame table
+# unsorted, so the first unwind runs classify_object_over_fdes over the whole
+# thing -- 201,604 Ir on EVERY compile regardless of input size (48% of a
+# two-line program, measured identical on tiny.ty and examples/invindex.ty).
+TYCHOC1_CFLAGS ?= --param inline-unit-growth=150 -static-pie -flto
 tychoc1: tychoc $(TYCHOC1_SRC)
 	./tychoc compiler/main.ty -o tychoc1-stage1
 	TYCHO_CFLAGS="$(TYCHOC1_CFLAGS)" ./tychoc1-stage1 compiler/main.ty -o tychoc1
