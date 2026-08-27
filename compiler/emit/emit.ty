@@ -3594,8 +3594,12 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
         # array that also lives there is already where it belongs; a place is
         # still somebody else's and copies. Narrow on purpose: evaluating the
         # value in `ow` instead reddened 190 fixtures.
-        if _heap(&cs, et) and (_place(args[1]) or ow != va) and
-                not _shares(&cs, args[1], et, ow):
+        # "Built in ow" is not "whole in ow": a constructed struct can be
+        # allocated in the destination arena and still hold a string built in
+        # the loop scratch, which the next arena_reset takes (tycho-q lexed
+        # `==` and pushed a token whose text read back empty). Only _shares
+        # may skip the copy now.
+        if _heap(&cs, et) and not _shares(&cs, args[1], et, ow):
             vc = _copy(&cs, vc, et, ow)
         pc9 := _arrf(&cs, et, "_push") + "(" + ow + ", &(" + rc + "), " + vc + ")"
         if cap9 > 0:
@@ -4958,6 +4962,12 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             # src/tychoc.c:11582 -- `y := f(y)` must land in a temp declared
             # BEFORE the new C local, or the initialiser reads the inner
             # uninitialised one.
+            # A place rooted in a CALL result -- `op := cur(ts, p).text` -- is the
+            # one shape _rhs3 neither copies nor moves: it aliases a field of a
+            # temporary built in the statement scratch. Recording own5 for it
+            # below would then be a lie, and every later _shares believes it.
+            if _place(rhs[0]) and _heap(&cs, t) and len(_rootname(rhs[0])) == 0:
+                c = _copy(&cs, c, t, own5)
             sh := len(_vtype(&cs, n)) > 0 and _refslocal(rhs[0], n)
             cn := _push(&cs, n, t)
             if own5 == "_parent" and _heap(&cs, t):
