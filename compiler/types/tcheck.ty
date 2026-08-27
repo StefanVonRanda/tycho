@@ -670,9 +670,16 @@ fn _sig_of(cs: inout C, prefix: string, fd: ast.Fn) -> FSig:
             push(pats, pm.ty[0])
         else:
             push(pats, ast.TPrim("?"))
+    gen := len(tps) > 0 or len(szs) > 0
+    # Only a TEMPLATE's body is ever read (_inst_body, reached solely from
+    # _generic_call2 behind an `sg[si].generic` guard), so a non-generic sig
+    # carried a whole function body through two deep copies for nothing.
+    bd := []ast.Stmt
+    if gen:
+        bd = fd.body
     return FSig(nm, cs.file, fd.line, pn, pt, pf, rt,
-                len(tps) > 0 or len(szs) > 0, false,
-                pats, fd.ret, tps, fd.wheres, prefix, szs, fd.body)
+                gen, false,
+                pats, fd.ret, tps, fd.wheres, prefix, szs, bd)
 
 fn _addsig(cs: inout C, s: FSig):
     if s.name in cs.sindex:
