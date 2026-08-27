@@ -2825,3 +2825,40 @@ Whatever those runs hit was environmental -- most likely the `Permission denied`
 and truncated-binary interference documented above, when two sessions were
 rebuilding tychoc1 concurrently. A failure seen once during a contended run is
 not a defect until it is reproduced on a quiet box.
+
+
+### OPEN: no lane can redden when tychoc1 stops checking generic template bodies
+
+Found 2026-08-27 as the negative control for f0e2a3b5. A build that drops
+FSig.body for GENERIC signatures too accepts an ill-typed template instance --
+`fn twice(x: $T) -> $T: return x + x` called at $T=bool, which ./tychoc refuses
+-- and `make parse-check` stays ALL GREEN: 1081 files, leg5 and leg10 both 0
+disagreements.
+
+Why both legs miss it: the 337 reject fixtures reach leg5 through
+compiler/reject_class.tsv as SEMANTIC, and a SEMANTIC rejection is required to
+be ACCEPTED by the parser leg (that is what stops "reject everything" scoring
+full marks). leg10's whole-tree typecheck comparison does not score them either.
+
+Done when: a fixture exists that reddens for this, with the accept/refuse pair
+above as its observed control. Note the pinned counts -- compiler/run.sh,
+compiler/verdict_diff.py@EXPECT and the three censuses -- move when a fixture is
+added; that has broken parse-check twice before.
+
+### CORRECTION: the -static-pie win in 30029fa5 is ~0.5%, not what that message claims
+
+30029fa5 reports "7 of 90 entry points at parity, now 39" and geomean
+1.0854 -> 1.0073. Those two figures came from two sweeps run hours apart and are
+not a controlled comparison. Measured head-to-head in one session, same source,
+alternating A/B, -static vs -static-pie is geomean **0.9949** over five inputs,
+with tiny.ty at 0.9923 (median 1.0256 -- i.e. the median says slightly slower).
+
+The Ir figure in that message IS solid and reproducible: -static-pie removes
+201,604 Ir of eh_frame scan on every compile. It does not convert to wall time,
+because that scan is a cache-resident linear walk at high IPC. Instruction count
+is not time, and this is the second measurement this session where I read a
+ratio off runs that were not taken against each other.
+
+Sweep counts against ./tychoc are session-dependent at the few-percent level and
+must not be quoted across sessions: 39/90 (geomean 1.0073) early, then 10/90 and
+12/90 (1.0577, 1.0614) back-to-back later the same day, same binaries.
