@@ -4290,6 +4290,13 @@ fn _spawn(cs: inout C, e: ast.Expr) -> (string, string):
                 cs.arena = sa
                 if pt == "float" and at == "int":
                     ac = "(double)(" + ac + ")"
+                # A spawn takes a SNAPSHOT: the task runs concurrently with the
+                # parent, so a heap argument must be deep-copied into the task's
+                # own arena. Setting cs.arena alone does not do it -- a place
+                # emits as the parent's variable -- and tests/conc/basic.ty read
+                # 39 for 10 because the parent pushed while sum() walked it.
+                if _heap(&cs, pt):
+                    ac = _copy(&cs, ac, pt, "&_tk->root")
                 fields = fields + " " + _ctyz(&cs, pt) + "a" + str(i) + ";"
                 init = init + "_sa->a" + str(i) + " = " + ac + "; "
                 call = call + ", _a->a" + str(i)
@@ -4350,7 +4357,55 @@ fn _block(cs: inout C, body: [ast.Stmt], ind: string) -> string:
 # joined in order, the reduction summed on the way out (src/tychoc.c@__plo).
 # One reduction variable is supported; the corpus has no program with two.
 # gap: two or more reductions want a tuple return, which ./tychoc emits.
-fn _parfor(cs: inout C, b: [ast.Stmt], ind: string) -> string:
+# `w` is the DECLARED width -- `parallel(3) for` -- empty for a bare `parallel
+# for`, which sizes itself to ncpu(). It used to be dropped at the call site,
+# so every explicit width compiled as ncpu() (tests/conc/parfor_width.ty).
+# The operator a parallel-for accumulator reduces with: `acc = acc + e` or
+# `acc = acc * e`. The chunk seed and the join must BOTH follow it -- a
+# product seeded at 0 stays 0, and products joined with + are a sum
+# (tests/conc/parfor.ty read p=1 for 120).
+fn _red_op(b: [ast.Stmt], n: string) -> string:
+    for s in b:
+        match s:
+            ast.Assign(l, an, r):
+                if an == n and len(r) == 1:
+                    match r[0]:
+                        ast.Binop(l2, o, k): return o
+                        _: pass
+            ast.IfS(l, c, bb, e):
+                o1 := _red_op(bb, n)
+                if len(o1) > 0:
+                    return o1
+                o2 := _red_op(e, n)
+                if len(o2) > 0:
+                    return o2
+            ast.WhileS(l, c, bb): 
+                o3 := _red_op(bb, n)
+                if len(o3) > 0:
+                    return o3
+            ast.For3(l, ip, c, bb):
+                o4 := _red_op(bb, n)
+                if len(o4) > 0:
+                    return o4
+            _: pass
+    return ""
+
+fn _parfor(cs: inout C, b: [ast.Stmt], ind: string, w: [ast.Expr]) -> string:
+    pkw := "tycho_ncpu()"
+    if len(w) == 1:
+        wc, wt := _ex(&cs, w[0])
+        pkw = wc
+        # a literal width prints as itself: ./tychoc emits `_pk = 3;` and the
+        # lane reads the initialiser, so the LL suffix _ex adds would miss it
+        match w[0]:
+            ast.IntLit(lw, iv): pkw = str(iv)
+            _: pass
+    # A DECLARED width is the programmer's, so it fails closed rather than
+    # clamping silently; the bare form is ncpu() and clamps by design
+    # (src/tychoc.c:11469).
+    pkg := ""
+    if len(w) == 1:
+        pkg = "    if (_pk < 1 || _pk > 64) tycho_die(\"parallel width out of range 1..64\");\n"
     match b[0]:
         ast.ForRange(l2, v, k, body):
             free := []string
@@ -4408,8 +4463,11 @@ fn _parfor(cs: inout C, b: [ast.Stmt], ind: string) -> string:
             decl := ""
             for j9 := 0; j9 < len(wr); j9 += 1:
                 cnr := _push(&cs, wr[j9], rts[j9])
+                seed := _zero(&cs, rts[j9])
+                if _red_op(body, wr[j9]) == "*":
+                    seed = "1"
                 decl = decl + "    " + _ctyz(&cs, rts[j9]) + "" + cnr + " = " +
-                    _zero(&cs, rts[j9]) + ";\n"
+                    seed + ";\n"
             iv := _push(&cs, v, "int")
             loop := "    for (tycho_int " + iv + " = h___plo; " + iv + " < h___phi; " + iv + " += 1) {\n" +
                 _block(&cs, body, "        ") + "    }\n"
@@ -4453,7 +4511,7 @@ fn _parfor(cs: inout C, b: [ast.Stmt], ind: string) -> string:
             out := ind + "{\n" +
                 ind + "    tycho_int _plo = " + loc + ", _phi = " + hic + ";\n" +
                 ind + "    if (_phi < _plo) _phi = _plo;\n" +
-                ind + "    tycho_int _pk = tycho_ncpu();\n" +
+                ind + "    tycho_int _pk = " + pkw + ";\n" + ind + pkg +
                 ind + "    if (_pk > _phi - _plo) _pk = _phi - _plo;\n" +
                 ind + "    if (_pk < 1) _pk = 1; if (_pk > 64) _pk = 64;\n" +
                 ind + "    HTask *_pts[64];\n" +
@@ -4473,17 +4531,23 @@ fn _parfor(cs: inout C, b: [ast.Stmt], ind: string) -> string:
                 ind + "        " + ct + " _pp = *(" + ct + " *)_pts[_pc]->ret;\n" +
                 ind + "        tycho_task_free(_pts[_pc]);\n"
             if len(wr) == 1:
+                jo := _red_op(body, wr[0])
+                if jo != "*":
+                    jo = "+"
                 out = out + ind + "        " + _vcname(&cs, wr[0]) + " = " +
-                    _vcname(&cs, wr[0]) + " + _pp;\n"
+                    _vcname(&cs, wr[0]) + " " + jo + " _pp;\n"
             elif len(wr) > 1:
                 for j9 := 0; j9 < len(wr); j9 += 1:
+                    jo2 := _red_op(body, wr[j9])
+                    if jo2 != "*":
+                        jo2 = "+"
                     out = out + ind + "        " + _vcname(&cs, wr[j9]) + " = " +
-                        _vcname(&cs, wr[j9]) + " + _pp.f" + str(j9) + ";\n"
+                        _vcname(&cs, wr[j9]) + " " + jo2 + " _pp.f" + str(j9) + ";\n"
             else:
                 out = out + ind + "        (void)_pp;\n"
             return out + ind + "    }\n" + ind + "}\n"
         ast.ForIn(l2, v, coll, body):
-            return _parchan(&cs, l2, v, coll, body, ind)
+            return _parchan(&cs, l2, v, coll, body, ind, pkw, pkg)
         _: _bad("parallel requires `for i in lo..<hi:` or `for x in ch:`")
     return ""
 
@@ -4493,7 +4557,7 @@ fn _parfor(cs: inout C, b: [ast.Stmt], ind: string) -> string:
 # `parallel for x in xs:` over an ARRAY -- the third form. Each worker takes a
 # half-open slice of the INDEX range and binds the element itself, so the array
 # is a capture like any other and the chunking is the range form's.
-fn _pararr(cs: inout C, cc: string, ct: string, v: string, body: [ast.Stmt], ind: string) -> string:
+fn _pararr(cs: inout C, cc: string, ct: string, v: string, body: [ast.Stmt], ind: string, pkw: string, pkg: string) -> string:
     et := _elem(ct)
     free := []string
     wr := []string
@@ -4585,7 +4649,7 @@ fn _pararr(cs: inout C, cc: string, ct: string, v: string, body: [ast.Stmt], ind
     out := ind + "{\n" +
         ind + "    " + _ctyz(&cs, ct) + "_parr = " + cc + ";\n" +
         ind + "    tycho_int _plo = 0, _phi = (_parr).len;\n" +
-        ind + "    tycho_int _pk = tycho_ncpu();\n" +
+        ind + "    tycho_int _pk = " + pkw + ";\n" + ind + pkg +
         ind + "    if (_pk > _phi - _plo) _pk = _phi - _plo;\n" +
         ind + "    if (_pk < 1) _pk = 1; if (_pk > 64) _pk = 64;\n" +
         ind + "    HTask *_pts[64];\n" +
@@ -4615,10 +4679,10 @@ fn _pararr(cs: inout C, cc: string, ct: string, v: string, body: [ast.Stmt], ind
         out = out + ind + "        (void)_pp;\n"
     return out + ind + "    }\n" + ind + "}\n"
 
-fn _parchan(cs: inout C, l: int, v: string, coll: [ast.Expr], body: [ast.Stmt], ind: string) -> string:
+fn _parchan(cs: inout C, l: int, v: string, coll: [ast.Expr], body: [ast.Stmt], ind: string, pkw: string, pkg: string) -> string:
     cc, ct := _ex(&cs, coll[0])
     if _is_arr(ct):
-        return _pararr(&cs, cc, ct, v, body, ind)
+        return _pararr(&cs, cc, ct, v, body, ind, pkw, pkg)
     if not _is_chan(ct):
         _bad("parallel requires `for i in lo..<hi:`, `for x in xs:` or `for x in ch:`")
     et := _cinner(ct)
@@ -4712,7 +4776,7 @@ fn _parchan(cs: inout C, l: int, v: string, coll: [ast.Expr], body: [ast.Stmt], 
         "tycho_pool_flush(); return 0; }\n")
     out := ind + "{\n" +
         ind + "    HChan *_pch = " + cc + ";\n" +
-        ind + "    tycho_int _pk = tycho_ncpu();\n" +
+        ind + "    tycho_int _pk = " + pkw + ";\n" + ind + pkg +
         ind + "    if (_pk < 1) _pk = 1; if (_pk > 64) _pk = 64;\n" +
         ind + "    HTask *_pts[64];\n" +
         ind + "    for (tycho_int _pc = 0; _pc < _pk; _pc++) {\n" +
@@ -5469,7 +5533,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             return out
         ast.ForRange(l, n, c, b): _bad("stmt:ForRange -- Phase 8")
         ast.ParallelS(l, w, b):
-            return _parfor(&cs, b, ind)
+            return _parfor(&cs, b, ind, w)
         ast.SelectS(l, a):
             return _select(&cs, a, ind)
         ast.DeleteS(l, k):
