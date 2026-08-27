@@ -2862,3 +2862,20 @@ ratio off runs that were not taken against each other.
 Sweep counts against ./tychoc are session-dependent at the few-percent level and
 must not be quoted across sessions: 39/90 (geomean 1.0073) early, then 10/90 and
 12/90 (1.0577, 1.0614) back-to-back later the same day, same binaries.
+
+
+### DECIDED 2026-08-27: tychoc1 keeps tail-call optimisation; the lane's fail-closed expectation does not apply to it
+
+tests/recursion asserts a 2,000,000-deep program dies with exit 1-127 and
+"stack overflow" on stderr. tychoc1 exits 0 and prints the RIGHT answer
+(2000001000001 and 0). It is not failing open on a crash -- there is no crash:
+tychoc1's elided `_scope` leaves the self-call in tail position and gcc turns
+the recursion into a loop, so the frames never exist. ./tychoc emits
+`arena_free(&_scope)` after the call, which blocks the tail call, so its stack
+really does overflow.
+
+Making tychoc1 match would mean deliberately pessimising it -- keeping a barrier
+in every self-recursive function so a correct program crashes. Asked, and the
+answer was **leave it**. prog-deep-big, prog-deep-small and prog-deep-spawn stay
+red until the lane is taught that a tail-optimised program may legitimately
+succeed. Do not "fix" tychoc1 to fail here.

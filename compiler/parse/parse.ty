@@ -241,7 +241,14 @@ fn _starts_type_lit(toks: [lex.Tok], i: int) -> bool:
         return true
     return _starts_type(toks, i)
 
+# A pathological type -- `[[[...int...]]]` 9000 deep -- must be REFUSED, not
+# recursed into until the parser's own stack dies (tests/recursion type_arr).
 fn ty(toks: [lex.Tok], i0: int) -> (ast.Ty, int):
+    return _ty_d(toks, i0, 0)
+
+fn _ty_d(toks: [lex.Tok], i0: int, depth: int) -> (ast.Ty, int):
+    if depth > 512:
+        _die(toks, _at(toks, i0), "type nesting too deep")
     ti := _cl(toks, i0)
     i := i0
 
@@ -251,7 +258,7 @@ fn ty(toks: [lex.Tok], i0: int) -> (ast.Ty, int):
 
     if toks[ti].k == lex.K_IDENT and toks[ti].text == "soa":
         i = _op(toks, i + 1, lex.OP_LBRACK)
-        el, j := ty(toks, i)
+        el, j := _ty_d(toks, i, depth + 1)
         i = _op(toks, j, lex.OP_RBRACK)
         return (ast.TSoa([el]), i)
 
@@ -261,14 +268,14 @@ fn ty(toks: [lex.Tok], i0: int) -> (ast.Ty, int):
         if cap.k != lex.K_INT and cap.k != lex.K_IDENT:
             _die(toks, cap, "bounded needs a capacity: bounded[N]T")
         i = _op(toks, i + 1, lex.OP_RBRACK)
-        el, j := ty(toks, i)
+        el, j := _ty_d(toks, i, depth + 1)
         return (ast.TBnd(cap.text, [el]), j)
 
     if toks[ti].k == lex.K_KW and toks[ti].text == "fn":
         i = _op(toks, i + 1, lex.OP_LPAREN)
         ps := []ast.Ty
         for not _isop(toks, i, lex.OP_RPAREN):
-            a, j := ty(toks, i)
+            a, j := _ty_d(toks, i, depth + 1)
             push(ps, a)
             i = j
             if not _isop(toks, i, lex.OP_COMMA):
@@ -278,7 +285,7 @@ fn ty(toks: [lex.Tok], i0: int) -> (ast.Ty, int):
         if len(ps) > 8:
             _die(toks, _at(toks, i0), "a function type has at most 8 parameters")
         if _isop(toks, i, lex.OP_ARROW):
-            r, j := ty(toks, i + 1)
+            r, j := _ty_d(toks, i + 1, depth + 1)
             push(ps, r)
             return (ast.TFn(true, ps), j)
         return (ast.TFn(false, ps), i)
@@ -286,11 +293,11 @@ fn ty(toks: [lex.Tok], i0: int) -> (ast.Ty, int):
     if toks[ti].k == lex.K_OP and toks[ti].ival == lex.OP_LPAREN:
         i += 1
         es := []ast.Ty
-        a, j := ty(toks, i)
+        a, j := _ty_d(toks, i, depth + 1)
         push(es, a)
         i = j
         for _isop(toks, i, lex.OP_COMMA):
-            b, k := ty(toks, i + 1)
+            b, k := _ty_d(toks, i + 1, depth + 1)
             push(es, b)
             i = k
         i = _op(toks, i, lex.OP_RPAREN)
@@ -307,7 +314,7 @@ fn ty(toks: [lex.Tok], i0: int) -> (ast.Ty, int):
         if _isop(toks, i, lex.OP_DOLLAR) and _kis(toks, i + 1, lex.K_IDENT) and _isop(toks, i + 2, lex.OP_RBRACK) and
                 _starts_type(toks, i + 3) and not _isid(toks, i + 3, "where"):
             nm := _x(toks, i + 1)
-            el, j := ty(toks, i + 3)
+            el, j := _ty_d(toks, i + 3, depth + 1)
             return (ast.TFix("$" + nm, [el]), j)
         # [N]T with a literal size, or [W]T naming an int const. The const form
         # is told from a dynamic [Foo] only by a type FOLLOWING the ']'.
@@ -323,12 +330,12 @@ fn ty(toks: [lex.Tok], i0: int) -> (ast.Ty, int):
         if fixed:
             if _kis(toks, i, lex.K_INT) and _at(toks, i).ival <= 0:
                 _die(toks, _at(toks, i0), "a fixed-size array length must be positive")
-            el, j := ty(toks, i + 2)
+            el, j := _ty_d(toks, i + 2, depth + 1)
             return (ast.TFix(sz, [el]), j)
-        el, j := ty(toks, i)
+        el, j := _ty_d(toks, i, depth + 1)
         i = j
         if _isop(toks, i, lex.OP_COLON):
-            v, k := ty(toks, i + 1)
+            v, k := _ty_d(toks, i + 1, depth + 1)
             i = _op(toks, k, lex.OP_RBRACK)
             return (ast.TMap([el, v]), i)
         i = _op(toks, i, lex.OP_RBRACK)
@@ -345,16 +352,16 @@ fn ty(toks: [lex.Tok], i0: int) -> (ast.Ty, int):
         args := []ast.Ty
         if len(qual) == 0 and (nm == "Option" or nm == "Channel"):
             i = _op(toks, i, lex.OP_LPAREN)
-            a, j := ty(toks, i)
+            a, j := _ty_d(toks, i, depth + 1)
             push(args, a)
             i = _op(toks, j, lex.OP_RPAREN)
             return (ast.TName("", nm, args), i)
         if len(qual) == 0 and nm == "Result":
             i = _op(toks, i, lex.OP_LPAREN)
-            a, j := ty(toks, i)
+            a, j := _ty_d(toks, i, depth + 1)
             push(args, a)
             i = _op(toks, j, lex.OP_COMMA)
-            b, k := ty(toks, i)
+            b, k := _ty_d(toks, i, depth + 1)
             push(args, b)
             i = _op(toks, k, lex.OP_RPAREN)
             return (ast.TName("", nm, args), i)
@@ -363,7 +370,7 @@ fn ty(toks: [lex.Tok], i0: int) -> (ast.Ty, int):
         if _isop(toks, i, lex.OP_LPAREN):
             i += 1
             for not _isop(toks, i, lex.OP_RPAREN):
-                a, j := ty(toks, i)
+                a, j := _ty_d(toks, i, depth + 1)
                 push(args, a)
                 i = j
                 if not _isop(toks, i, lex.OP_COMMA):

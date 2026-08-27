@@ -2823,15 +2823,22 @@ fn _arrlit(cs: inout C, k: [ast.Expr]) -> (string, string):
     if len(k) == 0:
         _bad("an empty array literal needs a type")
     v := _fresh(&cs, "_l")
-    c0, et0 := _ex(&cs, k[0])
-    et := et0
+    sw := cs.want
     # `a: [u32] = [1, 2]` -- the elements adapt to the ANNOTATED element type,
     # which is the only place it is written down; taking it from element 0 alone
     # would type this [int] and then fail to initialise a TychoArrK.
-    if _is_arr(cs.want) and _elem(cs.want) != et0:
+    # Element 0 is emitted UNDER the narrowed want like every other element: it
+    # used to be emitted first, under the outer one, and `[[[1]]]` -- one element
+    # at every level -- then built TychoArrK0 at all three (tests/recursion
+    # ok_type, which cc refused).
+    et := ""
+    if _is_arr(cs.want):
         et = _elem(cs.want)
-    sw := cs.want
-    cs.want = et
+        cs.want = et
+    c0, et0 := _ex(&cs, k[0])
+    if len(et) == 0:
+        et = et0
+        cs.want = et
     ct := _cty(&cs, "[" + et + "]")
     out := "({ " + ct + " " + v + " = " + _arrf(&cs, et, "_with_cap") + "(" + cs.arena + ", " +
         str(len(k)) + "L); "
