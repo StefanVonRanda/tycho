@@ -3365,6 +3365,23 @@ fn _call(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], args: [ast.Ex
                     ", u) + sizeof(E_" + en + "_Some)); " + ov2 + "->tag = " +
                     str(_tag(&cs, oi, "Some")) + "; " + ov2 + "->u.Some.f0 = tycho_str_from_c(" +
                     cs.arena + ", " + xv + "); } " + ov2 + "; })", ot)
+            # An ARRAY return crosses as two out-parameters, exactly as `bytes`
+            # does below: `[int] f()` is `void f(tycho_int **out, tycho_int *len)`.
+            # tychoc1 emitted the call with NEITHER, so the C function wrote
+            # *out and *len through whatever the registers held -- ASan reported
+            # allocation-size-too-big in ffi_iota (tests/ffi).
+            if _is_arr(cs.fds[fi].ret) and (_elem(cs.fds[fi].ret) == "int" or
+                    _elem(cs.fds[fi].ret) == "float"):
+                aet := _elem(cs.fds[fi].ret)
+                aov := _fresh(&cs, "_o")
+                aol := _fresh(&cs, "_ol")
+                sep3 := ", "
+                if strings.ends_with(out2, "("):
+                    sep3 = ""
+                return ("({ " + _ctyz(&cs, aet) + "*" + aov + " = 0; tycho_int " + aol +
+                    " = 0; " + out2 + sep3 + "&" + aov + ", &" + aol + "); " +
+                    _arrf(&cs, aet, "_from_c") + "(" + cs.arena + ", " + aov + ", " +
+                    aol + "); })", cs.fds[fi].ret)
             if cs.fds[fi].ret == "bytes":
                 ov := _fresh(&cs, "_o")
                 ol := _fresh(&cs, "_ol")
@@ -7317,6 +7334,15 @@ fn program(pfx: [string], us: [ast.Unit]) -> string:
         # reader (iox_read_line).
         if _is_optT(&cs, cs.fds[xi].ret) and _opt_inner(&cs, cs.fds[xi].ret) == "string":
             xrt = "char *"
+        # An ARRAY return crosses the same way: void, plus (ptr, len) out-
+        # parameters. Declaring it as TychoArrInt made cc read a struct return
+        # where the shim writes through two pointers.
+        if _is_arr(cs.fds[xi].ret) and (_elem(cs.fds[xi].ret) == "int" or
+                _elem(cs.fds[xi].ret) == "float"):
+            xrt = "void "
+            if len(xps) > 0:
+                xps = xps + ", "
+            xps = xps + _ctyz(&cs, _elem(cs.fds[xi].ret)) + "**, tycho_int *"
         if cs.fds[xi].ret == "bytes":
             # A `bytes` return crosses the ABI as (ptr, len) OUT-PARAMETERS and
             # the C function returns void; the caller wraps them with
