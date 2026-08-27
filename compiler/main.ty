@@ -1,7 +1,12 @@
 package main
 
 import "core:strings"
+import "core:os"
 import "driver"
+
+# Kept in step with src/tychoc.c's TYCHO_VERSION by hand; --version must agree.
+fn VERSION() -> string:
+    return "0.7.0"
 
 # `foo.ty` -> `foo`, the default output base when no -o is given.
 fn _strip_ext(p: string) -> string:
@@ -23,6 +28,11 @@ fn main():
     out := ""
     rt := "runtime/tycho_rt.c"
     emit_c := false
+    cc9 := "cc"
+    xtra := []string
+    shim9 := []string
+    nat := false
+    dbg := false
     mode := "compile"
     eof := false
     i := 1
@@ -65,6 +75,48 @@ fn main():
             if i >= len(av):
                 usage()
             out = av[i]
+        elif a == "--native":
+            nat = true
+        elif a == "-g":
+            dbg = true
+        elif a == "--version":
+            print("tychoc " + VERSION() + "\n")
+            return
+        elif a == "--help" or a == "-h":
+            usage()
+        elif a == "--symbols":
+            mode = "lspsym"
+        elif a == "--cc":
+            i += 1
+            if i >= len(av):
+                usage()
+            cc9 = av[i]
+        elif a == "--link":
+            i += 1
+            if i >= len(av):
+                usage()
+            push(xtra, "-l" + av[i])
+        elif a == "--shim":
+            i += 1
+            if i >= len(av):
+                usage()
+            push(shim9, av[i])
+        elif a == "--pkg":
+            i += 1
+            if i >= len(av):
+                usage()
+            r9 := os.run("pkg-config --cflags --libs " + av[i])
+            if r9.code != 0:
+                die("tychoc1: pkg-config failed for '" + av[i] + "'")
+            for w9 in split(strings.trim(r9.out), " "):
+                if len(strings.trim(w9)) > 0:
+                    push(xtra, strings.trim(w9))
+        # -L/-I take the attached (-L/path) and separated (-L /path) forms
+        elif strings.starts_with(a, "-L") or strings.starts_with(a, "-I"):
+            push(xtra, a)
+            if len(a) == 2 and i + 1 < len(av):
+                i += 1
+                push(xtra, av[i])
         elif a == "--runtime":
             i += 1
             if i >= len(av):
@@ -104,6 +156,9 @@ fn main():
     if mode == "tcensus":
         driver.type_census(src, av[0])
         return
+    if mode == "lspsym":
+        driver.emit_symbols(src, av[0])
+        return
     if mode == "symbols":
         driver.dump_symbols(src, av[0])
         return
@@ -121,7 +176,7 @@ fn main():
         base := out
         if len(base) == 0:
             base = _strip_ext(src)
-        driver.build(src, rt, base, av[0])
+        driver.build(src, rt, base, av[0], cc9, xtra, shim9, nat, dbg)
         return
     if len(out) == 0:
         usage()
