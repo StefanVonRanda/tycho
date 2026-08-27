@@ -1282,3 +1282,191 @@ fn _show(cs: inout C, t: string) -> string:
             i += 1
         return m
     return t
+
+# --- `parallel for` body rules (src/tychoc.c@parfor_check) --------------------
+#
+# The chunks run concurrently over one shared frame, so the body may not steer
+# control flow out of itself, and may touch an outer variable only as a
+# reduction the runtime can combine per chunk. tychoc1 checked NONE of this and
+# compiled all six of tests/conc/reject/parfor_*.ty.
+
+fn _pf_locals(b: [ast.Stmt], out: inout [string: bool]):
+    for s in b:
+        match s:
+            ast.Decl(l, n, t, r, v): out[n] = true
+            ast.MDecl(l, d, ns, r):
+                if d:
+                    for n2 in ns:
+                        out[n2] = true
+            ast.IfS(l, c, bb, e):
+                _pf_locals(bb, &out)
+                _pf_locals(e, &out)
+            ast.WhileS(l, c, bb): _pf_locals(bb, &out)
+            ast.For3(l, ip, c, bb):
+                _pf_locals(ip, &out)
+                _pf_locals(bb, &out)
+            ast.ForIn(l, n, c, bb):
+                out[n] = true
+                _pf_locals(bb, &out)
+            ast.ForRange(l, n, c, bb):
+                out[n] = true
+                _pf_locals(bb, &out)
+            ast.MatchS(l, sj, arms):
+                for a in arms:
+                    _pf_locals(a.body, &out)
+            _: pass
+    return
+
+# Is this `acc = <expr>` the reduction shape -- acc = acc <op> e, op in + or *?
+fn _pf_reduction(n: string, r: ast.Expr) -> bool:
+    match r:
+        ast.Binop(l, o, k):
+            if (o != "+" and o != "*") or len(k) != 2:
+                return false
+            match k[0]:
+                ast.Name(l2, v): return v == n
+                _: return false
+        _: pass
+    return false
+
+fn _pf_reads(e: ast.Expr, n: string) -> bool:
+    match e:
+        ast.Name(l, v):
+            if v == n:
+                return true
+        _: pass
+    for c in ast.kids(e):
+        if _pf_reads(c, n):
+            return true
+    return false
+
+# `push(xs, ...)` and friends write their FIRST argument in place.
+# send/close are NOT here: a channel is the sanctioned way to carry results
+# out of a parallel for, and tools/tycho-chess/main.ty does exactly that.
+fn _pf_mutator(nm: string) -> bool:
+    return nm == "push" or nm == "pop" or nm == "reserve" or nm == "delete"
+
+fn _pf_body(cs: inout C, b: [ast.Stmt], loc: [string: bool], depth: int):
+    for s in b:
+        match s:
+            ast.ReturnS(l, k):
+                cs.line = l
+                _cerr(&cs, "return cannot cross a parallel for")
+            ast.BreakS(l):
+                if depth == 0:
+                    cs.line = l
+                    _cerr(&cs, "break cannot apply to a parallel for (chunks cannot stop each other)")
+            ast.Assign(l, n, r):
+                if not (n in loc):
+                    cs.line = l
+                    if len(r) == 1 and _pf_reduction(n, r[0]):
+                        # the accumulator is write-only in the body: a chunk holds
+                        # its own partial, so a read here sees a partial sum
+                        if _pf_reads(r[0], n) and not _pf_top_read(r[0], n):
+                            _cerr(&cs, "reduction accumulator '" + n + "' may only be updated, not read, inside parallel for")
+                    else:
+                        _cerr(&cs, "parallel for may update an outer variable only as a reduction: acc = acc + e or acc = acc * e (int/float)")
+            ast.ExprStmt(l, k):
+                for e in k:
+                    _pf_mut_check(&cs, e, loc, l)
+                    _pf_acc_read(&cs, e, loc, l)
+            ast.IfS(l, c, bb, e):
+                for x in c:
+                    _pf_acc_read(&cs, x, loc, l)
+                _pf_body(&cs, bb, loc, depth)
+                _pf_body(&cs, e, loc, depth)
+            ast.WhileS(l, c, bb): _pf_body(&cs, bb, loc, depth + 1)
+            ast.For3(l, ip, c, bb): _pf_body(&cs, bb, loc, depth + 1)
+            ast.ForIn(l, n, c, bb): _pf_body(&cs, bb, loc, depth + 1)
+            ast.ForRange(l, n, c, bb): _pf_body(&cs, bb, loc, depth + 1)
+            ast.MatchS(l, sj, arms):
+                for a in arms:
+                    _pf_body(&cs, a.body, loc, depth)
+            _: pass
+    return
+
+# `acc = acc + e` reads acc at the top of the RHS, which is the reduction itself.
+fn _pf_top_read(r: ast.Expr, n: string) -> bool:
+    match r:
+        ast.Binop(l, o, k):
+            if len(k) != 2:
+                return false
+            match k[0]:
+                ast.Name(l2, v): return v == n and not _pf_reads(k[1], n)
+                _: return false
+        _: pass
+    return false
+
+fn _pf_mut_check(cs: inout C, e: ast.Expr, loc: [string: bool], l: int):
+    match e:
+        ast.Call(ln, q, n, t, a):
+            if len(q) == 0 and _pf_mutator(n) and len(a) > 0:
+                r := _rootn(a[0])
+                if len(r) > 0 and not (r in loc):
+                    cs.line = l
+                    _cerr(&cs, "parallel for cannot mutate captured variable '" + r + "' in place")
+        _: pass
+    for c in ast.kids(e):
+        _pf_mut_check(&cs, c, loc, l)
+    return
+
+fn _pf_acc_read(cs: inout C, e: ast.Expr, loc: [string: bool], l: int):
+    for a in cs.pfacc:
+        if _pf_reads(e, a):
+            cs.line = l
+            _cerr(&cs, "reduction accumulator '" + a + "' may only be updated, not read, inside parallel for")
+    return
+
+fn _rootn(e: ast.Expr) -> string:
+    match e:
+        ast.Name(l, v): return v
+        ast.Field(l, k, f):
+            if len(k) == 1:
+                return _rootn(k[0])
+        ast.Index(l, k):
+            if len(k) > 0:
+                return _rootn(k[0])
+        _: pass
+    return ""
+
+# The accumulators this body reduces into, so a later read of one is refused.
+fn _pf_accs(b: [ast.Stmt], loc: [string: bool], out: inout [string], bad: inout [string: bool]):
+    for s in b:
+        match s:
+            ast.Assign(l, n, r):
+                if not (n in loc):
+                    if len(r) == 1 and _pf_reduction(n, r[0]):
+                        push(out, n)
+                    else:
+                        # one non-reduction write and it is not an accumulator
+                        # at all: the ASSIGN is the error to report, and the
+                        # read rule must not pre-empt it.
+                        bad[n] = true
+            ast.IfS(l, c, bb, e):
+                _pf_accs(bb, loc, &out, &bad)
+                _pf_accs(e, loc, &out, &bad)
+            ast.WhileS(l, c, bb): _pf_accs(bb, loc, &out, &bad)
+            ast.For3(l, ip, c, bb): _pf_accs(bb, loc, &out, &bad)
+            ast.ForIn(l, n, c, bb): _pf_accs(bb, loc, &out, &bad)
+            ast.MatchS(l, sj, arms):
+                for a in arms:
+                    _pf_accs(a.body, loc, &out, &bad)
+            _: pass
+    return
+
+fn _parfor_check(cs: inout C, l: int, v: string, b: [ast.Stmt]):
+    loc := []string: bool
+    loc[v] = true
+    _pf_locals(b, &loc)
+    accs := []string
+    bad := []string: bool
+    _pf_accs(b, loc, &accs, &bad)
+    keep := []string
+    for a in accs:
+        if not (a in bad):
+            push(keep, a)
+    sav := cs.pfacc
+    cs.pfacc = keep
+    _pf_body(&cs, b, loc, 0)
+    cs.pfacc = sav
+    return

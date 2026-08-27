@@ -176,6 +176,8 @@ struct C:
 
 # The offending source line beneath the message, the shape every
 # tests/diag/*.err golden pins. Same rule as resolve.ty@_excerpt.
+    pfacc: [string]                    # reduction accumulators of the enclosing parallel for
+
 fn _cexcerpt(cs: inout C, file: string, line: int) -> string:
     if line <= 0:
         return ""
@@ -1149,6 +1151,23 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
             cs.nlambda = cs.nlambda + 1
             cs.lam_mark = m
             _exs(&cs, body)
+            # Captures are the bindings BELOW this lambda's mark. An affine one
+            # has a single owner and a scope-bound destructor, so a closure that
+            # outlives the scope would hold a freed handle.
+            for ci := 0; ci < m; ci += 1:
+                k9 := _aff_kind(&cs, cs.vars[ci].ty)
+                if len(k9) == 0:
+                    continue
+                for be in body:
+                    if _pf_reads(be, cs.vars[ci].name):
+                        cs.line = l
+                        if k9 == "task":
+                            _cerr(&cs, "a closure cannot capture a task handle -- wait it first")
+                        elif k9 == "chan":
+                            _cerr(&cs, "a closure cannot capture a channel handle -- take it as a parameter instead")
+                        else:
+                            _cerr(&cs, "a closure cannot capture a handle -- it is freed at the end of its scope")
+                        break
             cs.nlambda = keepc
             cs.lam_mark = keepm
             cs.ret = keepr
@@ -2221,6 +2240,7 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
             _vrestore(&cs, m)
             cs.loopd = cs.loopd - 1
         ast.ForRange(l, v, bounds, b):
+            _parfor_check(&cs, l, v, b)
             cs.loopd = cs.loopd + 1
             for x in bounds:
                 _ex(&cs, x)
@@ -2416,7 +2436,7 @@ fn _infinite_check(cs: inout C):
 fn check(p: Program) -> C:
     cs := C([]string, -1, []string: bool, []string: bool, 0, []string, []string, []TDecl, []string: int, []FSig, []string: int, []string: string, []string: string,
             []string: string, []string: int, []string: bool, []string: string, []string: bool, []VBind, 0, []string, []string,
-            []string: int, "", 0, "", "?", false, false, []ast.ImportD, []ast.ImportD, false, 0, 0, false, 0, []string: int, []string: bool, []string: bool, 0, 0, false)
+            []string: int, "", 0, "", "?", false, false, []ast.ImportD, []ast.ImportD, false, 0, 0, false, 0, []string: int, []string: bool, []string: bool, 0, 0, false, []string)
     for f in p.files:
         push(cs.srcp, f.path)
         push(cs.srct, f.src)
