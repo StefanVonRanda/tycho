@@ -121,9 +121,10 @@ struct C:
     retslot: bool                      # emitting the ELEMENTS of a tuple that is being returned
     used: [string: bool]               # generated helper names the emitted text actually calls
     hdone: [string: bool]              # already written, so a re-run adds only what is new
+    lmark: [int]                       # var mark at each loop entry, for break/continue frees
 
 fn _new() -> C:
-    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt, [], [], [], false, []string: bool, []string: bool)
+    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt, [], [], [], false, []string: bool, []string: bool, []int)
 
 fn _bad(msg: string):
     die("tychoc1: " + msg)
@@ -2814,7 +2815,8 @@ fn _orret(cs: inout C, e: ast.Expr) -> (string, string):
         gt = ok[0]
     return ("({ E_" + _tname(t) + " *" + v + " = " + c + "; if (" + v + "->tag == " +
         str(bad) + ") { E_" + rn + " *_orr = " + mk +
-        "; " + _scr_frees(&cs) + "if (_scope.head) arena_free(&_scope); return _orr; } " +
+        "; " + _oneline(_finalizers(&cs, cs.fnbase, "")) + _scr_frees(&cs) +
+        "if (_scope.head) arena_free(&_scope); return _orr; } " +
         got + "; })", gt)
 
 fn _arrlit(cs: inout C, k: [ast.Expr]) -> (string, string):
@@ -4317,6 +4319,13 @@ fn _finalizers(cs: inout C, m: int, ind: string) -> string:
             out = out + ind + "tycho_chan_free(" + cs.vcn[i] + ");\n"
     return out
 
+# The frees a `break`/`continue` must run: everything declared since the
+# innermost loop was entered.
+fn _lpfin(cs: inout C) -> string:
+    if len(cs.lmark) == 0:
+        return ""
+    return _finalizers(&cs, cs.lmark[len(cs.lmark) - 1], "")
+
 fn _block(cs: inout C, body: [ast.Stmt], ind: string) -> string:
     m := _mark(&cs)
     out := ""
@@ -5184,12 +5193,14 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             return ind + "{ " + _ctyz(&cs, rt) + "" + v + " = " + c + "; " +
                 _oneline(fin) + _scr_frees(&cs) + "arena_free(&_scope); return " + v + "; }\n"
         ast.BreakS(l):
-            return ind + "break;\n"
+            # Leaving the loop leaves every scope inside it: the block's own
+            # finalizers sit after this jump and never run.
+            return ind + "{ " + _oneline(_lpfin(&cs)) + "break; }\n"
         ast.ContinueS(l):
             # src/tychoc.c:12263 -- inside a three-clause `for` the post clause
             # sits at the body's end, so `continue` must jump TO it, not over it.
             if len(cs.lpost) > 0 and cs.lpost[len(cs.lpost) - 1] >= 0:
-                return ind + "goto _post" + str(cs.lpost[len(cs.lpost) - 1]) + ";\n"
+                return ind + "{ " + _oneline(_lpfin(&cs)) + "goto _post" + str(cs.lpost[len(cs.lpost) - 1]) + "; }\n"
             return ind + "continue;\n"
         ast.IfS(l, c, b, e):
             cc0, ct := _ex(&cs, c[0])
@@ -5212,9 +5223,11 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             push(cs.ascope, "&" + idw)
             cs.loopdepth += 1   # src/tychoc.c@g_loop_depth -- moves are unsafe inside a loop
             push(cs.lpost, -1)
+            push(cs.lmark, _mark(&cs))
             cs.arena = "&" + idw
             bdw := _block(&cs, b, ind + "        ")
             pop(cs.lpost)
+            pop(cs.lmark)
             pop(cs.ascope)
             cs.loopdepth -= 1
             cs.arena = svw
@@ -5248,6 +5261,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             push(cs.ascope, "&" + id3)
             cs.loopdepth += 1   # src/tychoc.c@g_loop_depth -- moves are unsafe inside a loop
             push(cs.lpost, k3)
+            push(cs.lmark, _mark(&cs))
             cs.arena = "&" + id3
             # `for i := 0; i < len(A); i += 1:` proves A[i] in range for the body
             ev3, ea3 := _for3_elide(ip, c, b)
@@ -5262,6 +5276,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                 pop(cs.elv)
                 pop(cs.ela)
             pop(cs.lpost)
+            pop(cs.lmark)
             pop(cs.ascope)
             cs.loopdepth -= 1
             cs.arena = sv3
@@ -5299,9 +5314,11 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                 push(cs.ascope, "&" + ids)
                 cs.loopdepth += 1   # src/tychoc.c@g_loop_depth -- moves are unsafe inside a loop
                 push(cs.lpost, -1)
+                push(cs.lmark, _mark(&cs))
                 cs.arena = "&" + ids
                 bds := _block(&cs, b, ind + "        ")
                 pop(cs.lpost)
+                pop(cs.lmark)
                 pop(cs.ascope)
                 cs.loopdepth -= 1
                 cs.arena = svs
@@ -5346,9 +5363,11 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             push(cs.ascope, "&" + ida)
             cs.loopdepth += 1   # src/tychoc.c@g_loop_depth -- moves are unsafe inside a loop
             push(cs.lpost, -1)
+            push(cs.lmark, _mark(&cs))
             cs.arena = "&" + ida
             bda := _block(&cs, b, ind + "        ")
             pop(cs.lpost)
+            pop(cs.lmark)
             pop(cs.ascope)
             cs.loopdepth -= 1
             cs.arena = sva

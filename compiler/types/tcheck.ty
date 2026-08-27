@@ -655,6 +655,11 @@ fn _sig_of(cs: inout C, prefix: string, fd: ast.Fn) -> FSig:
         _cperr(&cs, "extern fn '" + fd.name + "': return type must be int/char/float/bool/string/ptr/bytes, [int]/[float], Option(string), a handle, or omitted")
     if _head(rt) == "chan":
         _cperr(&cs, "a function cannot return a channel -- create it in the owning scope and pass it down")
+    # An `extern fn` opener is the only producer: its return is where a handle
+    # enters the program. A Tycho fn returning one hands out a second owner of
+    # a pointer its own scope exit already freed.
+    if not fd.is_extern and _aff_kind(&cs, rt) == "handle":
+        _cperr(&cs, "a Tycho fn cannot return a handle -- only an `extern fn` opener may, because a handle is freed at the end of its scope")
     nm := prefix + fd.name
     if fd.is_extern:
         nm = fd.name
@@ -1384,7 +1389,12 @@ fn _check_args(cs: inout C, name: string, si: int, args: [ast.Expr], line: int):
                     _cerr(&cs, "argument " + str(i + 1) + " of '" + name + "' is inout; pass it as '&variable'")
             elif args[i] is ast.Addr:
                 _cerr(&cs, "argument " + str(i + 1) + " of '" + name + "' is not inout; remove the '&'")
-            if not compat(at, want):
+            # is_null asks whether an opener FAILED, so it takes a handle as well
+            # as a ptr -- and nothing else, or the exception would swallow int.
+            ok9 := compat(at, want)
+            if not ok9 and name == "is_null" and want == "ptr" and _aff_kind(&cs, at) == "handle":
+                ok9 = true
+            if not ok9:
                 _cerr(&cs, "argument " + str(i + 1) + " of '" + name + "' is " + _show(&cs, at) + ", expected " + _show(&cs, want))
                 _nt_note(&cs, at, want)
         cs.line = ast.line_of(args[i])
