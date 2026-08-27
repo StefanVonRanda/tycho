@@ -914,7 +914,7 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
             if h == "map":
                 kt := _targs(rt)[0]
                 if not compat(kt, it):
-                    _cerr(&cs, "map key must be " + kt + ", got " + it)
+                    _cerr(&cs, "map key must be " + _show(&cs, kt) + ", got " + _show(&cs, it))
                 return _targs(rt)[1]
             if h == "tup":
                 _cerr(&cs, "a tuple element is named `.0`, `.1`, ... not `[i]` -- the index must be a constant position, so it is not a subscript")
@@ -1315,7 +1315,9 @@ fn _binop(cs: inout C, op: string, k: [ast.Expr]) -> string:
     li := _tdecl(&cs, lt)
     ri := _tdecl(&cs, rt)
     if li >= 0 and ri >= 0 and cs.tds[li].kind == "newtype" and cs.tds[ri].kind == "newtype" and lt != rt:
-        _cerr(&cs, "arithmetic on two different newtypes: '" + _short(cs.tds[li].name) + "' and '" + _short(cs.tds[ri].name) + "' are distinct types even though both are represented as their base")
+        # _short drops the package outright; a diagnostic has to print what the
+        # source can type, and money.Cents is not spellable as Cents.
+        _cerr(&cs, "arithmetic on two different newtypes: '" + _show(&cs, "@" + cs.tds[li].name) + "' and '" + _show(&cs, "@" + cs.tds[ri].name) + "' are distinct types even though both are represented as their base")
         return "?"
     if li >= 0 or ri >= 0:
         return "?"                     # a same-newtype operand keeps its type
@@ -2073,7 +2075,7 @@ fn _place_ty(cs: inout C, e: ast.Expr) -> string:
             if h == "map":
                 kt := _targs(rt)[0]
                 if not compat(kt, it):
-                    _cerr(&cs, "map key must be " + kt + ", got " + it)
+                    _cerr(&cs, "map key must be " + _show(&cs, kt) + ", got " + _show(&cs, it))
                 return _targs(rt)[1]
             return _elem_of(&cs, rt)
         ast.Field(l, k, f):
