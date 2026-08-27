@@ -145,8 +145,19 @@ fn _pkgflags(p: types.Program) -> [string]:
         seen[f.dir] = true
         match io.read_text(f.dir + "/deps"):
             Ok(txt):
+                win := false
                 for ln in split(txt, "\n"):
                     t := strings.trim(ln)
+                    # Everything after `_WIN32:` is RAW linker flags for the
+                    # Windows build (-lws2_32, -lpcre2-posix). They are not
+                    # pkg-config names, and a non-Windows compiler skips the
+                    # whole section (src/tychoc.c:5326). Reading them as package
+                    # names made pkg-config fail and net/tls/httpd/regex SKIP.
+                    if t == "_WIN32:":
+                        win = true
+                        continue
+                    if win:
+                        continue
                     if len(t) == 0 or t[0] == 35 or (t in seen):
                         continue
                     seen[t] = true
@@ -272,9 +283,14 @@ fn print_deps(src_path: string, argv0: string):
         seen[f.dir] = true
         match io.read_text(f.dir + "/deps"):
             Ok(txt):
+                win2 := false
                 for ln in split(txt, "\n"):
                     t := strings.trim(ln)
-                    if len(t) > 0 and t[0] != 35 and not (t in seen):
+                    # `_WIN32:` flags are never listed: they are raw linker
+                    # flags, not probe-able pkg-config names.
+                    if t == "_WIN32:":
+                        win2 = true
+                    if not win2 and len(t) > 0 and t[0] != 35 and not (t in seen):
                         seen[t] = true
                         out = out + t + "\n"
             Err(e): pass

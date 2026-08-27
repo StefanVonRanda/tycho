@@ -3361,7 +3361,11 @@ fn _call(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], args: [ast.Ex
                 ov2 := _fresh(&cs, "_ov")
                 return ("({ const char *" + xv + " = " + out2 + "); E_" + en + " *" + ov2 +
                     " = &_sing_" + en + "_" + str(_tag(&cs, oi, "None")) + "; if (" + xv + ") { " +
-                    ov2 + " = (E_" + en + " *)arena_alloc(&_scope, offsetof(E_" + en +
+                    # cs.arena, NOT &_scope: this is a RETURN value in io.read_line,
+                    # and _scope is freed on the same line. Three consecutive reads
+                    # then aliased one recycled block -- line1 printed "two" and the
+                    # third read found a garbage tag ("non-exhaustive match").
+                    ov2 + " = (E_" + en + " *)arena_alloc(" + cs.arena + ", offsetof(E_" + en +
                     ", u) + sizeof(E_" + en + "_Some)); " + ov2 + "->tag = " +
                     str(_tag(&cs, oi, "Some")) + "; " + ov2 + "->u.Some.f0 = tycho_str_from_c(" +
                     cs.arena + ", " + xv + "); } " + ov2 + "; })", ot)
