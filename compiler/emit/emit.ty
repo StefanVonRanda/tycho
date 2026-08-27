@@ -3594,12 +3594,11 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
         # array that also lives there is already where it belongs; a place is
         # still somebody else's and copies. Narrow on purpose: evaluating the
         # value in `ow` instead reddened 190 fixtures.
-        # "Built in ow" is not "whole in ow": a constructed struct can be
-        # allocated in the destination arena and still hold a string built in
-        # the loop scratch, which the next arena_reset takes (tycho-q lexed
-        # `==` and pushed a token whose text read back empty). Only _shares
-        # may skip the copy now.
-        if _heap(&cs, et) and not _shares(&cs, args[1], et, ow):
+        # A value the expression built in `va` is already whole there, so a
+        # push into an array owned by the SAME arena needs nothing; the q
+        # defect this once guarded against was upstream, at the declaration.
+        if _heap(&cs, et) and (_place(args[1]) or ow != va) and
+                not _shares(&cs, args[1], et, ow):
             vc = _copy(&cs, vc, et, ow)
         pc9 := _arrf(&cs, et, "_push") + "(" + ow + ", &(" + rc + "), " + vc + ")"
         if cap9 > 0:
