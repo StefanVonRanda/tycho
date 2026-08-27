@@ -1283,7 +1283,7 @@ fn _show(cs: inout C, t: string) -> string:
         return m
     return t
 
-# --- `parallel for` body rules (src/tychoc.c@parfor_check) --------------------
+# --- `parallel for` body rules (src/tychoc.c@pf_scan_stmt) --------------------
 #
 # The chunks run concurrently over one shared frame, so the body may not steer
 # control flow out of itself, and may touch an outer variable only as a
