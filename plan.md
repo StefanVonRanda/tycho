@@ -2879,3 +2879,24 @@ in every self-recursive function so a correct program crashes. Asked, and the
 answer was **leave it**. prog-deep-big, prog-deep-small and prog-deep-spawn stay
 red until the lane is taught that a tail-optimised program may legitimately
 succeed. Do not "fix" tychoc1 to fail here.
+
+
+### SETTLED 2026-08-29: --symbols type qualification cannot be matched, and should not be
+
+src/tychoc.c@nominal_name turns `pkg__Name` into `pkg.Name` only when
+is_imported_pkg(pkg) holds, and that filters g_imports by **g_srcname** -- set
+per file at parse time and never reassigned between parsing and emit_symbols
+(read src/tychoc.c:14392-14476). Qualification is therefore decided by whichever
+file the parser happened to finish with.
+
+Two observations, both explained by it and by nothing else:
+- a probe whose entry imports aa and bb, with aa importing cc: aa.Rec and
+  bb.Box qualify, cc__Deep does not.
+- tools/tycho-make: graph.MakeErr and strings.IntErr qualify, build__BuildErr
+  does not -- although main.ty DOES `import "build"` and does NOT import
+  strings.
+
+tychoc1 qualifies unconditionally. It scores better against the reference
+anyway (tycho-make 464 exact rows against 450 for the closest reading of
+is_imported_pkg), and the alternative is reproducing a global-state artefact.
+Do not "fix" this to match.

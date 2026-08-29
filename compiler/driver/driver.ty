@@ -488,7 +488,7 @@ fn type_census(src_path: string, argv0: string):
 # `pk` is the package name ("cli") and `own` the type names that package
 # declares. A TName written bare but DECLARED here prints qualified, which
 # is what the reference does: `-> cli.Cli`, not `-> Cli`.
-fn _ty_src(t: ast.Ty, pk: string, own: [string: bool]) -> string:
+fn _ty_src(t: ast.Ty, pk: string, own: [string: bool], imp: [string: string]) -> string:
     match t:
         ast.TPrim(n): return n
         ast.TParam(n): return "$" + n
@@ -497,6 +497,15 @@ fn _ty_src(t: ast.Ty, pk: string, own: [string: bool]) -> string:
             if len(q) > 0:
                 base = q + "." + n
             elif len(pk) > 0 and (n in own):
+                # ALWAYS qualified, deliberately unlike the reference. src/tychoc.c
+                # gates this on is_imported_pkg, which filters g_imports by
+                # g_srcname -- a global left pointing at whichever file the parser
+                # finished with (no assignment between parse and emit_symbols,
+                # src/tychoc.c:14392-14476). So the SAME type prints `graph.MakeErr`
+                # and `build__BuildErr` in one run, and tools/tycho-make/main.ty
+                # imports build either way. Matching that means reproducing a load
+                # order, not a rule. Unconditional also scores better: tycho-make
+                # 464 rows against 450 for the closest reading of the reference.
                 base = pk + "." + n
             if len(a) == 0:
                 return base
@@ -504,30 +513,30 @@ fn _ty_src(t: ast.Ty, pk: string, own: [string: bool]) -> string:
             for i := 0; i < len(a); i += 1:
                 if i > 0:
                     out = out + ", "
-                out = out + _ty_src(a[i], pk, own)
+                out = out + _ty_src(a[i], pk, own, imp)
             return out + ")"
         ast.TArr(e):
             if len(e) == 1:
-                return "[" + _ty_src(e[0], pk, own) + "]"
+                return "[" + _ty_src(e[0], pk, own, imp) + "]"
         ast.TFix(n, e):
             if len(e) == 1:
-                return "[" + n + "]" + _ty_src(e[0], pk, own)
+                return "[" + n + "]" + _ty_src(e[0], pk, own, imp)
         ast.TMap(e):
             if len(e) == 2:
-                return "[" + _ty_src(e[0], pk, own) + ": " + _ty_src(e[1], pk, own) + "]"
+                return "[" + _ty_src(e[0], pk, own, imp) + ": " + _ty_src(e[1], pk, own, imp) + "]"
         ast.TTup(e):
             out2 := "("
             for i := 0; i < len(e); i += 1:
                 if i > 0:
                     out2 = out2 + ", "
-                out2 = out2 + _ty_src(e[i], pk, own)
+                out2 = out2 + _ty_src(e[i], pk, own, imp)
             return out2 + ")"
         ast.TSoa(e):
             if len(e) == 1:
-                return "soa [" + _ty_src(e[0], pk, own) + "]"
+                return "soa [" + _ty_src(e[0], pk, own, imp) + "]"
         ast.TBnd(n, e):
             if len(e) == 1:
-                return "bounded[" + n + "]" + _ty_src(e[0], pk, own)
+                return "bounded[" + n + "]" + _ty_src(e[0], pk, own, imp)
         ast.TFn(hr, e):
             out3 := "fn("
             np := len(e)
@@ -536,10 +545,10 @@ fn _ty_src(t: ast.Ty, pk: string, own: [string: bool]) -> string:
             for i := 0; i < np; i += 1:
                 if i > 0:
                     out3 = out3 + ", "
-                out3 = out3 + _ty_src(e[i], pk, own)
+                out3 = out3 + _ty_src(e[i], pk, own, imp)
             out3 = out3 + ")"
             if hr and len(e) > 0:
-                out3 = out3 + " -> " + _ty_src(e[len(e) - 1], pk, own)
+                out3 = out3 + " -> " + _ty_src(e[len(e) - 1], pk, own, imp)
             return out3
         _: pass
     return "?"
@@ -551,38 +560,49 @@ fn _ty_src(t: ast.Ty, pk: string, own: [string: bool]) -> string:
 # Prints per record. Accumulating into one string is quadratic under value
 # semantics -- every `out = out + x` copies the whole buffer -- and over a
 # corelib-sized program that never finished.
-fn _sym_locals(b: [ast.Stmt], fnline: int, pk: string, own: [string: bool]):
+fn _sym_locals(b: [ast.Stmt], fnline: int, pk: string, own: [string: bool], imp: [string: string]):
     for s in b:
         match s:
             ast.Decl(l, n, t, r, v):
                 ty9 := "?"
                 if len(t) == 1:
-                    ty9 = _ty_src(t[0], pk, own)
+                    ty9 = _ty_src(t[0], pk, own, imp)
                 print("local\t" + n + "\t" + ty9 + "\t" + str(fnline) + "\t" + str(l) + "\n")
             ast.MDecl(l, d, ns, r):
                 for n2 in ns:
                     print("local\t" + n2 + "\t?\t" + str(fnline) + "\t" + str(l) + "\n")
             ast.IfS(l, c, bb, e):
-                _sym_locals(bb, fnline, pk, own)
-                _sym_locals(e, fnline, pk, own)
-            ast.WhileS(l, c, bb): _sym_locals(bb, fnline, pk, own)
+                _sym_locals(bb, fnline, pk, own, imp)
+                _sym_locals(e, fnline, pk, own, imp)
+            ast.WhileS(l, c, bb): _sym_locals(bb, fnline, pk, own, imp)
             ast.For3(l, ip, c, bb):
-                _sym_locals(ip, fnline, pk, own)
-                _sym_locals(bb, fnline, pk, own)
-            ast.ForIn(l, n, c, bb): _sym_locals(bb, fnline, pk, own)
-            ast.ForRange(l, n, c, bb): _sym_locals(bb, fnline, pk, own)
+                _sym_locals(ip, fnline, pk, own, imp)
+                _sym_locals(bb, fnline, pk, own, imp)
+            ast.ForIn(l, n, c, bb): _sym_locals(bb, fnline, pk, own, imp)
+            ast.ForRange(l, n, c, bb): _sym_locals(bb, fnline, pk, own, imp)
             ast.MatchS(l, sj, arms):
                 for a in arms:
-                    _sym_locals(a.body, fnline, pk, own)
+                    _sym_locals(a.body, fnline, pk, own, imp)
             ast.SelectS(l, arms):
                 for a in arms:
-                    _sym_locals(a.body, fnline, pk, own)
+                    _sym_locals(a.body, fnline, pk, own, imp)
             _: pass
     return
 
 fn emit_symbols(src_path: string, argv0: string):
     p := types.Program([]types.File, "", "", "", "")
     types.load_into(src_path, argv0, &p)
+    # the entry file's imports, base name -> the alias the source wrote
+    imp := []string: string
+    for f0 in p.files:
+        if f0.pkg != p.entry_pkg or f0.dir != p.entry_dir:
+            continue
+        for im in f0.unit.imports:
+            b9 := types.pkg_basename(im.path)
+            if len(im.alias) > 0:
+                imp[b9] = im.alias
+            else:
+                imp[b9] = b9
     for f in p.files:
         pk := f.pkg
         own := []string: bool
@@ -605,18 +625,24 @@ fn emit_symbols(src_path: string, argv0: string):
                     sig = sig + ", "
                 pt := "?"
                 if len(fd.params[j].ty) == 1:
-                    pt = _ty_src(fd.params[j].ty[0], pk, own)
+                    pt = _ty_src(fd.params[j].ty[0], pk, own, imp)
+                    # `...$T` IS the array: the AST keeps the element type and
+                    # the flag, the reference prints [$T].
+                    if fd.params[j].is_variadic:
+                        pt = "[" + pt + "]"
                 sig = sig + fd.params[j].name + ": " + pt
             sig = sig + ")"
             if len(fd.ret) == 1:
-                sig = sig + " -> " + _ty_src(fd.ret[0], pk, own)
+                sig = sig + " -> " + _ty_src(fd.ret[0], pk, own, imp)
             print("fn\t" + nm9 + "\t" + str(fd.line) + "\t" + sig + "\n")
             for j := 0; j < len(fd.params); j += 1:
                 pt2 := "?"
                 if len(fd.params[j].ty) == 1:
-                    pt2 = _ty_src(fd.params[j].ty[0], pk, own)
+                    pt2 = _ty_src(fd.params[j].ty[0], pk, own, imp)
+                    if fd.params[j].is_variadic:
+                        pt2 = "[" + pt2 + "]"
                 print("param\t" + fd.params[j].name + "\t" + pt2 + "\t" + str(fd.line) + "\n")
-            _sym_locals(fd.body, fd.line, pk, own)
+            _sym_locals(fd.body, fd.line, pk, own, imp)
     # The reference prints every struct and enum AFTER all functions
     # (src/tychoc.c@emit_symbols), not interleaved per file.
     for f in p.files:
@@ -630,8 +656,8 @@ fn emit_symbols(src_path: string, argv0: string):
             print("struct\t" + f.prefix + sd.name + "\t" + str(sd.line) + "\n")
             for j := 0; j < len(sd.fields); j += 1:
                 print("field\t" + f.prefix + sd.name + "\t" + sd.fields[j].name + "\t" +
-                    _ty_src(sd.fields[j].ty, pk, own) + "\n")
+                    _ty_src(sd.fields[j].ty, pk, own, imp) + "\n")
         for ed in f.unit.enums:
             print("enum\t" + f.prefix + ed.name + "\t" + str(ed.line) + "\n")
             for j := 0; j < len(ed.variants); j += 1:
-                print("variant\t" + f.prefix + ed.name + "\t" + ed.variants[j].name + "\n")
+                print("variant\t" + f.prefix + ed.name + "\t" + f.prefix + ed.variants[j].name + "\n")
