@@ -177,6 +177,13 @@ struct C:
 # The offending source line beneath the message, the shape every
 # tests/diag/*.err golden pins. Same rule as resolve.ty@_excerpt.
     pfacc: [string]                    # reduction accumulators of the enclosing parallel for
+    symrows: [string]                  # --symbols: one `local` row per declaration
+    symon: bool                        # ...recorded only when --symbols asked for it
+    symfn: int                         # the enclosing fn's line, the row's 4th field
+    symfnm: string                     # ...and its MANGLED name: two files can put
+                                       # two functions on the same line (cli__is_short
+                                       # and main are both line 44 in tycho-stat), and
+                                       # a line-keyed bucket merges them
 
 fn _cexcerpt(cs: inout C, file: string, line: int) -> string:
     if line <= 0:
@@ -2145,6 +2152,9 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
             if len(ty) == 1:
                 t = want
             _tnote(&cs, "d:" + t)
+            if cs.symon:
+                push(cs.symrows, cs.symfnm + "\nlocal\t" + name + "\t" + _show(&cs, t) + "\t" +
+                    str(cs.symfn) + "\t" + str(l))
             _vpush(&cs, name, t, true)
         ast.MDecl(l, isdecl, names, rhs):
             t := "?"
@@ -2158,6 +2168,9 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
                     et = els[i]
                 if isdecl:
                     _tnote(&cs, "m:" + et)
+                    if cs.symon:
+                        push(cs.symrows, cs.symfnm + "\nlocal\t" + names[i] + "\t" + _show(&cs, et) +
+                            "\t" + str(cs.symfn) + "\t" + str(l))
                     _vpush(&cs, names[i], et, true)
                 else:
                     _assign_check(&cs, names[i], et)
@@ -2433,10 +2446,20 @@ fn _infinite_check(cs: inout C):
         cs.line = cs.tds[best].line
         _cerr(&cs, "infinite type: " + cs.tds[best].name + " contains itself by value -- use an array ([" + cs.tds[best].name + "]) or Option([" + cs.tds[best].name + "]) for indirection")
 
+# --symbols wants the INFERRED type of every local, which only the checker
+# knows. Same walk as check(), with the recording switched on.
+fn check_syms(p: Program) -> [string]:
+    cs := check_on(p, true)
+    return cs.symrows
+
 fn check(p: Program) -> C:
+    return check_on(p, false)
+
+fn check_on(p: Program, syms: bool) -> C:
     cs := C([]string, -1, []string: bool, []string: bool, 0, []string, []string, []TDecl, []string: int, []FSig, []string: int, []string: string, []string: string,
             []string: string, []string: int, []string: bool, []string: string, []string: bool, []VBind, 0, []string, []string,
-            []string: int, "", 0, "", "?", false, false, []ast.ImportD, []ast.ImportD, false, 0, 0, false, 0, []string: int, []string: bool, []string: bool, 0, 0, false, []string)
+            []string: int, "", 0, "", "?", false, false, []ast.ImportD, []ast.ImportD, false, 0, 0, false, 0, []string: int, []string: bool, []string: bool, 0, 0, false, []string, []string, false, 0, "")
+    cs.symon = syms
     for f in p.files:
         push(cs.srcp, f.path)
         push(cs.srct, f.src)
@@ -2458,6 +2481,8 @@ fn check(p: Program) -> C:
             if si < 0:
                 continue
             cs.line = fd.line
+            cs.symfn = fd.line
+            cs.symfnm = f.prefix + fd.name
             cs.ment = _mentions(fd.body)
             cs.sinkp = []string: bool
             cs.parms = []string: bool

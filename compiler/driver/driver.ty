@@ -592,6 +592,22 @@ fn _sym_locals(b: [ast.Stmt], fnline: int, pk: string, own: [string: bool], imp:
 fn emit_symbols(src_path: string, argv0: string):
     p := types.Program([]types.File, "", "", "", "")
     types.load_into(src_path, argv0, &p)
+    # the checker's inferred type for every local, bucketed by the fn it is in.
+    # The AST alone cannot supply it: `a := args()` carries no annotation.
+    # keyed by the fn's MANGLED NAME, not its line: cli__is_short and main are
+    # both on line 44 of tools/tycho-stat, and a line bucket merged them, which
+    # printed every local of both twice.
+    lrows := []string: [string]
+    for r9 in types.check_syms(p):
+        k9 := 0
+        for k9 < len(r9) and r9[k9] != 10:
+            k9 += 1
+        key9 := r9[0:k9]
+        cur9 := []string
+        if key9 in lrows:
+            cur9 = lrows[key9]
+        push(cur9, r9[k9 + 1:])
+        lrows[key9] = cur9
     # the entry file's imports, base name -> the alias the source wrote
     imp := []string: string
     for f0 in p.files:
@@ -642,7 +658,9 @@ fn emit_symbols(src_path: string, argv0: string):
                     if fd.params[j].is_variadic:
                         pt2 = "[" + pt2 + "]"
                 print("param\t" + fd.params[j].name + "\t" + pt2 + "\t" + str(fd.line) + "\n")
-            _sym_locals(fd.body, fd.line, pk, own, imp)
+            if nm9 in lrows:
+                for lr in lrows[nm9]:
+                    print(lr + "\n")
     # The reference prints every struct and enum AFTER all functions
     # (src/tychoc.c@emit_symbols), not interleaved per file.
     for f in p.files:
