@@ -13936,6 +13936,11 @@ static char *strip_ext(const char *path) {
 }
 
 /* directory of a path: "proj/geom/point.ty" -> "proj/geom"; "main.ty" -> "." */
+/* gap: '/' only. A native Windows entry path -- `tychoc Z:\dir\main.ty` --
+ * yields "." and dies "package directory . has no .ty files". Not fixed with
+ * the under_corelib separator bug beside it because no lane passes that form:
+ * scripts/wine_corelib.sh and wine_test.sh both hand over relative,
+ * forward-slash paths. Observed 2026-08-30 under wine. */
 static char *path_dir(const char *p) {
     const char *slash = strrchr(p, '/');
     return slash ? xstrndup(p, (size_t)(slash - p)) : xstrndup(".", 1);
@@ -13978,7 +13983,18 @@ static int under_corelib(const char *dir) {
     if (!root) return 0;
     char *cd = canon_dir(dir), *cr = canon_dir(root);
     size_t n = strlen(cr);
+    /* _fullpath returns BACKSLASHES, so the boundary after the root is '\\' and
+     * a '/'-only test answered "not under corelib" for every corelib file on
+     * Windows. src_in_corelib then stopped suppressing the unused-local check
+     * and corelib/test/io and /httpd -- which declare unused locals on purpose
+     * ("unprinted: prior state is unknown") -- failed to EMIT under
+     * scripts/wine_corelib.sh. Guarded so the POSIX build is byte-identical:
+     * a backslash is a legal filename character there. */
+#ifdef _WIN32
+    int r = !strncmp(cd, cr, n) && (cd[n] == '/' || cd[n] == '\\' || cd[n] == '\0');
+#else
     int r = !strncmp(cd, cr, n) && (cd[n] == '/' || cd[n] == '\0');
+#endif
     free(cd); free(cr);
     return r;
 }

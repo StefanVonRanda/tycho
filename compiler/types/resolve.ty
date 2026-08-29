@@ -257,7 +257,7 @@ fn _ends_ret(body: [ast.Stmt]) -> bool:
     return false
 
 fn _warn(rs: inout R, msg: string):
-    # A dependency under corelib is not the caller's to fix (src/tychoc.c:14097).
+    # A dependency under corelib is not the caller's to fix (src/tychoc.c:14113).
     if not rs.entry_in_corelib and strings.contains(rs.file, "corelib/"):
         return
     push(rs.warns, rs.file + ":" + str(rs.line) + ": warning: " + msg +
