@@ -930,9 +930,9 @@ self-built twice, the two emitted `.c` identical.
   at `TYCHO_THREADS=4`. The same command on `./tychoc` at the same throttle is
   fine, so the harness and the parallelism are not the cause. Every `tychoc1`
   invocation gets `ulimit -v 2000000` and a `timeout`, run sequentially. The
-  bounded sweep is `scripts/tychoc1_sweep.sh` and takes ~2 min.
+  bounded sweep is `scripts/tychoc1_check.sh` and takes ~2 min.
 
-  **Measured, bounded, 2026-08-23** (`sh scripts/tychoc1_sweep.sh`):
+  **Measured, bounded, 2026-08-23** (`sh scripts/tychoc1_check.sh`):
 
   ```
   compile=77 clean-error=197 TIMEOUT=0 KILLED=0
@@ -963,10 +963,10 @@ self-built twice, the two emitted `.c` identical.
   - Done when: the bounded sweep's `clean-error` count falls and `MATCH` rises,
     both stated. Phase 8's subjects (maps, soa, generics, affine, concurrency)
     are excluded and stay Phase 8's.
-  - Verify: `sh scripts/tychoc1_sweep.sh` — never an unbounded `make test`.
+  - Verify: `sh scripts/tychoc1_check.sh` — never an unbounded `make test`.
 
   **STILL PARTIAL, committed unticked 2026-08-23 (second pass).**
-  `sh scripts/tychoc1_sweep.sh`, before and after this pass:
+  `sh scripts/tychoc1_check.sh`, before and after this pass:
 
   ```
   before  tests: compile=201 clean-error=73 link=201 RUN=201 MATCH=199
@@ -1046,7 +1046,7 @@ self-built twice, the two emitted `.c` identical.
   monomorphiser had no cap and allocated until the kernel killed it.
 
   **Why only the full suite died:** `tests/reject/` is outside
-  `scripts/tychoc1_sweep.sh`'s corpus, so every bounded sweep run to date was
+  `scripts/tychoc1_check.sh`'s corpus, so every bounded sweep run to date was
   green while the one fixture that kills the box sat just outside it.
 
   Fixed in `compiler/emit/emit.ty@_inst_cap`, called from all three
@@ -1065,7 +1065,7 @@ self-built twice, the two emitted `.c` identical.
   covered every corpus `tests/run.sh` walks from the start, not just
   `tests/*.ty`. Phase 7d widens it.
 
-- [x] **Phase 7d — `scripts/tychoc1_sweep.sh` covers only `tests/*.ty`**
+- [x] **Phase 7d — `scripts/tychoc1_check.sh` covers only `tests/*.ty`**
   - Scope: the sweep script. `tests/run.sh` also walks `examples/*.ty`,
     `tests/pkg/`, `tests/reject/`, `tests/reject/pkg/`, `tests/abort/`,
     `tests/diag/`, `tests/warn/` and `tests/warn/pkg/`. Phase 7c found the
@@ -1115,7 +1115,7 @@ self-built twice, the two emitted `.c` identical.
 
 - [ ] **Phase 7e — multi-package emit: 16 of 23 `tests/pkg/` fixtures**
 
-  **PARTIAL, committed unticked.** `sh scripts/tychoc1_sweep.sh`:
+  **PARTIAL, committed unticked.** `sh scripts/tychoc1_check.sh`:
 
   | line | before | after |
   |---|---|---|
@@ -1139,7 +1139,7 @@ self-built twice, the two emitted `.c` identical.
   (`sized_pkg`), `extern` functions (`corelib_variant_shadow`, `vendor_deps`).
 
   - Done when: all 23 compile and match.
-  - Verify: `sh scripts/tychoc1_sweep.sh`, the `tests/pkg` line.
+  - Verify: `sh scripts/tychoc1_check.sh`, the `tests/pkg` line.
   - Negative control, observed: `_pfx` forced to `""` drops `tests/pkg` to
     compile=1 MATCH=1 and `tests` MATCH to 198; reverting restores 16/16/199.
 
@@ -1151,7 +1151,7 @@ self-built twice, the two emitted `.c` identical.
     died on an unknown call — a refusal for the wrong reason.
   - Scope: `compiler/types/`. Re-check a generic body against each binding.
   - Done when: `reject/pkg` is back to refused=17/17.
-  - Verify: `sh scripts/tychoc1_sweep.sh`, the `reject/pkg` line.
+  - Verify: `sh scripts/tychoc1_check.sh`, the `reject/pkg` line.
 
 - [ ] **Phase 7f — one reject fixture still compiles, and 17 abort fixtures do**
   - `reject accepted=1` of 337, and `abort refused=2 accepted=17`. The abort
@@ -1160,7 +1160,7 @@ self-built twice, the two emitted `.c` identical.
     from a compile that merely succeeded.
   - Done when: the 1 accepted reject fixture is named and refused, and the
     abort corpus is scored on its exit status rather than on compiling.
-  - Verify: `sh scripts/tychoc1_sweep.sh` with an abort leg that reads exit
+  - Verify: `sh scripts/tychoc1_check.sh` with an abort leg that reads exit
     status, plus the named reject fixture refused.
 
 - [ ] **Phase 8 — codegen: maps, soa, generics, affine, concurrency**
@@ -1168,7 +1168,7 @@ self-built twice, the two emitted `.c` identical.
     handle destructors, `spawn`/`channel`/`select`, `parallel for`.
   - Done when: `TYCHOC=./tychoc1 make test` is green at the same count as
     `./tychoc` — **752**, measured 2026-08-23; the "719" this said was stale.
-  - Verify: `sh scripts/tychoc1_sweep.sh` — never an unbounded `make test`.
+  - Verify: `sh scripts/tychoc1_check.sh` — never an unbounded `make test`.
 
   ### The soa target, read out of `./tychoc`'s own output
 
@@ -1217,7 +1217,7 @@ self-built twice, the two emitted `.c` identical.
   correctly while exactly one id addresses somebody else, and a golden
   re-recorded from that build agrees with it.
 
-  **PARTIAL, committed unticked.** `sh scripts/tychoc1_sweep.sh` moved
+  **PARTIAL, committed unticked.** `sh scripts/tychoc1_check.sh` moved
   `compile=126 clean-error=148 / link=125 RUN=125 MATCH=122` to
   `compile=201 clean-error=73 / link=201 RUN=201 MATCH=199`, with
   `TIMEOUT=0 KILLED=0` throughout. **Maps and generics are done; soa, channels
@@ -1297,7 +1297,7 @@ self-built twice, the two emitted `.c` identical.
 
 - [ ] **Phase 8b — one fixture's sweep verdict is not reproducible** (found in
   Phase 8, out of scope there)
-  - Five consecutive `sh scripts/tychoc1_sweep.sh` runs on the same binary read
+  - Five consecutive `sh scripts/tychoc1_check.sh` runs on the same binary read
     `MATCH=199` four times and `198` once. The 198 was not reproduced and the
     fixture was not identified; `bad.sh`-style per-fixture reruns were stable at
     the same two mismatches three times over.
@@ -1319,7 +1319,7 @@ self-built twice, the two emitted `.c` identical.
     compiling, with no diagnostic naming the cap.
   - Scope: replace the depth cap with a visited set over struct/tuple ids.
   - Done when: the recursive shapes still terminate and no legal depth is cut.
-  - Verify: `sh scripts/tychoc1_sweep.sh` unmoved, plus a probe nesting a
+  - Verify: `sh scripts/tychoc1_check.sh` unmoved, plus a probe nesting a
     hashable struct 12 deep and keying a map on it.
 
 - [ ] **Phase 10a — `io.read_text` is miscompiled: the fixpoint's real blocker**
@@ -1490,7 +1490,7 @@ self-built twice, the two emitted `.c` identical.
     Errors are `expr:ChanE`, `generic type 'Channel'`, `stmt:ParallelS`.
   - **This is the one lane that can HANG THE MACHINE rather than print a wrong
     answer.** Three sessions were already killed by an unbounded `tychoc1` run
-    (Phase 7c). Every probe goes through `scripts/tychoc1_sweep.sh` or the same
+    (Phase 7c). Every probe goes through `scripts/tychoc1_check.sh` or the same
     `ulimit -v 2000000` + `timeout` wrapper, sequentially; a miscompiled spawn
     shows up as the sweep's TIMEOUT/KILLED columns, which fail it by design.
   - **`parallel for` is not a small arm** — read from
@@ -1510,7 +1510,7 @@ self-built twice, the two emitted `.c` identical.
     mistake that cost four non-linking files in the element-wise work.
   - Done when: the sweep's `tests` MATCH rises by up to 8 with
     `TIMEOUT=0 KILLED=0` still holding.
-  - Verify: `sh scripts/tychoc1_sweep.sh`, plus a DETERMINISM leg — any
+  - Verify: `sh scripts/tychoc1_check.sh`, plus a DETERMINISM leg — any
     spawn/channel fixture must give identical output over at least 5 runs,
     because a golden that matches once proves nothing when scheduling is
     involved.
@@ -1529,7 +1529,7 @@ self-built twice, the two emitted `.c` identical.
     nothing; the size has to survive in emit's type STRING first, which
     touches every array path (`_is_arr`, `_elem`, `_apfx`, the array defs).
   - Done when: both fixtures match, and the sweep's other counts do not fall.
-  - Verify: `sh scripts/tychoc1_sweep.sh`, plus a control that makes the two
+  - Verify: `sh scripts/tychoc1_check.sh`, plus a control that makes the two
     instances share one N and shows the count drop — two call sites with
     DIFFERENT lengths must produce two instances, which is the whole feature.
 
@@ -1799,7 +1799,7 @@ self-built twice, the two emitted `.c` identical.
     2026-08-23 and reverted. The order is a real dependency graph, not a list,
     and it needs solving as one.
   - Done when: `tests` `link` equals `compile` in the sweep, with MATCH >= 230.
-  - Verify: `sh scripts/tychoc1_sweep.sh` only. Never an unbounded `make test`.
+  - Verify: `sh scripts/tychoc1_check.sh` only. Never an unbounded `make test`.
 
 ## Phase: close the compile-speed gap to ./tychoc
 
