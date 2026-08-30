@@ -58,19 +58,23 @@ too cheap to argue with. `make ci` before a substantial push is yours to run,
 and it is the only thing that covers the wide lanes — a dogfood link break or a
 cross-package mangling divergence is invisible to `make test`.
 
-**`make ci` measured 626 / 620 s over two runs on a 16-core box, 2026-08-15**
-(the sweep prints its own duration on its last line). It has grown, not shrunk:
-548 / 551 / 563 s on 2026-08-14 and 495 s on 2026-08-10, even though `make test`
-fell from ~8 min to 113 s in that window — new lanes more than absorbed the
-saving, and there are 77 steps now, including 200 fuzz seeds. `make ci N=0`, which skips
-the fuzz lanes, is **~380s** (383 / 379 / 381 s, it was 274s
-on 2026-08-10). It parallelises (`run_lanes` forks
-each lane group), though the sweep no longer costs "barely more than `make test`"
-— 620 s against 113 s is 5.5x, because `make test` stopped being the long pole.
+**`make ci` measured 899 s on a 16-core box, 2026-08-30** — one run, and the
+sweep prints its own duration on its last line, so a re-run costs nothing to
+record. It keeps growing: 495 s on 2026-08-10, 548 / 551 / 563 s on 2026-08-14,
+626 / 620 s on 2026-08-15. That is despite `make test` falling from ~8 min to
+113 s in the same window — new lanes more than absorbed the saving, and there
+are 77 steps now, including 200 fuzz seeds. **No lane was re-timed alongside the
+899 s run, so which one absorbed the last 4½ minutes is unmeasured.**
+`make ci N=0`, which skips the fuzz lanes, was **~380 s** (383 / 379 / 381 s on
+2026-08-15, 274 s on 2026-08-10) and has not been re-measured since. It
+parallelises (`run_lanes` forks each lane group), though the sweep no longer
+costs "barely more than `make test`" — 899 s against a 113 s `make test` that is
+itself a stale figure, so call it roughly 8x rather than the few percent this
+once claimed.
 
 **Two different things get confused here.** Running EVERY lane one at a time is
 slower than the sweep — the sum beats the parallel whole, so never do that. Running
-the ONE lane that can redden for your change is seconds against nine minutes, and
+the ONE lane that can redden for your change is seconds against fifteen minutes, and
 that is what the table below is for. Reach for the sweep when you cannot name a
 lane that covers what you touched, or when you want the three things no lane
 gives cheaply: the fuzz lanes, `ilp32`, and `asan-self`.
