@@ -1,6 +1,6 @@
 set -u
 cd "$(dirname "$0")/../.." || exit 2
-TYCHOC=./tychoc
+TYCHOC="${TYCHOC:-./tychoc}"
 [ -x "$TYCHOC" ] || { echo "no ./tychoc -- run 'make' first"; exit 2; }
 pkg-config --exists sqlite3 2>/dev/null || { echo "tally-check: SKIPPED (missing: sqlite3)"; exit 0; }
 RECORD="${RECORD:-0}"

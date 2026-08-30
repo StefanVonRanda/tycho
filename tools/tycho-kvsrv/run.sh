@@ -1,6 +1,6 @@
 set -u
 cd "$(dirname "$0")/../.." || exit 2
-TYCHOC=./tychoc
+TYCHOC="${TYCHOC:-./tychoc}"
 [ -x "$TYCHOC" ] || { echo "tycho-kvsrv: no ./tychoc -- run 'make' first"; exit 2; }
 export TYCHO_CORELIB="$PWD/corelib"
 RECORD="${RECORD:-0}"

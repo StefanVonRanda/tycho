@@ -1,5 +1,5 @@
 cd "$(dirname "$0")/../.." || exit 2
-TYCHOC=./tychoc
+TYCHOC="${TYCHOC:-./tychoc}"
 [ -x "$TYCHOC" ] || { echo "no ./tychoc -- run 'make' first"; exit 2; }
 CC="${CC:-cc}"
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT

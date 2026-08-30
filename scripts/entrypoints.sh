@@ -1,6 +1,6 @@
 set -u
 cd "$(dirname "$0")/.." || exit 2
-TYCHOC=./tychoc
+TYCHOC="${TYCHOC:-./tychoc}"
 [ -x "$TYCHOC" ] || { echo "entrypoints: no ./tychoc -- run 'make' first"; exit 2; }
 export TYCHO_CORELIB="$PWD/corelib"
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
@@ -33,7 +33,7 @@ done
 
 ISOLATE="bench/trie/trie.ty bench/trie/trie_pool.ty"
 
-WARNBASE=scripts/entrypoints.warn
+WARNBASE="${WARNBASE:-scripts/entrypoints.warn}"
 : > "$T/warn"
 
 n=0; fail=0

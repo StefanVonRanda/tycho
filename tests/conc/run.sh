@@ -1,7 +1,7 @@
 set -u
 cd "$(dirname "$0")/../.."
 CC="${CC:-cc}"
-TYCHOC=./tychoc
+TYCHOC="${TYCHOC:-./tychoc}"
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 # LeakSanitizer is absent from Apple's ASan; detect_leaks=1 aborts every

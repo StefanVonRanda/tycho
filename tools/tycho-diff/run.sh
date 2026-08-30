@@ -1,7 +1,7 @@
 set -eu
 
 cd "$(dirname "$0")/../.."
-TYCHOC=./tychoc
+TYCHOC="${TYCHOC:-./tychoc}"
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
 out="$T/got"

@@ -2,7 +2,7 @@ set -u
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$root" || exit 2
-TYCHOC=./tychoc
+TYCHOC="${TYCHOC:-./tychoc}"
 [ -x "$TYCHOC" ] || { echo "spec-examples: no ./tychoc — run 'make' first" >&2; exit 2; }
 CC="${CC:-cc}"
 TMP=$(mktemp -d)

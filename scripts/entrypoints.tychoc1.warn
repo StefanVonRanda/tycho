@@ -1,0 +1,6 @@
+tools/tycho-db/main.ty -> tools/tycho-db/store/store.ty:359: warning: `find` collides with the builtin of the same name -- every unqualified `find(...)` calls the BUILTIN, so this procedure is unreachable by that name (§3.7). `package main` has no package prefix to qualify with, so rename it.
+tools/tycho-grid/main.ty -> tools/tycho-grid/main.ty:108: warning: `sum_all` is deprecated: use total(g, nrows, ncols) -- sum_all walks the rows and predates the subscript
+tools/tycho-kv/main.ty -> tools/tycho-kv/main.ty:196: warning: not all paths of 'kv_lookup' return a value (a fall-off-the-end yields a zero value)
+tools/tycho-scheme/main.ty -> tools/tycho-scheme/main.ty:32: warning: not all paths of 'lookup' return a value (a fall-off-the-end yields a zero value)
+tools/tycho-sheet/main.ty -> tools/tycho-sheet/cell/dtoa.ty:12: warning: `fabs` collides with the builtin of the same name -- every unqualified `fabs(...)` calls the BUILTIN, so this procedure is unreachable by that name (§3.7). `package main` has no package prefix to qualify with, so rename it.
+tools/tycho-sheet/main.ty -> tools/tycho-sheet/cell/fold.ty:29: warning: `pow` collides with the builtin of the same name -- every unqualified `pow(...)` calls the BUILTIN, so this procedure is unreachable by that name (§3.7). `package main` has no package prefix to qualify with, so rename it.

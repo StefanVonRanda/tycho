@@ -1,7 +1,7 @@
 set -u
 cd "$(dirname "$0")/.." || exit 2
 
-TYCHOC=./tychoc
+TYCHOC="${TYCHOC:-./tychoc}"
 CC="${CC:-cc}"
 [ -x "$TYCHOC" ] || { echo "locale-check: no ./tychoc -- run 'make' first" >&2; exit 2; }
 
