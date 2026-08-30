@@ -678,12 +678,30 @@ The phases below are ranked by expected size of win. Each names the
 - [ ] **Perf 1 — per-iteration loop scratch arena**
   - `src/tychoc.c:12272` opens an `_scr<N> = arena_child(...)` per loop,
     `src/tychoc.c:12276` resets it at the top of each iteration and
-    `src/tychoc.c:12287` frees it after. `compiler/emit/` has **zero**
-    `arena_reset` and zero `_scr`: every transient goes to `&_scope`
+    `src/tychoc.c:12287` frees it after. `compiler/emit/` HAS both now
+    (5 `arena_reset`, 19 `_scr`, counted 2026-08-30 -- this line used to read
+    "zero" and is corrected, not deleted, because the phase is NOT closed): the
+    remaining transients go to `&_scope`
     (`compiler/emit/emit.ty:2250`), which lives for the whole function, so a
     loop's garbage accumulates until the function returns.
   - Evidence: dominant cause. Every 100x+ RSS row above is a loop building
     transients — strarr_build, inout_fill, iter-transform, latency.
+  - **Re-measured 2026-08-30, `sh bench/prongB/run.sh` under each compiler.**
+    Two of those rows are still red, and only under tychoc1 -- the md5 matches
+    and the row reads `ok`, so this is memory, not answers:
+
+    | workload | `./tychoc` | `./tychoc1` |
+    |---|---|---|
+    | iter-transform (reassign a loop-carried value) | 4 MB / 213 ms | **1534 MB** / 858 ms |
+    | dispatch (closures rebuilt per pass) | 1 MB / 21 ms | **62 MB** / 41 ms |
+
+    The other five workloads are within 1 MB of each other, and tychoc1 is
+    FASTER on binary_trees (242 -> 134 ms), maptree (125 -> 89) and json_parse
+    (1153 -> 767). So the scratch arena landed but does not reach these two
+    shapes. Unrelated, seen in the same run: the koka column prints nothing
+    (`md5=d41d8cd9`, the empty-string digest) on two workloads and fails the
+    harness's cross-language check under BOTH compilers -- a koka toolchain
+    problem on this box, not a Tycho defect.
   - Known hazard, already measured under "close the compile-speed gap": a naive
     per-loop reset leaked 3 fixtures because an early `return` escapes the
     scratch. The escape analysis is the work, not the arena.
