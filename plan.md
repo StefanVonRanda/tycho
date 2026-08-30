@@ -2864,39 +2864,27 @@ must not be quoted across sessions: 39/90 (geomean 1.0073) early, then 10/90 and
 12/90 (1.0577, 1.0614) back-to-back later the same day, same binaries.
 
 
-### DECIDED 2026-08-27: tychoc1 keeps tail-call optimisation; the lane's fail-closed expectation does not apply to it
+### CLOSED 2026-08-30: the recursion TCO fixtures pass under BOTH compilers
 
-tests/recursion asserts a 2,000,000-deep program dies with exit 1-127 and
-"stack overflow" on stderr. tychoc1 exits 0 and prints the RIGHT answer
-(2000001000001 and 0). It is not failing open on a crash -- there is no crash:
-tychoc1's elided `_scope` leaves the self-call in tail position and gcc turns
-the recursion into a loop, so the frames never exist. ./tychoc emits
-`arena_free(&_scope)` after the call, which blocks the tail call, so its stack
-really does overflow.
+Superseded the 2026-08-27 "leave it" entry. tychoc1 was never wrong here: a
+self-call in tail position is a loop once the emitted C has nothing after it, so
+the frames never exist and the program returns the right answer. ./tychoc emits
+arena_free(&_scope) AFTER the call, which blocks the tail call, so its stack
+really does overflow. Both behaviours are correct; the lane asserted only one of
+them.
 
-Making tychoc1 match would mean deliberately pessimising it -- keeping a barrier
-in every self-recursive function so a correct program crashes. Asked, and the
-answer was **leave it**. prog-deep-big, prog-deep-small and prog-deep-spawn stay
-red until the lane is taught that a tail-optimised program may legitimately
-succeed. Do not "fix" tychoc1 to fail here.
+tests/recursion/run.sh@progdie now takes the expected answer and accepts either
+outcome:
+  exit 0        -> stdout must EQUAL that answer
+  exit 1..127   -> stdout empty and "stack overflow" on stderr (unchanged)
+  exit >= 128   -> FAIL always, a signal is never acceptable
 
+That is STRONGER than what it asserted before, not weaker: it used to accept any
+nonzero exit and never checked what a surviving program computed. Nothing in the
+compiler changed.
 
-### SETTLED 2026-08-29: --symbols type qualification cannot be matched, and should not be
+  ./tychoc   3x "program died cleanly, rc=1"
+  ./tychoc1  3x "tail call became a loop; correct answer ...", 2000001000001 / 0 / 0
 
-src/tychoc.c@nominal_name turns `pkg__Name` into `pkg.Name` only when
-is_imported_pkg(pkg) holds, and that filters g_imports by **g_srcname** -- set
-per file at parse time and never reassigned between parsing and emit_symbols
-(read src/tychoc.c:14392-14476). Qualification is therefore decided by whichever
-file the parser happened to finish with.
-
-Two observations, both explained by it and by nothing else:
-- a probe whose entry imports aa and bb, with aa importing cc: aa.Rec and
-  bb.Box qualify, cc__Deep does not.
-- tools/tycho-make: graph.MakeErr and strings.IntErr qualify, build__BuildErr
-  does not -- although main.ty DOES `import "build"` and does NOT import
-  strings.
-
-tychoc1 qualifies unconditionally. It scores better against the reference
-anyway (tycho-make 464 exact rows against 450 for the closest reading of
-is_imported_pkg), and the alternative is reproducing a global-state artefact.
-Do not "fix" this to match.
+Controls, both observed: a deliberately wrong expected answer fails the tail-call
+branch, and a binary dying on SIGSEGV exits 139, which the >= 128 leg refuses.

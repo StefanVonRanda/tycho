@@ -128,8 +128,24 @@ progdie() {
         echo "FAIL $name (cc)"; sed 's/^/      /' "$T/$2.cc.log"; fail=1; return
     fi
     out=$("$T/$2.bin" 2>"$T/$2.err"); rc=$?
-    if [ "$rc" -eq 0 ] || [ "$rc" -ge 128 ]; then
-        echo "FAIL $name (exit $rc -- must fail closed, 1-127, never a signal)"; fail=1; return
+    # TWO legitimate outcomes, and the third argument is what makes accepting the
+    # second safe. A self-call in tail position is a LOOP once the emitted C has
+    # nothing after it, so the frames never exist and the program returns the
+    # right answer -- tychoc1 elides the function's arena and gets there, while
+    # ./tychoc emits arena_free(&_scope) after the call, blocks the tail call and
+    # really does overflow. Both are correct; only a SIGNAL, a wrong answer or a
+    # missing diagnostic is not. Requiring the answer is a stronger assertion
+    # than this lane made before: it used to accept any nonzero exit and never
+    # checked what a surviving program computed.
+    if [ "$rc" -ge 128 ]; then
+        echo "FAIL $name (exit $rc -- a signal; must never crash)"; fail=1; return
+    fi
+    if [ "$rc" -eq 0 ]; then
+        if [ "$out" != "$3" ]; then
+            echo "FAIL $name (tail-optimised to completion but printed '$out', want '$3')"; fail=1; return
+        fi
+        echo "ok    $name (tail call became a loop; correct answer '$out', no frames to exhaust)"
+        return
     fi
     if [ -n "$out" ]; then echo "FAIL $name (stdout not empty: '$out')"; fail=1; return; fi
     if ! grep -q "stack overflow" "$T/$2.err"; then
@@ -152,9 +168,9 @@ progrun() {
     echo "ok    $name (ran, output '$got')"
 }
 
-progdie "prog-deep-big"    prog_big
-progdie "prog-deep-small"  prog_small
-progdie "prog-deep-spawn"  prog_spawn
+progdie "prog-deep-big"    prog_big    2000001000001
+progdie "prog-deep-small"  prog_small  0
+progdie "prog-deep-spawn"  prog_spawn  0
 progrun "prog-ok-big"      prog_ok_big    "500501"
 progrun "prog-ok-spawn"    prog_ok_spawn  "0"
 
