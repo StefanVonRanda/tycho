@@ -943,11 +943,15 @@ fn _aff_word(k: string) -> string:
     return "channel"
 
 fn _short(m: string) -> string:
-    i := len(m) - 1
-    for i >= 1:
+    # scan LEFT to right: the package separator is the FIRST `__`, and a fn whose
+    # own name starts with `_` puts a third underscore right after it, so a
+    # right-to-left scan lands inside the separator and eats the leading `_`
+    # (`cell___fabs` read back as `fabs`, warned about colliding with the builtin)
+    i := 1
+    for i < len(m):
         if m[i] == 95 and m[i - 1] == 95:
             return m[i + 1:]
-        i -= 1
+        i += 1
     return m
 
 # `Box(ch)` / `Full(ch)`: a generic aggregate instantiated from a CONSTRUCTOR

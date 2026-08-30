@@ -475,6 +475,10 @@ fn _copylive_stmt(cs: inout C, body: [ast.Stmt], i: int):
         ast.Assign(l, n, r):
             for e in r:
                 _call_aggs(e, &cand)
+        ast.MatchS(l, c, arms):
+            # the SUBJECT only: an arm body is not `afterwards` of its own match
+            for e in c:
+                _call_aggs(e, &cand)
         ast.ReturnS(l, k): return       # a return has no `afterwards`
         _: pass
     if len(cand) == 0:

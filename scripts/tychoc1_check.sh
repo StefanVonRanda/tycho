@@ -6,14 +6,13 @@
 # an AST census, with typecheck and emit ungated. This substitutes tychoc1 into
 # the real runners rather than reimplementing their judgements.
 #
-# entrypoints gets its OWN warning baseline. tychoc1 and ./tychoc disagree on
-# six warning lines, first measured 2026-08-30 by this lane: tychoc1 raises a
-# builtin collision for store.ty@find, cell/dtoa.ty@_fabs and cell/fold.ty@_pow
-# (the last two are declared with a leading underscore and collide with nothing,
-# so they are false positives) and misses the copy-is-live warning at
-# exec.ty:107, exec.ty:119 and tycho-tally/main.ty:72. The baseline records what
-# tychoc1 does TODAY so a regression reddens; it is not an endorsement of either
-# set. Closing the gap deletes the second baseline.
+# entrypoints gets its OWN warning baseline. tychoc1 misses three copy-is-live
+# warnings ./tychoc emits -- exec.ty:107, exec.ty:119 and tycho-tally/main.ty:72.
+# All three turn on the LIVENESS MODEL, not on a missing case: zzchan.ty scans
+# for a later textual read of the name, while src/tychoc.c:10075 fires wherever
+# it decided to copy, so `hostile` warns there despite never being read again.
+# The baseline records what tychoc1 does today so a regression reddens; it is
+# not an endorsement. Closing the gap deletes the second baseline.
 #
 # Runners are invoked as `sh <dir>/run.sh`, never through make: `make conc` and
 # friends depend on the `tychoc` target and rebuild it, silently replacing a

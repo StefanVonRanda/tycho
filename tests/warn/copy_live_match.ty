@@ -1,0 +1,9 @@
+fn label(xs: [string]) -> Result(int, string):
+    return Ok(len(xs))
+
+fn main():
+    s := "ada"
+    match label([s, "grace"]):    # copies s into the array; s is live after
+        Ok(n): print(str(n))
+        Err(e): print(e)
+    print(s)                      # the second read that keeps s live

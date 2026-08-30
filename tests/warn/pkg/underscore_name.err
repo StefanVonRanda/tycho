@@ -1,0 +1,2 @@
+tests/warn/pkg/underscore_name/./inn/inn.ty:3: warning: '_helper' is never called
+     3 | fn _helper() -> int:

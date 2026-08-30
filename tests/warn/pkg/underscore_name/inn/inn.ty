@@ -1,0 +1,7 @@
+package inn
+
+fn _helper() -> int:
+    return 1
+
+fn used() -> int:
+    return 2

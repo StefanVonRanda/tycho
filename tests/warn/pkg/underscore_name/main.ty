@@ -1,0 +1,6 @@
+package main
+
+import "./inn"
+
+fn main():
+    print(str(inn.used()))
