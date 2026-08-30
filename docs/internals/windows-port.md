@@ -31,7 +31,7 @@
 
 - The **compiler** (`src/tychoc.c`) is mostly portable C. Its POSIX surface is
   `dirent` (opendir/readdir/closedir, `src/tychoc.c:4925@opendir`), `popen`
-  (`src/tychoc.c:14225@popen`), `realpath`, `access`, `vasprintf`
+  (`src/tychoc.c:14229@popen`), `realpath`, `access`, `vasprintf`
   (`src/tychoc.c:214@vasprintf`), and `newlocale/uselocale`
   (`src/tychoc.c:286@uselocale`). mingw-w64 provides no POSIX
   `newlocale`/`uselocale`/`locale_t` at any version (checked against upstream

@@ -13936,13 +13936,17 @@ static char *strip_ext(const char *path) {
 }
 
 /* directory of a path: "proj/geom/point.ty" -> "proj/geom"; "main.ty" -> "." */
-/* gap: '/' only. A native Windows entry path -- `tychoc Z:\dir\main.ty` --
- * yields "." and dies "package directory . has no .ty files". Not fixed with
- * the under_corelib separator bug beside it because no lane passes that form:
- * scripts/wine_corelib.sh and wine_test.sh both hand over relative,
- * forward-slash paths. Observed 2026-08-30 under wine. */
+/* A native Windows entry path -- `tychoc Z:\dir\main.ty` -- split on '/' alone
+ * yielded "." and died "package directory . has no .ty files". Guarded so the
+ * POSIX build is byte-identical: a backslash is a legal filename character
+ * there, and splitting on it would cut a legitimate name in half. Same shape
+ * as src_in_corelib, which already took the later of the two separators. */
 static char *path_dir(const char *p) {
     const char *slash = strrchr(p, '/');
+#ifdef _WIN32
+    const char *bs = strrchr(p, '\\');
+    if (bs && (!slash || bs > slash)) slash = bs;
+#endif
     return slash ? xstrndup(p, (size_t)(slash - p)) : xstrndup(".", 1);
 }
 /* leading `package <name>` of a token stream, or NULL if the file has none */
