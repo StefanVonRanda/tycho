@@ -5233,7 +5233,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             cs.arena = sa4
             if len(t) == 0:
                 _vset(&cs, n, rt)
-            # src/tychoc.c:11793@do_recycle. `a = step(a)` in a loop leaves the OLD
+            # src/tychoc.c@do_recycle. `a = step(a)` in a loop leaves the OLD
             # spine unreachable but still charged to the arena, so it grows once per
             # iteration: bench/prongB iter-transform ran 1534 MB against ./tychoc's
             # 4 MB. Soundness comes from the read count -- move-on-last-use only
