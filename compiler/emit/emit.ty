@@ -3591,15 +3591,23 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
         # scratch-built value into a longer-lived array leaves it dangling at
         # the next arena_reset, and _shares cannot see that (examples/json.ty
         # read ["arena","arena"] for ["systems","arena"]).
-        va := "&_scope"
-        if _ownerof(&cs, args[0]) == _curown(&cs):
-            va = _curown(&cs)
+        # Build the pushed value in the ARRAY'S OWN arena, not in &_scope. The
+        # two die together, so it cannot dangle at a reset the way a
+        # scratch-built value pushed into a longer-lived array did
+        # (examples/json.ty read ["arena","arena"] for ["systems","arena"]),
+        # and it is strictly tighter than the function arena: prongB dispatch
+        # built 2000x2000 closure envs in &_scope and freed none until main
+        # returned.
+        va := _ownerof(&cs, args[0])
         vc := ""
         vt := ""
-        if va == "&_scope":
-            vc, vt = _ex_scope(&cs, args[1])
-        else:
+        if va == _curown(&cs):
             vc, vt = _ex_cur(&cs, args[1])
+        else:
+            sav3 := cs.arena
+            cs.arena = va
+            vc, vt = _ex(&cs, args[1])
+            cs.arena = sav3
         cs.want = swp
         if strings.starts_with(rt, "?A"):
             pi := strings.parse_int(rt[2:])
