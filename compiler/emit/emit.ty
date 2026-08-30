@@ -1986,8 +1986,12 @@ fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
                 et = _elem(cs.want)
             v := _fresh(&cs, "_l")
             ct := _cty(&cs, "[" + et + "]")
+            # cs.arena, not a hard-coded &_scope: inside a loop body that is the
+            # per-iteration scratch, and a loop-local `fs := []T` was otherwise
+            # charged to the whole function. An ASSIGNMENT to an outer name is
+            # unaffected -- the Assign arm sets cs.arena to the TARGET's owner.
             return ("({ " + ct + " " + v + " = " + _arrf(&cs, et, "_with_cap") +
-                "(&_scope, 0); " + v + ".len = 0; " + v + "; })", "[" + et + "]")
+                "(" + cs.arena + ", 0); " + v + ".len = 0; " + v + "; })", "[" + et + "]")
         ast.IsVar(l, k, q, vn):
             sc, st := _ex(&cs, k[0])
             if not _is_enum(st):
@@ -5034,7 +5038,10 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             # proc's own &_scope), never a loop or if-body scratch. The arena
             # has to move with it: a literal is built through cs.arena, and
             # recording _parent while building in &_scope returns freed memory.
-            own5 := "&_scope"
+            # A decl inside a loop body belongs to that body's scratch, not the
+            # whole function: prongB dispatch kept every pass's closures alive,
+            # 62 MB against ./tychoc's 1 MB. _push already records _curown.
+            own5 := _curown(&cs)
             if _curown(&cs) == "&_scope" and _heap(&cs, cs.cur_ret) and _isesc(&cs, n):
                 own5 = "_parent"
             if uset:
@@ -5218,6 +5225,23 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             cs.arena = sa4
             if len(t) == 0:
                 _vset(&cs, n, rt)
+            # src/tychoc.c:11793@do_recycle. `a = step(a)` in a loop leaves the OLD
+            # spine unreachable but still charged to the arena, so it grows once per
+            # iteration: bench/prongB iter-transform ran 1534 MB against ./tychoc's
+            # 4 MB. Soundness comes from the read count -- move-on-last-use only
+            # moves a var read EXACTLY once, so >= 2 reads means this var never
+            # sourced a move and cannot be sharing its buffer with a live name.
+            # An inout target owns nothing here (its arena is the caller's `_ina_`),
+            # and an accumulator is appended to rather than replaced.
+            if len(cs.lmark) > 0 and _is_arr(t) and len(_accof(&cs, n)) == 0 and
+                    not strings.starts_with(ow4, "_ina_") and _creads_b(cs.pbody, n) >= 2:
+                rid := _fresh(&cs, "_rec")
+                cn4 := _vcname(&cs, n)
+                return ind + _cty(&cs, t) + " " + rid + " = " + rc + ";\n" +
+                    ind + "if (" + cn4 + ".data && " + cn4 + ".data != " + rid +
+                    ".data) arena_recycle(" + ow4 + ", " + cn4 + ".data, (size_t)" +
+                    cn4 + ".cap * sizeof(*" + cn4 + ".data));\n" +
+                    ind + cn4 + " = " + rid + ";\n"
             return ind + _vcname(&cs, n) + " = " + rc + ";\n"
         ast.PlaceSet(l, k):
             # `m[f()] += 1` desugars to `m[f()] = m[f()] + 1` with the SAME key
