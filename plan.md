@@ -93,13 +93,6 @@ self-built twice, the two emitted `.c` identical.
   - Verify: `sh scripts/tychoc1_check.sh` unmoved, plus a probe nesting a
     hashable struct 12 deep and keying a map on it.
 
-- [ ] **Phase 4b — `CONTRIBUTING.md`'s gate table has no `parse-check` cost**
-  (found in Phase 4). Phase 3d already notes the row is missing entirely. The
-  figure has since moved: the lane is ~15.5 s, not the ~2.5 s Phase 3b measured,
-  because legs 1c, 4, 5, 2b, 6 and 7 were added. Whoever writes that row writes
-  15.5 s and the eight legs, not the two-leg description.
-  - Do NOT run: any test lane. It is a Markdown edit; the two doc gates only.
-
 - [ ] **Phase 3c — `scripts/check_goldens.py` carried a stale NO_GOLDEN entry**
   - Found while wiring Phase 3b: `NO_GOLDEN` still excused `compiler/run.sh`
     ("a differential, not a golden") for a file `603d8fbd` deleted wholesale.
@@ -109,14 +102,6 @@ self-built twice, the two emitted `.c` identical.
   - Scope: audit the other 19 `NO_GOLDEN` entries for runners that no longer
     exist. Nothing else in the tree checks that list against `git ls-files`.
   - Verify: `make goldens-check` (~0.08 s) and nothing else.
-
-- [ ] **Phase 3d — `CONTRIBUTING.md`'s gate table has no `parse-check` row**
-  - Phase 3b added the row to the gitignored `CLAUDE.md` only, which its scope
-    lock named. The tracked contributor copy ("Which gate for which change") is
-    what a fresh clone reads, and it is now one gate behind.
-  - Scope: one trimmed row in `CONTRIBUTING.md`. No internal history.
-  - Verify: `python3 scripts/check_citations.py` and `sh scripts/check_links.sh`.
-    Nothing else — it is a Markdown edit.
 
 - [ ] **Phase 5d — `'X' is already defined` says more than `src/tychoc.c` does**
   (found in Phase 5b, out of scope there: 5b's contract was the LINE, not the
