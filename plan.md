@@ -757,10 +757,6 @@ The phases below are ranked by expected size of win. Each names the
     by `compiler/emit/`**.
   - Evidence: **none measured.**
 
-- [ ] **Perf 0 — `tychoc1` has no `--pkg`, so dbquery cannot be scored**
-  - `tychoc1: unknown option '--pkg'`. A CLI gap, not codegen; it is here
-    because it is why one benchmark row is blank.
-
 - [ ] **Emit parity — the classes measured 2026-08-26, in payoff order**
   - Method: diff every differing fixture, bucket the changed lines. Parity is
     byte-identity PER FIXTURE, so the count moves only when a fixture's LAST

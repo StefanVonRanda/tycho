@@ -20,7 +20,9 @@ fn _strip_ext(p: string) -> string:
     return p
 
 fn usage():
-    die("usage: tychoc1 <file.ty> ([-o <name>] [--emit-c] [--runtime P] | --bundle | --dump-tokens | --round-trip | --dump-dnotes | --parse | --parse-census | --resolve | --resolve-census | --dump-symbols | --typecheck | --type-census)")
+    die("usage: tychoc1 <file.ty> ([-o <name>] [--emit-c] [--runtime P] | --bundle | --dump-tokens | --round-trip | --dump-dnotes | --parse | --parse-census | --resolve | --resolve-census | --dump-symbols | --typecheck | --type-census)\n" +
+        "  linking:  --link <lib>  --shim <file.c>  --pkg <name>  --cc <cc>  -L<dir>  -I<dir>\n" +
+        "  reports:  --print-shims  --print-deps  --symbols  --version")
 
 fn main():
     av := args()
@@ -95,7 +97,7 @@ fn main():
             i += 1
             if i >= len(av):
                 usage()
-            push(xtra, "-l" + av[i])
+            push(xtra, "-l" + driver.cc_safe(av[i], "--link"))
         elif a == "--shim":
             i += 1
             if i >= len(av):
@@ -105,7 +107,7 @@ fn main():
             i += 1
             if i >= len(av):
                 usage()
-            r9 := os.run("pkg-config --cflags --libs " + av[i])
+            r9 := os.run("pkg-config --cflags --libs " + driver.cc_safe(av[i], "--pkg"))
             if r9.code != 0:
                 die("tychoc1: pkg-config failed for '" + av[i] + "'")
             for w9 in split(strings.trim(r9.out), " "):

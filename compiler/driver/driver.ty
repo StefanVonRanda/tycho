@@ -106,6 +106,21 @@ fn _shims(p: types.Program) -> [string]:
             Err(e): pass
     return out
 
+# A library or pkg-config name reaches a SHELL -- os.run is popen, and the name
+# is also spliced onto the cc line. `extern "x; rm -rf ~"` in an untrusted .ty
+# would otherwise execute it. Mirrors src/tychoc.c@cc_safe_name and fails closed
+# on anything outside the conservative cc-token charset.
+fn cc_safe(s: string, what: string) -> string:
+    if len(s) == 0:
+        die("tychoc1: empty " + what + " name")
+    for i9 := 0; i9 < len(s); i9 += 1:
+        c9 := s[i9]
+        ok9 := (c9 >= 65 and c9 <= 90) or (c9 >= 97 and c9 <= 122) or (c9 >= 48 and c9 <= 57)
+        if not (ok9 or c9 == 46 or c9 == 95 or c9 == 43 or c9 == 45):
+            die("tychoc1: illegal character in " + what + " name '" + s +
+                "' (only [A-Za-z0-9._+-] allowed)")
+    return s
+
 fn _links(p: types.Program) -> [string]:
     out := []string
     seen := []string: bool
@@ -161,7 +176,7 @@ fn _pkgflags(p: types.Program) -> [string]:
                     if len(t) == 0 or t[0] == 35 or (t in seen):
                         continue
                     seen[t] = true
-                    r := os.run("pkg-config --cflags --libs " + t)
+                    r := os.run("pkg-config --cflags --libs " + cc_safe(t, "deps pkg-config"))
                     if r.code != 0:
                         continue
                     for w in split(strings.trim(r.out), " "):
@@ -213,7 +228,7 @@ fn build(src_path: string, runtime_path: string, base: string, argv0: string,
     for sh9 in shim9:
         push(argv, sh9)
     for l in _links(p):
-        push(argv, "-l" + l)
+        push(argv, "-l" + cc_safe(l, "extern library"))
     # Each loaded package's `deps` file names pkg-config packages; their cflags
     # and libs go on the cc line, or a program using core:tls/zip/compress/
     # crypto/image/http/sqlite does not LINK (24 of them did not).
