@@ -78,7 +78,34 @@ module.exports = grammar({
         ),
       ),
 
-    fstring: ($) => token(seq('f"', repeat(choice(/[^"\\]/, /\\./)), '"')),
+    // An INTERPOLATION may contain a double-quoted string --
+    // `f"{io.append(ap, \"!\")}"` is valid Tycho and corelib/test/io/main.ty:485
+    // has one. The old rule ended the fstring at that inner quote, so the file
+    // stopped parsing under this grammar while ./tychoc accepted it.
+    fstring: ($) =>
+      token(
+        seq(
+          'f"',
+          repeat(
+            choice(
+              seq(
+                '{',
+                repeat(
+                  choice(
+                    /\\./,
+                    seq('"', repeat(choice(/[^"\\]/, /\\./)), '"'),
+                    /[^}"\\]/,
+                  ),
+                ),
+                '}',
+              ),
+              /[^"\\{]/,
+              /\\./,
+            ),
+          ),
+          '"',
+        ),
+      ),
 
     // `\xNN` is exactly two hex digits and is listed FIRST so it wins over the
     // one-character `/\\./` alternative. It is a CHAR-literal escape only — a
