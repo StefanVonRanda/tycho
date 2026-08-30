@@ -93,19 +93,6 @@ self-built twice, the two emitted `.c` identical.
   - Verify: `sh scripts/tychoc1_check.sh` unmoved, plus a probe nesting a
     hashable struct 12 deep and keying a map on it.
 
-- [ ] **Phase 10c — the bootstrap decision is undocumented**
-  Phase 10 closed on 2026-08-30: the fixpoint holds (gen2 == gen3 == gen4,
-  byte-identical) and no `run.sh` reaches `./tychoc` inline. Its one unmet
-  scope item survives here.
-  - Scope: one section in `docs/architecture.md` — why the tree ships two
-    compilers, which one is the reference, and what a contributor runs to
-    rebuild the self-hosted one. Grep finds `bootstrap` only in
-    `docs/debugging.md` and `docs/internals/FRICTION.md`, neither of which
-    states the decision.
-  - Done when: the section exists and `docs/README.md` reaches it.
-  - Verify: `sh scripts/check_links.sh` and `python3 scripts/check_citations.py`.
-    Nothing else — it is Markdown.
-
 - [ ] **Phase 4b — `CONTRIBUTING.md`'s gate table has no `parse-check` cost**
   (found in Phase 4). Phase 3d already notes the row is missing entirely. The
   figure has since moved: the lane is ~15.5 s, not the ~2.5 s Phase 3b measured,

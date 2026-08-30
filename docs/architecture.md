@@ -12,10 +12,43 @@ for an honest accounting of where the model wins and loses see
 
 ## The pieces
 
-It was frozen once that held, and no gate builds it now. Treat it as a snapshot
-of the language at the freeze, not as a second implementation: the two accept and
-reject different programs today, and `tychoc` with [the spec](spec/) is
-normative.
+**Two compilers ship, and only one is normative.**
+
+`src/tychoc.c` — 14,529 lines of C, the reference implementation. It and [the
+spec](spec/) define the language: where the two disagree, this one is right by
+definition.
+
+`compiler/` — 18,254 lines of Tycho across 13 files, the same language written
+in itself, built as `tychoc1`. Six packages: `lex`, `parse`, `ast`, `types`,
+`emit`, `driver`. It exists twice over — to prove the language can carry a real
+program, and to be a second opinion on the first. `make parse-check` scores its
+front end against `./tychoc`'s own answers file by file; `make tychoc1-check`
+runs the whole fixture corpus and every tool lane with `TYCHOC=./tychoc1`.
+
+### Bootstrapping
+
+`make tychoc1` builds in two stages (`Makefile@tychoc1`):
+
+```
+./tychoc          compiler/main.ty -o tychoc1-stage1
+./tychoc1-stage1  compiler/main.ty -o tychoc1
+```
+
+The second stage is not ceremony. Stage 1 is emitted by the C compiler; the
+shipped `tychoc1` is emitted by a compiler that was itself written in Tycho, so
+a defect in tychoc1's own code generation reaches the binary you actually run
+instead of hiding one generation back.
+
+The fixpoint holds. Generating three further compilers from `compiler/main.ty`
+gives byte-identical C at every hop — gen2 == gen3 == gen4, measured
+2026-08-30. Note that the corelib is resolved relative to the running binary,
+so a generation built somewhere else must be run from the repo root or it
+cannot find `core:strings`.
+
+`TYCHOC1_CFLAGS` (`Makefile@TYCHOC1_CFLAGS`) links `-static-pie`, not
+`-static`: a plain static link leaves `.eh_frame` unsorted, so the first unwind
+runs `classify_object_over_fdes` over the whole table — 201,604 Ir on every
+compile regardless of input size.
 
 ## The verification surface
 
