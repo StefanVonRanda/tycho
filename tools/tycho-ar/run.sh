@@ -263,8 +263,8 @@ fn main():
                 Err(e): println("refused")
         Err(e): println("unreadable")
 TY
-    if ./tychoc "$bd/m.ty" --emit-c -o "$bd/g" >"$bd/emit.log" 2>&1; then
-        SH=$(./tychoc "$bd/m.ty" --print-shims 2>/dev/null | tr '
+    if "$TYCHOC" "$bd/m.ty" --emit-c -o "$bd/g" >"$bd/emit.log" 2>&1; then
+        SH=$("$TYCHOC" "$bd/m.ty" --print-shims 2>/dev/null | tr '
 ' ' ')
         # $SH unquoted on purpose: it is a LIST of shim paths. This lane runs under
         # /bin/sh, which word-splits it; zsh would not, and that cost a debug round.
