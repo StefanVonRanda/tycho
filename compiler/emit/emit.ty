@@ -3855,15 +3855,20 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
         # A value the expression built in `va` is already whole there, so a
         # push into an array owned by the SAME arena needs nothing; the q
         # defect this once guarded against was upstream, at the declaration.
-        didcp := false
-        if _heap(&cs, et) and (_place(args[1]) or ow != va) and
-                not _shares(&cs, args[1], et, ow):
-            vc = _copy(&cs, vc, et, ow)
-            didcp = true
         fi9 := -1
         match args[0]:
             ast.Name(l9, n9): fi9 = _fuse_idx(&cs, n9)
             _: pass
+        # tycho_arr_str_push already copies the bytes into the owner arena, so an
+        # emit-side copy on top is a second allocation of the same string --
+        # ./tychoc emits one where this emitted two, on every in-loop string push.
+        # The fused form calls no helper, so there the copy is still ours to make.
+        helpercp := _apfx(&cs, et) == "tycho_arr_str" and fi9 < 0
+        didcp := false
+        if _heap(&cs, et) and (_place(args[1]) or ow != va) and
+                not _shares(&cs, args[1], et, ow) and not helpercp:
+            vc = _copy(&cs, vc, et, ow)
+            didcp = true
         if fi9 >= 0 and cap9 == 0:
             fdn := cs.fuid[fi9]
             # tycho_arr_str_push COPIES the bytes into the owner arena on its way
