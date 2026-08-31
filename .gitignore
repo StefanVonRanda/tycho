@@ -278,3 +278,4 @@ OVERVIEW.md
 /tycho-diff
 /tycho-fold
 /tycho-hash
+tests/ffi/main.c
