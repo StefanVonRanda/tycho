@@ -95,6 +95,35 @@ injection_leg() {
 }
 case "$ONLY" in all|shell-injection) injection_leg ;; esac
 
+# Push fusion hoists an array's data/len/cap into locals so -O3 can register them
+# (prongB iter-transform: 248 ms -> 214 against ./tychoc's 215). It is a CODEGEN
+# SHAPE -- both forms print the same thing, so no golden can see it, and the
+# unsafe case is silent too: an array READ in the same body would see a stale
+# descriptor. Both directions are asserted.
+fusion_leg() {
+    n=$((n + 1)); d="$T/fuse"; mkdir -p "$d/y" "$d/n"; bad=0
+    printf 'package main\n\nfn main():\n    xs := []int\n    for i := 0; i < 5; i += 1:\n        push(xs, i * 2)\n    for i := 0; i < len(xs); i += 1:\n        println(str(xs[i]))\n' > "$d/y/main.ty"
+    printf 'package main\n\nfn main():\n    xs := []int\n    for i := 0; i < 5; i += 1:\n        push(xs, i)\n        println(str(len(xs)))\n' > "$d/n/main.ty"
+    "$C" "$d/y/main.ty" --emit-c -o "$d/y/c" >/dev/null 2>&1 || bad=1
+    "$C" "$d/n/main.ty" --emit-c -o "$d/n/c" >/dev/null 2>&1 || bad=1
+    [ "$(grep -c '_fd[0-9]*l' "$d/y/c.c" 2>/dev/null)" -gt 0 ] || bad=2   # must fuse
+    [ "$(grep -c '_fd[0-9]*l' "$d/n/c.c" 2>/dev/null)" -eq 0 ] || bad=3   # must NOT
+    for k in y n; do
+        cc -O2 -o "$d/$k/bin" "$d/$k/c.c" -lm 2>/dev/null || bad=4
+        ./tychoc "$d/$k/main.ty" --emit-c -o "$d/$k/r" >/dev/null 2>&1
+        cc -O2 -o "$d/$k/rbin" "$d/$k/r.c" -lm 2>/dev/null || bad=4
+        [ "$("$d/$k/bin")" = "$("$d/$k/rbin")" ] || bad=5   # answers must agree
+    done
+    case $bad in
+        0) printf '  %-22s ok\n' push-fusion ;;
+        2) printf '  %-22s FAIL (fusion stopped firing)\n' push-fusion; fails=$((fails + 1)) ;;
+        3) printf '  %-22s FAIL (fused an array READ in the same body)\n' push-fusion; fails=$((fails + 1)) ;;
+        5) printf '  %-22s FAIL (fused code disagrees with ./tychoc)\n' push-fusion; fails=$((fails + 1)) ;;
+        *) printf '  %-22s FAIL (probe did not build)\n' push-fusion; fails=$((fails + 1)) ;;
+    esac
+}
+case "$ONLY" in all|push-fusion) fusion_leg ;; esac
+
 lane conc        sh tests/conc/run.sh
 lane ffi         sh tests/ffi/run.sh
 lane recursion   sh tests/recursion/run.sh

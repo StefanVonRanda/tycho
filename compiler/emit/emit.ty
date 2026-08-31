@@ -122,9 +122,12 @@ struct C:
     used: [string: bool]               # generated helper names the emitted text actually calls
     hdone: [string: bool]              # already written, so a re-run adds only what is new
     lmark: [int]                       # var mark at each loop entry, for break/continue frees
+    fua: [string]                      # src/tychoc.c@g_fuse -- push-fused array names
+    fuid: [string]                     # each one's hoisted cursor suffix
+    fuel: [string]                     # each one's element type
 
 fn _new() -> C:
-    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt, [], [], [], false, []string: bool, []string: bool, []int)
+    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt, [], [], [], false, []string: bool, []string: bool, []int, [], [], [])
 
 fn _bad(msg: string):
     die("tychoc1: " + msg)
@@ -1489,6 +1492,221 @@ fn _fresh(cs: inout C, p: string) -> string:
 # parent does not free it, so every exit path frees it by hand.
 
 # The arena a value created at this point lives in.
+# src/tychoc.c@fuse_open. A `push(xs, v)` in a loop calls a helper per element,
+# which -O3 cannot keep in registers; hoisting xs's data/len/cap into locals lets
+# it. bench/prongB iter-transform was 248 ms against ./tychoc's 219 at -O3 for
+# exactly this reason -- and 336 vs 433 at -O2, where the call is not the
+# bottleneck, which is why it only shows up under the harness's flags.
+fn _fuse_idx(cs: inout C, nm: string) -> int:
+    for i := len(cs.fua) - 1; i >= 0; i -= 1:
+        if cs.fua[i] == nm:
+            return i
+    return -1
+
+fn _pushn_e(e: ast.Expr, nm: string) -> int:
+    k := 0
+    match e:
+        ast.Call(l, q, n, ts, args):
+            if n == "push" and len(q) == 0 and len(args) >= 1:
+                match args[0]:
+                    ast.Name(l2, n2):
+                        if n2 == nm:
+                            k = 1
+                    _: pass
+        _: pass
+    for c in ast.kids(e):
+        k = k + _pushn_e(c, nm)
+    return k
+
+fn _pushn_l(es: [ast.Expr], nm: string) -> int:
+    k := 0
+    for e in es:
+        k = k + _pushn_e(e, nm)
+    return k
+
+fn _pushn_a(ar: [ast.Arm], nm: string) -> int:
+    k := 0
+    for a in ar:
+        k = k + _pushn_b(a.body, nm)
+    return k
+
+fn _pushn_s(s: ast.Stmt, nm: string) -> int:
+    match s:
+        ast.ExprStmt(l, k2): return _pushn_l(k2, nm)
+        ast.Decl(l, n, t, r, v): return _pushn_l(r, nm) + _pushn_b(v, nm)
+        ast.MDecl(l, d, ns, r): return _pushn_l(r, nm)
+        ast.Assign(l, n, r): return _pushn_l(r, nm)
+        ast.PlaceSet(l, k2): return _pushn_l(k2, nm)
+        ast.ConstS(l, n, k2): return _pushn_l(k2, nm)
+        ast.ReturnS(l, k2): return _pushn_l(k2, nm)
+        ast.IfS(l, c2, b, e): return _pushn_l(c2, nm) + _pushn_b(b, nm) + _pushn_b(e, nm)
+        ast.WhileS(l, c2, b): return _pushn_l(c2, nm) + _pushn_b(b, nm)
+        ast.For3(l, ip, c2, b): return _pushn_b(ip, nm) + _pushn_l(c2, nm) + _pushn_b(b, nm)
+        ast.ForIn(l, n, c2, b): return _pushn_l(c2, nm) + _pushn_b(b, nm)
+        ast.ForRange(l, n, c2, b): return _pushn_l(c2, nm) + _pushn_b(b, nm)
+        ast.ParallelS(l, w, b): return _pushn_l(w, nm) + _pushn_b(b, nm)
+        ast.MatchS(l, c2, a): return _pushn_l(c2, nm) + _pushn_a(a, nm)
+        ast.SelectS(l, a): return _pushn_a(a, nm)
+        ast.DeleteS(l, k2): return _pushn_l(k2, nm)
+        _: return 0
+    return 0
+
+fn _pushn_b(b: [ast.Stmt], nm: string) -> int:
+    k := 0
+    for st in b:
+        k = k + _pushn_s(st, nm)
+    return k
+
+# reassigned, re-declared or shadowed in the body: the cursor would not track it
+fn _defs_s(s: ast.Stmt, nm: string) -> bool:
+    match s:
+        ast.Assign(l, n, r): return n == nm
+        ast.Decl(l, n, t, r, v): return n == nm or _defs_b(v, nm)
+        ast.MDecl(l, d, ns, r):
+            for x in ns:
+                if x == nm:
+                    return true
+            return false
+        ast.IfS(l, c2, b, e): return _defs_b(b, nm) or _defs_b(e, nm)
+        ast.WhileS(l, c2, b): return _defs_b(b, nm)
+        ast.For3(l, ip, c2, b): return _defs_b(ip, nm) or _defs_b(b, nm)
+        ast.ForIn(l, n, c2, b): return n == nm or _defs_b(b, nm)
+        ast.ForRange(l, n, c2, b): return n == nm or _defs_b(b, nm)
+        ast.ParallelS(l, w, b): return _defs_b(b, nm)
+        ast.MatchS(l, c2, a): return _defs_a(a, nm)
+        ast.SelectS(l, a): return _defs_a(a, nm)
+        _: return false
+    return false
+
+fn _defs_a(ar: [ast.Arm], nm: string) -> bool:
+    for a in ar:
+        if _defs_b(a.body, nm):
+            return true
+    return false
+
+fn _defs_b(b: [ast.Stmt], nm: string) -> bool:
+    for st in b:
+        if _defs_s(st, nm):
+            return true
+    return false
+
+fn _fuse_names_e(e: ast.Expr, out: inout [string]):
+    match e:
+        ast.Call(l, q, n, ts, args):
+            if n == "push" and len(q) == 0 and len(args) >= 1:
+                match args[0]:
+                    ast.Name(l2, n2):
+                        seen := false
+                        for x in out:
+                            if x == n2:
+                                seen = true
+                        if not seen:
+                            push(out, n2)
+                    _: pass
+        _: pass
+    for c in ast.kids(e):
+        _fuse_names_e(c, &out)
+
+fn _fuse_names(b: [ast.Stmt], out: inout [string]):
+    for st in b:
+        for e in _stmt_es(st):
+            _fuse_names_e(e, &out)
+        for sb in _stmt_bs(st):
+            _fuse_names(sb, &out)
+
+fn _stmt_es(s: ast.Stmt) -> [ast.Expr]:
+    match s:
+        ast.ExprStmt(l, k2): return k2
+        ast.Decl(l, n, t, r, v): return r
+        ast.MDecl(l, d, ns, r): return r
+        ast.Assign(l, n, r): return r
+        ast.PlaceSet(l, k2): return k2
+        ast.ConstS(l, n, k2): return k2
+        ast.ReturnS(l, k2): return k2
+        ast.IfS(l, c2, b, e): return c2
+        ast.WhileS(l, c2, b): return c2
+        ast.For3(l, ip, c2, b): return c2
+        ast.ForIn(l, n, c2, b): return c2
+        ast.ForRange(l, n, c2, b): return c2
+        ast.ParallelS(l, w, b): return w
+        ast.MatchS(l, c2, a): return c2
+        ast.DeleteS(l, k2): return k2
+        _: return []ast.Expr
+    return []ast.Expr
+
+fn _stmt_bs(s: ast.Stmt) -> [[ast.Stmt]]:
+    out := [][ast.Stmt]
+    match s:
+        ast.Decl(l, n, t, r, v): push(out, v)
+        ast.IfS(l, c2, b, e):
+            push(out, b)
+            push(out, e)
+        ast.WhileS(l, c2, b): push(out, b)
+        ast.For3(l, ip, c2, b):
+            push(out, ip)
+            push(out, b)
+        ast.ForIn(l, n, c2, b): push(out, b)
+        ast.ForRange(l, n, c2, b): push(out, b)
+        ast.ParallelS(l, w, b): push(out, b)
+        ast.MatchS(l, c2, a):
+            for x in a:
+                push(out, x.body)
+        ast.SelectS(l, a):
+            for x in a:
+                push(out, x.body)
+        _: pass
+    return out
+
+# Emits the cursor declarations for every fusible array in `b`; returns the code
+# and how many were opened, which _fuse_close pops.
+fn _fuse_open(cs: inout C, b: [ast.Stmt], ind: string, guard: [ast.Expr]) -> (string, int):
+    cand := []string
+    _fuse_names(b, &cand)
+    out := ""
+    opened := 0
+    for nm in cand:
+        if _fuse_idx(&cs, nm) >= 0:
+            continue                       # an enclosing loop already cached it
+        t := _vtype(&cs, nm)
+        nmx := ast.Name(0, nm)
+        if not _is_arr(t) or _cap_of_target(&cs, nmx) > 0:
+            continue                       # bounded has no growable spine
+        ow := _ownerof(&cs, nmx)
+        if strings.starts_with(ow, "_ina_"):
+            continue                       # an inout param is a pointer, not a value
+        if _defs_b(b, nm):
+            continue
+        if _creads_b(b, nm) != _pushn_b(b, nm):
+            continue                       # read for anything but a push: stale view
+        gr := 0
+        for ge in guard:
+            gr = gr + _creads_e(ge, nm)
+        if gr > 0:
+            continue                       # the loop condition would read a stale len
+        et := _elem(t)
+        id := _fresh(&cs, "_fd")
+        cn := _vcname(&cs, nm)
+        out = out + ind + _cty(&cs, et) + " *" + id + " = " + cn + ".data; tycho_int " +
+            id + "l = " + cn + ".len, " + id + "c = " + cn + ".cap;\n"
+        push(cs.fua, nm)
+        push(cs.fuid, id)
+        push(cs.fuel, et)
+        opened = opened + 1
+    return (out, opened)
+
+fn _fuse_close(cs: inout C, opened: int, ind: string) -> string:
+    out := ""
+    for i := 0; i < opened; i += 1:
+        j := len(cs.fua) - 1
+        cn := _vcname(&cs, cs.fua[j])
+        id := cs.fuid[j]
+        out = out + ind + cn + ".data = " + id + "; " + cn + ".len = " + id + "l; " +
+            cn + ".cap = " + id + "c;\n"
+        pop(cs.fua)
+        pop(cs.fuid)
+        pop(cs.fuel)
+    return out
+
 fn _curown(cs: inout C) -> string:
     if len(cs.ascope) > 0:
         return cs.ascope[len(cs.ascope) - 1]
@@ -3640,6 +3858,15 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
         if _heap(&cs, et) and (_place(args[1]) or ow != va) and
                 not _shares(&cs, args[1], et, ow):
             vc = _copy(&cs, vc, et, ow)
+        fi9 := -1
+        match args[0]:
+            ast.Name(l9, n9): fi9 = _fuse_idx(&cs, n9)
+            _: pass
+        if fi9 >= 0 and cap9 == 0:
+            fdn := cs.fuid[fi9]
+            return ("({ if (" + fdn + "l == " + fdn + "c) " + _arrf(&cs, et, "_grow") +
+                "(" + ow + ", &" + fdn + ", &" + fdn + "c, " + fdn + "l); " +
+                fdn + "[" + fdn + "l++] = " + vc + "; })", "void")
         pc9 := _arrf(&cs, et, "_push") + "(" + ow + ", &(" + rc + "), " + vc + ")"
         if cap9 > 0:
             # the capacity trap: a bounded array refuses the push that would
@@ -5415,6 +5642,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                 push(cs.ela, ea3)
             # the post clause is the LAST statement of the body, not a C for
             # header -- src/tychoc.c:12291-12325 -- and it is generated after it
+            fo3, fn3 := _fuse_open(&cs, b, ind + "    ", c)
             bd3 := _block(&cs, b, ind + "        ")
             post := _stmt(&cs, ip[1], ind + "        ")
             if len(ea3) > 0:
@@ -5442,9 +5670,10 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             elif f3 or fp3:
                 bd3 = _replace(bd3, "arena_free(&" + id3 + "); ", "")
                 post = _replace(post, "arena_free(&" + id3 + "); ", "")
-            out := ind + "{\n" + ind + "    " + _trim_nl(init) + open3 +
+            fc3 := _fuse_close(&cs, fn3, ind + "    ")
+            out := ind + "{\n" + ind + "    " + _trim_nl(init) + open3 + fo3 +
                 ind + "    while (" + cc + ") {\n" + res3 +
-                bd3 + lab3 + post + ind + "    }\n" + clos3 + ind + "}\n"
+                bd3 + lab3 + post + ind + "    }\n" + fc3 + clos3 + ind + "}\n"
             _restore(&cs, m)
             return out
         ast.ForIn(l, n, c, b):
@@ -6152,6 +6381,13 @@ fn _arr_defs(cs: inout C) -> (string, string, string, string):
                 "        for (tycho_int i = 0; i < xs->len; i++) nd[i] = xs->data[i];\n" +
                 "        xs->data = nd; xs->cap = nc;\n    }\n" +
                 "    xs->data[xs->len++] = v;\n}\n"
+        if _need(&cs, p + "_grow"):
+            pr = pr + "static void " + p + "_grow(Arena *, " + et + " **, tycho_int *, tycho_int);\n"
+            fb = fb + "static void " + p + "_grow(Arena *a, " + et + " **data, tycho_int *cap, tycho_int len) {\n" +
+                "    tycho_int nc = *cap ? *cap * 2 : 4;\n" +
+                "    " + et + " *nd = (" + et + " *)arena_alloc(a, (size_t)nc * sizeof(" + et + "));\n" +
+                "    for (tycho_int i = 0; i < len; i++) nd[i] = (*data)[i];\n" +
+                "    *data = nd; *cap = nc;\n}\n"
         if _need(&cs, p + "_reserve"):
             pr = pr + "static void " + p + "_reserve(Arena *, " + ct + " *, tycho_int);\n"
             fb = fb + "static void " + p + "_reserve(Arena *a, " + ct + " *xs, tycho_int n) {\n" +
