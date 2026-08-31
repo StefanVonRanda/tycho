@@ -3855,9 +3855,11 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
         # A value the expression built in `va` is already whole there, so a
         # push into an array owned by the SAME arena needs nothing; the q
         # defect this once guarded against was upstream, at the declaration.
+        didcp := false
         if _heap(&cs, et) and (_place(args[1]) or ow != va) and
                 not _shares(&cs, args[1], et, ow):
             vc = _copy(&cs, vc, et, ow)
+            didcp = true
         fi9 := -1
         match args[0]:
             ast.Name(l9, n9): fi9 = _fuse_idx(&cs, n9)
@@ -3869,7 +3871,7 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
             # `fd[l++] = v` raw drops that copy, so a string built in the loop
             # scratch was stored by pointer and dangled at the next reset --
             # corelib zip, tycho-ledger and tycho-snap, all string pushes.
-            if _apfx(&cs, et) == "tycho_arr_str":
+            if _apfx(&cs, et) == "tycho_arr_str" and not didcp:
                 vc = "tycho_str_copy(" + ow + ", " + vc + ")"
             return ("({ if (" + fdn + "l == " + fdn + "c) " + _arrf(&cs, et, "_grow") +
                 "(" + ow + ", &" + fdn + ", &" + fdn + "c, " + fdn + "l); " +
