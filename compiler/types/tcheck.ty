@@ -2113,10 +2113,38 @@ fn _place_ty(cs: inout C, e: ast.Expr) -> string:
         _: return _ex(&cs, e)
     return "?"
 
+# src/tychoc.c@is_pure_builtin, copied name for name.
+fn _pure_builtin(n: string) -> bool:
+    return n == "str" or n == "substr" or n == "chr" or n == "split" or n == "keys" or
+        n == "find" or n == "char_at" or n == "map_get" or n == "map_has" or
+        n == "map_set" or n == "map_del" or n == "sqrt" or n == "pow" or n == "floor" or
+        n == "fabs" or n == "to_float" or n == "to_int" or n == "to_char" or
+        n == "to_str" or n == "to_bool" or n == "is_null" or n == "len" or n == "hash"
+
 fn _tstmt(cs: inout C, s: ast.Stmt):
     cs.line = ast.sline_of(s)
     match s:
         ast.ExprStmt(l, k):
+            # src/tychoc.c@is_pure_builtin -- a pure builtin has no side effect, so
+            # discarding its result in statement position does nothing at all.
+            # `map_set(m, k, v)` as a bare statement is the footgun this names: it
+            # returns a NEW map and changes nothing.
+            match k[0]:
+                ast.Call(l2, q2, n2, ts2, ar2):
+                    # `m.get(k, d)` parses as a QUALIFIED call, q = the receiver.
+                    # src/tychoc.c@discarded_map_get gates it on a map receiver, which
+                    # keeps a user `get` on some other type quiet.
+                    if n2 == "get" and len(q2) > 0 and _head(_ex(&cs, ast.Name(l2, q2))) == "map":
+                        cs.line = l
+                        _cwarn(&cs, "result of `get` is discarded; it has no side effects," +
+                            " so this statement does nothing (to change a map, use" +
+                            " `m[k] = v` or `delete m[k]`)")
+                    if len(q2) == 0 and _pure_builtin(n2):
+                        cs.line = l
+                        _cwarn(&cs, "result of `" + n2 + "` is discarded; it has no side" +
+                            " effects, so this statement does nothing (to change a map," +
+                            " use `m[k] = v` or `delete m[k]`)")
+                _: pass
             t := _ex(&cs, k[0])
             # A Result used as a statement throws the error path away.
             if len(t) > 4 and t[0:4] == "res(":

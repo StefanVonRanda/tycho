@@ -1,6 +1,6 @@
 set -u
 cd "$(dirname "$0")/../.." || exit 2
-TYCHOC="${TYCHOC:-./tychoc}"
+TYCHOC="${TYCHOC:-./tychoc1}"
 [ -x "$TYCHOC" ] || { echo "no ./tychoc -- run 'make' first"; exit 2; }
 command -v python3 >/dev/null 2>&1 || { echo "snap-check: SKIPPED (no python3 for the independent zip reader)"; exit 0; }
 RECORD="${RECORD:-0}"

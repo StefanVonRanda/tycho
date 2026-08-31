@@ -1,6 +1,6 @@
 set -u
 cd "$(dirname "$0")"
-TYCHOC="${TYCHOC:-../../tychoc}"
+TYCHOC="${TYCHOC:-../../tychoc1}"
 [ -x "$TYCHOC" ] || { echo "no $TYCHOC -- run 'make' at the repo root first"; exit 2; }
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 

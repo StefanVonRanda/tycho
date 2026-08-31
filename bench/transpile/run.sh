@@ -3,7 +3,7 @@ cd "$(dirname "$0")/../.." || exit 2
 
 runs=11
 input=""
-compiler="${TYCHOC:-./tychoc}"
+compiler="${TYCHOC:-./tychoc1}"
 while [ $# -gt 0 ]; do
     case "$1" in
         -n) runs=$2; shift 2 ;;

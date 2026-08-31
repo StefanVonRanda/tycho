@@ -3,7 +3,7 @@ cd "$(dirname "$0")/.." || exit 2
 case "$(uname -s)" in *MSYS*|*MINGW*|*CYGWIN*) FIND=/usr/bin/find ;; *) FIND=find ;; esac
 
 make -s tychoc tychofmt tycho-lsp || { echo "tools build failed"; exit 1; }
-TYCHOC="${TYCHOC:-./tychoc}"; FMT=./tychofmt; LSP=./tycho-lsp
+TYCHOC="${TYCHOC:-./tychoc1}"; FMT=./tychofmt; LSP=./tycho-lsp
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 fail=0

@@ -1,6 +1,6 @@
 set -u
 cd "$(dirname "$0")/../.." || exit 2          # repo root
-TYCHOC="${TYCHOC:-./tychoc}"
+TYCHOC="${TYCHOC:-./tychoc1}"
 [ -x "$TYCHOC" ] || { echo "tycho-ar: no ./tychoc -- run 'make' first"; exit 2; }
 export TYCHO_CORELIB="$PWD/corelib"
 RECORD="${RECORD:-0}"
@@ -245,7 +245,7 @@ if [ "$fail" -eq 0 ]; then
     fi
 fi
 
-if command -v python3 >/dev/null 2>&1 && [ -n "${TYCHOC:-./tychoc}" ]; then
+if command -v python3 >/dev/null 2>&1 && [ -n "${TYCHOC:-./tychoc1}" ]; then
     bd="$T/bomb"; mkdir -p "$bd"
     python3 -c "
 import gzip,pathlib,sys

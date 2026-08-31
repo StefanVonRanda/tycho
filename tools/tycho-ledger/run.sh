@@ -1,6 +1,6 @@
 set -u
 cd "$(dirname "$0")/../.." || exit 2
-TYCHOC="${TYCHOC:-./tychoc}"
+TYCHOC="${TYCHOC:-./tychoc1}"
 [ -x "$TYCHOC" ] || { echo "no ./tychoc -- run 'make' first"; exit 2; }
 RECORD="${RECORD:-0}"
 golden="tools/tycho-ledger/ledger.out"

@@ -1,7 +1,7 @@
 set -eu
 cd "$(dirname "$0")/.."
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
-TYCHOC="${TYCHOC:-./tychoc}"
+TYCHOC="${TYCHOC:-./tychoc1}"
 fail=0
 bad() { echo "image-ceiling: FAIL -- $*" >&2; fail=1; }
 

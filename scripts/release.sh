@@ -24,8 +24,8 @@ arch="$(uname -m)"
 
 # Build first: a clean checkout has no ./tychoc, and a previous build may carry
 # an older version than src/tychoc.c.
-echo ">> building native compiler"
-make -s tychoc
+echo ">> building native compiler (tychoc1, self-hosted; tychoc bootstraps it)"
+make -s tychoc1
 
 # the version MUST match the compiler's constant (the changelog discipline)
 ver="$(./tychoc --version | awk '{print $2}')"
@@ -111,7 +111,9 @@ else
     echo ">> staging $stage"
     rm -rf "$stage"
     mkdir -p "$stage"
-    cp "tychoc$EXE" "tychofmt$EXE" "tycho-lsp$EXE" "tycho-debug$EXE" "$stage"/
+    # the shipped `tychoc` IS tychoc1 -- users get the self-hosted compiler
+    cp "tychoc1$EXE" "$stage/tychoc$EXE"
+    cp "tychofmt$EXE" "tycho-lsp$EXE" "tycho-debug$EXE" "$stage"/
     cp -r corelib "$stage"/
     cp README.md LICENSE "$stage"/
     mkdir -p "$stage"/examples

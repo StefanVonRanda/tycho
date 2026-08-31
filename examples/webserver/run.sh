@@ -1,6 +1,6 @@
 set -u
 cd "$(dirname "$0")/../.." || exit 2                  # repo root (so content paths resolve)
-TYCHOC="${TYCHOC:-./tychoc}"
+TYCHOC="${TYCHOC:-./tychoc1}"
 [ -x "$TYCHOC" ] || { echo "no ./tychoc -- run 'make' first"; exit 2; }
 CC="${CC:-cc}"
 export TYCHO_CORELIB="$PWD/corelib"

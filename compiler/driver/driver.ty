@@ -42,14 +42,14 @@ fn write_runtime(path: string, argv0: string, dst: string):
 # the package graph -- corelib root, per-file imports, post-order, cycle
 # detection -- so emit is handed every file with the package prefix the loader
 # gave it, and mangles against that (src/tychoc.c@pkg_prefix_for).
-fn emit_to(p: types.Program, runtime_path: string, argv0: string, out_c: string):
+fn emit_to(p: types.Program, runtime_path: string, argv0: string, out_c: string, dbgf: string):
     write_runtime(runtime_path, argv0, out_c)
     pfx := []string
     us := []ast.Unit
     for f in p.files:
         push(pfx, f.prefix)
         push(us, f.unit)
-    match io.append_text(out_c, emit.program(pfx, us)):
+    match io.append_text(out_c, emit.program(pfx, us, dbgf)):
         Ok: return
         Err(e): die("tychoc1: cannot write '" + out_c + "'")
     return
@@ -195,7 +195,12 @@ fn build(src_path: string, runtime_path: string, base: string, argv0: string,
     _guard_c(c_path)
     p := types.Program([]types.File, "", "", "", "")
     check_into(src_path, argv0, &p)
-    emit_to(p, runtime_path, argv0, c_path)
+    # -g: src/tychoc.c:14367 makes #line single-file only, and names the source
+    # in every directive. A multi-file build has no single g_line_file to name.
+    dbgf := ""
+    if dbg and len(p.files) == 1:
+        dbgf = p.files[0].path
+    emit_to(p, runtime_path, argv0, c_path, dbgf)
     # -O2 and -fno-semantic-interposition were measured here and neither pays:
     # compiling compiler/main.ty is 1181.3e6 Ir at -O2 against 1051.3e6 at -O3,
     # and -fno-semantic-interposition moves nothing (one static TU, nothing to
@@ -311,10 +316,13 @@ fn print_deps(src_path: string, argv0: string):
             Err(e): pass
     print(out)
 
-fn compile(src_path: string, runtime_path: string, out_c: string, argv0: string):
+fn compile(src_path: string, runtime_path: string, out_c: string, argv0: string, dbg: bool):
     p := types.Program([]types.File, "", "", "", "")
     check_into(src_path, argv0, &p)
-    emit_to(p, runtime_path, argv0, out_c)
+    dbgf := ""
+    if dbg and len(p.files) == 1:
+        dbgf = p.files[0].path
+    emit_to(p, runtime_path, argv0, out_c, dbgf)
 
 # --- --dump-tokens ----------------------------------------------------------
 # The lexer's own gate. One line per token so a disagreement names a position

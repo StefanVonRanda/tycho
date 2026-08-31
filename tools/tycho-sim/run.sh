@@ -1,6 +1,6 @@
 set -u
 cd "$(dirname "$0")/../.." || exit 2          # repo root
-TYCHOC="${TYCHOC:-./tychoc}"
+TYCHOC="${TYCHOC:-./tychoc1}"
 [ -x "$TYCHOC" ] || { echo "tycho-sim: no ./tychoc -- run 'make' first"; exit 2; }
 TYCHOC="$PWD/tychoc"          # absolute: the probe in [8] is built after a cd
 export TYCHO_CORELIB="$PWD/corelib"

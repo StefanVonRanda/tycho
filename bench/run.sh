@@ -1,7 +1,7 @@
 set -u
 cd "$(dirname "$0")/.." || exit 2
 
-TYCHOC="${TYCHOC:-./tychoc}"
+TYCHOC="${TYCHOC:-./tychoc1}"
 [ -x "$TYCHOC" ] || { echo "no $TYCHOC — run 'make' first"; exit 2; }
 CC="${CC:-cc}"
 TMP="$(mktemp -d)"

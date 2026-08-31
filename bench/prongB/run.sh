@@ -1,6 +1,6 @@
 set -u
 cd "$(dirname "$0")/../.." || exit 2          # repo root
-TYCHOC="${TYCHOC:-./tychoc}"
+TYCHOC="${TYCHOC:-./tychoc1}"
 [ -x "$TYCHOC" ] || { echo "no $TYCHOC — run 'make' first"; exit 2; }
 D=bench/prongB
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT

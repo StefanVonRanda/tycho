@@ -1,6 +1,6 @@
 set -u
 cd "$(dirname "$0")/../.." || exit 2                  # repo root
-TYCHOC="${TYCHOC:-./tychoc}"
+TYCHOC="${TYCHOC:-./tychoc1}"
 [ -x "$TYCHOC" ] || { echo "no $TYCHOC -- run 'make' first"; exit 2; }
 CC="${CC:-cc}"
 # Detect sqlite3 portably. Prefer pkg-config (Linux); on macOS Apple ships

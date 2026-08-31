@@ -125,9 +125,10 @@ struct C:
     fua: [string]                      # src/tychoc.c@g_fuse -- push-fused array names
     fuid: [string]                     # each one's hoisted cursor suffix
     fuel: [string]                     # each one's element type
+    dbgfile: string                    # -g: src/tychoc.c@g_line_file, empty when off
 
 fn _new() -> C:
-    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt, [], [], [], false, []string: bool, []string: bool, []int, [], [], [])
+    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt, [], [], [], false, []string: bool, []string: bool, []int, [], [], [], "")
 
 fn _bad(msg: string):
     die("tychoc1: " + msg)
@@ -4621,6 +4622,10 @@ fn _block(cs: inout C, body: [ast.Stmt], ind: string) -> string:
     m := _mark(&cs)
     out := ""
     for s in body:
+        # -g: src/tychoc.c:11514 puts a `#line` before every statement so a
+        # debugger steps the .ty source rather than the generated C.
+        if len(cs.dbgfile) > 0:
+            out = out + "#line " + str(ast.sline_of(s)) + " \"" + cs.dbgfile + "\"\n"
         out = out + _stmt(&cs, s, ind)
     out = out + _finalizers(&cs, m, ind)
     _restore(&cs, m)
@@ -7434,8 +7439,9 @@ fn _ends_ret(b: [ast.Stmt]) -> bool:
 # for every other, exactly as src/tychoc.c@pkg_prefix_for spells it. The files
 # arrive in the loader's post-order, so a package's dependencies are collected
 # before it is.
-fn program(pfx: [string], us: [ast.Unit]) -> string:
+fn program(pfx: [string], us: [ast.Unit], dbgf: string) -> string:
     cs := _new()
+    cs.dbgfile = dbgf
     for x in pfx:
         push(cs.fpfx, x)
     for u0 in us:

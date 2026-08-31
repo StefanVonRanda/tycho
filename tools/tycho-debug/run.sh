@@ -1,6 +1,6 @@
 set -u
 cd "$(dirname "$0")/../.." || exit 2                  # repo root
-TYCHOC="${TYCHOC:-./tychoc}"
+TYCHOC="${TYCHOC:-./tychoc1}"
 [ -x "$TYCHOC" ] || { echo "no ./tychoc -- run 'make' first"; exit 2; }
 D=tools/tycho-debug
 T="$(mktemp -d)"; trap 'rm -rf "$T"; pkill -f "interpreter=mi2 --args /tmp/.tycho_dbg_" 2>/dev/null' EXIT

@@ -13,7 +13,9 @@ RUNTIME := runtime/tycho_rt.c
 
 .PHONY: parse-check tychoc1-check script-check friction-check surface-check all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check goldens-check tls-verify http-verify format-diff math-diff traversal-check ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check flow-check ed-check sheet-check sim-check make-check snap-check tally-check agg-check tmpl-check stat-check ledger-check fh-check grid-check chess-check rsa-check kvsrv-check sat-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci release-check hooks ilp32 asan-self editors-check clean
 
-all: tychoc
+# tychoc1, the self-hosted compiler, is what `make` produces and what ships.
+# It still depends on tychoc: src/tychoc.c is the bootstrap stage that builds it.
+all: tychoc1
 
 # Turn the runtime C source into a single C string literal the compiler
 # embeds into every generated file. Each line is escaped and suffixed
@@ -47,37 +49,37 @@ TYCHOC1_SRC := compiler/main.ty $(wildcard compiler/*/*.ty)
 # two-line program, measured identical on tiny.ty and examples/invindex.ty).
 TYCHOC1_CFLAGS ?= --param inline-unit-growth=150 -static-pie -flto
 tychoc1: tychoc $(TYCHOC1_SRC)
-	./tychoc compiler/main.ty -o tychoc1-stage1
+	./tychoc1 compiler/main.ty -o tychoc1-stage1
 	TYCHO_CFLAGS="$(TYCHOC1_CFLAGS)" ./tychoc1-stage1 compiler/main.ty -o tychoc1
 	@rm -f tychoc1-stage1
 
-tycho: tychoc tools/tycho.ty tools/tycho_shim.c
-	./tychoc tools/tycho.ty --shim tools/tycho_shim.c -o tycho
+tycho: tychoc1 tools/tycho.ty tools/tycho_shim.c
+	./tychoc1 tools/tycho.ty --shim tools/tycho_shim.c -o tycho
 
-tychofmt: tychoc tools/tychofmt.ty
-	./tychoc tools/tychofmt.ty -o tychofmt
+tychofmt: tychoc1 tools/tychofmt.ty
+	./tychoc1 tools/tychofmt.ty -o tychofmt
 
-tycho-lsp: tychoc tools/lsp.ty tools/lsp_shim.c
-	./tychoc tools/lsp.ty --shim tools/lsp_shim.c -o tycho-lsp
+tycho-lsp: tychoc1 tools/lsp.ty tools/lsp_shim.c
+	./tychoc1 tools/lsp.ty --shim tools/lsp_shim.c -o tycho-lsp
 
-tycho-debug: tychoc tools/tycho-debug/main.ty tools/tycho-debug/debug_shim.c
-	./tychoc tools/tycho-debug/main.ty --shim tools/tycho-debug/debug_shim.c -o tycho-debug
+tycho-debug: tychoc1 tools/tycho-debug/main.ty tools/tycho-debug/debug_shim.c
+	./tychoc1 tools/tycho-debug/main.ty --shim tools/tycho-debug/debug_shim.c -o tycho-debug
 
 tools: tycho tychofmt tycho-lsp tycho-debug
 
-tools-check: tychoc
+tools-check: tychoc1
 	@sh scripts/tools_check.sh
 
 editors-check:
 	@sh scripts/editors_check.sh
 
-entrypoints: tychoc
+entrypoints: tychoc1
 	@sh scripts/entrypoints.sh
 
 spec-check:
 	@sh scripts/spec_check.sh
 
-docs-fences: tychoc
+docs-fences: tychoc1
 	@python3 scripts/docs_fences.py
 
 check-links:
@@ -93,7 +95,7 @@ wiki:
 	@python3 scripts/sync-wiki.py $(WIKI_DIR)
 	@echo "Review $(WIKI_DIR)/, then: git -C $(WIKI_DIR) add -A && git -C $(WIKI_DIR) commit -m ... && git -C $(WIKI_DIR) push"
 
-demo: tychoc
+demo: tychoc1
 	./tychoc examples/hello.ty
 	@echo "--- running examples/hello (type a name) ---"
 	@./examples/hello
@@ -116,7 +118,7 @@ wine-tools:
 wine-ffi:
 	@sh scripts/wine_ffi.sh
 
-test: tychoc
+test: tychoc1
 	@sh tests/run.sh
 
 build/prunner: tools/prunner/main.ty tychoc | build
@@ -130,16 +132,16 @@ test-fast: build/prunner
 asan-self: $(EMBED)
 	@sh scripts/asan_self.sh
 
-conc: tychoc
+conc: tychoc1
 	@sh tests/conc/run.sh
 
-rtparity: tychoc
+rtparity: tychoc1
 	@python3 tests/rtparity/run.py
 
-locale-check: tychoc
+locale-check: tychoc1
 	@sh scripts/locale_check.sh
 
-test-update: tychoc
+test-update: tychoc1
 	@RECORD=1 sh tests/run.sh
 
 bench: $(TYCHOC) entrypoints
@@ -169,10 +171,10 @@ bench-latency: $(TYCHOC)
 bench-gcscan: $(TYCHOC)
 	@TYCHOC=$(TYCHOC) sh bench/gcscan/run.sh
 
-corelib: tychoc
+corelib: tychoc1
 	@sh corelib/run.sh
 
-corelib-examples: tychoc
+corelib-examples: tychoc1
 	@sh examples/corelib/run.sh
 
 shim-check:
@@ -202,116 +204,116 @@ math-diff:
 traversal-check:
 	@sh scripts/traversal_depth.sh
 
-ar-check: tychoc
+ar-check: tychoc1
 	@sh tools/tycho-ar/run.sh
 
-image-ceiling: tychoc
+image-ceiling: tychoc1
 	@sh scripts/image_ceiling.sh
 
-build-check: tychoc
+build-check: tychoc1
 	@sh tools/tycho-build/run.sh
 
-debug-check: tychoc
+debug-check: tychoc1
 	@sh tools/tycho-debug/run.sh
 
-q-check: tychoc
+q-check: tychoc1
 	@sh tools/tycho-q/run.sh
 
-vm-check: tychoc
+vm-check: tychoc1
 	@sh tools/tycho-vm/run.sh
 
-scheme-check: tychoc
+scheme-check: tychoc1
 	@sh tools/tycho-scheme/run.sh
 
-kv-check: tychoc
+kv-check: tychoc1
 	@sh tools/tycho-kv/run.sh
 
-db-check: tychoc
+db-check: tychoc1
 	@sh tools/tycho-db/run.sh
 
-flow-check: tychoc
+flow-check: tychoc1
 	@sh tools/tycho-flow/run.sh
 
-ed-check: tychoc
+ed-check: tychoc1
 	@sh tools/tycho-ed/run.sh
 
-sheet-check: tychoc
+sheet-check: tychoc1
 	@sh tools/tycho-sheet/run.sh
 
-sim-check: tychoc
+sim-check: tychoc1
 	@sh tools/tycho-sim/run.sh
 
-make-check: tychoc
+make-check: tychoc1
 	@sh tools/tycho-make/run.sh
 
-diff-check: tychoc
+diff-check: tychoc1
 	@sh tools/tycho-diff/run.sh
 
-hash-check: tychoc
+hash-check: tychoc1
 	@sh tools/tycho-hash/run.sh
 
-fold-check: tychoc
+fold-check: tychoc1
 	@sh tools/tycho-fold/run.sh
 
-snap-check: tychoc
+snap-check: tychoc1
 	@sh tools/tycho-snap/run.sh
 
-tally-check: tychoc
+tally-check: tychoc1
 	@sh tools/tycho-tally/run.sh
 
-agg-check: tychoc
+agg-check: tychoc1
 	@sh tools/tycho-agg/run.sh
 
-tmpl-check: tychoc
+tmpl-check: tychoc1
 	@sh tools/tycho-tmpl/run.sh
 
-stat-check: tychoc
+stat-check: tychoc1
 	@sh tools/tycho-stat/run.sh
 
-ledger-check: tychoc
+ledger-check: tychoc1
 	@sh tools/tycho-ledger/run.sh
 
-fh-check: tychoc
+fh-check: tychoc1
 	@sh tools/tycho-fh/run.sh
 
-grid-check: tychoc
+grid-check: tychoc1
 	@sh tools/tycho-grid/run.sh
 
-chess-check: tychoc
+chess-check: tychoc1
 	@sh tools/tycho-chess/run.sh
 
-rsa-check: tychoc
+rsa-check: tychoc1
 	@sh tools/tycho-rsa/run.sh
 
-kvsrv-check: tychoc
+kvsrv-check: tychoc1
 	@sh tools/tycho-kvsrv/run.sh
 
-sat-check: tychoc
+sat-check: tychoc1
 	@sh tools/tycho-sat/run.sh
 
-fetch: tychoc
+fetch: tychoc1
 	@sh examples/fetch/run.sh
 
-weblog: tychoc
+weblog: tychoc1
 	@sh examples/weblog/run.sh
 
-webserver: tychoc
+webserver: tychoc1
 	@sh examples/webserver/run.sh
 
-server: tychoc
+server: tychoc1
 	@./tychoc server/main.ty -o tycho-httpd
 	@echo "built ./tycho-httpd -- try: ./tycho-httpd --root server/www --port 8080"
 
-server-check: tychoc
+server-check: tychoc1
 	@sh server/run.sh
 
-site: tychoc
+site: tychoc1
 	@sh examples/site/run.sh
 
-raytrace: tychoc
+raytrace: tychoc1
 	@sh examples/raytrace/run.sh
 
-mandelbrot: tychoc
+mandelbrot: tychoc1
 	@sh examples/mandelbrot/run.sh
 
 # Rebuild every emitted fixture C under a 32-bit-long data model and compare
@@ -320,7 +322,7 @@ mandelbrot: tychoc
 # evaluates doubles in 80-bit registers -- Tycho float is IEEE-754 binary64, so
 # x87 evaluation is not a permitted configuration. -ffloat-store is not enough:
 # it rounds on store but not in a comparison.
-ilp32: tychoc
+ilp32: tychoc1
 	@printf '#include <stdint.h>\n_Static_assert(sizeof(long)==4,"want ILP32 long");\nint main(void){int64_t x=5000000000LL;return x==5000000000LL?0:1;}\n' > build/.m32probe.c
 	@gcc -m32 build/.m32probe.c -o build/.m32probe 2>build/.m32probe.log || { \
 	  echo "ilp32: FATAL -- 'gcc -m32' cannot build a 32-bit int64 program." >&2; \
@@ -332,24 +334,24 @@ ilp32: tychoc
 	@echo "ilp32: ASan lane SKIPPED for ilp32 (32-bit ASan runtime absent under multilib; 64-bit 'make test' covers ASan)"
 	@CC="gcc -m32 -msse2 -mfpmath=sse" TYCHO_NO_ASAN=1 sh tests/run.sh
 
-ffi: tychoc
+ffi: tychoc1
 	@sh tests/ffi/run.sh
 
-recursion: tychoc
+recursion: tychoc1
 	@sh tests/recursion/run.sh
 
 N ?= 200
-fuzz: tychoc
+fuzz: tychoc1
 	@python3 fuzz/run.py $(N)
 
 QN ?= 60
-fuzz-quick: tychoc
+fuzz-quick: tychoc1
 	@python3 fuzz/run.py $(QN)
 
-fuzz-reject: tychoc
+fuzz-reject: tychoc1
 	@python3 fuzz/run_reject.py $(N)
 
-fuzz-leak: tychoc
+fuzz-leak: tychoc1
 	@python3 fuzz/run_leak.py $(N)
 
 bench-guard: $(TYCHOC)
@@ -358,7 +360,7 @@ bench-guard: $(TYCHOC)
 ci:
 	@sh scripts/ci.sh $(N)
 
-release-check: tychoc
+release-check: tychoc1
 	@set -eu; \
 	  version="$$(./tychoc --version | awk '{print $$2}')"; \
 	  os="$$(uname -s | tr '[:upper:]' '[:lower:]')"; \
@@ -401,7 +403,7 @@ surface-check:
 	@python3 scripts/surface_lock.py --selfcheck
 	@python3 scripts/surface_lock.py
 
-site-code-check: tychoc
+site-code-check: tychoc1
 	@python3 scripts/check_site_code.py --selfcheck
 	@python3 scripts/check_site_code.py
 
