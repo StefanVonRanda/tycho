@@ -95,6 +95,14 @@ injection_leg() {
 }
 case "$ONLY" in all|shell-injection) injection_leg ;; esac
 
+# NOT scored here, deliberately: the STRING-element copy. tycho_arr_str_push
+# copies the bytes into the owner arena on its way in and the fused form must
+# too; dropping it dangles a string built in the loop scratch. Three synthetic
+# fixtures failed to reproduce it -- the emit-side copy already fires for a bare
+# local, and a call result did not land in a reset scratch -- so a leg here would
+# be decoration. It is held by the corelib, tycho-ledger and tycho-snap lanes
+# below, measured: with the copy removed those three FAIL and the rest pass.
+#
 # Push fusion hoists an array's data/len/cap into locals so -O3 can register them
 # (prongB iter-transform: 248 ms -> 214 against ./tychoc's 215). It is a CODEGEN
 # SHAPE -- both forms print the same thing, so no golden can see it, and the

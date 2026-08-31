@@ -3864,6 +3864,13 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
             _: pass
         if fi9 >= 0 and cap9 == 0:
             fdn := cs.fuid[fi9]
+            # tycho_arr_str_push COPIES the bytes into the owner arena on its way
+            # in; the other push families store the value as given. Writing
+            # `fd[l++] = v` raw drops that copy, so a string built in the loop
+            # scratch was stored by pointer and dangled at the next reset --
+            # corelib zip, tycho-ledger and tycho-snap, all string pushes.
+            if _apfx(&cs, et) == "tycho_arr_str":
+                vc = "tycho_str_copy(" + ow + ", " + vc + ")"
             return ("({ if (" + fdn + "l == " + fdn + "c) " + _arrf(&cs, et, "_grow") +
                 "(" + ow + ", &" + fdn + ", &" + fdn + "c, " + fdn + "l); " +
                 fdn + "[" + fdn + "l++] = " + vc + "; })", "void")
@@ -5692,6 +5699,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                 push(cs.lpost, -1)
                 push(cs.lmark, _mark(&cs))
                 cs.arena = "&" + ids
+                fos, fns := _fuse_open(&cs, b, ind + "    ", c)
                 bds := _block(&cs, b, ind + "        ")
                 pop(cs.lpost)
                 pop(cs.lmark)
@@ -5708,11 +5716,12 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                     closs = ind + "    arena_free(&" + ids + ");\n"
                 elif fids:
                     bds = _replace(bds, "arena_free(&" + ids + "); ", "")
-                outs := ind + "{\n" + ind + "    char *" + fs + " = " + cc + ";\n" + opens +
+                fcs := _fuse_close(&cs, fns, ind + "    ")
+                outs := ind + "{\n" + ind + "    char *" + fs + " = " + cc + ";\n" + opens + fos +
                     ind + "    for (tycho_int " + fj + " = 0; " + fj +
                     " < tycho_str_len(" + fs + "); " + fj + " += 1) {\n" + ress +
                     ind + "        tycho_int " + scn + " = tycho_str_get(" + fs + ", " + fj + ");\n" +
-                    bds + ind + "    }\n" + closs + ind + "}\n"
+                    bds + ind + "    }\n" + fcs + closs + ind + "}\n"
                 _restore(&cs, ms)
                 return outs
             if not _is_arr(ct):
@@ -5741,6 +5750,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             push(cs.lpost, -1)
             push(cs.lmark, _mark(&cs))
             cs.arena = "&" + ida
+            foa, fna := _fuse_open(&cs, b, ind + "    ", c)
             bda := _block(&cs, b, ind + "        ")
             pop(cs.lpost)
             pop(cs.lmark)
@@ -5758,11 +5768,11 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             elif fida:
                 bda = _replace(bda, "arena_free(&" + ida + "); ", "")
             out := ind + "{\n" + ind + "    " + _ctyz(&cs, "[" + et + "]") + "" + fc +
-                " = " + cc2 + ";\n" + opena +
+                " = " + cc2 + ";\n" + opena + foa +
                 ind + "    for (tycho_int " + fi + " = 0; " + fi + " < " + fc +
                 ".len; " + fi + " += 1) {\n" + resa +
                 ind + "        " + _ctyz(&cs, et) + "" + fcn + " = " + fc + ".data[" + fi + "];\n" +
-                bda + ind + "    }\n" + closa + ind + "}\n"
+                bda + ind + "    }\n" + _fuse_close(&cs, fna, ind + "    ") + closa + ind + "}\n"
             _restore(&cs, m)
             return out
         ast.MatchS(l, subj, arms):
