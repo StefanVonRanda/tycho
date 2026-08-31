@@ -5597,6 +5597,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             push(cs.lpost, -1)
             push(cs.lmark, _mark(&cs))
             cs.arena = "&" + idw
+            fow, fnw := _fuse_open(&cs, b, ind + "    ", c)
             bdw := _block(&cs, b, ind + "        ")
             pop(cs.lpost)
             pop(cs.lmark)
@@ -5615,8 +5616,9 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                 closw = ind + "    arena_free(&" + idw + ");\n"
             elif fidw:
                 bdw = _replace(bdw, "arena_free(&" + idw + "); ", "")
-            return ind + "{\n" + openw + ind + "    while (" + cc + ") {\n" + resw +
-                bdw + ind + "    }\n" + closw + ind + "}\n"
+            fcw := _fuse_close(&cs, fnw, ind + "    ")
+            return ind + "{\n" + openw + fow + ind + "    while (" + cc + ") {\n" + resw +
+                bdw + ind + "    }\n" + fcw + closw + ind + "}\n"
         ast.For3(l, ip, c, b):
             m := _mark(&cs)
             # init runs once and the loop variable is written by the post clause
