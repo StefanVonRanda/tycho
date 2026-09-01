@@ -279,3 +279,6 @@ OVERVIEW.md
 /tycho-fold
 /tycho-hash
 tests/ffi/main.c
+
+# working plan -- rotates, not for visitors
+plan.md
