@@ -282,3 +282,6 @@ tests/ffi/main.c
 
 # working plan -- rotates, not for visitors
 plan.md
+
+# created by the core:sqlite doc fence when make docs-fences RUNS it
+app.db
