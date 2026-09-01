@@ -1,6 +1,6 @@
 # Design: `match` on scalar values
 
-Status: the deliverable of `plan.md` Phase 1 (the tycho-vm findings). Read
+Status: the deliverable of `docs/internals/plan-tycho-vm-DONE.md` Phase 1. Read
 before Phase 2 implements. This document is the contract; the six decisions
 below each carry their reason, and the codegen section carries the numbers
 that justify the choice.
@@ -138,16 +138,16 @@ instead of seven labels with a shared body).
 
 ## What it would buy — the arithmetic
 
-From the plan's own measurements (`plan.md:36-38`): VM throughput is 1.39 M
+From the plan's own measurements (`docs/internals/plan-tycho-vm-DONE.md:36-38`): VM throughput is 1.39 M
 instructions/sec — about **720 ns per instruction** — and the dispatch is
-~12 int comparisons per instruction (`plan.md:54`). An int compare plus
+~12 int comparisons per instruction (`docs/internals/plan-tycho-vm-DONE.md:54`). An int compare plus
 branch is ~2 cycles, ~0.7 ns at ~3 GHz, so the whole dispatch chain is
 **~8 ns ≈ 1% of the per-instruction budget**. A jump table replaces it with a
 bounds check plus an indirect jump, ~2–3 ns — a saving of **~0.5–1% of VM
 time, inside measurement noise**.
 
 The dominant cost is elsewhere: a struct-with-a-string copy is **815 ns**
-against **110 ns** for a bare `JMP` (`plan.md:36`) — 7×. Copies and arena
+against **110 ns** for a bare `JMP` (`docs/internals/plan-tycho-vm-DONE.md:36`) — 7×. Copies and arena
 traffic, not comparisons, are what the VM spends its 720 ns on.
 
 **Conclusion, stated plainly:** scalar `match` is an **ergonomics** feature

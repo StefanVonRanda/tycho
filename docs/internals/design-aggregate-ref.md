@@ -1,6 +1,6 @@
 # Design: a cheap reference to an aggregate
 
-Status: the deliverable of `plan.md` Phase 3 (the tycho-vm findings). Read
+Status: the deliverable of `docs/internals/plan-tycho-vm-DONE.md` Phase 3. Read
 before any implementation starts; this document's recommendation is that the
 answer is **mostly already shipped**, that the plan's premise is stale in one
 measured place, and that the residual gap is not worth a new construct.
