@@ -134,7 +134,7 @@ fn _pkg_files(dir: string) -> [string]:
     for nm in list_dir(dir):
         if len(nm) > 3 and nm[len(nm) - 3:] == ".ty":
             push(out, dir + "/" + nm)
-    sort.asc(out)
+    out = sort.asc(out)               # sort.asc RETURNS a new array; the bare call sorted a copy
     return out
 
 fn _empty_unit() -> ast.Unit:
