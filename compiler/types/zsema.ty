@@ -1318,6 +1318,11 @@ fn _pf_locals(b: [ast.Stmt], out: inout [string: bool]):
             ast.MatchS(l, sj, arms):
                 for a in arms:
                     _pf_locals(a.body, &out)
+            ast.SelectS(l, arms):
+                for a in arms:
+                    for bn in a.binds:
+                        out[bn] = true
+                    _pf_locals(a.body, &out)
             _: pass
     return
 
@@ -1350,7 +1355,8 @@ fn _pf_reads(e: ast.Expr, n: string) -> bool:
 fn _pf_mutator(nm: string) -> bool:
     return nm == "push" or nm == "pop" or nm == "reserve" or nm == "delete"
 
-fn _pf_body(cs: inout C, b: [ast.Stmt], loc: [string: bool], depth: int):
+fn _pf_body(cs: inout C, b: [ast.Stmt], loc: [string: bool], depth: int,
+            accop: inout [string: string]):
     for s in b:
         match s:
             ast.ReturnS(l, k):
@@ -1368,8 +1374,35 @@ fn _pf_body(cs: inout C, b: [ast.Stmt], loc: [string: bool], depth: int):
                         # its own partial, so a read here sees a partial sum
                         if _pf_reads(r[0], n) and not _pf_top_read(r[0], n):
                             _cerr(&cs, "reduction accumulator '" + n + "' may only be updated, not read, inside parallel for")
+                        # one accumulator, one op: the runtime seeds each chunk's
+                        # private copy from the op's identity, so + and * on the
+                        # same name have no single seed (src/tychoc.c:7793).
+                        o := _pf_op(r[0])
+                        if n in accop and accop[n] != o:
+                            _cerr(&cs, "accumulator '" + n + "' must use one reduction op consistently")
+                        accop[n] = o
                     else:
                         _cerr(&cs, "parallel for may update an outer variable only as a reduction: acc = acc + e or acc = acc * e (int/float)")
+            ast.MDecl(l, d, ns, r):
+                if not d:
+                    for n2 in ns:
+                        if not (n2 in loc):
+                            cs.line = l
+                            _cerr(&cs, "parallel for cannot assign to captured variable '" + n2 + "'")
+                for e in r:
+                    _pf_mut_check(&cs, e, loc, l)
+            ast.PlaceSet(l, k):
+                if len(k) == 2:
+                    r2 := _rootn(k[0])
+                    if len(r2) > 0 and not (r2 in loc):
+                        cs.line = l
+                        _cerr(&cs, "parallel for cannot mutate captured variable '" + r2 + "' in place")
+                for e in k:
+                    _pf_mut_check(&cs, e, loc, l)
+            ast.Decl(l, n, t, r, v):
+                for e in r:
+                    _pf_mut_check(&cs, e, loc, l)
+                _pf_body(&cs, v, loc, depth, &accop)
             ast.ExprStmt(l, k):
                 for e in k:
                     _pf_mut_check(&cs, e, loc, l)
@@ -1377,17 +1410,27 @@ fn _pf_body(cs: inout C, b: [ast.Stmt], loc: [string: bool], depth: int):
             ast.IfS(l, c, bb, e):
                 for x in c:
                     _pf_acc_read(&cs, x, loc, l)
-                _pf_body(&cs, bb, loc, depth)
-                _pf_body(&cs, e, loc, depth)
-            ast.WhileS(l, c, bb): _pf_body(&cs, bb, loc, depth + 1)
-            ast.For3(l, ip, c, bb): _pf_body(&cs, bb, loc, depth + 1)
-            ast.ForIn(l, n, c, bb): _pf_body(&cs, bb, loc, depth + 1)
-            ast.ForRange(l, n, c, bb): _pf_body(&cs, bb, loc, depth + 1)
+                _pf_body(&cs, bb, loc, depth, &accop)
+                _pf_body(&cs, e, loc, depth, &accop)
+            ast.WhileS(l, c, bb): _pf_body(&cs, bb, loc, depth + 1, &accop)
+            ast.For3(l, ip, c, bb): _pf_body(&cs, bb, loc, depth + 1, &accop)
+            ast.ForIn(l, n, c, bb): _pf_body(&cs, bb, loc, depth + 1, &accop)
+            ast.ForRange(l, n, c, bb): _pf_body(&cs, bb, loc, depth + 1, &accop)
             ast.MatchS(l, sj, arms):
                 for a in arms:
-                    _pf_body(&cs, a.body, loc, depth)
+                    _pf_body(&cs, a.body, loc, depth, &accop)
+            ast.SelectS(l, arms):
+                for a in arms:
+                    _pf_body(&cs, a.body, loc, depth, &accop)
             _: pass
     return
+
+# `acc = acc + e` / `acc = acc * e` -- the op, once _pf_reduction has passed.
+fn _pf_op(r: ast.Expr) -> string:
+    match r:
+        ast.Binop(l, o, k): return o
+        _: pass
+    return ""
 
 # `acc = acc + e` reads acc at the top of the RHS, which is the reduction itself.
 fn _pf_top_read(r: ast.Expr, n: string) -> bool:
@@ -1403,6 +1446,12 @@ fn _pf_top_read(r: ast.Expr, n: string) -> bool:
 
 fn _pf_mut_check(cs: inout C, e: ast.Expr, loc: [string: bool], l: int):
     match e:
+        ast.Addr(ln, k):
+            if len(k) == 1:
+                r := _rootn(k[0])
+                if len(r) > 0 and not (r in loc):
+                    cs.line = l
+                    _cerr(&cs, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)")
         ast.Call(ln, q, n, t, a):
             if len(q) == 0 and _pf_mutator(n) and len(a) > 0:
                 r := _rootn(a[0])
@@ -1455,6 +1504,9 @@ fn _pf_accs(b: [ast.Stmt], loc: [string: bool], out: inout [string], bad: inout 
             ast.MatchS(l, sj, arms):
                 for a in arms:
                     _pf_accs(a.body, loc, &out, &bad)
+            ast.SelectS(l, arms):
+                for a in arms:
+                    _pf_accs(a.body, loc, &out, &bad)
             _: pass
     return
 
@@ -1471,6 +1523,7 @@ fn _parfor_check(cs: inout C, l: int, v: string, b: [ast.Stmt]):
             push(keep, a)
     sav := cs.pfacc
     cs.pfacc = keep
-    _pf_body(&cs, b, loc, 0)
+    accop := []string: string
+    _pf_body(&cs, b, loc, 0, &accop)
     cs.pfacc = sav
     return

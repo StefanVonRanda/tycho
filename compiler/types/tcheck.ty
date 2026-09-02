@@ -2374,10 +2374,16 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
             _vrestore(&cs, m)
             cs.loopd = cs.loopd - 1
         ast.ForRange(l, v, bounds, b):
+            # src/tychoc.c:7937 checks the range BEFORE scanning the body, and
+            # takes the type as written: a sized int and a newtype over int are
+            # both refused, so this compares the raw type, not `_base`.
+            for x in bounds:
+                bt := _ex(&cs, x)
+                cs.line = l
+                if known(bt) and bt != "int":
+                    _cerr(&cs, "parallel for needs an int range")
             _parfor_check(&cs, l, v, b)
             cs.loopd = cs.loopd + 1
-            for x in bounds:
-                _ex(&cs, x)
             m := _vmark(&cs)
             cs.line = l
             _vpush(&cs, v, "int", false)
