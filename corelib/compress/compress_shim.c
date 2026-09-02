@@ -138,7 +138,12 @@ void zx_raw_inflate(const unsigned char *data, tycho_int len, tycho_int *status,
             free(buf); inflateEnd(&s); return;
         }
         if (s.avail_out == 0) {
-            size_t ncap = cap * 2u; unsigned char *nb = (unsigned char *)realloc(buf, ncap);
+            /* Same ZD_MAX_OUT ceiling the gzip path enforces: core:zip feeds raw
+             * deflate streams straight in and only compares the declared size
+             * AFTER the inflate, so without this a 1.1 MB zip reaches 1.1 GB. */
+            size_t ncap = cap * 2u;
+            if (ncap > ZD_MAX_OUT) { *status = ZD_TOOBIG; free(buf); inflateEnd(&s); return; }
+            unsigned char *nb = (unsigned char *)realloc(buf, ncap);
             if (!nb) { free(buf); inflateEnd(&s); return; }
             buf = nb; s.next_out = buf + s.total_out; s.avail_out = (uInt)(ncap - s.total_out); cap = ncap;
         }

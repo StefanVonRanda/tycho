@@ -45,6 +45,14 @@ static Resp *perform(const char *url, const char *post_body, const char *ctype) 
     r->body = (char *)malloc(1); r->body[0] = 0; r->len = 0;
 
     curl_easy_setopt(c, CURLOPT_URL, url);
+    /* The FIRST hop needs the same fence as a redirect: this libcurl carries
+     * FILE, FTP, SCP, SMTP and friends, so an unfenced CURLOPT_URL makes
+     * http.get("file:///etc/passwd") a working file read. */
+#ifdef CURLOPT_PROTOCOLS_STR
+    curl_easy_setopt(c, CURLOPT_PROTOCOLS_STR, "http,https");
+#elif defined(CURLPROTO_HTTP)
+    curl_easy_setopt(c, CURLOPT_PROTOCOLS, (long)(CURLPROTO_HTTP | CURLPROTO_HTTPS));
+#endif
     curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, collect);
     curl_easy_setopt(c, CURLOPT_WRITEDATA, r);
     curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);

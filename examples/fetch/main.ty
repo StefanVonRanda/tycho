@@ -1,6 +1,6 @@
 # fetch -- a small CLI that GETs a URL and summarizes + caches the response.
 # A dogfood that composes five corelib modules end-to-end:
-#   core:http   -- the request (any libcurl protocol: http/https/file)
+#   core:http   -- the request (http/https only; other schemes are refused)
 #   core:json   -- detect + summarize a JSON body
 #   core:sha256 -- a content hash of the body
 #   core:io     -- write the body to a content-addressed cache file

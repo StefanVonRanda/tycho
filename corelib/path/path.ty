@@ -128,11 +128,27 @@ fn clean(p: string) -> string:
 #   safe_join("/srv/data", "user/report.txt") -> "/srv/data/user/report.txt"
 #   safe_join("/srv/data", "../../etc/passwd") -> ""
 #   safe_join("/srv/data", "/etc/passwd")      -> ""
+#   safe_join("/srv/data", "..\\etc\\passwd")  -> ""   (backslash: see below)
 # Fail-closed: callers MUST treat "" as rejected before using the path. The
 # escape test is base-independent -- clean() leaves a leading ".." exactly
 # when the relative path climbs above its own start.
+#
+# DESIGN CHOICE, backslash: `clean` stays POSIX-only -- `\` is a LEGAL byte in a
+# POSIX filename, and rewriting it to "/" there would silently open a different
+# file than the caller named. But `..\` IS a parent reference on the Windows
+# target this repo ships (server/winsignal.c, `make wine-ubsan`), so safe_join
+# REFUSES any `rel` carrying a backslash or a `X:` drive prefix rather than
+# interpreting it. Refusing is correct on both platforms: on Windows it closes
+# the traversal, on POSIX it costs only an exotic filename that no caller of an
+# untrusted-input guard should be accepting anyway. The answer must NOT vary by
+# build -- a security rule that differs per target is one nobody can reason about.
 fn safe_join(base: string, rel: string) -> string:
     if is_abs(rel):
+        return ""
+    for i := 0; i < len(rel); i += 1:
+        if rel[i] == 92:                       # '\' -- never interpreted, always refused
+            return ""
+    if len(rel) >= 2 and rel[1] == 58:         # "X:" drive prefix, absolute on Windows
         return ""
     cr := clean(rel)
     if cr == "..":

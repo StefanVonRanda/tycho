@@ -212,6 +212,11 @@ ar-check: tychoc1
 image-ceiling: tychoc1
 	@sh scripts/image_ceiling.sh
 
+# The core:zip sibling of image-ceiling. tycho-ar's bomb leg covers gzip via
+# compress.decompress; zip entries are RAW deflate, a different function.
+zip-ceiling: tychoc1
+	@sh scripts/zip_ceiling.sh
+
 build-check: tychoc1
 	@sh tools/tycho-build/run.sh
 

@@ -1,11 +1,7 @@
 ok=0 null=1 status=0
 body=[]
 get_body=[] get_status=0
-url_ctl_null=0 url_ctl_len=18
-url_nul_null=1 url_nul_len=0
+file_get_null=1 file_get_len=0
 wrote=1
-post_ctl_null=0 post_ctl_len=18
-post_url_null=1
-post_ct_null=1
-gb_ctl=18
-gb_nul=0
+file_post_null=1 file_post_len=0
+file_gb=0

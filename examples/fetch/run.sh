@@ -15,20 +15,33 @@ SHIM="$("$TYCHOC" examples/fetch/main.ty --print-shims)" \
     || { echo "fetch: FAIL (tychoc --print-shims)"; exit 1; }
 RECORD="${RECORD:-0}"
 golden=examples/fetch/expected.out
-T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
+T="$(mktemp -d)"
+srv=""
+cleanup() { [ -n "$srv" ] && kill "$srv" 2>/dev/null; rm -rf "$T"; }
+trap cleanup EXIT INT TERM
 fail=0
 # mingw gcc ships no sanitizer runtime -- see the SKIP at the sanitizer leg below
 case "$(uname -s)" in *MSYS*|*MINGW*|*CYGWIN*) IS_WINDOWS=1 ;; *) IS_WINDOWS=0 ;; esac
-# The fixture is fetched over file://, so the URL needs a path the NATIVE program
-# can open. Under MSYS2 $PWD is the POSIX view (/c/tycho), which libcurl -- a
-# native Windows DLL -- cannot resolve: the request came back "no response" and
-# the lane read as a core:http failure. cygpath -m gives the mixed form
-# (C:/tycho) that both a file: URL and the CRT accept.
-if [ "$IS_WINDOWS" = 1 ]; then
-    URL="file:///$(cygpath -m "$PWD")/examples/fetch/fixture.json"
-else
-    URL="file://$PWD/examples/fetch/fixture.json"
-fi
+# The fixture used to be fetched over file://, which needed a cygpath dance on
+# Windows and, more to the point, stopped working when core:http grew its scheme
+# fence -- http.get now refuses every scheme but http/https. So this lane serves
+# the fixture over real loopback HTTP instead, which is closer to what the
+# example is for. Port chosen by the kernel; readiness is a real connect, never
+# a sleep. No python3 means no server, so the lane skips rather than lying.
+command -v python3 >/dev/null 2>&1 || { echo "fetch: SKIP (no python3 to serve the fixture)"; exit 0; }
+port=$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()')
+python3 -m http.server "$port" --bind 127.0.0.1 --directory examples/fetch >/dev/null 2>&1 &
+srv=$!
+ready=0; i=0
+while [ "$i" -lt 100 ]; do
+    if python3 -c "
+import socket,sys
+s=socket.socket(); s.settimeout(0.2)
+sys.exit(0 if s.connect_ex(('127.0.0.1',$port))==0 else 1)" 2>/dev/null; then ready=1; break; fi
+    i=$((i + 1))
+done
+[ "$ready" -eq 1 ] || { echo "fetch: SKIP (the fixture server never came up)"; exit 0; }
+URL="http://127.0.0.1:$port/fixture.json"
 
 # (1) C reference compiler (auto-discovers the core:http shim + deps)
 if ! "$TYCHOC" examples/fetch/main.ty -o "$T/c" >"$T/c.log" 2>&1; then
@@ -57,4 +70,4 @@ if [ "$fail" -eq 0 ] && ! cmp -s "$T/c.out" "$golden"; then
     echo "FAIL: output != golden"; diff "$golden" "$T/c.out" | sed 's/^/      /'; fail=1
 fi
 if [ "$IS_WINDOWS" = 1 ]; then SAN="ASan SKIPPED (no mingw runtime)"; else SAN="ASan"; fi
-[ "$fail" -eq 0 ] && echo "fetch: green (http+json+sha256+io+path compose; tychoc+$SAN; real libcurl via file://)" || { echo "fetch: FAIL"; exit 1; }
+[ "$fail" -eq 0 ] && echo "fetch: green (http+json+sha256+io+path compose; tychoc+$SAN; real libcurl over loopback HTTP)" || { echo "fetch: FAIL"; exit 1; }

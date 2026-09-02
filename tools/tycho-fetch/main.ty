@@ -19,9 +19,10 @@ fn main():
     st := http.status(r)
     body := http.body_bytes(r)
     http.release(r)
-    # file:// URLs have no HTTP status line (libcurl reports 0); accept 200,
-    # or 0 with a non-empty body (a successful file:// download). Anything
-    # else -- or an empty 0 (missing file, failed request) -- fails closed.
+    # core:http refuses every scheme but http/https now, so status 0 no longer
+    # means "a file:// download with no status line" -- it means the request did
+    # not complete. The 0-with-a-body arm is kept for a proxy that answers
+    # without a status line, and still fails closed on an empty body.
     if st != 200 and (st != 0 or len(body) == 0):
         die("tycho-fetch: " + url + " -> HTTP " + str(st))
     sha := sha256.hex(to_str(body))

@@ -85,3 +85,9 @@ fn main():
     sj5 := path.safe_join("/srv/data", "a/../../x")
     sj6 := path.safe_join("/srv/data", "./x")
     println(f"safe_join inner=[{sj4}] escape=[{sj5}] dot=[{sj6}]")
+    # Backslash is a parent reference on the Windows target and a legal filename
+    # byte on POSIX: safe_join refuses it either way rather than interpreting it.
+    sj7 := path.safe_join("/srv/data", "..\\..\\etc\\passwd")
+    sj8 := path.safe_join("/srv/data", "a\\b.txt")
+    sj9 := path.safe_join("/srv/data", "C:/Windows/win.ini")
+    println(f"safe_join bsdotdot=[{sj7}] bsplain=[{sj8}] drive=[{sj9}]")

@@ -97,6 +97,44 @@ r3=$(env -u SSL_CERT_DIR SSL_CERT_FILE="$T/ca.pem" "$T/probe" "https://127.0.0.1
 say "[3] same server, CA trusted, name differs" "$r3"
 [ "$r3" = 0 ] || { echo "  LEAK: the hostname was NOT checked -- a valid cert for another name was accepted."; fail=1; }
 
+# --- [4] the SCHEME fence, and [4b] the interior-NUL guard --------------------
+# Both need a request that really FETCHES as their positive control, and this is
+# the only lane in the tree that has one. corelib/test/http used file:// for
+# that, which stopped working the day file:// started being refused -- so the
+# NUL leg lives here now, where [4ctl] is a live 200 rather than a local read.
+mkdir -p "$T/p2"
+cat > "$T/p2/main.ty" <<'EOF'
+package main
+import "core:http"
+
+# Body LENGTH, not status: file:// carries no HTTP status, so a status-only
+# probe answers 0 for a refused scheme and for a successful file read alike.
+fn main():
+    u := args()[1]
+    if len(args()) > 2:
+        u = u + to_str(to_bytes([0])) + "/ignored"
+    println(str(len(http.get_body(u))))
+EOF
+./tychoc "$T/p2/main.ty" -o "$T/probe2" >"$T/build2.log" 2>&1 || {
+    echo "http-verify: FAILED (the scheme probe does not build)"; tail -4 "$T/build2.log"; exit 1; }
+printf 'eighteen bytes ok\n' > "$T/local.txt"
+
+n4ctl=$(env -u SSL_CERT_DIR SSL_CERT_FILE="$T/ca.pem" "$T/probe2" "https://localhost:$port/" 2>/dev/null || true)
+say "[4ctl] live https fetch, bytes returned" "$n4ctl"
+if [ "${n4ctl:-0}" -le 0 ] 2>/dev/null; then
+    echo "  CONTROL DEAD: nothing fetched at all, so [4] and [4b] would pass on a"
+    echo "                probe that never reached curl."
+    fail=1
+fi
+
+n4=$(env -u SSL_CERT_DIR SSL_CERT_FILE="$T/ca.pem" "$T/probe2" "file://$T/local.txt" 2>/dev/null || true)
+say "[4] file:// URL, 18 bytes on disk" "$n4"
+[ "$n4" = 0 ] || { echo "  LEAK: file:// was fetched -- CURLOPT_PROTOCOLS is not fencing the first hop."; fail=1; }
+
+n4b=$(env -u SSL_CERT_DIR SSL_CERT_FILE="$T/ca.pem" "$T/probe2" "https://localhost:$port/" nul 2>/dev/null || true)
+say "[4b] the SAME live URL with an interior NUL" "$n4b"
+[ "$n4b" = 0 ] || { echo "  LEAK: a URL carrying an interior NUL was fetched (truncated, so a DIFFERENT URL)."; fail=1; }
+
 # --- [C] the control: [1] must be refusing because verification runs ----------
 # Built against a COPY, so the tree is never in the unverified state. Both
 # options go off together: VERIFYPEER alone still leaves the hostname check
@@ -119,4 +157,4 @@ if [ "$rc" = 0 ]; then
 fi
 
 [ "$fail" -eq 0 ] || { echo "http-verify: FAIL"; exit 1; }
-echo "http-verify: green (an untrusted certificate is refused, the same server is accepted once its CA is trusted through either SSL_CERT_FILE or SSL_CERT_DIR and reached by the name in the cert, refused again under a name the cert does not carry, and accepted by a control with verification off -- so the refusals are verification, not a dead connection)"
+echo "http-verify: green (an untrusted certificate is refused, the same server is accepted once its CA is trusted through either SSL_CERT_FILE or SSL_CERT_DIR and reached by the name in the cert, refused again under a name the cert does not carry, and accepted by a control with verification off -- so the refusals are verification, not a dead connection; and file:// and an interior-NUL URL are both refused while a live fetch through the same probe still returns bytes)"

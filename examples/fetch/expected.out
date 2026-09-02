@@ -1,5 +1,5 @@
 source : fixture.json
-status : 0
+status : 200
 bytes  : 151
 sha256 : 3f4d59121753c86614bf62394b22b79385f83e81f75eed7db63b8db5b651822d
 content: json object, 5 keys: name, language, stars, topics, owner
