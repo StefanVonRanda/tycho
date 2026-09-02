@@ -100,3 +100,8 @@ fn main():
     println("trunc_n17_5=" + bignum.to_str(bignum.div(bignum.from_int(0 - 17), bignum.from_int(5))) + "," + bignum.to_str(bignum.mod(bignum.from_int(0 - 17), bignum.from_int(5))))
     println("trunc_17_n5=" + bignum.to_str(bignum.div(bignum.from_int(17), bignum.from_int(0 - 5))) + "," + bignum.to_str(bignum.mod(bignum.from_int(17), bignum.from_int(0 - 5))))
     println("trunc_n17_n5=" + bignum.to_str(bignum.div(bignum.from_int(0 - 17), bignum.from_int(0 - 5))) + "," + bignum.to_str(bignum.mod(bignum.from_int(0 - 17), bignum.from_int(0 - 5))))
+
+    # INT_MIN: |n| does not fit, so from_int builds the magnitude as |n|-1 plus 1.
+    imin := (0 - 9223372036854775807) - 1
+    println("int_min=" + bignum.to_str(bignum.from_int(imin)) + " " + bignum.to_str(bignum.from_int(imin + 1)) + " " + bignum.to_str(bignum.from_int(0 - 1)))
+    println("int_min_neg=" + bignum.to_str(bignum.neg(bignum.from_int(imin))) + " " + str(bignum.cmp(bignum.from_int(imin), bignum.from_int(imin + 1))))

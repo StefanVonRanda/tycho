@@ -98,3 +98,6 @@ fn main():
     println("lax_wrong=" + decimal.to_str(decimal.from_str("1.5x")) + " " + decimal.to_str(decimal.from_str("1.2.3")) + " " + decimal.to_str(decimal.from_str("1,5")))
     println("strict_ok=" + ck("1.5") + " " + ck("1.50") + " " + ck("-2.25") + " " + ck("+3") + " " + ck(".5") + " " + ck("5.") + " " + ck("99999999999999999999.5"))
     println("strict_err=" + ck("1.5x") + " " + ck("1.2.3") + " " + ck("") + " " + ck("-") + " " + ck(".") + " " + ck("abc") + " " + ck(" 1.5") + " " + ck("1e5") + " " + ck("1,5"))
+
+    # INT_MIN survives from_int; a negative rescale is refused (die), not rendered.
+    println("int_min=" + decimal.to_str(decimal.from_int((0 - 9223372036854775807) - 1)))

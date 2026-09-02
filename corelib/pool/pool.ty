@@ -12,7 +12,16 @@ struct Pool($T):
     free: [int]           # indices of removed slots, ready to reuse
 
 # --- handle packing (index in the low 24 bits, generation above) ---
+
+# The index field is 24 bits wide, so slot 2^24 used to pack to the SAME handle
+# as slot 0 at generation+1 -- an alias reached by GROWING the pool, which the
+# generation counter cannot see because nothing was ever freed. Refused here,
+# the one place every handle is minted.
+const MAX_SLOTS = 16777216         # 2^24 -- one more than the index field holds
+
 fn pack(idx: int, gen: int) -> Handle:
+    if idx < 0 or idx >= MAX_SLOTS:
+        die("pool.pack: slot index " + str(idx) + " does not fit the 24-bit handle field (max " + str(MAX_SLOTS - 1) + ")")
     return Handle((gen << 24) | idx)
 fn index_of(h: Handle) -> int:
     return to_int(h) & 16777215
@@ -29,6 +38,8 @@ fn add(p: inout Pool($T), v: $T) -> Handle:
         p.slots[idx].used = true
         return pack(idx, p.slots[idx].gen)
     ni := len(p.slots)
+    if ni >= MAX_SLOTS:
+        die("pool.add: pool is full (" + str(MAX_SLOTS) + " slots)")
     push(p.slots, Slot(v, 0, true))
     return pack(ni, 0)
 

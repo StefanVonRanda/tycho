@@ -162,19 +162,26 @@ fn mag_divmod(u: [int], v: [int]) -> ([int], [int]):
 
 # ---- construction ----------------------------------------------------------
 
-# NB: INT_MIN is not representable (0 - INT_MIN overflows); callers pass in-range ints.
+# Every int64 is representable, INT_MIN included. A negative n is taken as
+# |n| - 1 (which always fits, unlike 0 - n at INT_MIN) and the 1 is added back
+# through mag_add; negating INT_MIN directly used to overflow to itself, leaving
+# a corrupt Big of sign -1 with ZERO limbs that died inside to_str.
 fn from_int(n: int) -> Big:
     if n == 0:
         return zero()
     sg := 1
     m := n
+    carry_one := false
     if n < 0:
         sg = -1
-        m = 0 - n
+        m = 0 - (n + 1)
+        carry_one = true
     ls := []int
     for m > 0:
         push(ls, m % BASE)
         m = m / BASE
+    if carry_one:
+        ls = mag_add(ls, [1])
     return Big(sg, ls)
 
 # Parse a decimal string: optional '-'/'+', then digits. Non-digits after the sign

@@ -12,3 +12,6 @@ cross   = 1
 bad qoi = 0
 bad bmp = 0
 empty   = 0
+qoi bomb= 0
+bmp bomb= 0
+ceiling = 01010

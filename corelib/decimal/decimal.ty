@@ -112,7 +112,17 @@ fn cmp(a: Decimal, b: Decimal) -> int:
 
 # Change the scale. Increasing is exact (append zeros); decreasing TRUNCATES toward
 # zero (the extra digits are dropped, not rounded).
+#
+# A negative scale is refused, not rendered: `scale` is documented `>= 0` on the
+# struct above and `div` already answers Err(BadScale) for one, but rescale used
+# to accept it and then to_str's `scale <= 0` arm printed the coefficient with
+# the implied trailing zeros DROPPED -- rescale(1.5, -2) read as "0". The scale
+# is a caller-chosen constant, never data, so this dies rather than widening the
+# return type (which is frozen surface); every other producer of a Decimal
+# already yields scale >= 0, so this is the only door.
 fn rescale(a: Decimal, newscale: int) -> Decimal:
+    if newscale < 0:
+        die("decimal.rescale: negative scale " + str(newscale) + " (scale must be >= 0)")
     if newscale == a.scale:
         return a
     if newscale > a.scale:

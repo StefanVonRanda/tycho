@@ -77,3 +77,33 @@ fn main():
     println("bad bmp = " + str(raster.decode_bmp(to_bytes([1, 2, 3])).width))
     empt := raster.decode_qoi(to_bytes([]int))
     println("empty   = " + str(empt.width))
+
+    # ---- decoded-size ceiling (the raster sibling of make image-ceiling) ----
+    # A 32-bit dimension field lets w*h and rowsize*h overflow int64: the qoi
+    # bomb used to return its declared size with zero pixels, the bmp one used
+    # to abort on a negative index.
+    qbomb := []int
+    push(qbomb, 113)
+    push(qbomb, 111)
+    push(qbomb, 105)
+    push(qbomb, 102)
+    for i := 0; i < 8; i += 1:
+        push(qbomb, 255)
+    push(qbomb, 4)
+    push(qbomb, 0)
+    println("qoi bomb= " + str(raster.decode_qoi(to_bytes(qbomb)).width))
+    bbomb := []int
+    for i := 0; i < 54; i += 1:
+        push(bbomb, 0)
+    bbomb[0] = 66
+    bbomb[1] = 77
+    bbomb[10] = 54
+    for i := 18; i < 26; i += 1:
+        bbomb[i] = 255
+    bbomb[21] = 127
+    bbomb[25] = 127
+    bbomb[28] = 32                # a legal bpp, or the bpp guard refuses it first
+    println("bmp bomb= " + str(raster.decode_bmp(to_bytes(bbomb)).width))
+    # The ceiling must ADMIT as well as refuse, or a decoder that refused
+    # everything would score the two lines above: both sides of the boundary.
+    println("ceiling = " + str(b(raster.too_big(134217728, 1))) + str(b(raster.too_big(134217729, 1))) + str(b(raster.too_big(11585, 11585))) + str(b(raster.too_big(11586, 11586))) + str(b(raster.too_big(4, 2))))

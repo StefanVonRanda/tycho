@@ -13,7 +13,8 @@
 #   raster.make(w, h, pixels) -> Image
 #
 # Decoders FAIL CLOSED: a malformed / truncated / wrong-format input yields a 0x0
-# Image (check width > 0). encode/decode round-trip losslessly.
+# Image (check width > 0), and so does one whose declared dimensions ask for more
+# than MAX_OUT bytes of RGBA. encode/decode round-trip losslessly.
 package raster
 
 struct Image:
@@ -26,6 +27,23 @@ fn make(width: int, height: int, pixels: bytes) -> Image:
 
 fn empty_image() -> Image:
     return Image(0, 0, to_bytes([]int))
+
+# Decoded-size ceiling, mirroring core:image's IMG_MAX_OUT (corelib/image/image_shim.c@IMG_MAX_OUT).
+# A header declares w and h as 32-bit fields, so w*h and rowsize*h overflow int64
+# long before either dimension does: decode_qoi's npx wrapped NEGATIVE and it
+# returned the declared dimensions with an EMPTY pixel buffer, and decode_bmp's
+# `offset + rowsize * h > n` wrapped past the guard and aborted the process on
+# a negative string index. The product is therefore never formed -- the two
+# bounds are checked by division.
+const MAX_OUT = 536870912          # 512 MiB of decoded RGBA, the same ceiling core:image uses
+const MAX_PX = 134217728           # MAX_OUT / 4 -- the pixel count that buys
+
+fn too_big(w: int, h: int) -> bool:
+    if w <= 0 or h <= 0:
+        return true
+    if w > MAX_PX:
+        return true
+    return h > MAX_PX / w
 
 # ---- little/big-endian readers over a string view of the input bytes ----------
 
@@ -120,6 +138,8 @@ fn decode_bmp(data: bytes) -> Image:
     if hraw < 0:
         topdown = true
         h = 0 - hraw
+    if too_big(w, h):                      # before rowsize * h can overflow
+        return empty_image()
     bpx := bpp / 8
     rowsize := ((bpp * w + 31) / 32) * 4   # rows padded to 4 bytes
     if offset + rowsize * h > n:
@@ -253,7 +273,7 @@ fn decode_qoi(data: bytes) -> Image:
         return empty_image()
     w := rd_u32_be(s, 4)
     h := rd_u32_be(s, 8)
-    if w <= 0 or h <= 0:
+    if too_big(w, h):                      # before npx can overflow
         return empty_image()
     npx := w * h
     index := []int
