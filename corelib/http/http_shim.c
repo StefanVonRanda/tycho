@@ -36,7 +36,7 @@ static size_t collect(char *ptr, size_t size, size_t nmemb, void *userp) {
 
 static int g_curl_init = 0;
 
-static Resp *perform(const char *url, const char *post_body, const char *ctype) {
+static Resp *perform(const char *url, const char *post_body, size_t post_len, const char *ctype) {
     if (!g_curl_init) { curl_global_init(CURL_GLOBAL_DEFAULT); g_curl_init = 1; }
     CURL *c = curl_easy_init();
     if (!c) return NULL;
@@ -78,7 +78,12 @@ static Resp *perform(const char *url, const char *post_body, const char *ctype) 
 
     struct curl_slist *hdrs = NULL;
     if (post_body) {
-        curl_easy_setopt(c, CURLOPT_POSTFIELDS, post_body);
+        /* SIZE FIRST, and COPYPOSTFIELDS: without a declared size curl calls
+         * strlen() on the body, so a body with an interior NUL is sent short
+         * and the Content-Length describes the truncation rather than the
+         * entity. The COPY form is what makes the length authoritative. */
+        curl_easy_setopt(c, CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t)post_len);
+        curl_easy_setopt(c, CURLOPT_COPYPOSTFIELDS, post_body);
         if (ctype && *ctype) {
             char h[512];
             snprintf(h, sizeof h, "Content-Type: %s", ctype);
@@ -115,8 +120,14 @@ void http_body_bytes(void *resp, const unsigned char **out, tycho_int *outlen) {
     *outlen = (tycho_int)r->len;
 }
 
-void *http_get(const char *url) { return perform(url, NULL, NULL); }
-void *http_post(const char *url, const char *body, const char *ctype) { return perform(url, body ? body : "", ctype); }
+void *http_get(const char *url) { return perform(url, NULL, 0, NULL); }
+/* The body crosses as (ptr, len), never as a C string: a Tycho `bytes` may carry
+ * interior NULs and every one of them belongs in the entity. `body` is NULL for
+ * an empty body, which is still a POST -- only http_get passes no body at all. */
+void *http_post_bytes(const char *url, const unsigned char *body, tycho_int len, const char *ctype) {
+    if (len < 0) return NULL;
+    return perform(url, body ? (const char *)body : "", (size_t)len, ctype);
+}
 tycho_int http_status(void *resp) { return resp ? (tycho_int)((Resp *)resp)->status : 0; }
 const char *http_body(void *resp) { return resp ? ((Resp *)resp)->body : ""; }
 void http_free(void *resp) { if (resp) { free(((Resp *)resp)->body); free(resp); } }

@@ -1,7 +1,7 @@
 package http
 
 extern fn http_get(url: string) -> ptr
-extern fn http_post(url: string, body: string, content_type: string) -> ptr
+extern fn http_post_bytes(url: string, body: bytes, content_type: string) -> ptr
 extern fn http_status(resp: ptr) -> int
 extern fn http_body(resp: ptr) -> string
 extern fn http_body_bytes(resp: ptr) -> bytes
@@ -22,10 +22,20 @@ fn get(url: string) -> ptr:
     return http_get(url)
 
 # Perform a POST with a request body and Content-Type (e.g. "application/json").
+# The BODY may carry interior NULs and every byte of it is sent: it crosses as
+# (ptr, len), so Content-Length is len(body). A NUL in the URL or the
+# Content-Type is still refused -- a truncated URL is not a shorter one, it is a
+# different one, and a header cannot carry a NUL at all.
 fn post(url: string, body: string, content_type: string) -> ptr:
     if has_nul(url) or has_nul(content_type):
         return null
-    return http_post(url, body, content_type)
+    return http_post_bytes(url, to_bytes(body), content_type)
+
+# The binary-safe sibling of post(): a `bytes` body, for a PNG or a protobuf.
+fn post_bytes(url: string, body: bytes, content_type: string) -> ptr:
+    if has_nul(url) or has_nul(content_type):
+        return null
+    return http_post_bytes(url, body, content_type)
 
 # Did the request reach the server (a handle, even for a 4xx/5xx status)?
 fn ok(resp: ptr) -> bool:

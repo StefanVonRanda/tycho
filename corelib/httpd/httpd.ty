@@ -34,7 +34,12 @@
 # calls, so the body buffer is never copied into an intermediate string. `render`
 # is still there for one-shot use and returns `bytes`.
 #
-# Content-Length is honored on read and emitted automatically on write.
+# Content-Length is honored on read and emitted automatically on write. A request
+# whose FRAMING is ambiguous is refused rather than guessed: Transfer-Encoding
+# (chunked is not decoded here), a Content-Length that is not one decimal number,
+# and two disagreeing Content-Lengths all give Err(Malformed) -> 400. A body
+# shorter than its Content-Length gives Err(Closed)/Err(Timeout), never an Ok
+# whose bytes the caller cannot tell from a complete entity. See `framing`.
 # `content_type(path)` maps a file extension to a MIME type (unknown ->
 # application/octet-stream, never text/plain). `connection_close(req)` /
 # `with_connection(r, alive)` implement HTTP/1.1 keep-alive.
@@ -133,6 +138,49 @@ fn to_uint(s: string) -> int:
         v = v * 10 + (c - 48)
     return v
 
+# A Content-Length as a NUMBER, or (0, false) when the field is not one single
+# decimal. `to_uint` above stops at the first non-digit and returns what it had,
+# so "4x" reads as 4 and the fifth byte silently starts a new request; it also
+# WRAPS, so a 20-digit length becomes a small positive one.
+# gap: 15 significant digits is the ceiling here (10^15 bytes, past any cap this
+# package is ever handed); a longer run of digits is REFUSED, never wrapped.
+fn parse_len(s: string) -> (int, bool):
+    if not all_digits(s):
+        return (0, false)
+    i := 0
+    for i < len(s) - 1 and s[i] == 48:          # leading zeros are legal: 1*DIGIT
+        i = i + 1
+    d := s[i:len(s)]
+    if len(d) > 15:
+        return (0, false)
+    v := 0
+    for j := 0; j < len(d); j += 1:
+        v = v * 10 + (d[j] - 48)
+    return (v, true)
+
+# How many body bytes this request frames, per RFC 9112 6. The bool is whether
+# the question is ANSWERABLE at all: false means REFUSE the request (400), never
+# guess a length. Guessing is the request-smuggling precondition -- bytes this
+# reader does not count as a body are still on the socket, and the next
+# read_request reads them as the next request's head.
+#
+#   Transfer-Encoding present     -> false. Nothing here decodes chunked, and
+#                                    reading it as "no body" leaves the chunks
+#                                    behind as a request the client never sent.
+#                                    RFC 9112 6.3 also makes TE + CL a MUST-refuse.
+#   Content-Length not one number -> false ("4x", "5, 6", " 12", 10^16)
+#   two Content-Lengths differing -> false (RFC 9112 6.3)
+#   absent                        -> (0, true): a request with no body
+fn framing(r: Request) -> (int, bool):
+    if header(r, "transfer-encoding") != "":
+        return (0, false)
+    if content_length_conflict(r):
+        return (0, false)
+    clh := trim(header(r, "content-length"))
+    if clh == "":
+        return (0, true)
+    return parse_len(clh)
+
 # True when `hay` contains `needle` as a comma-separated token, case-insensitively
 # (the shape of `Connection: keep-alive, Upgrade`).
 fn has_token(hay: string, needle: string) -> bool:
@@ -215,12 +263,14 @@ fn read_request_deadline(fd: int, cap: int, deadline_ms: int) -> (Result(Request
         he := find(buf, term)
         if he >= 0 and need < 0:
             probe := result.unwrap_or(parse_request(buf), bad_request())
-            clh := header(probe, "content-length")
-            blen := 0
-            if all_digits(clh) and not content_length_conflict(probe) and
-                    header(probe, "transfer-encoding") == "":
-                blen = to_uint(clh)
+            blen, framed := framing(probe)
+            if not framed:
+                return (Err(Malformed), buf)    # ambiguous framing -> 400, and
+                                                # the connection must not be reused
             need = he + 4 + blen
+            if need > cap:
+                return (Err(TooLarge), buf)     # the body does not fit the budget;
+                                                # refuse rather than read a prefix
         if (need >= 0 and len(buf) >= need) or len(buf) >= cap:
             reading = false
         else:
@@ -239,8 +289,19 @@ fn read_request_deadline(fd: int, cap: int, deadline_ms: int) -> (Result(Request
     if find(buf, term) < 0:
         if cut:
             out = Err(why)                      # no complete head: the transport reason wins
+    elif len(buf) < need:
+        # A complete head and a SHORT body. A body that does not match its own
+        # Content-Length is not a shorter body, it is an unfinished request --
+        # returning Ok here handed the caller bytes it could not distinguish
+        # from a complete entity.
+        if cut:
+            out = Err(why)                      # the peer hung up or timed out mid-body
+        else:
+            out = Err(Closed)                   # fail closed: no bytes, no reason
     else:
-        out = parse_request(buf)                # Ok, or Err(Malformed) for garbage
+        # Exactly what this request framed. Anything past `need` is the NEXT
+        # request on a pipelined connection and must not be glued to this body.
+        out = parse_request(buf[0:need])        # Ok, or Err(Malformed) for garbage
     return (out, buf)
 
 # ---- keep-alive ------------------------------------------------------------

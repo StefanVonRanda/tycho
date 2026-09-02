@@ -29,6 +29,7 @@ fn why(r: Result(httpd.Request, httpd.ReqErr)) -> string:
         Err(httpd.Malformed): return "Malformed"
         Err(httpd.Closed): return "Closed"
         Err(httpd.Timeout): return "Timeout"
+        Err(httpd.TooLarge): return "TooLarge"
         _: return "Failed"
 
 fn main():
@@ -177,6 +178,43 @@ fn main():
     net.close_fd(cli6)
     println("partial_why    = " + why(httpd.read_request(conn6)))
     net.close_fd(conn6)
+
+    # ---- request framing (RFC 9112 6) ------------------------------------
+    # None of these can be seen by a golden that only prints a status: the
+    # question is whether the BYTES the caller gets are the bytes the sender
+    # framed. Reading an ambiguous request as "no body" leaves the body on the
+    # socket, where the next read_request reads it as a request the client
+    # never sent -- so each refusal below is scored, and so is the round trip
+    # that must survive it. A refusal that also breaks the valid case proves
+    # nothing.
+    fr := []string
+    frames := []string
+    push(fr, "short_body")                                   # CL 10, 4 bytes, then a hang-up
+    push(frames, "POST /x HTTP/1.1" + nl + "Content-Length: 10" + nl + nl + "abcd")
+    push(fr, "chunked")                                      # not decoded here -> refuse, not "no body"
+    push(frames, "POST /x HTTP/1.1" + nl + "Transfer-Encoding: chunked" + nl + nl + "0" + nl + nl + "GET /smuggled HTTP/1.1" + nl + nl)
+    push(fr, "junk_clen")                                    # "4x": to_uint read 4 and left "EXTRA"
+    push(frames, "POST /x HTTP/1.1" + nl + "Content-Length: 4x" + nl + nl + "abcdEXTRA")
+    push(fr, "wrap_clen")                                    # 20 digits: to_uint WRAPPED
+    push(frames, "POST /x HTTP/1.1" + nl + "Content-Length: 99999999999999999999" + nl + nl)
+    push(fr, "clen_conflict")                                # two lengths, two readings
+    push(frames, "POST /x HTTP/1.1" + nl + "Content-Length: 0" + nl + "Content-Length: 44" + nl + nl)
+    push(fr, "te_and_clen")
+    push(frames, "POST /x HTTP/1.1" + nl + "Content-Length: 6" + nl + "Transfer-Encoding: chunked" + nl + nl + "0" + nl + nl)
+    push(fr, "clen_agrees")                                  # CONTROL: not a conflict -> Ok
+    push(frames, "POST /x HTTP/1.1" + nl + "Content-Length: 5" + nl + "Content-Length: 5" + nl + nl + "hello")
+    push(fr, "exact_body")                                   # CONTROL: the valid case round-trips
+    push(frames, "POST /x HTTP/1.1" + nl + "Content-Length: 5" + nl + nl + "hello")
+    push(fr, "pipelined")                                    # body is 5, the rest is the NEXT request
+    push(frames, "POST /x HTTP/1.1" + nl + "Content-Length: 5" + nl + nl + "helloGET /next HTTP/1.1" + nl + nl)
+    for i := 0; i < len(fr); i += 1:
+        fcli := n_of(net.connect("127.0.0.1", port))
+        fconn := n_of(net.accept(srv))
+        fw := n_of(net.write(fcli, to_bytes(frames[i])))
+        net.close_fd(fcli)                                   # so a short body ends as Closed, not a stall
+        fres := httpd.read_request(fconn)
+        println("frame " + fr[i] + " = " + why(fres) + " body=[" + to_str(rq(fres).body) + "]")
+        net.close_fd(fconn)
 
     net.close_fd(srv)
 

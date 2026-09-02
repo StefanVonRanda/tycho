@@ -473,14 +473,22 @@ eq("400 two conflicting Content-Length",
 eq("400 Content-Length with Transfer-Encoding",
    status(raw(b"POST / HTTP/1.1\r\nHost: x\r\nContent-Length: 6\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n")),
    "HTTP/1.1 400 Bad Request")
-# The control for all three: a DUPLICATE Content-Length that AGREES is not a
-# conflict, and a lone Transfer-Encoding is not ambiguous -- neither may be
-# swept into the 400. Without these, "reject anything with two headers" passes.
+# A LONE Transfer-Encoding is a 400 too, and this line used to expect 405. Read
+# as "no body" it is not merely odd: nothing in corelib decodes chunked, so the
+# chunks stay on the socket and the next read on that connection parses them as
+# a request the client never sent. RFC 9112 6.1 -- a server that cannot decode
+# the coding must not guess a length.
+eq("400 Transfer-Encoding alone (chunked is not decoded here)",
+   status(raw(b"POST / HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n")),
+   "HTTP/1.1 400 Bad Request")
+# The control for all four: a DUPLICATE Content-Length that AGREES is not a
+# conflict, and a WELL-FORMED body is not ambiguous -- neither may be swept into
+# the 400. Without these, "reject anything with a body" passes every leg above.
 eq("405 duplicate Content-Length that agrees is not a conflict",
    status(raw(b"POST / HTTP/1.1\r\nHost: x\r\nContent-Length: 0\r\nContent-Length: 0\r\n\r\n")),
    "HTTP/1.1 405 Method Not Allowed")
-eq("405 Transfer-Encoding alone is not ambiguous",
-   status(raw(b"POST / HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n")),
+eq("405 a well-formed POST body is framed, not refused",
+   status(raw(b"POST / HTTP/1.1\r\nHost: x\r\nContent-Length: 5\r\n\r\nhello")),
    "HTTP/1.1 405 Method Not Allowed")
 
 # ---- 404 / 405 --------------------------------------------------------------

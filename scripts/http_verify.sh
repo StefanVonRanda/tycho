@@ -3,7 +3,9 @@ set -eu
 cd "$(dirname "$0")/.."
 T=$(mktemp -d)
 srv=""
+echosrv=""
 cleanup() {
+    if [ -n "$echosrv" ]; then kill -TERM "$echosrv" 2>/dev/null || true; fi
     if [ -n "$srv" ]; then
         kill -TERM "$srv" 2>/dev/null || true
         n=0
@@ -135,6 +137,54 @@ n4b=$(env -u SSL_CERT_DIR SSL_CERT_FILE="$T/ca.pem" "$T/probe2" "https://localho
 say "[4b] the SAME live URL with an interior NUL" "$n4b"
 [ "$n4b" = 0 ] || { echo "  LEAK: a URL carrying an interior NUL was fetched (truncated, so a DIFFERENT URL)."; fail=1; }
 
+# --- [5] the POST body is sent by LENGTH, not as a C string -------------------
+# The body crosses the FFI as (ptr, len) and curl is told the size, so a body
+# with an interior NUL is sent whole. Told nothing, curl calls strlen() on it:
+# a 7-byte body with a NUL at offset 2 went out as 2 bytes under a
+# Content-Length of 2, and every layer downstream agreed with the truncation.
+# The SERVER counts the bytes, not the client: a client-side length would print
+# the same number whatever curl actually put on the wire.
+cat > "$T/echo.py" <<'EOF'
+import http.server, socketserver
+class H(http.server.BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.0"
+    def do_POST(self):
+        n = int(self.headers.get("Content-Length", "0"))
+        b = self.rfile.read(n)
+        m = str(len(b)).encode()
+        self.send_response(200); self.send_header("Content-Length", str(len(m))); self.end_headers()
+        self.wfile.write(m)
+    def log_message(self, *a): pass
+s = socketserver.TCPServer(("127.0.0.1", 0), H)
+print(s.server_address[1], flush=True)
+s.serve_forever()
+EOF
+mkfifo "$T/echo.port"
+python3 "$T/echo.py" > "$T/echo.port" 2>/dev/null &
+echosrv=$!
+eport=$(head -1 "$T/echo.port")
+mkdir -p "$T/p3"
+cat > "$T/p3/main.ty" <<'EOF'
+package main
+import "core:http"
+
+fn main():
+    body := to_str(to_bytes([104, 105, 0, 116, 104, 101, 114]))   # 7 bytes, NUL at offset 2
+    if len(args()) > 2:
+        body = "hithere"                                          # the same 7, no NUL
+    println(http.body(http.post(args()[1], body, "application/octet-stream")))
+EOF
+./tychoc "$T/p3/main.ty" -o "$T/probe3" >"$T/build3.log" 2>&1 || {
+    echo "http-verify: FAILED (the POST probe does not build)"; tail -4 "$T/build3.log"; exit 1; }
+
+n5b=$("$T/probe3" "http://127.0.0.1:$eport/" plain 2>/dev/null || true)
+say "[5b] control: 7-byte body, no NUL, bytes received" "$n5b"
+[ "$n5b" = 7 ] || { echo "  CONTROL DEAD: a clean 7-byte POST did not arrive as 7, so [5] measures nothing."; fail=1; }
+
+n5=$("$T/probe3" "http://127.0.0.1:$eport/" 2>/dev/null || true)
+say "[5] the SAME 7 bytes with a NUL at offset 2" "$n5"
+[ "$n5" = 7 ] || { echo "  TRUNCATED: the body was cut at the NUL -- curl was not told the length."; fail=1; }
+
 # --- [C] the control: [1] must be refusing because verification runs ----------
 # Built against a COPY, so the tree is never in the unverified state. Both
 # options go off together: VERIFYPEER alone still leaves the hostname check
@@ -157,4 +207,4 @@ if [ "$rc" = 0 ]; then
 fi
 
 [ "$fail" -eq 0 ] || { echo "http-verify: FAIL"; exit 1; }
-echo "http-verify: green (an untrusted certificate is refused, the same server is accepted once its CA is trusted through either SSL_CERT_FILE or SSL_CERT_DIR and reached by the name in the cert, refused again under a name the cert does not carry, and accepted by a control with verification off -- so the refusals are verification, not a dead connection; and file:// and an interior-NUL URL are both refused while a live fetch through the same probe still returns bytes)"
+echo "http-verify: green (an untrusted certificate is refused, the same server is accepted once its CA is trusted through either SSL_CERT_FILE or SSL_CERT_DIR and reached by the name in the cert, refused again under a name the cert does not carry, and accepted by a control with verification off -- so the refusals are verification, not a dead connection; file:// and an interior-NUL URL are both refused while a live fetch through the same probe still returns bytes; and a POST body carrying an interior NUL arrives whole)"

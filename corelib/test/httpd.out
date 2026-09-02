@@ -52,4 +52,13 @@ timeout_closes = 1
 garbage_why    = Malformed
 hangup_why     = Closed
 partial_why    = Closed
+frame short_body = Closed body=[]
+frame chunked = Malformed body=[]
+frame junk_clen = Malformed body=[]
+frame wrap_clen = Malformed body=[]
+frame clen_conflict = Malformed body=[]
+frame te_and_clen = Malformed body=[]
+frame clen_agrees = Ok body=[hello]
+frame exact_body = Ok body=[hello]
+frame pipelined = Ok body=[hello]
 hdr_injection  = clean
