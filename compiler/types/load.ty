@@ -118,16 +118,45 @@ fn _resolve_pkg_dir(ld: inout Loader, importer_dir: string, path: string) -> str
         return ld.root + "/" + path[5:]
     return importer_dir + "/" + path
 
+# Same directory, by its listing -- there is no cwd builtin here, so this is the
+# only identity test available to under_corelib below.
+fn _same_dir(a: string, b: string) -> bool:
+    xa := sort.asc(list_dir(a))
+    xb := sort.asc(list_dir(b))
+    if len(xa) == 0 or len(xa) != len(xb):
+        return false
+    for i := 0; i < len(xa); i += 1:
+        if xa[i] != xb[i]:
+            return false
+    return true
+
+# src/tychoc.c@under_corelib canonicalises BOTH sides with realpath, so a
+# RELATIVE package dir under an ABSOLUTE TYCHO_CORELIB still compares equal.
+# The lexical test alone answered "no" there, corelib/test/io and /httpd lost
+# the unused-local exemption src/tychoc.c@vars_report_decl gives corelib
+# sources, and `make corelib` -- which exports an absolute root -- failed to
+# compile them. Re-root the relative side onto the absolute one and confirm the
+# two name the same directory.
 fn under_corelib(root: string, dir: string) -> bool:
     if len(root) == 0:
         return false
     cd := norm(dir)
     cr := norm(root)
-    if len(cd) < len(cr):
+    if len(cd) >= len(cr) and cd[0:len(cr)] == cr:
+        if len(cd) == len(cr) or cd[len(cr)] == 47:
+            return true
+    if (cr[0] == 47) == (cd[0] == 47):
         return false
-    if cd[0:len(cr)] != cr:
-        return false
-    return len(cd) == len(cr) or cd[len(cr)] == 47
+    parts := split(cd, "/")
+    for i := 1; i < len(parts); i += 1:
+        tail := ""
+        for j := i; j < len(parts); j += 1:
+            if len(tail) > 0:
+                tail = tail + "/"
+            tail = tail + parts[j]
+        if _same_dir(cr + "/" + tail, cd):
+            return true
+    return false
 
 fn _pkg_files(dir: string) -> [string]:
     out := []string
