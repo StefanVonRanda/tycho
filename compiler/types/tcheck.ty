@@ -964,8 +964,21 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
             return bt
         ast.Unop(l, o, k):
             t := _ex(&cs, k[0])
+            cs.line = l
+            # src/tychoc.c:7184-7199, arm for arm. `~` reads the RAW type (a
+            # newtype over int is refused); `-` reads the base (`-Meters` is a
+            # Meters); neither sees through a sized int to `int`.
             if o == "not":
+                if known(t) and t != "bool":
+                    _cerr(&cs, "`not` needs a bool operand")
                 return "bool"
+            if o == "~":
+                if known(t) and not _is_int(t):
+                    _cerr(&cs, "unary `~` needs an integer")
+            elif o == "-":
+                ub := _base(&cs, t)
+                if known(ub) and ub != "int" and ub != "float":
+                    _cerr(&cs, "unary `-` needs an int or a float")
             return t
         ast.IsVar(l, k, q, v):
             st := _base(&cs, _ex(&cs, k[0]))
@@ -1219,6 +1232,10 @@ fn _binop(cs: inout C, op: string, k: [ast.Expr]) -> string:
     rt := _ex(&cs, k[1])
     cs.line = ast.line_of(k[0])
     if op == "and" or op == "or":
+        # src/tychoc.c:7224-7228 -- EXACTLY bool on both sides, no adaptation
+        # and no newtype: the C compares against T_BOOL, not base_of().
+        if (known(lt) and lt != "bool") or (known(rt) and rt != "bool"):
+            _cerr(&cs, "`" + op + "` needs bool operands")
         return "bool"
     if op == "in":
         rb := _base(&cs, rt)
