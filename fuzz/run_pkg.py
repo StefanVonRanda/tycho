@@ -1,7 +1,9 @@
 import sys, os, random, subprocess, tempfile, shutil
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TYCHOC = os.path.join(REPO, "tychoc")
+# The SHIPPED compiler, not the C bootstrap: every other gate runs tychoc1,
+# and checks present in tychoc are absent from it. Override with TYCHOC=.
+TYCHOC = os.environ.get("TYCHOC") or os.path.join(REPO, "tychoc1")
 ENV = dict(os.environ, TYCHO_CORELIB=os.path.join(REPO, "corelib"))
 CC = ["cc", "-O2", "-fwrapv", "-std=c11", "-pthread"]
 

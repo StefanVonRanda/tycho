@@ -2,7 +2,9 @@ import subprocess, sys, os, tempfile, shutil
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GEN = os.path.join(REPO, "fuzz", "gen.py")
-TYCHOC = os.path.join(REPO, "tychoc")
+# The SHIPPED compiler, not the C bootstrap: every other gate runs tychoc1,
+# and checks present in tychoc are absent from it. Override with TYCHOC=.
+TYCHOC = os.environ.get("TYCHOC") or os.path.join(REPO, "tychoc1")
 FFI_SHIM = os.path.join(REPO, "fuzz", "ffi_shim.c")
 FINDINGS = os.path.join(REPO, "fuzz", "findings")
 ASAN = ["-fsanitize=address,undefined", "-fno-sanitize-recover=all"]

@@ -1,7 +1,6 @@
 import subprocess, sys, os, tempfile
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TYCHOC = os.path.join(REPO, "tychoc")
 ASAN = ["-fsanitize=address,undefined", "-fno-sanitize-recover=all"]
 ENV = dict(os.environ, ASAN_OPTIONS="detect_leaks=0")
 TMP = tempfile.mkdtemp()

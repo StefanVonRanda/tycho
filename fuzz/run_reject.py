@@ -2,7 +2,6 @@ import subprocess, sys, os, tempfile, shutil
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GEN = os.path.join(REPO, "fuzz", "gen_malformed.py")
-TYCHOC = os.path.join(REPO, "tychoc")
 FINDINGS = os.path.join(REPO, "fuzz", "findings")
 ASAN = ["-fsanitize=address,undefined", "-fno-sanitize-recover=all"]
 ENV = dict(os.environ, ASAN_OPTIONS="detect_leaks=0:abort_on_error=1",
