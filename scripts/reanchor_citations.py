@@ -55,6 +55,13 @@ check_citations.py either, which is why they drift silently):
 
   Find them with:  git grep -nE '[ (]:[0-9]{3,5}\\b' -- <path>
 
+WHICH FILES IT RE-ANCHORS. With no positional argument it takes EVERY file the
+diff against <ref> moved that something else in the tree cites, and re-anchors
+all of them in one pass; changed files nothing cites are named and skipped. The
+old default was the single file `src/tychoc.c`, and a commit that also moved
+`runtime/tycho_rt.c` silently left its refs stale -- 20 of them across 13
+documents, observed 2026-09-02. Naming files explicitly still overrides.
+
 USAGE
   python3 scripts/reanchor_citations.py                       # dry run vs HEAD
   python3 scripts/reanchor_citations.py --apply               # write
@@ -91,15 +98,31 @@ def line_map(old, new):
     return m
 
 
-def main():
-    args = [a for a in sys.argv[1:] if not a.startswith("-")]
-    apply_ = "--apply" in sys.argv
-    ref = "HEAD"
-    if "--ref" in sys.argv:
-        ref = sys.argv[sys.argv.index("--ref") + 1]
-        args = [a for a in args if a != ref]
-    target = args[0] if args else "src/tychoc.c"
+def tracked_texts():
+    texts = {}
+    for path in subprocess.run(["git", "ls-files"], capture_output=True,
+                               text=True, check=True).stdout.split("\n"):
+        if not path or path in SKIP or path.endswith((".out", ".err")):
+            continue
+        full = os.path.join(ROOT, path)
+        if not os.path.isfile(full):
+            continue
+        try:
+            texts[path] = open(full, errors="strict").read()
+        except (UnicodeDecodeError, IsADirectoryError):
+            continue
+    return texts
 
+
+def moved_files(ref):
+    return [p for p in subprocess.run(
+        ["git", "diff", "--name-only", ref, "--"], capture_output=True,
+        text=True, check=True).stdout.split("\n")
+        if p and os.path.isfile(os.path.join(ROOT, p))]
+
+
+def reanchor(target, ref, texts, touched):
+    """Rewrite every citation to `target` in `texts`; return (files, dropped)."""
     old = subprocess.run(["git", "show", "%s:%s" % (ref, target)],
                          capture_output=True, text=True, check=True
                          ).stdout.split("\n")
@@ -108,8 +131,8 @@ def main():
     print("%s: %d of %d lines survive %s..worktree (%d -> %d lines)"
           % (target, len(lmap), len(old), ref, len(old), len(new)))
     if len(old) == len(new) and all(k == v for k, v in lmap.items()):
-        print("no line moved; nothing to re-anchor")
-        return 0
+        print("  no line moved; nothing to re-anchor")
+        return 0, 0
 
     moved = dropped = 0
 
@@ -123,17 +146,8 @@ def main():
             return None
         return na, nb
 
-    for path in subprocess.run(["git", "ls-files"], capture_output=True,
-                               text=True, check=True).stdout.split("\n"):
-        if not path or path in SKIP or path.endswith((".out", ".err")):
-            continue
-        full = os.path.join(ROOT, path)
-        if not os.path.isfile(full):
-            continue
-        try:
-            text = open(full, errors="strict").read()
-        except (UnicodeDecodeError, IsADirectoryError):
-            continue
+    for path in sorted(texts):
+        text = texts[path]
         if target not in text and not path.endswith(".md"):
             continue
 
@@ -182,13 +196,53 @@ def main():
 
         if changed:
             moved += 1
-            print("  %s %s" % ("rewrote" if apply_ else "would rewrite", path))
-            if apply_:
-                open(full, "w").write("\n".join(out))
+            texts[path] = "\n".join(out)
+            touched.add(path)
+    return moved, dropped
+
+
+def main():
+    args = [a for a in sys.argv[1:] if not a.startswith("-")]
+    apply_ = "--apply" in sys.argv
+    ref = "HEAD"
+    if "--ref" in sys.argv:
+        ref = sys.argv[sys.argv.index("--ref") + 1]
+        args = [a for a in args if a != ref]
+
+    texts = tracked_texts()
+    if args:
+        targets, skipped = args, []
+    else:
+        targets, skipped = [], []
+        # A path nothing else cites has no citation to move; naming it is what
+        # stops a silent skip reading like a clean pass.
+        for p in moved_files(ref):
+            if any(p in t for q, t in texts.items() if q != p):
+                targets.append(p)
+            else:
+                skipped.append(p)
+        if not targets:
+            print("no cited file moved against %s" % ref)
+            for p in skipped:
+                print("  skipped %s (nothing cites it)" % p)
+            return 0
+    print("targets: %s" % " ".join(targets))
+    for p in skipped:
+        print("  skipped %s (nothing cites it)" % p)
+
+    touched, dropped = set(), 0
+    for t in targets:
+        _, d = reanchor(t, ref, texts, touched)
+        dropped += d
+
+    for path in sorted(touched):
+        print("  %s %s" % ("rewrote" if apply_ else "would rewrite", path))
+        if apply_:
+            open(os.path.join(ROOT, path), "w").write(texts[path])
 
     print("%s %d file(s); %d citation(s) need a human"
-          % ("rewrote" if apply_ else "would rewrite", moved, dropped))
-    if not apply_ and moved:
+          % ("rewrote" if apply_ else "would rewrite", len(touched), dropped))
+    if not apply_ and touched:
         print("(dry run -- re-run with --apply, then check_citations.py)")
     return 1 if dropped else 0
 

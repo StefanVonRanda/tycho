@@ -2660,7 +2660,7 @@ fn check_warns(cs: C) -> [string]:
 
 fn check_census(cs: C) -> [string]:
     names := keys(cs.counts)
-    sort.asc(names)
+    names = sort.asc(names)
     out := []string
     for n in names:
         push(out, n + " " + str(cs.counts[n]))

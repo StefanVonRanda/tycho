@@ -432,7 +432,7 @@ fn parse_census(src_path: string):
     for k in ks:
         counts[k] = counts.get(k, 0) + 1
     names := keys(counts)
-    sort.asc(names)
+    names = sort.asc(names)
     out := ""
     for n in names:
         out = out + n + " " + str(counts[n]) + "\n"

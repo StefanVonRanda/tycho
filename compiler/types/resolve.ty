@@ -1197,7 +1197,7 @@ fn late_lines(rs: R) -> [string]:
 
 fn census_lines(rs: R) -> [string]:
     names := keys(rs.counts)
-    sort.asc(names)
+    names = sort.asc(names)
     out := []string
     for n in names:
         push(out, n + " " + str(rs.counts[n]))
@@ -1207,5 +1207,5 @@ fn symbol_lines(rs: R) -> [string]:
     out := []string
     for s in rs.syms:
         push(out, s.kind + " " + s.name + " " + s.file)
-    sort.asc(out)
+    out = sort.asc(out)
     return out
