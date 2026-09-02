@@ -62,8 +62,13 @@ static long ty_gmtoff(const time_t *t) {
     return (long)(mktime(&lt) - mktime(&ut));
 }
 #define tm_gmtoff ty_gmtoff_placeholder   /* the shim must not touch tm_gmtoff */
+#endif   /* _WIN32 -- the POSIX-TZ parser below is built on EVERY platform */
 
-/* ---- POSIX TZ strings, parsed here because the Windows CRT will not --------
+/* ---- POSIX TZ strings, parsed here rather than handed to the CRT -----------
+ *
+ * This block was `#ifdef _WIN32` until the TZ race below was fixed. It is
+ * unconditional now, and that is the fix: answering from the RULE needs no
+ * environment at all, so the common case never touches the process TZ.
  *
  * dtx_offset_at's whole contract is that an EXPLICIT POSIX rule like
  * "EST5EDT,M3.2.0,M11.1.0" is self-contained and therefore gives the same
@@ -229,11 +234,24 @@ static int ty_posix_tz_offset(const char *tz, long long secs, long *out) {
     *out = stdoff;
     return 0;
 }
-#endif
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
 #include "../tycho.h"
+
+/* Guards the setenv("TZ")+tzset() fallback in dtx_offset_at. pthreads on
+ * POSIX, where a Tycho program's `spawn` / `parallel for` workers really are
+ * OS threads; a no-op under mingw, whose pthread support is an optional
+ * add-on this shim declares no dependency on. */
+#ifndef _WIN32
+#include <pthread.h>
+static pthread_mutex_t ty_tz_mu = PTHREAD_MUTEX_INITIALIZER;
+static void ty_tz_lock(void)   { pthread_mutex_lock(&ty_tz_mu); }
+static void ty_tz_unlock(void) { pthread_mutex_unlock(&ty_tz_mu); }
+#else
+static void ty_tz_lock(void)   { }
+static void ty_tz_unlock(void) { }
+#endif
 
 tycho_int dtx_local_offset(tycho_int secs) {
     time_t t = (time_t)secs;
@@ -247,16 +265,24 @@ tycho_int dtx_local_offset(tycho_int secs) {
 }
 
 tycho_int dtx_offset_at(const char *tz, tycho_int secs) {
-#ifdef _WIN32
-    /* Answer from the rule itself. The CRT only reads the "TZN[+-]hh" prefix
-     * and drops the ",start,end", which made every DST answer wrong (US
-     * Eastern in July: -18000, want -14400). Falls through to the CRT below
-     * for anything this parser does not recognise. */
+    /* Answer from the rule itself, on every platform. This path reads and
+     * writes NOTHING process-wide, so it is safe from any number of threads --
+     * which is the whole reason it runs first. On Windows it is also the only
+     * CORRECT path: the CRT reads the "TZN[+-]hh" prefix and drops the
+     * ",start,end", making every DST answer wrong (US Eastern in July:
+     * -18000, want -14400). */
     {
         long off = 0;
         if (ty_posix_tz_offset(tz, (long long)secs, &off) == 0) return (tycho_int)off;
     }
-#endif
+    /* Fallback for a name the rule parser does not cover -- an IANA id like
+     * "Europe/Copenhagen". This one HAS to go through the environment, and
+     * setenv("TZ")+tzset() is process-wide: a concurrent time call on another
+     * thread read the wrong zone for the window. Serialize it. The lock does
+     * not make a CONCURRENT localtime() correct -- nothing here can -- it makes
+     * two offset_at callers correct, and keeps the window as short as it can
+     * be. Prefer a POSIX rule string when a zone must be read from threads. */
+    ty_tz_lock();
     char *cur = getenv("TZ");
     char *saved = cur ? strdup(cur) : NULL;   /* NULL if unset or on OOM: restore by unsetting */
     setenv("TZ", tz, 1);
@@ -271,5 +297,6 @@ tycho_int dtx_offset_at(const char *tz, tycho_int secs) {
 #endif
     if (saved) { setenv("TZ", saved, 1); free(saved); } else { unsetenv("TZ"); }
     tzset();                                  /* restore the process zone exactly once */
+    ty_tz_unlock();
     return off;
 }

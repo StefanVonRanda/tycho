@@ -9,6 +9,9 @@
 #ifndef _DEFAULT_SOURCE
 #define _DEFAULT_SOURCE          /* glibc: expose popen/pclose + wait-status macros */
 #endif
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE              /* glibc: pipe2 -- the race-free CLOEXEC pipe */
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,8 +27,26 @@ static tycho_int ty_os_decode(int st) { return (tycho_int)st; }   /* Windows: sy
 #include <sys/wait.h>
 #include <spawn.h>              /* posix_spawnp + file actions -- the argv path */
 #include <unistd.h>             /* pipe, close, read */
+#include <fcntl.h>              /* O_CLOEXEC / F_SETFD -- the capture pipe */
 #include <errno.h>
 extern char **environ;          /* posix_spawnp inherits it, as execvp does */
+
+/* pipe2 is Linux/glibc + the BSDs; it is the only race-free spelling, since a
+ * pipe() followed by fcntl() leaves a window in which a concurrent spawn on
+ * another thread inherits the raw ends. Fall back to the window where absent. */
+static int ty_pipe_cloexec(int fds[2]) {
+#if defined(__linux__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
+    return pipe2(fds, O_CLOEXEC);
+#else
+    if (pipe(fds) != 0) return -1;
+    if (fcntl(fds[0], F_SETFD, FD_CLOEXEC) != 0 ||
+        fcntl(fds[1], F_SETFD, FD_CLOEXEC) != 0) {
+        close(fds[0]); close(fds[1]);
+        return -1;
+    }
+    return 0;
+#endif
+}
 #define TY_POPEN  popen
 #define TY_PCLOSE pclose
 static tycho_int ty_os_decode(int st) {                       /* POSIX wait-status -> a plain code */
@@ -112,7 +133,12 @@ static tycho_int osx_spawn(const char *const *v, tycho_int n, char **out) {
     posix_spawn_file_actions_t fa;
     int have_fa = 0;
     if (out) {
-        if (pipe(fds) != 0) { free(argv); return -1; }
+        /* CLOEXEC on BOTH ends. A Tycho program is threaded, so a sibling task
+         * spawning its own child would otherwise have it inherit this write end
+         * and the read loop below would block until that unrelated child exits.
+         * The dup2 file action makes a FRESH descriptor for the child's stdout,
+         * and dup2 clears FD_CLOEXEC, so the capture path still works. */
+        if (ty_pipe_cloexec(fds) != 0) { free(argv); return -1; }
         if (posix_spawn_file_actions_init(&fa) != 0) { free(argv); close(fds[0]); close(fds[1]); return -1; }
         have_fa = 1;
         /* the child writes the pipe as its stdout and holds neither raw end */

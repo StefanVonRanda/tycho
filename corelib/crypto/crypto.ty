@@ -66,7 +66,8 @@ fn hmac_sha256(key: ptr, msg_hex: string) -> string:
 
 # PBKDF2-HMAC-SHA256 -> a derived KEY handle (dklen bytes). password is text;
 # salt is hex. Use a high iteration count (>= 600000) and a random salt. Free
-# the returned handle when done.
+# the returned handle when done. `iters` above 2^31-1 is REFUSED (null handle)
+# rather than truncated -- a truncated count derives a silently weaker key.
 fn pbkdf2_sha256(password: string, salt_hex: string, iters: int, dklen: int) -> ptr:
     return cx_pbkdf2_sha256(password, len(password), salt_hex, iters, dklen)
 

@@ -1,8 +1,8 @@
 #ifndef _DEFAULT_SOURCE
 #define _DEFAULT_SOURCE          /* glibc: expose getaddrinfo + struct addrinfo */
 #endif
+#include <limits.h>    /* INT_MAX -- the SSL_read/SSL_write length clamps */
 #ifndef _WIN32
-#include <limits.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
@@ -18,6 +18,7 @@
 #define close _close
 #endif
 #include <openssl/ssl.h>
+#include <errno.h>     /* EINTR -- the SIGPIPE drain below */
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -25,6 +26,55 @@
 #include "../tycho.h"
 
 typedef struct { SSL_CTX *ctx; SSL *ssl; int fd; } Tls;
+
+/* ---- SIGPIPE, suppressed for THIS write only ------------------------------
+ * Writing to a peer that has gone away raises SIGPIPE, whose default action
+ * kills the process -- so a departed peer took the whole program down instead
+ * of tlsx_write returning -1. The fix must not be process-wide: a Tycho
+ * program that installs its own SIGPIPE disposition, or wants the default
+ * elsewhere, still gets it.
+ *
+ * OpenSSL's socket BIO writes with write(2), not send(MSG_NOSIGNAL), so the
+ * flag cannot be passed per-call. Two per-socket/per-thread routes instead:
+ * SO_NOSIGPIPE where the platform has it (macOS/BSD), and otherwise blocking
+ * SIGPIPE on the CALLING THREAD across the write and draining what the write
+ * raised. A SIGPIPE already pending on entry is left alone -- it belongs to
+ * somebody else and consuming it would swallow their signal. */
+#ifndef _WIN32
+#include <signal.h>
+#include <time.h>
+#endif
+
+#if !defined(_WIN32) && !defined(SO_NOSIGPIPE)
+#include <pthread.h>
+typedef struct { sigset_t old; int blocked, was_pending; } TlsSigGuard;
+
+static void tls_sig_begin(TlsSigGuard *g) {
+    g->blocked = 0; g->was_pending = 0;
+    sigset_t pipeset, pend;
+    sigemptyset(&pipeset);
+    sigaddset(&pipeset, SIGPIPE);
+    if (sigpending(&pend) == 0 && sigismember(&pend, SIGPIPE) == 1) g->was_pending = 1;
+    if (pthread_sigmask(SIG_BLOCK, &pipeset, &g->old) == 0) g->blocked = 1;
+}
+
+static void tls_sig_end(TlsSigGuard *g) {
+    if (!g->blocked) return;
+    if (!g->was_pending) {                     /* drain only what WE raised */
+        sigset_t pipeset, pend;
+        sigemptyset(&pipeset);
+        sigaddset(&pipeset, SIGPIPE);
+        struct timespec zero = { 0, 0 };
+        if (sigpending(&pend) == 0 && sigismember(&pend, SIGPIPE) == 1)
+            while (sigtimedwait(&pipeset, NULL, &zero) < 0 && errno == EINTR) { }
+    }
+    pthread_sigmask(SIG_SETMASK, &g->old, NULL);
+}
+#else
+typedef struct { int unused; } TlsSigGuard;
+static void tls_sig_begin(TlsSigGuard *g) { (void)g; }
+static void tls_sig_end(TlsSigGuard *g)   { (void)g; }
+#endif
 
 /* Resolve host:port and open a blocking TCP connection; -1 on any failure. */
 static int tcp_connect(const char *host, tycho_int port) {
@@ -40,6 +90,12 @@ static int tcp_connect(const char *host, tycho_int port) {
     for (rp = res; rp; rp = rp->ai_next) {
         fd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
         if (fd < 0) continue;
+#ifdef SO_NOSIGPIPE
+        {   /* macOS/BSD: per-socket, so no signal mask is needed at write time */
+            int on = 1;
+            setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, sizeof on);
+        }
+#endif
         if (connect(fd, rp->ai_addr, rp->ai_addrlen) == 0) break;
         close(fd);
         fd = -1;
@@ -77,11 +133,17 @@ tycho_int tlsx_write(void *p, const unsigned char *data, tycho_int len) {
     if (!p || len < 0) return -1;
     Tls *t = (Tls *)p;
     tycho_int off = 0;
+    TlsSigGuard g;
+    tls_sig_begin(&g);                                         /* a departed peer must not kill the process */
     while (off < len) {
-        int n = SSL_write(t->ssl, data + off, (int)(len - off));
-        if (n <= 0) return -1;                                 /* fail closed */
+        /* SSL_write takes an int; clamp the same way tlsx_read does. */
+        tycho_int want = len - off;
+        if (want > INT_MAX) want = INT_MAX;
+        int n = SSL_write(t->ssl, data + off, (int)want);
+        if (n <= 0) { tls_sig_end(&g); return -1; }            /* fail closed */
         off += n;
     }
+    tls_sig_end(&g);
     return off;
 }
 

@@ -52,7 +52,7 @@
   `GetCurrentThreadStackLimits` + `AddVectoredExceptionHandler` catching
   `EXCEPTION_STACK_OVERFLOW` (~60-100 lines). Estimate: 2-3 days.
 - Two corelib shims are **already ported**: `core:os` has `_popen`/`_pclose`
-  (`corelib/os/os_shim.c:21-24`), `core:net` has a real Winsock2 path
+  (`corelib/os/os_shim.c:24-27`), `core:net` has a real Winsock2 path
   (`corelib/net/net_shim.c:16-25`). The rest split into small ports (`core:io`
   — `getline` at `corelib/io/io_shim.c:59`, `pread` at `:141`), one big port
   (`core:regex` — POSIX `regcomp`/`regexec` at `corelib/regex/regex_shim.c:20, corelib/regex/regex_shim.c:26`

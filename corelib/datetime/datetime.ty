@@ -373,7 +373,10 @@ fn local_offset(secs: int) -> int:
 # UTC offset for an EXPLICIT POSIX TZ string at `secs`, DST-aware AND host-
 # independent (the rule lives in the string; no zoneinfo file needed):
 # "EST5EDT,M3.2.0,M11.1.0" -> 0 - 18000 in winter, 0 - 14400 in summer; "UTC0" ->
-# 0. NOT thread-safe -- it sets the process TZ; serialize offset_at across threads.
+# 0. A POSIX RULE string is answered from the rule and touches no process state,
+# so it is thread-safe. An IANA name ("Europe/Copenhagen") falls back to the
+# process TZ, which is serialized internally -- correct against another
+# offset_at, but a concurrent local_offset/now_local still sees that window.
 fn offset_at(tz: string, secs: int) -> int:
     for i := 0; i < len(tz); i += 1:
         if tz[i] == 0:

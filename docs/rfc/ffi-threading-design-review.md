@@ -42,7 +42,7 @@ pointer enters Tycho's owned world — but it pushes real cost onto users:
 2. No byte-buffer / `(ptr,len)` story. A `string` cannot hold `0x00`
    (`corelib/hex/hex.ty:7-11`), so all binary is marshaled as hex — see the
    crypto package marshaling *every* key/nonce/ciphertext/digest as a hex
-   string (`corelib/crypto/crypto.ty:11-18`, `corelib/crypto/crypto_shim.c:1-25`).
+   string (`corelib/crypto/crypto.ty:11-18`, `corelib/crypto/crypto_shim.c:1-26`).
 3. `ptr` is fully opaque and unsafe: no type tag, no compiler-known
    destructor, so handles leak and nothing prevents use-after-free or
    passing the wrong handle type (`docs/reference/ffi.md:108-110`; no destructor exists
@@ -113,7 +113,7 @@ A Tycho `string` is a NUL-terminated `char *` (`docs/reference/ffi.md:74`), so i
 carry an interior `0x00`. `corelib/hex/hex.ty:7-11` documents this directly:
 `decode("00")` is `""` — a NUL byte is dropped. Consequence: the entire crypto
 package marshals **all** binary data as lowercase hex
-(`corelib/crypto/crypto.ty:11-18`, shim header `corelib/crypto/crypto_shim.c:1-15`):
+(`corelib/crypto/crypto.ty:11-18`, shim header `corelib/crypto/crypto_shim.c:1-16`):
 
 - Every key, nonce, ciphertext, signature, digest crosses as hex
   (`crypto.ty` externs `cx_sha256_hex`, `cx_aead_encrypt`, etc.).
@@ -290,7 +290,7 @@ these cases, and the docs only partially flag them:
    library hit whatever sharing that library has. The repo's own crypto shim is
    a live example to scrutinize:
    - The recycled return buffer is `static __thread char *g_out`
-     (`corelib/crypto/crypto_shim.c:13@g_out`), so it *is* per-thread-safe — good.
+     (`corelib/crypto/crypto_shim.c:14@g_out`), so it *is* per-thread-safe — good.
      But this is a property of *this* shim, not of the FFI, and it relies on
      Tycho arena-copying the returned string before the next call
      (`crypto_shim.c:10-14`). A shim author who uses a plain `static` buffer
@@ -336,7 +336,7 @@ these cases, and the docs only partially flag them:
   > (shared but internally synchronized), or failure isolation (a panic in any
   > task aborts the whole process).
 - Add an **"FFI from threads"** subsection: shims that return a buffer must use
-  `__thread` (point to `corelib/crypto/crypto_shim.c:13@g_out` as the reference
+  `__thread` (point to `corelib/crypto/crypto_shim.c:14@g_out` as the reference
   pattern), and the bound C library must be documented thread-safe for the
   calls made.
 - *Effort.* Trivial. *Value.* High — the current wording is the specific thing

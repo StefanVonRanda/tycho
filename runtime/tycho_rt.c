@@ -1633,8 +1633,11 @@ tycho_int tycho_write_file(const char *path, const char *data) {
     if (!f) return 0;
     tycho_int n = tycho_str_len(data);
     size_t w = fwrite(data, 1, (size_t)n, f);
-    fclose(f);
-    return (w == (size_t)n) ? 1 : 0;
+    /* fwrite lands in the stdio buffer; ENOSPC/EIO surface at the FLUSH, which
+     * fclose performs. Ignoring its status reported a full disk as a success. */
+    int ok = (w == (size_t)n) && ferror(f) == 0;
+    if (fclose(f) != 0) ok = 0;
+    return ok ? 1 : 0;
 }
 
 /* getenv(name): the environment variable's value as a string, or "" if unset. */
