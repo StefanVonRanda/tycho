@@ -73,6 +73,13 @@ fi
 
 bar
 printf ' CI GREEN -- tree is good (%ss)\n' "$(( $(date +%s) - ci_started ))"
+# Record WHICH commit was verified, so `make status` can say whether HEAD still
+# is. A green sweep whose sha nobody wrote down answers "was the tree ever good",
+# never "is it good now" -- and that gap is most of why the state of this project
+# became unreadable.
+mkdir -p build
+printf '%s %s %s\n' "$(git rev-parse HEAD 2>/dev/null || echo unknown)" \
+    "$(date '+%Y-%m-%d')" "$(( $(date +%s) - ci_started ))" > build/ci-status
 bar
 exit 0
 fi
