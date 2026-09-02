@@ -14216,6 +14216,31 @@ static const char *cc_safe_name(const char *s, const char *what) {
     return s;
 }
 
+/* Shell-quote ONE path for the cc line system() runs. Every path on that line --
+ * the -o base, the intermediate .c, the corelib -I and each discovered shim -- is
+ * derived from the SOURCE path, so before this a directory named `x;touch p;y`
+ * executed, and a path with a space simply failed to build. cc_safe_name above
+ * covers only library NAMES, which are a closed charset; a path is not. POSIX sh:
+ * wrap in '' and spell an embedded quote '\''. cmd.exe has no '' quoting. */
+static char *shq(const char *s) {
+    size_t n = strlen(s);
+    char *q = (char *)xmalloc(n * 4 + 3), *w = q;
+#ifdef _WIN32
+    *w++ = '"';
+    for (const char *p = s; *p; p++) { if (*p == '"') *w++ = '\\'; *w++ = *p; }
+    *w++ = '"';
+#else
+    *w++ = '\'';
+    for (const char *p = s; *p; p++) {
+        if (*p == '\'') { memcpy(w, "'\\''", 4); w += 4; }
+        else *w++ = *p;
+    }
+    *w++ = '\'';
+#endif
+    *w = '\0';
+    return q;
+}
+
 /* FFI Stage 3: `pkg-config --cflags --libs <name>` -> the cc flags for a system
  * library, or NULL on failure. The result is spliced onto the cc line. */
 static char *pkg_config_flags(const char *name) {
@@ -14391,11 +14416,11 @@ int main(int argc, char **argv) {
         /* FFI Stage 3: linker/include ergonomics. -L/-I accept both attached
          * (-L/path) and separated (-L /path) forms; all accumulate onto the cc line. */
         else if (!strncmp(argv[i], "-L", 2) || !strncmp(argv[i], "-I", 2)) {
-            extra = sfmt("%s %s", extra, argv[i]);
-            if (!argv[i][2] && i + 1 < argc) extra = sfmt("%s %s", extra, argv[++i]);
+            extra = sfmt("%s %s", extra, shq(argv[i]));
+            if (!argv[i][2] && i + 1 < argc) extra = sfmt("%s %s", extra, shq(argv[++i]));
         }
         else if (!strcmp(argv[i], "--link") && i + 1 < argc) extra = sfmt("%s -l%s", extra, cc_safe_name(argv[++i], "--link"));
-        else if (!strcmp(argv[i], "--shim") && i + 1 < argc) shims = sfmt("%s %s", shims, argv[++i]);
+        else if (!strcmp(argv[i], "--shim") && i + 1 < argc) shims = sfmt("%s %s", shims, shq(argv[++i]));
         else if (!strcmp(argv[i], "--pkg") && i + 1 < argc) {
             char *pc = pkg_config_flags(argv[++i]);
             if (!pc) { fprintf(stderr, "tychoc: pkg-config failed for '%s'\n", argv[i]); return 1; }
@@ -14509,7 +14534,7 @@ int main(int argc, char **argv) {
     for (int i = 0; i < g_nlinks; i++) links = sfmt("%s -l%s", links, cc_safe_name(g_links[i], "extern library"));
     const char *march = native ? " -march=native" : "";
     const char *optdbg = debug ? "-O0 -g" : "-O3";   /* -g: unoptimized + DWARF so gdb/lldb step the .ty source */
-    for (int i = 0; i < g_nshims; i++) shims = sfmt("%s %s", shims, g_shims[i]);   /* auto-discovered <pkg>_shim.c */
+    for (int i = 0; i < g_nshims; i++) shims = sfmt("%s %s", shims, shq(g_shims[i]));   /* auto-discovered <pkg>_shim.c */
     const char *pkgdeps = g_pkgdeps ? g_pkgdeps : "";   /* pkg-config flags from <pkg>/deps (cflags + libs, trailing) */
     /* -I the corelib root so ANY shim can `#include <tycho.h>` for the ABI types,
        instead of hand-declaring `tycho_int` as all 13 in-tree shims once did. */
@@ -14519,8 +14544,8 @@ int main(int argc, char **argv) {
      * "(null)" on the cc line, which the shell then read as a subshell and
      * reported as ITS OWN syntax error (generics probe, 2026-08-19). */
     const char *cl_root = corelib_root();
-    char *incdir = cl_root ? sfmt(" -I%s", cl_root) : (char *)"";
-    char *cmd = sfmt("%s %s -fwrapv%s -pthread%s -o %s %s%s -lm%s%s %s", cc, optdbg, march, incdir, base, c_path, shims, links, extra, pkgdeps);
+    char *incdir = cl_root ? sfmt(" -I%s", shq(cl_root)) : (char *)"";
+    char *cmd = sfmt("%s %s -fwrapv%s -pthread%s -o %s %s%s -lm%s%s %s", cc, optdbg, march, incdir, shq(base), shq(c_path), shims, links, extra, pkgdeps);
     int rc = system(cmd);
     if (rc != 0) { fprintf(stderr, "tychoc: C compilation failed (%s)\n", cmd); return 1; }   /* the .c SURVIVES a cc failure on purpose: it is the evidence the printed command refers to */
     remove(c_path);

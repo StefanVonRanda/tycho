@@ -371,7 +371,7 @@ fn diagnose(uri: string, text: string, cc: string):
         tmp = pkg_mirror(path, text)
     else:
         write_file(tmp, text)
-    tycho_run(cc + " " + tmp + " --emit-c -o /tmp/.tycholsp_out > " + null_dev() + " 2> " + errf)
+    tycho_run(cc + " " + shq(tmp) + " --emit-c -o /tmp/.tycholsp_out > " + null_dev() + " 2> " + errf)
     errtext := read_file(errf)
     diags := ""
     nd := 0
@@ -517,7 +517,7 @@ fn compute_projs(uri: string, text: string, cc: string) -> string:
     path := uri_to_path(uri)
     if path == "":
         return ""
-    tycho_run(cc + " " + path + " --symbols > /tmp/.tycholsp_proj.txt 2>" + null_dev())
+    tycho_run(cc + " " + shq(path) + " --symbols > /tmp/.tycholsp_proj.txt 2>" + null_dev())
     return read_file("/tmp/.tycholsp_proj.txt")
 
 # the qualifier `q` in `q.member` when the cursor sits in the member position

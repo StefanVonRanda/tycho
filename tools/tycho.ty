@@ -12,6 +12,26 @@ fn null_dev() -> string:
         return "nul"
     return "/dev/null"
 
+# Quote ONE argument for the shell tycho_run() hands the line to: sh on POSIX,
+# cmd.exe on Windows. A filename or a forwarded arg is attacker-shaped -- never
+# interpolate one raw. (Same spelling as tools/tycho-debug/main.ty@shq.)
+fn shq(s: string) -> string:
+    if tycho_is_windows() == 1:
+        out := "\""
+        for i := 0; i < len(s); i += 1:
+            if s[i] == 34:                              # 34 = double quote
+                out = out + "\\\""
+            else:
+                out = out + substr(s, i, i + 1)
+        return out + "\""
+    out := "'"
+    for i := 0; i < len(s); i += 1:
+        if s[i] == 39:                                  # 39 = single quote
+            out = out + "'\\''"
+        else:
+            out = out + substr(s, i, i + 1)
+    return out + "'"
+
 # Where the throwaway build/check artifacts live. Drive-anchored on Windows so
 # the path does not depend on which drive the current directory sits on.
 fn tmp_dir() -> string:
@@ -69,14 +89,14 @@ fn out_name(file: string) -> string:
             return substr(base, 0, n - 3)
     return base
 
-# join a[start:] with single spaces (forwarded program args)
+# join a[start:] with single spaces, each argument shell-quoted
 fn join_from(a: [string], start: int) -> string:
     s := ""
     i := start
     for i < len(a):
         if i > start:
             s = s + " "
-        s = s + a[i]
+        s = s + shq(a[i])
         i = i + 1
     return s
 
@@ -96,12 +116,12 @@ fn cmd_run(a: [string], cc: string):
     ensure_tmp_root()
     exe := with_exe(tmp_dir() + "/.tycho_run_bin")
     # build to a throwaway temp; tychoc emits <exe>, and <exe>.c survives a cc
-    # failure on purpose (src/tychoc.c:14328) -- so clean both, either way
-    if tycho_run(cc + " " + file + " -o " + exe + " > " + null_dev()) != 0:
+    # failure on purpose (src/tychoc.c:14353) -- so clean both, either way
+    if tycho_run(cc + " " + shq(file) + " -o " + shq(exe) + " > " + null_dev()) != 0:
         tycho_remove(exe)
         tycho_remove(exe + ".c")
         die("tycho run: build failed: " + file)
-    code := tycho_run(exe + " " + join_from(a, 3))
+    code := tycho_run(shq(exe) + " " + join_from(a, 3))
     tycho_remove(exe)                              # the generated binary
     tycho_remove(exe + ".c")                       # and its transpiled C, if a failure left one
     if code != 0:
@@ -114,7 +134,7 @@ fn cmd_build(a: [string], cc: string):
         if a[3] == "-o":
             out = a[4]
     out = with_exe(out)                            # an explicit -o gets it too: cmd needs the suffix
-    if tycho_run(cc + " " + file + " -o " + out + " > " + null_dev()) != 0:
+    if tycho_run(cc + " " + shq(file) + " -o " + shq(out) + " > " + null_dev()) != 0:
         die("tycho build: failed: " + file)
     println("built " + out)
 
@@ -123,7 +143,7 @@ fn cmd_check(a: [string], cc: string):
     # --emit-c runs the whole front-end (parse + type + codegen) but skips cc;
     # the throwaway C goes to a temp, errors land on stderr (inherited -> shown).
     ensure_tmp_root()
-    if tycho_run(cc + " " + file + " --emit-c -o " + tmp_dir() + "/.tycho_check > " + null_dev()) != 0:
+    if tycho_run(cc + " " + shq(file) + " --emit-c -o " + shq(tmp_dir() + "/.tycho_check") + " > " + null_dev()) != 0:
         die("tycho check: " + file + " has errors")
     println("ok: " + file)
 
@@ -146,10 +166,10 @@ fn cmd_fmt(a: [string], cc: string):
     if file == "":
         die("tycho fmt: no file given")
     if not write:
-        tycho_run(fmtr + " " + file)                          # preview to stdout
+        tycho_run(fmtr + " " + shq(file))                     # preview to stdout
         return
     tmp := file + ".tychofmt~"                                # sibling temp -> same FS -> atomic rename
-    if tycho_run(fmtr + " " + file + " > " + tmp) != 0:
+    if tycho_run(fmtr + " " + shq(file) + " > " + shq(tmp)) != 0:
         tycho_remove(tmp)
         die("tycho fmt -w: formatter failed on " + file)
     ensure_tmp_root()
@@ -157,11 +177,11 @@ fn cmd_fmt(a: [string], cc: string):
     ca := tmp_dir() + "/.tychofmt_a"
     cb := tmp_dir() + "/.tychofmt_b"
     tycho_copy(file, chk)
-    if tycho_run(cc + " " + chk + " --emit-c -o " + ca + " > " + null_dev() + " 2>&1") != 0:
+    if tycho_run(cc + " " + shq(chk) + " --emit-c -o " + shq(ca) + " > " + null_dev() + " 2>&1") != 0:
         tycho_remove(tmp)
         die("tycho fmt -w: " + file + " does not compile -- fix it first (preview with: tycho fmt " + file + ")")
     tycho_copy(tmp, chk)
-    if tycho_run(cc + " " + chk + " --emit-c -o " + cb + " > " + null_dev() + " 2>&1") != 0:
+    if tycho_run(cc + " " + shq(chk) + " --emit-c -o " + shq(cb) + " > " + null_dev() + " 2>&1") != 0:
         tycho_remove(tmp)
         die("tycho fmt -w: REFUSED -- formatted output does not compile; " + file + " left unchanged")
     # anything but a proven-identical pair refuses: 0 is "differs", -1 is "one of
@@ -189,7 +209,7 @@ fn cmd_watch(a: [string], cc: string):
         if cur != last:
             last = cur
             println("--- change detected, checking ---")
-            tycho_run(cc + " " + file + " --emit-c -o " + tmp_dir() + "/.tycho_check > " + null_dev())
+            tycho_run(cc + " " + shq(file) + " --emit-c -o " + shq(tmp_dir() + "/.tycho_check") + " > " + null_dev())
         tycho_sleep_ms(300)
 
 fn main():
