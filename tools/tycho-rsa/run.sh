@@ -54,8 +54,20 @@ else
     fi
 fi
 
+# ---------------------------------------------------------------------------
+# [4] the key is drawn fresh: two runs of the same size must not agree.
+#     A golden cannot see this -- the transcript no longer prints the digits.
+# ---------------------------------------------------------------------------
+"$RSA" keygen 512 > "$T/k512b" 2>/dev/null || bad "second keygen 512 exited non-zero"
+n2=$(sed -n 's/^n = //p' "$T/k512b")
+if [ -z "$n2" ]; then
+    bad "second keygen 512 did not print n"
+elif [ "$n2" = "$n" ]; then
+    bad "two keygen 512 runs produced the SAME modulus -- the generator is not seeded from the OS"
+fi
+
 if [ "$fail" -eq 0 ]; then
-    echo "tycho-rsa: green (textbook vector, 3 python-pow modexp sizes, Miller-Rabin probes incl. Carmichael 561, deterministic keygen invariants + both round-trips == golden; 512-bit keygen round-trip ok)"
+    echo "tycho-rsa: green (textbook vector, 3 python-pow modexp sizes, Miller-Rabin probes incl. Carmichael 561, CSPRNG keygen invariants + both round-trips == golden; 512-bit keygen round-trip ok; two 512-bit keygens differ)"
 else
     echo "tycho-rsa: FAIL"; exit 1
 fi
