@@ -26,7 +26,11 @@ for entry in examples/corelib/*/main.ty; do
         fi
     fi
     if ! "$TYCHOC" "$entry" -o "$T/c" >/dev/null 2>&1; then echo "FAIL $name (tychoc compile)"; fail=1; continue; fi
-    "$T/c" > "$T/co" 2>&1
+    "$T/c" > "$T/co" 2>&1; rc=$?
+    # The exit status was thrown away entirely, so an example that printed its
+    # golden and then exit(1) scored ok. Scored BEFORE RECORD, or RECORD=1
+    # blesses a dying example.
+    if [ "$rc" -ne 0 ]; then echo "FAIL $name (exit $rc)"; head "$T/co" | sed 's/^/      /'; fail=1; continue; fi
     if [ "$RECORD" = 1 ]; then cp "$T/co" "$golden"; echo "rec  $name"; ran=$((ran + 1)); continue; fi
     if [ ! -f "$golden" ]; then echo "FAIL $name (no golden -- run RECORD=1)"; fail=1; continue; fi
     if ! cmp -s "$T/co" "$golden"; then echo "FAIL $name (output != golden)"; diff "$golden" "$T/co" | head | sed 's/^/      /'; fail=1; continue; fi

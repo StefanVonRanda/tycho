@@ -40,6 +40,10 @@ for entry in corelib/test/*/main.ty; do
             [ "$rc" -eq 0 ] && break
         done
     fi
+    # rc was captured and read only for the Windows-127 retry above, so a test that
+    # printed its golden and then exit(1) scored ok -- and RECORD=1 blessed it.
+    # Scored BEFORE RECORD for exactly that reason.
+    if [ "$rc" -ne 0 ]; then echo "FAIL $name (exit $rc)"; head "$T/co" | sed 's/^/      /'; fail=1; continue; fi
     if [ "$RECORD" = 1 ]; then cp "$T/co" "$golden"; echo "rec  $name"; ran=$((ran + 1)); continue; fi
     if [ ! -f "$golden" ]; then echo "FAIL $name (no golden -- run RECORD=1)"; fail=1; continue; fi
     if ! cmp -s "$T/co" "$golden"; then echo "FAIL $name (output != golden)"; diff "$golden" "$T/co" | head | sed 's/^/      /'; fail=1; continue; fi

@@ -21,9 +21,14 @@ best() { # binary -> best-of-3 wall ms
 
 rc=0
 for w in binary_trees maptree; do
-  "$TYCHOC" "bench/prongB/$w.ty" --emit-c -o "$T/h" >/dev/null 2>&1
-  cc -O3 -o "$T/h" "$T/h.c" -lm
-  cc -O3 -o "$T/c" "bench/prongB/$w.c" -lm
+  # set -e killed this script silently when tychoc could not compile a benchmark:
+  # stderr went to /dev/null and the run ended with no verdict line at all.
+  "$TYCHOC" "bench/prongB/$w.ty" --emit-c -o "$T/h" >"$T/emit.log" 2>&1 \
+    || { echo "bench-guard: FAILED -- $TYCHOC cannot compile bench/prongB/$w.ty"; sed 's/^/      /' "$T/emit.log"; exit 1; }
+  cc -O3 -o "$T/h" "$T/h.c" -lm 2>"$T/cc.log" \
+    || { echo "bench-guard: FAILED -- cc rejected the C emitted for $w"; sed 's/^/      /' "$T/cc.log"; exit 1; }
+  cc -O3 -o "$T/c" "bench/prongB/$w.c" -lm 2>"$T/cc.log" \
+    || { echo "bench-guard: FAILED -- cc rejected bench/prongB/$w.c"; sed 's/^/      /' "$T/cc.log"; exit 1; }
   h=$(best "$T/h"); c=$(best "$T/c")
   # pass if 100*h < GATE_NUM*c  (h/c < 0.60)
   if [ $((100 * h)) -lt $((GATE_NUM * c)) ]; then
@@ -34,7 +39,8 @@ for w in binary_trees maptree; do
   fi
 done
 
-"$TYCHOC" bench/prongB/arr_pipeline.ty --emit-c -o "$T/ap" >/dev/null 2>&1
+"$TYCHOC" bench/prongB/arr_pipeline.ty --emit-c -o "$T/ap" >"$T/emit.log" 2>&1 \
+  || { echo "bench-guard: FAILED -- $TYCHOC cannot compile bench/prongB/arr_pipeline.ty"; sed 's/^/      /' "$T/emit.log"; exit 1; }
 el=$(grep -c '\.data\[h_i\]' "$T/ap.c" || true)
 ck=$(grep -c 'tycho_arr_int_get(h_' "$T/ap.c" || true)
 if [ "$el" -ge 2 ] && [ "$ck" -eq 0 ]; then

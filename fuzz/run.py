@@ -133,6 +133,16 @@ def main():
     # large share of generated programs is rejected, the generator (or a
     # compiler front-end regression) has invalidated the run -- fail loudly
     # instead of green-exiting on near-zero coverage.
+    # "ok" is the only verdict that actually COMPARED two compilers. A run where
+    # every seed timed out, or (below the n>=20 ceiling) every seed was rejected,
+    # scored nothing at all and used to exit 0.
+    if counts["ok"] == 0:
+        print("NOTHING SCORED: 0 of %d seeds produced a comparison (skip=%d timeout=%d) -- generator, front end or host is broken" % (
+            n, counts["skip"], counts["timeout"]))
+        return 1
+    if n >= 20 and counts["timeout"] > 0.3 * n:
+        print("TIMEOUT CEILING EXCEEDED: %d/%d (>30%%) seeds timed out -- a hang, or a host too loaded to fuzz on" % (counts["timeout"], n))
+        return 1
     if n >= 20 and counts["skip"] > 0.3 * n:
         print("SKIP CEILING EXCEEDED: %d/%d (>30%%) programs rejected by tychoc -- generator or front-end regression" % (counts["skip"], n))
         return 1

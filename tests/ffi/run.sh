@@ -82,8 +82,25 @@ if "$TYCHOC" tests/ffi/main.ty --link "m; touch $mark" -L "$T" >/dev/null 2>&1; 
 # (8) FFI R4 out-param fail-closed: only int/char/float/bool/ptr may be `inout`
 # (a clean T* the C fn fills). `inout string` (a char** with no length header) and
 # other non-trivial out-param shapes must be rejected.
+# --emit-c, NEVER -o: `extern "x"` puts -lx on the link line and no such library
+# exists, so a -o leg passed on `cannot find -lx` whatever the front end decided.
 printf 'extern "x" fn f(s: inout string)\nfn main():\n    print("x")\n' > "$T/r4rej.ty"
-if "$TYCHOC" "$T/r4rej.ty" -o "$T/r4rej" >/dev/null 2>&1; then echo "FAIL: inout-string out-param accepted by tychoc"; fail=1; fi
+# Positive control: the same shape with a permitted out-param type MUST compile,
+# or the rejection above is not about `inout string`.
+printf 'extern "x" fn f(s: inout int)\nfn main():\n    print("x")\n' > "$T/r4ok.ty"
+if ! "$TYCHOC" "$T/r4ok.ty" --emit-c -o "$T/r4ok" >/dev/null 2>&1; then
+    echo "FAIL: inout-int control rejected -- the R4 leg cannot distinguish string from int"; fail=1
+fi
+# tychoc1 does not carry this ban (src/tychoc.c:4583 has it; see plan.md R3).
+# Encoded BY NAME so a new miss reddens and a FIXED one reddens too, rather than
+# quietly widening the exemption.
+r4known=0; case "$TYCHOC" in *tychoc1) r4known=1 ;; esac
+if "$TYCHOC" "$T/r4rej.ty" --emit-c -o "$T/r4rej" >/dev/null 2>&1; then
+    if [ "$r4known" -eq 1 ]; then echo "KNOWN MISS: $TYCHOC accepts \`inout string\` (tychoc rejects it) -- plan.md R3"
+    else echo "FAIL: inout-string out-param accepted by $TYCHOC"; fail=1; fi
+elif [ "$r4known" -eq 1 ]; then
+    echo "FAIL: known-miss list stale -- $TYCHOC now rejects \`inout string\`; drop the exemption in tests/ffi/run.sh"; fail=1
+fi
 
 # (9) FFI-boundary sized ints (u8/u16/u32/u64/i8/i16/i32/i64): recognized ONLY in
 # extern signatures; the value is `int` to Tycho but the emitted prototype uses the
