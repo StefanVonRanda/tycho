@@ -48,8 +48,10 @@ TYCHOC1_SRC := compiler/main.ty $(wildcard compiler/*/*.ty)
 # thing -- 201,604 Ir on EVERY compile regardless of input size (48% of a
 # two-line program, measured identical on tiny.ty and examples/invindex.ty).
 TYCHOC1_CFLAGS ?= --param inline-unit-growth=150 -static-pie -flto
+# `make clean && make` is the bootstrap check: clean removes tychoc1, so this
+# line runs for real. 8c156d38 swapped it to ./tychoc1 and only a fresh clone saw it.
 tychoc1: tychoc $(TYCHOC1_SRC)
-	./tychoc1 compiler/main.ty -o tychoc1-stage1
+	./tychoc compiler/main.ty -o tychoc1-stage1
 	TYCHO_CFLAGS="$(TYCHOC1_CFLAGS)" ./tychoc1-stage1 compiler/main.ty -o tychoc1
 	@rm -f tychoc1-stage1
 
@@ -417,7 +419,7 @@ site-code-check: tychoc1
 # `--emit-c -o <base>` writes and keeps `<base>.c`, so the intermediates below
 # are removed here rather than by the build.
 clean:
-	rm -f tychoc tycho tycho.c tychofmt tychofmt.c tycho-lsp tycho-lsp.c tycho-debug tycho-debug.c build/tycho_rt_embed.h
+	rm -f tychoc tychoc1 tychoc1-stage1 tycho tycho.c tychofmt tychofmt.c tycho-lsp tycho-lsp.c tycho-debug tycho-debug.c build/tycho_rt_embed.h
 	rm -f tycho-httpd tycho-httpd.c
 	rm -f examples/hello examples/hello.c examples/demo examples/demo.c
 	rm -f examples/accumulate examples/accumulate.c
