@@ -1,6 +1,6 @@
 # Security policy
 
-**Tycho is 0.7 — pre-1.0 software** (see the README's status banner): the
+**Tycho is 0.8 — pre-1.0 software** (see the README's status banner): the
 language surface and the corelib API can still change. It has undergone the
 internal security review recorded below — a review of the FFI shims, performed
 by the author, **not a formal third-party audit**. An external review is one of

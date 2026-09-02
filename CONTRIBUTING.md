@@ -1,6 +1,6 @@
 # Contributing to Tycho
 
-Thanks for trying Tycho and wanting to help. **Tycho is 0.7 — pre-1.0** (see the
+Thanks for trying Tycho and wanting to help. **Tycho is 0.8 — pre-1.0** (see the
 status note in the [README](README.md)): the language surface and the corelib API
 can still change, so the most useful thing you can send is a **bug report, a
 repro, or some design feedback** — much more than a big feature. Feedback on

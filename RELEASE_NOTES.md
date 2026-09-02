@@ -7,7 +7,7 @@ Draft release notes. Edit this before publishing, then:
 Build one tarball per platform (there is no hosted CI); attach them all to the release.
 -->
 
-Tycho 0.7 — pre-1.0, no stability guarantees (see the [README](README.md) for
+Tycho 0.8 — pre-1.0, no stability guarantees (see the [README](README.md) for
 what that means in practice). Prebuilt binaries are attached, so you can try the
 language without building from source.
 
@@ -142,7 +142,7 @@ unsafe by design — see [SECURITY.md](SECURITY.md).
 
 ## Status
 
-0.7 is pre-1.0 and there are **no stability guarantees**: anything here may
+0.8 is pre-1.0 and there are **no stability guarantees**: anything here may
 change — this release broke source compatibility in six places and the next one
 may too. [ROADMAP.md](ROADMAP.md#what-10-requires) lists what 1.0 requires, and
 the blocking item is not engineering — it is that nobody outside this repo has

@@ -102,7 +102,7 @@ Two further terms are used, always explicitly and collected in
 ### 1.5 Versioning
 
 This specification defines **Tycho 0.5** and is maintained against the current
-release (0.7.0); where the two differ, `CHANGELOG.md` records the change. It was
+release (0.8.0); where the two differ, `CHANGELOG.md` records the change. It was
 ratified on 2026-07-13 under the
 name *Tycho 1.0* and renamed on 2026-08-09 when the project was demoted to 0.5;
 no technical content changed with the rename.

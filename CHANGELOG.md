@@ -9,6 +9,70 @@ The version constant lives in `src/tychoc.c` (`TYCHO_VERSION`, printed by
 
 Nothing yet.
 
+## [0.8.0] — 2026-09-02
+
+**Not a breaking release.** Every one of the 300 files in the accept corpus that
+v0.7.0 compiled, 0.8.0 compiles: measured by building the v0.7.0 compiler and
+running both over `tests/*.ty` and `examples/*.ty` — 297 accepted by v0.7.0, 300
+by 0.8.0, 0 regressions. The 12 fixtures added under `tests/reject/` document
+rules that already existed; four were checked against the v0.7.0 binary and it
+refused all four too.
+
+### Compiler — the headline
+
+- **The compiler that ships is now written in Tycho.** `tychoc1`, self-hosted,
+  is what `make` builds and what the Linux archive contains (`8c156d38`). It is
+  built in two stages — the C bootstrap in `src/tychoc.c` builds stage 1, and
+  stage 1 builds the shipped binary, so the compiler carries its own
+  optimisations. `src/tychoc.c` remains the bootstrap and is not going away.
+- **On Windows the archive still ships the C bootstrap.** The mingw64 build
+  cross-compiles `src/tychoc.c`; it does not cross-build the self-hosted
+  compiler. Same language, same version, different implementation.
+- **Compile speed is at or past parity.** On its own source the self-hosted
+  compiler is faster than the bootstrap — 73 ms against 105 ms, min of 10 via
+  `bench/transpile/run.sh` — and level on three other inputs. It began this
+  cycle 5x slower.
+
+### Language
+
+- Three generic shapes that 0.7.0 refused now compile: a generic function
+  returning an array under a `where` clause, a generic constructor taking a bare
+  `[]`, and a lambda argument at a generic call site (`tests/generic_arr_ret_where.ty`,
+  `tests/generic_ctor_bare_arr.ty`, `tests/generic_lambda_arg.ty`).
+- **The surface is frozen** as of 2026-08-22 and gated by `make surface-check`:
+  101 keywords and 41 builtins, no additions or removals; corelib may gain a
+  function but may not lose one or change a signature.
+
+### Core library
+
+- Added: `io.make_dir_all` (the `mkdir -p` `tycho-ar` had hand-rolled),
+  `io.append_text`, `io.copy`, `strings.format_g17`.
+- `decimal.from_str` is **deprecated**, not removed. It fails open — it returned
+  `0.15` for `"1.5x"` — and `decimal.parse_unchecked` is the explicit spelling
+  for callers that want the old behaviour (FRICTION #56).
+
+### Tooling
+
+- Three new programs: `tycho-diff`, `tycho-fold`, `tycho-hash`.
+
+### Performance
+
+- Array-literal codegen was quadratic: 30,000 elements went from over 60 s to
+  20 ms (`d9f03d99`).
+- Emitted-program memory and speed are within ~3% of the bootstrap compiler's
+  output across six benchmarks, measured with `bench/peakrss.c`.
+
+### Verification
+
+- The fixture corpus is 814 `.ty` files, from 776.
+- New gates, each with its own negative controls: `make surface-check` (the
+  freeze), `make version-check` (a doc may not announce a version the compiler
+  does not ship), `make script-check` (every tracked `.py`/`.sh` parses, and no
+  statement sits unreachable after a `return`), `make parse-check` (the second
+  compiler's parser, against a committed AST census), `make docs-fences` (every
+  fenced snippet in the tree is built AND run — 199 of them), plus contrast and
+  code checks for the website.
+
 ## [0.7.0] — 2026-08-15
 
 **Breaking.** Several shapes that used to compile no longer do — a copied

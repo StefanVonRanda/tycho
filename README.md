@@ -7,7 +7,7 @@
 
 # Tycho
 
-> **Status: 0.7 — pre-1.0. No stability guarantees yet.** Tycho is an
+> **Status: 0.8 — pre-1.0. No stability guarantees yet.** Tycho is an
 > experiment testing one idea: implicit arenas under value semantics. It is
 > pre-1.0 because 1.0 is a promise not to break people, and nobody outside this
 > repo has written enough Tycho to know what that promise costs. The

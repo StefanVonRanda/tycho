@@ -6,7 +6,7 @@ import "driver"
 
 # Kept in step with src/tychoc.c's TYCHO_VERSION by hand; --version must agree.
 fn VERSION() -> string:
-    return "0.7.0"
+    return "0.8.0"
 
 # `foo.ty` -> `foo`, the default output base when no -o is given.
 fn _strip_ext(p: string) -> string:
