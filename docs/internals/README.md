@@ -19,6 +19,8 @@ measurements, and they assume you already know the codebase.
 - [`ffi-review-2026-08-14.md`](ffi-review-2026-08-14.md) — an FFI boundary review.
 - [`audit-2026-08-16.md`](audit-2026-08-16.md) — security audit across the whole
   threat model: two vulnerabilities found and fixed, and what it did not cover.
+- [`roadmap-closed-2026-08.md`](roadmap-closed-2026-08.md) — the 1.0 conditions
+  closed in August 2026, moved out of `ROADMAP.md`.
 - [`windows-port.md`](windows-port.md) — the design record of the native
   Windows port. Cited by `tests/run.sh`, `scripts/ci.sh` and the wine lanes.
 
