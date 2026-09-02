@@ -18,6 +18,17 @@ const DEF_PORT    = 8080
 const DEF_WORKERS = 8
 const DEF_IDLE_MS = 5000
 const DEF_HEAD_MS = 15000
+# THE FIRST-BYTE DEADLINE, and it is a different thing from --idle-ms even though
+# both are a read timeout on the same fd. --idle-ms is how long an ESTABLISHED
+# keep-alive peer may pause between requests: a client that has already been
+# answered has earned that patience. This is how long a peer that has said
+# NOTHING may hold a worker, and it must be short, because that is the whole
+# attack: each of --workers accept loops serves one connection at a time, so K
+# silent sockets delayed a legitimate GET by 4.93s at K=8 (measured against the
+# 5000ms idle timeout, which is what governed the first read before this split).
+# The bound is now ceil(K / workers) * --first-ms, and it no longer moves when an
+# operator lengthens the keep-alive window.
+const DEF_FIRST_MS = 1000
 const MAX_HEAD    = 16384      # per-request byte budget; past this -> 431, connection closed
 const MAX_REQS    = 1024       # requests served on one connection before we close it
 const LOG_FIELD   = 160        # longest request target we will echo into a log line
@@ -30,6 +41,7 @@ struct Config:
     port: int
     workers: int
     idle_ms: int
+    first_ms: int
     quiet: bool
 
 # What a request target resolved to. `status` 200 means serve `file`; 301 means
@@ -296,6 +308,20 @@ fn hidden_segment(rel: string) -> bool:
         opening = c == 47
     return false
 
+# The dotfile rule applied to the ANSWER rather than the request. It is a THIRD
+# guard, not a restatement of the second: an in-root symlink named `x.txt` may
+# resolve into `.hidden/` while the request never spelled a dot segment, and
+# hidden_segment(rel) cannot see that. Silent when the answer is not under the
+# resolved root -- deciding THAT is resolve_under's job, and a guard that also
+# answers a question it was not asked is a guard nobody can reason about.
+fn hidden_answer(root: string, fsp: string) -> bool:
+    rroot := path.real(root)
+    if rroot == "" or len(fsp) <= len(rroot) + 1:
+        return false
+    if fsp[0:len(rroot)] != rroot or fsp[len(rroot)] != 47:
+        return false
+    return hidden_segment(path.clean(fsp[len(rroot) + 1:len(fsp)]))
+
 fn resolve(root: string, target: string) -> Route:
     p := target
     q := find(p, "?")
@@ -316,9 +342,16 @@ fn resolve(root: string, target: string) -> Route:
         rel += "index.html"
     if hidden_segment(path.clean(rel)):
         return Route(403, "", "")
-    fsp := path.safe_join(root, rel)
+    # NOT safe_join: that is string math, and a symlink is invisible to it. A
+    # link under --root pointing outside it passed every lexical test and this
+    # server answered 200 with the outside file's bytes -- measured. resolve_under
+    # applies the containment test to what the path RESOLVES to, and hands back
+    # the resolved path so the read below opens what was checked.
+    fsp := path.resolve_under(root, rel)
     if fsp == "":
-        return Route(403, "", "")                  # absolute, or escapes root
+        return Route(403, "", "")                  # absolute, escaping, or resolving outside root
+    if hidden_answer(root, fsp):
+        return Route(403, "", "")
     match io.is_dir(fsp):
         Ok(isdir):
             if not isdir:
@@ -391,13 +424,22 @@ fn serve_conn(cfg: Config, conn: int, wid: int) -> int:
     # Asked ONCE per connection, not once per request: the peer of an accepted fd
     # cannot change, and keep-alive would otherwise repeat the syscall per request.
     peer := result.unwrap_or(net.peer_addr(conn), "-")
+    # The read deadline is NOT one number for the life of the connection.
+    # accept_loop armed the short first-byte deadline; the moment this peer has
+    # been answered once it stops being a suspect and gets the keep-alive idle
+    # window it asked for. Re-armed exactly once, at served == 1, not per request.
     for alive and served < MAX_REQS and not signal.shutdown_requested():
+        head_ms := cfg.first_ms
+        if served > 0:
+            head_ms = DEF_HEAD_MS
+            if served == 1 and not net.set_read_timeout_ms(conn, cfg.idle_ms) and not cfg.quiet:
+                eprint("w" + str(wid) + " warn: idle timeout not re-armed\n")
         # ONE corelib call does the read, the cap and the parse. `raw` is the second
         # tuple element, for the two jobs the Result cannot do: name a request that
         # would not parse in the access log, and answer "did this peer even start
         # talking" below. This one line replaced a 19-line local read loop and its
         # `Head` struct.
-        got, raw := httpd.read_request_deadline(conn, MAX_HEAD, DEF_HEAD_MS)
+        got, raw := httpd.read_request_deadline(conn, MAX_HEAD, head_ms)
         sw := time.start()
         match got:
             Err(httpd.Closed):
@@ -581,9 +623,12 @@ fn accept_loop(cfg: Config, srv: int, wid: int) -> int:
                 reg := signal.register_conn(slot, conn)
                 if not reg and not cfg.quiet:
                     eprint("w" + str(wid) + " warn: connection not registered for shutdown\n")
-                armed := net.set_read_timeout_ms(conn, cfg.idle_ms)
+                # THE FIRST-BYTE DEADLINE, not the idle one. A connection that
+                # has sent nothing is not a keep-alive peer waiting between
+                # requests, it is an unknown holding one of --workers loops.
+                armed := net.set_read_timeout_ms(conn, cfg.first_ms)
                 if not armed and not cfg.quiet:
-                    eprint("w" + str(wid) + " warn: idle timeout not armed\n")
+                    eprint("w" + str(wid) + " warn: first-byte timeout not armed\n")
                 served += serve_conn(cfg, conn, wid)
                 # BEFORE close_fd, not after. A slot still naming a closed fd is a
                 # number the kernel can hand back out to the next accept, and the
@@ -621,6 +666,8 @@ fn usage() -> string:
             "  --port N         port to bind, 0 = pick free   (default: " + str(DEF_PORT) + ")\n"
             "  --workers N      concurrent accept loops       (default: " + str(DEF_WORKERS) + ")\n"
             "  --idle-ms N      keep-alive idle timeout, ms   (default: " + str(DEF_IDLE_MS) + ")\n"
+            "  --first-ms N     deadline for a peer that has\n"
+            "                   sent nothing yet, ms          (default: " + str(DEF_FIRST_MS) + ")\n"
             "  --quiet, -q      do not log requests\n"
             "  --help, -h       this text\n\n"
             "Both spellings work: --port 8080 and --port=8080.\n")
@@ -633,7 +680,7 @@ fn as_uint(s: string, what: string) -> int:
 fn parse_args(av: [string]) -> Config:
     # the whole schema: names that take a value, and names that are booleans.
     # Both without dashes, which is the spelling cli.get/cli.flag already take.
-    valued := ["root", "host", "port", "workers", "idle-ms"]
+    valued := ["root", "host", "port", "workers", "idle-ms", "first-ms"]
     boolean := ["quiet", "q", "help", "h"]
     c := cli.parse_spec(av, valued, boolean)
 
@@ -655,14 +702,17 @@ fn parse_args(av: [string]) -> Config:
     port := as_uint(cli.get(c, "port", str(DEF_PORT)), "--port")
     workers := as_uint(cli.get(c, "workers", str(DEF_WORKERS)), "--workers")
     idle := as_uint(cli.get(c, "idle-ms", str(DEF_IDLE_MS)), "--idle-ms")
+    first := as_uint(cli.get(c, "first-ms", str(DEF_FIRST_MS)), "--first-ms")
     if port > 65535:
         die("tycho-httpd: --port must be 0..65535\n")
     if workers < 1 or workers > 256:
         die("tycho-httpd: --workers must be 1..256\n")
     if idle < 1:
         die("tycho-httpd: --idle-ms must be at least 1\n")
+    if first < 1:
+        die("tycho-httpd: --first-ms must be at least 1\n")
     return Config(path.clean(cli.get(c, "root", ".")), cli.get(c, "host", DEF_HOST),
-                  port, workers, idle, cli.flag(c, "quiet") or cli.flag(c, "q"))
+                  port, workers, idle, first, cli.flag(c, "quiet") or cli.flag(c, "q"))
 
 fn main():
     cfg := parse_args(cli.argv())
@@ -691,7 +741,8 @@ fn main():
     banner := "tycho-httpd: serving " + cfg.root
     banner += " on http://" + cfg.host + ":" + str(bound) + "/"
     banner += "  workers=" + str(cfg.workers)
-    banner += " idle=" + str(cfg.idle_ms) + "ms\n"
+    banner += " idle=" + str(cfg.idle_ms) + "ms"
+    banner += " first=" + str(cfg.first_ms) + "ms\n"
     eprint(banner)
 
     total := workers(cfg, srv, cfg.workers)

@@ -105,16 +105,19 @@ cleanup_srv() {
 }
 
 HID='s|    if hidden_segment(path.clean(rel)):|    if false:|'
-SJN='s|    fsp := path.safe_join(root, rel)|    fsp := root + "/" + rel|'
+ANS='s|    if hidden_answer(root, fsp):|    if false:|'
+SJN='s|    fsp := path.resolve_under(root, rel)|    fsp := root + "/" + rel|'
 
 build intact
-probe intact "[1] both guards intact"          403
+probe intact "[1] all three guards intact"          403
 build nohid "$HID"
 probe nohid  "[2] hidden_segment defeated"     403
 build nosj  "$SJN"
-probe nosj   "[3] safe_join defeated"          403
-build none  "$HID" "$SJN"
-probe none   "[C] control: BOTH defeated"      LEAK
+probe nosj   "[3] resolve_under defeated"     403
+build noans "$ANS"
+probe noans  "[4] hidden_answer defeated"     403
+build none  "$HID" "$SJN" "$ANS"
+probe none   "[C] control: ALL THREE defeated" LEAK
 
 [ "$fail" -eq 0 ] || { echo "traversal-check: FAIL"; exit 1; }
-echo "traversal-check: green (the traversal is refused with EITHER guard removed, and gets through only when both are -- so the defence is two independent layers, not one layer and a decoration)"
+echo "traversal-check: green (the traversal is refused with ANY ONE of the three guards removed, and gets through only when all three are -- so the defence is three independent layers, not one layer and two decorations)"

@@ -156,3 +156,74 @@ fn safe_join(base: string, rel: string) -> string:
     if len(cr) >= 3 and cr[0] == 46 and cr[1] == 46 and cr[2] == 47:   # "../"
         return ""
     return clean(join(base, rel))
+
+# ---- the filesystem fence --------------------------------------------------
+#
+# Everything above this line is string math and answers the same on every host.
+# These two are the exception, and they exist because a lexical fence CANNOT SEE
+# A SYMLINK: `safe_join("/srv/www", "link.txt")` is a perfectly contained answer
+# whether or not `link.txt` points at /etc/passwd. A static server built on
+# safe_join alone served the target of such a link with 200 -- measured, not
+# supposed. So the containment test has to be applied to what the path RESOLVES
+# TO, which takes a real syscall.
+
+# realpath(3): the absolute path with every symlink and ".." resolved, or "" if
+# the path does not exist, cannot be read, or does not fit. Fail-closed.
+extern fn pathx_real(p: string) -> string
+
+fn real(p: string) -> string:
+    for i := 0; i < len(p); i += 1:
+        if p[i] == 0:
+            return ""                          # a NUL truncates the C string
+    return pathx_real(p)
+
+# True when `p` IS `root` or lies underneath it. Both must already be resolved:
+# this is the comparison, not the resolution.
+fn under(root: string, p: string) -> bool:
+    if root == "" or p == "":
+        return false
+    if p == root:
+        return true
+    if len(p) <= len(root):
+        return false
+    return p[0:len(root)] == root and (p[len(root)] == 47 or root[len(root) - 1] == 47)
+
+# Resolve an UNTRUSTED relative `rel` under a trusted `base` and prove the ANSWER
+# is inside `base`. Returns the path to use, or "" when `rel` is refused.
+#
+#   resolve_under("/srv/www", "a/b.txt")   -> "/srv/www/a/b.txt" (resolved)
+#   resolve_under("/srv/www", "../etc")    -> ""   (lexical, safe_join)
+#   resolve_under("/srv/www", "link.txt")  -> ""   if link.txt leaves the root
+#   resolve_under("/srv/www", "link.txt")  -> the target, if it stays inside
+#
+# A path that does not exist is NOT a refusal: the longest existing ancestor is
+# resolved instead and checked, and the lexical join comes back so the caller can
+# report its own "not found" rather than a spurious "forbidden". Nothing can
+# escape through a component that is not there -- there is no symlink to follow.
+#
+# RESIDUAL RACE, stated rather than hidden: between this check and the caller's
+# open(2) an attacker WITH WRITE ACCESS INSIDE the root could replace a resolved
+# component with a symlink. Closing that needs the open itself to be done here,
+# with O_NOFOLLOW per component. This narrows an unconditional escape to a race
+# an outside attacker cannot reach; it does not remove it.
+fn resolve_under(base: string, rel: string) -> string:
+    j := safe_join(base, rel)
+    if j == "":
+        return ""
+    rb := real(base)
+    if rb == "":
+        return ""                              # no usable root: refuse everything
+    p := j
+    for len(p) > 0:
+        rp := real(p)
+        if rp != "":
+            if not under(rb, rp):
+                return ""                      # resolved outside the root
+            if p == j:
+                return rp                      # fully resolved: hand back the real path
+            return j                           # a missing leaf under a real ancestor
+        up := dir(p)
+        if up == p:
+            return ""                          # walked off the top without a hit
+        p = up
+    return ""

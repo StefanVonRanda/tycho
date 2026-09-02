@@ -25,12 +25,26 @@ usage: tycho-httpd [options]
   --port N         port to bind, 0 = pick free   (default: 8080)
   --workers N      concurrent accept loops       (default: 8)
   --idle-ms N      keep-alive idle timeout, ms   (default: 5000)
+  --first-ms N     deadline for a peer that has
+                   sent nothing yet, ms          (default: 1000)
   --quiet, -q      do not log requests
   --help, -h       this text
 ```
 
 Both `--port 8080` and `--port=8080` work. `--port 0` binds an ephemeral port
 and prints the one it got, which is what the test scripts use.
+
+`--first-ms` and `--idle-ms` are two deadlines on the same socket and the split
+is deliberate. A peer that has been answered once has earned `--idle-ms` between
+requests; a peer that has said **nothing** gets `--first-ms`, because each of
+`--workers` accept loops serves one connection at a time and a silent socket
+otherwise holds one for a whole idle timeout. With the two conflated, 8 silent
+sockets against 8 workers delayed a legitimate `GET` by **4.93 s**, and 25 of
+them exhausted the listen backlog so a later request failed outright. Split, the
+same 8 cost **0.72 s** and the same 25 cost **2.77 s** — the bound being
+`ceil(K / workers) x --first-ms` for K silent sockets. It does not remove the
+cost of a connection that completes a request and then parks: that is what
+`--idle-ms` is for, and it stays the operator's dial.
 
 `--idle-ms` bounds two things rather than one, and the second is easy to miss.
 It is how long a silent keep-alive peer may pin a worker — and, because a worker
@@ -56,9 +70,9 @@ filed as phase 15 of the signals plan.
 | **Byte ranges** | One range. `Range: bytes=A-B` (both ends inclusive, `B` clamped to the last byte), `bytes=A-` and the suffix `bytes=-N` get `206` with `Content-Range: bytes A-B/LEN` and a `Content-Length` of the **slice**. A range with no satisfiable byte is `416` with `Content-Range: bytes */LEN`. An invalid spec, an unknown unit or a multipart request is ignored: `200`, whole file. `Accept-Ranges: bytes` goes on exactly the `200` for a file and the `206`. A `304` outranks a `Range` (RFC 7232 §6). |
 | **Keep-alive** | HTTP/1.1 default-on, `Connection: close` honoured, HTTP/1.0 defaults to close. Up to 1024 requests per connection. |
 | **Idle timeout** | `SO_RCVTIMEO` on each accepted socket, so a silent peer cannot pin a worker. |
-| **Shutdown** | `SIGTERM` and `SIGINT` are caught (`core:signal`): every accept loop retires, every worker is joined, the process prints `tycho-httpd: stopped after N requests` (`server/main.ty:698@stopped`) and exits **0**. `SIGKILL` is uncatchable and still stops it where it stands, with no such line. Shutdown latency is bounded by `--idle-ms`, not by the signal — see Usage above. |
+| **Shutdown** | `SIGTERM` and `SIGINT` are caught (`core:signal`): every accept loop retires, every worker is joined, the process prints `tycho-httpd: stopped after N requests` (`server/main.ty:749@stopped`) and exits **0**. `SIGKILL` is uncatchable and still stops it where it stands, with no such line. Shutdown latency is bounded by `--idle-ms`, not by the signal — see Usage above. |
 | **Statuses** | 200, 206, 301, 304, 400, 403, 404, 405, 408, 416, 431. A peer that hangs up before a complete request arrives gets no response and no log line at all — the transport cause (`httpd.ReqErr`) is what separates that from the 400 a malformed head earns. |
-| **Logging** | One line per request on stderr: worker, **client address**, method, target, status, body bytes, duration — `w1 127.0.0.1 GET / 200 2659 0.081ms` (`server/main.ty:204-214`). A response the peer hung up on gains a ` write-failed` tail and reports 0 bytes rather than claiming a body nobody received. The target is control-byte-scrubbed and truncated, so a hostile URL cannot inject newlines into the log. |
+| **Logging** | One line per request on stderr: worker, **client address**, method, target, status, body bytes, duration — `w1 127.0.0.1 GET / 200 2659 0.081ms` (`server/main.ty:216-226`). A response the peer hung up on gains a ` write-failed` tail and reports 0 bytes rather than claiming a body nobody received. The target is control-byte-scrubbed and truncated, so a hostile URL cannot inject newlines into the log. |
 
 ## Concurrency
 
@@ -118,8 +132,24 @@ order of operations in `resolve()` is deliberate:
    and decoding twice cannot let `%252e%252e` through (the historical IIS bug)
 4. reject control bytes including NUL — path smuggling and log injection; **400**
 5. reject any segment starting with `.` — `.git`, `.env`, `.htpasswd`; **403**
-6. `path.safe_join(root, rel)`, which returns `""` for an absolute `rel` or one
-   that climbs above the root, and is treated as a refusal; **403**
+6. `path.resolve_under(root, rel)`, which returns `""` for an absolute `rel`,
+   one that climbs above the root, or one whose **resolved** answer lands
+   outside it, and is treated as a refusal; **403**
+7. re-apply step 5 to the resolved answer — an in-root symlink can reach a
+   dotfile the request never spelled; **403**
+
+Step 6 used to be `path.safe_join`, which is string math and therefore **cannot
+see a symlink**: a link under `--root` pointing outside it spelled no `..`,
+passed every lexical test, and this server answered **200 with the outside
+file's bytes**. `resolve_under` applies the containment test to what the path
+resolves to (`realpath(3)`) and hands back that resolved path, so the read opens
+what was checked. A path that does not exist is not a refusal — the longest
+existing ancestor is checked instead, which is what keeps a missing file a
+**404** rather than a spurious 403. One residual, stated rather than hidden:
+between the check and the `open` an attacker **with write access inside the
+root** could swap a resolved component for a symlink. Closing that needs the open
+done component-by-component with `O_NOFOLLOW`; this narrows an unconditional
+escape to a race an outside attacker cannot reach.
 
 The split between 400 and 403 is deliberate and it is the order above that
 decides it. A **403** means the path parsed and was declined — understood, and
@@ -132,7 +162,11 @@ re-checked live at HEAD: `/../../etc/passwd`, `/..%2f..%2f..%2fetc/passwd`,
 `/%2e%2e/%2e%2e/etc/passwd`, `/....//....//etc/passwd`, `//etc/passwd` and
 `/.git/config` are each **403**; `/%00` is **400**, at step 4. All refused, with
 zero bytes of `/etc/passwd` returned, while a control confirms the process can
-in fact read that file. `make server-check` asserts both groups.
+in fact read that file. `make server-check` asserts both groups, plus three
+symlink escapes (a linked file, a linked directory component, and a link into
+`.hidden/`) against the positive control that a symlink staying **inside** the
+root still serves 200 — without which a green run would only prove symlinks had
+been banned outright.
 
 ## Deliberately not implemented
 
@@ -196,7 +230,7 @@ And a third, closed on **2026-07-31**:
   stood: `kill -TERM` gave wait status 143, the `tycho-httpd: stopped after N
   requests` line never printed, and the access log's last entry was a request.
   The accept loop already *had* its wind-down path — `accept_loop` sets
-  `running = false` on an `Err` from `net.accept` (`server/main.ty:490-491`) —
+  `running = false` on an `Err` from `net.accept` (`server/main.ty:532-533`) —
   so what was missing was the signal that triggers it, and that was a language
   gap rather than a server one.
   **Fixed 2026-07-31** by `core:signal` (`docs/spec/18-library.md` §32.27), a
@@ -211,7 +245,7 @@ And a third, closed on **2026-07-31**:
   readiness banner, so no reader is told "serving" while `SIGTERM` still has its
   default disposition. **No new control flow was added** — every blocked
   `accept` returns `Err`, every loop retires, every spawned peer is joined, and
-  `server/main.ty:698@stopped` prints the count that was always unreachable. It fails
+  `server/main.ty:749@stopped` prints the count that was always unreachable. It fails
   closed: a handler that cannot be installed warns on stderr and the server runs
   on with the old behaviour.
 
@@ -279,7 +313,7 @@ the rough edges they closed.)
   `corelib/net/net_shim.c:151-152`). Before this, one client that sent a partial request and closed
   without reading killed the entire server — `SIGPIPE`, signal 13, every worker
   and every in-flight connection gone. The server now survives 100 consecutive
-  hostile disconnects and logs them as `write-failed` (`server/main.ty:374@write-failed`);
+  hostile disconnects and logs them as `write-failed` (`server/main.ty:407@write-failed`);
   `make server-check` re-runs a 50-disconnect version of that on every CI sweep.
 - **`TCP_NODELAY`** (`corelib/net/net_shim.c:97-98`).
   `httpd.write_response` sends the head and the body as two writes, on purpose,
@@ -331,7 +365,7 @@ Until 2026-07-30 this section said there was no `make` gate for the server,
 "because it is a long-running network daemon, not a fixture with a golden".
 Both halves were wrong, and the second was wrong as a *principle*: the daemon
 shape is exactly what makes it gateable. `--port 0` plus the startup banner
-(`server/main.ty:635-639`) hands a runner readiness **and** the bound port on
+(`server/main.ty:682-686`) hands a runner readiness **and** the bound port on
 one line, so there is no `sleep` and no fixed port to collide on, and a `trap`
 covers teardown. What is genuinely unassertable is wall-clock — the concurrency
 table and the `TCP_NODELAY` figures, both above — not behaviour.

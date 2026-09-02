@@ -63,6 +63,21 @@ fi
 cp -R server/www "$T/www" || exit 2
 mkdir -p "$T/www/emptydir" "$T/www/.hidden"
 : > "$T/www/.hidden/secret.txt"
+# SYMLINKS, and they are a fixture no string test can stand in for. `outside/` is
+# a SIBLING of the document root, so a link into it is a real escape -- the one
+# `path.safe_join` cannot see, because the request spells no "..". The two
+# POSITIVE controls are the point: `inlink.html` points back INSIDE the root and
+# must still serve, or a green run proves only that symlinks were banned
+# wholesale, and `dotlink.txt` resolves into `.hidden/` without the request ever
+# spelling a dot segment. `ln -s` is best-effort: an unprivileged Windows shell
+# cannot make one, and the driver skips those legs by name when the link is not
+# a link.
+mkdir -p "$T/outside"
+printf 'OUTSIDE-SECRET\n' > "$T/outside/secret.txt"
+ln -s "$T/outside/secret.txt" "$T/www/link.txt"      2>/dev/null || true
+ln -s "$T/outside"            "$T/www/linkdir"       2>/dev/null || true
+ln -s "$T/www/index.html"     "$T/www/inlink.html"   2>/dev/null || true
+ln -s "$T/www/.hidden/secret.txt" "$T/www/dotlink.txt" 2>/dev/null || true
 # A zero-length file, for the one Range case a repo of real assets cannot carry:
 # EVERY range over a 0-byte file is unsatisfiable, and `Content-Range: bytes */0`
 # is the only thing a 416 can say about it. git stores the file happily enough,
@@ -70,7 +85,7 @@ mkdir -p "$T/www/emptydir" "$T/www/.hidden"
 : > "$T/www/empty.txt"
 
 srv_start "$T/srv.err" --root "$T/www" --host 127.0.0.1 --port 0 \
-          --workers 4 --idle-ms 500
+          --workers 4 --idle-ms 500 --first-ms 700
 
 # ---- the conversation -------------------------------------------------------
 python3 - "$T/srv.err" "$T/www" server/www <<'PY'
@@ -98,7 +113,7 @@ port, t0 = None, time.time()
 while time.time() - t0 < 10.0:
     with open(errlog, "rb") as f:
         seen = f.read().decode("utf-8", "replace")
-    m = re.search(r"^tycho-httpd: serving (\S+) on http://(\S+):(\d+)/  workers=(\d+) idle=(\d+)ms$",
+    m = re.search(r"^tycho-httpd: serving (\S+) on http://(\S+):(\d+)/  workers=(\d+) idle=(\d+)ms first=(\d+)ms$",
                   seen, re.M)
     if m:
         port = int(m.group(3)); break
@@ -108,7 +123,7 @@ if port is None:
     print("       stderr was: " + repr(seen[:500]))
     sys.exit(1)
 ok("readiness: banner in %dms, bound port %d" % (round((time.time() - t0) * 1000), port))
-eq("banner: root/workers/idle", (m.group(1), m.group(4), m.group(5)), (root, "4", "500"))
+eq("banner: root/workers/idle/first", (m.group(1), m.group(4), m.group(5), m.group(6)), (root, "4", "500", "700"))
 if port <= 0:
     bad("readiness: --port 0 resolved to a real port", port, "> 0")
 
@@ -464,6 +479,39 @@ eq("403 hidden segment /.hidden/secret.txt",
    status(get(b"/.hidden/secret.txt")), "HTTP/1.1 403 Forbidden")
 eq("403 body is not the file", b"root:" in get(b"/../../etc/passwd").split(b"\r\n\r\n", 1)[1], False)
 
+# ---- 403: the escape a LEXICAL guard cannot see -----------------------------
+# path.safe_join is string math and answers "contained" for /link.txt whatever
+# the link points at; before path.resolve_under this server returned 200 with
+# the outside file's bytes. Measured, not supposed: 200 + OUTSIDE-SECRET.
+if not os.path.islink(os.path.join(root, "link.txt")):
+    print("  skip symlink escape (this filesystem/shell cannot make a symlink)")
+else:
+    r = get(b"/link.txt")
+    eq("403 symlink to a file outside the root", status(r), "HTTP/1.1 403 Forbidden")
+    # SEPARATE from the status, because the two fail separately: a 403 whose body
+    # carried the secret would still be a leak, and a status assertion cannot see it.
+    eq("403 symlink body does not carry the outside file", b"OUTSIDE-SECRET" in r, False)
+    r = get(b"/linkdir/secret.txt")
+    eq("403 symlinked DIRECTORY component", status(r), "HTTP/1.1 403 Forbidden")
+    eq("403 symlinked dir body does not carry it", b"OUTSIDE-SECRET" in r, False)
+    # The dotfile rule applied to the ANSWER, not the request: nothing in this
+    # target spells a dot segment, and the file it reaches is under .hidden/.
+    eq("403 symlink resolving into .hidden/", status(get(b"/dotlink.txt")),
+       "HTTP/1.1 403 Forbidden")
+    # THE POSITIVE CONTROL. Without it every leg above passes on a server that
+    # refuses symlinks outright, which is a different (and wrong) rule.
+    r = get(b"/inlink.html")
+    eq("200 symlink that stays INSIDE the root still serves", status(r), "HTTP/1.1 200 OK")
+    eq("200 in-root symlink serves index.html's bytes", split(r)[1],
+       open(os.path.join(repo_www, "index.html"), "rb").read())
+# And a path that does not exist must still be 404, not 403: resolve_under falls
+# back to the longest existing ancestor precisely so a missing file keeps its own
+# answer. Without that leg, "refuse everything" scores full marks above.
+eq("404 missing file is still 404, not 403", status(get(b"/no-such-file.txt")),
+   "HTTP/1.1 404 Not Found")
+eq("404 missing DEEP path is still 404", status(get(b"/no/such/deep.txt")),
+   "HTTP/1.1 404 Not Found")
+
 eq("400 non-numeric Content-Length",
    status(raw(b"POST / HTTP/1.1\r\nHost: x\r\nContent-Length: 4x\r\n\r\n")),
    "HTTP/1.1 400 Bad Request")
@@ -670,9 +718,9 @@ fi
 # A second server, started the same way and polled for the same banner. Used by
 # both remaining cases; there is only one process to kill per case, and the first
 # one is already gone.
-respawn() {  # respawn <errfile> [idle-ms]; sets SRV
+respawn() {  # respawn <errfile> [idle-ms] [first-ms]; sets SRV
     srv_start "$1" --root "$T/www" --host 127.0.0.1 --port 0 \
-              --workers 4 --idle-ms "${2:-500}"
+              --workers 4 --idle-ms "${2:-500}" --first-ms "${3:-700}"
     i=0
     while [ "$i" -lt 500 ]; do                   # the banner, not a fixed sleep
         grep -q '^tycho-httpd: serving ' "$1" 2>/dev/null && return 0
@@ -890,6 +938,84 @@ fi
 
 
 # ---- the command line -------------------------------------------------------
+# ---- idle connections must not starve a real request -------------------------
+# Each of --workers accept loops serves ONE connection at a time, so a socket
+# that connects and says nothing holds a worker for as long as the read deadline
+# allows. That deadline used to be --idle-ms, and 8 silent sockets against 8
+# workers delayed a legitimate GET by 4.93s -- measured, not supposed. --first-ms
+# is that deadline split out: a peer that has sent nothing gets first-ms, one
+# that has already been answered keeps idle-ms.
+#
+# The server below is configured with idle-ms SIXTEEN TIMES first-ms, and that
+# ratio is what makes this leg able to redden. If the first read ever goes back
+# to the idle timeout the measured delay jumps from ~1s to ~8s and misses the
+# bound by a mile; run with the two timeouts equal, the leg would pass either way
+# and prove nothing.
+respawn "$T/starve.err" 8000 500
+python3 - "$(port_of "$T/starve.err")" 4 500 8000 <<'STARVE'
+import socket, sys, time
+port, workers, first_ms, idle_ms = (int(x) for x in sys.argv[1:5])
+bad = 0
+
+def timed_get(timeout):
+    t = time.time()
+    s = socket.create_connection(("127.0.0.1", port), timeout)
+    s.settimeout(timeout)
+    s.sendall(b"GET /index.html HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n")
+    buf = b""
+    while True:
+        c = s.recv(65536)
+        if not c:
+            break
+        buf += c
+    s.close()
+    return (time.time() - t) * 1000.0, buf.split(b"\r\n")[0].decode("latin1")
+
+# [1] THE CONTROL, and it runs first: an unloaded server must answer promptly, or
+# the number measured under load says nothing about starvation at all.
+ms, st = timed_get(10.0)
+if st != "HTTP/1.1 200 OK" or ms > 500:
+    print("  FAIL idle-starvation control: unloaded GET %.0fms %s, want 200 under 500ms" % (ms, st))
+    bad = 1
+else:
+    print("  ok   idle-starvation control: unloaded GET answered in %.0fms" % ms)
+
+# [2] Twice as many silent sockets as workers. The bound is the mechanism written
+# out -- ceil(K / workers) rounds, each ending when first-ms expires, plus a
+# second of slack for a loaded box. It is far under idle-ms, which is the real
+# assertion here.
+K = workers * 2
+bound = (((K + workers - 1) // workers) * first_ms) + 1000
+held = []
+for _ in range(K):
+    try:
+        held.append(socket.create_connection(("127.0.0.1", port), 3.0))
+    except OSError as e:
+        print("  FAIL idle-starvation: could not open silent socket %d: %s" % (len(held), e))
+        bad = 1
+        break
+time.sleep(0.2)
+try:
+    ms, st = timed_get(30.0)
+except OSError as e:
+    print("  FAIL idle-starvation: legitimate GET failed outright under %d idle sockets: %s" % (K, e))
+    ms, st, bad = -1.0, "", 1
+for c in held:
+    c.close()
+if ms >= 0 and st == "HTTP/1.1 200 OK" and ms <= bound:
+    print("  ok   idle-starvation: %d silent sockets vs %d workers -> 200 in %.0fms "
+          "(bound %dms = ceil(%d/%d) x first-ms %d + 1000; idle-ms is %d)"
+          % (K, workers, ms, bound, K, workers, first_ms, idle_ms))
+elif ms >= 0:
+    print("  FAIL idle-starvation: %d silent sockets delayed a GET %.0fms (%s), bound %dms"
+          % (K, ms, st or "no answer", bound))
+    bad = 1
+sys.exit(bad)
+STARVE
+rc=$?
+[ "$rc" -eq 0 ] || fail=1
+srv_kill; wait "$SRV" 2>/dev/null; SRV=""
+
 "$HTTPD" --help >"$T/help.out" 2>&1
 rc=$?
 if [ "$rc" -eq 0 ] && grep -q '^  --port N ' "$T/help.out"; then
