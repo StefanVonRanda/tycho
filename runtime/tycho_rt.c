@@ -372,6 +372,25 @@ static tycho_int tycho_f2i(double x) {
     }
     return (tycho_int)x;
 }
+/* Float to a FIXED-WIDTH int (to_u8..to_i64). The spec calls these conversions
+ * total, so unlike to_int they may not trap -- but a bare C cast of a NaN, an
+ * infinity or an out-of-range value is undefined (C11 6.3.1.4p1). Defined answer:
+ * a non-finite input is 0, a finite one truncates toward zero and then wraps
+ * modulo 2^64, which is exactly how the int->sized cast already wraps. The caller
+ * narrows this u64 to the target width. */
+static uint64_t tycho_f2u64(double x) {
+    if (!isfinite(x)) return 0;
+    x = fmod(trunc(x), 18446744073709551616.0);   /* now |x| < 2^64, still integral */
+    int neg = x < 0;
+    if (neg) x = -x;
+    /* (uint64_t)x is only defined below 2^64, and adding 2^64 to a negative x
+     * would round to exactly 2^64 in binary64 -- so subtract the top bit in
+     * FLOAT space (exact: x >= 2^63 has spacing 2048) and negate in INT space. */
+    uint64_t u = x < 9223372036854775808.0
+               ? (uint64_t)x
+               : (uint64_t)(x - 9223372036854775808.0) + 0x8000000000000000ULL;
+    return neg ? (uint64_t)0 - u : u;
+}
 /* reserve() takes a runtime int straight from user code: a negative or huge n
  * would make (size_t)n*elem wrap, allocating a tiny buffer under a huge cap --
  * every later push then writes out of bounds. Fail loudly instead. */

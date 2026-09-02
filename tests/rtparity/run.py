@@ -71,7 +71,7 @@ RUNTIME = os.path.join(ROOT, "runtime", "tycho_rt.c")
 # capability disappearing, an entry appearing unlisted is a capability nobody
 # wrote down.
 
-# runtime/tycho_rt.c:409, :567, :848 -- the only literal getenv() names in the
+# runtime/tycho_rt.c:428, :567, :848 -- the only literal getenv() names in the
 # runtime. The wrapper Tycho code calls takes a runtime string (getenv(name)), so
 # a user program's own env reads cannot land here.
 EXPECT_ENV = {
@@ -81,7 +81,7 @@ EXPECT_ENV = {
     "TYCHO_THREADS",
 }
 
-# The TYCHO_ARENA_STATS report's row labels (runtime/tycho_rt.c:369-377).
+# The TYCHO_ARENA_STATS report's row labels (runtime/tycho_rt.c:369-396).
 EXPECT_ROWS = {
     "arenas",
     "block reuse",
@@ -130,9 +130,9 @@ EXPECT_MSG_RUNTIME = {
 # that triggers it. These are the entries the lane earns its keep on -- a codegen
 # arm that stops emitting its guard reddens here and nowhere else.
 EXPECT_MSG_CODEGEN = {
-    r"tycho: non-exhaustive match\n",     # src/tychoc.c:11472, :10782
-    r"tycho: push to a full bounded[4]\n",  # src/tychoc.c:13295 (the [4] is surface.ty's Inline.slots)
-    r"tycho: slice [%",                   # src/tychoc.c:11098, :9711
+    r"tycho: non-exhaustive match\n",     # src/tychoc.c:11526, :10782
+    r"tycho: push to a full bounded[4]\n",  # src/tychoc.c:13349 (the [4] is surface.ty's Inline.slots)
+    r"tycho: slice [%",                   # src/tychoc.c:11152, :9711
 }
 # REMOVED 2026-07-30 (the loops-cleanup plan): r"tycho: range step is zero\n".
 # The oracle was out of date, not the codegen. `range(a, b, step)` went on

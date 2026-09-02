@@ -1382,6 +1382,19 @@ static Type base_of(Type t) { return IS_NEWTYPE(t) ? nt_under(t) : t; }
  * -fwrapv; u32/u64 wrap natively as unsigned. */
 static int is_uint(Type t)      { return t == T_U8 || t == T_U16 || t == T_U32 || t == T_U64; }
 static int is_sized_int(Type t) { return is_uint(t) || t == T_I8 || t == T_I16 || t == T_I32 || t == T_I64; }
+/* The closed value range of a fixed-width int type. u64's top half is unreachable
+ * from a literal -- lex_num caps an int literal at INT64_MAX -- so INT64_MAX is
+ * the honest ceiling here rather than 2^64-1. */
+static void sized_range(Type t, int64_t *lo, int64_t *hi) {
+    *lo = 0; *hi = INT64_MAX;
+    if (t == T_U8)  { *hi = 255; }
+    else if (t == T_U16) { *hi = 65535; }
+    else if (t == T_U32) { *hi = 4294967295LL; }
+    else if (t == T_I8)  { *lo = -128; *hi = 127; }
+    else if (t == T_I16) { *lo = -32768; *hi = 32767; }
+    else if (t == T_I32) { *lo = -2147483648LL; *hi = 2147483647LL; }
+    else if (t == T_I64) { *lo = INT64_MIN; }
+}
 /* Element-wise arithmetic on arrays (post-freeze): is `x OP y` legal for two
  * values of element type `et`? The whole rule is that `a OP b` on arrays is
  * legal IFF `a[i] OP b[i]` is legal, so this table is DERIVED from the scalar
@@ -2507,7 +2520,7 @@ static Type parse_type_inner(Parser *ps) {
             return mt;
         }
         eat(ps, TK_RBRACKET, "']'");
-        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2450) sits after a die_at */
+        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2463) sits after a die_at */
             die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
         return arr_of(elem);   /* fixed [int]/[float]/[string] or a composite */
     }
@@ -2870,7 +2883,7 @@ static Expr *parse_primary(Parser *ps) {
                 e->ival = mt; e->op = TK_COLON;
                 return e;
             }
-            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2268): parse_type never yields T_VOID */
+            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2281): parse_type never yields T_VOID */
                 die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
             e->ival = arr_of(elem);   /* type carried to the resolver */
             return e;
@@ -5144,8 +5157,14 @@ static Expr *const_fold(Expr *e, int refs) {
         case TK_PLUS:    r = x + y; break;
         case TK_MINUS:   r = x - y; break;
         case TK_STAR:    r = x * y; break;
-        case TK_SLASH:   if (y == 0) die_at(e->line, "const expression divides by zero"); r = x / y; break;
-        case TK_PERCENT: if (y == 0) die_at(e->line, "const expression divides by zero"); r = x % y; break;
+        /* INT64_MIN / -1 is 2^63, which no int holds -- computing it in the compiler
+         * raised SIGFPE and killed tychoc with no diagnostic. The remainder is 0
+         * mathematically, so that one is answered rather than refused. */
+        case TK_SLASH:   if (y == 0) die_at(e->line, "const expression divides by zero");
+                         if (x == INT64_MIN && y == -1) die_at(e->line, "const expression overflows: the smallest int divided by -1 has no int value");
+                         r = x / y; break;
+        case TK_PERCENT: if (y == 0) die_at(e->line, "const expression divides by zero");
+                         r = (x == INT64_MIN && y == -1) ? 0 : x % y; break;
         case TK_AMP:     r = x & y; break;
         case TK_PIPE:    r = x | y; break;
         case TK_CARET:   r = x ^ y; break;
@@ -5774,7 +5793,7 @@ static void collect_idents(Expr *e, const char **out, int *n, int cap) {
     }
     if (e->kind == E_CALL) {   /* Neither name on a call is a child expr: the callee lives in
                                 * sval (`g(x)` where g is a closure) and a method call's RECEIVER
-                                * lives in qual (`m.get(k)`, src/tychoc.c:3239), because the parser
+                                * lives in qual (`m.get(k)`, src/tychoc.c:3252), because the parser
                                 * cannot tell it from a package call. Both are outer reads; missing
                                 * qual let `m` reach the lifted body uncaptured and the C compiler,
                                 * not tychoc, reported `h_m undeclared`. pf_scan_expr already does
@@ -5873,6 +5892,29 @@ static void f32_lit(Expr *e) {
         die_at(e->line, "f32 literal out of range: `%g` exceeds the largest f32 "
                         "(IEEE-754 binary32); write to_f32(1.0/0.0) for an infinity", e->fval);
     e->type = T_F32;
+}
+/* An int LITERAL adapting to a fixed-width int destination. The f32 sibling above
+ * already refuses a literal its type cannot hold; this one used to truncate in
+ * silence -- `x: u32 = 4294967296` compiled to 0 through a C cast. */
+static void sized_lit(Expr *e, Type want) {
+    int64_t lo, hi;
+    sized_range(want, &lo, &hi);
+    if (e->ival < lo || e->ival > hi)
+        die_at(e->line, "%lld does not fit %s (its range is %lld..%lld) -- write to_%s(x) "
+                        "to convert with wraparound", (long long)e->ival, type_name(want),
+               (long long)lo, (long long)hi, type_name(want));
+    e->type = want;
+}
+/* `-1` parses as a unary minus over a literal, not as a literal, so every
+ * adaptation rule below (which tests E_INT/E_FLOAT) skipped it: `x: float = -1`
+ * and `2.0 * -1` were refused while their positive twins compiled. Fold the
+ * negation into the literal node in place so one rule serves both signs. The
+ * operand has already been resolved, so its type checks still happened. */
+static int neg_lit_fold(Expr *e) {
+    if (!e || e->kind != E_BINOP || e->op != TK_MINUS || e->rhs || !e->lhs) return 0;
+    if (e->lhs->kind == E_INT)   { int64_t v = e->lhs->ival; e->kind = E_INT;   e->op = 0; e->lhs = NULL; e->ival = -v; return 1; }
+    if (e->lhs->kind == E_FLOAT) { double  v = e->lhs->fval; e->kind = E_FLOAT; e->op = 0; e->lhs = NULL; e->fval = -v; return 1; }
+    return 0;
 }
 static Type resolve_expr_inner(Expr *e);
 static Type resolve_expr(Expr *e) {
@@ -7069,7 +7111,7 @@ static Type resolve_expr_inner(Expr *e) {
             if (e->nargs != s->nparams)
                 die_at(e->line, "'%s' takes %d argument(s), got %d",
                        nominal_name(e->sval), s->nparams, e->nargs);
-            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:6536 */
+            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:6578 */
             for (int i = 0; i < e->nargs; i++) {
                 g_in_arg++;
                 Type at_ = resolve_exp(e->args[i], s->params[i]);   /* fixes a None arg */
@@ -7234,13 +7276,14 @@ static Type resolve_expr_inner(Expr *e) {
                     die_at(e->line, "`in` key must be %s", type_name(map_key(rt)));
                 return e->type = T_BOOL;
             }
+            neg_lit_fold(e->lhs); neg_lit_fold(e->rhs);   /* `-1` becomes the literal the rules below look for */
             /* sized-numeric literal adaptation: an int LITERAL takes the u32/u64 type
              * of the other operand; an int/float LITERAL takes f32. Literals only (a
              * typed variable never changes width), value-directional — mirrors the
              * int->float rule. Lets `w + 1`, `k == 0`, `x & 7` work when w/k/x are
              * u32/u64/f32 without a cast on every constant. */
-            if (e->lhs->kind == E_INT && is_sized_int(rt)) { e->lhs->type = rt; lt = rt; }
-            if (e->rhs->kind == E_INT && is_sized_int(lt)) { e->rhs->type = lt; rt = lt; }
+            if (e->lhs->kind == E_INT && is_sized_int(rt)) { sized_lit(e->lhs, rt); lt = rt; }
+            if (e->rhs->kind == E_INT && is_sized_int(lt)) { sized_lit(e->rhs, lt); rt = lt; }
             if (rt == T_F32 && (e->lhs->kind == E_INT || e->lhs->kind == E_FLOAT)) {
                 f32_lit(e->lhs); lt = T_F32;
             }
@@ -7529,6 +7572,7 @@ static Type resolve_exp(Expr *e, Type want) {
                 die_at(e->line, "element %d of a %s literal is the wrong type", i + 1, type_name(want));
         return e->type = want;
     }
+    if (want == T_FLOAT || want == T_F32 || is_sized_int(want)) neg_lit_fold(e);   /* `-1` is a literal here too */
     if (e->kind == E_INT && want == T_FLOAT) {   /* int literal adapts to a float context (B-1; literals only) */
         e->kind = E_FLOAT;
         e->fval = (double)e->ival;
@@ -7536,7 +7580,7 @@ static Type resolve_exp(Expr *e, Type want) {
     }
     /* sized-numeric literal adapts to a u32/u64/f32 context (a decl annotation,
      * return type, or arg) — `w: u32 = 5`, `return 0u64`, `f(3.0)` where f wants f32. */
-    if (e->kind == E_INT && is_sized_int(want)) return e->type = want;
+    if (e->kind == E_INT && is_sized_int(want)) { sized_lit(e, want); return e->type = want; }
     if ((e->kind == E_INT || e->kind == E_FLOAT) && want == T_F32) {
         f32_lit(e);
         return e->type = T_F32;
@@ -7657,7 +7701,7 @@ static void pf_capture(Expr *id) {
 /* capture an outer local named by a STRING rather than by an E_IDENT node -- the
  * callee of `f(x)` and the receiver of `o.f(x)` live in E_CALL's sval/qual, not
  * in a child expr. The synthesized read is resolved in the enclosing scope with
- * every other capture (src/tychoc.c:8269). Non-locals (global fns, builtins,
+ * every other capture (src/tychoc.c:8313). Non-locals (global fns, builtins,
  * enum constructors, package qualifiers) fail vars_find and are dropped. */
 static void pf_capture_name(const char *n, int line) {
     Type vt;
@@ -7680,10 +7724,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7617),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7661),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:7891). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:7935). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
@@ -7704,7 +7748,7 @@ static void pf_scan_expr(Expr *e) {
     }
     /* A call's callee is NOT an E_IDENT child of the node: `f(x)` keeps the name
      * in sval, and `o.f(x)` keeps the receiver in qual because the parser cannot
-     * tell it from a package call (src/tychoc.c:3233). The generic descent below
+     * tell it from a package call (src/tychoc.c:3246). The generic descent below
      * visits lhs/rhs/args only, so a fn-typed local reached the lifted chunk proc
      * uncaptured and the C compiler -- not tychoc -- reported the undeclared name.
      * The lambda capture analysis already does the sval half (src/tychoc.c@collect_idents). */
@@ -9434,7 +9478,7 @@ static const char *for3_elidable_arr(Stmt *s) {
     if (!bound || bound->kind != E_CALL || !bound->sval || strcmp(bound->sval, "len") ||
         bound->nargs != 1 || !bound->args[0] || bound->args[0]->kind != E_IDENT) return NULL;
     if (IS_BOUNDED(bound->args[0]->type)) return NULL;   /* bounded stores in .v, not .data — elision emits .data[i], so never elide it */
-    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:3998-4003) */
+    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:4011-4016) */
     if (!post || post->kind != S_ASSIGN || !post->name || strcmp(post->name, iv)) return NULL;
     Expr *inc = post->expr;
     if (!inc || inc->kind != E_BINOP || inc->op != TK_PLUS) return NULL;
@@ -10570,7 +10614,7 @@ static char *gen_call(Expr *e, const char *arena) {
     if (!strcmp(e->sval, "args")) {
         return sfmt("tycho_args(%s)", arena);
     }
-    if (!strcmp(e->sval, "chr") || !strcmp(e->sval, "to_char")) {   /* int -> byte. Both route through tycho_chr so both inherit its 0..255 ABORT (`runtime/tycho_rt.c:1376`) rather than masking -- the established answer for an out-of-range conversion here, the same one to_int(float) takes at `runtime/tycho_rt.c:230-232`. to_char then reads the byte back out; the sized to_u8 family wraps instead, but those are documented as total reinterpretations (docs/spec/06-conversions.md:40), not conversions with a domain. */
+    if (!strcmp(e->sval, "chr") || !strcmp(e->sval, "to_char")) {   /* int -> byte. Both route through tycho_chr so both inherit its 0..255 ABORT (`runtime/tycho_rt.c:1395`) rather than masking -- the established answer for an out-of-range conversion here, the same one to_int(float) takes at `runtime/tycho_rt.c:230-232`. to_char then reads the byte back out; the sized to_u8 family wraps instead, but those are documented as total reinterpretations (docs/spec/06-conversions.md:40), not conversions with a domain. */
         return sfmt(e->sval[0] == 'c' ? "tycho_chr(%s, %s)" : "((tycho_int)(unsigned char)tycho_chr(%s, %s)[0])", arena, gen_expr(e->args[0], arena));
     }
     if (!strcmp(e->sval, "die")) {   /* print to stderr and exit(1); never returns */
@@ -10613,8 +10657,18 @@ static char *gen_call(Expr *e, const char *arena) {
     }
     if (!strcmp(e->sval, "to_ptr"))      /* int -> void* (FFI sentinel pointer; tycho never derefs it) */
         return sfmt("((void*)(tycho_int)%s)", gen_expr(e->args[0], arena));
-    if (is_sized_conv(e->sval))          /* to_u8..to_i64, to_f32: cast to the target C type (truncate / sign- or zero-extend) */
-        return sfmt("((%s)%s)", c_type(sized_conv_target(e->sval)), gen_expr(e->args[0], arena));
+    if (is_sized_conv(e->sval)) {        /* to_u8..to_i64, to_f32: cast to the target C type (truncate / sign- or zero-extend) */
+        Type ct = sized_conv_target(e->sval), cb = base_of(e->args[0]->type);
+        char *ca = gen_expr(e->args[0], arena);
+        /* float -> a fixed-width int: a bare cast of a NaN, an infinity or an
+         * out-of-range value is C11 6.3.1.4p1 undefined behavior, and these
+         * conversions are documented total (spec 06-conversions). Route through
+         * the runtime's defined truncate-and-wrap; the narrowing cast then is one
+         * between integers, which is defined (or implementation-defined) in C. */
+        if (ct != T_F32 && (cb == T_FLOAT || cb == T_F32))
+            return sfmt("((%s)tycho_f2u64(%s))", c_type(ct), ca);
+        return sfmt("((%s)%s)", c_type(ct), ca);
+    }
     if (!strcmp(e->sval, "to_bytes") && base_of(e->args[0]->type) == T_ARRAY_INT)   /* [int] -> bytes: real conversion (each elem & 0xFF into a fresh binary buffer) */
         return sfmt("tycho_bytes_from_intarr(%s, %s)", arena, gen_expr(e->args[0], arena));
     if (!strcmp(e->sval, "to_str") || !strcmp(e->sval, "to_bool") || !strcmp(e->sval, "to_under") || !strcmp(e->sval, "to_bytes"))   /* zero-cost newtype unwrap / bytes<->string reinterpret (identical char* repr) */

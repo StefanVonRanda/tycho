@@ -14,8 +14,8 @@ types differ (for example, a C backend MUST realize `int` as a 64-bit type even
 on a target where C `long` is 32 bits).
 
 > Provenance: scalar tags `src/tychoc.c:761-782`; C lowering `c_type`
-> `:1551-1591`; equality/ordering `:6944-6977`; newtype decl `parse_typedecl`
-> `:4464-4483`.
+> `:1564-1604`; equality/ordering `:6986-7019`; newtype decl `parse_typedecl`
+> `:4477-4496`.
 
 ## 5.1 The type-identity model
 
@@ -229,9 +229,9 @@ dynamic element — `[bool]` is a supported array type — and is rejected only 
 the inline fixed-capacity forms `[N]T`, `[$N]T` and `bounded[N]T`, which have no
 bool codegen.
 
-> Provenance: dynamic `[T]` tests `void` alone (`src/tychoc.c:2493@elem`); the
-> fixed forms test both (`src/tychoc.c:2143-2144`), as does `bounded[N]T`
-> (`src/tychoc.c:2034-2035`). Detailed in
+> Provenance: dynamic `[T]` tests `void` alone (`src/tychoc.c:2506@elem`); the
+> fixed forms test both (`src/tychoc.c:2156-2157`), as does `bounded[N]T`
+> (`src/tychoc.c:2047-2048`). Detailed in
 > [§16.7](12-aggregates.md#167-element-type-restriction).
 
 ### 5.3.2 Fixed-size arrays `[N]T`
@@ -331,7 +331,7 @@ as a top-level key type.
 Map operations (`m[k]` as a place, absent-key read yielding the value's zero,
 `k in m`, `delete m[k]`, `m.get`) are specified in §18.
 
-> Provenance: `map_of` `src/tychoc.c:1486-1515`; `key_hashable` `:1438-1452`.
+> Provenance: `map_of` `src/tychoc.c:1499-1528`; `key_hashable` `:1451-1465`.
 
 ### 5.3.6 Enums, `Option`, `Result`
 
@@ -496,5 +496,5 @@ One asymmetry follows and is intentional: `bool` is comparable and `str`-able bu
 is not ordered. (`char` is comparable, ordered, and `str`-able — its `str` is the
 one-byte glyph.)
 
-> Provenance: `src/tychoc.c:6671-6704` (equality/ordering resolver); function-
-> value identity equality `:10214@identity equality`.
+> Provenance: `src/tychoc.c:6713-6746` (equality/ordering resolver); function-
+> value identity equality `:10258@identity equality`.

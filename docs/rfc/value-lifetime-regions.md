@@ -41,9 +41,9 @@ when its scope ends (`runtime/tycho_rt.c:5-13`). The emitted shape is four rules
 `main` opens `_root`, every function opens `Arena _scope = arena_child(_parent)`,
 every allocation takes an arena argument, and a return builds into `_parent`
 (`docs/memory-model.md:30-38`), realised in codegen by a single "current
-arena" string that defaults to `&_scope` (`src/tychoc.c:9563@g_cur_scope`) and a
-per-proc stack of enclosing block arenas (`src/tychoc.c:11265@g_ascope`) freed
-innermost-first at any exit (`src/tychoc.c:11324@g_nascope`).
+arena" string that defaults to `&_scope` (`src/tychoc.c:9607@g_cur_scope`) and a
+per-proc stack of enclosing block arenas (`src/tychoc.c:11319@g_ascope`) freed
+innermost-first at any exit (`src/tychoc.c:11378@g_nascope`).
 
 The three exceptions in the tree are the ones that prove the rule, because each is a
 *runtime* object the compiler finalises like a scope, not a user-visible lifetime:
@@ -52,8 +52,8 @@ The three exceptions in the tree are the ones that prove the rule, because each 
   `tycho_task_free` (`runtime/tycho_rt.c@tycho_task_new`,
   `runtime/tycho_rt.c@tycho_task_free`);
 - a channel cell's payload arena, one per ring slot, created at channel construction
-  and freed when a later send reclaims the slot (`runtime/tycho_rt.c:1061@arena_new`,
-  `runtime/tycho_rt.c:1111@arena_free`);
+  and freed when a later send reclaims the slot (`runtime/tycho_rt.c:1080@arena_new`,
+  `runtime/tycho_rt.c:1130@arena_free`);
 - a typed FFI handle's destructor, which is emitted into exactly the slot the task
   finaliser uses.
 
@@ -211,10 +211,10 @@ region variable, which is an annotation on every signature in the transitive clo
 
 **`spawn` / channels.** A spawn site allocates its argument struct in the task root
 and deep-copies each heap argument into it, after which spawner and task share zero
-bytes (`src/tychoc.c:10921-10929`, `runtime/tycho_rt.c@tycho_task_new`); `wait` copies
+bytes (`src/tychoc.c:10975-10983`, `runtime/tycho_rt.c@tycho_task_new`); `wait` copies
 the result out and frees the root eagerly
-(`src/tychoc.c:10536@arena_free(&_tk->root)`). A channel does the same per payload
-into a per-cell arena (`runtime/tycho_rt.c:1021@payload bytes live here`). An `@r` value
+(`src/tychoc.c:10580@arena_free(&_tk->root)`). A channel does the same per payload
+into a per-cell arena (`runtime/tycho_rt.c:1040@payload bytes live here`). An `@r` value
 offers neither option: copying it means copying the whole region (unbounded — the
 region exists *because* it is the long-lived structure), and passing the region pointer
 shares mutable storage across threads, which is the exact hypothesis the race-freedom
@@ -261,19 +261,19 @@ into it: reads copy out (already the language's defining invariant,
 semantics like any other value — it moves down as an argument and up as a return, and
 its arena travels with it. The two-direction rule of §2.2 is untouched, because a
 region introduces no new direction; it changes only *which* arena an allocation lands
-in, and the compiler already picks that per write site (`src/tychoc.c:9563@g_cur_scope`,
+in, and the compiler already picks that per write site (`src/tychoc.c:9607@g_cur_scope`,
 `docs/memory-model.md:50-59`).
 
 **`spawn` / channels.** This design survives the boundary, which is the reason it is
 worth writing down at all. Because a region is owned and pointer-free from outside,
-`copy_into(param, "(&_tk->root)", arg)` (`src/tychoc.c:10959@copy_into`) generalises without a new
+`copy_into(param, "(&_tk->root)", arg)` (`src/tychoc.c:11013@copy_into`) generalises without a new
 rule: create a fresh arena inside the task root, deep-copy every live element into it.
 Blocks crossing threads is already the status quo — the block pool is thread-local
-(`runtime/tycho_rt.c:591@g_block_pool`), blocks are released to whichever thread's pool
-frees them (`runtime/tycho_rt.c:629@HBlock *nx`), and a spawned thread flushes its pool
+(`runtime/tycho_rt.c:610@g_block_pool`), blocks are released to whichever thread's pool
+frees them (`runtime/tycho_rt.c:648@HBlock *nx`), and a spawned thread flushes its pool
 before exiting so nothing leaks with the TLS (`runtime/tycho_rt.c@tycho_pool_flush`). Channels need nothing new
 either: a region payload deep-copies into the cell arena like any other value
-(`runtime/tycho_rt.c:1021@payload bytes live here`).
+(`runtime/tycho_rt.c:1040@payload bytes live here`).
 
 The honest limit is that this makes regions **cheap to free and no cheaper to send**.
 A 1 GB region crosses a channel as 1 GB of deep copy. Today you would send an index
@@ -289,9 +289,9 @@ typedef struct { Arena rgn; Arr_Conn conns; } Server;
 Allocations for elements of `s.conns` target `&s.rgn` instead of the current scope
 string; the deep copy becomes `_c.rgn = arena_new(0);` followed by the existing
 recursive element copy; and the free is one `arena_free(&s.rgn)` emitted into exactly
-the finaliser slot tasks and handles already use (`src/tychoc.c:11275@g_taskvars`),
+the finaliser slot tasks and handles already use (`src/tychoc.c:11329@g_taskvars`),
 which fires at block end, early `return`, `break`/`continue` and `or_return`
-(`src/tychoc.c:11240-11243`). There is a
+(`src/tychoc.c:11294-11297`). There is a
 genuine simplification available: `inout` on a heap value today threads the caller's
 owning scope to the callee as a hidden parameter so an allocating mutation lands where
 the borrowed value lives (`docs/spec/07-memory-model.md:186-192`). If the value owns
@@ -300,7 +300,7 @@ longer needed for region-bearing types.
 
 **The arithmetic that decides it.** `arena_new(0)` sets `blocksz` to
 `TYCHO_BLOCK_DEFAULT` = 65536 (`runtime/tycho_rt.c:76@TYCHO_BLOCK_DEFAULT`,
-`runtime/tycho_rt.c:636@TYCHO_BLOCK_DEFAULT`), and the first allocation in a fresh
+`runtime/tycho_rt.c:655@TYCHO_BLOCK_DEFAULT`), and the first allocation in a fresh
 arena takes a block of `max(n, blocksz)` (`runtime/tycho_rt.c@arena_alloc`) from the
 thread-local pool or, failing a fit, from `malloc` (`runtime/tycho_rt.c@block_get`). So **every live region holds a 64 KiB block
 out of the pool for as long as it lives**, whatever it contains. Resident cost is

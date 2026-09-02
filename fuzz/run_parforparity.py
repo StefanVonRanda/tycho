@@ -108,7 +108,7 @@ fn main():
         bump(&xs)
 ''',
 # The RHS of a multi-assign must be a single TUPLE-valued expression
-# (src/tychoc.c:7796-7799), so this fixture's original body `a, b = b, a` was never
+# (src/tychoc.c:7840-7843), so this fixture's original body `a, b = b, a` was never
 # valid Tycho: it died at "expected newline" in the parser and never reached the
 # capture gate it names. That was invisible while the whole file died earlier still,
 # on `range()`. Respelled through a tuple-returning call, it now trips
@@ -143,7 +143,7 @@ fn main():
         acc = acc + i
     print(str(acc) + "\\n")
 ''',
-# `0..<N` starts at a literal 0 (src/tychoc.c:3983@i_dotlt), so the old `range(1, 8)` is
+# `0..<N` starts at a literal 0 (src/tychoc.c:3996@i_dotlt), so the old `range(1, 8)` is
 # respelled `0..<7` with the offset folded into the body. Folding, not renumbering
 # to `0..<8`: a product over a zero-based space is 0, and 0 is also what a
 # reduction that silently drains a private copy produces, so `0..<8` would make the

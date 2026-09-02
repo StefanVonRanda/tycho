@@ -169,7 +169,7 @@ section is kept as the record of the two prices that were weighed.
 **Lifting it is small — smaller than the row's "open by design" implies.** The
 blocker is not representation. `runtime/tycho_rt.c@TychoArrStr` is
 `typedef struct { char **data; tycho_int len; tycho_int cap; } TychoArrStr;`, and
-`runtime/tycho_rt.c:1242@NUL` records that a Tycho string is NUL-terminated and its
+`runtime/tycho_rt.c:1261@NUL` records that a Tycho string is NUL-terminated and its
 pointer is a valid C `char *` with the header hidden behind it. So a `[string]`'s
 `.data` **is already a `char **` of ordinary C strings** — no marshalling, no
 copy, no ownership transfer. The change is one branch in
@@ -182,13 +182,13 @@ emit `(const char *const *)xs.data, xs.len` unchanged. Comparable to `308b6d6`
 Three things that must be decided with it, not after:
 
 1. **`(ptr, len)`, not a NULL-terminated argv.** It would follow the
-   `[int]`/`[float]` convention already at `src/tychoc.c:10310@arrp`. A callee wanting
+   `[int]`/`[float]` convention already at `src/tychoc.c:10354@arrp`. A callee wanting
    `execv` semantics appends its own `NULL`. Promising argv-shape instead means
    the emitter allocates a terminated copy, and that is a different, larger change.
 2. **Borrow for the call; the callee must not retain.** Same contract
    `[int]`/`[float]` carry today. Nobody frees, because nothing was allocated.
 3. **The return direction stays refused.** `[string]` *out* of C has no length
-   header to reconstruct — the same reason `src/tychoc.c:4591-4592` bans a
+   header to reconstruct — the same reason `src/tychoc.c:4604-4605` bans a
    `char **` out-param. Lifting the parameter direction does not lift this one,
    and saying so is part of the change.
 

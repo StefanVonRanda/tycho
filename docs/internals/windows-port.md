@@ -30,8 +30,8 @@
 ## Why it is feasible at all — the assessment in one screen
 
 - The **compiler** (`src/tychoc.c`) is mostly portable C. Its POSIX surface is
-  `dirent` (opendir/readdir/closedir, `src/tychoc.c:4925@opendir`), `popen`
-  (`src/tychoc.c:14254@popen`), `realpath`, `access`, `vasprintf`
+  `dirent` (opendir/readdir/closedir, `src/tychoc.c:4938@opendir`), `popen`
+  (`src/tychoc.c:14308@popen`), `realpath`, `access`, `vasprintf`
   (`src/tychoc.c:214@vasprintf`), and `newlocale/uselocale`
   (`src/tychoc.c:286@uselocale`). mingw-w64 provides no POSIX
   `newlocale`/`uselocale`/`locale_t` at any version (checked against upstream
@@ -42,7 +42,7 @@
   Estimate: ~1 day.
 - The **runtime** (`runtime/tycho_rt.c`, embedded verbatim into every emitted
   program) needs: winpthreads for the whole concurrency model
-  (`runtime/tycho_rt.c:967@pthread_create` — free under `-pthread`),
+  (`runtime/tycho_rt.c:986@pthread_create` — free under `-pthread`),
   `clock_gettime`/`nanosleep`/`sched_yield`/`sysconf`
   (`runtime/tycho_rt.c:60@sysconf` — mingw shims, a few lines), and **the one
   hard piece**: the deep-recursion stack-overflow guard built on
