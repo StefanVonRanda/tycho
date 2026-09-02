@@ -44,7 +44,15 @@ fn walk(root: string) -> [string]:
         abs := root
         if rel != "":
             abs = path.join(root, rel)
-        names := io.list(abs)
+        names := []string
+        # io.list() answers [] for a directory it cannot OPEN and for an empty one
+        # alike, so an unreadable subtree used to be archived as nothing, exit 0,
+        # with a member count that was simply wrong. Fail the archive instead.
+        match io.list_checked(abs):
+            Ok(ns):
+                names = ns
+            Err(e):
+                die("tycho-ar: cannot list " + abs)
         for j := 0; j < len(names); j += 1:
             child_rel := names[j]
             if rel != "":

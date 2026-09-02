@@ -15,6 +15,7 @@
 #include <stdint.h>
 #include <errno.h>
 #include <sys/stat.h>            /* stat(2) + S_ISDIR -- iox_stat_kind */
+#include <dirent.h>             /* opendir(3) -- iox_dir_probe */
 #include <fcntl.h>               /* open(2) + O_RDONLY -- iox_read_at */
 #include <unistd.h>              /* pread(2) + close(2) -- iox_read_at */
 /* Every open(2) below MUST carry this. The MSVCRT open() defaults to TEXT
@@ -217,6 +218,31 @@ tycho_int iox_stat_kind(const char *path) {
     errno = 0;
     if (stat(path, &st) != 0) return ty_rf_errno(path);   /* ENOENT/ENOTDIR -> MISS */
     return S_ISDIR(st.st_mode) ? TY_RF_DIR : TY_RF_OK;
+}
+
+/* Can `path` be READ as a directory? The list_dir builtin hands back an empty
+ * array for an unreadable directory and for a genuinely empty one alike, and it
+ * has no status channel to tell them apart -- io.list_checked needs one, so the
+ * question is asked here instead. Same status space as iox_stat_kind:
+ *
+ *      TY_RF_DIR  (2)  a directory, and opendir succeeded: the entries are readable
+ *      TY_RF_OK   (1)  it exists and is not a directory
+ *      TY_RF_MISS (0)  nothing is there
+ *      TY_RF_ERR  (3)  it IS a directory and could not be opened (EACCES, ...)
+ *
+ * The handle is closed again rather than kept: list_dir opens its own, and a
+ * cached DIR* would be a second lifetime for corelib to own. The window between
+ * the two opens is real and unavoidable from here -- a directory whose mode
+ * changes in it lists as empty, which is the pre-existing behaviour, not a new
+ * one. */
+tycho_int iox_dir_probe(const char *path) {
+    tycho_int k = iox_stat_kind(path);
+    if (k != TY_RF_DIR) return k;
+    errno = 0;
+    DIR *d = opendir(path);
+    if (!d) return TY_RF_ERR;
+    closedir(d);
+    return TY_RF_DIR;
 }
 
 /* The MODIFICATION TIME of `path`, in whole seconds since the UNIX epoch,

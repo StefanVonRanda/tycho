@@ -35,7 +35,15 @@ fn walk(root: string) -> [string]:
         abs := root
         if rel != "":
             abs = path.join(root, rel)
-        for name in io.list(abs):
+        names := []string
+        # Same gap io.list() has in tycho-ar: an unreadable directory reads as an
+        # empty one, so the digest covered fewer files than the report claimed.
+        match io.list_checked(abs):
+            Ok(ns):
+                names = ns
+            Err(e):
+                die("tycho-hash: cannot list " + abs)
+        for name in names:
             crel := name
             if rel != "":
                 crel = rel + "/" + name

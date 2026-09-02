@@ -410,7 +410,11 @@ fn solve(s: inout Solver, learn: bool) -> int:
 
 # parse a DIMACS CNF body (the "p cnf N M" line is optional); returns false if the
 # formula contains the empty clause.
-fn parse_cnf(s: inout Solver, lines: [string]) -> bool:
+# strings.parse_int FAILS OPEN on trailing garbage -- "1x" reads as 1 -- so a
+# corrupt DIMACS file used to be solved as a DIFFERENT formula and reported
+# SAT/UNSAT with exit 0. The checked sibling is the whole fix: a token that is
+# not an integer is named, with its file and line, and nothing is solved.
+fn parse_cnf(s: inout Solver, lines: [string], src: string) -> bool:
     for i := 0; i < len(lines); i += 1:
         ln := lines[i]
         if ln == "" or strings.starts_with(ln, "c") or strings.starts_with(ln, "p"):
@@ -423,8 +427,15 @@ fn parse_cnf(s: inout Solver, lines: [string]) -> bool:
                 tok = tok + chr(ln[k])
             else:
                 if tok != "":
-                    if tok != "0":
-                        push(lits, strings.parse_int(tok))
+                    v := 0
+                    match strings.parse_int_checked(tok):
+                        Ok(n):
+                            v = n
+                        Err(e):
+                            die("tycho-sat: " + src + ":" + str(i + 1) +
+                                ": '" + tok + "' is not a DIMACS literal")
+                    if v != 0:                 # 0 terminates a clause
+                        push(lits, v)
                     tok = ""
             k = k + 1
         if len(lits) > 0:
@@ -479,6 +490,7 @@ fn main():
     learn := true
     nvars := 0
     lines := []string
+    src := "-"
     php_n := 0
     if av[0] == "--php":
         if len(av) < 2:
@@ -491,6 +503,7 @@ fn main():
         if len(av) > 2 and av[2] == "--no-learn":
             learn = false
         lines = io.read_lines(av[1])
+        src = av[1]
         # find "p cnf N M" for the var count (default: a generous bound is not
         # possible -- the parse needs nvars first, so scan for the p-line)
         found := false
@@ -504,7 +517,14 @@ fn main():
                         sp = k
                         break
                     k = k + 1
-                nvars = strings.parse_int(rest[:sp])
+                match strings.parse_int_checked(rest[:sp]):
+                    Ok(n):
+                        nvars = n
+                    Err(e):
+                        die("tycho-sat: " + av[1] + ":" + str(i + 1) +
+                            ": 'p cnf " + rest[:sp] + "' has no variable count")
+                if nvars < 0:
+                    die("tycho-sat: " + av[1] + ": negative variable count in the p-line")
                 found = true
                 break
         if not found:
@@ -517,7 +537,7 @@ fn main():
     if php_n > 0:
         gen_php(&s, php_n)
     else:
-        ok = parse_cnf(&s, lines)
+        ok = parse_cnf(&s, lines, src)
     if not ok:
         println("s UNSATISFIABLE")
         return

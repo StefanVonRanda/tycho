@@ -159,6 +159,7 @@ extern fn iox_append_str(path: string, data: string, n: int, status: inout int)
 # stat(2): the same status codes, with 1 meaning "exists and is not a directory".
 # A plain scalar return -- no `inout` needed, because nothing else occupies it.
 extern fn iox_stat_kind(path: string) -> int
+extern fn iox_dir_probe(path: string) -> int    # RF_DIR only if opendir also succeeded
 extern fn iox_stat_mtime(path: string, mtime: inout int) -> int
 # utimensat(2): the write side of iox_stat_mtime, same status codes. No `inout` --
 # the epoch second travels IN, so the return carries only the status.
@@ -480,6 +481,30 @@ fn list(p: string) -> [string]:
     if has_nul(p):
         return []string
     return list_dir(p)
+
+# Directory entry names, WITH the error channel list() lacks. list() answers []
+# for a directory it could not open and for a genuinely empty one alike, so a
+# walker built on it archives an unreadable subtree as nothing and exits 0 -- the
+# defect this sibling exists to close. list() is unchanged: every caller that
+# does not care keeps working.
+#
+#   Ok(names)       the directory was opened; [] means genuinely empty
+#   Err(NotFound)   nothing is there
+#   Err(Failed)     it is a directory and could not be opened (EACCES, EMFILE),
+#                   OR the path exists and is not a directory. Those share a
+#                   variant because IoErr has no "not a directory" and ADDING one
+#                   would break every exhaustive match on it; call is_dir() first
+#                   when the difference matters.
+#   Err(BadPath)    interior NUL -- nothing was attempted
+fn list_checked(p: string) -> Result([string], IoErr):
+    if has_nul(p):
+        return Err(BadPath)
+    k := iox_dir_probe(p)
+    if k == RF_MISS:
+        return Err(NotFound)
+    if k != RF_DIR:
+        return Err(Failed)
+    return Ok(list_dir(p))
 
 fn exists(p: string) -> bool:
     if has_nul(p):

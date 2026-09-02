@@ -189,6 +189,14 @@ fn fen_rank(r: int) -> int:
 fn empty_board() -> Board:
     return Board([0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], WHITE, 0, -1)
 
+# A FEN rank must name exactly 8 files. Nothing checked that, so a rank of nine
+# pieces drove `sq` past 63 and `1 << sq` in set_piece shifted out of range --
+# undefined, silently wrong, and invisible: array indexing traps in this language
+# but a shift does not, so the board came out plausible and eval answered a
+# question the input had not asked. Refused by name now, at the boundary.
+fn fen_bad(fen: string, why: string):
+    die("tycho-chess: bad FEN (" + why + "): " + fen)
+
 fn parse_fen(fen: string) -> Board:
     b := empty_board()
     i := 0
@@ -199,14 +207,20 @@ fn parse_fen(fen: string) -> Board:
         if c == 32:                        # ' ' ends the placement
             break
         if c == 47:                        # '/'
+            if f != 8:
+                fen_bad(fen, "rank " + str(8 - r) + " has " + str(f) + " files, not 8")
             r = r + 1
             f = 0
             i = i + 1
             continue
         if c >= 49 and c <= 56:            # '1'..'8'
             f = f + (c - 48)
+            if f > 8:
+                fen_bad(fen, "rank " + str(8 - r) + " runs past file 8")
             i = i + 1
             continue
+        if f >= 8:
+            fen_bad(fen, "rank " + str(8 - r) + " runs past file 8")
         sq := fen_rank(r) * 8 + f
         piece := 0
         side := 0
@@ -232,8 +246,14 @@ fn parse_fen(fen: string) -> Board:
             else:
                 ptype = P_PAWN
             set_piece(&b, sq, side, ptype)
+        else:
+            fen_bad(fen, "'" + chr(c) + "' is not a piece")
         f = f + 1
         i = i + 1
+    if r != 7:
+        fen_bad(fen, "placement has " + str(r + 1) + " ranks, not 8")
+    if f != 8:
+        fen_bad(fen, "rank " + str(8 - r) + " has " + str(f) + " files, not 8")
     # the rest: side to move, castling, ep
     for i < len(fen) and fen[i] == 32:
         i = i + 1
