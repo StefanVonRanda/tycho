@@ -102,6 +102,9 @@ if printf '%s\n' "$REFS" | awk '$3 != "refs/heads/gh-pages" { found = 1 } END { 
     # sweep deleted a branch header and python ran the orphaned body silently
     gate "make script-check (.py/.sh parse, no unreachable code)" script-check
     gate "make check-links (links + path:line citations)" check-links
+    # 0.15s, and the moment it exists for is a push: the 0.6->0.7 bump left five
+    # files announcing the old release and every gate stayed green.
+    gate "make version-check (docs name the shipped version)" version-check
     gate "make fuzz-quick (soundness smoke)"     fuzz-quick
 fi
 

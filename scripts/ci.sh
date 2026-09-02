@@ -51,6 +51,9 @@ make -s check-links
 step "[1b/13] make goldens-check  (every golden a run.sh names is tracked by git -- the fresh-clone check)"
 make -s goldens-check
 
+step "[1c/13] make version-check  (every STATUS claim in a tracked doc names the version src/tychoc.c ships. The 0.6->0.7 bump grepped for \"Tycho 0.6\", missed \"Tycho is 0.6\", and left five files announcing the old release -- no lane here could see it, because the doc gates read links and citations and never a claim in a sentence. Scoped to status claims, not to the ~1080 version tokens in tracked Markdown, most of which are legitimate history)"
+make -s version-check
+
 step "[2/13] make test  (golden output + ASan/UBSan/LeakSanitizer)"
 make -s test
 
