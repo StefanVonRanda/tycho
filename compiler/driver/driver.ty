@@ -85,7 +85,22 @@ fn check_into(src_path: string, argv0: string, p: inout types.Program):
             out2 = out2 + e + "\n"
         eprint(out2)
         exit(1)
+    _drain_late(rs)
     return
+
+# `declared and not used` / `imported and not used` are FATAL in src/tychoc.c,
+# but only once resolution AND type checking have both got to the end
+# (report_unused_locals / report_unused_imports) -- resolve.ty:302-310 says why
+# they cannot be part of the resolve verdict. This is that end.
+fn _drain_late(rs: types.R):
+    ls := types.late_lines(rs)
+    if len(ls) == 0:
+        return
+    out := ""
+    for l in ls:
+        out = out + l + "\n"
+    eprint(out)
+    exit(1)
 
 
 # --- the build path ------------------------------------------------------------
@@ -489,6 +504,7 @@ fn typecheck_only(src_path: string, argv0: string):
             out2 = out2 + e + "\n"
         eprint(out2)
         exit(1)
+    _drain_late(rs)
     sixb := "0"
     if types.check_uses6b(cs):
         sixb = "1"

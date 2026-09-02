@@ -470,6 +470,17 @@ fn _dec(sz: string) -> string:
         i += 1
     return str(v)
 
+# A canonical decimal capacity as an int, or -1 when it is not one ("?", "$N").
+fn _capn(s: string) -> int:
+    if len(s) == 0:
+        return -1
+    v := 0
+    for i := 0; i < len(s); i += 1:
+        if s[i] < 48 or s[i] > 57:
+            return -1
+        v = v * 10 + (s[i] - 48)
+    return v
+
 fn _fixsize(cs: inout C, sz: string) -> string:
     if len(sz) == 0:
         return "?"
@@ -928,6 +939,12 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
             if h == "tup":
                 _cerr(&cs, "a tuple element is named `.0`, `.1`, ... not `[i]` -- the index must be a constant position, so it is not a subscript")
                 return "?"
+            # Everything past the map/tuple cases indexes by position, and the
+            # index is exactly `int` -- not a sized int, not a newtype over one
+            # (src/tychoc.c:6174-6175, `kt != T_INT`).
+            if known(rt) and known(it) and it != "int":
+                cs.line = l
+                _cerr(&cs, "index must be int")
             if rt == "string" or rt == "bytes":
                 return "int"
             if _is_arr(rt) or h == "soa":
@@ -1022,6 +1039,14 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
                     _ex2(&cs, x, ew)
                 cs.line = l
                 _cerr(&cs, "a fixed-size array of length " + _targs(wb)[0] + " needs " + _targs(wb)[0] + " elements, got " + str(len(k)))
+                return wb
+            # bounded[N]T accepts FEWER than N (len becomes k) but never more --
+            # src/tychoc.c:7522-7526. A `$N` capacity is "?" and stays unscored.
+            if _head(wb) == "bnd" and _capn(_targs(wb)[0]) >= 0 and len(k) > _capn(_targs(wb)[0]):
+                for x in k:
+                    _ex2(&cs, x, ew)
+                cs.line = l
+                _cerr(&cs, "a bounded[" + _targs(wb)[0] + "] holds at most " + _targs(wb)[0] + " elements, got " + str(len(k)))
                 return wb
             et := "?"
             for i := 0; i < len(k); i += 1:
@@ -1357,14 +1382,15 @@ fn _binop(cs: inout C, op: string, k: [ast.Expr]) -> string:
         return lt
     li := _tdecl(&cs, lt)
     ri := _tdecl(&cs, rt)
-    if li >= 0 and ri >= 0 and cs.tds[li].kind == "newtype" and cs.tds[ri].kind == "newtype" and lt != rt:
+    if li >= 0 and ri >= 0 and cs.tds[li].kind == "newtype" and cs.tds[ri].kind == "newtype":
         # _short drops the package outright; a diagnostic has to print what the
         # source can type, and money.Cents is not spellable as Cents.
         _cerr(&cs, "arithmetic on two different newtypes: '" + _show(&cs, "@" + cs.tds[li].name) + "' and '" + _show(&cs, "@" + cs.tds[ri].name) + "' are distinct types even though both are represented as their base")
         return "?"
-    if li >= 0 or ri >= 0:
-        return "?"                     # a same-newtype operand keeps its type
-    _cerr(&cs, "arithmetic requires two ints or two floats (got " + lt + ", " + rt + ") -- convert one side, e.g. to_float(x) to compute in floats, or to_int(x) in ints")
+    # A single newtype operand used to return "?" here, which accepted
+    # `Cents(1) + 1` -- src/tychoc.c:7463 falls straight through to the generic
+    # arithmetic error, and the same-newtype numeric pair already returned above.
+    _cerr(&cs, "arithmetic requires two ints or two floats (got " + _show(&cs, lt) + ", " + _show(&cs, rt) + ") -- convert one side, e.g. to_float(x) to compute in floats, or to_int(x) in ints")
     return lt
 
 # ---------------------------------------------------------------- calls
@@ -1374,6 +1400,12 @@ fn _any_named(args: [ast.Expr]) -> bool:
         if a is ast.Named:
             return true
     return false
+
+fn _all_named(args: [ast.Expr]) -> bool:
+    for a in args:
+        if not (a is ast.Named):
+            return false
+    return true
 
 fn _walk_args(cs: inout C, args: [ast.Expr]):
     keep := cs.in_arg
@@ -1454,6 +1486,10 @@ fn _check_fields(cs: inout C, ti: int, args: [ast.Expr], line: int) -> string:
         for a in args:
             _ex(&cs, a)
         cs.in_arg = keep
+        # src/tychoc.c:6599-6601: once one field is named, every field is.
+        if _any_named(args) and not _all_named(args):
+            cs.line = line
+            _cerr(&cs, cs.tds[ti].name + ": cannot mix named and positional fields")
         if cs.tds[ti].generic:
             return "?"
         return "@" + cs.tds[ti].name
@@ -1558,6 +1594,17 @@ fn _call(cs: inout C, l: int, q: string, n: string, ts: [ast.Ty], args: [ast.Exp
     return _call_builtin(&cs, l, n, args, want)
 
 fn _call_named(cs: inout C, l: int, m: string, spelt: string, args: [ast.Expr], want: string) -> string:
+    # src/tychoc.c:6595-6597: `f(a: 1)` at anything but a struct is refused
+    # outright; the mix rule for a struct lives in _check_fields.
+    if _any_named(args):
+        ti0 := -1
+        if m in cs.tindex:
+            ti0 = cs.tindex[m]
+        if ti0 < 0 or cs.tds[ti0].kind != "struct":
+            _walk_args(&cs, args)
+            cs.line = l
+            _cerr(&cs, "named arguments are only valid for struct construction")
+            return "?"
     si := _sigidx(&cs, m)
     if si >= 0:
         if cs.sg[si].generic:
@@ -1571,7 +1618,23 @@ fn _call_named(cs: inout C, l: int, m: string, spelt: string, args: [ast.Expr], 
         if d.kind == "struct":
             return _check_fields(&cs, cs.tindex[m], args, l)
         if d.kind == "newtype":
-            _walk_args(&cs, args)
+            # src/tychoc.c:6576-6582: one argument, and it must already BE the
+            # underlying type -- Cents(1.5) does not truncate on the way in.
+            un := "?"
+            if len(d.ftypes) > 0:
+                un = d.ftypes[0]
+            if len(args) != 1:
+                _walk_args(&cs, args)
+                cs.line = l
+                _cerr(&cs, _show(&cs, "@" + m) + "(x) takes one " + _show(&cs, un))
+                return "@" + m
+            keepn := cs.in_arg
+            cs.in_arg = true
+            at := _ex2(&cs, args[0], un)
+            cs.in_arg = keepn
+            cs.line = l
+            if not compat(at, un):
+                _cerr(&cs, _show(&cs, "@" + m) + "(x) needs a " + _show(&cs, un) + ", got " + _show(&cs, at))
             return "@" + m
         _walk_args(&cs, args)
         return "?"
@@ -2247,6 +2310,19 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
                 cs.line = l
                 if not compat(t, cs.ret):
                     _cerr(&cs, "returning " + t + " but proc returns " + cs.ret)
+            elif known(cs.ret) and cs.ret != "void":
+                cs.line = l
+                _cerr(&cs, "missing return value (proc returns " + cs.ret + ")")
+        # src/tychoc.c:12249-12252. cs.loopd was already maintained by every loop
+        # arm below and read by nothing.
+        ast.BreakS(l):
+            if cs.loopd == 0:
+                cs.line = l
+                _cerr(&cs, "'break' outside a loop")
+        ast.ContinueS(l):
+            if cs.loopd == 0:
+                cs.line = l
+                _cerr(&cs, "'continue' outside a loop")
         ast.DeleteS(l, k): _exs(&cs, k)
         ast.IfS(l, c, b, e):
             t := _ex(&cs, c[0])

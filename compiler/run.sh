@@ -120,10 +120,12 @@ tr=0; tm=0; ta=0; tw=0
 #                       6b's scope -- see plan.md's Phase 6c)
 #   generic_recur_grow  needs the template BODY instantiated, not just its
 #                       signature
-#   infer_bare_empty    the pending-type (B-3) grounding analysis, a subsystem
-#   infer_use_before_ground   of its own
-#   void_grounds_pending_push
-KNOWN_TYPE_MISS="tests/reject/generic_recur_grow.ty tests/reject/infer_bare_empty.ty tests/reject/infer_use_before_ground.ty tests/reject/len_scalar.ty tests/reject/void_grounds_pending_push.ty"
+#   infer_use_before_ground   the pending-type (B-3) grounding analysis, a
+#   void_grounds_pending_push subsystem of its own
+# infer_bare_empty LEFT this list when `declared and not used` became fatal
+# (plan.md R3): it is refused now, but by THAT rule and not by B-3 grounding, so
+# Phase 6c's grounding work is unchanged -- only the verdict moved.
+KNOWN_TYPE_MISS="tests/reject/generic_recur_grow.ty tests/reject/infer_use_before_ground.ty tests/reject/len_scalar.ty tests/reject/void_grounds_pending_push.ty"
 # (the whole-tree list in compiler/verdict_diff.py carries five more, all under
 # tests/diag and tests/reject/pkg, which this leg does not reach)
 seen_miss=""
@@ -162,7 +164,7 @@ echo "leg2c tests/reject/*.ty --typecheck: all=$((tr+tm)) rejected=$tr missed=$t
 got=$(echo $seen_miss | tr ' ' '\n' | LC_ALL=C sort | tr '\n' ' ')
 want=$(echo $KNOWN_TYPE_MISS | tr ' ' '\n' | LC_ALL=C sort | tr '\n' ' ')
 [ "$got" = "$want" ] || { echo "parse-check: the TYPE misses moved"; echo "    now:  $got"; echo "    was:  $want"; rc=1; }
-[ "$tr" = 332 ] || { echo "parse-check: --typecheck refused $tr of 337, expected 332"; rc=1; }
+[ "$tr" = 333 ] || { echo "parse-check: --typecheck refused $tr of 337, expected 333"; rc=1; }
 
 # [3] -- the census, against a recorded golden
 for f in $(ls tests/*.ty) $(find corelib -name '*.ty' | sort) $(find tools examples server bench -name '*.ty' | sort); do
@@ -600,7 +602,6 @@ fn main():
 EOF
 np ok_under_struct <<'EOF'
 package main
-import "coin"
 struct P:
     x: int
 type Good = P
