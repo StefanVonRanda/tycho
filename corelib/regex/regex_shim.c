@@ -76,9 +76,44 @@ static int rx_repeat_too_big(const char *p, size_t n) {
     return 0;
 }
 
+/* POSIX ERE has NO backreferences. glibc's regcomp accepts \1..\9 anyway, as an
+ * extension, and matching one is a backtracking search the {n,m} guard above
+ * cannot see: `^(.*)*\1\1\1$` over 240 bytes ran past 30 seconds with no
+ * repetition count anywhere in the pattern. Refusing to compile keeps the
+ * documented dialect (ERE) and the bound at the same place.
+ * A backslash is NOT special inside a bracket expression, so those are skipped
+ * whole -- `[\1]` is the two literal characters and stays legal. */
+static int rx_has_backref(const char *p, size_t n) {
+    for (size_t i = 0; i < n; i++) {
+        if (p[i] == '[') {
+            size_t j = i + 1;
+            if (j < n && p[j] == '^') j++;
+            if (j < n && p[j] == ']') j++;         /* a leading ] is literal */
+            while (j < n && p[j] != ']') {
+                if (p[j] == '[' && j + 1 < n &&
+                    (p[j + 1] == ':' || p[j + 1] == '.' || p[j + 1] == '=')) {
+                    char k = p[j + 1];             /* [:class:] [.coll.] [=eq=] */
+                    j += 2;
+                    while (j + 1 < n && !(p[j] == k && p[j + 1] == ']')) j++;
+                    j++;
+                }
+                j++;
+            }
+            i = j;                                 /* the closing ], or past the end */
+            continue;
+        }
+        if (p[i] == '\\') {
+            if (i + 1 < n && p[i + 1] >= '1' && p[i + 1] <= '9') return 1;
+            i++;                                   /* an ordinary escape */
+        }
+    }
+    return 0;
+}
+
 void *rx_compile(const char *pattern, tycho_int n) {
     if (n < 0 || memchr(pattern, '\0', (size_t)n)) return NULL;
     if (rx_repeat_too_big(pattern, (size_t)n)) return NULL;
+    if (rx_has_backref(pattern, (size_t)n)) return NULL;
     regex_t *re = (regex_t *)malloc(sizeof(regex_t));
     if (!re) return NULL;
     if (regcomp(re, pattern, REG_EXTENDED) != 0) { free(re); return NULL; }

@@ -63,14 +63,39 @@ fn find_from(s: string, close: string, from: int) -> int:
 # --- inline formatting -------------------------------------------------------
 # Render inline markdown within one text run to HTML. Left-to-right scan; an
 # unmatched delimiter is emitted as an escaped literal (fail soft).
+
+# Nesting bound for both recursive renderers. Markdown input is untrusted text;
+# `>` repeated ~30k took the process out with a stack overflow, and nothing in
+# the format needs more nesting than this.
+const MD_MAX_NEST = 64
+
 fn inline(s: string) -> string:
+    return inline_at(s, 0)
+
+fn inline_at(s: string, depth: int) -> string:
     out := ""
     i := 0
     n := len(s)
+    if depth >= MD_MAX_NEST:
+        return esc(s)                               # too deep: emit it as text
+    # Once a terminator is absent from position i it is absent from every
+    # LATER position too, and `i` only moves forward -- so the search is done
+    # at most once per terminator. Re-searching to end-of-string for each of n
+    # unmatched `[` was O(n^2): 100k of them is 10^10 byte comparisons.
+    no_bt := false                                  # no ` at or after i
+    no_rb := false                                  # no ]
+    no_rp := false                                  # no )
+    no_bb := false                                  # no **
+    no_st := false                                  # no *
+    no_us := false                                  # no _
     for i < n:
         c := s[i]
         if c == 96:                                 # `code`
-            j := index_from(s, 96, i + 1)
+            j := 0 - 1
+            if not no_bt:
+                j = index_from(s, 96, i + 1)
+                if j < 0:
+                    no_bt = true
             if j < 0:
                 out = out + "&#96;"
                 i = i + 1
@@ -78,9 +103,17 @@ fn inline(s: string) -> string:
                 out = out + "<code>" + esc(substr(s, i + 1, j)) + "</code>"
                 i = j + 1
         elif c == 33 and i + 1 < n and s[i + 1] == 91:   # ![alt](src)
-            rb := index_from(s, 93, i + 2)              # ]
+            rb := 0 - 1
+            if not no_rb:
+                rb = index_from(s, 93, i + 2)           # ]
+                if rb < 0:
+                    no_rb = true
             if rb > 0 and rb + 1 < n and s[rb + 1] == 40:   # (
-                rp := index_from(s, 41, rb + 2)         # )
+                rp := 0 - 1
+                if not no_rp:
+                    rp = index_from(s, 41, rb + 2)      # )
+                    if rp < 0:
+                        no_rp = true
                 if rp > 0:
                     alt := substr(s, i + 2, rb)
                     src := substr(s, rb + 2, rp)
@@ -96,16 +129,24 @@ fn inline(s: string) -> string:
                 out = out + "!"
                 i = i + 1
         elif c == 91:                               # [text](url)
-            rb := index_from(s, 93, i + 1)          # ]
+            rb := 0 - 1
+            if not no_rb:
+                rb = index_from(s, 93, i + 1)       # ]
+                if rb < 0:
+                    no_rb = true
             if rb > 0 and rb + 1 < n and s[rb + 1] == 40:   # (
-                rp := index_from(s, 41, rb + 2)     # )
+                rp := 0 - 1
+                if not no_rp:
+                    rp = index_from(s, 41, rb + 2)  # )
+                    if rp < 0:
+                        no_rp = true
                 if rp > 0:
                     txt := substr(s, i + 1, rb)
                     url := substr(s, rb + 2, rp)
                     if safe_url(url):
-                        out = out + "<a href=\"" + esc(url) + "\">" + inline(txt) + "</a>"
+                        out = out + "<a href=\"" + esc(url) + "\">" + inline_at(txt, depth + 1) + "</a>"
                     else:                            # fail soft: the text, unlinked
-                        out = out + inline(txt)
+                        out = out + inline_at(txt, depth + 1)
                     i = rp + 1
                 else:
                     out = out + chr(91)             # unmatched '[' -> literal
@@ -114,20 +155,34 @@ fn inline(s: string) -> string:
                 out = out + chr(91)                 # unmatched '[' -> literal
                 i = i + 1
         elif c == 42 and i + 1 < n and s[i + 1] == 42:   # **bold**
-            j := find_from(s, "**", i + 2)
+            j := 0 - 1
+            if not no_bb:
+                j = find_from(s, "**", i + 2)
+                if j < 0:
+                    no_bb = true
             if j < 0:
                 out = out + "**"
                 i = i + 2
             else:
-                out = out + "<strong>" + inline(substr(s, i + 2, j)) + "</strong>"
+                out = out + "<strong>" + inline_at(substr(s, i + 2, j), depth + 1) + "</strong>"
                 i = j + 2
         elif c == 42 or c == 95:                    # *italic* or _italic_
-            j := index_from(s, c, i + 1)
+            j := 0 - 1
+            gone := no_st
+            if c == 95:
+                gone = no_us
+            if not gone:
+                j = index_from(s, c, i + 1)
+                if j < 0:
+                    if c == 95:
+                        no_us = true
+                    else:
+                        no_st = true
             if j < 0:
                 out = out + chr(c)
                 i = i + 1
             else:
-                out = out + "<em>" + inline(substr(s, i + 1, j)) + "</em>"
+                out = out + "<em>" + inline_at(substr(s, i + 1, j), depth + 1) + "</em>"
                 i = j + 1
         elif c == 38:                               # & -> escaped
             out = out + "&amp;"
@@ -191,6 +246,9 @@ fn ol_item(line: string) -> string:
 
 # --- the block renderer ------------------------------------------------------
 fn render(src: string) -> string:
+    return render_at(src, 0)
+
+fn render_at(src: string, depth: int) -> string:
     lines := strings.lines(src)
     out := ""
     i := 0
@@ -222,7 +280,11 @@ fn render(src: string) -> string:
             for i < n and strings.starts_with(lines[i], ">"):
                 body = body + strings.trim(substr(lines[i], 1, len(lines[i]))) + "\n"
                 i = i + 1
-            out = out + "<blockquote>\n" + render(body) + "</blockquote>\n"
+            # One frame per leading `>`: ~30k of them took the process out.
+            if depth + 1 >= MD_MAX_NEST:
+                out = out + "<blockquote>\n<p>" + esc(strings.trim(body)) + "</p>\n</blockquote>\n"
+            else:
+                out = out + "<blockquote>\n" + render_at(body, depth + 1) + "</blockquote>\n"
         elif ul_item(line) != "":                               # unordered list
             out = out + "<ul>\n"
             for i < n and ul_item(lines[i]) != "":

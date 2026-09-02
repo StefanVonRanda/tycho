@@ -7,6 +7,17 @@ fn parse_row(s: string, n: int, pos: inout int, d: int) -> [string]:
     fields := []string
     field := ""
     done := false
+    # A BLANK LINE is a row with NO fields, not a row with one empty field --
+    # Python's csv reader says so, and it is what makes stringify's promised
+    # round trip hold for `[[]]` (a zero-field row) as well as for `[[""]]`.
+    if pos < n and (s[pos] == 10 or s[pos] == 13):
+        if s[pos] == 13:
+            pos = pos + 1
+            if pos < n and s[pos] == 10:
+                pos = pos + 1
+        else:
+            pos = pos + 1
+        return fields
     for not done:
         if pos < n and s[pos] == 34:           # a quoted field
             pos = pos + 1
@@ -23,11 +34,14 @@ fn parse_row(s: string, n: int, pos: inout int, d: int) -> [string]:
                     for pos < n and s[pos] != 34:
                         pos = pos + 1
                     field = field + substr(s, qstart, pos)
-        else:                                   # an unquoted field: take the whole span in one substr
-            fstart := pos
-            for pos < n and s[pos] != d and s[pos] != 10 and s[pos] != 13:
-                pos = pos + 1
-            field = field + substr(s, fstart, pos)
+        # The unquoted span runs UNCONDITIONALLY, so bytes after a closing quote
+        # join the field instead of ending the row. `"ab"cd,x` used to give the
+        # rows [ab] and [d][x] -- `c` dropped entirely, one record split into
+        # two. Python's csv reader appends them: [abcd][x].
+        fstart := pos
+        for pos < n and s[pos] != d and s[pos] != 10 and s[pos] != 13:
+            pos = pos + 1
+        field = field + substr(s, fstart, pos)
         push(fields, field)
         field = ""
         if pos >= n:

@@ -502,6 +502,12 @@ fn parse_array(s: string, n: int, pos: inout int, ecode: inout int) -> Json:
     pos = pos + 1                              # skip ]
     return JArr(xs)
 
+fn key_index(ks: [string], k: string) -> int:  # position of k in ks, or -1
+    for i := 0; i < len(ks); i += 1:
+        if ks[i] == k:
+            return i
+    return -1
+
 fn parse_object(s: string, n: int, pos: inout int, ecode: inout int) -> Json:
     pos = pos + 1                              # skip {
     ks := []string
@@ -523,8 +529,18 @@ fn parse_object(s: string, n: int, pos: inout int, ecode: inout int) -> Json:
             ecode = JE_COLON
             return JObj(ks, vs)
         pos = pos + 1                          # skip :
-        push(ks, k)
-        push(vs, parse_value(s, n, &pos, &ecode))
+        # DUPLICATE KEYS: last value wins, at the FIRST key's position. RFC 8259
+        # leaves this to the implementation; Python, JavaScript and Go all keep
+        # the last. Keeping both meant `get` returned the FIRST -- the opposite
+        # answer to every mainstream parser, and a filter that read one value
+        # while the consumer downstream read the other.
+        kv := parse_value(s, n, &pos, &ecode)
+        dup := key_index(ks, k)
+        if dup >= 0:
+            vs[dup] = kv
+        else:
+            push(ks, k)
+            push(vs, kv)
         if ecode != JE_OK:
             return JObj(ks, vs)
         if pos == before:                      # cannot happen today -- see above
@@ -745,6 +761,9 @@ fn kind(j: Json) -> string:
         JObj(ks, vs):
             return "obj"
 
+# Object field, else JNull. A parsed object holds each key ONCE -- the parser
+# resolves a duplicate to its LAST value, as Python/JS/Go do -- so there is no
+# first-vs-last question to answer here.
 fn get(j: Json, key: string) -> Json:          # object field, else JNull
     match j:
         JObj(ks, vs):

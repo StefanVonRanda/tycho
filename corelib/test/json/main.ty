@@ -379,8 +379,9 @@ fn main():
     # them and a reader cannot infer either from the signatures. Both are named
     # in the corelib header under OBJECTS.
     #
-    # DUPLICATE KEYS: every member is kept, so the round trip is byte-identical
-    # and no member is invented or dropped; `get` answers with the FIRST.
+    # DUPLICATE KEYS: the LAST value wins, at the first key's position -- what
+    # Python, JavaScript and Go all do. Keeping both members meant `get`
+    # answered with the FIRST, the opposite of every mainstream parser.
     dup := "{\"a\":1,\"a\":2}"
     println("dup rt      = " + fixed(dup))
     println("dup keys    = " + str(len(json.keys(json.parse(dup)))))

@@ -30,7 +30,8 @@ struct Cli:
     flags: [string]       # flag names present (long and short)
     positional: [string]  # positional arguments, in order
     noval: [string]       # parse_spec: valued options that ran out of argv  (cli.missing)
-    unk: [string]         # parse_spec: tokens the schema does not name       (cli.unknown)
+    unk: [string]         # tokens the schema does not name, and (either entry
+                          # point) tokens naming NO option: `--=v`, `-=v`  (cli.unknown)
 
 fn argv() -> [string]:
     a := args()
@@ -93,7 +94,9 @@ fn parse_into(av_in: [string], valued_in: [string], boolean_in: [string], strict
             eq := find(body, "=")
             if eq >= 0:
                 name := body[0:eq]
-                if in_list(boolean, name):
+                if name == "":                  # `--=v` names no option at all
+                    push(unk, a)
+                elif in_list(boolean, name):
                     push(flags, name)           # `--quiet=1`: a flag is a flag, value dropped
                 elif not strict or in_list(valued, name):
                     push(keys, name)
@@ -113,6 +116,18 @@ fn parse_into(av_in: [string], valued_in: [string], boolean_in: [string], strict
                     step = 2
             elif not strict or in_list(boolean, body):
                 push(flags, body)               # `--verbose`
+            else:
+                push(unk, a)
+        elif is_short(a) and find(a, "=") >= 0:
+            # `-o=file` is ONE valued option, not the six short flags o = f i l e
+            # that the cluster loop below used to make of it.
+            seq := find(a, "=")
+            sname := a[1:seq]
+            if sname == "" or in_list(boolean, sname):
+                push(unk, a)                    # `-=v`, or a flag given a value
+            elif not strict or in_list(valued, sname):
+                push(keys, sname)
+                push(vals, a[seq + 1:len(a)])
             else:
                 push(unk, a)
         elif is_short(a):

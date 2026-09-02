@@ -198,8 +198,9 @@ element type instead of a family of per-type siblings.
   **Round-trip fidelity**, each measured: an integer that fits 64 bits is `JNum`
   and everything else — a fraction, an exponent, or an integer too large — is
   `JFloat(value, lexeme)` carrying the original digits, so `stringify` re-emits
-  every accepted number byte-for-byte; object keys keep insertion order; duplicate
-  keys are all kept (`get` answers with the first); a `\uXXXX` escape decodes to
+  every accepted number byte-for-byte; object keys keep insertion order; a duplicate
+  key resolves to its **last** value at the first key's position, as Python,
+  JavaScript and Go all do, so a parsed object holds each key once; a `\uXXXX` escape decodes to
   its UTF-8 bytes, so it is not byte-identical but parse→stringify is a fixed
   point, embedded NULs included. Two limits: a number outside binary64's range
   (`1e400`) is refused rather than represented, and `get` returns `JNull` for both
@@ -208,7 +209,9 @@ element type instead of a family of per-type siblings.
   `[[string]]`. `parse(s) -> [[string]]` is a small state machine handling quoted
   fields, the `""` escape, embedded delimiters/newlines inside quotes, and LF / CRLF /
   lone-CR line endings; it fails closed (an unterminated quote parses leniently, never
-  aborts). A trailing newline adds no empty row; a mid-file blank line is `[""]`.
+  aborts). Bytes after a closing quote JOIN the field (`"ab"cd` is `abcd`), which is
+  what Python's reader does. A trailing newline adds no empty row; a mid-file blank
+  line is a row with NO fields, which is what makes the round trip hold for one.
   `stringify(rows) -> string` emits LF endings and quotes only fields containing the
   delimiter/quote/CR/LF (doubling internal quotes) -- `parse`/`stringify` round-trip.
   `parse_delim`/`stringify_delim` take an arbitrary single-byte delimiter (TSV is
