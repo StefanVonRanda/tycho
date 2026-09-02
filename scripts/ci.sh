@@ -54,6 +54,9 @@ make -s goldens-check
 step "[1c/13] make version-check  (every STATUS claim in a tracked doc names the version src/tychoc.c ships. The 0.6->0.7 bump grepped for \"Tycho 0.6\", missed \"Tycho is 0.6\", and left five files announcing the old release -- no lane here could see it, because the doc gates read links and citations and never a claim in a sentence. Scoped to status claims, not to the ~1080 version tokens in tracked Markdown, most of which are legitimate history)"
 make -s version-check
 
+step "[1d/13] make surface-check  (the language surface is frozen: keywords and builtins hard, corelib additive. It was enforced only when somebody typed it -- the freeze that exists because 91 commits touched docs/spec/ and 69 touched src/tychoc.c in ten days had no lane in the sweep. Adding a keyword or a builtin is meant to be a two-part act, the code plus a visible surface.lock diff a reviewer can refuse; without this step the second part was optional)"
+make -s surface-check
+
 step "[2/13] make test  (golden output + ASan/UBSan/LeakSanitizer)"
 make -s test
 
