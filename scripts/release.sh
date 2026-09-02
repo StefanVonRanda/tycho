@@ -115,6 +115,14 @@ else
     cp "tychoc1$EXE" "$stage/tychoc$EXE"
     cp "tychofmt$EXE" "tycho-lsp$EXE" "tycho-debug$EXE" "$stage"/
     cp -r corelib "$stage"/
+    # tychoc1 COPIES the runtime into its output at emit time rather than
+    # embedding it the way src/tychoc.c does, so the file has to travel with the
+    # binary. driver.ty@write_runtime already falls back to <dir-of-argv0>/runtime,
+    # as corelib_root does; without this the packaged compiler dies on the first
+    # program a user compiles. The mingw archive ships the bootstrap, which has
+    # the runtime embedded, and does not need it.
+    mkdir -p "$stage"/runtime
+    cp runtime/tycho_rt.c "$stage"/runtime/
     cp README.md LICENSE "$stage"/
     mkdir -p "$stage"/examples
     cp examples/hello.ty "$stage"/examples/ 2>/dev/null || true
