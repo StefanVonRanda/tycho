@@ -43,40 +43,25 @@ SITES = C.load_sites()
 # The fixtures `--typecheck` does not refuse -- the same list compiler/run.sh
 # carries, with the same reasons. Phase 6b turned `--typecheck` into the whole
 # semantic check, so SEMANTIC is scored as a refusal here too.
+#
+# An entry that no longer misses is not merely untidy: line 166 below skips a
+# KNOWN file when scoring leg11, so a stale name silently drops that file's
+# `file:line` agreement with ./tychoc out of the score. Re-measured
+# 2026-09-03 with `./tychoc1 <f> --typecheck` over every entry -- 17 of the 25
+# were rejecting and were deleted.
 KNOWN_TYPE_MISS = {
     "tests/reject/generic_recur_grow.ty",
-    "tests/reject/infer_bare_empty.ty",
     "tests/reject/infer_use_before_ground.ty",
     "tests/reject/len_scalar.ty",
-    "tests/reject/typeset_notin.ty",
     "tests/reject/void_grounds_pending_push.ty",
-    # THE CONCURRENCY RULES, a family of their own: what `spawn` may be applied
-    # to, `parallel for`'s reduction and control-flow rules, capturing a task,
-    # and wait's argument. None of them is a type rule -- each is a statement
-    # SHAPE -- and they are Phase 6c's, named there.
+    # THE CONCURRENCY RULES: what `spawn` may be applied to, capturing a task,
+    # and wait's argument. Not type rules -- statement SHAPES -- and they are
+    # Phase 6c item 2's, named there. The seven `parallel for` siblings that
+    # used to sit here left the list when Phase R4 implemented them.
     "tests/conc/reject/builtin.ty",
-    "tests/conc/reject/capture.ty",
     "tests/conc/reject/closure.ty",
     "tests/conc/reject/inout.ty",
-    "tests/conc/reject/parfor_assign.ty",
-    "tests/conc/reject/parfor_break.ty",
-    "tests/conc/reject/parfor_push.ty",
-    "tests/conc/reject/parfor_read_acc.ty",
-    "tests/conc/reject/parfor_return.ty",
-    "tests/conc/reject/select_return_in_parfor.ty",
     "tests/conc/reject/wait_nontask.ty",
-    # a match ARM naming a foreign package's variant, or a Result arm written
-    # with one: the arm-name rules, also Phase 6c
-    "tests/reject/pkg/foreign_variant_bare/main.ty",
-    "tests/reject/pkg/foreign_variant_is/main.ty",
-    "tests/reject/pkg/result_arm_mangled/main.ty",
-    # the same rule, reached only through an INSTANTIATED generic: the error is
-    # in the template body and only a bound $T makes it one
-    "tests/diag/generic_inst_name.ty",
-    "tests/reject/pkg/generic_inst_callsite/helper.ty",
-    "tests/reject/pkg/generic_inst_callsite/main.ty",
-    "tests/reject/pkg/generic_inst_srcfile/helper.ty",
-    "tests/reject/pkg/generic_inst_srcfile/main.ty",
 }
 LIT = lambda f: len(re.sub(r"%[-0-9.*]*(?:ll)?[a-zA-Z]", "", f))
 

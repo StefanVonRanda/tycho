@@ -1189,6 +1189,9 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
                     _cerr(&cs, "lambda parameter '" + ps[i].name + "' needs a type here -- no expected fn type supplies it (annotate: fn(x: T))")
                 _vpush(&cs, ps[i].name, pt, false)
                 out = out + "," + pt
+            # cs.loopd is deliberately NOT saved here: ast.Lambda's body is
+            # [Expr] (compiler/ast/ast.ty@Lambda) and BreakS/ContinueS are Stmt,
+            # so no break can reach a lambda body to observe an unreset depth.
             keepr := cs.ret
             keepc := cs.nlambda
             keepm := cs.lam_mark
@@ -1385,7 +1388,7 @@ fn _binop(cs: inout C, op: string, k: [ast.Expr]) -> string:
     if li >= 0 and ri >= 0 and cs.tds[li].kind == "newtype" and cs.tds[ri].kind == "newtype":
         # _short drops the package outright; a diagnostic has to print what the
         # source can type, and money.Cents is not spellable as Cents.
-        _cerr(&cs, "arithmetic on two different newtypes: '" + _show(&cs, "@" + cs.tds[li].name) + "' and '" + _show(&cs, "@" + cs.tds[ri].name) + "' are distinct types even though both are represented as their base")
+        _cerr(&cs, "arithmetic on two different newtypes: '" + _show(&cs, "@" + cs.tds[li].name) + "' and '" + _show(&cs, "@" + cs.tds[ri].name) + "' are distinct types even though both are over " + _show(&cs, _base(&cs, lt)) + " -- unwrap one with to_under(x), or make both sides the same newtype")
         return "?"
     # A single newtype operand used to return "?" here, which accepted
     # `Cents(1) + 1` -- src/tychoc.c:7511 falls straight through to the generic

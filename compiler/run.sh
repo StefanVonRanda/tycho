@@ -161,7 +161,7 @@ while IFS='	' read -r f cls line msg; do
 done < "$TSV"
 echo "leg2  tests/reject/*.ty --parse: SYNTAX=$((sr+sa)) rejected=$sr missed=$sa | NAME+SEMANTIC=$((ma+mr)) accepted=$ma wrongly-rejected=$mr"
 echo "leg2b tests/reject/*.ty --resolve: SYNTAX+NAME=$((rr+rm_)) rejected=$rr missed=$rm_ | TYPE+SEMANTIC=$((ra+rw)) accepted=$ra wrongly-rejected=$rw"
-echo "leg2c tests/reject/*.ty --typecheck: all=$((tr+tm)) rejected=$tr missed=$tm (KNOWN 6)"
+echo "leg2c tests/reject/*.ty --typecheck: all=$((tr+tm)) rejected=$tr missed=$tm (KNOWN $(echo $KNOWN_TYPE_MISS | wc -w))"
 [ "$nsyn" = 57 ] && [ "$nname" = 30 ] && [ "$ntype" = 147 ] && [ "$nsem" = 103 ] || { echo "parse-check: the split moved -- expected SYNTAX=57 NAME=30 TYPE=147 SEMANTIC=103"; rc=1; }
 [ "$mr" = 0 ] || { echo "parse-check: a NAME or SEMANTIC fixture was rejected by --parse; a parser has no symbol table"; rc=1; }
 [ "$sa" = 0 ] || { echo "parse-check: a SYNTAX fixture was accepted; the parser must refuse it"; rc=1; }

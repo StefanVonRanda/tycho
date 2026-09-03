@@ -1380,9 +1380,9 @@ fn _forstmt_into(toks: [lex.Tok], i0: int, par: bool, out: inout ast.Stmt) -> in
         i += 2
         if _dotlt_ahead(toks, i):
             if not par:
-                _die(toks, _at(toks, i0 - 1), "`0..<N` counts only in a `parallel for` -- write `for idx := 0; idx < N; idx += 1:` for a sequential count")
+                _die(toks, _at(toks, i0 - 1), "`0..<N` counts only in a `parallel for` -- write `for " + v + " := 0; " + v + " < N; " + v + " += 1:` for a sequential count")
             if not (_kis(toks, i, lex.K_INT) and _at(toks, i).ival == 0 and _isop(toks, i + 1, lex.OP_DOTDOTLT)):
-                _die(toks, _at(toks, i0 - 1), "`parallel for` counts from zero: write `0..<N`")
+                _die(toks, _at(toks, i0 - 1), "`parallel for` counts from zero: write `0..<N` -- a literal `0`, then `..<`, then the exclusive upper bound")
             hi := ast.NullLit(0)
             j := _expr_into(toks, i + 2, &hi)
             i = _op(toks, j, lex.OP_COLON)
@@ -1391,7 +1391,7 @@ fn _forstmt_into(toks: [lex.Tok], i0: int, par: bool, out: inout ast.Stmt) -> in
             out = ast.ForRange(toks[ti].line, v, [ast.IntLit(toks[ti].line, 0), hi], b)
             return k
         if _isid(toks, i, "range") and _isop(toks, i + 1, lex.OP_LPAREN):
-            _die(toks, _at(toks, i0 - 1), "`range()` was removed: write `for idx := 0; idx < N; idx += 1:` to count, or `parallel for idx in 0..<N:` to count in parallel")
+            _die(toks, _at(toks, i0 - 1), "`range()` was removed: write `for " + v + " := 0; " + v + " < N; " + v + " += 1:` to count, or `parallel for " + v + " in 0..<N:` to count in parallel")
         coll := ast.NullLit(0)
         j := _expr_into(toks, i, &coll)
         # src/tychoc.c:4042 -- an array and a channel source are both scalar
