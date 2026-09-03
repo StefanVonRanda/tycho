@@ -179,6 +179,8 @@ fn parse_value(tok: string) -> Result(Value, string):
     if len(tok) >= 10 and is_date_head(tok):
         if not is_date_valid(tok):
             return Err("not a real date: " + tok)
+        if not is_time_valid(tok):
+            return Err("not a real time: " + tok)
         return Ok(TStr(tok))       # ISO-8601 datetime, kept as a string
     if is_num_start(c) or c == 43 or c == 45:
         return parse_number(tok)
@@ -192,7 +194,6 @@ fn dnum(t: string, a: int, b: int) -> int:
 
 # A SHAPE is not a date: `9999-99-99` is ten bytes shaped NNNN-NN-NN and was
 # accepted whole as a datetime string. Month and day ranges, leap year included.
-# gap: the time half after the date is still unchecked (`...T99:99:99`).
 fn is_date_valid(t: string) -> bool:
     y := dnum(t, 0, 4)
     m := dnum(t, 5, 7)
@@ -207,6 +208,58 @@ fn is_date_valid(t: string) -> bool:
         if y % 4 == 0 and (y % 100 != 0 or y % 400 == 0):
             dim = 29
     return d <= dim
+
+# Two digits at `i`, or -1. The -1 is what makes every t[i+k] below in range.
+fn d2(t: string, i: int) -> int:
+    if i + 2 > len(t):
+        return -1
+    if t[i] < 48 or t[i] > 57:
+        return -1
+    if t[i + 1] < 48 or t[i + 1] > 57:
+        return -1
+    return (t[i] - 48) * 10 + (t[i + 1] - 48)
+
+# Everything after the ten-byte date head. Was accepted whole, so
+# `2023-01-01T99:99:99` and `2023-01-01hello` were both datetimes.
+fn is_time_valid(t: string) -> bool:
+    if len(t) == 10:
+        return true                       # local date, no time half
+    sep := t[10]
+    if sep != 84 and sep != 116 and sep != 32:    # 'T' / 't' / ' '
+        return false
+    a := 11
+    h := d2(t, a)
+    m := d2(t, a + 3)
+    s := d2(t, a + 6)
+    if h < 0 or m < 0 or s < 0:
+        return false
+    if t[a + 2] != 58 or t[a + 5] != 58:          # ':'
+        return false
+    if h > 23 or m > 59 or s > 60:                # 60 is a leap second
+        return false
+    i := a + 8
+    if i < len(t) and t[i] == 46:                 # '.' fractional seconds
+        i = i + 1
+        n := 0
+        for i < len(t) and t[i] >= 48 and t[i] <= 57:
+            i = i + 1
+            n = n + 1
+        if n == 0:
+            return false
+    if i == len(t):
+        return true                       # local datetime, offset omitted
+    c := t[i]
+    if c == 90 or c == 122:                       # 'Z' / 'z'
+        return i + 1 == len(t)
+    if c != 43 and c != 45:                       # '+' / '-'
+        return false
+    oh := d2(t, i + 1)
+    om := d2(t, i + 4)
+    if oh < 0 or om < 0:
+        return false
+    if t[i + 3] != 58:
+        return false
+    return oh <= 23 and om <= 59 and i + 6 == len(t)
 
 fn is_date_head(t: string) -> bool:       # YYYY-MM-DD shape only
     for i := 0; i < 10; i += 1:

@@ -75,10 +75,23 @@ LIT = lambda f: len(re.sub(r"%[-0-9.*]*(?:ll)?[a-zA-Z]", "", f))
 # said "not under corelib", the unused-local exemption was lost, and the whole
 # compiler lane was blind to it for four commits. So resolution is scored a
 # SECOND time under an absolute root and the two must agree, verdict and late
-# count alike. Anything else keyed on the corelib root -- the `core:` import
-# hint, the export rule -- is covered by the same differential.
+# count alike.
+#
+# R7f: "anything else keyed on the corelib root is covered by the same
+# differential" was an ASSUMPTION, and the wrong one -- resolve is not the only
+# pass that can read the root. leg6c and leg10c score --parse and --typecheck
+# under the same absolute root, on the VERDICT and on the first diagnostic line,
+# so a root-keyed rule firing at either of those passes reddens too.
+# Measured while adding them: `--parse` today CANNOT diverge -- driver.ty@parse_only
+# takes no argv0, builds no Loader and reads no root, it lexes and parses one file.
+# leg6c is therefore insurance against that changing, at one extra run per file.
+# `--typecheck` is the opposite: driver.ty@typecheck_only calls load_into + resolve
+# before types.check, so it reads the root on every file, and leg10c is a real leg.
 ABS_ENV = dict(os.environ, TYCHO_CORELIB=os.path.abspath("corelib"))
 late_of = lambda r: next((w for w in r.stdout.split() if w.startswith("late=")), "late=?")
+# First diagnostic line, so a root-keyed rule that changed the MESSAGE without
+# changing the verdict still reddens leg6c/leg10c.
+err1 = lambda r: next((l.strip() for l in r.stderr.split("\n") if ": error: " in l), "")
 
 
 def tychoc_verdict(path):
@@ -116,7 +129,7 @@ def main():
                    for root in ROOTS for d, _, ns in os.walk(root)
                    for n in ns if n.endswith(".ty"))
     n = {"ACCEPT": 0, "SEMANTIC": 0, "NAME": 0, "TYPE": 0, "SYNTAX": 0, "UNMATCHED": 0}
-    bad = rbad = lbad = tbad = abad = 0
+    bad = rbad = lbad = tbad = abad = pabad = tabad = 0
     known_hit = set()
     lok = lbad2 = lskip = 0
     tok = tbad2 = tskip = 0
@@ -127,6 +140,12 @@ def main():
         n[cls] += 1
         p = subprocess.run(["./tychoc1", f, "--parse"], capture_output=True, text=True)
         parsed = p.returncode == 0
+        pa = subprocess.run(["./tychoc1", f, "--parse"], capture_output=True,
+                            text=True, env=ABS_ENV)
+        if (pa.returncode == 0) != parsed or err1(pa) != err1(p):
+            pabad += 1
+            print("  ABS-ROOT-PARSE-DISAGREE %s relative=(rc=%d %s) absolute=(rc=%d %s)"
+                  % (f, p.returncode, err1(p)[:60], pa.returncode, err1(pa)[:60]))
         if cls == "UNMATCHED":
             print("  UNMATCHED %s :: %s" % (f, msg[:100]))
             bad += 1
@@ -163,6 +182,12 @@ def main():
                 lok += 1
         t = subprocess.run(["./tychoc1", f, "--typecheck"], capture_output=True, text=True)
         typed = t.returncode == 0
+        ta = subprocess.run(["./tychoc1", f, "--typecheck"], capture_output=True,
+                            text=True, env=ABS_ENV)
+        if (ta.returncode == 0) != typed or err1(ta) != err1(t):
+            tabad += 1
+            print("  ABS-ROOT-TYPECHECK-DISAGREE %s relative=(rc=%d %s) absolute=(rc=%d %s)"
+                  % (f, t.returncode, err1(t)[:60], ta.returncode, err1(ta)[:60]))
         if typed != (cls == "ACCEPT"):
             if f in KNOWN_TYPE_MISS:
                 known_hit.add(f)          # the entry is still earning its exemption
@@ -196,10 +221,12 @@ def main():
           % (rbad, lbad))
     print("leg6b whole-tree resolution under an ABSOLUTE TYCHO_CORELIB (%s): disagreements=%d"
           % (ABS_ENV["TYCHO_CORELIB"], abad))
+    print("leg6c whole-tree PARSE under the same absolute root: disagreements=%d" % pabad)
     print("leg8  NAME diagnostic file:line vs ./tychoc: scored=%d agree=%d disagree=%d unlocated=%d"
           % (lok + lbad2 + lskip, lok, lbad2, lskip))
     print("leg10 whole-tree typecheck: disagreements=%d (%d TYPE files known-missed)"
           % (tbad, len(KNOWN_TYPE_MISS)))
+    print("leg10c whole-tree TYPECHECK under the same absolute root: disagreements=%d" % tabad)
     print("leg11 TYPE diagnostic file:line vs ./tychoc: scored=%d agree=%d disagree=%d unlocated=%d"
           % (tok + tbad2 + tskip, tok, tbad2, tskip))
     print("leg12 accepted programs with a generic/newtype/handle/bounded construct this pass "
@@ -225,7 +252,8 @@ def main():
     if len(files) != EXPECT:
         print("parse-check: the tree is %d .ty files, expected %d" % (len(files), EXPECT))
         return 1
-    return 1 if (bad or rbad or lbad or lbad2 or lskip or tbad or tbad2 or tskip or abad) else 0
+    return 1 if (bad or rbad or lbad or lbad2 or lskip or tbad or tbad2 or tskip
+                  or abad or pabad or tabad) else 0
 
 
 if __name__ == "__main__":

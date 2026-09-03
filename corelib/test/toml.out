@@ -27,3 +27,15 @@ err duplicate key: a
 err duplicate table header: [t]
 ok
 ok
+err not a real time: 2023-01-01T99:99:99
+err not a real time: 2023-01-01T25:61:61+99:99
+err not a real time: 2023-01-01hello
+err not a real time: 2023-01-01T12:00:00+24:00
+err not a real time: 2023-01-01T12:00:00.
+err not a real time: 2023-01-01T12:00
+err not a real time: 2023-01-01T12:00:00ZZ
+ok
+ok
+ok
+ok
+ok

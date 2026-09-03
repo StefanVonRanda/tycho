@@ -107,3 +107,18 @@ fn main():
     # refusal above could be a blanket ban on any second header.
     show_one("[[a]]\nx = 1\n[[a]]\nx = 2")
     show_one("[a]\nx = 1\n[a.b]\ny = 2")
+    # A DATETIME's time half was accepted whole: `T99:99:99` parsed. Each of
+    # these must be refused, and the six below must still be accepted -- a
+    # refuse-everything check scores full marks on the refusals alone.
+    show_one("a = 2023-01-01T99:99:99")
+    show_one("a = 2023-01-01T25:61:61+99:99")
+    show_one("a = 2023-01-01hello")
+    show_one("a = 2023-01-01T12:00:00+24:00")
+    show_one("a = 2023-01-01T12:00:00.")
+    show_one("a = 2023-01-01T12:00")
+    show_one("a = 2023-01-01T12:00:00ZZ")
+    show_one("a = 2023-01-01")
+    show_one("a = 2023-01-01T12:00:00")
+    show_one("a = 2023-01-01T12:00:00Z")
+    show_one("a = 2023-01-01 12:00:00z")
+    show_one("a = 2023-01-01T23:59:60.123456-05:30")
