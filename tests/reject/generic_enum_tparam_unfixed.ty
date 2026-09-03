@@ -1,0 +1,9 @@
+# src/tychoc.c:6752 -- a nullary variant carries no value, so $T can only be
+# supplied explicitly.
+# expect: type parameter $T of Tree is not fixed by any payload value
+enum Tree($T):
+    Leaf
+    Node($T)
+fn main():
+    t := Leaf()
+    println(str(len(str(t))))

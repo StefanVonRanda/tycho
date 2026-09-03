@@ -1,0 +1,9 @@
+# src/tychoc.c:6681 -- named construction has no defaulting: every field is
+# given, or the value would be part-initialised.
+# expect: P: named construction must give all 2 field(s), got 1
+struct P:
+    x: int
+    y: int
+fn main():
+    p := P(x: 1)
+    println(str(p.x))

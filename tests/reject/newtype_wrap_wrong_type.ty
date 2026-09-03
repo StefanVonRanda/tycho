@@ -1,0 +1,7 @@
+# src/tychoc.c:6654 -- the argument must already BE the underlying type;
+# a wrap does not convert on the way in.
+# expect: Meters(x) needs a float, got string
+type Meters = float
+fn main():
+    m := Meters("x")
+    println(str(to_float(m)))

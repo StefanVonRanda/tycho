@@ -136,6 +136,7 @@ tests/reject/enum_is_unknown_variant.ty	TYPE	1321	'VFloat' is not a variant of V
 tests/reject/enum_key_payload.ty	TYPE	2549	map keys must be string, int (directly or through a newtype), a fieldless enum, or a hashable struct/tuple/array
 tests/reject/enum_named_none.ty	NAME	4318	'None' is already defined
 tests/reject/enum_payload_sizeparam.ty	SEMANTIC	9313	an enum payload cannot be a `[$N]T` size-parameterized array -- use a fixed `[N]T` or a dynamic `[T]`
+tests/reject/enum_payload_type.ty	SEMANTIC	6763	Circle payload 1 is float, got string
 tests/reject/enum_typaram_max.ty	SYNTAX	4762	too many enum type parameters (max 16)
 tests/reject/err_empty.ty	SYNTAX	2997	Err() carries no value -- a Result's error type cannot be void
 tests/reject/explicit_count.ty	TYPE	2675	unknown type 'str'
@@ -187,6 +188,10 @@ tests/reject/genenum_bare_nullary.ty	SEMANTIC	6129	Empty is a variant of generic
 tests/reject/generic_bounded_field_degraded.ty	TYPE	6723	field 'xs' of Box__int is bounded[4]int, got [4]int
 tests/reject/generic_chan_inout_param.ty	SEMANTIC	4354	'c' is inout, which an affine type cannot be -- it has one owner and is freed at that scope's exit, so there is nothing to consume or copy back. Pass it plainly: that is already a borrow
 tests/reject/generic_enum_payload_chan.ty	SEMANTIC	2247	an enum payload cannot be a channel -- 'Holder' was instantiated at one
+tests/reject/generic_enum_payload_count.ty	SEMANTIC	6744	Node takes 1 payload value(s), got 2
+tests/reject/generic_enum_payload_pattern.ty	SEMANTIC	6748	Wrap payload 1 does not fit a int argument
+tests/reject/generic_enum_tparam_unfixed.ty	SEMANTIC	6752	type parameter $T of Tree is not fixed by any payload value; supply it explicitly, e.g. Leaf$(int)
+tests/reject/generic_enum_typearg_count.ty	SEMANTIC	6739	Tree expects 1 type argument(s), got 2
 tests/reject/generic_inout_fnvalue.ty	TYPE	9009	inout parameter 'g': a function value can't be inout (a callee could write a closure back into the caller and it would dangle)
 tests/reject/generic_inst_chan_inout.ty	SEMANTIC	9071	'c' is inout, which an affine type cannot be -- 'f' was instantiated at one. Pass it plainly: that is already a borrow
 tests/reject/generic_inst_inout_fnvalue.ty	TYPE	9009	inout parameter 'g': a function value can't be inout (a callee could write a closure back into the caller and it would dangle)
@@ -202,7 +207,10 @@ tests/reject/generic_return_only_unbound.ty	SEMANTIC	9040	no argument fixes 'emp
 tests/reject/generic_sink_affine.ty	SEMANTIC	9071	'x' is sink, which an affine type cannot be -- 'take' was instantiated at one. Pass it plainly: that is already a borrow
 tests/reject/generic_sizeparam_max.ty	SEMANTIC	2489	too many size parameters (max 16)
 tests/reject/generic_struct_field_chan.ty	SEMANTIC	2247	a struct field cannot be a channel -- 'Box' was instantiated at one
+tests/reject/generic_struct_field_count.ty	SEMANTIC	6701	Box takes 1 field value(s), got 2
+tests/reject/generic_struct_field_pattern.ty	SEMANTIC	6706	field 'b' of Pair does not fit a string argument
 tests/reject/generic_struct_field_task.ty	SEMANTIC	2247	a struct field cannot be a task -- 'Box' was instantiated at one
+tests/reject/generic_struct_tparam_unfixed.ty	SEMANTIC	6711	type parameter $U of Box is not fixed by any field value
 tests/reject/generic_typaram_max.ty	SEMANTIC	2400	too many type parameters (max 16)
 tests/reject/handle_body_not_free.ty	SYNTAX	4683	a handle body is exactly 'free: <c_free_fn>'
 tests/reject/handle_dup_name.ty	NAME	4318	'H' is already defined
@@ -305,6 +313,7 @@ tests/reject/mdecl_not_tuple.ty	SEMANTIC	8419	the right side of a destructuring 
 tests/reject/missing_return_value.ty	SEMANTIC	8498	missing return value (proc returns int)
 tests/reject/modulo_needs_int.ty	SEMANTIC	7492	modulo / bitwise operators require two matching integers (got float, float)
 tests/reject/mut_arg_no_amp.ty	TYPE	7155	argument 1 of 'g' is inout; pass it as '&variable'
+tests/reject/named_arg_not_struct.ty	SEMANTIC	6669	named arguments are only valid for struct construction
 tests/reject/neg_needs_number.ty	SEMANTIC	7264	unary `-` needs an int or a float
 tests/reject/newtype_agg_mix.ty	TYPE	7198	argument 1 of 'total' is [int], expected Ids
 tests/reject/newtype_agg_still_distinct.ty	TYPE	7198	argument 1 of 'takes_raw' is Ids, expected [int]
@@ -326,6 +335,8 @@ tests/reject/newtype_under_result.ty	SEMANTIC	4833	a newtype's underlying type m
 tests/reject/newtype_under_soa.ty	SEMANTIC	4833	a newtype's underlying type must be int, float, string, bool, an array, a map, or a struct (got soa [P])
 tests/reject/newtype_under_tuple.ty	SEMANTIC	4833	a newtype's underlying type must be int, float, string, bool, an array, a map, or a struct (got (int, int))
 tests/reject/newtype_under_u8.ty	SEMANTIC	4833	a newtype's underlying type must be int, float, string, bool, an array, a map, or a struct (got u8)
+tests/reject/newtype_wrap_two_args.ty	SEMANTIC	6651	Meters(x) takes one float
+tests/reject/newtype_wrap_wrong_type.ty	SEMANTIC	6654	Meters(x) needs a float, got string
 tests/reject/no_main.ty	NAME	0	no 'main' procedure
 tests/reject/not_needs_bool.ty	SEMANTIC	7258	`not` needs a bool operand
 tests/reject/ok_empty_nonvoid.ty	TYPE	7643	declared type Result(int, string) but value is Ok(); Ok() is only a Result(void, E)
@@ -413,8 +424,12 @@ tests/reject/str_two_args.ty	SEMANTIC	6822	str(x) takes one argument
 tests/reject/string_escape.ty	SYNTAX	0	unsupported escape \  (use \n \t \r \\ \")
 tests/reject/string_raw_control.ty	SYNTAX	0	raw control byte in string literal (use an escape such as \n or \t)
 tests/reject/string_unterminated.ty	SYNTAX	688	unterminated string literal
+tests/reject/struct_mix_named_positional.ty	SEMANTIC	6673	P: cannot mix named and positional fields
 tests/reject/struct_mutual_by_value.ty	TYPE	12783	infinite type: A contains itself by value — use an array ([A]) or Option([A]) for indirection
+tests/reject/struct_named_dup_field.ty	SEMANTIC	6688	P: field 'x' given more than once
 tests/reject/struct_named_ok.ty	NAME	4318	'Ok' is already defined
+tests/reject/struct_named_partial.ty	SEMANTIC	6681	P: named construction must give all 2 field(s), got 1
+tests/reject/struct_named_unknown_field.ty	SEMANTIC	6678	P has no field 'z'
 tests/reject/struct_typaram_max.ty	SYNTAX	4705	too many struct type parameters (max 16)
 tests/reject/subscript_dangling.ty	SYNTAX	4507	a subscript must yield a place rooted in one of its parameters (else the projection would dangle)
 tests/reject/subscript_generic_recv.ty	SEMANTIC	4483	a subscript receiver may not be generic ('Pool($T)'): declare the subscript on a concrete instance

@@ -1617,6 +1617,34 @@ fn _check_args(cs: inout C, name: string, si: int, args: [ast.Expr], line: int):
     cs.in_arg = keep3
     cs.line = line
 
+fn _arg_name(a: ast.Expr) -> string:
+    match a:
+        ast.Named(l, n, k): return n
+        _: return ""
+
+# src/tychoc.c:6676-6690 -- the three rules an all-named struct construction
+# must satisfy, in the bootstrap's own order.
+fn _check_named(cs: inout C, ti: int, args: [ast.Expr], line: int):
+    nm := cs.tds[ti].name
+    fns := cs.tds[ti].fnames
+    cs.line = line
+    for a in args:
+        an := _arg_name(a)
+        if len(an) == 0:
+            return                     # mixed: the mix rule already fired
+        if not _has_name6(fns, an):
+            _cerr(&cs, nm + " has no field '" + an + "'")
+    if len(args) != len(fns):
+        _cerr(&cs, nm + ": named construction must give all " + str(len(fns)) +
+            " field(s), got " + str(len(args)))
+    for f in fns:
+        c9 := 0
+        for a in args:
+            if _arg_name(a) == f:
+                c9 += 1
+        if c9 > 1:
+            _cerr(&cs, nm + ": field '" + f + "' given more than once")
+
 fn _check_fields(cs: inout C, ti: int, args: [ast.Expr], line: int) -> string:
     # read in place: this is a whole declaration, and only fields are wanted
     if _any_named(args) or cs.tds[ti].generic:
@@ -1629,6 +1657,8 @@ fn _check_fields(cs: inout C, ti: int, args: [ast.Expr], line: int) -> string:
         if _any_named(args) and not _all_named(args):
             cs.line = line
             _cerr(&cs, cs.tds[ti].name + ": cannot mix named and positional fields")
+        if _any_named(args):
+            _check_named(&cs, ti, args, line)
         if cs.tds[ti].generic:
             return "?"
         return "@" + cs.tds[ti].name
@@ -1665,7 +1695,7 @@ fn _check_variant(cs: inout C, m: string, args: [ast.Expr], line: int) -> string
         at0 := 0
         for v := 0; v < len(cs.tds[ti].fnames); v += 1:
             if cs.tds[ti].fnames[v] == _short(m):
-                return _inst_ctor(&cs, line, ti, args, at0, cs.tds[ti].pcnt[v])
+                return _inst_ctor(&cs, line, ti, args, at0, cs.tds[ti].pcnt[v], _short(m))
             at0 += cs.tds[ti].pcnt[v]
         return "?"
     if generic or _any_named(args) or len(args) != len(pay):
@@ -1682,7 +1712,7 @@ fn _check_variant(cs: inout C, m: string, args: [ast.Expr], line: int) -> string
         at := _ex2(&cs, args[i], pay[i])
         cs.line = line
         if not compat(at, pay[i]):
-            _cerr(&cs, "payload " + str(i + 1) + " of " + m + " is " + _show(&cs, at) + ", expected " + _show(&cs, pay[i]))
+            _cerr(&cs, _short(m) + " payload " + str(i + 1) + " is " + _show(&cs, pay[i]) + ", got " + _show(&cs, at))
         cs.line = ast.line_of(args[i])
     cs.in_arg = keep
     cs.line = line
@@ -1773,7 +1803,7 @@ fn _call_named(cs: inout C, l: int, m: string, spelt: string, args: [ast.Expr], 
     if m in cs.tindex:
         d := cs.tds[cs.tindex[m]]
         if d.kind == "struct" and d.generic:
-            return _inst_ctor(&cs, l, cs.tindex[m], args, 0, len(args))
+            return _inst_ctor(&cs, l, cs.tindex[m], args, 0, len(cs.tds[cs.tindex[m]].fnames), "")
         if d.kind == "struct":
             return _check_fields(&cs, cs.tindex[m], args, l)
         if d.kind == "newtype":

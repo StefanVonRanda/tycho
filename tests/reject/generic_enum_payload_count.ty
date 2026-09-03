@@ -1,0 +1,9 @@
+# src/tychoc.c:6744 -- naming the type argument explicitly still does not
+# change how many payload values the variant carries.
+# expect: Node takes 1 payload value(s), got 2
+enum Tree($T):
+    Leaf
+    Node($T)
+fn main():
+    t := Node$(int)(1, 2)
+    println(str(len(str(t))))

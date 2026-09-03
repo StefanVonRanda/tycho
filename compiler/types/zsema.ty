@@ -411,6 +411,14 @@ fn _has_name6(xs: [string], n: string) -> bool:
             return true
     return false
 
+# Does `tp` appear anywhere in this constructor's own field/payload patterns?
+fn _tp_in_pats(cs: inout C, ti: int, at0: int, npay: int, tp: string) -> bool:
+    for i := 0; i < npay; i += 1:
+        for q in _pat_params(cs.tds[ti].pats[at0 + i], cs.tds[ti].tps, []string):
+            if q == tp:
+                return true
+    return false
+
 fn _pat_params(t: ast.Ty, tps: [string], acc: [string]) -> [string]:
     out := acc
     match t:
@@ -688,6 +696,23 @@ fn _explicit_call(cs: inout C, l: int, q: string, n: string, ts: [ast.Ty], args:
         for t in ts:
             _enc(&cs, t)
         _walk_args(&cs, args)
+        # src/tychoc.c:6739 -- `Leaf$(int, string)` on a one-parameter enum
+        if len(q) == 0 and n in cs.vowner:
+            ti9 := _tdecl(&cs, cs.vowner[n])
+            if ti9 >= 0 and cs.tds[ti9].generic and len(ts) != len(cs.tds[ti9].tps):
+                cs.line = l
+                _cerr(&cs, _short(cs.tds[ti9].name) + " expects " + str(len(cs.tds[ti9].tps)) +
+                    " type argument(s), got " + str(len(ts)))
+            # src/tychoc.c:6744 -- the payload arity, which the explicit-type-arg
+            # path reached without ever counting
+            vi9 := -1
+            if ti9 >= 0:
+                for v9 := 0; v9 < len(cs.tds[ti9].fnames); v9 += 1:
+                    if cs.tds[ti9].fnames[v9] == n:
+                        vi9 = v9
+            if vi9 >= 0 and len(args) != cs.tds[ti9].pcnt[vi9]:
+                cs.line = l
+                _cerr(&cs, n + " takes " + str(cs.tds[ti9].pcnt[vi9]) + " payload value(s), got " + str(len(args)))
         return "?"                     # a generic ENUM variant or struct: 6c
     if not cs.sg[si].generic:
         for t in ts:
@@ -965,7 +990,7 @@ fn _short(m: string) -> string:
 # call rather than a written type. The bindings come from unifying each field
 # (or payload) pattern against the argument, which is src/tychoc.c's own
 # inference for a struct literal at a generic type.
-fn _inst_ctor(cs: inout C, l: int, ti: int, args: [ast.Expr], at0: int, npay: int) -> string:
+fn _inst_ctor(cs: inout C, l: int, ti: int, args: [ast.Expr], at0: int, npay: int, vn: string) -> string:
     # read in place: this is a whole declaration, and only fields are wanted
     ats := []string
     keep := cs.in_arg
@@ -975,6 +1000,12 @@ fn _inst_ctor(cs: inout C, l: int, ti: int, args: [ast.Expr], at0: int, npay: in
     cs.in_arg = keep
     cs.line = l
     if len(args) != npay:
+        # src/tychoc.c:6701 / :6744 -- the arity, which used to be passed as
+        # len(args) by the struct caller and so could never disagree.
+        if len(vn) > 0:
+            _cerr(&cs, vn + " takes " + str(npay) + " payload value(s), got " + str(len(args)))
+        else:
+            _cerr(&cs, _short(cs.tds[ti].name) + " takes " + str(npay) + " field value(s), got " + str(len(args)))
         return "?"
     ktp := cs.typarams
     kp := cs.prefix
@@ -983,16 +1014,43 @@ fn _inst_ctor(cs: inout C, l: int, ti: int, args: [ast.Expr], at0: int, npay: in
         cs.typarams[nm] = true
     cs.prefix = cs.tds[ti].pfx
     b := []string: string
-    ok := true
+    bad := -1
     for i := 0; i < npay; i += 1:
         if not _unify(&cs, cs.tds[ti].pats[at0 + i], ats[i], &b):
-            ok = false
+            if bad < 0:
+                bad = i
     cs.typarams = ktp
     cs.prefix = kp
     cs.line = l
-    if not ok:
-        _cerr(&cs, "argument " + str(1) + " of '" + _short(cs.tds[ti].name) + "' does not fit the field pattern")
+    if bad >= 0:
+        # src/tychoc.c:6706 / :6748 -- name the argument that failed, not "1"
+        if len(vn) > 0:
+            _cerr(&cs, vn + " payload " + str(bad + 1) + " does not fit a " + _show(&cs, ats[bad]) + " argument")
+        else:
+            _cerr(&cs, "field '" + cs.tds[ti].fnames[bad] + "' of " + _short(cs.tds[ti].name) +
+                " does not fit a " + _show(&cs, ats[bad]) + " argument")
         return "?"
+    # src/tychoc.c:6711 / :6752 -- a type parameter no value fixes. Guarded on
+    # every argument type being KNOWN: an unresolved argument leaves the same
+    # binding empty, and refusing there would reject a program ./tychoc accepts.
+    allk := true
+    for t9 in ats:
+        if not known(t9):
+            allk = false
+    if allk:
+        for nm9 in cs.tds[ti].tps:
+            # LOOSER than the naive reading, and it has to be: a $T buried in a
+            # SELF-REFERENTIAL pattern (`Node(Tree($T), Tree($T))`, `W(Box($T))`)
+            # is fixed by provenance, which this pass does not do -- refusing on
+            # an empty binding alone rejected 8 corpus programs ./tychoc accepts.
+            if not (nm9 in b) and not _tp_in_pats(&cs, ti, at0, npay, nm9):
+                if len(vn) > 0:
+                    _cerr(&cs, "type parameter $" + nm9 + " of " + _short(cs.tds[ti].name) +
+                        " is not fixed by any payload value; supply it explicitly, e.g. " + vn + "$(int)")
+                else:
+                    _cerr(&cs, "type parameter $" + nm9 + " of " + _short(cs.tds[ti].name) +
+                        " is not fixed by any field value")
+                return "?"
     enc := []string
     for nm in cs.tds[ti].tps:
         if nm in b:

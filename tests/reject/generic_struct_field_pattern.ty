@@ -1,0 +1,9 @@
+# src/tychoc.c:6706 -- both fields are $T, so the second value must unify with
+# the binding the first one made.
+# expect: field 'b' of Pair does not fit a string argument
+struct Pair($T):
+    a: $T
+    b: $T
+fn main():
+    p := Pair(1, "x")
+    println(str(p.a))

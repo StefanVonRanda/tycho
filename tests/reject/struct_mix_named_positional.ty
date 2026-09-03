@@ -1,0 +1,9 @@
+# src/tychoc.c:6673 -- once one field is named, every field is: a half-named
+# call has no unambiguous reading.
+# expect: P: cannot mix named and positional fields
+struct P:
+    x: int
+    y: int
+fn main():
+    p := P(1, y: 2)
+    println(str(p.x))

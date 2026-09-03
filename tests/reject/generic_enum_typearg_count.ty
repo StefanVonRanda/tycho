@@ -1,0 +1,9 @@
+# src/tychoc.c:6739 -- explicit type arguments bind the ENUM's parameters, so
+# the count is the enum's, not the variant's.
+# expect: Tree expects 1 type argument(s), got 2
+enum Tree($T):
+    Leaf
+    Node($T)
+fn main():
+    t := Leaf$(int, string)()
+    println(str(len(str(t))))

@@ -1,0 +1,8 @@
+# src/tychoc.c:6763 -- a payload value must have the declared payload type;
+# there is no widening from string.
+# expect: Circle payload 1 is float, got string
+enum Shape:
+    Circle(float)
+fn main():
+    s := Circle("x")
+    println(str(len(str(s))))

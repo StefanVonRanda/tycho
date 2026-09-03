@@ -70,7 +70,8 @@ corpus_census() {
     # the parallel-for block and the 9k/12k tail, plus all 27 R21f-4 added for the
     # 8k match/destructuring/select block and the three infinite-type arms,
     # plus 23 of the 24 R21f-5 added for the 6k expression block
-    # (src/tychoc.c:6046-6589).
+    # (src/tychoc.c:6046-6589), plus all 15 R21f-7 added for the 6k struct and
+    # enum CONSTRUCTION block (src/tychoc.c:6651-6763).
     # The other 4 carry none on purpose: this lane scores the expectation against
     # ./tychoc1, and on those rules the two compilers word it differently, so an
     # `# expect:` here could only assert one of the two. Each says so in its header.
@@ -80,7 +81,7 @@ corpus_census() {
         grep -q '^# expect: ' "$cc_e" && cc_exp=$((cc_exp + 1))
     done
     [ "$cc_show" = print ] && printf 'count %-10s %d\n' reject-expect "$cc_exp"
-    [ "$cc_exp" -eq 232 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=232"
+    [ "$cc_exp" -eq 247 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=247"
 
     cc_dirs=0
     for cc_d in $(git ls-files tests 2>/dev/null | grep '\.ty$' | sed 's|/[^/]*$||' | sort -u); do

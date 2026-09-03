@@ -1,0 +1,8 @@
+# src/tychoc.c:6678 -- a named argument must name a field that exists.
+# expect: P has no field 'z'
+struct P:
+    x: int
+    y: int
+fn main():
+    p := P(x: 1, z: 2)
+    println(str(p.x))

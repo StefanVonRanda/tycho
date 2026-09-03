@@ -1,0 +1,9 @@
+# src/tychoc.c:6688 -- one field, one value. The count check passes here, so
+# only the duplicate itself can catch this.
+# expect: P: field 'x' given more than once
+struct P:
+    x: int
+    y: int
+fn main():
+    p := P(x: 1, x: 2)
+    println(str(p.x))
