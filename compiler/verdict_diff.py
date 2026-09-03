@@ -48,7 +48,9 @@ SITES = C.load_sites()
 # KNOWN file when scoring leg11, so a stale name silently drops that file's
 # `file:line` agreement with ./tychoc out of the score. Re-measured
 # 2026-09-03 with `./tychoc1 <f> --typecheck` over every entry -- 17 of the 25
-# were rejecting and were deleted.
+# were rejecting and were deleted. leg10b below is what stops that recurring:
+# the set is compared against the entries that ACTUALLY missed this run, the way
+# compiler/run.sh compares its own, so a fixed fixture reddens the lane.
 KNOWN_TYPE_MISS = {
     "tests/reject/generic_recur_grow.ty",
     "tests/reject/infer_use_before_ground.ty",
@@ -64,6 +66,19 @@ KNOWN_TYPE_MISS = {
     "tests/conc/reject/wait_nontask.ty",
 }
 LIT = lambda f: len(re.sub(r"%[-0-9.*]*(?:ll)?[a-zA-Z]", "", f))
+
+# leg6b -- compiler/run.sh sets no TYCHO_CORELIB, so every other leg here runs
+# tychoc1 with the argv0-relative `./corelib` fallback. `corelib/run.sh:5`
+# exports an ABSOLUTE root, and that is the one configuration in which the
+# under_corelib divergence R7d fixed could fire: tychoc1 compared the package
+# dir to the root LEXICALLY, so an absolute root against a relative entry path
+# said "not under corelib", the unused-local exemption was lost, and the whole
+# compiler lane was blind to it for four commits. So resolution is scored a
+# SECOND time under an absolute root and the two must agree, verdict and late
+# count alike. Anything else keyed on the corelib root -- the `core:` import
+# hint, the export rule -- is covered by the same differential.
+ABS_ENV = dict(os.environ, TYCHO_CORELIB=os.path.abspath("corelib"))
+late_of = lambda r: next((w for w in r.stdout.split() if w.startswith("late=")), "late=?")
 
 
 def tychoc_verdict(path):
@@ -101,7 +116,8 @@ def main():
                    for root in ROOTS for d, _, ns in os.walk(root)
                    for n in ns if n.endswith(".ty"))
     n = {"ACCEPT": 0, "SEMANTIC": 0, "NAME": 0, "TYPE": 0, "SYNTAX": 0, "UNMATCHED": 0}
-    bad = rbad = lbad = tbad = 0
+    bad = rbad = lbad = tbad = abad = 0
+    known_hit = set()
     lok = lbad2 = lskip = 0
     tok = tbad2 = tskip = 0
     sixb = 0
@@ -127,6 +143,13 @@ def main():
             print("  RESOLVE-DISAGREE %s tychoc=%s tychoc1=%s :: %s"
                   % (f, cls, "accept" if resolved else "reject",
                      (msg or q.stderr.split("\n")[0]).strip()[:90]))
+        qa = subprocess.run(["./tychoc1", f, "--resolve"], capture_output=True,
+                            text=True, env=ABS_ENV)
+        if (qa.returncode == 0) != resolved or late_of(qa) != late_of(q):
+            abad += 1
+            print("  ABS-ROOT-DISAGREE %s relative=(rc=%d %s) absolute=(rc=%d %s) :: %s"
+                  % (f, q.returncode, late_of(q), qa.returncode, late_of(qa),
+                     qa.stderr.split("\n")[0].strip()[:90]))
         if cls == "NAME":
             m = re.search(r"^(\S+?(?::\d+)?): error: ", q.stderr, re.M)
             mine = m.group(1) if m else ""
@@ -141,7 +164,9 @@ def main():
         t = subprocess.run(["./tychoc1", f, "--typecheck"], capture_output=True, text=True)
         typed = t.returncode == 0
         if typed != (cls == "ACCEPT"):
-            if f not in KNOWN_TYPE_MISS:
+            if f in KNOWN_TYPE_MISS:
+                known_hit.add(f)          # the entry is still earning its exemption
+            else:
                 tbad += 1
                 print("  TYPE-DISAGREE %s tychoc=%s tychoc1=%s :: %s"
                       % (f, cls, "accept" if typed else "reject",
@@ -169,6 +194,8 @@ def main():
           % (len(files), n["ACCEPT"], n["SEMANTIC"], n["NAME"], n["TYPE"], n["SYNTAX"], bad))
     print("leg6  whole-tree resolution: disagreements=%d unused-local/import on an accepted file=%d"
           % (rbad, lbad))
+    print("leg6b whole-tree resolution under an ABSOLUTE TYCHO_CORELIB (%s): disagreements=%d"
+          % (ABS_ENV["TYCHO_CORELIB"], abad))
     print("leg8  NAME diagnostic file:line vs ./tychoc: scored=%d agree=%d disagree=%d unlocated=%d"
           % (lok + lbad2 + lskip, lok, lbad2, lskip))
     print("leg10 whole-tree typecheck: disagreements=%d (%d TYPE files known-missed)"
@@ -180,6 +207,14 @@ def main():
           "(202), which no amount of work could drive down; the flag now marks an "
           "instantiation, a generic return or a bounded capacity actually left `?`"
           % (sixb, n["ACCEPT"]))
+    stale = sorted(KNOWN_TYPE_MISS - known_hit)
+    print("leg10b KNOWN_TYPE_MISS entries still missing: %d of %d"
+          % (len(known_hit), len(KNOWN_TYPE_MISS)))
+    for f in stale:
+        print("  STALE-EXEMPTION %s :: --typecheck no longer misses it (or the file is gone)" % f)
+    if stale:
+        print("parse-check: %d KNOWN_TYPE_MISS entries are stale -- delete them" % len(stale))
+        return 1
     if tok + tbad2 + tskip != ntype_scored:
         print("parse-check: leg11 scored %d of %d TYPE files"
               % (tok + tbad2 + tskip, ntype_scored))
@@ -190,7 +225,7 @@ def main():
     if len(files) != EXPECT:
         print("parse-check: the tree is %d .ty files, expected %d" % (len(files), EXPECT))
         return 1
-    return 1 if (bad or rbad or lbad or lbad2 or lskip or tbad or tbad2 or tskip) else 0
+    return 1 if (bad or rbad or lbad or lbad2 or lskip or tbad or tbad2 or tskip or abad) else 0
 
 
 if __name__ == "__main__":
