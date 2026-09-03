@@ -1,0 +1,12 @@
+# src/tychoc.c:8438 -- the multi-assign twin of mdecl_arity, worded apart because
+# the names already exist here.
+# expect: assigning 3 name(s) from a 2-element tuple
+fn f() -> (int, int):
+    return (1, 2)
+
+fn main():
+    a := 0
+    b := 0
+    c := 0
+    a, b, c = f()
+    println(str(a) + str(b) + str(c))

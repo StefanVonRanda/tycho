@@ -1,0 +1,12 @@
+# src/tychoc.c:8768 -- the second default can never run.
+# expect: select takes at most one default and one closed arm
+fn main():
+    ch := channel(int, 1)
+    send(ch, 1)
+    select:
+        recv(ch, v):
+            println(str(v))
+        default:
+            println("d1")
+        default:
+            println("d2")

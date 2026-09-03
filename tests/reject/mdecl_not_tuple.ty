@@ -1,0 +1,9 @@
+# src/tychoc.c:8419 -- a destructuring `:=` takes a tuple apart; an int has no
+# elements to hand out.
+# expect: the right side of a destructuring `:=` must be a tuple, got int
+fn f() -> int:
+    return 1
+
+fn main():
+    a, b := f()
+    println(str(a) + str(b))

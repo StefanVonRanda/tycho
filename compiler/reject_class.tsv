@@ -199,6 +199,7 @@ tests/reject/generic_typaram_max.ty	SEMANTIC	2400	too many type parameters (max 
 tests/reject/handle_body_not_free.ty	SYNTAX	4683	a handle body is exactly 'free: <c_free_fn>'
 tests/reject/handle_dup_name.ty	NAME	4318	'H' is already defined
 tests/reject/handle_named_some.ty	NAME	4318	'Some' is already defined
+tests/reject/handle_reassign.ty	SEMANTIC	8474	a handle variable cannot be reassigned -- it is freed once, at the end of its scope
 tests/reject/handle_then_enum.ty	NAME	4318	'H' is already defined
 tests/reject/handle_then_newtype.ty	NAME	4318	'H' is already defined
 tests/reject/handle_then_struct.ty	NAME	4318	'H' is already defined
@@ -216,6 +217,9 @@ tests/reject/index_elem_type.ty	TYPE	8823	cannot assign string to a int element
 tests/reject/infer_bare_empty.ty	SEMANTIC	8909	could not infer the type of 'xs' -- no grounding use in its block (annotate: xs : [T] = [] / Option(T) = None)
 tests/reject/infer_lambda_param.ty	SEMANTIC	5996	lambda parameter 'x' needs a type here -- no expected fn type supplies it (annotate: fn(x: T))
 tests/reject/infer_use_before_ground.ty	SEMANTIC	6108	'xs' is used before its type can be inferred -- assign/push/pass it first, or annotate the declaration
+tests/reject/infinite_option_arm.ty	TYPE	12805	infinite type: an Option contains itself by value — use Option([T]) for indirection
+tests/reject/infinite_result_arm.ty	TYPE	12816	infinite type: a Result contains itself by value — use indirection (e.g. Result([T], E))
+tests/reject/infinite_tuple_arm.ty	TYPE	12832	infinite type: a tuple contains itself by value
 tests/reject/inline_arr_self_elem.ty	TYPE	12783	infinite type: Node contains itself by value — use an array ([Node]) or Option([Node]) for indirection
 tests/reject/inout_alias.ty	SEMANTIC	7215	variable 'n' passed to two inout parameters of 'swap2' (overlapping mutable access)
 tests/reject/inout_arg_newtype.ty	TYPE	7198	argument 1 of 'f' is int, expected Id
@@ -247,12 +251,27 @@ tests/reject/map_key_wrong_read.ty	TYPE	6224	map key must be Slot, got int
 tests/reject/map_set_removed.ty	SYNTAX	3041	map_set was removed; use `m[k] = v`
 tests/reject/map_type_as_value.ty	SYNTAX	2878	`[string: int]` is the TYPE, not a value -- for an empty map write `[]string: int`, or annotate the declaration: `m : [string: int] = []`
 tests/reject/map_value_type.ty	TYPE	8815	cannot assign string to a int map value
+tests/reject/massign_arity.ty	SEMANTIC	8438	assigning 3 name(s) from a 2-element tuple
+tests/reject/massign_not_tuple.ty	SEMANTIC	8436	the right side of a multi-assign must be a tuple, got int
 tests/reject/match_arm_neg_not_int.ty	SYNTAX	3499	'-' is only valid before an int literal in a match arm
 tests/reject/match_arm_set_not_scalar.ty	SYNTAX	3498	a match arm must be a variant name, a scalar literal, a range, or `_`
+tests/reject/match_bad_subject.ty	SEMANTIC	8716	match expects an Option, Result, or enum value, or an int/char/bool, got S
+tests/reject/match_bind_is_variant.ty	SEMANTIC	8605	'Q' is a variant of Inner, not a binding name -- match it in its own match, or rename the binding
+tests/reject/match_bind_payload_variant.ty	SEMANTIC	8283	'A' is a variant of E that carries a payload -- write Ok(A(x)) to match it, or rename the binding
+tests/reject/match_bool_arms.ty	SEMANTIC	8676	a match on a bool takes true/false arms
+tests/reject/match_char_arms.ty	SEMANTIC	8674	a match on a char takes char literal arms
 tests/reject/match_const_list_not_int.ty	TYPE	8657	'C' is not an int constant
 tests/reject/match_dup_arm.ty	TYPE	8591	duplicate arm for Red
+tests/reject/match_dup_nested_arm.ty	SEMANTIC	8302	duplicate Ok(A) arm
+tests/reject/match_dup_none_arm.ty	SEMANTIC	8535	duplicate None arm
+tests/reject/match_dup_ok_arm.ty	SEMANTIC	8264	duplicate Ok arm
 tests/reject/match_expr_nonexhaustive.ty	TYPE	8547	match on an Option must cover both Some and None
+tests/reject/match_nested_arity.ty	SEMANTIC	8297	A binds 1 value(s), got 2
+tests/reject/match_nested_needs_enum.ty	SEMANTIC	8289	a nested pattern needs an enum payload, but Ok here carries int
 tests/reject/match_non_exhaustive.ty	TYPE	8259	non-exhaustive match: missing variant B of E
+tests/reject/match_none_binds.ty	SEMANTIC	8536	None binds nothing
+tests/reject/match_ok_binds_two.ty	SEMANTIC	8274	Ok(x) binds exactly one value
+tests/reject/match_option_bad_arm.ty	SEMANTIC	8539	an Option's arms are Some(x), None, and _, not 'Nope'
 tests/reject/match_range_no_high.ty	SYNTAX	3513	expected a value after '..' in the match arm
 tests/reject/match_result_missing_side.ty	TYPE	8573	match on a Result must cover both Ok and Err
 tests/reject/match_result_partial_err.ty	TYPE	8259	non-exhaustive match: missing variant B of E
@@ -267,7 +286,11 @@ tests/reject/match_scalar_overlap.ty	TYPE	8694	duplicate or overlapping match ar
 tests/reject/match_scalar_range_flipped.ty	TYPE	8678	a range starts at 9 and ends at 3 (the start must not exceed the end)
 tests/reject/match_scalar_string.ty	TYPE	8713	match on string is refused: nothing in the tree dispatches on it -- use if/elif (see docs/internals/design-scalar-match.md D1)
 tests/reject/match_underscore_use.ty	NAME	6165	unknown variable '_'; did you mean 'r'?
+tests/reject/match_wildcard_binds.ty	SEMANTIC	8521	a `_` wildcard binds nothing
 tests/reject/match_wildcard_not_last.ty	TYPE	8520	a `_` wildcard must be the last match arm
+tests/reject/mdecl_arity.ty	SEMANTIC	8422	destructuring 3 name(s) from a 2-element tuple
+tests/reject/mdecl_not_tuple.ty	SEMANTIC	8419	the right side of a destructuring `:=` must be a tuple, got int
+tests/reject/missing_return_value.ty	SEMANTIC	8498	missing return value (proc returns int)
 tests/reject/modulo_needs_int.ty	SEMANTIC	7492	modulo / bitwise operators require two matching integers (got float, float)
 tests/reject/mut_arg_no_amp.ty	TYPE	7155	argument 1 of 'g' is inout; pass it as '&variable'
 tests/reject/neg_needs_number.ty	SEMANTIC	7264	unary `-` needs an int or a float
@@ -311,6 +334,7 @@ tests/reject/parfor_capture_task.ty	SEMANTIC	7739	a parallel for cannot capture 
 tests/reject/parfor_inout_capture.ty	SEMANTIC	7754	parallel for cannot pass a captured variable as inout (no shared mutation across chunks)
 tests/reject/parfor_massign_captured.ty	SEMANTIC	7844	parallel for cannot assign to captured variable 'a'
 tests/reject/parfor_or_return.ty	SEMANTIC	7748	or_return cannot cross a parallel for (no early exit from a chunk)
+tests/reject/parfor_range_not_int.ty	SEMANTIC	8012	parallel for needs an int range
 tests/reject/pass_as_value.ty	NAME	6164	`pass` is a statement and produces no value -- a value if/match needs one in every branch, so write this as a plain statement
 tests/reject/place_call_receiver.ty	TYPE	8789	can only index-assign an array or map variable or field
 tests/reject/place_call_receiver_field.ty	TYPE	8836	cannot assign to a field of a temporary (only variables, fields, and composite-array elements are places)
@@ -343,6 +367,9 @@ tests/reject/scalar_coerce_place.ty	TYPE	8839	cannot assign float to a int field
 tests/reject/scalar_coerce_reassign.ty	TYPE	8451	cannot assign float to 'x' of type int
 tests/reject/scalar_coerce_struct_field.ty	TYPE	6723	field 'v' of S is int, got float
 tests/reject/select_arm_unknown.ty	SYNTAX	3899	a select arm is `recv(ch, x):`, `default:`, or `closed:`
+tests/reject/select_no_recv.ty	SEMANTIC	8767	select needs at least one recv arm
+tests/reject/select_recv_not_chan.ty	SEMANTIC	8757	select recv needs a channel, got int
+tests/reject/select_two_default.ty	SEMANTIC	8768	select takes at most one default and one closed arm
 tests/reject/semi_no_grammar.ty	SYNTAX	2077	expected newline
 tests/reject/send_not_channel.ty	SEMANTIC	6795	send(ch, v) takes a channel, got int
 tests/reject/send_one_arg.ty	SEMANTIC	6793	send(ch, v) takes a channel and a value

@@ -1,0 +1,15 @@
+# src/tychoc.c:8297 -- the refined variant A carries one value and the pattern
+# names two, so the second binding would read past the payload.
+# expect: A binds 1 value(s), got 2
+enum E:
+    A(int)
+    B
+
+fn mk() -> Result(E, string):
+    return Err("x")
+
+fn main():
+    match mk():
+        Ok(A(x, y)): println(str(x) + str(y))
+        Ok(B): println("b")
+        Err(e): println(e)

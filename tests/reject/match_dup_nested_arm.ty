@@ -1,0 +1,16 @@
+# src/tychoc.c:8302 -- two arms refine the SAME variant of the Ok payload, so the
+# second can never run.
+# expect: duplicate Ok(A) arm
+enum E:
+    A(int)
+    B
+
+fn mk() -> Result(E, string):
+    return Err("x")
+
+fn main():
+    match mk():
+        Ok(A(x)): println(str(x))
+        Ok(A(y)): println(str(y))
+        Ok(B): println("b")
+        Err(e): println(e)

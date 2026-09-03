@@ -1,0 +1,11 @@
+# src/tychoc.c:8716 -- a struct has no cases to dispatch on.
+# The two compilers spell the struct differently -- tychoc says `S`, tychoc1 says
+# `@S` -- so the expectation stops at the shared text.
+# expect: match expects an Option, Result, or enum value, or an int/char/bool, got
+struct S:
+    a: int
+
+fn main():
+    s := S(1)
+    match s:
+        _: println("other")

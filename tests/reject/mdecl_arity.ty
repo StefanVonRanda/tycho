@@ -1,0 +1,8 @@
+# src/tychoc.c:8422 -- three names, two elements: the third would bind nothing.
+# expect: destructuring 3 name(s) from a 2-element tuple
+fn f() -> (int, int):
+    return (1, 2)
+
+fn main():
+    a, b, c := f()
+    println(str(a) + str(b) + str(c))

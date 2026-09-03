@@ -1,0 +1,15 @@
+# tychoc reaches this arm by rooting the walk at an EARLIER-declared struct that
+# only REFERENCES the cycle: src/tychoc.c:12863 visits every struct before any
+# Option, Result or tuple, so the first grey node re-entered here is the Result,
+# not B. tychoc1 attributes the same cycle to the struct that closes it, so only
+# the shared prefix can be pinned.
+# expect: infinite type:
+# src/tychoc.c:12816
+struct A:
+    b: Result(B, string)
+
+struct B:
+    x: Result(B, string)
+
+fn main():
+    println("unreachable")

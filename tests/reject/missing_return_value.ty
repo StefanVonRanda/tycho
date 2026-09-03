@@ -1,0 +1,7 @@
+# src/tychoc.c:8498 -- a bare `return` in a proc that declares a result type.
+# expect: missing return value (proc returns int)
+fn g() -> int:
+    return
+
+fn main():
+    println(str(g()))

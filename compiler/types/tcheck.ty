@@ -1937,6 +1937,46 @@ fn _variant_payload(cs: inout C, et: string, name: string) -> [string]:
             return split(cs.tds[i].ftypes[k], "|")
     return []string
 
+# Is `name` a variant of the enum type `t`? src/tychoc.c@enum_variant_index.
+fn _is_variant_of(cs: inout C, t: string, name: string) -> bool:
+    ti := _tdecl(&cs, _base(&cs, t))
+    if ti < 0 or cs.tds[ti].kind != "enum":
+        return false
+    for v in cs.tds[ti].fnames:
+        if v == name:
+            return true
+    return false
+
+# The payload-shape rules for one Option/Result side -- src/tychoc.c@match_arm_payload.
+# It only ADDS diagnostics: _nested_of still decides what the arm covers, so a
+# payload this cannot resolve (a `?` from a generic) is left alone rather than
+# refused, which keeps the port no stricter than the bootstrap.
+fn _pay_shape(cs: inout C, a: ast.Arm, pay: string, tag: string):
+    if not known(pay):
+        return
+    cs.line = a.line
+    ti := _tdecl(&cs, _base(&cs, pay))
+    isenum := ti >= 0 and cs.tds[ti].kind == "enum"
+    if len(a.sub) == 0:
+        if len(a.binds) != 1:
+            _cerr(&cs, tag + "(x) binds exactly one value")
+            return
+        if isenum and _is_variant_of(&cs, pay, a.binds[0]):
+            if len(_variant_payload(&cs, _base(&cs, pay), a.binds[0])) != 0:
+                _cerr(&cs, "'" + a.binds[0] + "' is a variant of " + _show(&cs, pay) +
+                    " that carries a payload -- write " + tag + "(" + a.binds[0] +
+                    "(x)) to match it, or rename the binding")
+        return
+    if not isenum:
+        _cerr(&cs, "a nested pattern needs an enum payload, but " + tag +
+            " here carries " + _show(&cs, pay))
+        return
+    if not _is_variant_of(&cs, pay, a.sub):
+        return
+    np := len(_variant_payload(&cs, _base(&cs, pay), a.sub))
+    if len(a.subbinds) != np:
+        _cerr(&cs, a.sub + " binds " + str(np) + " value(s), got " + str(len(a.subbinds)))
+
 fn _arm_binds(cs: inout C, a: ast.Arm, tys: [string]):
     for i := 0; i < len(a.binds); i += 1:
         t := "?"
@@ -1958,6 +1998,9 @@ fn _match(cs: inout C, l: int, subj: [ast.Expr], arms: [ast.Arm]):
             if i != len(arms) - 1:
                 cs.line = arms[i].line
                 _cerr(&cs, "a `_` wildcard must be the last match arm")
+            if len(arms[i].binds) != 0:
+                cs.line = arms[i].line
+                _cerr(&cs, "a `_` wildcard binds nothing")
             wild = true
         if arms[i].kind == "scalar":
             for p in arms[i].pats:
@@ -1991,10 +2034,14 @@ fn _match(cs: inout C, l: int, subj: [ast.Expr], arms: [ast.Arm]):
             if a.name == "_":
                 pass
             elif a.name == yes and len(a.qual) == 0:
+                if full0:                          # an unrefined arm already took this side
+                    _cerr(&cs, "duplicate " + yes + " arm")
                 seen0 = true
                 nested := _nested_of(&cs, a, _targs(st)[0])
                 if len(nested) > 0:
                     ref0 = true
+                    if nested in cov0:
+                        _cerr(&cs, "duplicate " + yes + "(" + nested + ") arm")
                     cov0[nested] = true
                 else:
                     full0 = true       # a plain binding covers the whole side
@@ -2003,20 +2050,35 @@ fn _match(cs: inout C, l: int, subj: [ast.Expr], arms: [ast.Arm]):
                 if h == "res" and _targs(st)[0] == "void" and len(a.binds) > 0:
                     _cerr(&cs, "Ok carries no value here -- write a bare `Ok:` arm")
                 else:
+                    if _targs(st)[0] != "void":
+                        _pay_shape(&cs, a, _targs(st)[0], yes)
                     _arm_binds(&cs, a, pay)
             elif a.name == no and len(a.qual) == 0:
-                seen1 = true
                 nested := ""
                 if h == "res":
+                    if full1:
+                        _cerr(&cs, "duplicate " + no + " arm")
                     nested = _nested_of(&cs, a, _targs(st)[1])
+                else:
+                    # None is nullary: src/tychoc.c:8535 and :8536 word it apart
+                    # from the Err side, which does carry a payload.
+                    if seen1:
+                        _cerr(&cs, "duplicate None arm")
+                    if len(a.binds) != 0 or len(a.sub) > 0:
+                        _cerr(&cs, "None binds nothing")
+                seen1 = true
                 if len(nested) > 0:
                     ref1 = true
+                    if nested in cov1:
+                        _cerr(&cs, "duplicate " + no + "(" + nested + ") arm")
                     cov1[nested] = true
                 else:
                     full1 = true
                 pay := []string
                 if h == "res":
                     push(pay, _targs(st)[1])
+                    if _targs(st)[1] != "void":
+                        _pay_shape(&cs, a, _targs(st)[1], no)
                 _arm_binds(&cs, a, pay)
             elif known(st):
                 spelt2 := a.name
@@ -2065,6 +2127,11 @@ fn _match(cs: inout C, l: int, subj: [ast.Expr], arms: [ast.Arm]):
                 pay := _variant_payload(&cs, st, a.name)
                 if found and len(a.binds) != len(pay) and len(a.subbinds) == 0:
                     _cerr(&cs, a.name + " binds " + str(len(pay)) + " value(s), got " + str(len(a.binds)))
+                for b := 0; b < len(a.binds); b += 1:
+                    if b < len(pay) and _is_variant_of(&cs, pay[b], a.binds[b]):
+                        cs.line = a.line
+                        _cerr(&cs, "'" + a.binds[b] + "' is a variant of " + _show(&cs, pay[b]) +
+                            ", not a binding name -- match it in its own match, or rename the binding")
                 _arm_binds(&cs, a, pay)
             _tblock(&cs, a.body)
             _vrestore(&cs, m)
@@ -2383,6 +2450,19 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
                 t = _base(&cs, _ex(&cs, rhs[0]))
             els := _targs(t)
             cs.line = l
+            if known(t) and len(rhs) == 1:
+                if _head(t) != "tup":
+                    if isdecl:
+                        _cerr(&cs, "the right side of a destructuring `:=` must be a tuple, got " + _show(&cs, t))
+                    else:
+                        _cerr(&cs, "the right side of a multi-assign must be a tuple, got " + _show(&cs, t))
+                elif len(els) != len(names):
+                    if isdecl:
+                        _cerr(&cs, "destructuring " + str(len(names)) + " name(s) from a " +
+                            str(len(els)) + "-element tuple")
+                    else:
+                        _cerr(&cs, "assigning " + str(len(names)) + " name(s) from a " +
+                            str(len(els)) + "-element tuple")
             for i := 0; i < len(names); i += 1:
                 et := "?"
                 if _head(t) == "tup" and i < len(els):
@@ -2509,13 +2589,34 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
                 _tstmt(&cs, st)
         ast.MatchS(l, subj, arms): _match(&cs, l, subj, arms)
         ast.SelectS(l, arms):
+            nrecv := 0
+            ndef := 0
+            nclosed := 0
             for a in arms:
                 m := _vmark(&cs)
-                _exs(&cs, a.ch)
+                if a.kind == "recv":
+                    nrecv += 1
+                    ct := "?"
+                    if len(a.ch) > 0:
+                        ct = _base(&cs, _ex(&cs, a.ch[0]))
+                    if known(ct) and _head(ct) != "chan":
+                        cs.line = a.line
+                        _cerr(&cs, "select recv needs a channel, got " + _show(&cs, ct))
+                elif a.kind == "default":
+                    ndef += 1
+                    _exs(&cs, a.ch)
+                else:
+                    nclosed += 1
+                    _exs(&cs, a.ch)
                 for bnd in a.binds:
                     _vpush(&cs, bnd, "?", true)
                 _tblock(&cs, a.body)
                 _vrestore(&cs, m)
+            cs.line = l
+            if nrecv == 0:
+                _cerr(&cs, "select needs at least one recv arm")
+            if ndef > 1 or nclosed > 1:
+                _cerr(&cs, "select takes at most one default and one closed arm")
         _: pass
 
 fn _assign_check(cs: inout C, name: string, t: string):
@@ -2641,11 +2742,14 @@ fn _fill_decls(cs: inout C, p: Program):
             _typarams_of(&cs, []string)
 
 # src/tychoc.c:12783 -- a struct that contains itself BY VALUE has no size. An
-# array, map or Option breaks the cycle; a tuple, a fixed array and a plain
-# field do not.
+# An array or a map breaks the cycle; a tuple, a fixed array and a plain field do
+# not -- and neither does an Option or a Result, which embed their payloads BY
+# VALUE (src/tychoc.c:12811 emits `struct TychoOpt%d_ { char has; T val; }` and
+# :12826 the Result twin). This comment used to say Option broke it, and tychoc1
+# accordingly accepted `b: Option(S)` inside S, which the bootstrap refuses.
 fn _contains(cs: inout C, t: string, target: string, seen: [string: bool]) -> bool:
     h := _head(t)
-    if h == "tup" or h == "fix":
+    if h == "tup" or h == "fix" or h == "opt" or h == "res":
         for a in _targs(t):
             if _contains(&cs, a, target, seen) and _head(a) != "?":
                 return true

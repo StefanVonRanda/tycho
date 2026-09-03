@@ -1,0 +1,11 @@
+# src/tychoc.c:8436 -- the multi-assign twin of mdecl_not_tuple: an existing pair
+# of variables still needs a tuple to take apart.
+# expect: the right side of a multi-assign must be a tuple, got int
+fn f() -> int:
+    return 1
+
+fn main():
+    a := 0
+    b := 0
+    a, b = f()
+    println(str(a) + str(b))

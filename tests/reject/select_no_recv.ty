@@ -1,0 +1,7 @@
+# src/tychoc.c:8767 -- a select with only a default arm never blocks and is just
+# its default branch written the long way.
+# expect: select needs at least one recv arm
+fn main():
+    select:
+        default:
+            println("d")

@@ -1,0 +1,15 @@
+# src/tychoc.c:8283 -- `Ok(A)` reads as a binding named A, which would silently
+# shadow the variant and match every Ok. A carries a payload, so say so.
+# expect: 'A' is a variant of E that carries a payload
+enum E:
+    A(int)
+    B
+
+fn mk() -> Result(E, string):
+    return Err("x")
+
+fn main():
+    match mk():
+        Ok(A): println("a")
+        Ok(B): println("b")
+        Err(e): println(e)

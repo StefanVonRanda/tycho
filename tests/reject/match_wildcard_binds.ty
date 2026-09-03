@@ -1,0 +1,8 @@
+# src/tychoc.c:8521 -- `_` is a catch-all, not a variant: there is no payload for
+# it to hand to a binding name.
+# expect: a `_` wildcard binds nothing
+fn main():
+    x : Option(int) = Some(1)
+    match x:
+        Some(v): println(str(v))
+        _(y): println(str(y))

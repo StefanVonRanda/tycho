@@ -1,0 +1,7 @@
+# src/tychoc.c:8536 -- None carries nothing, so a binding name has no value.
+# expect: None binds nothing
+fn main():
+    x : Option(int) = Some(1)
+    match x:
+        Some(v): println(str(v))
+        None(z): println(str(z))

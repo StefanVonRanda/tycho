@@ -1,0 +1,8 @@
+# src/tychoc.c:8674 -- an int literal arm cannot be compared against a char
+# subject; the arms follow the subject's type.
+# expect: a match on a char takes char literal arms
+fn main():
+    c := 'a'
+    match c:
+        1: println("one")
+        _: println("other")

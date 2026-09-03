@@ -1,0 +1,11 @@
+# src/tychoc.c:8264 -- an unrefined `Ok(a)` arm takes the whole Ok side, so a
+# second one is dead code, not a second case.
+# expect: duplicate Ok arm
+fn mk() -> Result(int, string):
+    return Ok(1)
+
+fn main():
+    match mk():
+        Ok(a): println(str(a))
+        Ok(b): println(str(b))
+        Err(e): println(e)

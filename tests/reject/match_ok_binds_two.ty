@@ -1,0 +1,10 @@
+# src/tychoc.c:8274 -- the Ok side carries ONE payload; two binding names have
+# nothing to bind the second to.
+# expect: Ok(x) binds exactly one value
+fn mk() -> Result(int, string):
+    return Ok(1)
+
+fn main():
+    match mk():
+        Ok(a, b): println(str(a) + str(b))
+        Err(e): println(e)

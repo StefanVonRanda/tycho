@@ -1,0 +1,8 @@
+# src/tychoc.c:8757 -- a select recv arm waits on a channel; an int has nothing
+# to wait on.
+# expect: select recv needs a channel, got int
+fn main():
+    x := 1
+    select:
+        recv(x, v):
+            println(str(v))

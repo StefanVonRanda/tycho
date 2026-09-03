@@ -1,0 +1,13 @@
+# src/tychoc.c:8474 -- a handle is freed once, at its declaring scope's exit, so
+# rebinding it would orphan the first one.
+# expect: a handle variable cannot be reassigned
+handle R:
+    free: hc
+
+extern fn ho(i: int) -> R
+extern fn hc(h: R) -> int
+
+fn main():
+    h := ho(1)
+    h = ho(2)
+    println("unreachable")
