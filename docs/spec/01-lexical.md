@@ -155,21 +155,31 @@ The following words are **reserved**. A reserved word is never an identifier;
 using one where a name is expected is a syntax error.
 
 ```text
-and     bool    break   continue elif    else    enum    f32
-false   float   fn      for      handle  if      in      inout
-int     is      match   not      null    or      or_return  parallel
-ptr     return  select  spawn    string  struct  true    type
-u32     u64
+and     bool    break   bytes   continue elif    else    enum
+f32     false   float   fn      for      handle  i8      i16
+i32     i64     if      in      inout    int     is      match
+not     null    or      or_return parallel ptr    return  select
+spawn   string  struct  true    type     u8      u16     u32
+u64
 ```
 
-`bytes` is also reserved (a primitive type keyword). The words `int`, `bool`,
-`string`, `float`, `ptr`, `bytes`, `u32`, `u64`, and `f32` are the primitive
-**type keywords**; the rest are declaration, control-flow, operator, or literal
+Those 41 are the whole of `keyword()`; the same list is tabulated in
+[Appendix B](appendix-b-keywords.md#b1-reserved-words). The words `int`, `bool`,
+`string`, `float`, `ptr`, `bytes`, `f32`, and the fixed-width integers `u8`,
+`u16`, `u32`, `u64`, `i8`, `i16`, `i32`, `i64` are the primitive **type
+keywords**; the rest are declaration, control-flow, operator, or literal
 keywords. `or_return` is matched as a single word (it is not `or` followed by
 `_return`).
 
-> Provenance: the complete reserved set is exactly `keyword()`,
-> `src/tychoc.c:336-378`. There is no `while` keyword (the loop keyword is
+`soa` is reserved too, but by the parser rather than the lexer: it lexes as an
+ordinary identifier and every expression position that sees it demands a `[`
+(`src/tychoc.c:2931-2934`), so `soa := 5` is accepted and the next mention of the
+name dies with `expected '[' after soa`. A binding of that name is declarable and
+permanently unusable, which is why [Appendix B](appendix-b-keywords.md#b1-reserved-words)
+lists it with the reserved words and not with the contextual ones.
+
+> Provenance: the complete **lexer** reserved set is exactly `keyword()`,
+> `src/tychoc.c@keyword`. There is no `while` keyword (the loop keyword is
 > `for`, §4); there is no `char` or `void` type keyword (the `char` type arises
 > only from character literals and inference, and `void` is the implicit
 > no-return type).
@@ -185,8 +195,12 @@ bars an uppercase spelling from every run-time binding position. They are
 - **Top-level leaders:** `package`, `import`, `extern`, `const`, `subscript`.
 - **Statement leaders:** `const` (local), `delete` — each significant only when
   immediately followed by an identifier.
-- **Type / expression position:** `soa`, `where`, `channel`, and the built-in
-  generic type names `Option`, `Result`, `Channel`.
+- **Type / expression position:** `where`, `channel`, and the built-in generic
+  type names `Option`, `Result`, `Channel`. `where` and `channel` are genuinely
+  unaffected as names; the three uppercase ones are not reserved either, but
+  §3.5.1 bars every uppercase spelling from a run-time binding position, so
+  `Option := 5` is refused exactly as `Foo := 5` is. `soa` is **not** in this
+  list — see §3.6.
 - **Parameter modifier:** `sink`.
 - **Construct bodies:** `yield` (in a `subscript`), `free` (in a `handle`),
   `range` (in the head of a `for … in`, **only to refuse it** since 2026-07-29).
@@ -243,7 +257,7 @@ bars an uppercase spelling from every run-time binding position. They are
   > normative part.
 
 > Provenance: contextual dispatch at `src/tychoc.c:5127-5136` (top level),
-> `:3761@"const"`/`:3784@"delete"` (`const`/`delete`), `:2375@soa [Struct]`/`:2935@soa []Struct` (`soa`),
+> `:3761@"const"`/`:3784@"delete"` (`const`/`delete`),
 > `:4353@"where"` (`where`), `:4324@"sink"` (`sink`), `:4015@"range"` (`range`, refusal only).
 
 ## 3.8 Operators and punctuation
@@ -507,8 +521,9 @@ specification):
 
 1. it lists `while` as a keyword — there is no `while` in the language;
 2. it lists `char` and `void` as type keywords — neither is spellable as a type;
-3. it treats `import`, `package`, `extern`, and `soa` as reserved keywords —
-   they are contextual identifiers (§3.7) — and omits the reserved word `handle`;
+3. it treats `import`, `package`, and `extern` as reserved keywords — they are
+   contextual identifiers (§3.7) — and omits the reserved word `handle`. Its
+   fourth entry, `soa`, is right: `soa` is reserved (§3.6);
 4. its number pattern does not model exponents or the leading-dot form (§3.9.2);
 5. it lists `{`/`}` as punctuation and omits `...` — braces are not tokens and
    `...` is a real operator (§3.8);

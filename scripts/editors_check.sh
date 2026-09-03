@@ -61,10 +61,11 @@ else
     fail=1
 fi
 
-cat > "$TMP/want" <<'EOF'
-tests/reject/hex_escape_one_digit.ty
-tests/reject/rawstring_unterminated.ty
-EOF
+# The known-bad set is DERIVED from editors/zed/syntax-coverage.tsv, which
+# carries a reason for every SYNTAX-class reject fixture -- both the ones this
+# grammar refuses and the ones it accepts. One list, one source of truth.
+COV=editors/zed/syntax-coverage.tsv
+grep -v '^#' "$COV" | awk -F'\t' '$2=="REJECTED"{print $1}' | sort > "$TMP/want"
 
 (cd "$TMP" && $TS parse -q $(cat "$TMP/files")) 2>/dev/null \
     | awk -F'\t' '/ERROR|MISSING/ {print $1}' \
@@ -76,6 +77,41 @@ else
     echo "    CORPUS PARSE MISMATCH ('<' expected to fail but parsed, '>' newly failing):"
     sed 's/^/      /' "$TMP/corpus.diff"
     fail=1
+fi
+
+# ---------------------------------------------- SYNTAX-reject classification
+# The corpus lane above proves nothing about tychoc's reject fixtures beyond
+# "they still parse the way they did". This leg pins WHY: every SYNTAX-class
+# fixture in compiler/reject_class.tsv must appear in the coverage table with a
+# verdict that matches a real parse and a non-empty reason. A new SYNTAX fixture
+# cannot join the accepted majority unclassified.
+awk -F'\t' '$2=="SYNTAX"{print $1}' compiler/reject_class.tsv | sort > "$TMP/syn"
+nsyn=$(wc -l < "$TMP/syn" | tr -d ' ')
+grep -v '^#' "$COV" | awk -F'\t' '{print $1}' | sort > "$TMP/cov.paths"
+echo ">>> editors: SYNTAX-reject classification ($nsyn fixtures)"
+if ! diff "$TMP/syn" "$TMP/cov.paths" > "$TMP/cov.diff" 2>&1; then
+    echo "    COVERAGE TABLE OUT OF STEP with compiler/reject_class.tsv"
+    echo "    ('<' classified but no longer SYNTAX, '>' SYNTAX but unclassified):"
+    sed 's/^/      /' "$TMP/cov.diff"
+    fail=1
+fi
+nbad=0
+while IFS="$(printf '\t')" read -r path verdict reason; do
+    case "$path" in \#*|"") continue;; esac
+    if [ -z "$reason" ]; then
+        echo "    NO REASON GIVEN: $path"; nbad=$((nbad+1)); continue
+    fi
+    if grep -qxF "$path" "$TMP/got"; then measured=REJECTED; else measured=ACCEPTED; fi
+    if [ "$measured" != "$verdict" ]; then
+        echo "    VERDICT MOVED: $path recorded $verdict, grammar now $measured"
+        nbad=$((nbad+1))
+    fi
+done < "$COV"
+if [ "$nbad" -ne 0 ]; then
+    fail=1
+else
+    nrej=$(wc -l < "$TMP/want" | tr -d ' ')
+    echo "    $nsyn classified, each with a reason: $nrej refused by the grammar, $((nsyn - nrej)) accepted (grammar.js has no external scanner and does no name resolution)"
 fi
 
 if [ "$fail" -ne 0 ]; then echo "editors-check: FAIL"; exit 1; fi

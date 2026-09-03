@@ -1,0 +1,69 @@
+# Every SYNTAX-class fixture in compiler/reject_class.tsv, and what the Zed
+# tree-sitter grammar does with it.  Three columns: path, verdict, reason.
+#
+# scripts/editors_check.sh asserts this table against a real parse: a fixture
+# recorded ACCEPTED that starts failing, or one recorded REJECTED that starts
+# parsing, reddens the lane by name.  A SYNTAX fixture missing from this table
+# also reddens, so a new one cannot join the accepted blob unclassified.
+#
+# ACCEPTED is not a defect report.  grammar.js is a highlighting grammar: it has
+# no external scanner, so it is whitespace-insensitive, and it does no name
+# resolution, no arity counting and no value-range checking.  Each row says
+# which of those the fixture needs.
+tests/reject/bare_expr_stmt.ty	ACCEPTED	an expression is a legal statement in grammar.js; "has no effect" is a check on the expression's KIND, not on its shape
+tests/reject/const_expr_divzero.ty	ACCEPTED	needs the const initialiser EVALUATED; the division parses
+tests/reject/const_expr_float.ty	ACCEPTED	needs "a const initialiser is one scalar literal"; the grammar admits any expression there
+tests/reject/const_expr_localref.ty	ACCEPTED	same rule as const_expr_float, reached through an identifier
+tests/reject/const_nonliteral.ty	ACCEPTED	same rule as const_expr_float, reached through a call
+tests/reject/dotlt_sequential.ty	ACCEPTED	`0..<N` is grammatical everywhere; restricting it to a `parallel for` head is a context rule
+tests/reject/dup_field.ty	ACCEPTED	two fields named `x` parse; duplicate detection needs a symbol table
+tests/reject/enum_typaram_max.ty	ACCEPTED	a ceiling (16 type parameters); the grammar repeats without counting
+tests/reject/err_empty.ty	ACCEPTED	`Err()` is a well-formed call; the refusal is about the Result's error type
+tests/reject/fixarr_qualified_const.ty	ACCEPTED	a qualified name is a legal array length in the grammar; "must be known at parse time" is a resolution rule
+tests/reject/fixed_array_zero_size.ty	ACCEPTED	a value-range check on a literal that lexes correctly
+tests/reject/float_exp_bad.ty	ACCEPTED	`1e` lexes as INT then IDENT in both, and with no newline rule the grammar takes the IDENT as its own expression
+tests/reject/float_lit_overflow_neg.ty	ACCEPTED	`1e400` is a well-formed float token; out-of-range is a value check
+tests/reject/fnty_arity.ty	ACCEPTED	a ceiling (8 parameters in a function type)
+tests/reject/for3_empty_clause.ty	ACCEPTED	the grammar makes the three-clause `for` init optional; tychoc requires it
+tests/reject/for_two_binders.ty	ACCEPTED	`for k, v in xs:` parses; "a for binds one name" is an arity rule on the binder list
+tests/reject/fstring_escape.ty	ACCEPTED	the string rule takes any backslash byte; the escape ALPHABET is checked in tychoc's lexer
+tests/reject/hex_escape_in_string.ty	ACCEPTED	same string rule as fstring_escape -- \x is consumed, not validated
+tests/reject/hex_escape_one_digit.ty	REJECTED	the grammar spells \x with exactly two hex digits, so a one-digit escape leaves the string unterminated
+tests/reject/if_expr_no_else.ty	ACCEPTED	an `if` with no `else` is grammatical; requiring one in VALUE position needs to know the position
+tests/reject/int_bin_bad_digit.ty	ACCEPTED	`0b2` lexes as `0` then `b2`, and with no newline rule the trailing identifier is its own expression
+tests/reject/int_hex_no_digits.ty	ACCEPTED	`0x` lexes as `0` then `x`, same as int_bin_bad_digit
+tests/reject/int_hex_overflow.ty	ACCEPTED	a well-formed hex token whose VALUE exceeds int64
+tests/reject/int_literal_overflow.ty	ACCEPTED	a well-formed decimal token whose VALUE exceeds int64
+tests/reject/kw_as_field_name.ty	ACCEPTED	the grammar's identifier rule does not exclude reserved words in field position
+tests/reject/kw_as_local_name.ty	ACCEPTED	same identifier rule, in binding position
+tests/reject/map_del_removed.ty	ACCEPTED	`map_del(...)` is an ordinary call; the removal is enforced by name resolution
+tests/reject/map_get_removed.ty	ACCEPTED	as map_del_removed
+tests/reject/map_has_removed.ty	ACCEPTED	as map_del_removed
+tests/reject/map_set_removed.ty	ACCEPTED	as map_del_removed
+tests/reject/map_type_as_value.ty	ACCEPTED	`[string: int]` parses as an index expression; telling type from value needs the context
+tests/reject/match_scalar_mixed_range.ty	ACCEPTED	`a..b` parses whatever the two ends are; "same kind of value" is a type check
+tests/reject/over_indent.ty	ACCEPTED	grammar.js has no external scanner and emits no INDENT/DEDENT, so indentation cannot be wrong
+tests/reject/range_removed.ty	ACCEPTED	`range(N)` is an ordinary call; the removal is enforced by name resolution
+tests/reject/rawstring_unterminated.ty	REJECTED	the raw-string rule needs a closing backtick, and there is none
+tests/reject/semi_no_grammar.ty	ACCEPTED	no newline rule, so a trailing `;` ends nothing and the statement still parses
+tests/reject/string_escape.ty	ACCEPTED	as fstring_escape -- the escape alphabet is not the grammar's
+tests/reject/struct_typaram_max.ty	ACCEPTED	a ceiling (16 type parameters)
+tests/reject/subscript_dangling.ty	ACCEPTED	`yield &<expr>` parses; "rooted in a parameter" is a dataflow rule
+tests/reject/subscript_not_place.ty	ACCEPTED	`yield <expr>` parses; place-ness is not a syntactic property here
+tests/reject/subscript_param_twice.ty	ACCEPTED	counting uses of a parameter inside the yielded place needs name resolution
+tests/reject/tab_mix.ty	ACCEPTED	no external scanner, so tabs and spaces are both just whitespace
+tests/reject/tab_mix2.ty	ACCEPTED	as tab_mix
+tests/reject/tuple_arity_max.ty	ACCEPTED	a ceiling (8 elements)
+tests/reject/tuple_arity_min.ty	ACCEPTED	a one-element parenthesised type parses as a grouping; the minimum is an arity rule
+tests/reject/two_stmts_one_line.ty	ACCEPTED	no newline rule, so two statements on one line are two statements
+tests/reject/typeset_badtp.ty	ACCEPTED	`where Q: ...` parses; whether `Q` is a type parameter needs the signature's scope
+tests/reject/upper_bind_local_used.ty	ACCEPTED	the grammar's identifier rule has no case classes, so `Ok` binds like any name
+tests/reject/upper_bind_param_used.ty	ACCEPTED	as upper_bind_local_used, in parameter position
+tests/reject/value_arm_no_tail.ty	ACCEPTED	a match arm ending in a statement parses; "must end in a value" needs the arm's position
+tests/reject/variadic_not_last.ty	ACCEPTED	the parameter list parses in any order; "last" is a positional rule tychoc enforces
+tests/reject/variant_payload_max.ty	ACCEPTED	a ceiling (8 payload fields)
+tests/reject/where_bad_tp.ty	ACCEPTED	as typeset_badtp -- the name resolves, or does not, outside the grammar
+tests/reject/where_constraint_max.ty	ACCEPTED	a ceiling (8 constraints)
+tests/reject/where_nongeneric.ty	ACCEPTED	a `where` clause parses on any signature; requiring a `$T` is a signature rule
+tests/reject/where_typeset_max.ty	ACCEPTED	a ceiling (16 types in a type set)
+tests/reject/where_unknown_pred.ty	ACCEPTED	the predicate name is an identifier to the grammar; the five legal names are tychoc's
