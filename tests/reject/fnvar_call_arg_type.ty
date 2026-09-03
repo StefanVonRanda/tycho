@@ -1,0 +1,8 @@
+# src/tychoc.c:6589 -- the argument types of a call through a fn-typed local.
+# expect: argument 2 to 'f' must be int
+fn add(a: int, b: int) -> int:
+    return a + b
+
+fn main():
+    f := add
+    println(str(f(1, "x")))

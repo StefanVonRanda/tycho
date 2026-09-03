@@ -1,0 +1,5 @@
+# src/tychoc.c:6187 -- and the first pair fixes the value type too.
+# expect: map values must all have the same type
+fn main():
+    m := ["a": 1, "b": "x"]
+    println(str(len(m)))

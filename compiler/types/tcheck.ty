@@ -73,6 +73,16 @@ fn _is_arr(t: string) -> bool:
     h := _head(t)
     return h == "arr" or h == "fix" or h == "bnd"
 
+# The shapes `x[i]` and `x[a:b]` can never name: a scalar, or a wrapper with no
+# element. A named struct is DELIBERATELY absent -- `g[r, c]` on one is a
+# declared `subscript` (tools/tycho-grid), not this rule.
+fn _unindexable(t: string) -> bool:
+    h := _head(t)
+    if h == "opt" or h == "res" or h == "chan" or h == "task" or h == "fun" or h == "tup":
+        return true
+    return t == "bool" or t == "float" or t == "f32" or t == "char" or
+        t == "ptr" or t == "void" or _is_int(t)
+
 fn _is_int(t: string) -> bool:
     return t == "int" or t == "u8" or t == "u16" or t == "u32" or t == "u64" or
         t == "i8" or t == "i16" or t == "i32" or t == "i64"
@@ -894,6 +904,17 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
                 _cerr(&cs, "'" + n + "' is generic, so it has no single function value -- there is no instantiation to take. Wrap it in a lambda that fixes the types")
                 return "?"
             if si >= 0:
+                # src/tychoc.c:6140-6143 -- the shape rules for a fn VALUE. A
+                # builtin has no Tycho signature to take, so it is left alone.
+                if not cs.sg[si].builtin:
+                    if len(cs.sg[si].ptypes) > 8:
+                        cs.line = l
+                        _cerr(&cs, "a function value supports at most 8 parameters")
+                    for fl in cs.sg[si].pflags:
+                        if fl == "inout":
+                            cs.line = l
+                            _cerr(&cs, "'" + n + "' has an inout parameter, so it can't be a function value")
+                            break
                 return _sigtype(cs.sg[si])
             return "?"
         ast.Field(l, k, f):
@@ -923,6 +944,9 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
         ast.TupIdx(l, k, i):
             rt := _base(&cs, _ex(&cs, k[0]))
             if _head(rt) != "tup":
+                if known(rt):                      # src/tychoc.c:6073
+                    cs.line = l
+                    _cerr(&cs, "tuple index ." + str(i) + " on a non-tuple value (" + _show(&cs, rt) + ")")
                 return "?"
             els := _targs(rt)
             if i >= len(els):
@@ -952,12 +976,42 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
             if _is_arr(rt) or h == "soa":
                 _tnote(&cs, "x:" + _elem_of(&cs, rt))
                 return _elem_of(&cs, rt)
+            # src/tychoc.c:6262. Scored only for the shapes that CANNOT carry a
+            # `subscript` -- a scalar or a wrapper. A named struct is left alone
+            # because `g[r, c]` on one is a declared subscript, not this rule.
+            if _unindexable(rt):
+                cs.line = l
+                _cerr(&cs, "can only index an array, a string, bytes, or a map (as a place)")
             return "?"
         ast.Slice(l, a, b, k):
+            # ast.Slice carries has_lo/has_hi, then recv, lo, hi in that order --
+            # so which of k[1]/k[2] is the START depends on the two flags.
             rt := _ex(&cs, k[0])
-            for i := 1; i < len(k); i += 1:
-                _ex(&cs, k[i])
-            return _base(&cs, rt)
+            ki := 1
+            if a:
+                lt := _ex(&cs, k[ki])
+                if known(lt) and lt != "int":      # src/tychoc.c:6272
+                    cs.line = l
+                    _cerr(&cs, "slice start must be int")
+                ki += 1
+            if b:
+                ht := _ex(&cs, k[ki])
+                if known(ht) and ht != "int":      # src/tychoc.c:6274
+                    cs.line = l
+                    _cerr(&cs, "slice end must be int")
+                ki += 1
+            for ki < len(k):
+                _ex(&cs, k[ki])
+                ki += 1
+            sb := _base(&cs, rt)
+            if _head(sb) == "bnd":                 # src/tychoc.c:6278
+                cs.line = l
+                _cerr(&cs, "cannot slice a bounded[...] value; copy it into a [" +
+                    _show(&cs, _elem_of(&cs, sb)) + "] first")
+            elif _unindexable(sb) or _head(sb) == "map":   # src/tychoc.c:6280
+                cs.line = l
+                _cerr(&cs, "can only slice an array, soa, a string, or bytes")
+            return sb
         ast.Call(l, q, n, ts, args):
             ct := _call(&cs, l, q, n, ts, args, want)
             _tnote(&cs, "c:" + ct)
@@ -968,10 +1022,20 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
                 cs.line = l
                 _cerr(&cs, "this value has type " + cvt + ", not a procedure -- it cannot be called")
             ct := _base(&cs, _ex(&cs, k[0]))
+            # fun(R,P...) keeps the RETURN first, so the parameters start at 1.
+            ps := _targs(ct)
+            if _head(ct) == "fun" and len(k) - 1 != len(ps) - 1:   # src/tychoc.c:6571
+                cs.line = l
+                _cerr(&cs, "this function value expects " + str(len(ps) - 1) +
+                    " argument(s), got " + str(len(k) - 1))
             keep := cs.in_arg
             cs.in_arg = true
             for i := 1; i < len(k); i += 1:
-                _ex(&cs, k[i])
+                at_ := _ex(&cs, k[i])
+                if _head(ct) == "fun" and i < len(ps) and known(at_) and known(ps[i]) and
+                        not compat(at_, ps[i]):                    # src/tychoc.c:6576
+                    cs.line = l
+                    _cerr(&cs, "argument " + str(i) + " must be " + _show(&cs, ps[i]))
             cs.in_arg = keep
             if _head(ct) == "fun":
                 return _targs(ct)[0]
@@ -1055,6 +1119,13 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
                 t := _ex2(&cs, k[i], ew)
                 if t == "void":
                     _cerr(&cs, "an array element cannot be void -- this element produces no value (a call to a procedure that returns nothing?)")
+                elif i == 0 and ew == "?" and (k[i] is ast.NoneE):
+                    # src/tychoc.c:6201. Only with NO expected element type: an
+                    # annotated `[Option(int)]` destination accepts a leading
+                    # None, measured against ./tychoc 2026-09-03.
+                    cs.line = l
+                    _cerr(&cs, "cannot infer the array's element type from None — put a Some(...) first")
+                    return "?"
                 elif et == "?":
                     et = t
                 elif not compat(t, et):
@@ -1074,8 +1145,16 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
                 b := _ex(&cs, k[i + 1])
                 if kt == "?":
                     kt = a
+                elif known(a) and not compat(a, kt):     # src/tychoc.c:6185
+                    cs.line = l
+                    _cerr(&cs, "map keys must all have the same type")
+                    return "?"
                 if vt == "?":
                     vt = b
+                elif known(b) and not compat(b, vt):     # src/tychoc.c:6187
+                    cs.line = l
+                    _cerr(&cs, "map values must all have the same type")
+                    return "?"
             _nest_aff_e(&cs, vt)
             return "map(" + kt + "," + vt + ")"
         ast.EmptyArr(l, t):
@@ -1100,6 +1179,9 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
                 return "?"
             return "soa(" + _enc(&cs, t[0]) + ")"
         ast.Tuple(l, k):
+            if len(k) < 2:                         # src/tychoc.c:6058 -- `(x,)`
+                cs.line = l
+                _cerr(&cs, "a tuple needs at least two elements")
             out := "tup("
             ws := _targs(_base(&cs, want))
             for i := 0; i < len(k); i += 1:
@@ -1107,6 +1189,9 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
                 if _head(_base(&cs, want)) == "tup" and i < len(ws):
                     w = ws[i]
                 et_ := _ex2(&cs, k[i], w)
+                if et_ == "void":                  # src/tychoc.c:6064
+                    cs.line = l
+                    _cerr(&cs, "tuple element " + str(i + 1) + " needs a concrete value")
                 _nest_aff_e(&cs, et_)
                 if i > 0:
                     out = out + ","
@@ -1117,6 +1202,9 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
             if _head(_base(&cs, want)) == "opt":
                 w = _targs(_base(&cs, want))[0]
             it_ := _ex2(&cs, k[0], w)
+            if it_ == "void":                      # src/tychoc.c:6046
+                cs.line = l
+                _cerr(&cs, "Some(...) needs a concrete value")
             _nest_aff_e(&cs, it_)
             return "opt(" + it_ + ")"
         ast.NoneE(l):
@@ -1151,11 +1239,32 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
                 rt = _ex(&cs, k[0])
             return "task(" + rt + ")"
         ast.OrRet(l, k):
+            # src/tychoc.c:6078-6094, leg for leg. Every one is guarded on the
+            # types being KNOWN: an unresolved return type is `?` here.
             t := _base(&cs, _ex(&cs, k[0]))
-            if _head(t) == "res":
-                return _targs(t)[0]
+            rb := _base(&cs, cs.ret)
             if _head(t) == "opt":
+                if known(cs.ret) and _head(rb) != "opt":
+                    cs.line = l
+                    _cerr(&cs, "or_return on an Option requires the enclosing function to return " +
+                        "an Option, but it returns " + _show(&cs, cs.ret))
                 return _targs(t)[0]
+            if _head(t) == "res":
+                if known(cs.ret) and _head(rb) != "res":
+                    cs.line = l
+                    _cerr(&cs, "or_return requires the enclosing function to return a Result, " +
+                        "but it returns " + _show(&cs, cs.ret))
+                elif _head(rb) == "res":
+                    ge := _targs(t)[1]
+                    fe := _targs(rb)[1]
+                    if known(ge) and known(fe) and not compat(ge, fe):
+                        cs.line = l
+                        _cerr(&cs, "or_return propagates a " + _show(&cs, ge) +
+                            " error, but the function's error type is " + _show(&cs, fe))
+                return _targs(t)[0]
+            if known(t):
+                cs.line = l
+                _cerr(&cs, "or_return applies to a Result or Option value, got " + _show(&cs, t))
             return "?"
         ast.Spread(l, k): return _ex(&cs, k[0])
         ast.Addr(l, k):
@@ -1615,6 +1724,26 @@ fn _call(cs: inout C, l: int, q: string, n: string, ts: [ast.Ty], args: [ast.Exp
         cs.line = l
         _cerr(&cs, "'" + n + "' has type " + vt + ", not a procedure -- it cannot be called")
         return "?"
+    if len(vt) > 0 and _head(_base(&cs, vt)) == "fun":
+        # src/tychoc.c:6581-6591. A local of fn type shadows every top-level
+        # name, exactly as vars_find runs before sig_find there.
+        fps := _targs(_base(&cs, vt))
+        if len(args) != len(fps) - 1:                              # src/tychoc.c:6584
+            _walk_args(&cs, args)
+            cs.line = l
+            _cerr(&cs, "'" + n + "' expects " + str(len(fps) - 1) +
+                " argument(s), got " + str(len(args)))
+            return fps[0]
+        fkeep := cs.in_arg
+        cs.in_arg = true
+        for i := 0; i < len(args); i += 1:
+            fat := _ex(&cs, args[i])
+            if known(fat) and known(fps[i + 1]) and not compat(fat, fps[i + 1]):
+                cs.line = l                                        # src/tychoc.c:6589
+                _cerr(&cs, "argument " + str(i + 1) + " to '" + n + "' must be " +
+                    _show(&cs, fps[i + 1]))
+        cs.in_arg = fkeep
+        return fps[0]
     if len(cs.prefix) > 0:
         m := cs.prefix + n
         if _sigidx(&cs, m) >= 0 or m in cs.tindex or m in cs.vowner:

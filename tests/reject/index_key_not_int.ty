@@ -1,0 +1,6 @@
+# src/tychoc.c:6247 -- a positional index is exactly int, so a string subscript
+# on an ARRAY is not a map lookup by another spelling.
+# expect: index must be int
+fn main():
+    xs := [1, 2, 3]
+    println(str(xs["a"]))

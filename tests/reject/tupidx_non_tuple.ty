@@ -1,0 +1,6 @@
+# src/tychoc.c:6073 -- `.0` on something that is not a tuple. The near miss of
+# tests/reject/tuple_index.ty, which indexes a tuple the array way.
+# expect: tuple index .0 on a non-tuple value (int)
+fn main():
+    x := 5
+    println(str(x.0))

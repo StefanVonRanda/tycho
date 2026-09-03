@@ -68,9 +68,11 @@ corpus_census() {
     # 25 R21f added for the builtin-call block at src/tychoc.c:6774-6997, plus all
     # 21 R21f-2 added for src/tychoc.c:7004-7598, plus all 11 R21f-3 added for
     # the parallel-for block and the 9k/12k tail, plus all 27 R21f-4 added for the
-    # 8k match/destructuring/select block and the three infinite-type arms.
-    # The other 3 carry none on purpose: this lane scores the expectation against
-    # ./tychoc1, and on those two rules the two compilers word it differently, so an
+    # 8k match/destructuring/select block and the three infinite-type arms,
+    # plus 23 of the 24 R21f-5 added for the 6k expression block
+    # (src/tychoc.c:6046-6589).
+    # The other 4 carry none on purpose: this lane scores the expectation against
+    # ./tychoc1, and on those rules the two compilers word it differently, so an
     # `# expect:` here could only assert one of the two. Each says so in its header.
     cc_exp=0
     for cc_e in $G_reject; do
@@ -78,7 +80,7 @@ corpus_census() {
         grep -q '^# expect: ' "$cc_e" && cc_exp=$((cc_exp + 1))
     done
     [ "$cc_show" = print ] && printf 'count %-10s %d\n' reject-expect "$cc_exp"
-    [ "$cc_exp" -eq 209 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=209"
+    [ "$cc_exp" -eq 232 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=232"
 
     cc_dirs=0
     for cc_d in $(git ls-files tests 2>/dev/null | grep '\.ty$' | sed 's|/[^/]*$||' | sort -u); do

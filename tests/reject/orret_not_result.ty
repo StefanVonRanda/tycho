@@ -1,0 +1,9 @@
+# src/tychoc.c:6087 -- or_return unwraps a Result or an Option and nothing else.
+# expect: or_return applies to a Result or Option value, got int
+fn f() -> Result(int, string):
+    x := 5
+    v := x or_return
+    return Ok(v)
+
+fn main():
+    println("x")

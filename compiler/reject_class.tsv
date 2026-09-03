@@ -34,6 +34,7 @@ tests/reject/affine_task_infer_arr.ty	SEMANTIC	0	a task handle cannot be stored 
 tests/reject/affine_task_written_type.ty	TYPE	2675	unknown type 'Task'
 tests/reject/and_needs_bool.ty	SEMANTIC	7299	`and` needs bool operands
 tests/reject/arr_elem_void.ty	TYPE	6199	an array element cannot be void -- this element produces no value (a call to a procedure that returns nothing?)
+tests/reject/arr_lit_none_first.ty	SEMANTIC	6201	cannot infer the array's element type from None — put a Some(...) first
 tests/reject/array_arith_fixlen.ty	TYPE	7425	element-wise `*` on a fixed array requires the same static length (got [3]int and [2]int)
 tests/reject/assign_to_literal.ty	SYNTAX	4180	cannot assign to this expression
 tests/reject/assign_unknown_plain.ty	NAME	8447	assignment to unknown variable 'zzqqww' (use ':=' to declare)
@@ -65,6 +66,7 @@ tests/reject/builtin_arity_too_many.ty	TYPE	6914	len(...) takes one argument
 tests/reject/builtin_arity_zero_args.ty	TYPE	7012	pop(arr) takes one argument
 tests/reject/bytes_concat_int.ty	TYPE	7367	cannot concatenate bytes with int -- to_bytes(x) to widen, or to_str(b) to work in strings
 tests/reject/bytes_no_arith.ty	SEMANTIC	7526	bytes has no arithmetic (got bytes, bytes) -- bytes supports `a + b` and `b + 'c'` (concat), `b[i]` (the byte value, an int) and `b[i:j]` (a sub-buffer); for anything else use to_str(b)
+tests/reject/call_value_not_fn.ty	SEMANTIC	6569	calling a value that isn't a function (int)
 tests/reject/chan_capture.ty	SEMANTIC	6009	a closure cannot capture a channel handle -- take it as a parameter instead
 tests/reject/chan_in_container.ty	SEMANTIC	6786	a channel must be created directly in a declaration: ch := channel(T, cap)
 tests/reject/chan_inout_param.ty	SEMANTIC	4354	'ch' is inout, which an affine type cannot be -- it has one owner and is freed at that scope's exit, so there is nothing to consume or copy back. Pass it plainly: that is already a borrow
@@ -165,6 +167,12 @@ tests/reject/fn_eq.ty	TYPE	7336	functions are not comparable -- closures have no
 tests/reject/fn_named_ok.ty	NAME	4318	'Ok' is already defined
 tests/reject/fnty_arity.ty	SYNTAX	2438	a function type has at most 8 parameters
 tests/reject/fnval_local_generic.ty	SEMANTIC	6158	'mymin' is generic, so it has no single function value -- there is no instantiation to take. Wrap it in a lambda that fixes the types, e.g. fn(a: int, b: int) -> int: mymin(a, b)
+tests/reject/fnvalue_call_arg_type.ty	SEMANTIC	6576	argument 2 must be int
+tests/reject/fnvalue_call_arity.ty	SEMANTIC	6571	this function value expects 2 argument(s), got 1
+tests/reject/fnvalue_inout_param.ty	SEMANTIC	6143	'bump' has an inout parameter, so it can't be a function value
+tests/reject/fnvalue_param_max.ty	SEMANTIC	6141	a function value supports at most 8 parameters
+tests/reject/fnvar_call_arg_type.ty	SEMANTIC	6589	argument 2 to 'f' must be int
+tests/reject/fnvar_call_arity.ty	SEMANTIC	6584	'f' expects 2 argument(s), got 1
 tests/reject/for3_empty_clause.ty	SYNTAX	3975	the init clause is required -- write `for:` for an infinite loop
 tests/reject/for3_empty_cond.ty	SYNTAX	3977	the condition clause is required -- write `for:` for an infinite loop
 tests/reject/for3_empty_post.ty	SYNTAX	3979	the post clause is required -- write `for cond:` for a loop that advances in its body
@@ -214,6 +222,8 @@ tests/reject/in_string.ty	TYPE	7304	`in` tests membership in a map; the right op
 tests/reject/in_wrong_key.ty	TYPE	7306	`in` key must be string
 tests/reject/indent_inconsistent.ty	SYNTAX	591	inconsistent indentation
 tests/reject/index_elem_type.ty	TYPE	8823	cannot assign string to a int element
+tests/reject/index_key_not_int.ty	SEMANTIC	6247	index must be int
+tests/reject/index_not_indexable.ty	SEMANTIC	6262	can only index an array, a string, bytes, or a map (as a place)
 tests/reject/infer_bare_empty.ty	SEMANTIC	8909	could not infer the type of 'xs' -- no grounding use in its block (annotate: xs : [T] = [] / Option(T) = None)
 tests/reject/infer_lambda_param.ty	SEMANTIC	5996	lambda parameter 'x' needs a type here -- no expected fn type supplies it (annotate: fn(x: T))
 tests/reject/infer_use_before_ground.ty	SEMANTIC	6108	'xs' is used before its type can be inferred -- assign/push/pass it first, or annotate the declaration
@@ -248,6 +258,8 @@ tests/reject/map_for_in.ty	TYPE	6223	a map is not directly iterable -- `for k in
 tests/reject/map_get_removed.ty	SYNTAX	3044	map_get was removed; use `m.get(k, default)`
 tests/reject/map_has_removed.ty	SYNTAX	3042	map_has was removed; use `k in m`
 tests/reject/map_key_wrong_read.ty	TYPE	6224	map key must be Slot, got int
+tests/reject/map_lit_key_types.ty	SEMANTIC	6185	map keys must all have the same type
+tests/reject/map_lit_value_types.ty	SEMANTIC	6187	map values must all have the same type
 tests/reject/map_set_removed.ty	SYNTAX	3041	map_set was removed; use `m[k] = v`
 tests/reject/map_type_as_value.ty	SYNTAX	2878	`[string: int]` is the TYPE, not a value -- for an empty map write `[]string: int`, or annotate the declaration: `m : [string: int] = []`
 tests/reject/map_value_type.ty	TYPE	8815	cannot assign string to a int map value
@@ -319,6 +331,10 @@ tests/reject/not_needs_bool.ty	SEMANTIC	7258	`not` needs a bool operand
 tests/reject/ok_empty_nonvoid.ty	TYPE	7643	declared type Result(int, string) but value is Ok(); Ok() is only a Result(void, E)
 tests/reject/option_void.ty	TYPE	2559	'void' is a type only as a Result's ok payload, as in Result(void, string)
 tests/reject/optres_is_wrong_family.ty	TYPE	7282	'Some' is not a variant of Result(int, string); write `Ok` or `Err`
+tests/reject/orret_err_type.ty	SEMANTIC	6092	or_return propagates a string error, but the function's error type is int
+tests/reject/orret_not_result.ty	SEMANTIC	6087	or_return applies to a Result or Option value, got int
+tests/reject/orret_option_fn.ty	SEMANTIC	6082	or_return on an Option requires the enclosing function to return an Option, but it returns int
+tests/reject/orret_result_fn.ty	SEMANTIC	6089	or_return requires the enclosing function to return a Result, but it returns int
 tests/reject/orreturn_stmt_value.ty	TYPE	8858	`or_return` here produces int, which this statement discards -- bind it (x := ... or_return)
 tests/reject/over_indent.ty	SYNTAX	3084	unexpected indentation: this line is indented further than the block it belongs to, and nothing above it opens a new block
 tests/reject/parallel_for_assign_unknown.ty	NAME	7850	assignment to unknown variable 'zzqq'
@@ -383,7 +399,12 @@ tests/reject/sink_consume_mentions.ty	SEMANTIC	10220	'w' is consumed by a `sink`
 tests/reject/sink_consume_param.ty	SEMANTIC	10211	'ys' is a `sink` parameter and cannot be handed to another `sink` parameter: a parameter's buffer is never adopted, however it was declared. Copy it first (`y := ys`) and consume `y`
 tests/reject/sink_use_after.ty	SEMANTIC	10220	'b' is consumed by a `sink` parameter but is mentioned 2 times in this function: a sink argument must be the variable's ONLY mention. One textual mention is how the compiler proves the consume is the last use on every path, with no dataflow analysis -- so `len(b)`, `b[0]`, `b[0] = ...` and passing `b` anywhere else all disqualify it, even before this line. Copy it first (`y := b`) and consume `y`
 tests/reject/sized_conv_string.ty	TYPE	6875	to_u8(x) takes a numeric value
+tests/reject/slice_bounded_value.ty	SEMANTIC	6278	cannot slice a bounded[...] value; copy it into a [int] first
+tests/reject/slice_end_not_int.ty	SEMANTIC	6274	slice end must be int
 tests/reject/slice_inout_alias.ty	SEMANTIC	7249	cannot pass a slice of 'a' and an inout of 'a' in one call (the inout may reallocate the buffer the slice views)
+tests/reject/slice_not_sliceable.ty	SEMANTIC	6280	can only slice an array, soa, a string, or bytes
+tests/reject/slice_start_not_int.ty	SEMANTIC	6272	slice start must be int
+tests/reject/some_needs_value.ty	SEMANTIC	6046	Some(...) needs a concrete value
 tests/reject/spawn_not_a_call.ty	SYNTAX	2956	spawn requires a direct call: spawn f(args)
 tests/reject/str_as_type.ty	TYPE	2675	unknown type 'str'
 tests/reject/str_index_assign.ty	TYPE	8820	cannot index-assign an element of string (it is immutable)
@@ -428,11 +449,14 @@ tests/reject/to_str_two_args.ty	SEMANTIC	6879	to_str(x) takes one argument
 tests/reject/to_u8_two_args.ty	SEMANTIC	6872	to_u8(x) takes one argument
 tests/reject/to_under_not_newtype.ty	SEMANTIC	6909	to_under(x) takes a newtype value, got int
 tests/reject/to_under_two_args.ty	SEMANTIC	6906	to_under(x) takes one argument
+tests/reject/tupidx_non_tuple.ty	SEMANTIC	6073	tuple index .0 on a non-tuple value (int)
 tests/reject/tuple_arity_max.ty	SYNTAX	2454	a tuple has at most 8 elements
 tests/reject/tuple_arity_min.ty	SYNTAX	2459	a tuple type needs at least two elements; parentheses do not group a type, so write it bare
 tests/reject/tuple_elem_index_assign.ty	TYPE	8789	can only index-assign an array or map variable or field
 tests/reject/tuple_index.ty	TYPE	6260	a tuple element is named `.0`, `.1`, ... not `[i]` -- the index must be a constant position, so it is not a subscript
 tests/reject/tuple_index_range.ty	TYPE	6075	tuple index 10 out of range (the tuple has 2 elements)
+tests/reject/tuple_lit_arity_min.ty	SEMANTIC	6058	a tuple needs at least two elements
+tests/reject/tuple_lit_elem_void.ty	SEMANTIC	6064	tuple element 2 needs a concrete value
 tests/reject/two_stmts_one_line.ty	SYNTAX	2077	expected newline
 tests/reject/type_forward_unknown.ty	TYPE	2674	unknown type 'Q'; did you mean 'S'?
 tests/reject/type_mismatch.ty	TYPE	7185	argument 1 of 'print' is int, expected string -- wrap it with str(...), e.g. print(str(x))

@@ -1,0 +1,7 @@
+# src/tychoc.c:6274 -- the twin of slice_start_not_int.ty, scored separately
+# because the two bounds are two checks.
+# expect: slice end must be int
+fn main():
+    xs := [1, 2, 3]
+    ys := xs[0:"b"]
+    println(str(len(ys)))
