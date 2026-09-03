@@ -88,6 +88,10 @@ check-links:
 	@sh scripts/check_links.sh
 	@python3 scripts/check_citations.py --selfcheck
 	@python3 scripts/check_citations.py
+# reanchor_citations.py is the tool that MAINTAINS the refs check_citations.py
+# scores, so its selfcheck belongs in the same lane. It ran only when somebody
+# typed it; script-check merely parses the file.
+	@python3 scripts/reanchor_citations.py --selfcheck
 
 WIKI_DIR ?= .wiki
 WIKI_REMOTE ?= https://github.com/StefanVonRanda/tycho.wiki.git

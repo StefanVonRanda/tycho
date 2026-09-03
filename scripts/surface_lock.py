@@ -10,13 +10,22 @@ Three surfaces, two policies:
 
   keywords  (src/tychoc.c's lexer)          FROZEN HARD -- no additions, no removals
   builtins  (docs/reference/builtins.md)    FROZEN HARD -- same
-  corelib   (every exported `fn` in corelib/) ADDITIONS ALLOWED; a removal or a
-            CHANGED SIGNATURE reddens, because that is what breaks a program
-            somebody already wrote
+  corelib   (every exported `fn` in corelib/) ADDITIONS ALLOWED but RECORDED; a
+            removal or a CHANGED SIGNATURE reddens, because that is what breaks
+            a program somebody already wrote
 
 Adding a keyword or a builtin is then a two-part act: the code, plus a visible
 `--record` diff to surface.lock that a reviewer can refuse. That is the whole
 point -- not to make it impossible, but to make it impossible by ACCIDENT.
+
+An unrecorded corelib addition reddens too, since 2026-09-03. Until then it
+printed a `note` line attached to no verdict, so the lock never grew and the
+notes accumulated: 22 functions across http/httpd/io/json/markdown/path/raster/
+strings/toml had arrived under a green lane, each in a real fix or perf commit
+but none through the deliberate step this file exists to force. A permanently
+green count of "22 addition(s) allowed" is exactly the shape R14 was about --
+a verdict that describes work nobody did. The addition is still ALLOWED (it is
+not a violation, and the message says so); it just has to be recorded.
 
     python3 scripts/surface_lock.py             # check
     python3 scripts/surface_lock.py --record    # re-lock, deliberately
@@ -108,6 +117,16 @@ def compare(old, new):
     return bad, added
 
 
+def rc(bad, added):
+    """The verdict. An unrecorded addition fails too -- it is not a violation of
+    the freeze, but leaving it green is what let 22 of them pile up unreviewed."""
+    return 1 if (bad or added) else 0
+
+
+def verdict(bad, added):
+    return "FAILED" if bad else ("UNRECORDED" if added else "ok")
+
+
 SELF_OLD = {
     "keywords": ["fn", "match"],
     "builtins": ["len", "str"],
@@ -131,6 +150,11 @@ def selfcheck():
     new = dict(SELF_OLD, corelib=dict(SELF_OLD["corelib"], io_new="()"))
     leg("[3] a NEW corelib fn is ALLOWED", compare(SELF_OLD, new)[0], [])
     leg("[3b] and is reported", len(compare(SELF_OLD, new)[1]), 1)
+    # [3c] is the leg R13c added: [3] and [3b] both passed for as long as an
+    # addition was a note attached to no verdict, so neither could tell an
+    # allowed addition from an unreviewed one.
+    leg("[3c] an UNRECORDED addition still fails the verdict", rc(*compare(SELF_OLD, new)), 1)
+    leg("[3d] and is not called a violation", verdict(*compare(SELF_OLD, new)), "UNRECORDED")
     c = dict(SELF_OLD["corelib"])
     c["io.read"] = "(p: string, n: int)-> string"
     leg("[4] a CHANGED corelib signature reddens", len(compare(SELF_OLD, dict(SELF_OLD, corelib=c))[0]), 1)
@@ -138,6 +162,7 @@ def selfcheck():
     del c["io.write"]
     leg("[5] a REMOVED corelib fn reddens", len(compare(SELF_OLD, dict(SELF_OLD, corelib=c))[0]), 1)
     leg("[6] an unchanged surface is clean", compare(SELF_OLD, SELF_OLD), ([], []))
+    leg("[6b] and passes the verdict", rc(*compare(SELF_OLD, SELF_OLD)), 0)
     # The live extractors must find something, or every leg above is vacuous
     # against an empty set -- a lock of nothing matches anything.
     leg("[7] the keyword extractor finds keywords", len(keywords()) > 10, True)
@@ -170,14 +195,17 @@ def main():
         return 2
     bad, added = compare(json.load(open(LOCK)), new)
     for line in added:
-        print("note   %s" % line)
+        print("UNRECORDED %s" % line)
     for line in bad:
         print("FROZEN %s" % line)
     print("surface lock: %s (%d keywords, %d builtins, %d corelib functions; "
-          "%d addition(s) allowed, %d violation(s))"
-          % ("FAILED" if bad else "ok", len(new["keywords"]), len(new["builtins"]),
+          "%d unrecorded addition(s), %d violation(s))"
+          % (verdict(bad, added), len(new["keywords"]), len(new["builtins"]),
              len(new["corelib"]), len(added), len(bad)))
-    return 1 if bad else 0
+    if added and not bad:
+        print("  an addition is allowed, but not silently: read the list above, "
+              "then `python3 scripts/surface_lock.py --record` in the same commit")
+    return rc(bad, added)
 
 
 if __name__ == "__main__":

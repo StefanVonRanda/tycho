@@ -3,6 +3,12 @@ set -eu
 cd "$(dirname "$0")/.."
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
+# Each control is a PATCHED COPY of the shim in "$T/<name>/", and the shim opens
+# with #include "../tycho.h" -- resolved against the copy's own directory, so it
+# looks here. Without this line both controls fail to BUILD: [2] took the skip
+# branch and printed a green verdict claiming it had run, and [3] read the build
+# failure as "the control disagreed" and passed on a control that never ran.
+cp corelib/tycho.h "$T/tycho.h"
 
 cat > "$T/p.c" <<'EOF'
 #define _GNU_SOURCE
@@ -121,7 +127,10 @@ sed 's|unsigned x = ((c \| 0x20u) - .a.) & 0xFFu;|unsigned x = ((c \| 0x20u) - 0
     corelib/crypto/crypto_shim.c > "$T/mask/crypto_shim.c"
 grep -q "0x61u);" "$T/mask/crypto_shim.c" || {
     echo "crypto-hygiene: FAIL -- the [3] control patch did not apply"; exit 1; }
-if cc -O1 -I "$T/mask" -o "$T/em" "$T/e.c" -lcrypto 2>/dev/null && "$T/em" >/dev/null 2>&1; then
+cc -O1 -I "$T/mask" -o "$T/em" "$T/e.c" -lcrypto 2>"$T/mask.log" || {
+    echo "crypto-hygiene: FAILED -- the [3] control does not BUILD, so it cannot disagree"
+    head -3 "$T/mask.log"; exit 1; }
+if "$T/em" >/dev/null 2>&1; then
     echo "CONTROL DEAD: a decode with the &0xFF mask removed compared EQUAL to the"
     echo "              original, so [3] would pass on a broken classifier."
     exit 1
@@ -130,6 +139,7 @@ cc -O1 -I corelib/crypto -o "$T/e" "$T/e.c" -lcrypto 2>/dev/null || {
     echo "crypto-hygiene: FAILED (the equivalence probe does not build)"; exit 1; }
 "$T/e" || { echo "crypto-hygiene: FAIL"; exit 1; }
 
+ct_claim=""
 if command -v valgrind >/dev/null 2>&1 && [ -f /usr/include/valgrind/memcheck.h ]; then
     cat > "$T/ct.c" <<'EOF'
 #include <valgrind/memcheck.h>
@@ -158,13 +168,14 @@ EOF
         echo "crypto-hygiene: FAIL -- the control patch did not apply, so [2] would prove nothing"; exit 1; }
 
     ct_run() {   # $1 = include dir; echoes the number of reported leaks
-        cc -O1 -g -I "$1" -o "$T/ct" "$T/ct.c" -lcrypto 2>/dev/null || { echo skip; return; }
+        cc -O1 -g -I "$1" -o "$T/ct" "$T/ct.c" -lcrypto 2>"$T/ct.cc.log" || { echo skip; return; }
         valgrind -q --suppressions="$T/sup" "$T/ct" >/dev/null 2>"$T/ct.err"
         grep -c uninitialised "$T/ct.err" || true
     }
     ctl=$(ct_run "$T/ctl")
     if [ "$ctl" = skip ]; then
         echo "crypto-hygiene: SKIPPED [2] (cannot build the ctgrind probe)"
+        head -3 "$T/ct.cc.log"
     elif [ "$ctl" -lt 1 ]; then
         echo "CONTROL DEAD: a branching digit decode was reported clean -- the"
         echo "              suppressions are hiding the subject, so [2] proves nothing."
@@ -177,8 +188,11 @@ EOF
             echo "crypto-hygiene: FAIL"; exit 1
         fi
         echo "  hexdec: 0 secret-dependent branches (the branching control scored $ctl)"
+        ct_claim="; and under memcheck the key-import hex decode has no branch derived from the secret, with only the input length and the one well-formedness bit declassified, against a branching control that does redden"
     fi
 else
     echo "crypto-hygiene: SKIPPED [2] (no valgrind or no memcheck.h)"
 fi
-echo "crypto-hygiene: green (a control block holding the secret is found and a cleansed one is not, then neither aead_encrypt nor aead_decrypt releases a heap block still holding the plaintext; the branch-free hex decode classifies all 256 byte values exactly as the branching original did, against a control with a mask removed that does not; and under memcheck the key-import hex decode has no branch derived from the secret, with only the input length and the one well-formedness bit declassified, against a branching control that does redden)"
+# The verdict names only the legs that RAN: $ct_claim is set by [2]'s own else
+# branch and stays empty on either skip, so a skipped [2] cannot be claimed.
+echo "crypto-hygiene: green (a control block holding the secret is found and a cleansed one is not, then neither aead_encrypt nor aead_decrypt releases a heap block still holding the plaintext; the branch-free hex decode classifies all 256 byte values exactly as the branching original did, against a control with a mask removed that does not${ct_claim})"

@@ -42,7 +42,10 @@ on, and the thing 1.0 is actually waiting for is programs written by people who
 are not the author.
 
 Corelib may still GAIN functions — a gap like a missing `mkdir -p` is worth
-filling. It may not lose one or change a signature.
+filling. It may not lose one or change a signature. Since 2026-09-03 a gained
+function must be RECORDED in the same commit: an addition the lock has not seen
+fails the gate, because until then it printed a note attached to no verdict and
+22 of them accumulated under a permanently green lane.
 
 Lifting the freeze is deliberate: `python3 scripts/surface_lock.py --record`, and
 the diff says exactly what grew.
