@@ -150,6 +150,9 @@ make -s server-check
 step "[3d/13] make shim-check  (every corelib <pkg>_shim.c compiles standalone under -std=c11)"
 make -s shim-check
 
+step "[3d2/13] make source-bytes  (CRLF line endings and a NUL byte, both compilers, no fixture can carry them)"
+make -s source-bytes
+
 step "[3e0/13] make image-ceiling  (core:image: a 3.6 GB header from 69 bytes is refused, a real image still decodes)"
 make -s image-ceiling
 

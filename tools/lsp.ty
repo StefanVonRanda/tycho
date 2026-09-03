@@ -778,7 +778,7 @@ fn handle_definition(id: Json, uris: [string], texts: [string], syms: [string], 
 # literal text is skipped but identifiers inside each `{...}` interpolation hole
 # ARE matched (so rename/references reach `x` in f"got {x}"); `{{`/`}}` are literal
 # braces, holes nest, and a nested "..." string inside a hole is skipped verbatim.
-# A backtick raw literal (src/tychoc.c:492-568) is skipped too, and because it may
+# A backtick raw literal (src/tychoc.c:497-573) is skipped too, and because it may
 # span source lines the `inraw` flag carries the state across the line loop --
 # without it the closing lines of a multi-line raw literal would be scanned as
 # ordinary code and a rename could edit text inside the literal.
@@ -1173,7 +1173,7 @@ fn handle_inlay(id: Json, uris: [string], texts: [string], syms: [string], param
 # src/tychoc.c:262 (or_return), :181 (parallel), :182 (select).
 # The four soft ones already here are NOT drift and stay: `handle` is a hard
 # token too (src/tychoc.c:275), while `const`, `sink`, `where` and `soa` are
-# TK_IDENT matched by text in the parser (src/tychoc.c:3421, :3681, :3715,
+# TK_IDENT matched by text in the parser (src/tychoc.c:3426, :3681, :3715,
 # :1911) -- keywords to a reader, contextual to the lexer, and both grammars
 # highlight them.
 fn sem_is_keyword(w: string) -> bool:
@@ -1240,7 +1240,7 @@ fn handle_semantic_tokens(id: Json, uris: [string], texts: [string], params: Jso
                 ty = 4
             elif c >= 48 and c <= 57:                # number (digits + a decimal point)
                 # A `.` that starts a `..` pair is NOT part of the number: it opens
-                # `..<` (src/tychoc.c:705) or `...` (src/tychoc.c:601). Without this
+                # `..<` (src/tychoc.c:710) or `...` (src/tychoc.c:606). Without this
                 # guard `0..<N` painted `0..` as one number token -- the digit, and
                 # two thirds of the operator beside it, in the number colour.
                 j := i

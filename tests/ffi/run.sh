@@ -91,7 +91,7 @@ printf 'extern "x" fn f(s: inout int)\nfn main():\n    print("x")\n' > "$T/r4ok.
 if ! "$TYCHOC" "$T/r4ok.ty" --emit-c -o "$T/r4ok" >/dev/null 2>&1; then
     echo "FAIL: inout-int control rejected -- the R4 leg cannot distinguish string from int"; fail=1
 fi
-# tychoc1 does not carry this ban (src/tychoc.c:4596 has it; see plan.md R3).
+# tychoc1 does not carry this ban (src/tychoc.c:4601 has it; see plan.md R3).
 # Encoded BY NAME so a new miss reddens and a FIXED one reddens too, rather than
 # quietly widening the exemption.
 r4known=0; case "$TYCHOC" in *tychoc1) r4known=1 ;; esac

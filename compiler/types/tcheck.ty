@@ -4,8 +4,8 @@ import "core:sort"
 import "../ast"
 
 # The monomorphic type checker -- src/tychoc.c's type-resolve section
-# (src/tychoc.c:5735-9394) for the non-generic language, plus the type rules
-# parse_type enforces while a declaration is read (src/tychoc.c:2391-2645).
+# (src/tychoc.c:5740-9399) for the non-generic language, plus the type rules
+# parse_type enforces while a declaration is read (src/tychoc.c:2396-2650).
 #
 # THE ONE INVARIANT THAT MATTERS. A type is a STRING and `?` is UNKNOWN.
 # Every rule below fires only when the types it compares are KNOWN; anything
@@ -157,7 +157,7 @@ struct C:
                                        # closure's entry
     nlambda: int                       # depth inside a closure body: a channel
                                        # read from an enclosing scope here is a
-                                       # CAPTURE (src/tychoc.c:5979)
+                                       # CAPTURE (src/tychoc.c:5984)
     chan_decl: bool                    # this expression is the DIRECT rhs of a `:=`
     nmatch: int
     ment: [string: int]                # mentions of each name in the function
@@ -202,7 +202,7 @@ fn _cexcerpt(cs: inout C, file: string, line: int) -> string:
     return ""
 
 # Typo suggestions, same threshold as resolve.ty@_dym and the same source:
-# src/tychoc.c:1482@edit_dist accepts the best candidate when
+# src/tychoc.c:1487@edit_dist accepts the best candidate when
 # bestd <= (strlen(name) <= 4 ? 1 : 2).
 fn _tedit(a: string, b: string) -> int:
     la := len(a)
@@ -255,7 +255,7 @@ fn _cwarn(cs: inout C, msg: string):
 
 # A newtype is erased in lowering, so "is int, expected Cents" reads as a
 # compiler quirk until you see that Cents IS an int, declared here
-# (src/tychoc.c:7164). Emitted AFTER its error, which is the order ./tychoc
+# (src/tychoc.c:7169). Emitted AFTER its error, which is the order ./tychoc
 # flushes them in.
 fn _cnote(cs: inout C, file: string, line: int, msg: string):
     push(cs.errs, file + ":" + str(line) + ": note: " + msg + _cexcerpt(&cs, file, line))
@@ -439,7 +439,7 @@ fn _enc_noval(cs: inout C, t: ast.Ty) -> string:
     cs.void_ok = keep
     return r
 
-# `[N]T` / `bounded[N]T`: a literal, or an int `const`. src/tychoc.c:2500.
+# `[N]T` / `bounded[N]T`: a literal, or an int `const`. src/tychoc.c:2505.
 # A fixed size is compared as TEXT, so `[0xA]int` and `[10]int` must normalise
 # to the same thing or a legal program is refused (tests/int_hex.ty:17).
 fn _dec(sz: string) -> string:
@@ -941,7 +941,7 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
                 return "?"
             # Everything past the map/tuple cases indexes by position, and the
             # index is exactly `int` -- not a sized int, not a newtype over one
-            # (src/tychoc.c:6216-6217, `kt != T_INT`).
+            # (src/tychoc.c:6221-6222, `kt != T_INT`).
             if known(rt) and known(it) and it != "int":
                 cs.line = l
                 _cerr(&cs, "index must be int")
@@ -982,7 +982,7 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
         ast.Unop(l, o, k):
             t := _ex(&cs, k[0])
             cs.line = l
-            # src/tychoc.c:7226-7241, arm for arm. `~` reads the RAW type (a
+            # src/tychoc.c:7231-7246, arm for arm. `~` reads the RAW type (a
             # newtype over int is refused); `-` reads the base (`-Meters` is a
             # Meters); neither sees through a sized int to `int`.
             if o == "not":
@@ -1041,7 +1041,7 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
                 _cerr(&cs, "a fixed-size array of length " + _targs(wb)[0] + " needs " + _targs(wb)[0] + " elements, got " + str(len(k)))
                 return wb
             # bounded[N]T accepts FEWER than N (len becomes k) but never more --
-            # src/tychoc.c:7565-7569. A `$N` capacity is "?" and stays unscored.
+            # src/tychoc.c:7570-7574. A `$N` capacity is "?" and stays unscored.
             if _head(wb) == "bnd" and _capn(_targs(wb)[0]) >= 0 and len(k) > _capn(_targs(wb)[0]):
                 for x in k:
                     _ex2(&cs, x, ew)
@@ -1222,7 +1222,7 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
 
 # ---------------------------------------------------------------- operators
 #
-# src/tychoc.c:7242-7503, arm for arm. The LITERAL ADAPTATION rules matter as
+# src/tychoc.c:7247-7508, arm for arm. The LITERAL ADAPTATION rules matter as
 # much as the refusals: an int literal takes a sized/f32/float operand's type,
 # and a variable never widens -- so `f < 0` is legal and `f < n` is not, and a
 # checker that widened both would accept a program src/tychoc.c refuses (which
@@ -1257,7 +1257,7 @@ fn _binop(cs: inout C, op: string, k: [ast.Expr]) -> string:
     rt := _ex(&cs, k[1])
     cs.line = ast.line_of(k[0])
     if op == "and" or op == "or":
-        # src/tychoc.c:7266-7270 -- EXACTLY bool on both sides, no adaptation
+        # src/tychoc.c:7271-7275 -- EXACTLY bool on both sides, no adaptation
         # and no newtype: the C compares against T_BOOL, not base_of().
         if (known(lt) and lt != "bool") or (known(rt) and rt != "bool"):
             _cerr(&cs, "`" + op + "` needs bool operands")
@@ -1388,7 +1388,7 @@ fn _binop(cs: inout C, op: string, k: [ast.Expr]) -> string:
         _cerr(&cs, "arithmetic on two different newtypes: '" + _show(&cs, "@" + cs.tds[li].name) + "' and '" + _show(&cs, "@" + cs.tds[ri].name) + "' are distinct types even though both are represented as their base")
         return "?"
     # A single newtype operand used to return "?" here, which accepted
-    # `Cents(1) + 1` -- src/tychoc.c:7506 falls straight through to the generic
+    # `Cents(1) + 1` -- src/tychoc.c:7511 falls straight through to the generic
     # arithmetic error, and the same-newtype numeric pair already returned above.
     _cerr(&cs, "arithmetic requires two ints or two floats (got " + _show(&cs, lt) + ", " + _show(&cs, rt) + ") -- convert one side, e.g. to_float(x) to compute in floats, or to_int(x) in ints")
     return lt
@@ -1486,7 +1486,7 @@ fn _check_fields(cs: inout C, ti: int, args: [ast.Expr], line: int) -> string:
         for a in args:
             _ex(&cs, a)
         cs.in_arg = keep
-        # src/tychoc.c:6641-6643: once one field is named, every field is.
+        # src/tychoc.c:6646-6648: once one field is named, every field is.
         if _any_named(args) and not _all_named(args):
             cs.line = line
             _cerr(&cs, cs.tds[ti].name + ": cannot mix named and positional fields")
@@ -1573,7 +1573,7 @@ fn _call(cs: inout C, l: int, q: string, n: string, ts: [ast.Ty], args: [ast.Exp
         m := _prefix_of(&cs, q) + n
         return _call_named(&cs, l, m, n, args, want)
     # The shape-directed builtins are resolved BEFORE the Sig table, exactly as
-    # src/tychoc.c:6782-7032 sits before its sig_find at :7049 -- a user `fn len`
+    # src/tychoc.c:6787-7037 sits before its sig_find at :7049 -- a user `fn len`
     # in the entry package is registered UNMANGLED, so without this ordering the
     # bare `len(b)` inside core:strings found it and refused a program ./tychoc
     # accepts (tests/warn/pkg/corelib_mute/main.ty).
@@ -1594,7 +1594,7 @@ fn _call(cs: inout C, l: int, q: string, n: string, ts: [ast.Ty], args: [ast.Exp
     return _call_builtin(&cs, l, n, args, want)
 
 fn _call_named(cs: inout C, l: int, m: string, spelt: string, args: [ast.Expr], want: string) -> string:
-    # src/tychoc.c:6637-6639: `f(a: 1)` at anything but a struct is refused
+    # src/tychoc.c:6642-6644: `f(a: 1)` at anything but a struct is refused
     # outright; the mix rule for a struct lives in _check_fields.
     if _any_named(args):
         ti0 := -1
@@ -1618,7 +1618,7 @@ fn _call_named(cs: inout C, l: int, m: string, spelt: string, args: [ast.Expr], 
         if d.kind == "struct":
             return _check_fields(&cs, cs.tindex[m], args, l)
         if d.kind == "newtype":
-            # src/tychoc.c:6618-6624: one argument, and it must already BE the
+            # src/tychoc.c:6623-6629: one argument, and it must already BE the
             # underlying type -- Cents(1.5) does not truncate on the way in.
             un := "?"
             if len(d.ftypes) > 0:
@@ -1645,7 +1645,7 @@ fn _call_named(cs: inout C, l: int, m: string, spelt: string, args: [ast.Expr], 
 
 # ---------------------------------------------------------------- builtins
 #
-# The shape-directed half of src/tychoc.c:6782-7032: str/hash/to_*/len/keys/
+# The shape-directed half of src/tychoc.c:6787-7037: str/hash/to_*/len/keys/
 # push/pop/reserve and the map_* family bypass the fixed Sig table because their
 # answer follows the ARGUMENT's type. Everything else falls through to the Sig
 # table, which is where `'print' takes 1 argument(s), got 0` comes from.
@@ -1835,7 +1835,7 @@ fn _call_builtin(cs: inout C, l: int, n: string, args: [ast.Expr], want: string)
 
 # ---------------------------------------------------------------- match
 #
-# src/tychoc.c:8484-8684. Exhaustiveness is the half a verdict differential
+# src/tychoc.c:8489-8689. Exhaustiveness is the half a verdict differential
 # cannot get for free: a match that covers three of four variants COMPILES under
 # a checker that forgot to count, and the program then falls off the end.
 
@@ -2100,7 +2100,7 @@ fn _tblock(cs: inout C, body: [ast.Stmt]):
     _vrestore(&cs, m)
 
 # The type an if/match VALUE block produces, and the rule that its branches must
-# agree (src/tychoc.c:8316). The parser rewrote each tail into a Decl/Assign of
+# agree (src/tychoc.c:8321). The parser rewrote each tail into a Decl/Assign of
 # the same target, so the branch types are read back off those tails.
 fn _value_type(cs: inout C, body: [ast.Stmt], want: string) -> string:
     if len(body) == 0:
@@ -2313,7 +2313,7 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
             elif known(cs.ret) and cs.ret != "void":
                 cs.line = l
                 _cerr(&cs, "missing return value (proc returns " + cs.ret + ")")
-        # src/tychoc.c:12303-12306. cs.loopd was already maintained by every loop
+        # src/tychoc.c:12308-12311. cs.loopd was already maintained by every loop
         # arm below and read by nothing.
         ast.BreakS(l):
             if cs.loopd == 0:
@@ -2374,7 +2374,7 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
             _vrestore(&cs, m)
             cs.loopd = cs.loopd - 1
         ast.ForRange(l, v, bounds, b):
-            # src/tychoc.c:7981 checks the range BEFORE scanning the body, and
+            # src/tychoc.c:7986 checks the range BEFORE scanning the body, and
             # takes the type as written: a sized int and a newtype over int are
             # both refused, so this compares the raw type, not `_base`.
             for x in bounds:
@@ -2527,7 +2527,7 @@ fn _fill_decls(cs: inout C, p: Program):
             cs.skip = false
             _typarams_of(&cs, []string)
 
-# src/tychoc.c:12737 -- a struct that contains itself BY VALUE has no size. An
+# src/tychoc.c:12742 -- a struct that contains itself BY VALUE has no size. An
 # array, map or Option breaks the cycle; a tuple, a fixed array and a plain
 # field do not.
 fn _contains(cs: inout C, t: string, target: string, seen: [string: bool]) -> bool:
@@ -2635,7 +2635,7 @@ fn check_on(p: Program, syms: bool) -> C:
             cs.errbase = -1
             _vrestore(&cs, m)
             cs.ret = "?"
-    # `main`: src/tychoc.c:9354 and :9313, a whole-program rule like `no 'main'`.
+    # `main`: src/tychoc.c:9359 and :9313, a whole-program rule like `no 'main'`.
     mi := _sigidx(&cs, "main")
     if mi >= 0:
         cs.file = cs.sg[mi].file

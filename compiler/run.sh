@@ -5,6 +5,8 @@
 # wrong-tree class, and it is the reason this lane is not two `wc -l`s:
 #
 #   [1]  every tests/*.ty that ./tychoc accepts must parse       277/277
+#   [0]  the classifier table's own citations: every src/tychoc.c line it names
+#        must still hold the diagnostic it was classified by.
 #   [1b] every corelib/**.ty must parse                           91/91
 #   [2]  tests/reject/, SPLIT by the committed classifier table:
 #        a SYNTAX rejection must be rejected, a SEMANTIC one must be ACCEPTED.
@@ -86,6 +88,12 @@ n_new=$(find tools examples server bench -name '*.ty' | wc -l)
 [ "$n_lib" = 91 ]  || { echo "parse-check: corelib/**.ty is $n_lib, expected 91"; rc=1; }
 [ "$n_new" = 179 ] || { echo "parse-check: tools+examples+server+bench .ty is $n_new, expected 179"; rc=1; }
 [ "$n_rej" = "$n_tsv" ] || { echo "parse-check: $n_rej reject fixtures but $n_tsv classified rows -- rerun scripts/classify_rejects.py"; rc=1; }
+
+# [0] -- the classifier table's own evidence. Column 3 is a src/tychoc.c line and
+# nothing gated it, so it rotted silently: 310 of 337 rows cited a line that had
+# moved (2026-09-03) while every class was still right. Cheap -- it re-reads the
+# diagnostic sites, it does not run ./tychoc.
+python3 scripts/check_reject_sites.py || rc=1
 
 # [1] and [1b] -- the accept corpora
 leg_accept() {
@@ -296,7 +304,7 @@ fn main():
     print(str(frexp(8.0, &n)))
 EOF
 # The accepting subscript twin is also the only place either corpus writes
-# THROUGH a subscript, which is the `g.at(0) = 5` place form (src/tychoc.c:4149).
+# THROUGH a subscript, which is the `g.at(0) = 5` place form (src/tychoc.c:4154).
 pr ok_subscript <<'EOF'
 package main
 struct G:
@@ -324,8 +332,8 @@ echo "leg4  declaration rules: refused=$nref/5 accepted=$nacc/5"
 
 # [4b] -- the two package-member formats, which NO verdict leg can see: both
 # spellings are a refusal, so leg2b/5/6/8 are green either way and the wording
-# is decoration until Phase 9 pins message text. src/tychoc.c:6294 answers
-# `pkg.Name` written with NO call; src/tychoc.c:6605 answers `pkg.name(...)`.
+# is decoration until Phase 9 pins message text. src/tychoc.c:6299 answers
+# `pkg.Name` written with NO call; src/tychoc.c:6610 answers `pkg.name(...)`.
 # Both measured against ./tychoc 2026-08-23. The accepting twin is required for
 # the usual reason: two refusals alone are satisfied by refusing everything.
 pr r3_field <<'EOF'

@@ -665,6 +665,14 @@ fn dnotes(src: string) -> [DNote]:
 fn tokenize_all(src: string, keep_trivia: bool) -> ([Tok], [DNote]):
     return tokenize_named(src, keep_trivia, "")
 
+# A line ending, CRLF included. The CR of a blank "\r\n" line is not leading
+# whitespace, so without this every empty line in a CRLF file measured as column
+# 0 and emitted DEDENTs the source never asked for. Mirrors src/tychoc.c@AT_EOL.
+fn _at_eol(src: string, p: int, n: int) -> bool:
+    if src[p] == 10:
+        return true
+    return src[p] == 13 and (p + 1 >= n or src[p + 1] == 10)
+
 fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNote]):
     toks := []Tok
     notes := []DNote
@@ -701,7 +709,7 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
 
         cont = false
         if pend:
-            blank := p >= n or src[p] == 10 or src[p] == 35
+            blank := p >= n or _at_eol(src, p, n) or src[p] == 35
             if col > pend_col and not blank:
                 if len(toks) > 0 and toks[len(toks) - 1].k == K_NEWLINE:
                     pop(toks)
@@ -712,7 +720,7 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
 
         # A blank or comment-only line carries no indentation information;
         # measuring it would emit a DEDENT the source never asked for.
-        if p >= n or src[p] == 10 or src[p] == 35:
+        if p >= n or _at_eol(src, p, n) or src[p] == 35:
             cs := p
             for p < n and src[p] != 10:
                 p += 1
