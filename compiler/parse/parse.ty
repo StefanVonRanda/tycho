@@ -316,6 +316,12 @@ fn _ty_d(toks: [lex.Tok], i0: int, depth: int) -> (ast.Ty, int):
             nm := _x(toks, i + 1)
             el, j := _ty_d(toks, i + 3, depth + 1)
             return (ast.TFix("$" + nm, [el]), j)
+        # `[pkg.CONST]T` cannot be SUPPORTED -- the value is not known at parse
+        # time -- but naming it beats the `unknown type 'pkg'` the fall-through
+        # gives. The trailing _starts_type keeps `[pkg.Type]` a dynamic array.
+        if _kis(toks, i, lex.K_IDENT) and _isop(toks, i + 1, lex.OP_DOT) and _kis(toks, i + 2, lex.K_IDENT) and
+                _isop(toks, i + 3, lex.OP_RBRACK) and _starts_type(toks, i + 4):
+            _die(toks, _at(toks, i), "a fixed-size array length cannot be an imported const ('" + _x(toks, i) + "." + _x(toks, i + 2) + "') -- its value is not known at parse time. Use an unqualified `const` declared in this file, or a dynamic [T]")
         # [N]T with a literal size, or [W]T naming an int const. The const form
         # is told from a dynamic [Foo] only by a type FOLLOWING the ']'.
         fixed := false
@@ -1358,6 +1364,10 @@ fn _forstmt_into(toks: [lex.Tok], i0: int, par: bool, out: inout ast.Stmt) -> in
         out = ast.WhileS(toks[ti].line, [ast.BoolLit(toks[ti].line, true)], b)
         return j
     if _for3_semi(toks, i) >= 0:
+        # An empty init clause reaches _simple_into as a bare ';' and reports
+        # `expected an expression`, which names no rule. src/tychoc.c:3975.
+        if _for3_semi(toks, i) == i:
+            _die(toks, _at(toks, i0 - 1), "the init clause is required -- write `for:` for an infinite loop")
         init := ast.PassS(0)
         j, nl1 := _simple_into(toks, i, &init)
         i = _op(toks, j, lex.OP_SEMI)
@@ -1375,6 +1385,14 @@ fn _forstmt_into(toks: [lex.Tok], i0: int, par: bool, out: inout ast.Stmt) -> in
         b, n := block(toks, i)
         out = ast.For3(toks[ti].line, [init, post], [cond], b)
         return n
+    # `for k, q in xs:` -- without this the comma reaches the condition form and
+    # reports `expected ':', found op ','`. src/tychoc.c:4012.
+    if _kis(toks, i, lex.K_IDENT) and _isop(toks, i + 1, lex.OP_COMMA):
+        k := 0
+        for _kis(toks, i + k, lex.K_IDENT) and _isop(toks, i + k + 1, lex.OP_COMMA):
+            k += 2
+        if _kis(toks, i + k, lex.K_IDENT) and _iskw(toks, i + k + 1, lex.KW_IN):
+            _die(toks, _at(toks, i0 - 1), "a `for` binds one name -- write `for p in COLL:` then `" + _x(toks, i) + ", " + _x(toks, i + 2) + " := p` in the body")
     if _kis(toks, i, lex.K_IDENT) and _iskw(toks, i + 1, lex.KW_IN):
         v := _x(toks, i)
         i += 2

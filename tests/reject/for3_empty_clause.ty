@@ -1,4 +1,4 @@
-# no `# expect:`: tychoc1 has no rule for this and emits a generic parse error (R16c-1)
+# expect: the init clause is required
 fn main():
     i := 0
     for ; i < 3; i += 1:
