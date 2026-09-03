@@ -1,0 +1,5 @@
+# src/tychoc.c:6375 -- zero$(T) is a type-directed literal, not a call.
+# expect: zero$(T) takes no value arguments
+fn main():
+    x := zero$(int)(1)
+    println(str(x))

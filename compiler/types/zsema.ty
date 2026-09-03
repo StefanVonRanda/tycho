@@ -678,6 +678,11 @@ fn _explicit_call(cs: inout C, l: int, q: string, n: string, ts: [ast.Ty], args:
     if n == "zero" and len(q) == 0:
         _walk_args(&cs, args)
         cs.line = l
+        if len(args) != 0:                                    # src/tychoc.c:6375
+            _cerr(&cs, "zero$(T) takes no value arguments")
+        if len(ts) != 1:                                      # src/tychoc.c:6376
+            _cerr(&cs, "zero$(T) takes exactly one type argument")
+            return "?"
         t := _enc(&cs, ts[0])
         if known(t) and not _pred_ok(&cs, "defaultable", t):
             _cerr(&cs, "zero$(" + t + "): only int, float, bool, and string are defaultable")
@@ -758,7 +763,13 @@ fn _bare_result(cs: inout C, t: string, rhs: ast.Expr):
     _cerr(&cs, "cannot infer the Result type of " + w + " -- annotate it (x : Result(T, E) = " + w + ")")
 
 # A nullary variant of a GENERIC enum, written bare, fixes nothing.
-fn _bare_variant(cs: inout C, l: int, n: string, owner: string) -> string:
+fn _bare_variant(cs: inout C, l: int, n: string, mang: string, owner: string) -> string:
+    # src/tychoc.c:6127 runs FIRST: a payload-carrying variant written bare is
+    # not a value at all, whatever its enum.
+    if mang in cs.vpay and len(cs.vpay[mang]) > 0:
+        cs.line = l
+        _cerr(&cs, n + " carries a payload — write " + n + "(...)")
+        return "?"
     i := _tdecl(&cs, owner)
     if i >= 0 and cs.tds[i].generic:
         cs.line = l
@@ -1257,6 +1268,16 @@ fn _sp_in_params(s: FSig, sp: string) -> bool:
 
 # `p.yy` on a struct that has no such field. `_field_ty` answers `?` so nothing
 # downstream refuses; the diagnostic has to be raised here.
+# src/tychoc.c:6346 -- `.f` on something that is not a struct AT ALL. `_no_field`
+# below answers only for a struct that is missing the field.
+fn _non_struct_field(cs: inout C, rt: string, f: string):
+    if f in cs.subs or not known(rt):
+        return
+    i := _tdecl(&cs, _base(&cs, rt))
+    if i >= 0 and cs.tds[i].kind == "struct":
+        return
+    _cerr(&cs, "'." + f + "' on a non-struct value")
+
 fn _no_field(cs: inout C, rt: string, f: string):
     if f in cs.subs:
         return                         # `g.at(0)`: a declared subscript, not a field

@@ -1,0 +1,5 @@
+package lib
+
+enum Ev:
+    Tick(int)
+    Stop

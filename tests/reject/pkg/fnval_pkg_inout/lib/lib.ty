@@ -1,0 +1,4 @@
+package lib
+
+fn bump(x: inout int):
+    x = x + 1

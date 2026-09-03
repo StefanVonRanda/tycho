@@ -1,0 +1,5 @@
+package lib
+
+enum Box($T):
+    Full($T)
+    Empty

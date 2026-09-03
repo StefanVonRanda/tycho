@@ -190,6 +190,9 @@ struct C:
     symrows: [string]                  # --symbols: one `local` row per declaration
     symon: bool                        # ...recorded only when --symbols asked for it
     symfn: int                         # the enclosing fn's line, the row's 4th field
+    callee: bool                       # this expression is the CALLEE of a CallVal:
+                                       # `a.b.get(v, 0)` is a method call, not a
+                                       # field read, so :6346 must not fire on it
     symfnm: string                     # ...and its MANGLED name: two files can put
                                        # two functions on the same line (cli__is_short
                                        # and main are both line 44 in tycho-stat), and
@@ -864,6 +867,8 @@ fn _ex(cs: inout C, e: ast.Expr) -> string:
 fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
     chan_ok := cs.chan_decl
     cs.chan_decl = false
+    callee_ok := cs.callee
+    cs.callee = false
     cs.line = ast.line_of(e)
     # src/tychoc.c@resolve_exp's literal adaptation, and the reason it has to be
     # here rather than only in _binop: a LITERAL takes the expected type's width
@@ -893,9 +898,9 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
             if n in cs.consts:
                 return cs.consts[n]
             if len(cs.prefix) > 0 and (cs.prefix + n) in cs.vowner:
-                return _bare_variant(&cs, l, n, cs.vowner[cs.prefix + n])
+                return _bare_variant(&cs, l, n, cs.prefix + n, cs.vowner[cs.prefix + n])
             if n in cs.vowner:
-                return _bare_variant(&cs, l, n, cs.vowner[n])
+                return _bare_variant(&cs, l, n, n, cs.vowner[n])
             si := _sigidx(&cs, n)
             if si < 0 and len(cs.prefix) > 0:
                 si = _sigidx(&cs, cs.prefix + n)
@@ -925,6 +930,17 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
                         if m in cs.consts:
                             return cs.consts[m]
                         if m in cs.vowner:
+                            # src/tychoc.c:6326-6331, the qualified twins of the two
+                            # rules _bare_variant carries for a bare one.
+                            if m in cs.vpay and len(cs.vpay[m]) > 0:
+                                cs.line = l
+                                _cerr(&cs, q + "." + f + " carries a payload — write " + q + "." + f + "(...)")
+                                return "?"
+                            vti := _tdecl(&cs, cs.vowner[m])
+                            if vti >= 0 and cs.tds[vti].generic:
+                                cs.line = l
+                                _cerr(&cs, q + "." + f + " is a variant of a generic enum; supply the type explicitly, e.g. " + q + "." + f + "$(int)")
+                                return "?"
                             return cs.vowner[m]
                         si := _sigidx(&cs, m)
                         if si >= 0 and cs.sg[si].generic:
@@ -932,12 +948,22 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
                             _cerr(&cs, "'" + q + "." + f + "' is generic, so it has no single function value -- there is no instantiation to take. Wrap it in a lambda that fixes the types")
                             return "?"
                         if si >= 0:
+                            # src/tychoc.c:6314 -- the same shape rule the bare-name
+                            # arm above enforces; this sibling caller had none.
+                            if not cs.sg[si].builtin:
+                                for fl in cs.sg[si].pflags:
+                                    if fl == "inout":
+                                        cs.line = l
+                                        _cerr(&cs, "'" + q + "." + f + "' has an inout parameter, so it can't be a function value")
+                                        break
                             return _sigtype(cs.sg[si])
                         return "?"
                 _: pass
             rt := _ex(&cs, k[0])
             ft := _field_ty(&cs, rt, f)
             cs.line = l
+            if not callee_ok:
+                _non_struct_field(&cs, rt, f)
             _no_field(&cs, rt, f)
             _tnote(&cs, "f:" + ft)
             return ft
@@ -1017,10 +1043,12 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
             _tnote(&cs, "c:" + ct)
             return ct
         ast.CallVal(l, k):
+            cs.callee = true
             cvt := _base(&cs, _ex(&cs, k[0]))
             if known(cvt) and _head(cvt) != "fun":
                 cs.line = l
                 _cerr(&cs, "this value has type " + cvt + ", not a procedure -- it cannot be called")
+            cs.callee = true
             ct := _base(&cs, _ex(&cs, k[0]))
             # fun(R,P...) keeps the RETURN first, so the parameters start at 1.
             ps := _targs(ct)
@@ -1728,6 +1756,13 @@ fn _call(cs: inout C, l: int, q: string, n: string, ts: [ast.Ty], args: [ast.Exp
         return _explicit_call(&cs, l, q, n, ts, args, want)
     if len(q) > 0:
         if not _is_pkg(&cs, q):
+            # src/tychoc.c:6409-6410. Receiver-directed exactly as there: a `get`
+            # on anything but a map local falls through to UFCS untouched.
+            if n == "get" and _head(_base(&cs, _vtype(&cs, q))) == "map" and len(args) != 1 and len(args) != 2:
+                _walk_args(&cs, args)
+                cs.line = l
+                _cerr(&cs, "m.get(key) or m.get(key, default) takes one or two arguments (got " + str(len(args)) + ")")
+                return "?"
             if _shape_builtin(n):
                 args2 := []ast.Expr
                 push(args2, ast.Name(l, q))
@@ -2961,7 +2996,7 @@ fn check(p: Program) -> C:
 fn check_on(p: Program, syms: bool) -> C:
     cs := C([]string, -1, []string: bool, []string: bool, 0, []string, []string, []TDecl, []string: int, []FSig, []string: int, []string: string, []string: string,
             []string: string, []string: int, []string: bool, []string: string, []string: bool, []VBind, 0, []string, []string,
-            []string: int, "", 0, "", "?", false, false, []ast.ImportD, []ast.ImportD, false, 0, 0, false, 0, []string: int, []string: bool, []string: bool, 0, 0, false, []string, []string, false, 0, "")
+            []string: int, "", 0, "", "?", false, false, []ast.ImportD, []ast.ImportD, false, 0, 0, false, 0, []string: int, []string: bool, []string: bool, 0, 0, false, []string, []string, false, 0, false, "")
     cs.symon = syms
     for f in p.files:
         push(cs.srcp, f.path)

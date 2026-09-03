@@ -38,7 +38,7 @@ sys.path.insert(0, "scripts")
 import classify_rejects as C
 
 ROOTS = ("tests", "corelib", "tools", "examples", "server", "bench")
-EXPECT = 1266          # a leg that scores 0 of 0 is green by accident
+EXPECT = 1278          # a leg that scores 0 of 0 is green by accident
 SITES = C.load_sites()
 # The fixtures `--typecheck` does not refuse -- the same list compiler/run.sh
 # carries, with the same reasons. Phase 6b turned `--typecheck` into the whole

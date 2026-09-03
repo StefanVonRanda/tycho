@@ -149,6 +149,7 @@ tests/reject/extern_param_struct.ty	SEMANTIC	4628	extern fn 'ffi_take': paramete
 tests/reject/extern_params_17.ty	TYPE	9321	too many parameters (max 16)
 tests/reject/extern_ret_arr_string.ty	SEMANTIC	4654	extern fn 'ffi_names': return type must be int/char/float/bool/string/ptr/bytes, [int]/[float], Option(string), a handle, or omitted
 tests/reject/extern_ret_struct.ty	SEMANTIC	4654	extern fn 'ffi_make': return type must be int/char/float/bool/string/ptr/bytes, [int]/[float], Option(string), a handle, or omitted
+tests/reject/field_on_non_struct.ty	SEMANTIC	6346	'.foo' on a non-struct value
 tests/reject/fixarr_elem_bool.ty	TYPE	2496	a fixed-size array element cannot be bool or void -- a dynamic [bool] is legal
 tests/reject/fixarr_into_bounded_arg.ty	TYPE	7198	argument 1 of 'take' is [3]int, expected bounded[4]int
 tests/reject/fixarr_into_dynamic_arg.ty	TYPE	7198	argument 1 of 'take' is [3]int, expected [int]
@@ -263,6 +264,7 @@ tests/reject/main_with_ret.ty	TYPE	9403	'main' returns nothing or Result(void, s
 tests/reject/map_as_key.ty	TYPE	2549	map keys must be string, int (directly or through a newtype), a fieldless enum, or a hashable struct/tuple/array
 tests/reject/map_del_removed.ty	SYNTAX	3043	map_del was removed; use `delete m[k]`
 tests/reject/map_for_in.ty	TYPE	6223	a map is not directly iterable -- `for k in m` indexes it by position. Loop over `keys(m)` instead: `for k in keys(m):` (the keys come back as string, wrapped)
+tests/reject/map_get_arity.ty	SEMANTIC	6410	m.get(key) or m.get(key, default) takes one or two arguments (got 3)
 tests/reject/map_get_removed.ty	SYNTAX	3044	map_get was removed; use `m.get(k, default)`
 tests/reject/map_has_removed.ty	SYNTAX	3042	map_has was removed; use `k in m`
 tests/reject/map_key_wrong_read.ty	TYPE	6224	map key must be Slot, got int
@@ -424,6 +426,7 @@ tests/reject/str_two_args.ty	SEMANTIC	6822	str(x) takes one argument
 tests/reject/string_escape.ty	SYNTAX	0	unsupported escape \  (use \n \t \r \\ \")
 tests/reject/string_raw_control.ty	SYNTAX	0	raw control byte in string literal (use an escape such as \n or \t)
 tests/reject/string_unterminated.ty	SYNTAX	688	unterminated string literal
+tests/reject/struct_field_unknown.ty	SEMANTIC	6353	struct S has no field 'zzzzzz'
 tests/reject/struct_mix_named_positional.ty	SEMANTIC	6673	P: cannot mix named and positional fields
 tests/reject/struct_mutual_by_value.ty	TYPE	12783	infinite type: A contains itself by value — use an array ([A]) or Option([A]) for indirection
 tests/reject/struct_named_dup_field.ty	SEMANTIC	6688	P: field 'x' given more than once
@@ -496,6 +499,7 @@ tests/reject/variadic_not_last.ty	SYNTAX	4369	a variadic parameter must be the l
 tests/reject/variadic_spread_mixed.ty	TYPE	7082	a spread argument `x...` must be the only variadic argument to 'sum'
 tests/reject/variadic_spread_nonvariadic.ty	TYPE	5963	spread `...` is only valid as the argument to a variadic parameter
 tests/reject/variadic_too_few_args.ty	SEMANTIC	7076	'f' takes at least 1 argument(s), got 0
+tests/reject/variant_bare_payload.ty	SEMANTIC	6127	A carries a payload — write A(...)
 tests/reject/variant_named_ok.ty	NAME	4318	'Ok' is already defined
 tests/reject/variant_payload_max.ty	SYNTAX	4802	too many payload fields (max 8)
 tests/reject/void_as_type.ty	TYPE	2559	'void' is a type only as a Result's ok payload, as in Result(void, string)
@@ -513,3 +517,5 @@ tests/reject/where_numeric.ty	SEMANTIC	9060	'sm' instantiated with T = string, w
 tests/reject/where_typeset_max.ty	SYNTAX	4399	at most 16 types in a `where` type set
 tests/reject/where_unknown_pred.ty	SYNTAX	4405	unknown `where` predicate 'fancy' (known: numeric, comparable, has_str, hashable, defaultable -- or use a type set, `T: int | float`)
 tests/reject/zero_bad_type.ty	SEMANTIC	6379	zero$([int]): only int, float, bool, and string are defaultable
+tests/reject/zero_two_typeargs.ty	SEMANTIC	6376	zero$(T) takes exactly one type argument
+tests/reject/zero_value_args.ty	SEMANTIC	6375	zero$(T) takes no value arguments

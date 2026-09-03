@@ -71,7 +71,10 @@ corpus_census() {
     # 8k match/destructuring/select block and the three infinite-type arms,
     # plus 23 of the 24 R21f-5 added for the 6k expression block
     # (src/tychoc.c:6046-6589), plus all 15 R21f-7 added for the 6k struct and
-    # enum CONSTRUCTION block (src/tychoc.c:6651-6763).
+    # enum CONSTRUCTION block (src/tychoc.c:6651-6763), plus all 6 flat ones
+    # R21f-8 added for the 6k field and variant ACCESS block
+    # (src/tychoc.c:6127-6410; its other 3 are package fixtures and are not in
+    # this count, which walks the flat lane only).
     # The other 4 carry none on purpose: this lane scores the expectation against
     # ./tychoc1, and on those rules the two compilers word it differently, so an
     # `# expect:` here could only assert one of the two. Each says so in its header.
@@ -81,7 +84,7 @@ corpus_census() {
         grep -q '^# expect: ' "$cc_e" && cc_exp=$((cc_exp + 1))
     done
     [ "$cc_show" = print ] && printf 'count %-10s %d\n' reject-expect "$cc_exp"
-    [ "$cc_exp" -eq 247 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=247"
+    [ "$cc_exp" -eq 253 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=253"
 
     cc_dirs=0
     for cc_d in $(git ls-files tests 2>/dev/null | grep '\.ty$' | sed 's|/[^/]*$||' | sort -u); do

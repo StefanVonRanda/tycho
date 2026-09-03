@@ -1,0 +1,10 @@
+# src/tychoc.c:6327 -- the qualified twin of :6127.
+# expect: lib.Tick carries a payload — write lib.Tick(...)
+package main
+import "lib"
+
+fn main():
+    e := lib.Tick
+    match e:
+        lib.Tick(n): println(str(n))
+        lib.Stop: println("s")

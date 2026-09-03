@@ -1,0 +1,8 @@
+# src/tychoc.c:6353 -- the no-suggestion arm: 'zzzzzz' is far enough from
+# 'alpha' that suggest_field offers nothing.
+# expect: struct S has no field 'zzzzzz'
+struct S:
+    alpha: int
+fn main():
+    s := S(1)
+    println(str(s.zzzzzz))
