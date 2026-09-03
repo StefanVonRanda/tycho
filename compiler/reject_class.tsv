@@ -88,6 +88,7 @@ tests/reject/char_unexpected.ty	SYNTAX	863	unexpected character '?'
 tests/reject/close_handle_nonvar.ty	SEMANTIC	6812	close(h) takes a handle variable
 tests/reject/close_not_channel.ty	SEMANTIC	6815	close takes a channel or a handle, got int
 tests/reject/close_two_args.ty	SEMANTIC	6808	close takes one channel or handle
+tests/reject/closure_capture_handle.ty	SEMANTIC	6008	a closure cannot capture a handle -- it is freed at the end of its scope
 tests/reject/coerce_annot_narrow.ty	TYPE	8351	declared type int but value is float
 tests/reject/coerce_arg_narrow.ty	TYPE	7198	argument 1 of 'g' is float, expected int
 tests/reject/coerce_array_mixed.ty	TYPE	6204	array elements must all have the same type
@@ -167,6 +168,7 @@ tests/reject/float_int_var_ord.ty	TYPE	7352	ordering compares two ints, two floa
 tests/reject/float_lit_overflow_neg.ty	SYNTAX	651	float literal out of range: `1e400` exceeds the largest float (IEEE-754 binary64); write 1.0/0.0 for an infinity
 tests/reject/fn_eq.ty	TYPE	7336	functions are not comparable -- closures have no structural equality; compare the values they produce instead
 tests/reject/fn_named_ok.ty	NAME	4318	'Ok' is already defined
+tests/reject/fn_returns_handle.ty	SEMANTIC	4374	a Tycho fn cannot return a handle -- only an `extern fn` opener may; a handle is freed at the end of its scope and cannot escape it
 tests/reject/fnty_arity.ty	SYNTAX	2438	a function type has at most 8 parameters
 tests/reject/fnval_local_generic.ty	SEMANTIC	6158	'mymin' is generic, so it has no single function value -- there is no instantiation to take. Wrap it in a lambda that fixes the types, e.g. fn(a: int, b: int) -> int: mymin(a, b)
 tests/reject/fnvalue_call_arg_type.ty	SEMANTIC	6576	argument 2 must be int
@@ -417,8 +419,12 @@ tests/reject/slice_end_not_int.ty	SEMANTIC	6274	slice end must be int
 tests/reject/slice_inout_alias.ty	SEMANTIC	7249	cannot pass a slice of 'a' and an inout of 'a' in one call (the inout may reallocate the buffer the slice views)
 tests/reject/slice_not_sliceable.ty	SEMANTIC	6280	can only slice an array, soa, a string, or bytes
 tests/reject/slice_start_not_int.ty	SEMANTIC	6272	slice start must be int
+tests/reject/soa_lit_elem_not_struct.ty	SEMANTIC	2967	soa requires a struct element type, e.g. soa []Point
+tests/reject/soa_type_elem_not_struct.ty	SEMANTIC	2410	soa requires a struct element type, e.g. soa [Point]
 tests/reject/some_needs_value.ty	SEMANTIC	6046	Some(...) needs a concrete value
+tests/reject/spawn_extern.ty	SEMANTIC	5977	cannot spawn an extern (FFI) function
 tests/reject/spawn_not_a_call.ty	SYNTAX	2956	spawn requires a direct call: spawn f(args)
+tests/reject/spawn_void_fn.ty	SEMANTIC	5979	a spawned function must return a value (wait(t) yields it)
 tests/reject/str_as_type.ty	TYPE	2675	unknown type 'str'
 tests/reject/str_index_assign.ty	TYPE	8820	cannot index-assign an element of string (it is immutable)
 tests/reject/str_of_fn_value.ty	SEMANTIC	6832	str(x) can't stringify a fn()

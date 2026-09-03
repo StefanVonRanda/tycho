@@ -103,9 +103,44 @@ REMOVED = ["map_set(m, key, value)", "map_set's first argument", "map_set key mu
 # `.under`; `type Cn = Channel(int)` died there. Its `[$N]T` sibling at
 # src/tychoc.c:9316 is NOT dead -- `[$N]int` is an array, so it passes that rule
 # -- and has a fixture.
+# Eleven more, measured 2026-09-03 by probing ./tychoc with the program each
+# rule names. SIX are the `void` bans in the type parser: g_void_ok is captured
+# and CLEARED at parse_type_inner's entry (src/tychoc.c:2393), so the permission
+# reaches Result's ok slot and nothing one level down. `Result(fn(void) -> int,
+# E)`, `Result((void, int), E)`, `Result([void], E)`, `Option(void)`,
+# `Channel(void)` and `Result(int, void)` were each fed to ./tychoc and each died
+# on `'void' is a type only as a Result's ok payload` -- the permission check at
+# src/tychoc.c:2558, which dominates all six. Two of the six say so in their own
+# source comment, and tests/reject/option_void.ty and result_void_err.ty are
+# fixtures for the DOMINATING message.
+# FOUR are `narms`/`nfields`/`nvariants == 0` after an unconditional
+# `eat(ps, TK_INDENT, ...)`: an INDENT is emitted only for a deeper non-blank,
+# non-comment line, and the loop that follows parses one arm/field/variant per
+# iteration or dies. `match x:`, `select:`, `struct S:` and `enum E:` with an
+# empty body, and with a comment-only body, each died on the INDENT eat instead
+# (`expected indented match arms`, `... select arms`, `an indented field list`,
+# `an indented variant list`).
+# The last is the SELF-DEFEATING GUARD shape: `expected `if` or `match`` at
+# src/tychoc.c:3597 is the fall-through of parse_value_ctrl, and all FIVE of its
+# call sites (src/tychoc.c:3843, :4138, :4152, :4161, :4183) are inside an
+# `if (at(ps, TK_IF) || at(ps, TK_MATCH))`. It cannot be entered on any other
+# token.
 DEAD = ["reserve only supports arrays of scalars",
         "a channel parameter cannot be inout",
-        "a newtype cannot wrap a channel"]
+        "a newtype cannot wrap a channel",
+        "a function-type parameter cannot be void",
+        "a tuple element cannot be void",
+        "an array element type cannot be void",
+        "Option(void) is not a type",
+        "Channel(void) is not a type",
+        # anchored on the tail: src/tychoc.c:2997's LIVE `Err() carries no value
+        # -- a Result's error type cannot be void` contains the head verbatim
+        "a Result's error type cannot be void -- Err always carries a value",
+        "match needs at least one arm",
+        "select needs at least one arm",
+        "a struct needs at least one field",
+        "an enum needs at least one variant",
+        "expected `if` or `match`"]
 INTERNAL = ["oom", "cannot open", "cannot write", "read error", "unknown flag",
             "pkg-config", "C compilation failed", "already exists and was not written",
             "-g line info", "contains a NUL byte", "import cycle",

@@ -1,0 +1,12 @@
+# src/tychoc.c:6008 -- the closure sibling of tests/reject/parfor_capture_handle.ty.
+# The closure outlives the scope that frees the handle.
+# expect: a closure cannot capture a handle -- it is freed at the end of its scope
+handle R:
+    free: hc
+extern fn ho(i: int) -> R
+extern fn hc(h: R) -> int
+
+fn main():
+    f := ho(1)
+    g := fn() -> int: hc(f)
+    println(str(g()))

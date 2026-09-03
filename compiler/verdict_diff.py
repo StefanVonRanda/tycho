@@ -38,7 +38,7 @@ sys.path.insert(0, "scripts")
 import classify_rejects as C
 
 ROOTS = ("tests", "corelib", "tools", "examples", "server", "bench")
-EXPECT = 1278          # a leg that scores 0 of 0 is green by accident
+EXPECT = 1284          # a leg that scores 0 of 0 is green by accident
 SITES = C.load_sites()
 # The fixtures `--typecheck` does not refuse -- the same list compiler/run.sh
 # carries, with the same reasons. Phase 6b turned `--typecheck` into the whole
@@ -59,8 +59,10 @@ KNOWN_TYPE_MISS = {
     # THE CONCURRENCY RULES: what `spawn` may be applied to, capturing a task,
     # and wait's argument. Not type rules -- statement SHAPES -- and they are
     # Phase 6c item 2's, named there. The seven `parallel for` siblings that
-    # used to sit here left the list when Phase R4 implemented them.
-    "tests/conc/reject/builtin.ty",
+    # used to sit here left the list when Phase R4 implemented them, and
+    # builtin.ty left it under R21f-9: `spawn println(...)` is now refused, by
+    # the void-return rule (src/tychoc.c:5979) rather than by :5975's own
+    # wording, so that rule is a MESSAGE divergence now instead of a verdict one.
     "tests/conc/reject/closure.ty",
     "tests/conc/reject/inout.ty",
     "tests/conc/reject/wait_nontask.ty",

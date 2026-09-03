@@ -197,6 +197,8 @@ struct C:
                                        # two functions on the same line (cli__is_short
                                        # and main are both line 44 in tycho-stat), and
                                        # a line-keyed bucket merges them
+    extfn: [string: bool]              # the `extern fn` names -- FSig has no
+                                       # is_extern and spawn needs one
 
 fn _cexcerpt(cs: inout C, file: string, line: int) -> string:
     if line <= 0:
@@ -441,6 +443,8 @@ fn _enc(cs: inout C, t: ast.Ty) -> string:
             return out + ")"
         ast.TSoa(k):
             el := _enc_noval(&cs, k[0])
+            if not _soa_elem_ok(&cs, el):                   # src/tychoc.c:2410
+                _cperr(&cs, "soa requires a struct element type, e.g. soa [Point]")
             return "soa(" + el + ")"
     return "?"
 
@@ -694,10 +698,11 @@ fn _sig_of(cs: inout C, prefix: string, fd: ast.Fn) -> FSig:
     # enters the program. A Tycho fn returning one hands out a second owner of
     # a pointer its own scope exit already freed.
     if not fd.is_extern and _aff_kind(&cs, rt) == "handle":
-        _cperr(&cs, "a Tycho fn cannot return a handle -- only an `extern fn` opener may, because a handle is freed at the end of its scope")
+        _cperr(&cs, "a Tycho fn cannot return a handle -- only an `extern fn` opener may; a handle is freed at the end of its scope and cannot escape it")
     nm := prefix + fd.name
     if fd.is_extern:
         nm = fd.name
+        cs.extfn[nm] = true            # src/tychoc.c:5977 reads it back at spawn
     cs.typarams = []string: bool
     szs := _sig_sizeparams(fd.params, fd.ret)
     tps := []string                    # the parser lists a `$T` once per mention
@@ -829,6 +834,15 @@ fn _tdecl(cs: inout C, t: string) -> int:
         if m in cs.tindex:
             return cs.tindex[m]
     return -1
+
+# src/tychoc.c:2410 and :2967, IS_STRUCT(el). An SOA splits its element into one
+# array per FIELD, so an enum, a newtype, a handle or a scalar has nothing to
+# split. `?` is an unground generic and says nothing either way.
+fn _soa_elem_ok(cs: inout C, el: string) -> bool:
+    if not known(el):
+        return true
+    i := _tdecl(&cs, el)
+    return i >= 0 and cs.tds[i].kind == "struct"
 
 fn _field_ty(cs: inout C, t: string, f: string) -> string:
     i := _tdecl(&cs, _base(&cs, t))
@@ -1205,7 +1219,11 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
         ast.SoaLit(l, t):
             if len(t) == 0:
                 return "?"
-            return "soa(" + _enc(&cs, t[0]) + ")"
+            sel := _enc(&cs, t[0])
+            if not _soa_elem_ok(&cs, sel):                  # src/tychoc.c:2967
+                cs.line = l
+                _cerr(&cs, "soa requires a struct element type, e.g. soa []Point")
+            return "soa(" + sel + ")"
         ast.Tuple(l, k):
             if len(k) < 2:                         # src/tychoc.c:6058 -- `(x,)`
                 cs.line = l
@@ -1264,7 +1282,16 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
             # `task(T)`, not a bare `task`: wait(t) has to know what it yields.
             rt := "void"
             if len(k) > 0:
-                rt = _ex(&cs, k[0])
+                rt = _ex(&cs, k[0])          # src/tychoc.c:5966, resolved first
+                match k[0]:
+                    ast.Call(l2, q2, n2, ts2, ar2):
+                        if len(q2) == 0 and n2 in cs.extfn:          # :5977
+                            cs.line = l
+                            _cerr(&cs, "cannot spawn an extern (FFI) function")
+                    _: pass
+                if rt == "void":                                     # :5979
+                    cs.line = l
+                    _cerr(&cs, "a spawned function must return a value (wait(t) yields it)")
             return "task(" + rt + ")"
         ast.OrRet(l, k):
             # src/tychoc.c:6078-6094, leg for leg. Every one is guarded on the
@@ -2996,7 +3023,7 @@ fn check(p: Program) -> C:
 fn check_on(p: Program, syms: bool) -> C:
     cs := C([]string, -1, []string: bool, []string: bool, 0, []string, []string, []TDecl, []string: int, []FSig, []string: int, []string: string, []string: string,
             []string: string, []string: int, []string: bool, []string: string, []string: bool, []VBind, 0, []string, []string,
-            []string: int, "", 0, "", "?", false, false, []ast.ImportD, []ast.ImportD, false, 0, 0, false, 0, []string: int, []string: bool, []string: bool, 0, 0, false, []string, []string, false, 0, false, "")
+            []string: int, "", 0, "", "?", false, false, []ast.ImportD, []ast.ImportD, false, 0, 0, false, 0, []string: int, []string: bool, []string: bool, 0, 0, false, []string, []string, false, 0, false, "", []string: bool)
     cs.symon = syms
     for f in p.files:
         push(cs.srcp, f.path)

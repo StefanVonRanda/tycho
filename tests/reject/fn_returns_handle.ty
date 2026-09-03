@@ -1,0 +1,15 @@
+# src/tychoc.c:4374 -- an `extern fn` opener is the only producer of a handle. A
+# Tycho fn returning one hands out a second owner of a pointer its own scope
+# exit has already freed. The generic form is tests/reject/generic_ret_handle.ty.
+# expect: a Tycho fn cannot return a handle -- only an `extern fn` opener may
+handle R:
+    free: hc
+extern fn ho(i: int) -> R
+extern fn hc(h: R) -> int
+
+fn make() -> R:
+    return ho(1)
+
+fn main():
+    f := make()
+    println(str(hc(f)))
