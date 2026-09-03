@@ -232,6 +232,7 @@ tests/reject/in_array.ty	TYPE	7304	`in` tests membership in a map; the right ope
 tests/reject/in_string.ty	TYPE	7304	`in` tests membership in a map; the right operand must be a map
 tests/reject/in_wrong_key.ty	TYPE	7306	`in` key must be string
 tests/reject/indent_inconsistent.ty	SYNTAX	591	inconsistent indentation
+tests/reject/index_assign_string_elem.ty	SEMANTIC	8797	cannot index-assign through this expression (only a variable, field, composite-array element, or map value is a place)
 tests/reject/index_elem_type.ty	TYPE	8823	cannot assign string to a int element
 tests/reject/index_key_not_int.ty	SEMANTIC	6247	index must be int
 tests/reject/index_not_indexable.ty	SEMANTIC	6262	can only index an array, a string, bytes, or a map (as a place)
@@ -264,6 +265,8 @@ tests/reject/main_result_int.ty	TYPE	9403	'main' returns nothing or Result(void,
 tests/reject/main_with_param.ty	TYPE	9400	'main' takes no parameters -- the command line arrives through the `args()` builtin
 tests/reject/main_with_ret.ty	TYPE	9403	'main' returns nothing or Result(void, string), not int -- an Err reaching the entry point is printed, so the error type is the message. For a status other than 0 or 1 (diff(1)'s 0/1/2, say), call the `exit(code)` builtin
 tests/reject/map_as_key.ty	TYPE	2549	map keys must be string, int (directly or through a newtype), a fieldless enum, or a hashable struct/tuple/array
+tests/reject/map_compound_composite.ty	SEMANTIC	8806	compound assignment `m[k] op= ...` is only supported for int/float/char map values; for a composite value use push(m[k], ...) or `m[k] = <expr>`
+tests/reject/map_compound_value_type.ty	SEMANTIC	8810	cannot compound-assign float to a int map value
 tests/reject/map_del_removed.ty	SYNTAX	3043	map_del was removed; use `delete m[k]`
 tests/reject/map_for_in.ty	TYPE	6223	a map is not directly iterable -- `for k in m` indexes it by position. Loop over `keys(m)` instead: `for k in keys(m):` (the keys come back as string, wrapped)
 tests/reject/map_get_arity.ty	SEMANTIC	6410	m.get(key) or m.get(key, default) takes one or two arguments (got 3)
@@ -292,6 +295,7 @@ tests/reject/match_dup_ok_arm.ty	SEMANTIC	8264	duplicate Ok arm
 tests/reject/match_expr_nonexhaustive.ty	TYPE	8547	match on an Option must cover both Some and None
 tests/reject/match_nested_arity.ty	SEMANTIC	8297	A binds 1 value(s), got 2
 tests/reject/match_nested_needs_enum.ty	SEMANTIC	8289	a nested pattern needs an enum payload, but Ok here carries int
+tests/reject/match_nested_plain_enum.ty	SEMANTIC	8600	a nested pattern is only supported inside Ok(...), Err(...) or Some(...) -- match Nil's payload in its own match
 tests/reject/match_non_exhaustive.ty	TYPE	8259	non-exhaustive match: missing variant B of E
 tests/reject/match_none_binds.ty	SEMANTIC	8536	None binds nothing
 tests/reject/match_ok_binds_two.ty	SEMANTIC	8274	Ok(x) binds exactly one value
@@ -364,6 +368,7 @@ tests/reject/parfor_capture_limit.ty	SEMANTIC	7728	parallel for captures at most
 tests/reject/parfor_capture_task.ty	SEMANTIC	7739	a parallel for cannot capture a task handle -- wait it first
 tests/reject/parfor_inout_capture.ty	SEMANTIC	7754	parallel for cannot pass a captured variable as inout (no shared mutation across chunks)
 tests/reject/parfor_massign_captured.ty	SEMANTIC	7844	parallel for cannot assign to captured variable 'a'
+tests/reject/parfor_not_collection.ty	SEMANTIC	8008	parallel for expects an array, string, or channel
 tests/reject/parfor_or_return.ty	SEMANTIC	7748	or_return cannot cross a parallel for (no early exit from a chunk)
 tests/reject/parfor_range_not_int.ty	SEMANTIC	8012	parallel for needs an int range
 tests/reject/pass_as_value.ty	NAME	6164	`pass` is a statement and produces no value -- a value if/match needs one in every branch, so write this as a plain statement
@@ -393,6 +398,7 @@ tests/reject/result_void_arm_binds.ty	TYPE	8267	Ok carries no value here -- writ
 tests/reject/result_void_bind.ty	TYPE	8381	cannot bind a void value
 tests/reject/result_void_err.ty	TYPE	2559	'void' is a type only as a Result's ok payload, as in Result(void, string)
 tests/reject/result_void_ok_arg.ty	TYPE	7647	Result(void, string) carries no ok value -- write Ok(), not Ok(x)
+tests/reject/return_value_in_void_proc.ty	SEMANTIC	8489	this proc returns nothing
 tests/reject/scalar_coerce_map_key.ty	TYPE	6224	map key must be int, got float
 tests/reject/scalar_coerce_place.ty	TYPE	8839	cannot assign float to a int field
 tests/reject/scalar_coerce_reassign.ty	TYPE	8451	cannot assign float to 'x' of type int
@@ -498,6 +504,10 @@ tests/reject/upper_bind_param_used.ty	SYNTAX	2985	'Ok' cannot name a binding -- 
 tests/reject/upper_local.ty	NAME	5586	'Total' cannot name a binding -- a local, parameter or pattern binding must start with a lowercase letter or '_'
 tests/reject/upper_param.ty	NAME	5586	'Limit' cannot name a binding -- a local, parameter or pattern binding must start with a lowercase letter or '_'
 tests/reject/value_arm_no_tail.ty	SYNTAX	3416	a value branch must end in a value expression
+tests/reject/value_ctrl_all_diverge.ty	SEMANTIC	8336	every branch of this value if/match diverges, so there is no value to bind to 'x' -- write the if/match as a plain statement
+tests/reject/value_ctrl_bare_none.ty	SEMANTIC	8341	cannot infer the type of this branch — a bare Ok/Err/None is fixed only by a destination type, and neither := nor x : T = flows one in; write the branch with a concrete type, or bind it via an assignment/return
+tests/reject/value_ctrl_task.ty	SEMANTIC	8355	a value if/match cannot produce a task handle
+tests/reject/value_ctrl_void_branch.ty	SEMANTIC	8343	a value if/match branch must produce a value, not void
 tests/reject/variadic_empty_generic.ty	SEMANTIC	7100	cannot infer the element type of an empty variadic call to generic 'count'; pass at least one argument, or name the type: count$(<type>)()
 tests/reject/variadic_empty_untyped.ty	SEMANTIC	7100	cannot infer the element type of an empty variadic call to generic 'count'; pass at least one argument, or name the type: count$(<type>)()
 tests/reject/variadic_inout.ty	SYNTAX	4351	a variadic parameter cannot also be inout or sink

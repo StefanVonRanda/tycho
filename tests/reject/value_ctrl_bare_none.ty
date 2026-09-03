@@ -1,0 +1,11 @@
+# src/tychoc.c:8341 -- a bare None in a value-if branch is fixed only by a
+# destination type, and neither `:=` nor `x : T =` flows one in.
+# No pinned expectation: scored against ./tychoc1, which leaves an unfixed bare
+# None at `?` and refuses this on the unused-local rule instead. Pinning either
+# message would assert one compiler's wording as if it were both.
+fn main():
+    x := if true:
+        None
+    else:
+        None
+    println("hi")

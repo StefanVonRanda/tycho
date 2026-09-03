@@ -1,0 +1,12 @@
+# src/tychoc.c:8336 -- every branch dies, so the value if/match has no tail to
+# bind and the local would be declared void.
+# No pinned expectation: scored against ./tychoc1, which has no divergence
+# analysis -- `_tail_type` reads `die(...)` as void, so it refuses this as
+# `cannot bind a void value`, the same message it gives value_ctrl_void_branch.ty.
+# Telling the two apart is a real change, not a wording port.
+fn main():
+    x := if true:
+        die("a")
+    else:
+        die("b")
+    println(str(x))

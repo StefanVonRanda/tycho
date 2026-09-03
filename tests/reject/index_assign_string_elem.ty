@@ -1,0 +1,9 @@
+# src/tychoc.c:8797 -- the base being indexed must itself be a place, and
+# `rows[0]` is a string, which is not.
+# No pinned expectation: scored against ./tychoc1, whose `_place_ty` reaches
+# the string-element rule (`cannot index-assign an element of string`) before
+# the place test, the reverse of the bootstrap's order.
+fn main():
+    rows := ["ab", "cd"]
+    rows[0][1] = 'z'
+    println(rows[0])

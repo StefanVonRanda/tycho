@@ -2348,6 +2348,12 @@ fn _match(cs: inout C, l: int, subj: [ast.Expr], arms: [ast.Arm]):
                 pay := _variant_payload(&cs, st, a.name)
                 if found and len(a.binds) != len(pay) and len(a.subbinds) == 0:
                     _cerr(&cs, a.name + " binds " + str(len(pay)) + " value(s), got " + str(len(a.binds)))
+                # src/tychoc.c:8600 -- the sibling of `_pay_shape`'s nested-pattern
+                # arm. A nested pattern is an Option/Result payload spelling only;
+                # this arm bound one silently.
+                if found and len(a.sub) > 0:
+                    _cerr(&cs, "a nested pattern is only supported inside Ok(...), Err(...) or Some(...) -- match " +
+                        a.name + "'s payload in its own match")
                 for b := 0; b < len(a.binds); b += 1:
                     if b < len(pay) and _is_variant_of(&cs, pay[b], a.binds[b]):
                         cs.line = a.line
@@ -2543,6 +2549,69 @@ fn _root_name(e: ast.Expr) -> string:
         _: return ""
     return ""
 
+# src/tychoc.c:8807 tests `s->expr->lhs == s->target` by POINTER, which the
+# desugar at compiler/parse/parse.ty:1307 guarantees for `place op= v`. There is
+# no pointer identity here, so the two places are compared structurally instead
+# -- a literal or a name key, which is every key the desugar can reproduce.
+fn _same_place(a: ast.Expr, b: ast.Expr) -> bool:
+    match a:
+        ast.Name(la, na):
+            match b:
+                ast.Name(lb, nb): return na == nb
+                _: return false
+        ast.Field(la, ka, fa):
+            match b:
+                ast.Field(lb, kb, fb): return fa == fb and _same_place(ka[0], kb[0])
+                _: return false
+        ast.Index(la, ka):
+            match b:
+                ast.Index(lb, kb): return _same_place(ka[0], kb[0]) and _same_key(ka[1], kb[1])
+                _: return false
+        _: return false
+    return false
+
+# src/tychoc.c:8806 -- `m[k] op= v` reads and writes the value slot in place, so
+# it lowers to a plain C operator and is restricted to the scalar value types.
+fn _map_compound(cs: inout C, l: int, place: ast.Expr, val: ast.Expr, pt: string):
+    if not known(pt) or not (place is ast.Index):
+        return
+    match place:
+        ast.Index(lp, kp):
+            if _head(_base(&cs, _ex(&cs, kp[0]))) != "map":
+                return
+        _: return
+    scalar := pt == "int" or pt == "float" or pt == "char"
+    match val:
+        ast.Binop(lv, o, kv):
+            if not _same_place(place, kv[0]):
+                return
+            cs.line = l
+            if not scalar:
+                _cerr(&cs, "compound assignment `m[k] op= ...` is only supported for int/float/char " +
+                    "map values; for a composite value use push(m[k], ...) or `m[k] = <expr>`")
+                return
+            # src/tychoc.c:8810 -- the read-modify-write is on the value slot, so
+            # the right side must already BE the value type; this runs ahead of
+            # the binop's own arithmetic rule, as it does in the bootstrap.
+            rt := _ex(&cs, kv[1])
+            cs.line = l
+            if known(rt) and rt != pt:
+                _cerr(&cs, "cannot compound-assign " + _show(&cs, rt) + " to a " + _show(&cs, pt) + " map value")
+        _: pass
+
+fn _same_key(a: ast.Expr, b: ast.Expr) -> bool:
+    match a:
+        ast.IntLit(la, va):
+            match b:
+                ast.IntLit(lb, vb): return va == vb
+                _: return false
+        ast.StrLit(la, va):
+            match b:
+                ast.StrLit(lb, vb): return va == vb
+                _: return false
+        _: return _same_place(a, b)
+    return false
+
 # An array, map or soa PARAMETER is borrowed read-only unless it is `sink`:
 # `src/tychoc.c@vars_can_mutate` answers exactly that, and the three mutating
 # builtins plus every `&` argument consult it.
@@ -2658,6 +2727,8 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
             if t == "void":
                 _cerr(&cs, "cannot bind a void value")
                 t = "?"
+            if len(vb) > 0 and _head(t) == "task":
+                _cerr(&cs, "a value if/match cannot produce a task handle")   # src/tychoc.c:8355
             if len(ty) == 1:
                 t = want
             _tnote(&cs, "d:" + t)
@@ -2707,6 +2778,7 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
             _assign_check(&cs, name, t)
         ast.PlaceSet(l, k):
             pt := _place_ty(&cs, k[0])
+            _map_compound(&cs, l, k[0], k[1], pt)   # src/tychoc.c:8806
             vt := _ex2(&cs, k[1], pt)
             cs.line = l
             if not compat(pt, vt):
@@ -2722,7 +2794,12 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
             if len(k) == 1:
                 t := _ex2(&cs, k[0], cs.ret)
                 cs.line = l
-                if not compat(t, cs.ret):
+                # src/tychoc.c:8489 runs AHEAD of the type comparison, so a proc
+                # with no return type is told it returns nothing rather than
+                # being handed a `returning int but proc returns void`.
+                if cs.ret == "void":
+                    _cerr(&cs, "this proc returns nothing")
+                elif not compat(t, cs.ret):
                     _cerr(&cs, "returning " + t + " but proc returns " + cs.ret)
             elif known(cs.ret) and cs.ret != "void":
                 cs.line = l
@@ -2781,6 +2858,11 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
                 et = "int"
             elif h == "chan":
                 et = _targs(ct)[0]
+            elif known(ct):
+                # src/tychoc.c:8008. `ast.ForIn` discards the `parallel` flag the
+                # parser saw, so the sequential wording is the one that can be
+                # emitted for both spellings.
+                _cerr(&cs, "len(...) takes an array, a string, bytes, a map, or a soa")
             m := _vmark(&cs)
             _tnote(&cs, "i:" + et)
             _vpush(&cs, v, et, true)

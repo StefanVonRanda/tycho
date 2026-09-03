@@ -1,0 +1,8 @@
+# src/tychoc.c:8810 -- the right side of a scalar `m[k] op= v` must be the map's
+# own value type.
+# expect: cannot compound-assign float to a int map value
+fn main():
+    m := []string: int
+    m["a"] = 1
+    m["a"] += 1.5
+    println(str(m["a"]))

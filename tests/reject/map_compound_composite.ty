@@ -1,0 +1,9 @@
+# src/tychoc.c:8806 -- `m[k] op= v` reads and writes the value slot in place, so
+# it lowers to a plain C operator and takes only int/float/char values. tychoc1
+# ACCEPTED this before 2026-09-03.
+# expect: compound assignment `m[k] op= ...` is only supported for int/float/char
+fn main():
+    m := []string: [int]
+    m["a"] = [1]
+    m["a"] += [2]
+    println(str(len(m["a"])))

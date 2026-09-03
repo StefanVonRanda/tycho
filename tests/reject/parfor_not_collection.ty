@@ -1,0 +1,12 @@
+# src/tychoc.c:8008 -- `parallel for x in EXPR` lifts the body over a collection,
+# so an int is not a source. tychoc1 ACCEPTED this before 2026-09-03; its
+# `ast.ForIn` discards the parser's `parallel` flag, so it words the refusal the
+# sequential way (compiler/types/tcheck.ty@ForIn).
+# No `# expect:`: this lane scores the expectation against ./tychoc1, and
+# `ast.ForIn` discards the parser's `parallel` flag, so tychoc1 can only word
+# this the sequential way (`len(...) takes an array, ...`). Pinning either
+# message here would assert one compiler's wording as if it were both.
+fn main():
+    n := 5
+    parallel for x in n:
+        println(str(x))

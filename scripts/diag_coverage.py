@@ -125,7 +125,29 @@ REMOVED = ["map_set(m, key, value)", "map_set's first argument", "map_set key mu
 # call sites (src/tychoc.c:3843, :4138, :4152, :4161, :4183) are inside an
 # `if (at(ps, TK_IF) || at(ps, TK_MATCH))`. It cannot be entered on any other
 # token.
+# Three more, measured 2026-09-03 by enumerating each site's producers rather
+# than by argument. `cannot infer the type of None` (src/tychoc.c:8388) is the
+# SELF-DEFEATING GUARD shape: T_NONE is produced at exactly ONE site
+# (src/tychoc.c:6042, `case E_NONE`), and the untyped-decl arm eighteen lines
+# above the guard (src/tychoc.c:8371) already diverts every `s->expr->kind ==
+# E_NONE` into the pending-inference list -- so the guard is handed only the
+# thing it exists to reject, and never receives it. `x := None` and `x := (None)`
+# both died on the pending arm's own `could not infer the type of 'x'`.
+# `a counting `for` needs int bounds` (src/tychoc.c:8776) has three S_FORRANGE
+# producers (src/tychoc.c:4035, :4069, :4084) and no fourth: the first two are
+# the `parallel for` forms, whose `s->parallel` sends them to resolve_parfor and
+# breaks before this check, and the third is the foreach desugar, which writes a
+# literal `0` and a `len(...)` call into the bounds itself. No user-written
+# expression reaches them.
+# `a spawned task must be bound and waited` (src/tychoc.c:8860) needs an
+# EXPRESSION STATEMENT of task type. task_of has one call site
+# (src/tychoc.c:5986, the E_SPAWN arm), and a bare `spawn f()` statement is
+# refused while it is PARSED (src/tychoc.c:4229) with the rule stated in full; a
+# bare task VARIABLE is refused as `a bare expression has no effect`. Both probed.
 DEAD = ["reserve only supports arrays of scalars",
+        "cannot infer the type of None",
+        "a counting `for` needs int bounds",
+        "a spawned task must be bound and waited",
         "a channel parameter cannot be inout",
         "a newtype cannot wrap a channel",
         "a function-type parameter cannot be void",

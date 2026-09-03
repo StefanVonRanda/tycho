@@ -1,0 +1,15 @@
+# src/tychoc.c:8600 -- a nested pattern is an Option/Result payload spelling
+# only. tychoc1 ACCEPTED this before 2026-09-03: `_pay_shape` carried the rule
+# for the Ok/Err/Some arms and the user-enum arm beside it bound `sub` silently.
+# expect: a nested pattern is only supported inside Ok(...), Err(...) or Some(...)
+enum Shape:
+    Nil
+    Sq(int)
+
+fn main():
+    s := Nil
+    match s:
+        Nil(Some(r)):
+            println(str(r))
+        Sq(n):
+            println(str(n))
