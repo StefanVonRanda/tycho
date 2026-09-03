@@ -1,2 +1,3 @@
+# expect: integer literal out of range
 fn main():
     a := 0xFFFFFFFFFFFFFFFF

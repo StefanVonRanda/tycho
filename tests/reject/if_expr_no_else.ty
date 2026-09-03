@@ -1,3 +1,4 @@
+# expect: an `if` used as a value must have an `else`
 fn main():
     x := if true:
         1

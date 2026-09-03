@@ -1,3 +1,4 @@
+# expect: float literal out of range
 fn main():
     x := -1e400
     println(str(x))

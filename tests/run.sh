@@ -59,6 +59,21 @@ corpus_census() {
         [ "$cc_show" = print ] && printf 'count %-10s %d\n' "$cc_name" "$cc_n"
         [ "$cc_n" -gt 0 ] || cc_bad="$cc_bad empty-class:$cc_name"
     done
+    # An `# expect:` line is OPT-IN, so a fixture that loses one silently falls
+    # back to scoring on the verdict alone -- refused for ANY reason, including a
+    # rule other than the one it was written for. That is invisible: the lane
+    # still prints `ok`. So the count is pinned to a literal here. 75 = the 24
+    # that predate R16c-1 plus 54 of the 57 SYNTAX fixtures minus 3 whose
+    # diagnostic under THIS compiler names no rule; each of the three says so in
+    # its own header, so the shortfall is recorded rather than silent.
+    cc_exp=0
+    for cc_e in $G_reject; do
+        [ -e "$cc_e" ] || continue
+        grep -q '^# expect: ' "$cc_e" && cc_exp=$((cc_exp + 1))
+    done
+    [ "$cc_show" = print ] && printf 'count %-10s %d\n' reject-expect "$cc_exp"
+    [ "$cc_exp" -eq 75 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=75"
+
     cc_dirs=0
     for cc_d in $(git ls-files tests 2>/dev/null | grep '\.ty$' | sed 's|/[^/]*$||' | sort -u); do
         case "$cc_d" in

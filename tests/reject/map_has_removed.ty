@@ -1,3 +1,4 @@
+# expect: map_has was removed
 fn main():
     m := []string: int
     m["a"] = 1

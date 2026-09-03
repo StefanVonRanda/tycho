@@ -1,3 +1,4 @@
+# expect: takes exactly two hex digits
 fn main():
     c := '\x4'
     println(str(c))

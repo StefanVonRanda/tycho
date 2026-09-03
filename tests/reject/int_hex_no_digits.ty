@@ -1,2 +1,3 @@
+# expect: a hex literal needs at least one digit after `0x`
 fn main():
     a := 0x

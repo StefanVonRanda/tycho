@@ -1,3 +1,4 @@
+# expect: `where` constraints require a generic function
 fn f(x: int) -> int where numeric(x):
     return x
 

@@ -1,3 +1,4 @@
+# expect: is the TYPE, not a value
 fn main():
     m := [string: int]
     println(str(len(m)))

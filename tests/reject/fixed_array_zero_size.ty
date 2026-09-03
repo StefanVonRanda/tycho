@@ -1,4 +1,5 @@
 # A fixed-array length must be positive.
+# expect: a fixed-size array length must be positive
 fn main():
     v: [0]int = []
     print("x")

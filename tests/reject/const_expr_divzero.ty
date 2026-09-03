@@ -1,4 +1,5 @@
 # const int division by zero is a compile error (folded at compile time)
+# expect: const expression divides by zero
 const B = 5 / 0
 
 fn main():

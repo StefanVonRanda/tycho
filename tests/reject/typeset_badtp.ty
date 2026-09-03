@@ -1,3 +1,4 @@
+# expect: is not a type parameter of this function
 fn f(x: $T) -> $T where Q: int | float:
     return x
 fn main():

@@ -1,3 +1,4 @@
+# expect: map_del was removed
 fn main():
     m := []string: int
     m["a"] = 1

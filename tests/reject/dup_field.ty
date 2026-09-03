@@ -1,3 +1,4 @@
+# expect: duplicate field
 struct P:
     x: int
     x: int

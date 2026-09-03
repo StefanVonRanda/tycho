@@ -1,3 +1,4 @@
+# expect: `where` refers to
 fn g(x: $T) -> $T where numeric(Q):
     return x
 

@@ -1,3 +1,4 @@
 # Mixed indentation (space then tab) in one line -- must be rejected.
+# expect: mixed tabs and spaces in indentation
 fn main():
  	println("mixed")

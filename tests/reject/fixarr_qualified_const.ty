@@ -1,3 +1,4 @@
+# no `# expect:`: tychoc1 has no rule for this and emits a generic parse error (R16c-1)
 
 fn main():
     xs: [lim.MAX]int = [1, 2, 3, 4]

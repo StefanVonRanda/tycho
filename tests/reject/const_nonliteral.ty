@@ -1,3 +1,4 @@
+# expect: a `const` must be a single scalar literal
 fn seed() -> int:
     return 7
 

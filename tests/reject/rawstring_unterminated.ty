@@ -1,3 +1,4 @@
+# expect: unterminated raw string literal
 
 fn main():
     s := `this literal never closes

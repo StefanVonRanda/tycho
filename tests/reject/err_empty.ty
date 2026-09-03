@@ -1,3 +1,4 @@
+# expect: Err() carries no value
 fn f() -> Result(void, string):
     return Err()
 
