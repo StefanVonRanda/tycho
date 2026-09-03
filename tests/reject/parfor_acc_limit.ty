@@ -1,0 +1,16 @@
+# src/tychoc.c:7862 -- each chunk keeps a private partial per accumulator and the
+# frame holds four. The fifth is what dies, not the loop.
+# expect: parallel for supports at most 4 reduction accumulators
+fn main():
+    t1 := 0
+    t2 := 0
+    t3 := 0
+    t4 := 0
+    t5 := 0
+    parallel for i in 0..<3:
+        t1 = t1 + i
+        t2 = t2 + i
+        t3 = t3 + i
+        t4 = t4 + i
+        t5 = t5 + i
+    println(str(t1 + t2 + t3 + t4 + t5))

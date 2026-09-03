@@ -1,0 +1,11 @@
+# src/tychoc.c:7739 -- a task has one owner and is waited in its own scope, so a
+# chunk cannot hold it. The read is what captures it (src/tychoc.c@pf_scan_expr).
+# expect: a parallel for cannot capture a task handle -- wait it first
+fn work(n: int) -> int:
+    return n * 2
+
+fn main():
+    t := spawn work(3)
+    parallel for i in 0..<3:
+        println(str(i))
+        println(str(wait(t)))

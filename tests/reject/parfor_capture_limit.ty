@@ -1,0 +1,22 @@
+# src/tychoc.c:7728 -- the lifted chunk proc takes each capture as a parameter and
+# the frame holds fourteen. Fifteen READS, no assignment: an outer write would hit
+# the reduction rule first.
+# expect: parallel for captures at most 14 outer variables
+fn main():
+    v1 := 1
+    v2 := 2
+    v3 := 3
+    v4 := 4
+    v5 := 5
+    v6 := 6
+    v7 := 7
+    v8 := 8
+    v9 := 9
+    v10 := 10
+    v11 := 11
+    v12 := 12
+    v13 := 13
+    v14 := 14
+    v15 := 15
+    parallel for i in 0..<3:
+        println(str(i + v1 + v2 + v3 + v4 + v5 + v6 + v7 + v8 + v9 + v10 + v11 + v12 + v13 + v14 + v15))

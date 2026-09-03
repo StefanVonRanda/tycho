@@ -1,0 +1,13 @@
+# src/tychoc.c:7740 -- the handle sibling of parfor_capture_task.ty. A captured
+# CHANNEL stays legal on purpose and is not this rule.
+# expect: a parallel for cannot capture a handle -- it is freed at the end of its scope
+handle R:
+    free: hc
+extern fn ho(i: int) -> R
+extern fn hc(h: R) -> int
+
+fn main():
+    f := ho(1)
+    parallel for i in 0..<3:
+        println(str(i))
+        println(str(hc(f)))

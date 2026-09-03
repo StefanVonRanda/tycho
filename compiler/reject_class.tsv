@@ -57,6 +57,7 @@ tests/reject/bounded_literal_too_many.ty	SEMANTIC	7598	a bounded[2] holds at mos
 tests/reject/bounded_no_capacity.ty	SYNTAX	2423	bounded needs a capacity: bounded[N]T
 tests/reject/bounded_nonconst_cap.ty	SEMANTIC	2421	a bounded capacity must be an integer literal or an int `const` -- 'NOPE' is not
 tests/reject/bounded_task_elem.ty	TYPE	2675	unknown type 'Task'
+tests/reject/break_outside_loop.ty	SEMANTIC	12352	'break' outside a loop
 tests/reject/builtin_arity_char_at.ty	TYPE	7142	'char_at' takes 2 argument(s), got 1
 tests/reject/builtin_arity_niladic.ty	TYPE	7142	'clock' takes 0 argument(s), got 1
 tests/reject/builtin_arity_too_few.ty	TYPE	7142	'substr' takes 3 argument(s), got 1
@@ -132,6 +133,7 @@ tests/reject/enum_is_not_an_enum.ty	TYPE	7287	`is` asks an enum, Option or Resul
 tests/reject/enum_is_unknown_variant.ty	TYPE	1321	'VFloat' is not a variant of Value
 tests/reject/enum_key_payload.ty	TYPE	2549	map keys must be string, int (directly or through a newtype), a fieldless enum, or a hashable struct/tuple/array
 tests/reject/enum_named_none.ty	NAME	4318	'None' is already defined
+tests/reject/enum_payload_sizeparam.ty	SEMANTIC	9313	an enum payload cannot be a `[$N]T` size-parameterized array -- use a fixed `[N]T` or a dynamic `[T]`
 tests/reject/enum_typaram_max.ty	SYNTAX	4762	too many enum type parameters (max 16)
 tests/reject/err_empty.ty	SYNTAX	2997	Err() carries no value -- a Result's error type cannot be void
 tests/reject/explicit_count.ty	TYPE	2675	unknown type 'str'
@@ -276,6 +278,7 @@ tests/reject/newtype_eq_raw_underlying.ty	TYPE	7329	cannot compare A with [int]
 tests/reject/newtype_eq_two_newtypes.ty	TYPE	7329	cannot compare A with B
 tests/reject/newtype_key_mix.ty	TYPE	6224	map key must be UserId, got string
 tests/reject/newtype_named_err.ty	NAME	4318	'Err' is already defined
+tests/reject/newtype_sizeparam.ty	SEMANTIC	9316	a newtype cannot wrap a `[$N]T` size-parameterized array
 tests/reject/newtype_under_bytes.ty	SEMANTIC	4833	a newtype's underlying type must be int, float, string, bool, an array, a map, or a struct (got bytes)
 tests/reject/newtype_under_enum.ty	SEMANTIC	4833	a newtype's underlying type must be int, float, string, bool, an array, a map, or a struct (got E)
 tests/reject/newtype_under_f32.ty	SEMANTIC	4833	a newtype's underlying type must be int, float, string, bool, an array, a map, or a struct (got f32)
@@ -300,6 +303,14 @@ tests/reject/parallel_for_not_zero.ty	SYNTAX	4033	`parallel for` counts from zer
 tests/reject/parallel_not_for.ty	SYNTAX	3930	expected 'for' after 'parallel'
 tests/reject/param_shadow.ty	NAME	8887	'x' is already declared in this scope
 tests/reject/params_17.ty	TYPE	9321	too many parameters (max 16)
+tests/reject/parfor_acc_limit.ty	SEMANTIC	7862	parallel for supports at most 4 reduction accumulators
+tests/reject/parfor_acc_op_mixed.ty	SEMANTIC	7867	accumulator 't' must use one reduction op consistently
+tests/reject/parfor_capture_handle.ty	SEMANTIC	7740	a parallel for cannot capture a handle -- it is freed at the end of its scope
+tests/reject/parfor_capture_limit.ty	SEMANTIC	7728	parallel for captures at most 14 outer variables
+tests/reject/parfor_capture_task.ty	SEMANTIC	7739	a parallel for cannot capture a task handle -- wait it first
+tests/reject/parfor_inout_capture.ty	SEMANTIC	7754	parallel for cannot pass a captured variable as inout (no shared mutation across chunks)
+tests/reject/parfor_massign_captured.ty	SEMANTIC	7844	parallel for cannot assign to captured variable 'a'
+tests/reject/parfor_or_return.ty	SEMANTIC	7748	or_return cannot cross a parallel for (no early exit from a chunk)
 tests/reject/pass_as_value.ty	NAME	6164	`pass` is a statement and produces no value -- a value if/match needs one in every branch, so write this as a plain statement
 tests/reject/place_call_receiver.ty	TYPE	8789	can only index-assign an array or map variable or field
 tests/reject/place_call_receiver_field.ty	TYPE	8836	cannot assign to a field of a temporary (only variables, fields, and composite-array elements are places)

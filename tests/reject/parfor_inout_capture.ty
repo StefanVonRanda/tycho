@@ -1,0 +1,11 @@
+# src/tychoc.c:7754 -- &v hands a chunk a pointer into the shared frame, which is
+# the mutation the reduction form exists to replace.
+# expect: parallel for cannot pass a captured variable as inout (no shared mutation across chunks)
+fn bump(p: inout int):
+    p = p + 1
+
+fn main():
+    v := 0
+    parallel for i in 0..<3:
+        bump(&v)
+    println(str(v))

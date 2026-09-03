@@ -89,7 +89,23 @@ REMOVED = ["map_set(m, key, value)", "map_set's first argument", "map_set key mu
 # `if (!is_array(arrt) && !is_map(arrt))` at src/tychoc.c:7042 dies, and
 # src/tychoc.c:7052 asks the identical question with `arrt` never reassigned in
 # between. Nothing can reach it, so no fixture can name it.
-DEAD = ["reserve only supports arrays of scalars"]
+# Two more, measured 2026-09-03 by probing both compilers. `a channel parameter
+# cannot be inout` (check_inout_param_type's IS_CHAN arm) has two call sites and
+# an IDENTICAL earlier guard dominates each: the direct one is refused while the
+# parameter is PARSED (src/tychoc.c:4353, the only place a param's type is
+# stored, and a variadic -- the one thing that rewrites it -- may not be inout),
+# and the generic-instance one is refused nine lines above its call
+# (src/tychoc.c:9069) on the same substituted type. `inout Channel(int)` and a
+# `inout $T` instantiated at a channel both died at those earlier guards.
+# `a newtype cannot wrap a channel` is dominated by the newtype's own
+# underlying-type rule (src/tychoc.c:4833), which admits only
+# int/float/string/bool/array/map/struct and runs at the ONE site that assigns
+# `.under`; `type Cn = Channel(int)` died there. Its `[$N]T` sibling at
+# src/tychoc.c:9316 is NOT dead -- `[$N]int` is an array, so it passes that rule
+# -- and has a fixture.
+DEAD = ["reserve only supports arrays of scalars",
+        "a channel parameter cannot be inout",
+        "a newtype cannot wrap a channel"]
 INTERNAL = ["oom", "cannot open", "cannot write", "read error", "unknown flag",
             "pkg-config", "C compilation failed", "already exists and was not written",
             "-g line info", "contains a NUL byte", "import cycle",

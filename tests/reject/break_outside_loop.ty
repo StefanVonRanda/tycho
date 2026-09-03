@@ -1,0 +1,5 @@
+# src/tychoc.c:12352 -- `break` with no enclosing loop. The parser accepts it; the
+# statement walker is what knows the loop depth.
+# expect: 'break' outside a loop
+fn main():
+    break

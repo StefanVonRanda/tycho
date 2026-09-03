@@ -1385,6 +1385,10 @@ fn _pf_body(cs: inout C, b: [ast.Stmt], loc: [string: bool], depth: int,
                         # private copy from the op's identity, so + and * on the
                         # same name have no single seed (src/tychoc.c:7867).
                         o := _pf_op(r[0])
+                        # src/tychoc.c:7862 -- one private partial per chunk per
+                        # accumulator, and the frame holds four.
+                        if not (n in accop) and len(accop) >= 4:
+                            _cerr(&cs, "parallel for supports at most 4 reduction accumulators")
                         if n in accop and accop[n] != o:
                             _cerr(&cs, "accumulator '" + n + "' must use one reduction op consistently")
                         accop[n] = o
@@ -1517,6 +1521,141 @@ fn _pf_accs(b: [ast.Stmt], loc: [string: bool], out: inout [string], bad: inout 
             _: pass
     return
 
+# Every expression in a parallel-for body, nested blocks included. The bootstrap
+# walks statements and expressions in one pass (src/tychoc.c@pf_scan_stmt);
+# collecting first lets the two scans below share one traversal.
+fn _pf_exprs(b: [ast.Stmt], out: inout [ast.Expr]):
+    for s in b:
+        match s:
+            ast.ExprStmt(l, k):
+                for e in k:
+                    push(out, e)
+            ast.Decl(l, n, t, r, v):
+                for e in r:
+                    push(out, e)
+                _pf_exprs(v, &out)
+            ast.MDecl(l, d, ns, r):
+                for e in r:
+                    push(out, e)
+            ast.Assign(l, n, r):
+                for e in r:
+                    push(out, e)
+            ast.PlaceSet(l, k):
+                for e in k:
+                    push(out, e)
+            ast.ConstS(l, n, r):
+                for e in r:
+                    push(out, e)
+            ast.ReturnS(l, k):
+                for e in k:
+                    push(out, e)
+            ast.IfS(l, c, bb, eb):
+                for e in c:
+                    push(out, e)
+                _pf_exprs(bb, &out)
+                _pf_exprs(eb, &out)
+            ast.WhileS(l, c, bb):
+                for e in c:
+                    push(out, e)
+                _pf_exprs(bb, &out)
+            ast.For3(l, ip, c, bb):
+                _pf_exprs(ip, &out)
+                for e in c:
+                    push(out, e)
+                _pf_exprs(bb, &out)
+            ast.ForIn(l, n, c, bb):
+                for e in c:
+                    push(out, e)
+                _pf_exprs(bb, &out)
+            ast.ForRange(l, n, c, bb):
+                for e in c:
+                    push(out, e)
+                _pf_exprs(bb, &out)
+            ast.MatchS(l, sj, arms):
+                for e in sj:
+                    push(out, e)
+                for a in arms:
+                    _pf_exprs(a.body, &out)
+            ast.SelectS(l, arms):
+                for a in arms:
+                    for e in a.ch:
+                        push(out, e)
+                    _pf_exprs(a.body, &out)
+            _: pass
+    return
+
+# src/tychoc.c:7748 -- a chunk has no early exit, so `or_return` cannot cross the
+# loop boundary. Descends into a lambda body, as pf_scan_expr does.
+fn _pf_orret(cs: inout C, e: ast.Expr) -> bool:
+    match e:
+        ast.OrRet(l, k):
+            cs.line = l
+            _cerr(&cs, "or_return cannot cross a parallel for (no early exit from a chunk)")
+            return true
+        _: pass
+    for c in ast.kids(e):
+        if _pf_orret(&cs, c):
+            return true
+    return false
+
+# The names this expression reads, with the first line of each read. A lambda
+# body is deliberately NOT descended: its parameters are locals the bootstrap
+# tracks (pf_scan_expr's E_LAMBDA arm) and counting them as captures here would
+# make tychoc1 STRICTER than the bootstrap -- the one failure mode a ported
+# ceiling must avoid. Under-counting only accepts more, which is safe.
+fn _pf_capnames(e: ast.Expr, out: inout [string: int], order: inout [string]):
+    match e:
+        ast.Name(l, v):
+            if not (v in out):
+                out[v] = l
+                push(order, v)
+            return
+        ast.Lambda(l, p, t, bb): return
+        _: pass
+    for c in ast.kids(e):
+        _pf_capnames(c, &out, &order)
+    return
+
+# The three rules that need the enclosing variable scope, which is why they live
+# here and not in _pf_body: an outer read is a capture only if it resolves to a
+# BINDING (src/tychoc.c@pf_capture_name calls vars_find), and its affinity
+# decides between the two refusals. A captured CHANNEL is legal and must stay
+# legal -- tools/tycho-chess/main.ty carries its results out of a parallel for
+# through one -- so only task and handle are refused.
+fn _pf_captures(cs: inout C, b: [ast.Stmt], loc: [string: bool], accs: [string]):
+    exprs := []ast.Expr
+    _pf_exprs(b, &exprs)
+    for e in exprs:
+        if _pf_orret(&cs, e):
+            return
+    seen := []string: int
+    order := []string
+    for e in exprs:
+        _pf_capnames(e, &seen, &order)
+    ncap := 0
+    for n in order:
+        if n in loc or _vfind(&cs, n) < 0:
+            continue
+        isacc := false
+        for a in accs:
+            if a == n:
+                isacc = true
+        if isacc:
+            continue
+        k := _aff_kind(&cs, _vtype(&cs, n))
+        cs.line = seen[n]
+        if k == "task":
+            _cerr(&cs, "a parallel for cannot capture a task handle -- wait it first")
+            return
+        if k == "handle":
+            _cerr(&cs, "a parallel for cannot capture a handle -- it is freed at the end of its scope")
+            return
+        ncap += 1
+        if ncap > 14:
+            _cerr(&cs, "parallel for captures at most 14 outer variables")
+            return
+    return
+
 fn _parfor_check(cs: inout C, l: int, v: string, b: [ast.Stmt]):
     loc := []string: bool
     loc[v] = true
@@ -1533,4 +1672,5 @@ fn _parfor_check(cs: inout C, l: int, v: string, b: [ast.Stmt]):
     accop := []string: string
     _pf_body(&cs, b, loc, 0, &accop)
     cs.pfacc = sav
+    _pf_captures(&cs, b, loc, accs)
     return
