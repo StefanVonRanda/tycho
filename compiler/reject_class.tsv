@@ -258,6 +258,8 @@ tests/reject/keys_not_map.ty	SEMANTIC	6973	keys's argument must be a map
 tests/reject/keys_two_args.ty	SEMANTIC	6970	keys(m) takes one argument
 tests/reject/kw_as_field_name.ty	SYNTAX	2076	'spawn' is a reserved keyword and cannot be used as a field name
 tests/reject/kw_as_local_name.ty	SYNTAX	3784	'spawn' is a reserved keyword and cannot be used as a variable name
+tests/reject/lambda_captures_max.ty	SEMANTIC	6010	a lambda captures at most 16 variables
+tests/reject/lambda_params_max.ty	SEMANTIC	5993	a lambda has at most 8 parameters
 tests/reject/len_scalar.ty	TYPE	6917	len(...) takes an array, a string, bytes, a map, or a soa
 tests/reject/main_params.ty	TYPE	9400	'main' takes no parameters -- the command line arrives through the `args()` builtin
 tests/reject/main_result_enum_err.ty	TYPE	9403	'main' returns nothing or Result(void, string), not Result(void, Fault) -- an Err reaching the entry point is printed, so the error type is the message. For a status other than 0 or 1 (diff(1)'s 0/1/2, say), call the `exit(code)` builtin
@@ -372,6 +374,8 @@ tests/reject/parfor_not_collection.ty	SEMANTIC	8008	parallel for expects an arra
 tests/reject/parfor_or_return.ty	SEMANTIC	7748	or_return cannot cross a parallel for (no early exit from a chunk)
 tests/reject/parfor_range_not_int.ty	SEMANTIC	8012	parallel for needs an int range
 tests/reject/pass_as_value.ty	NAME	6164	`pass` is a statement and produces no value -- a value if/match needs one in every branch, so write this as a plain statement
+tests/reject/pend_arr_ground_scalar.ty	SEMANTIC	5886	'xs' was declared with [] but its first use makes it int
+tests/reject/pend_none_ground_scalar.ty	SEMANTIC	5890	'x' was declared with None but its first use makes it int
 tests/reject/place_call_receiver.ty	TYPE	8789	can only index-assign an array or map variable or field
 tests/reject/place_call_receiver_field.ty	TYPE	8836	cannot assign to a field of a temporary (only variables, fields, and composite-array elements are places)
 tests/reject/pop_bounded.ty	SEMANTIC	7023	pop is not supported on a bounded[...] yet; read the last element via len()-1 and rebuild
@@ -420,6 +424,7 @@ tests/reject/sink_consume_mentions.ty	SEMANTIC	10220	'w' is consumed by a `sink`
 tests/reject/sink_consume_param.ty	SEMANTIC	10211	'ys' is a `sink` parameter and cannot be handed to another `sink` parameter: a parameter's buffer is never adopted, however it was declared. Copy it first (`y := ys`) and consume `y`
 tests/reject/sink_use_after.ty	SEMANTIC	10220	'b' is consumed by a `sink` parameter but is mentioned 2 times in this function: a sink argument must be the variable's ONLY mention. One textual mention is how the compiler proves the consume is the last use on every path, with no dataflow analysis -- so `len(b)`, `b[0]`, `b[0] = ...` and passing `b` anywhere else all disqualify it, even before this line. Copy it first (`y := b`) and consume `y`
 tests/reject/sized_conv_string.ty	TYPE	6875	to_u8(x) takes a numeric value
+tests/reject/sized_lit_range.ty	SEMANTIC	5933	4294967296 does not fit u32 (its range is 0..4294967295) -- write to_u32(x) to convert with wraparound
 tests/reject/slice_bounded_value.ty	SEMANTIC	6278	cannot slice a bounded[...] value; copy it into a [int] first
 tests/reject/slice_end_not_int.ty	SEMANTIC	6274	slice end must be int
 tests/reject/slice_inout_alias.ty	SEMANTIC	7249	cannot pass a slice of 'a' and an inout of 'a' in one call (the inout may reallocate the buffer the slice views)

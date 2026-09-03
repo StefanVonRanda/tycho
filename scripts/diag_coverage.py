@@ -163,7 +163,15 @@ DEAD = ["reserve only supports arrays of scalars",
         "a struct needs at least one field",
         "an enum needs at least one variant",
         "expected `if` or `match`"]
+# One more, measured 2026-09-03 by moving the BINARY rather than by argument.
+# `cannot find the corelib for import` (src/tychoc.c:5022) reports on the
+# INSTALLATION, not on the program: TYCHO_CORELIB is taken unchecked when set,
+# and with it unset the lookup finds `<exe_dir>/corelib`, which exists for every
+# compiler in this tree. Copied to a bare directory, ./tychoc emits it for the
+# same `import "core:strings"` that compiles here -- so no .ty file can reach it.
+# It is an fprintf+exit like every other entry below, not a die_at.
 INTERNAL = ["oom", "cannot open", "cannot write", "read error", "unknown flag",
+            "cannot find the corelib for import",
             "pkg-config", "C compilation failed", "already exists and was not written",
             "-g line info", "contains a NUL byte", "import cycle",
             "has no .ty files", "empty %s name", "illegal character in %s name",

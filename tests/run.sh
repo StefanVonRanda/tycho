@@ -83,13 +83,16 @@ corpus_census() {
     # The other 4 carry none on purpose: this lane scores the expectation against
     # ./tychoc1, and on those rules the two compilers word it differently, so an
     # `# expect:` here could only assert one of the two. Each says so in its header.
+    # Plus all 5 flat ones R21f-11 added for the 5k const-fold and pending-decl
+    # block and the two lambda ceilings; its 6th is a package fixture and is not
+    # in this count, which walks the flat lane only.
     cc_exp=0
     for cc_e in $G_reject; do
         [ -e "$cc_e" ] || continue
         grep -q '^# expect: ' "$cc_e" && cc_exp=$((cc_exp + 1))
     done
     [ "$cc_show" = print ] && printf 'count %-10s %d\n' reject-expect "$cc_exp"
-    [ "$cc_exp" -eq 264 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=264"
+    [ "$cc_exp" -eq 269 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=269"
 
     cc_dirs=0
     for cc_d in $(git ls-files tests 2>/dev/null | grep '\.ty$' | sed 's|/[^/]*$||' | sort -u); do

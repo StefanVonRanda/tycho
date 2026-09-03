@@ -1,0 +1,23 @@
+# The capture half of the ceiling above: seventeen distinct enclosing locals read
+# by one closure body, one past the limit. src/tychoc.c:6010.
+# expect: a lambda captures at most 16 variables
+fn main():
+    v1 := 1
+    v2 := 1
+    v3 := 1
+    v4 := 1
+    v5 := 1
+    v6 := 1
+    v7 := 1
+    v8 := 1
+    v9 := 1
+    va := 1
+    vb := 1
+    vc := 1
+    vd := 1
+    ve := 1
+    vf := 1
+    vg := 1
+    vh := 1
+    f := fn(): v1 + v2 + v3 + v4 + v5 + v6 + v7 + v8 + v9 + va + vb + vc + vd + ve + vf + vg + vh
+    println(str(f()))

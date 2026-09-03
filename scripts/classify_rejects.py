@@ -216,6 +216,12 @@ FALLBACK = [
     # AFTER name resolution in both compilers, and the NAME class means "the
     # resolver refuses it" (compiler/verdict_diff.py:160).
     ("declared and not used", "SEMANTIC"),
+    # report_unused_imports (src/tychoc.c@report_unused_imports) is the sibling of
+    # the line above and invisible to load_sites for the same reason: an fprintf
+    # loop, not a die_at. Measured 2026-09-03 on
+    # tests/reject/pkg/import_unused/main.ty -- ./tychoc1 --parse rc=0,
+    # --resolve rc=0, --typecheck rc=1, which is exactly the SEMANTIC contract.
+    ("imported and not used in this file", "SEMANTIC"),
 ]
 
 

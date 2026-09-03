@@ -199,6 +199,11 @@ struct C:
                                        # a line-keyed bucket merges them
     extfn: [string: bool]              # the `extern fn` names -- FSig has no
                                        # is_extern and spawn needs one
+    pendarr: [string: bool]            # locals declared as a bare `[]`: PENDING,
+                                       # grounded by their first typed use
+                                       # (src/tychoc.c:5886). Kept beside the
+                                       # binding rather than in its type, which
+                                       # stays "?" so nothing else changes
 
 fn _cexcerpt(cs: inout C, file: string, line: int) -> string:
     if line <= 0:
@@ -874,6 +879,42 @@ fn _exs(cs: inout C, es: [ast.Expr]):
 fn _ex(cs: inout C, e: ast.Expr) -> string:
     return _ex2(&cs, e, "?")
 
+# src/tychoc.c@sized_lit -- an int LITERAL adapting to a fixed-width
+# destination. Only the eight exact spellings: a newtype over one is not
+# `_is_int`, and widening the test would refuse a negative at a signed newtype.
+fn _sized_fits(cs: inout C, e: ast.Expr, want: string):
+    lo := 0
+    hi := 9223372036854775807
+    if want == "u8":
+        hi = 255
+    elif want == "u16":
+        hi = 65535
+    elif want == "u32":
+        hi = 4294967295
+    elif want == "i8":
+        lo = -128
+        hi = 127
+    elif want == "i16":
+        lo = -32768
+        hi = 32767
+    elif want == "i32":
+        lo = -2147483648
+        hi = 2147483647
+    elif want == "i64":
+        lo = -9223372036854775807 - 1
+    match e:
+        ast.IntLit(l, v):
+            if v < lo or v > hi:
+                cs.line = l
+                _cerr(&cs, str(v) + " does not fit " + want + " (its range is " + str(lo) +
+                    ".." + str(hi) + ") -- write to_" + want + "(x) to convert with wraparound")
+        _: pass
+
+fn _bare_empty_arr(e: ast.Expr) -> bool:
+    match e:
+        ast.EmptyArr(l, t): return len(t) == 0
+        _: return false
+
 # `want` is the EXPECTED type, which src/tychoc.c@resolve_exp threads for the
 # same three reasons: `None` and `Ok()`/`Err()` have no type of their own, an
 # empty `[]` takes the annotation's, and an untyped lambda parameter takes the
@@ -889,6 +930,8 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
     # (`x: u32 = 1`, `scale(v, 2)` at a float parameter), a variable never does.
     if want != "?":
         if (e is ast.IntLit) and (_is_int(want) or want == "float" or want == "f32"):
+            if _is_int(want) and want != "int":
+                _sized_fits(&cs, e, want)
             return want
         if (e is ast.FloatLit) and want == "f32":
             return want
@@ -1341,6 +1384,9 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
                 return "chan(?)"
             return "chan(" + _enc(&cs, t[0]) + ")"
         ast.Lambda(l, ps, rt, body):
+            if len(ps) > 8:                                 # src/tychoc.c:5993
+                cs.line = l
+                _cerr(&cs, "a lambda has at most 8 parameters")
             m := _vmark(&cs)
             wb := _base(&cs, want)
             wps := _targs(wb)
@@ -1388,6 +1434,17 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
                         else:
                             _cerr(&cs, "a closure cannot capture a handle -- it is freed at the end of its scope")
                         break
+            # src/tychoc.c:6010. The lifted proc takes [captures][params], and
+            # src/tychoc.c@collect_idents dedups by NAME, so count distinct names.
+            capn := []string: bool
+            for ci := 0; ci < m; ci += 1:
+                for be in body:
+                    if _pf_reads(be, cs.vars[ci].name):
+                        capn[cs.vars[ci].name] = true
+                        break
+            if len(capn) > 16:
+                cs.line = l
+                _cerr(&cs, "a lambda captures at most 16 variables")
             cs.nlambda = keepc
             cs.lam_mark = keepm
             cs.ret = keepr
@@ -2736,6 +2793,9 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
                 push(cs.symrows, cs.symfnm + "\nlocal\t" + name + "\t" + _show(&cs, t) + "\t" +
                     str(cs.symfn) + "\t" + str(l))
             _vpush(&cs, name, t, true)
+            delete cs.pendarr[name]
+            if len(ty) == 0 and len(rhs) == 1 and _bare_empty_arr(rhs[0]):
+                cs.pendarr[name] = true
         ast.MDecl(l, isdecl, names, rhs):
             t := "?"
             if len(rhs) == 1:
@@ -2926,6 +2986,19 @@ fn _assign_check(cs: inout C, name: string, t: string):
     vt := _vtype(&cs, name)
     if len(vt) == 0:
         return
+    # src/tychoc.c:5886 and :5890 -- a bare `[]` or `None` decl is PENDING and
+    # its first typed use grounds it; only an array/map/soa grounds the first,
+    # only an Option the second. tcheck types the bare `[]` "?" and the bare
+    # `None` "opt(?)", so without these two the family is accepted (`[]`) or
+    # refused by the generic assign rule under other wording (`None`).
+    if name in cs.pendarr:
+        delete cs.pendarr[name]
+        if known(t) and not _is_arr(t) and _head(t) != "map" and _head(t) != "soa":
+            _cerr(&cs, "'" + name + "' was declared with [] but its first use makes it " + _show(&cs, t))
+            return
+    if vt == "opt(?)" and known(t) and _head(t) != "opt":
+        _cerr(&cs, "'" + name + "' was declared with None but its first use makes it " + _show(&cs, t))
+        return
     if not compat(vt, t):
         _cerr(&cs, "cannot assign " + t + " to '" + name + "' of type " + vt)
 
@@ -3105,7 +3178,7 @@ fn check(p: Program) -> C:
 fn check_on(p: Program, syms: bool) -> C:
     cs := C([]string, -1, []string: bool, []string: bool, 0, []string, []string, []TDecl, []string: int, []FSig, []string: int, []string: string, []string: string,
             []string: string, []string: int, []string: bool, []string: string, []string: bool, []VBind, 0, []string, []string,
-            []string: int, "", 0, "", "?", false, false, []ast.ImportD, []ast.ImportD, false, 0, 0, false, 0, []string: int, []string: bool, []string: bool, 0, 0, false, []string, []string, false, 0, false, "", []string: bool)
+            []string: int, "", 0, "", "?", false, false, []ast.ImportD, []ast.ImportD, false, 0, 0, false, 0, []string: int, []string: bool, []string: bool, 0, 0, false, []string, []string, false, 0, false, "", []string: bool, []string: bool)
     cs.symon = syms
     for f in p.files:
         push(cs.srcp, f.path)
@@ -3150,6 +3223,7 @@ fn check_on(p: Program, syms: bool) -> C:
             cs.paramset = []string: bool
             for pnm in cs.sg[si].pnames:
                 cs.paramset[pnm] = true
+            cs.pendarr = []string: bool
             cs.errbase = len(cs.errs)
             _tblock(&cs, fd.body)
             cs.errbase = -1
