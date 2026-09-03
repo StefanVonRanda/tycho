@@ -290,9 +290,12 @@ element type instead of a family of per-type siblings.
   when an attacker is in the threat model: CSPRNG (`random_hex`), `sha256`/`sha512` of
   binary, `hmac_sha256`, `pbkdf2_sha256`, constant-time `ct_equal`, ChaCha20-Poly1305 AEAD
   (`aead_encrypt`/`aead_decrypt`, `"!err"` on auth failure), Ed25519
-  (`ed25519_pubkey`/`sign`/`verify`), and X25519 (`x25519_pubkey`/`shared`). Real crypto must
-  be constant-time and audited, which pure Tycho can't promise, so the primitives are bound
-  to OpenSSL rather than reimplemented. Every value (keys, nonces, ciphertext, signatures,
+  (`ed25519_pubkey`/`sign`/`verify`), and X25519 (`x25519_pubkey`/`shared`). Real crypto must be
+  constant-time and **pure Tycho cannot be**: `/` and `%` lower to a runtime helper that
+  branches on its operands (`runtime/tycho_rt.c@tycho_imod`), so a routine written over
+  secret values branches on those values however the source is written. That is why these
+  primitives are bound to OpenSSL rather than reimplemented, and why `tools/tycho-rsa/main.ty`
+  — a correct RSA — still leaks its private key to anyone who can time repeated decryptions. Every value (keys, nonces, ciphertext, signatures,
   digests) crosses as lowercase hex, because a Tycho string can't hold a `0x00`; use
   `core:hex` to convert text. Checked against independent known-answer vectors (RFC 4231 HMAC,
   RFC 7914 PBKDF2, RFC 8439 ChaCha20-Poly1305, Ed25519/X25519).

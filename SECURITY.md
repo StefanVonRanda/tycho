@@ -27,6 +27,15 @@ A few sharp edges are inherent, by design:
   decoded NUL byte is dropped. They are exact for text and non-NUL binary.
 - The hashes in `core:hash` are **non-cryptographic**; `core:md5` is broken for
   security (use `core:sha256` or a real KDF where it matters).
+- **No constant-time code can be written in Tycho today**, so no pure-Tycho
+  routine resists a timing attacker. `/` and `%` on an `int` lower to a runtime
+  helper that branches on its operands (`runtime/tycho_rt.c@tycho_imod`), and
+  the compiler offers no branchless select, so an arithmetic routine over secret
+  values branches on those values however the source is written. Concretely:
+  `tools/tycho-rsa/main.ty` is a correct RSA implementation whose private-key path leaks
+  `d` to anyone who can time repeated decryptions — it is a `core:bignum`
+  demonstration, not a key you should protect anything with. Where you need
+  constant time, call `core:crypto`, whose primitives run inside OpenSSL.
 - **Native Windows (MSYS2/mingw) keeps a few behavioural gaps** the POSIX build
   does not have, and they are part of the sharp-edge list rather than the
   stability contract: `core:signal`'s Windows handler is

@@ -1,3 +1,17 @@
+# tycho-rsa -- RSA keygen and RSAES-OAEP (RFC 8017) in pure Tycho, written to
+# stress core:bignum. The maths is checked: OAEP against python `cryptography`
+# in both directions, modexp against python `pow()`, and every random byte comes
+# from the OS CSPRNG (OpenSSL RAND_bytes), never from core:rand.
+#
+# It is NOT constant time. `modexp` branches on each bit of the exponent and
+# does an extra multiply where that bit is 1, so anyone who can time repeated
+# decryptions with one key recovers `d` -- the private key itself, not just the
+# message. Use this only on keys you would be willing to publish.
+#
+# That is a language limit rather than an oversight here: `/` and `%` lower to a
+# runtime helper that branches on its operands (`runtime/tycho_rt.c@tycho_imod`),
+# so no constant-time routine can be written in Tycho today. See SECURITY.md.
+
 package main
 
 import "core:bignum"
@@ -454,7 +468,7 @@ fn want_hex(s: string) -> string:
 fn main():
     av := cli.argv()
     if len(av) < 1:
-        die("usage: tycho-rsa selfcheck | keygen <bits> | encrypt <hex-msg> <e> <n> | decrypt <hex-ct> <d> <n> | primetest <n>")
+        die("usage: tycho-rsa selfcheck | keygen <bits> | encrypt <hex-msg> <e> <n> | decrypt <hex-ct> <d> <n> | primetest <n>\nNOT constant time: modexp branches on the exponent's bits, so anyone who can time repeated decryptions with one key recovers the private key. Demonstration only.")
     if av[0] == "selfcheck":
         selfcheck()
     elif av[0] == "keygen":
