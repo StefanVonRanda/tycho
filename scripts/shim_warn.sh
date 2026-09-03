@@ -11,10 +11,9 @@
 # failure. A wider set would need an exemption list, and an exemption list is
 # how a warning lane becomes decoration.
 #
-# Deps parsing differs from shim_check.sh on purpose: everything from the
-# `_WIN32:` marker onward is raw Windows link flags, not pkg-config packages
-# (corelib/tls/deps documents this). shim_check.sh feeds them to pkg-config and
-# skips 4 shims that build fine here; see the plan phase filed alongside this.
+# Deps parsing lives in scripts/deps_pkgs.sh and is shared with shim_check.sh,
+# which used to feed the `_WIN32:` link flags to pkg-config and skip 4 shims
+# that build fine here.
 
 set -eu
 
@@ -27,12 +26,12 @@ WFLAGS="-Wall -Wextra -Wdeprecated-declarations"
 # because nothing was compiled at all.
 MIN_COMPILED=10
 
+# One spelling of the `deps` parse, shared with scripts/shim_check.sh.
+. "$(dirname "$0")/deps_pkgs.sh"
+
 T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT
 
-pkgs_of() {
-    sed -e 's/#.*//' -e '/_WIN32:/,$d' "$1" | grep -vE '^[[:space:]]*$' || true
-}
 
 selfcheck() {
     rc=0

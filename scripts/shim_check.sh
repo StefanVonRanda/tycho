@@ -1,5 +1,8 @@
 set -eu
 
+# One spelling of the `deps` parse, shared with scripts/shim_warn.sh.
+. "$(dirname "$0")/deps_pkgs.sh"
+
 CC="${CC:-cc}"
 fail=0 ok=0 skipped=0
 
@@ -8,7 +11,7 @@ for shim in corelib/*/*_shim.c; do
     depflags=""
 
     if [ -f "$dir/deps" ]; then
-        pkgs="$(grep -vE '^[[:space:]]*(#|$)' "$dir/deps" || true)"
+        pkgs="$(pkgs_of "$dir/deps")"
         missing=""
         for pkg in $pkgs; do
             pkg-config --exists "$pkg" 2>/dev/null || missing="$missing $pkg"
