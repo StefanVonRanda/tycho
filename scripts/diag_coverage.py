@@ -61,7 +61,12 @@ DIE = ("die_at", "die", "warn_at", "diag_push")
 # Held out of the rule set. Matched as substrings of the FORMAT string.
 CAPACITY = ["too many ", "nesting too deep", "indentation too deep",
             "string too long", "declares too many locals", "a function type has at most",
-            "a tuple has at most"]
+            "a tuple has at most",
+            # R21d-2: two more ceilings that meet this hold-out's own criterion --
+            # 17 explicit type arguments and a 33-deep assignment place are
+            # generated programs, and both are the same family as the two
+            # `has at most` entries above. ./tychoc1 --parse accepts each.
+            "at most 16 explicit type arguments", "too deeply nested"]
 INTERNAL = ["oom", "cannot open", "cannot write", "read error", "unknown flag",
             "pkg-config", "C compilation failed", "already exists and was not written",
             "-g line info", "contains a NUL byte", "import cycle",

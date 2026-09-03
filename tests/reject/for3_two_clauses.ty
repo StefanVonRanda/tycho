@@ -1,0 +1,8 @@
+# No `# expect:`: the two compilers word this differently and `make test` scores
+# the expectation against ./tychoc1. Bootstrap src/tychoc.c:3971 says `a
+# three-clause `for` is `for init; cond; post:` -- two ';' separating three
+# clauses`; tychoc1 says `expected ';', found op ':'`. Porting the wording is
+# R16c-5's own scope, not this fixture's.
+fn main():
+    for i := 0; i < 3:
+        println("x")

@@ -62,9 +62,10 @@ corpus_census() {
     # An `# expect:` line is OPT-IN, so a fixture that loses one silently falls
     # back to scoring on the verdict alone -- refused for ANY reason, including a
     # rule other than the one it was written for. That is invisible: the lane
-    # still prints `ok`. So the count is pinned to a literal here. 109 = the 82 at
-    # R16c-4, plus 27 of the 29 R21d wrote for bootstrap rules no fixture reached.
-    # The other 2 carry none on purpose: this lane scores the expectation against
+    # still prints `ok`. So the count is pinned to a literal here. 111 = the 82 at
+    # R16c-4, plus 27 of the 29 R21d wrote for bootstrap rules no fixture reached,
+    # plus 2 of the 3 R21d-2 added.
+    # The other 3 carry none on purpose: this lane scores the expectation against
     # ./tychoc1, and on those two rules the two compilers word it differently, so an
     # `# expect:` here could only assert one of the two. Each says so in its header.
     cc_exp=0
@@ -73,7 +74,7 @@ corpus_census() {
         grep -q '^# expect: ' "$cc_e" && cc_exp=$((cc_exp + 1))
     done
     [ "$cc_show" = print ] && printf 'count %-10s %d\n' reject-expect "$cc_exp"
-    [ "$cc_exp" -eq 109 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=109"
+    [ "$cc_exp" -eq 111 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=111"
 
     cc_dirs=0
     for cc_d in $(git ls-files tests 2>/dev/null | grep '\.ty$' | sed 's|/[^/]*$||' | sort -u); do

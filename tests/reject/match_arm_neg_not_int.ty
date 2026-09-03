@@ -1,0 +1,10 @@
+# `-` is accepted before any scalar in the set loop and only then checked, so a
+# second set element reaches it: src/tychoc.c:3499. Both compilers agree.
+# expect: '-' is only valid before an int literal in a match arm
+fn main():
+    x := 1
+    match x:
+        1 | -true:
+            println("y")
+        _:
+            println("n")

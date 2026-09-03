@@ -151,6 +151,7 @@ tests/reject/for3_empty_post.ty	SYNTAX	3979	the post clause is required -- write
 tests/reject/for3_four_clauses.ty	SYNTAX	3966	a three-clause `for` has exactly three clauses: `for init; cond; post:`
 tests/reject/for3_init_not_decl.ty	SYNTAX	3989	the init clause of a three-clause `for` is a declaration or an assignment
 tests/reject/for3_post_not_assign.ty	SYNTAX	3994	the post clause of a three-clause `for` is an assignment to a variable (`i += 1`)
+tests/reject/for3_two_clauses.ty	SYNTAX	3971	a three-clause `for` is `for init; cond; post:` -- two ';' separating three clauses
 tests/reject/for_missing_colon.ty	SYNTAX	3973	expected ':' before the block
 tests/reject/for_two_binders.ty	SYNTAX	4012	a `for` binds one name -- write `for p in COLL:` then `k, q := p` in the body
 tests/reject/fstring_escape.ty	SYNTAX	0	unsupported escape \  (use \n \t \r \\ \")
@@ -219,6 +220,8 @@ tests/reject/map_has_removed.ty	SYNTAX	3042	map_has was removed; use `k in m`
 tests/reject/map_key_wrong_read.ty	TYPE	6224	map key must be Slot, got int
 tests/reject/map_set_removed.ty	SYNTAX	3041	map_set was removed; use `m[k] = v`
 tests/reject/map_type_as_value.ty	SYNTAX	2878	`[string: int]` is the TYPE, not a value -- for an empty map write `[]string: int`, or annotate the declaration: `m : [string: int] = []`
+tests/reject/match_arm_neg_not_int.ty	SYNTAX	3499	'-' is only valid before an int literal in a match arm
+tests/reject/match_arm_set_not_scalar.ty	SYNTAX	3498	a match arm must be a variant name, a scalar literal, a range, or `_`
 tests/reject/match_dup_arm.ty	TYPE	8591	duplicate arm for Red
 tests/reject/match_expr_nonexhaustive.ty	TYPE	8547	match on an Option must cover both Some and None
 tests/reject/match_non_exhaustive.ty	TYPE	8259	non-exhaustive match: missing variant B of E
