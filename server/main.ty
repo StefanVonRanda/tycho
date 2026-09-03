@@ -29,6 +29,18 @@ const DEF_HEAD_MS = 15000
 # The bound is now ceil(K / workers) * --first-ms, and it no longer moves when an
 # operator lengthens the keep-alive window.
 const DEF_FIRST_MS = 1000
+# THE WHOLE-CONNECTION BUDGET, and it is the third deadline on the same fd. The
+# other two bound ONE read; this bounds the connection. It exists because
+# --first-ms fixed only half the starvation: a peer that COMPLETES one request
+# and then parks has earned --idle-ms and holds one of --workers accept loops for
+# all of it, and a peer that dribbles one request per idle window holds one for
+# MAX_REQS rounds. The real cure is an event loop -- a worker cannot notice a
+# second connection while it is blocked on this one -- and that is a rewrite of
+# accept_loop, not a patch. This is the bound that can be had without one: no
+# connection holds a worker longer than --conn-ms, so the starvation bound for K
+# parked peers becomes ceil(K / workers) * min(--idle-ms, --conn-ms) and stops
+# scaling with the keep-alive dial. 0 disables it.
+const DEF_CONN_MS = 30000
 const MAX_HEAD    = 16384      # per-request byte budget; past this -> 431, connection closed
 const MAX_REQS    = 1024       # requests served on one connection before we close it
 const LOG_FIELD   = 160        # longest request target we will echo into a log line
@@ -42,6 +54,7 @@ struct Config:
     workers: int
     idle_ms: int
     first_ms: int
+    conn_ms: int
     quiet: bool
 
 # What a request target resolved to. `status` 200 means serve `file`; 301 means
@@ -427,13 +440,30 @@ fn serve_conn(cfg: Config, conn: int, wid: int) -> int:
     # The read deadline is NOT one number for the life of the connection.
     # accept_loop armed the short first-byte deadline; the moment this peer has
     # been answered once it stops being a suspect and gets the keep-alive idle
-    # window it asked for. Re-armed exactly once, at served == 1, not per request.
+    # window it asked for -- but never more of it than --conn-ms has left, which
+    # is what stops a parked peer holding this worker for a whole idle timeout
+    # and a dribbling one holding it for MAX_REQS of them. `armed` tracks what is
+    # on the socket so the re-arm is still one syscall per CHANGE, not per request.
+    cw := time.start()
+    armed := cfg.first_ms
     for alive and served < MAX_REQS and not signal.shutdown_requested():
+        left := cfg.conn_ms - time.elapsed_ms(cw)
+        if cfg.conn_ms > 0 and left <= 0:
+            break                       # the connection's total budget is spent
         head_ms := cfg.first_ms
+        want := cfg.first_ms
         if served > 0:
             head_ms = DEF_HEAD_MS
-            if served == 1 and not net.set_read_timeout_ms(conn, cfg.idle_ms) and not cfg.quiet:
-                eprint("w" + str(wid) + " warn: idle timeout not re-armed\n")
+            want = cfg.idle_ms
+        if cfg.conn_ms > 0:
+            if want > left:
+                want = left
+            if head_ms > left:
+                head_ms = left
+        if want != armed:
+            if not net.set_read_timeout_ms(conn, want) and not cfg.quiet:
+                eprint("w" + str(wid) + " warn: read timeout not re-armed\n")
+            armed = want
         # ONE corelib call does the read, the cap and the parse. `raw` is the second
         # tuple element, for the two jobs the Result cannot do: name a request that
         # would not parse in the access log, and answer "did this peer even start
@@ -472,6 +502,14 @@ fn serve_conn(cfg: Config, conn: int, wid: int) -> int:
                 if clh != "" or httpd.header(req, "transfer-encoding") != "":
                     keep = false
                 teh := httpd.header(req, "transfer-encoding")
+                # A SECOND LINE, deliberately kept though it is currently
+                # unreachable: since the framing rewrite, corelib refuses all
+                # three of these (`corelib/httpd/httpd.ty@framing`) and the read
+                # comes back Err(Malformed), so the Ok(req) arm never sees one.
+                # It stays because request smuggling is what it prevents and the
+                # cost is three string tests on a path that already parsed a
+                # head; if the corelib check is ever loosened this answers 400
+                # rather than serving an ambiguously-framed request.
                 bad_len := (clh != "" and not is_digits(clh)) or
                         httpd.content_length_conflict(req) or
                         (clh != "" and teh != "")
@@ -668,6 +706,8 @@ fn usage() -> string:
             "  --idle-ms N      keep-alive idle timeout, ms   (default: " + str(DEF_IDLE_MS) + ")\n"
             "  --first-ms N     deadline for a peer that has\n"
             "                   sent nothing yet, ms          (default: " + str(DEF_FIRST_MS) + ")\n"
+            "  --conn-ms N      total time one connection may\n"
+            "                   hold a worker, ms, 0 = off    (default: " + str(DEF_CONN_MS) + ")\n"
             "  --quiet, -q      do not log requests\n"
             "  --help, -h       this text\n\n"
             "Both spellings work: --port 8080 and --port=8080.\n")
@@ -680,7 +720,7 @@ fn as_uint(s: string, what: string) -> int:
 fn parse_args(av: [string]) -> Config:
     # the whole schema: names that take a value, and names that are booleans.
     # Both without dashes, which is the spelling cli.get/cli.flag already take.
-    valued := ["root", "host", "port", "workers", "idle-ms", "first-ms"]
+    valued := ["root", "host", "port", "workers", "idle-ms", "first-ms", "conn-ms"]
     boolean := ["quiet", "q", "help", "h"]
     c := cli.parse_spec(av, valued, boolean)
 
@@ -703,6 +743,7 @@ fn parse_args(av: [string]) -> Config:
     workers := as_uint(cli.get(c, "workers", str(DEF_WORKERS)), "--workers")
     idle := as_uint(cli.get(c, "idle-ms", str(DEF_IDLE_MS)), "--idle-ms")
     first := as_uint(cli.get(c, "first-ms", str(DEF_FIRST_MS)), "--first-ms")
+    conn := as_uint(cli.get(c, "conn-ms", str(DEF_CONN_MS)), "--conn-ms")
     if port > 65535:
         die("tycho-httpd: --port must be 0..65535\n")
     if workers < 1 or workers > 256:
@@ -711,8 +752,11 @@ fn parse_args(av: [string]) -> Config:
         die("tycho-httpd: --idle-ms must be at least 1\n")
     if first < 1:
         die("tycho-httpd: --first-ms must be at least 1\n")
+    if conn > 0 and conn < first:
+        die("tycho-httpd: --conn-ms must be 0 or at least --first-ms\n")
     return Config(path.clean(cli.get(c, "root", ".")), cli.get(c, "host", DEF_HOST),
-                  port, workers, idle, first, cli.flag(c, "quiet") or cli.flag(c, "q"))
+                  port, workers, idle, first, conn,
+                  cli.flag(c, "quiet") or cli.flag(c, "q"))
 
 fn main():
     cfg := parse_args(cli.argv())
@@ -742,7 +786,8 @@ fn main():
     banner += " on http://" + cfg.host + ":" + str(bound) + "/"
     banner += "  workers=" + str(cfg.workers)
     banner += " idle=" + str(cfg.idle_ms) + "ms"
-    banner += " first=" + str(cfg.first_ms) + "ms\n"
+    banner += " first=" + str(cfg.first_ms) + "ms"
+    banner += " conn=" + str(cfg.conn_ms) + "ms\n"
     eprint(banner)
 
     total := workers(cfg, srv, cfg.workers)

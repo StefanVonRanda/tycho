@@ -211,7 +211,10 @@ element type instead of a family of per-type siblings.
   / `get_status(url)` do the request and free the handle. The body is arena-copied via the
   FFI string-return, so a binary body with interior `0x00` truncates — `body(r)` is for text
   APIs; `body_bytes(r)` is the binary-safe sibling (the full byte length, interior NULs
-  preserved — used by tycho-fetch). Tests are skipped where libcurl is absent.
+  preserved — used by tycho-fetch). `post(url, body, content_type)` takes a `string` body
+  and stops at the first interior `0x00`; `post_bytes(url, body, content_type)` is its
+  binary-safe sibling, taking `bytes` and sending the whole length — the same split
+  `body`/`body_bytes` make on the way back. Tests are skipped where libcurl is absent.
 - **`json`** — a recursive-descent JSON parser + serializer (the `examples/json.ty`
   demo promoted to a reusable module). The document is a value-semantic tree, the
   `Json` enum (`JNull`/`JBool`/`JNum`/`JFloat`/`JStr`/`JArr`/`JObj`, objects as
@@ -509,6 +512,8 @@ element type instead of a family of per-type siblings.
   with your own byte budget — reaching it with no header terminator is `Err(TooLarge)`, the
   `431` decision — plus every byte read as the second tuple element, so an access log can
   name a request that would not parse; `read_request` is this with `cap = MAX_REQUEST`) /
+  `read_request_deadline(fd, cap, deadline_ms)` (the same again, with a deadline on the
+  **whole** head-and-body rather than on one `read`) /
   `write_response(fd, r) -> Result(int, net.NetErr)` (Ok = total bytes written;
   it returns the same error type `net.write` does, so `or_return` propagates a failed
   send with no sentinel check). **Binary-safe bodies** — `Request.body` and
@@ -523,6 +528,18 @@ element type instead of a family of per-type siblings.
   empty `bad_request()` always closes) and `with_connection(r, alive)`; pair it with
   `net.set_read_timeout_ms` so an idle peer cannot pin a worker. CRLF is built with
   `chr(13)` (tycho strings have no `\r` escape).
+  **Framing is refused, never guessed**, by all three read entry points
+  (`corelib/httpd/httpd.ty@framing`): any `Transfer-Encoding` at all — **chunked bodies are
+  not decoded** — a `Content-Length` that is not a plain decimal, two `Content-Length`
+  headers that disagree, or `Content-Length` together with `Transfer-Encoding`, are each
+  `Err(Malformed)`, and the connection must not be reused. A framed size past `cap` is
+  `Err(TooLarge)` *before* the body is read; a body shorter than its own `Content-Length` is
+  `Err(Closed)`, because an unfinished request is not a short one.
+  **Pipelining is not supported.** Exactly the bytes this request framed are parsed;
+  anything the peer sent past them is discarded with the buffer, so a client that pipelines
+  loses every request after the first. Handing the leftover back would need a
+  per-connection buffer these signatures do not carry — what matters is that the leftover
+  is never glued onto this request's body, which is the smuggling bug.
 - **`cli`** — command-line argument parsing, pure string math. `parse(argv) -> Cli` sorts the
   vector into three buckets: `--key=value` **options**, boolean **flags** (`--flag`, and short
   clusters `-abc` → `a`/`b`/`c`), and **positionals** (everything else, plus everything after

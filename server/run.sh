@@ -113,7 +113,7 @@ port, t0 = None, time.time()
 while time.time() - t0 < 10.0:
     with open(errlog, "rb") as f:
         seen = f.read().decode("utf-8", "replace")
-    m = re.search(r"^tycho-httpd: serving (\S+) on http://(\S+):(\d+)/  workers=(\d+) idle=(\d+)ms first=(\d+)ms$",
+    m = re.search(r"^tycho-httpd: serving (\S+) on http://(\S+):(\d+)/  workers=(\d+) idle=(\d+)ms first=(\d+)ms conn=(\d+)ms$",
                   seen, re.M)
     if m:
         port = int(m.group(3)); break
@@ -718,9 +718,10 @@ fi
 # A second server, started the same way and polled for the same banner. Used by
 # both remaining cases; there is only one process to kill per case, and the first
 # one is already gone.
-respawn() {  # respawn <errfile> [idle-ms] [first-ms]; sets SRV
+respawn() {  # respawn <errfile> [idle-ms] [first-ms] [conn-ms]; sets SRV
     srv_start "$1" --root "$T/www" --host 127.0.0.1 --port 0 \
-              --workers 4 --idle-ms "${2:-500}" --first-ms "${3:-700}"
+              --workers 4 --idle-ms "${2:-500}" --first-ms "${3:-700}" \
+              --conn-ms "${4:-30000}"
     i=0
     while [ "$i" -lt 500 ]; do                   # the banner, not a fixed sleep
         grep -q '^tycho-httpd: serving ' "$1" 2>/dev/null && return 0
@@ -1016,6 +1017,95 @@ rc=$?
 [ "$rc" -eq 0 ] || fail=1
 srv_kill; wait "$SRV" 2>/dev/null; SRV=""
 
+# ---- a PARKED keep-alive peer must not starve one either ---------------------
+# The sibling of the leg above, one request later, and --first-ms cannot see it:
+# a peer that COMPLETES a request has earned --idle-ms, and it holds one of
+# --workers accept loops for all of it. --conn-ms is the whole-connection budget
+# that bounds it without an event loop, so the delay is ceil(K / workers) x
+# min(--idle-ms, --conn-ms) instead of ceil(K / workers) x --idle-ms.
+#
+# The server below runs at idle-ms EIGHT TIMES conn-ms, and that ratio is what
+# lets this redden: with --conn-ms 0 the same probe measured 8192ms against this
+# 3000ms bound -- one full idle timeout, which is the defect.
+respawn "$T/parkstarve.err" 8000 500 1000
+python3 - "$(port_of "$T/parkstarve.err")" 4 1000 8000 <<'PARKSTARVE'
+import socket, sys, time
+port, workers, conn_ms, idle_ms = (int(x) for x in sys.argv[1:5])
+bad = 0
+GET = b"GET /index.html HTTP/1.1\r\nHost: t\r\n\r\n"
+
+def timed_get(timeout):
+    t = time.time()
+    s = socket.create_connection(("127.0.0.1", port), timeout)
+    s.settimeout(timeout)
+    s.sendall(b"GET /index.html HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n")
+    buf = b""
+    while True:
+        c = s.recv(65536)
+        if not c:
+            break
+        buf += c
+    s.close()
+    return (time.time() - t) * 1000.0, buf.split(b"\r\n")[0].decode("latin1")
+
+# [1] THE CONTROL, first: an unloaded server must answer promptly or the number
+# measured under load says nothing about starvation at all.
+ms, st = timed_get(10.0)
+if st != "HTTP/1.1 200 OK" or ms > 500:
+    print("  FAIL parked-starvation control: unloaded GET %.0fms %s, want 200 under 500ms" % (ms, st))
+    bad = 1
+else:
+    print("  ok   parked-starvation control: unloaded GET answered in %.0fms" % ms)
+
+K = workers * 2
+held = []
+for _ in range(K):
+    try:
+        s = socket.create_connection(("127.0.0.1", port), 3.0)
+    except OSError as e:
+        print("  FAIL parked-starvation: could not open socket %d: %s" % (len(held), e))
+        bad = 1
+        break
+    s.settimeout(10.0)
+    s.sendall(GET)
+    held.append(s)
+# [2] Every parked peer must have been ANSWERED. Without this these are merely
+# silent sockets and the leg is the first-ms one wearing a different name.
+answered = 0
+for s in held:
+    try:
+        if s.recv(65536).startswith(b"HTTP/1.1 200"):
+            answered += 1
+    except OSError:
+        pass
+if answered != K:
+    print("  FAIL parked-starvation: only %d of %d peers were answered before parking" % (answered, K))
+    bad = 1
+else:
+    print("  ok   parked-starvation: all %d peers were answered, then went silent" % K)
+
+bound = (((K + workers - 1) // workers) * conn_ms) + 1000
+try:
+    ms, st = timed_get(60.0)
+except OSError as e:
+    print("  FAIL parked-starvation: legitimate GET failed outright under %d parked peers: %s" % (K, e))
+    ms, st, bad = -1.0, "", 1
+for c in held:
+    c.close()
+if ms >= 0 and st == "HTTP/1.1 200 OK" and ms <= bound:
+    print("  ok   parked-starvation: %d parked peers vs %d workers -> 200 in %.0fms "
+          "(bound %dms = ceil(%d/%d) x conn-ms %d + 1000; idle-ms is %d)"
+          % (K, workers, ms, bound, K, workers, conn_ms, idle_ms))
+elif ms >= 0:
+    print("  FAIL parked-starvation: %d parked peers delayed a GET %.0fms (%s), bound %dms"
+          % (K, ms, st or "no answer", bound))
+    bad = 1
+sys.exit(bad)
+PARKSTARVE
+rc=$?
+[ "$rc" -eq 0 ] || fail=1
+srv_kill; wait "$SRV" 2>/dev/null; SRV=""
+
 "$HTTPD" --help >"$T/help.out" 2>&1
 rc=$?
 if [ "$rc" -eq 0 ] && grep -q '^  --port N ' "$T/help.out"; then
@@ -1036,6 +1126,13 @@ if [ "$rc" -eq 1 ] && grep -q '^tycho-httpd: --port must be 0..65535$' "$T/range
     echo "  ok   --port 70000: exit 1, out of range"
 else
     echo "  FAIL --port 70000: exit $rc"; sed 's/^/      /' "$T/range.out"; fail=1
+fi
+"$HTTPD" --conn-ms 100 --first-ms 500 >"$T/connms.out" 2>&1
+rc=$?
+if [ "$rc" -eq 1 ] && grep -q '^tycho-httpd: --conn-ms must be 0 or at least --first-ms$' "$T/connms.out"; then
+    echo "  ok   --conn-ms 100 under --first-ms 500: exit 1, names the rule"
+else
+    echo "  FAIL --conn-ms below --first-ms: exit $rc"; sed 's/^/      /' "$T/connms.out"; fail=1
 fi
 
 if [ "$fail" -eq 0 ]; then

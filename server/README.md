@@ -27,6 +27,8 @@ usage: tycho-httpd [options]
   --idle-ms N      keep-alive idle timeout, ms   (default: 5000)
   --first-ms N     deadline for a peer that has
                    sent nothing yet, ms          (default: 1000)
+  --conn-ms N      total time one connection may
+                   hold a worker, ms, 0 = off    (default: 30000)
   --quiet, -q      do not log requests
   --help, -h       this text
 ```
@@ -42,9 +44,20 @@ otherwise holds one for a whole idle timeout. With the two conflated, 8 silent
 sockets against 8 workers delayed a legitimate `GET` by **4.93 s**, and 25 of
 them exhausted the listen backlog so a later request failed outright. Split, the
 same 8 cost **0.72 s** and the same 25 cost **2.77 s** — the bound being
-`ceil(K / workers) x --first-ms` for K silent sockets. It does not remove the
-cost of a connection that completes a request and then parks: that is what
-`--idle-ms` is for, and it stays the operator's dial.
+`ceil(K / workers) x --first-ms` for K silent sockets.
+
+`--conn-ms` is the third deadline and it covers what `--first-ms` cannot: a peer
+that **completes** a request and then parks has earned `--idle-ms`, and holds one
+of `--workers` accept loops for all of it; one that dribbles a request per idle
+window holds one for a thousand of them. `--first-ms` and `--idle-ms` each bound
+one *read*; `--conn-ms` bounds the *connection*, so no peer holds a worker longer
+than it and the parked bound becomes `ceil(K / workers) x min(--idle-ms,
+--conn-ms)` instead of scaling with the keep-alive dial. Measured at
+`--workers 4 --idle-ms 8000 --first-ms 500`: 8 parked peers delayed a legitimate
+`GET` by **8192 ms** at `--conn-ms 0`, and by **1024 ms** at `--conn-ms 1000`. It
+is a bound, not a cure — a worker still cannot notice a second connection while
+it is blocked on one, and that needs an event loop, which is a rewrite of
+`server/main.ty@accept_loop` rather than a patch.
 
 `--idle-ms` bounds two things rather than one, and the second is easy to miss.
 It is how long a silent keep-alive peer may pin a worker — and, because a worker
@@ -70,7 +83,7 @@ filed as phase 15 of the signals plan.
 | **Byte ranges** | One range. `Range: bytes=A-B` (both ends inclusive, `B` clamped to the last byte), `bytes=A-` and the suffix `bytes=-N` get `206` with `Content-Range: bytes A-B/LEN` and a `Content-Length` of the **slice**. A range with no satisfiable byte is `416` with `Content-Range: bytes */LEN`. An invalid spec, an unknown unit or a multipart request is ignored: `200`, whole file. `Accept-Ranges: bytes` goes on exactly the `200` for a file and the `206`. A `304` outranks a `Range` (RFC 7232 §6). |
 | **Keep-alive** | HTTP/1.1 default-on, `Connection: close` honoured, HTTP/1.0 defaults to close. Up to 1024 requests per connection. |
 | **Idle timeout** | `SO_RCVTIMEO` on each accepted socket, so a silent peer cannot pin a worker. |
-| **Shutdown** | `SIGTERM` and `SIGINT` are caught (`core:signal`): every accept loop retires, every worker is joined, the process prints `tycho-httpd: stopped after N requests` (`server/main.ty:749@stopped`) and exits **0**. `SIGKILL` is uncatchable and still stops it where it stands, with no such line. Shutdown latency is bounded by `--idle-ms`, not by the signal — see Usage above. |
+| **Shutdown** | `SIGTERM` and `SIGINT` are caught (`core:signal`): every accept loop retires, every worker is joined, the process prints `tycho-httpd: stopped after N requests` (`server/main.ty:794@stopped`) and exits **0**. `SIGKILL` is uncatchable and still stops it where it stands, with no such line. Shutdown latency is bounded by `--idle-ms`, not by the signal — see Usage above. |
 | **Statuses** | 200, 206, 301, 304, 400, 403, 404, 405, 408, 416, 431. A peer that hangs up before a complete request arrives gets no response and no log line at all — the transport cause (`httpd.ReqErr`) is what separates that from the 400 a malformed head earns. |
 | **Logging** | One line per request on stderr: worker, **client address**, method, target, status, body bytes, duration — `w1 127.0.0.1 GET / 200 2659 0.081ms` (`server/main.ty:216-226`). A response the peer hung up on gains a ` write-failed` tail and reports 0 bytes rather than claiming a body nobody received. The target is control-byte-scrubbed and truncated, so a hostile URL cannot inject newlines into the log. |
 
@@ -245,7 +258,7 @@ And a third, closed on **2026-07-31**:
   readiness banner, so no reader is told "serving" while `SIGTERM` still has its
   default disposition. **No new control flow was added** — every blocked
   `accept` returns `Err`, every loop retires, every spawned peer is joined, and
-  `server/main.ty:749@stopped` prints the count that was always unreachable. It fails
+  `server/main.ty:794@stopped` prints the count that was always unreachable. It fails
   closed: a handler that cannot be installed warns on stderr and the server runs
   on with the old behaviour.
 
@@ -313,7 +326,7 @@ the rough edges they closed.)
   `corelib/net/net_shim.c:151-152`). Before this, one client that sent a partial request and closed
   without reading killed the entire server — `SIGPIPE`, signal 13, every worker
   and every in-flight connection gone. The server now survives 100 consecutive
-  hostile disconnects and logs them as `write-failed` (`server/main.ty:407@write-failed`);
+  hostile disconnects and logs them as `write-failed` (`server/main.ty:420@write-failed`);
   `make server-check` re-runs a 50-disconnect version of that on every CI sweep.
 - **`TCP_NODELAY`** (`corelib/net/net_shim.c:97-98`).
   `httpd.write_response` sends the head and the body as two writes, on purpose,

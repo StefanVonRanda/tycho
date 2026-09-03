@@ -293,7 +293,8 @@ value-and-verdict form above (`corelib/datetime/datetime.ty@parse_offset`),
 `bignum.divmod(a, b) -> (Big, Big)` (`corelib/bignum/bignum.ty@divmod`), and
 `httpd.read_request_capped(fd, cap) -> (Result(Request, ReqErr), string)`
 (`corelib/httpd/httpd.ty@read_request_capped`), which carries a classification *and* the raw bytes
-that produced it. For a C function that must classify a payload the FFI has its own
+that produced it — the classification covering the framing refusals as well as the transport
+ones, and the raw bytes being what lets an access log name a request that would not parse. For a C function that must classify a payload the FFI has its own
 shape, since a tuple does not cross the boundary — see
 [§24.1.1](14-ffi.md#2411-returning-a-payload-and-a-classification).
 

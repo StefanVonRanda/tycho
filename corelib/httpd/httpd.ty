@@ -249,6 +249,16 @@ fn read_request(fd: int) -> Result(Request, ReqErr):
     got, raw := read_request_capped(fd, MAX_REQUEST)
     return got
 
+# Read one request off `fd`, at most `cap` bytes, within `deadline_ms` for the
+# whole head+body (0 disables it). Refuses rather than guesses: ambiguous framing
+# is Err(Malformed) (any Transfer-Encoding -- chunked is NOT decoded -- a
+# non-decimal or self-contradicting Content-Length, or CL together with TE), an
+# over-budget framed size is Err(TooLarge) before the body is read, a body
+# shorter than its own Content-Length is Err(Closed). PIPELINING IS NOT
+# SUPPORTED: exactly `need` bytes are parsed and anything past them is DISCARDED
+# with the buffer, so a pipelining client loses every request after the first.
+# Handing the leftover back needs a per-connection buffer this signature has not
+# got; gluing it onto the body is the smuggling bug and does not happen.
 fn read_request_deadline(fd: int, cap: int, deadline_ms: int) -> (Result(Request, ReqErr), string):
     sw := time.start()
     buf := ""
@@ -502,6 +512,7 @@ fn write_response(fd: int, r: Response) -> Result(int, net.NetErr):
 
 # The old two-argument shape, unchanged: no deadline. Kept so every existing
 # caller compiles as written; a server that faces the open internet should call
-# read_request_deadline instead and say how long a head may take.
+# read_request_deadline instead and say how long a head may take. Same refusals
+# and the same no-pipelining rule -- see that function's header.
 fn read_request_capped(fd: int, cap: int) -> (Result(Request, ReqErr), string):
     return read_request_deadline(fd, cap, 0)

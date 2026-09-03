@@ -326,19 +326,29 @@ fn to_str(a: Big) -> string:
         i = i - 1
     return out
 
-# The int value when the magnitude fits in a signed 64-bit int, else 0. Fail-closed
-# on overflow -- but note 0 is also the value of zero, so if a large value is
+# The int value when it fits in a signed 64-bit int, else 0. Fail-closed on
+# overflow -- but note 0 is also the value of zero, so if a large value is
 # possible, size-check first (e.g. via to_str) rather than trusting a 0 return.
+# The range is int64's own, INT_MIN included, so `to_int(from_int(n)) == n` for
+# every int: the negative bound is one larger than the positive one, and bounding
+# both at INT_MAX made from_int(INT_MIN) -- correct since 2026-09-03 -- read back
+# as 0. The magnitude of INT_MIN is not representable, so a negative is measured
+# one below it, the same |n| - 1 trick from_int uses.
 fn to_int(a: Big) -> int:
     if a.sign == 0:
         return 0
     if len(a.limbs) > 3:                  # > ~10^27 -- cannot fit in 64 bits
         return 0
+    ls := a.limbs
+    if a.sign < 0:
+        ls = mag_sub(ls, [1])
     mag := 0
-    i := len(a.limbs) - 1
+    i := len(ls) - 1
     for i >= 0:
-        if mag > (INT_MAX - a.limbs[i]) / BASE:   # mag*BASE + limb would exceed INT_MAX
+        if mag > (INT_MAX - ls[i]) / BASE:        # mag*BASE + limb would exceed INT_MAX
             return 0                               # fail closed
-        mag = mag * BASE + a.limbs[i]
+        mag = mag * BASE + ls[i]
         i = i - 1
-    return mag * a.sign
+    if a.sign < 0:
+        return 0 - mag - 1                # -(|a| - 1) - 1, never negating INT_MIN
+    return mag
