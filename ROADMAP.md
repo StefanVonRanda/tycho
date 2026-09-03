@@ -50,6 +50,31 @@ fails the gate, because until then it printed a note attached to no verdict and
 Lifting the freeze is deliberate: `python3 scripts/surface_lock.py --record`, and
 the diff says exactly what grew.
 
+### Queued behind the freeze
+
+Three features are accepted in principle and deliberately not built yet. They
+are recorded here so the freeze does not quietly become a decision never to
+revisit:
+
+- **Alignment and packed layout.** Nothing in the type system currently lets a
+  struct state its alignment or pack its fields. That costs twice: every binary
+  header in the tree is read byte by byte and reassembled by hand, and an `soa`
+  column starts wherever the allocator put it rather than on a boundary the
+  language promised. Both are attributes in the emitted C, so the cost is in the
+  surface, not the backend.
+- **Vectors.** `soa` gives contiguous columns; vector types are what consume
+  them. Without them, vectorisation is whatever the C compiler happens to do,
+  which is the wrong thing to leave to luck in a data-oriented language.
+- **Groups.** Simultaneous assignment, and the field form that permutes several
+  fields at once. It pairs with vectors, and it replaces the temporaries that a
+  swap needs today.
+
+Alignment comes first, because vectors without it buy little, and groups follow
+vectors because that is where the notation earns its keep.
+
+Not queued: compile-time execution, and field promotion (`using`). The first is
+deferred, the second refused -- a bare field name should say where it came from.
+
 ## Near-term
 
 Foundation before feature breadth. In rough priority:
