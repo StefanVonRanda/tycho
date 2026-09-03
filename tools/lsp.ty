@@ -318,6 +318,14 @@ fn path_base(p: string) -> string:
 # single-quote a string for the shell, escaping embedded quotes (paths from a
 # file:// uri are attacker-shaped -- never interpolate them raw into a command).
 fn shq(s: string) -> string:
+    if tycho_is_windows() == 1:                         # same spelling as tools/tycho.ty@shq
+        out := "\""
+        for i := 0; i < len(s); i += 1:
+            if s[i] == 34:                              # 34 = double quote
+                out = out + "\\\""
+            else:
+                out = out + substr(s, i, i + 1)
+        return out + "\""
     out := "'"
     for i := 0; i < len(s); i += 1:
         if s[i] == 39:                                  # 39 = single quote
@@ -488,6 +496,33 @@ fn compute_syms(text: string, cc: string) -> string:
     tycho_run(cc + " /tmp/.tycholsp_doc.ty --symbols > /tmp/.tycholsp_syms.txt 2>" + null_dev())
     return read_file("/tmp/.tycholsp_syms.txt")
 
+fn hex_val(c: int) -> int:
+    if c >= 48 and c <= 57:
+        return c - 48                                   # '0'-'9'
+    if c >= 97 and c <= 102:
+        return c - 87                                   # 'a'-'f'
+    if c >= 65 and c <= 70:
+        return c - 55                                   # 'A'-'F'
+    return -1
+
+# A uri is percent-encoded: a file named `a b.ty` arrives as `a%20b.ty`, and
+# handing that to the compiler names a path that does not exist. A lone `%` not
+# followed by two hex digits stays literal -- that is a filename, not an escape.
+fn pct_decode(s: string) -> string:
+    out := ""
+    i := 0
+    for i < len(s):
+        if s[i] == 37 and i + 2 < len(s):               # 37 = '%'
+            hi := hex_val(s[i + 1])
+            lo := hex_val(s[i + 2])
+            if hi >= 0 and lo >= 0:
+                out = out + chr(hi * 16 + lo)
+                i = i + 3
+                continue
+        out = out + substr(s, i, i + 1)
+        i = i + 1
+    return out
+
 # --- cross-package symbols (project index) -----------------------------------
 # The buffer temp above is a lone file, so `import "core:X"` and sibling files
 # never resolve (imports load only in package mode, over the real directory).
@@ -497,7 +532,7 @@ fn compute_syms(text: string, cc: string) -> string:
 # active file's own live symbols still come from compute_syms.
 fn uri_to_path(uri: string) -> string:
     if starts_with(uri, "file://"):
-        return substr(uri, 7, len(uri))
+        return pct_decode(substr(uri, 7, len(uri)))
     return ""
 
 fn has_import(text: string) -> bool:

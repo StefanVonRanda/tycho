@@ -177,12 +177,38 @@ fn parse_value(tok: string) -> Result(Value, string):
     if tok == "false":
         return Ok(TBool(false))
     if len(tok) >= 10 and is_date_head(tok):
+        if not is_date_valid(tok):
+            return Err("not a real date: " + tok)
         return Ok(TStr(tok))       # ISO-8601 datetime, kept as a string
     if is_num_start(c) or c == 43 or c == 45:
         return parse_number(tok)
     return Err("cannot parse value: " + tok)
 
-fn is_date_head(t: string) -> bool:       # YYYY-MM-DD
+fn dnum(t: string, a: int, b: int) -> int:
+    v := 0
+    for i := a; i < b; i += 1:
+        v = v * 10 + (t[i] - 48)
+    return v
+
+# A SHAPE is not a date: `9999-99-99` is ten bytes shaped NNNN-NN-NN and was
+# accepted whole as a datetime string. Month and day ranges, leap year included.
+# gap: the time half after the date is still unchecked (`...T99:99:99`).
+fn is_date_valid(t: string) -> bool:
+    y := dnum(t, 0, 4)
+    m := dnum(t, 5, 7)
+    d := dnum(t, 8, 10)
+    if m < 1 or m > 12 or d < 1:
+        return false
+    dim := 31
+    if m == 4 or m == 6 or m == 9 or m == 11:
+        dim = 30
+    elif m == 2:
+        dim = 28
+        if y % 4 == 0 and (y % 100 != 0 or y % 400 == 0):
+            dim = 29
+    return d <= dim
+
+fn is_date_head(t: string) -> bool:       # YYYY-MM-DD shape only
     for i := 0; i < 10; i += 1:
         if i == 4 or i == 7:
             if t[i] != 45:
@@ -263,6 +289,8 @@ fn parse_number(t: string) -> Result(Value, string):
             base = 8
         elif t[i + 1] == 98 or t[i + 1] == 66:
             base = 2
+        if not underscores_ok(t, i + 2, base):
+            return Err("bad number: " + t)
         v := 0
         seen := false
         j := i + 2
@@ -311,6 +339,8 @@ fn parse_number(t: string) -> Result(Value, string):
     # exponent digit by digit and then multiplied by 10.0 that many times, so
     # `1e99999999999` looped ~10^11 times (a hang, not an answer) and `1e400`
     # came back as infinity; the hand-rolled int wrapped silently.
+    if not underscores_ok(t, i, 10):
+        return Err("bad number: " + t)
     clean := strip_underscores(t)
     if is_float:
         match strings.parse_float(clean):
@@ -331,6 +361,28 @@ fn parse_number(t: string) -> Result(Value, string):
             return Err("integer out of range: " + t)
         Err(e2):
             return Err("bad number: " + t)
+
+fn digit_ok(c: int, base: int) -> bool:
+    if base == 16:
+        return hex_digit(c) >= 0
+    if base == 8:
+        return c >= 48 and c <= 55
+    if base == 2:
+        return c == 48 or c == 49
+    return c >= 48 and c <= 57
+
+# TOML allows `_` only BETWEEN digits. strip_underscores dropped one anywhere,
+# so `1__0`, `_1` and `1_` read back as 10, 1 and 1 -- a wrong answer, not a
+# refusal. `from` is the first digit position (past any sign or base prefix).
+fn underscores_ok(t: string, from: int, base: int) -> bool:
+    for i := from; i < len(t); i += 1:
+        if t[i] != 95:
+            continue
+        if i == from or i + 1 >= len(t):
+            return false
+        if not digit_ok(t[i - 1], base) or not digit_ok(t[i + 1], base):
+            return false
+    return true
 
 fn strip_underscores(t: string) -> string:
     out := ""

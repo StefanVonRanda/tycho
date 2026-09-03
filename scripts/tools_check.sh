@@ -200,6 +200,44 @@ print("    completion(strings.) trim+lines=%s   hover(strings.trim)=%s" % (comp_
 sys.exit(0 if comp_ok and hover_ok else 1)
 PY
 
+echo ">>> pcturi: a percent-encoded uri reaches the same file as a raw one"
+# A client sends `file:///a%20b%23c.ty` for a file named `a b#c.ty`. uri_to_path
+# did no decoding, so compute_projs ran the compiler on a path that does not
+# exist, got nothing back and silently dropped imported-symbol completion -- no
+# error, just a shorter list. Scored as a DIFFERENTIAL against the raw uri for
+# the same file, so a leg that merely "got some labels" cannot pass.
+mkdir -p "$TMP/pct uri"
+printf 'package main\nimport "core:strings"\n\nfn main():\n    s := strings.trim("  hi  ")\n    println(s)\n' > "$TMP/pct uri/a b#c.ty"
+python3 - "$LSP" "$TMP/pct uri/a b#c.ty" "$PWD/corelib" <<'PY' || fail=1
+import subprocess, json, os, sys, urllib.parse
+lsp, path, corelib = sys.argv[1], sys.argv[2], sys.argv[3]
+def frame(o):
+    b = json.dumps(o).encode(); return b"Content-Length: %d\r\n\r\n%b" % (len(b), b)
+text = open(path).read()
+line4 = text.split("\n")[4]
+dot = line4.index("strings.") + len("strings.")
+def labels_for(uri):
+    msgs = (frame({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}})
+            + frame({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":uri,"text":text}}})
+            + frame({"jsonrpc":"2.0","id":2,"method":"textDocument/completion","params":{"textDocument":{"uri":uri},"position":{"line":4,"character":dot}}})
+            + frame({"jsonrpc":"2.0","method":"exit"}))
+    p = subprocess.run([lsp], input=msgs, capture_output=True, timeout=30, env=dict(os.environ, TYCHOC="./tychoc", TYCHO_CORELIB=corelib))
+    out = p.stdout.decode(); i = 0; res = {}
+    while True:
+        k = out.find("Content-Length: ", i)
+        if k < 0: break
+        j = out.find("\r\n\r\n", k); n = int(out[k+16:j]); body = out[j+4:j+4+n]; i = j+4+n
+        o = json.loads(body)
+        if isinstance(o.get("id"), int): res[o["id"]] = o.get("result")
+    return sorted(it["label"] for it in (res.get(2) or {}).get("items", []))
+enc = labels_for("file://" + urllib.parse.quote(path))
+raw = labels_for("file://" + path)
+# raw is the positive control: if IT is empty the differential is vacuous
+ok = raw == enc and "trim" in enc and "lines" in enc
+print("    raw=%d labels  encoded=%d labels  identical=%s" % (len(raw), len(enc), raw == enc))
+sys.exit(0 if ok else 1)
+PY
+
 echo ">>> pkgdiag: package-aware diagnostics (sibling resolution + live buffer)"
 # A package file is compiled package-aware: its dir is mirrored with the live
 # buffer swapped in, so sibling symbols resolve and the active file's real errors

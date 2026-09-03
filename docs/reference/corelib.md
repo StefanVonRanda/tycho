@@ -72,14 +72,45 @@ element type instead of a family of per-type siblings.
   `strip_prefix`/`strip_suffix`, `pad_left`/`pad_right(s, width, pad)` (pad is one byte),
   `reverse`, `capitalize`, `split_once(s, sep) -> (before, after)` (`(s, "")` if absent).
   (`split`/`find`/`substr`/`len`/`chr` are builtins.)
-- **`path`** — POSIX path utilities, all pure string math (separator `/`, no
-  filesystem access, every function returns a fresh value): `base` (final element,
-  trailing slashes ignored; `""`→`.`, `"/"`→`/`), `dir` (all but the final element),
+- **`path`** — POSIX path utilities (separator `/`). Everything above the fence
+  below is pure string math (no filesystem access, every function returns a fresh
+  value): `base` (final element, trailing slashes ignored; `""`→`.`, `"/"`→`/`), `dir` (all but the final element),
   `ext` (extension incl. the dot, `""` if none; a leading dot is a dotfile, not an
   ext), `stem` (base minus ext), `join(a, b)` (exactly one separator, empty operands
   drop out), `is_abs`, `split_path(p) -> (dir, base)` (the inverse of `join`), and
   `clean` (lexical normalize: collapse `//`, drop `.`, resolve `..` but never above
   the root or past a leading `..`). `last_slash(s)` is the shared scan helper.
+  `safe_join(base, rel)` is the lexical containment prefilter: the cleaned join when
+  an untrusted `rel` stays under `base`, `""` when it is absolute, escapes via `..`,
+  or carries a backslash or an `X:` drive prefix — those are refused rather than
+  interpreted, so the answer does not vary by build target.
+
+  **The filesystem fence.** A lexical check cannot see a symlink: `safe_join` is
+  perfectly happy with a contained name whose target is `/etc/passwd`. Three
+  functions therefore make a real syscall, and all three fail closed — `""` is a
+  refusal and callers MUST treat it as one before using the path.
+
+  - `real(p)` — realpath(3): the absolute path with every symlink and `..`
+    resolved, or `""` if the path does not exist, cannot be read, contains a NUL,
+    or does not fit.
+  - `under(root, p)` — true when `p` **is** `root` or lies underneath it. This is
+    the comparison only, not the resolution: both arguments must already be resolved.
+  - `resolve_under(base, rel)` — **the one to reach for first** when a path is
+    built from untrusted input; `safe_join` is the cheap prefilter inside it. It
+    returns the path to use, or `""` when `rel` is refused — refused lexically, or
+    because the resolved answer lands outside `base`, or because `base` itself does
+    not resolve. A path that **does not exist is not a refusal**: the longest
+    existing ancestor is resolved and checked instead, and the lexical join comes
+    back, so the caller reports its own "not found" rather than a spurious
+    "forbidden". Nothing can escape through a component that is not there — there
+    is no symlink to follow.
+
+    **Residual TOCTOU, stated rather than hidden:** between this check and the
+    caller's own open, an attacker *with write access inside the root* could
+    replace a resolved component with a symlink. Closing that needs the open done
+    here, with `O_NOFOLLOW` per component. This narrows an unconditional escape to
+    a race an outside attacker cannot reach; it does not remove it.
+
 - **`arrays`** — generic utilities over any element type `[T]`: `contains`, `index_of`
   (−1 if absent), `count`, `reverse`, `take(xs, n)`, `drop(xs, n)`, `concat(a, b)`,
   `fill(n, v)`, `dedup` (consecutive — sort first for a full dedup); `sort` (ascending),
