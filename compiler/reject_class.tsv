@@ -106,6 +106,7 @@ tests/reject/err_empty.ty	SYNTAX	2997	Err() carries no value -- a Result's error
 tests/reject/explicit_count.ty	TYPE	2675	unknown type 'str'
 tests/reject/explicit_noarg.ty	SEMANTIC	9040	no argument fixes 'empty''s type parameter $T -- it appears only in the return type. Give it explicitly: empty$(<the type for $T>)(...)
 tests/reject/explicit_nongeneric.ty	SEMANTIC	7120	explicit type arguments given, but 'f' is not a generic function
+tests/reject/extern_inout_string.ty	SEMANTIC	4626	extern fn 'ffi_get': an `inout` (out) parameter 's' must be int/char/float/bool/ptr — string/bytes/handle/composite have no trivial out-param ABI
 tests/reject/extern_param_enum.ty	SEMANTIC	4628	extern fn 'ffi_take': parameter 's' must be int/char/float/bool/string/ptr/bytes, [int]/[float]/[string], or a handle (no other composites across the C boundary)
 tests/reject/extern_param_newtype.ty	SEMANTIC	4628	extern fn 'ffi_take': parameter 's' must be int/char/float/bool/string/ptr/bytes, [int]/[float]/[string], or a handle (no other composites across the C boundary)
 tests/reject/extern_param_struct.ty	SEMANTIC	4628	extern fn 'ffi_take': parameter 's' must be int/char/float/bool/string/ptr/bytes, [int]/[float]/[string], or a handle (no other composites across the C boundary)
