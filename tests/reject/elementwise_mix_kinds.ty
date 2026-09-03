@@ -1,0 +1,8 @@
+# src/tychoc.c:7417. tychoc1 stops before the "(got ...)" tail and the
+# "copy one side" hint, so the expectation is the part both print.
+# expect: cannot mix a fixed array and a growable array in element-wise `+`
+fn main():
+    a: [2]int = [1, 2]
+    b := [1, 2]
+    c := a + b
+    println(str(len(c)))

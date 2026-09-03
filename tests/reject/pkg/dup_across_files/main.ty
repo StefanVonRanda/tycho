@@ -1,0 +1,13 @@
+# src/tychoc.c:9279 -- two files in one package defining the same function.
+# tychoc compiles every .ty beside the entry, so this needs its own directory.
+# The two compilers word the tail differently (the bootstrap says "-- also at
+# <file>:<line>, a DIFFERENT file in the same package ..."; tychoc1 says
+# "(fn in <file>)"), so only the shared head is asserted.
+# expect: 'helper' is already defined
+package main
+
+fn helper() -> int:
+    return 1
+
+fn main():
+    println(str(helper()))

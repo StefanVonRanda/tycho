@@ -1,5 +1,6 @@
 tests/reject/addr_binding.ty	TYPE	6361	'&' is only valid as the argument to an inout parameter, e.g. f(&x)
 tests/reject/addr_expr.ty	TYPE	6361	'&' is only valid as the argument to an inout parameter, e.g. f(&x)
+tests/reject/addr_on_plain_param.ty	TYPE	7165	argument 1 of 'plain' is not inout; remove the '&'
 tests/reject/affine_chan_arr_elem.ty	SEMANTIC	0	a channel handle cannot be stored in a container or aggregate -- pass it as an argument instead
 tests/reject/affine_chan_container.ty	SEMANTIC	0	a channel handle cannot be stored in a container or aggregate -- pass it as an argument instead
 tests/reject/affine_chan_copy.ty	SEMANTIC	8410	a channel cannot be copied -- it is freed once, when its creating scope exits, and a second name hides every send and receive from the compiler's analysis; bind the channel(...) directly, or pass this one as an argument
@@ -34,6 +35,8 @@ tests/reject/affine_task_written_type.ty	TYPE	2675	unknown type 'Task'
 tests/reject/arr_elem_void.ty	TYPE	6199	an array element cannot be void -- this element produces no value (a call to a procedure that returns nothing?)
 tests/reject/array_arith_fixlen.ty	TYPE	7425	element-wise `*` on a fixed array requires the same static length (got [3]int and [2]int)
 tests/reject/assign_to_literal.ty	SYNTAX	4180	cannot assign to this expression
+tests/reject/assign_unknown_plain.ty	NAME	8447	assignment to unknown variable 'zzqqww' (use ':=' to declare)
+tests/reject/assign_unknown_suggest.ty	NAME	8446	assignment to unknown variable 'counr' (use ':=' to declare); did you mean 'count'?
 tests/reject/bare_expr_stmt.ty	SYNTAX	4235	a statement must be a declaration, assignment, or call -- a bare expression has no effect
 tests/reject/base_mismatch_arg.ty	TYPE	7198	argument 1 of 'f' is string, expected int
 tests/reject/base_mismatch_call_decl.ty	TYPE	8351	declared type int but value is string
@@ -47,6 +50,7 @@ tests/reject/base_mismatch_var_arg.ty	TYPE	7198	argument 1 of 'need_int' is stri
 tests/reject/bounded_chan_elem.ty	SEMANTIC	0	a channel handle cannot be stored in a container or aggregate -- pass it as an argument instead
 tests/reject/bounded_const_cap_zero.ty	SEMANTIC	2424	a bounded capacity must be positive
 tests/reject/bounded_elem_bool.ty	SEMANTIC	2428	a bounded element cannot be bool or void
+tests/reject/bounded_literal_elem_type.ty	TYPE	7602	element 2 of a bounded[4]int literal is the wrong type
 tests/reject/bounded_no_capacity.ty	SYNTAX	2423	bounded needs a capacity: bounded[N]T
 tests/reject/bounded_nonconst_cap.ty	SEMANTIC	2421	a bounded capacity must be an integer literal or an int `const` -- 'NOPE' is not
 tests/reject/bounded_task_elem.ty	TYPE	2675	unknown type 'Task'
@@ -55,6 +59,7 @@ tests/reject/builtin_arity_niladic.ty	TYPE	7142	'clock' takes 0 argument(s), got
 tests/reject/builtin_arity_too_few.ty	TYPE	7142	'substr' takes 3 argument(s), got 1
 tests/reject/builtin_arity_too_many.ty	TYPE	6914	len(...) takes one argument
 tests/reject/builtin_arity_zero_args.ty	TYPE	7012	pop(arr) takes one argument
+tests/reject/bytes_concat_int.ty	TYPE	7367	cannot concatenate bytes with int -- to_bytes(x) to widen, or to_str(b) to work in strings
 tests/reject/chan_capture.ty	SEMANTIC	6009	a closure cannot capture a channel handle -- take it as a parameter instead
 tests/reject/chan_in_container.ty	SEMANTIC	6786	a channel must be created directly in a declaration: ch := channel(T, cap)
 tests/reject/chan_inout_param.ty	SEMANTIC	4354	'ch' is inout, which an affine type cannot be -- it has one owner and is freed at that scope's exit, so there is nothing to consume or copy back. Pass it plainly: that is already a borrow
@@ -78,6 +83,7 @@ tests/reject/coerce_arg_narrow.ty	TYPE	7198	argument 1 of 'g' is float, expected
 tests/reject/coerce_array_mixed.ty	TYPE	6204	array elements must all have the same type
 tests/reject/coerce_return_narrow.ty	TYPE	8491	returning float but proc returns int
 tests/reject/comment_double_slash.ty	SYNTAX	829	'//' is not valid in Tycho -- use '#' for comments, or '/' for division
+tests/reject/compare_void.ty	TYPE	7330	cannot compare void
 tests/reject/compound_assign_to_literal.ty	SYNTAX	4218	cannot compound-assign to this expression
 tests/reject/cond_elif_str.ty	TYPE	8508	if condition must be bool
 tests/reject/cond_for_int.ty	TYPE	8722	for condition must be bool
@@ -98,6 +104,7 @@ tests/reject/const_named_none.ty	NAME	4318	'None' is already defined
 tests/reject/const_nonliteral.ty	SYNTAX	3797	a `const` must be a single scalar literal -- an int, float, string, bool or char. Arrays, maps and struct literals are not allowed, and neither is an expression
 tests/reject/const_reassign.ty	NAME	8459	cannot assign to constant 'X'
 tests/reject/const_shift_negative.ty	SYNTAX	5201	const expression shifts by a negative count
+tests/reject/decl_not_used.ty	SEMANTIC	0	'x' declared and not used
 tests/reject/delete_from_call.ty	SYNTAX	3837	cannot `delete` from this expression
 tests/reject/delete_not_an_index.ty	SYNTAX	3820	`delete` removes a map element: `delete m[k]`
 tests/reject/destructure_too_many.ty	SYNTAX	4115	at most 8 destructuring targets
@@ -110,6 +117,9 @@ tests/reject/dup_local.ty	NAME	8887	'a' is already declared in this scope
 tests/reject/dup_param.ty	NAME	9391	duplicate parameter 'x'
 tests/reject/dup_struct_enum.ty	NAME	4318	'X' is already defined
 tests/reject/dup_variant.ty	NAME	0	variant name 'W' is already used in this package
+tests/reject/elementwise_bounded.ty	TYPE	7408	element-wise `+` is defined for [T] and [N]T only (got bounded[4]int, bounded[4]int)
+tests/reject/elementwise_elem_type.ty	TYPE	7411	element-wise `+` requires two arrays with the same element type (got [int], [float])
+tests/reject/elementwise_mix_kinds.ty	TYPE	7417	cannot mix a fixed array and a growable array in element-wise `+` (got [2]int, [int]) -- copy one side into the other's kind first
 tests/reject/enum_is_not_an_enum.ty	TYPE	7287	`is` asks an enum, Option or Result value which variant it holds; int is none of those
 tests/reject/enum_is_unknown_variant.ty	TYPE	1321	'VFloat' is not a variant of Value
 tests/reject/enum_key_payload.ty	TYPE	2549	map keys must be string, int (directly or through a newtype), a fieldless enum, or a hashable struct/tuple/array
@@ -191,12 +201,14 @@ tests/reject/in_array.ty	TYPE	7304	`in` tests membership in a map; the right ope
 tests/reject/in_string.ty	TYPE	7304	`in` tests membership in a map; the right operand must be a map
 tests/reject/in_wrong_key.ty	TYPE	7306	`in` key must be string
 tests/reject/indent_inconsistent.ty	SYNTAX	591	inconsistent indentation
+tests/reject/index_elem_type.ty	TYPE	8823	cannot assign string to a int element
 tests/reject/infer_bare_empty.ty	SEMANTIC	8909	could not infer the type of 'xs' -- no grounding use in its block (annotate: xs : [T] = [] / Option(T) = None)
 tests/reject/infer_lambda_param.ty	SEMANTIC	5996	lambda parameter 'x' needs a type here -- no expected fn type supplies it (annotate: fn(x: T))
 tests/reject/infer_use_before_ground.ty	SEMANTIC	6108	'xs' is used before its type can be inferred -- assign/push/pass it first, or annotate the declaration
 tests/reject/inline_arr_self_elem.ty	TYPE	12783	infinite type: Node contains itself by value — use an array ([Node]) or Option([Node]) for indirection
 tests/reject/inout_alias.ty	SEMANTIC	7215	variable 'n' passed to two inout parameters of 'swap2' (overlapping mutable access)
 tests/reject/inout_arg_newtype.ty	TYPE	7198	argument 1 of 'f' is int, expected Id
+tests/reject/inout_arg_not_place.ty	TYPE	7161	inout argument 1 of 'bump' must name a variable
 tests/reject/inout_byval_alias.ty	SEMANTIC	7233	variable 'a' is passed to an inout parameter and also by value in the same call to 'f' (overlapping access — the by-value copy would alias the inout'd value)
 tests/reject/inout_fnvalue.ty	TYPE	9009	inout parameter 'h': a function value can't be inout (a callee could write a closure back into the caller and it would dangle)
 tests/reject/int_bin_bad_digit.ty	SYNTAX	0	a binary literal needs digits 0 or 1 after `0b`
@@ -220,8 +232,10 @@ tests/reject/map_has_removed.ty	SYNTAX	3042	map_has was removed; use `k in m`
 tests/reject/map_key_wrong_read.ty	TYPE	6224	map key must be Slot, got int
 tests/reject/map_set_removed.ty	SYNTAX	3041	map_set was removed; use `m[k] = v`
 tests/reject/map_type_as_value.ty	SYNTAX	2878	`[string: int]` is the TYPE, not a value -- for an empty map write `[]string: int`, or annotate the declaration: `m : [string: int] = []`
+tests/reject/map_value_type.ty	TYPE	8815	cannot assign string to a int map value
 tests/reject/match_arm_neg_not_int.ty	SYNTAX	3499	'-' is only valid before an int literal in a match arm
 tests/reject/match_arm_set_not_scalar.ty	SYNTAX	3498	a match arm must be a variant name, a scalar literal, a range, or `_`
+tests/reject/match_const_list_not_int.ty	TYPE	8657	'C' is not an int constant
 tests/reject/match_dup_arm.ty	TYPE	8591	duplicate arm for Red
 tests/reject/match_expr_nonexhaustive.ty	TYPE	8547	match on an Option must cover both Some and None
 tests/reject/match_non_exhaustive.ty	TYPE	8259	non-exhaustive match: missing variant B of E
@@ -266,6 +280,7 @@ tests/reject/option_void.ty	TYPE	2559	'void' is a type only as a Result's ok pay
 tests/reject/optres_is_wrong_family.ty	TYPE	7282	'Some' is not a variant of Result(int, string); write `Ok` or `Err`
 tests/reject/orreturn_stmt_value.ty	TYPE	8858	`or_return` here produces int, which this statement discards -- bind it (x := ... or_return)
 tests/reject/over_indent.ty	SYNTAX	3084	unexpected indentation: this line is indented further than the block it belongs to, and nothing above it opens a new block
+tests/reject/parallel_for_assign_unknown.ty	NAME	7850	assignment to unknown variable 'zzqq'
 tests/reject/parallel_for_not_zero.ty	SYNTAX	4033	`parallel for` counts from zero: write `0..<N` -- a literal `0`, then `..<`, then the exclusive upper bound
 tests/reject/parallel_not_for.ty	SYNTAX	3930	expected 'for' after 'parallel'
 tests/reject/param_shadow.ty	NAME	8887	'x' is already declared in this scope
@@ -276,6 +291,7 @@ tests/reject/place_call_receiver_field.ty	TYPE	8836	cannot assign to a field of 
 tests/reject/print_arity_zero.ty	TYPE	7142	'print' takes 1 argument(s), got 0
 tests/reject/println_arity_many.ty	TYPE	7142	'println' takes 1 argument(s), got 2
 tests/reject/push_scalar.ty	TYPE	6995	push's first argument must be an array or soa
+tests/reject/push_target_not_place.ty	TYPE	6985	push's first argument must be an array variable or field
 tests/reject/range_removed.ty	SYNTAX	4046	`range()` was removed: write `for i := 0; i < N; i += 1:` to count, or `parallel for i in 0..<N:` to count in parallel
 tests/reject/rawstring_unterminated.ty	SYNTAX	793	unterminated raw string literal
 tests/reject/result_bare_decl.ty	SEMANTIC	8390	cannot infer the Result type of Ok(...) — annotate it (x : Result(T, E) = Ok(...))
@@ -326,8 +342,10 @@ tests/reject/tab_mix.ty	SYNTAX	515	mixed tabs and spaces in indentation; use one
 tests/reject/tab_mix2.ty	SYNTAX	515	mixed tabs and spaces in indentation; use one consistently
 tests/reject/task_copy.ty	SEMANTIC	8398	a task handle cannot be copied or re-bound -- bind the spawn directly (t := spawn f(...))
 tests/reject/to_float_already_float.ty	TYPE	6859	to_float(n) takes an int, a sized int, f32, or a float newtype
+tests/reject/to_float_two_args.ty	TYPE	6856	to_float(n) takes one argument
 tests/reject/to_int_already_int.ty	TYPE	6866	to_int(x): x is already an int -- indexing a string (s[i]) yields the byte value as an int; use chr(x) for its one-character string
 tests/reject/to_int_string.ty	TYPE	6868	to_int(x) takes a float (truncates toward zero), a sized int, f32, a char, or an int newtype
+tests/reject/to_int_two_args.ty	TYPE	6863	to_int(x) takes one argument
 tests/reject/tuple_arity_max.ty	SYNTAX	2454	a tuple has at most 8 elements
 tests/reject/tuple_arity_min.ty	SYNTAX	2459	a tuple type needs at least two elements; parentheses do not group a type, so write it bare
 tests/reject/tuple_elem_index_assign.ty	TYPE	8789	can only index-assign an array or map variable or field

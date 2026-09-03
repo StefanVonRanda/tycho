@@ -1,0 +1,10 @@
+# src/tychoc.c:8447 -- the same, with no near-miss name for the suggester.
+# Same wording divergence as assign_unknown_suggest.ty: tychoc1 omits
+# "(use ':=' to declare)", so the expectation is the part both print.
+# expect: assignment to unknown variable 'zzqqww'
+fn two() -> (int, int):
+    return 1, 2
+fn main():
+    a := 0
+    a, zzqqww = two()
+    println(a)

@@ -1,0 +1,14 @@
+# src/tychoc.c:8446 -- destructuring assignment to a name that does not exist,
+# close enough to an existing one for the suggester. The two compilers word this
+# differently: tychoc1 drops the "(use ':=' to declare)" clause, so only the
+# parts BOTH print are asserted -- `make test` scores `# expect:` against
+# ./tychoc1 (tests/run.sh:102), not against the bootstrap.
+# expect: assignment to unknown variable 'counr'
+# expect: did you mean 'count'?
+fn two() -> (int, int):
+    return 1, 2
+fn main():
+    count := 0
+    a := 0
+    a, counr = two()
+    println(a)

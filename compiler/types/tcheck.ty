@@ -1295,6 +1295,8 @@ fn _binop(cs: inout C, op: string, k: [ast.Expr]) -> string:
     if op == "==" or op == "!=":
         if lt != rt:
             _cerr(&cs, "cannot compare " + lt + " with " + rt)
+        elif lt == "void":             # src/tychoc.c:7330 -- void has no values to compare
+            _cerr(&cs, "cannot compare void")
         elif _head(lt) == "fun":
             _cerr(&cs, "functions are not comparable -- closures have no structural equality; compare the values they produce instead")
         return "bool"
@@ -1469,6 +1471,8 @@ fn _check_args(cs: inout C, name: string, si: int, args: [ast.Expr], line: int):
             if cs.sg[si].pflags[i] == "inout":
                 if not (args[i] is ast.Addr):
                     _cerr(&cs, "argument " + str(i + 1) + " of '" + name + "' is inout; pass it as '&variable'")
+                elif not _is_place(&cs, ast.kids(args[i])[0]):
+                    _cerr(&cs, "inout argument " + str(i + 1) + " of '" + name + "' must name a variable")
             elif args[i] is ast.Addr:
                 _cerr(&cs, "argument " + str(i + 1) + " of '" + name + "' is not inout; remove the '&'")
             # is_null asks whether an opener FAILED, so it takes a handle as well
@@ -1790,6 +1794,9 @@ fn _call_builtin(cs: inout C, l: int, n: string, args: [ast.Expr], want: string)
         return "arr(" + _targs(b0)[0] + ")"
     if n == "push":
         if not _arity(&cs, n, args, 2, "push(arr, value) takes two arguments"):
+            return "void"
+        if not _is_place(&cs, args[0]):
+            _cerr(&cs, "push's first argument must be an array variable or field")
             return "void"
         if known(b0) and not (_is_arr(b0) or _head(b0) == "soa"):
             _cerr(&cs, "push's first argument must be an array or soa")

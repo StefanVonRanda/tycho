@@ -1,0 +1,7 @@
+# src/tychoc.c:8823 -- the array arm, the sibling of map_value_type.ty. Both
+# compilers word it identically.
+# expect: cannot assign string to a int element
+fn main():
+    xs := [1, 2]
+    xs[0] = "a"
+    println(str(len(xs)))

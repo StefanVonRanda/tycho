@@ -1,0 +1,11 @@
+# src/tychoc.c:7161 -- `&<call>` is an address of a temporary, so there is
+# nothing for the callee to write back. tychoc1 ACCEPTED this until the rule was
+# ported into compiler/types/tcheck.ty; both now word it identically.
+# expect: inout argument 1 of 'bump' must name a variable
+fn bump(x: inout int):
+    x = x + 1
+fn g() -> int:
+    return 1
+fn main():
+    bump(&g())
+    println("x")

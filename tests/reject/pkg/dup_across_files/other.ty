@@ -1,0 +1,4 @@
+package main
+
+fn helper() -> int:
+    return 2

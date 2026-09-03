@@ -1,0 +1,10 @@
+# src/tychoc.c:6634 -- an unknown package member CALLED, close enough to a real
+# one that the bootstrap suggests it. tychoc1 has no suggester here and stops
+# after the name, so only the part both print is asserted -- `make test` scores
+# `# expect:` against ./tychoc1 (tests/run.sh:102).
+# expect: package 'strings' has no symbol 'to_uppe'
+package main
+import "core:strings"
+
+fn main():
+    println(strings.to_uppe("a"))

@@ -211,6 +211,11 @@ FALLBACK = [
     ("no 'main' procedure", "NAME"),                   # whole-program, but the Sig table alone decides it
     ("unclosed '(' or '['", "SYNTAX"),                 # the lexer, message built by snprintf
     ("must declare its own package first", "NAME"),    # the package header, an fprintf after parsing
+    # report_unused_locals (src/tychoc.c:5576) is an fprintf loop, not a die_at, so
+    # load_sites cannot see it. SEMANTIC, not NAME: it is a whole-program pass run
+    # AFTER name resolution in both compilers, and the NAME class means "the
+    # resolver refuses it" (compiler/verdict_diff.py:160).
+    ("declared and not used", "SEMANTIC"),
 ]
 
 
