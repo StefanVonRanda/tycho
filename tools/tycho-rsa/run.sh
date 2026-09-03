@@ -9,6 +9,17 @@ T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 fail=0
 bad() { echo "FAIL: $*"; fail=1; }
 
+# core:crypto links libcrypto; without OpenSSL's dev package this lane SKIPS
+# loudly with exit 0, the way corelib/run.sh@nskip does for image/libpng.
+if deps="$("$TYCHOC" tools/tycho-rsa/main.ty --print-deps 2>/dev/null)"; then
+    missing=""
+    for pkg in $deps; do pkg-config --exists "$pkg" 2>/dev/null || missing="$missing $pkg"; done
+    if [ -n "$missing" ]; then
+        echo "tycho-rsa: SKIPPED (missing dependency:$missing) -- the lane did not run"
+        exit 0
+    fi
+fi
+
 RSA="$T/tycho-rsa"
 if ! "$TYCHOC" tools/tycho-rsa/main.ty -o "$RSA" >"$T/build.log" 2>&1; then
     echo "FAIL: tychoc compile"; sed 's/^/      /' "$T/build.log"
@@ -55,14 +66,14 @@ back=$("$RSA" decrypt "$c1" "$D" "$N" 2>"$T/e") || bad "decrypt exited non-zero:
 # [4] the key is drawn fresh: two runs of the same size must not agree.
 #     A golden cannot see this -- the transcript no longer prints the digits.
 # ---------------------------------------------------------------------------
-"$RSA" keygen 512 > "$T/k512" 2>/dev/null || bad "keygen 512 exited non-zero"
-"$RSA" keygen 512 > "$T/k512b" 2>/dev/null || bad "second keygen 512 exited non-zero"
-n=$(sed -n 's/^n = //p' "$T/k512")
-n2=$(sed -n 's/^n = //p' "$T/k512b")
+"$RSA" keygen 528 > "$T/k528" 2>/dev/null || bad "keygen 528 exited non-zero"
+"$RSA" keygen 528 > "$T/k528b" 2>/dev/null || bad "second keygen 528 exited non-zero"
+n=$(sed -n 's/^n = //p' "$T/k528")
+n2=$(sed -n 's/^n = //p' "$T/k528b")
 if [ -z "$n" ] || [ -z "$n2" ]; then
-    bad "keygen 512 did not print n"
+    bad "keygen 528 did not print n"
 elif [ "$n2" = "$n" ]; then
-    bad "two keygen 512 runs produced the SAME modulus -- the generator is not seeded from the OS"
+    bad "two keygen 528 runs produced the SAME modulus -- the generator is not seeded from the OS"
 fi
 
 # ---------------------------------------------------------------------------
@@ -133,8 +144,28 @@ long=$(printf 'aa%.0s' $(seq 1 63))     # 63 bytes > k - 2*32 - 2 = 62
 "$RSA" encrypt "zz" 65537 "$N" >/dev/null 2>&1 && bad "a non-hex message was accepted"
 "$RSA" encrypt "$PT" 65537 "12x34" >/dev/null 2>&1 && bad "a non-decimal modulus was accepted"
 
+# ---------------------------------------------------------------------------
+# [8] keygen may not hand out a key encrypt would refuse, and the small-n
+#     primality edges may not crash. Both were live defects; neither is visible
+#     in the transcript, so each is asserted here against a literal.
+# ---------------------------------------------------------------------------
+for b in 8 512 527; do
+    if "$RSA" keygen "$b" >/dev/null 2>&1; then
+        bad "keygen $b succeeded -- OAEP-SHA256 needs 66 bytes, so 528 is the floor"
+    fi
+    "$RSA" keygen "$b" 2>&1 | grep -q 'minimum is 528 bits' || bad "keygen $b did not name the 528-bit minimum"
+done
+"$RSA" keygen >/dev/null 2>&1 && bad "keygen with no operand did not fail"
+"$RSA" keygen 2>&1 | grep -q '^usage:' || bad "keygen with no operand did not print a usage line"
+for n in 0 1 2 3 4; do
+    want=false; [ "$n" = 2 ] && want=true; [ "$n" = 3 ] && want=true
+    got="$("$RSA" primetest "$n" 2>&1)" || bad "primetest $n exited non-zero: $got"
+    [ "$got" = "$want" ] || bad "primetest $n printed '$got', want '$want'"
+done
+"$RSA" primetest >/dev/null 2>&1 && bad "primetest with no operand did not fail"
+
 if [ "$fail" -eq 0 ]; then
-    echo "tycho-rsa: green (textbook vector, 3 python-pow modexp sizes, Miller-Rabin probes incl. Carmichael 561, CSPRNG keygen invariants == golden; RSAES-OAEP round trip through the CLI; two 512-bit keygens differ; OAEP known-answer test vs python cryptography BOTH ways; the same plaintext encrypts twice to different ciphertexts, with a fixed-seed copy as the control; no modexp command; tampered/short/over-long/non-hex inputs all refused)"
+    echo "tycho-rsa: green (textbook vector, 3 python-pow modexp sizes, Miller-Rabin probes incl. Carmichael 561, CSPRNG keygen invariants == golden; RSAES-OAEP round trip through the CLI; two 528-bit keygens differ; OAEP known-answer test vs python cryptography BOTH ways; the same plaintext encrypts twice to different ciphertexts, with a fixed-seed copy as the control; no modexp command; tampered/short/over-long/non-hex inputs all refused; keygen refuses every size OAEP cannot carry; primetest 0..4 answer without crashing)"
 else
     echo "tycho-rsa: FAIL"; exit 1
 fi

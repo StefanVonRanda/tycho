@@ -465,16 +465,25 @@ fn want_hex(s: string) -> string:
 
 # ---- main --------------------------------------------------------------------------
 
+# a missing operand used to index argv out of bounds instead of naming the usage
+fn need(av: [string], n: int, u: string):
+    if len(av) < n:
+        die("usage: tycho-rsa " + u)
+
 fn main():
     av := cli.argv()
     if len(av) < 1:
-        die("usage: tycho-rsa selfcheck | keygen <bits> | encrypt <hex-msg> <e> <n> | decrypt <hex-ct> <d> <n> | primetest <n>\nNOT constant time: modexp branches on the exponent's bits, so anyone who can time repeated decryptions with one key recovers the private key. Demonstration only.")
+        die("usage: tycho-rsa selfcheck | keygen <bits (>= 528)> | encrypt <hex-msg> <e> <n> | decrypt <hex-ct> <d> <n> | primetest <n>\nNOT constant time: modexp branches on the exponent's bits, so anyone who can time repeated decryptions with one key recovers the private key. Demonstration only.")
     if av[0] == "selfcheck":
         selfcheck()
     elif av[0] == "keygen":
+        need(av, 2, "keygen <bits>, minimum 528")
         bits := 0
         for i := 0; i < len(av[1]); i += 1:
             bits = bits * 10 + (av[1][i] - 48)
+        # a key this tool's own encrypt would refuse is not a key worth printing
+        if bits < 528:
+            die("keygen: " + str(bits) + " bits is too small -- SHA-256 OAEP needs a modulus of at least " + str(2 * hlen() + 2) + " bytes, so the minimum is 528 bits")
         k := gen_key(bits)
         println("n = " + bignum.to_str(k.n))
         println("e = " + bignum.to_str(k.e))
@@ -482,10 +491,13 @@ fn main():
         println("p = " + bignum.to_str(k.p))
         println("q = " + bignum.to_str(k.q))
     elif av[0] == "encrypt":
+        need(av, 4, "encrypt <hex-msg> <e> <n>")
         println(oaep_encrypt(want_hex(av[1]), want_big(av[2]), want_big(av[3])))
     elif av[0] == "decrypt":
+        need(av, 4, "decrypt <hex-ct> <d> <n>")
         println(oaep_decrypt(want_hex(av[1]), want_big(av[2]), want_big(av[3])))
     elif av[0] == "primetest":
+        need(av, 2, "primetest <n>")
         println(str(is_prime(bignum.from_str(av[1]))))
     else:
         die("unknown command: " + av[0])

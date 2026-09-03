@@ -48,10 +48,14 @@ static Resp *perform(const char *url, const char *post_body, size_t post_len, co
     /* The FIRST hop needs the same fence as a redirect: this libcurl carries
      * FILE, FTP, SCP, SMTP and friends, so an unfenced CURLOPT_URL makes
      * http.get("file:///etc/passwd") a working file read. */
-#ifdef CURLOPT_PROTOCOLS_STR
+/* Version-gated, not #ifdef'd: CURLOPT_PROTOCOLS_STR is an ENUM constant, so
+ * #ifdef on it is always false and the deprecated arm was always taken. */
+#if LIBCURL_VERSION_NUM >= 0x075500 /* 7.85.0 */
     curl_easy_setopt(c, CURLOPT_PROTOCOLS_STR, "http,https");
 #elif defined(CURLPROTO_HTTP)
     curl_easy_setopt(c, CURLOPT_PROTOCOLS, (long)(CURLPROTO_HTTP | CURLPROTO_HTTPS));
+#else
+#error "no scheme fence: this libcurl has neither CURLOPT_PROTOCOLS_STR nor CURLPROTO_HTTP, so http.get would accept file://"
 #endif
     curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, collect);
     curl_easy_setopt(c, CURLOPT_WRITEDATA, r);
@@ -62,10 +66,12 @@ static Resp *perform(const char *url, const char *post_body, size_t post_len, co
      * Pin both here rather than inherit whatever the linked curl decided, so a
      * redirect cannot walk an https fetch onto file:// or gopher://. */
     curl_easy_setopt(c, CURLOPT_MAXREDIRS, 10L);
-#ifdef CURLOPT_REDIR_PROTOCOLS_STR
+#if LIBCURL_VERSION_NUM >= 0x075500 /* 7.85.0 */
     curl_easy_setopt(c, CURLOPT_REDIR_PROTOCOLS_STR, "http,https");
 #elif defined(CURLPROTO_HTTP)
     curl_easy_setopt(c, CURLOPT_REDIR_PROTOCOLS, (long)(CURLPROTO_HTTP | CURLPROTO_HTTPS));
+#else
+#error "no redirect scheme fence: a redirect could walk an https fetch onto file://"
 #endif
     curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 10L);
     curl_easy_setopt(c, CURLOPT_TIMEOUT, 30L);
