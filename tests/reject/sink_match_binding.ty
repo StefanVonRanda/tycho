@@ -1,0 +1,20 @@
+# src/tychoc.c:10228, the last arm of the sink-consume chain. A match binding
+# BORROWS the scrutinee's payload -- src/tychoc.c:12321 pushes it with a NULL
+# arena -- so it can never be adopted by a `sink`, however few times it is
+# mentioned. The three arms above it (a sink param, a loop, more than one
+# mention) all miss this one.
+# expect: cannot be consumed by a `sink` parameter here
+enum Box:
+    Full([int])
+    Empty
+
+fn eat(xs: sink [int]) -> int:
+    return len(xs)
+
+fn main():
+    b := Full([1, 2, 3])
+    match b:
+        Full(v):
+            println(str(eat(v)))
+        Empty:
+            println("empty")

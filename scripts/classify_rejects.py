@@ -222,6 +222,13 @@ FALLBACK = [
     # tests/reject/pkg/import_unused/main.ty -- ./tychoc1 --parse rc=0,
     # --resolve rc=0, --typecheck rc=1, which is exactly the SEMANTIC contract.
     ("imported and not used in this file", "SEMANTIC"),
+    # merge_pkg's two package-header checks (src/tychoc.c:14230, :14234) are
+    # fprintf+exit in the package LOADER, so load_sites cannot see them either.
+    # NAME, on the same measurement as "must declare its own package first"
+    # above: ./tychoc1 --parse rc=0, --resolve rc=1, which is the NAME contract
+    # at compiler/verdict_diff.py@main. Measured 2026-09-03 on both fixtures.
+    ("but has no `package` declaration", "NAME"),
+    ("but is in package `", "NAME"),
 ]
 
 

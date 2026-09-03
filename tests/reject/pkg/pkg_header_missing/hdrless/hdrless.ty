@@ -1,0 +1,2 @@
+fn two() -> int:
+    return 2

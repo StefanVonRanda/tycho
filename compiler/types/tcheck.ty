@@ -199,6 +199,10 @@ struct C:
                                        # a line-keyed bucket merges them
     extfn: [string: bool]              # the `extern fn` names -- FSig has no
                                        # is_extern and spawn needs one
+    mbind: [string: bool]              # match/if-let arm bindings. They BORROW the
+                                       # scrutinee's payload, so they own no arena
+                                       # (src/tychoc.c:12321 pushes NULL) and can
+                                       # never be adopted by a `sink`
     pendarr: [string: bool]            # locals declared as a bare `[]`: PENDING,
                                        # grounded by their first typed use
                                        # (src/tychoc.c:5886). Kept beside the
@@ -910,6 +914,18 @@ fn _sized_fits(cs: inout C, e: ast.Expr, want: string):
                     ".." + str(hi) + ") -- write to_" + want + "(x) to convert with wraparound")
         _: pass
 
+# src/tychoc.c:6053's four rejected inner types, in this pass's spelling:
+# T_VOID, T_NONE (a `None` no context typed), and the two half-built Results a
+# nested Ok()/Err() yields -- E_OK and E_ERR always resolve to a PARTIAL there,
+# so a "?" on either side is the same test.
+fn _no_concrete(t: string) -> bool:
+    if t == "void" or t == "opt(?)":
+        return true
+    if _head(t) != "res":
+        return false
+    ts := _targs(t)
+    return len(ts) == 2 and (ts[0] == "?" or ts[1] == "?")
+
 fn _bare_empty_arr(e: ast.Expr) -> bool:
     match e:
         ast.EmptyArr(l, t): return len(t) == 0
@@ -1314,13 +1330,21 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
                 if w == "void":
                     _cerr(&cs, "Result(void, " + _targs(wb)[1] + ") carries no ok value -- write Ok(), not Ok(x)")
                     return want
-            return "res(" + _ex2(&cs, k[0], w) + ",?)"
+            ot := _ex2(&cs, k[0], w)
+            if _no_concrete(ot):                   # src/tychoc.c:6054
+                cs.line = l
+                _cerr(&cs, "Ok(...) needs a concrete value")
+            return "res(" + ot + ",?)"
         ast.ErrE(l, k):
             wb := _base(&cs, want)
             w := "?"
             if _head(wb) == "res":
                 w = _targs(wb)[1]
-            return "res(?," + _ex2(&cs, k[0], w) + ")"
+            et := _ex2(&cs, k[0], w)
+            if _no_concrete(et):                   # src/tychoc.c:6054
+                cs.line = l
+                _cerr(&cs, "Err(...) needs a concrete value")
+            return "res(?," + et + ")"
         ast.SpawnE(l, k):
             # `task(T)`, not a bare `task`: wait(t) has to know what it yields.
             rt := "void"
@@ -2265,8 +2289,10 @@ fn _arm_binds(cs: inout C, a: ast.Arm, tys: [string]):
             _cerr(&cs, "cannot bind a void value")
             t = "?"
         _vpush(&cs, a.binds[i], t, true)
+        cs.mbind[a.binds[i]] = true
     for b in a.subbinds:
         _vpush(&cs, b, "?", true)
+        cs.mbind[b] = true
 
 fn _match(cs: inout C, l: int, subj: [ast.Expr], arms: [ast.Arm]):
     st := _base(&cs, _ex(&cs, subj[0]))
@@ -3176,9 +3202,7 @@ fn check(p: Program) -> C:
     return check_on(p, false)
 
 fn check_on(p: Program, syms: bool) -> C:
-    cs := C([]string, -1, []string: bool, []string: bool, 0, []string, []string, []TDecl, []string: int, []FSig, []string: int, []string: string, []string: string,
-            []string: string, []string: int, []string: bool, []string: string, []string: bool, []VBind, 0, []string, []string,
-            []string: int, "", 0, "", "?", false, false, []ast.ImportD, []ast.ImportD, false, 0, 0, false, 0, []string: int, []string: bool, []string: bool, 0, 0, false, []string, []string, false, 0, false, "", []string: bool, []string: bool)
+    cs := C([]string, -1, []string: bool, []string: bool, 0, []string, []string, []TDecl, []string: int, []FSig, []string: int, []string: string, []string: string, []string: string, []string: int, []string: bool, []string: string, []string: bool, []VBind, 0, []string, []string, []string: int, "", 0, "", "?", false, false, []ast.ImportD, []ast.ImportD, false, 0, 0, false, 0, []string: int, []string: bool, []string: bool, 0, 0, false, []string, []string, false, 0, false, "", []string: bool, []string: bool, []string: bool)
     cs.symon = syms
     for f in p.files:
         push(cs.srcp, f.path)
@@ -3224,6 +3248,7 @@ fn check_on(p: Program, syms: bool) -> C:
             for pnm in cs.sg[si].pnames:
                 cs.paramset[pnm] = true
             cs.pendarr = []string: bool
+            cs.mbind = []string: bool
             cs.errbase = len(cs.errs)
             _tblock(&cs, fd.body)
             cs.errbase = -1

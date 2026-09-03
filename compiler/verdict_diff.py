@@ -38,7 +38,16 @@ sys.path.insert(0, "scripts")
 import classify_rejects as C
 
 ROOTS = ("tests", "corelib", "tools", "examples", "server", "bench")
-EXPECT = 1300          # a leg that scores 0 of 0 is green by accident
+EXPECT = 1307          # a leg that scores 0 of 0 is green by accident
+
+# NAME fixtures whose diagnostic carries no file:line in EITHER compiler, because
+# merge_pkg (src/tychoc.c:14230, :14234) names the offending FILE and exits. Both
+# are scored as agreeing that there is no location; anything else unlocated is a
+# skip and reddens the lane.
+NO_LINE = {
+    "tests/reject/pkg/pkg_header_missing/main.ty",
+    "tests/reject/pkg/pkg_header_mismatch/main.ty",
+}
 SITES = C.load_sites()
 # The fixtures `--typecheck` does not refuse -- the same list compiler/run.sh
 # carries, with the same reasons. Phase 6b turned `--typecheck` into the whole
@@ -134,6 +143,7 @@ def main():
     bad = rbad = lbad = tbad = abad = pabad = tabad = 0
     known_hit = set()
     lok = lbad2 = lskip = 0
+    nolinehit = set()
     tok = tbad2 = tskip = 0
     sixb = 0
     ntype_scored = 0
@@ -174,7 +184,15 @@ def main():
         if cls == "NAME":
             m = re.search(r"^(\S+?(?::\d+)?): error: ", q.stderr, re.M)
             mine = m.group(1) if m else ""
-            if not loc or not mine:
+            if not loc and not mine and f in NO_LINE:
+                # merge_pkg's two package-header diagnostics report on a FILE, not
+                # on a line, in BOTH compilers -- there is no location to compare,
+                # and agreeing that there is none is the whole verdict here. Named
+                # rather than blanket, so a NEW unlocated NAME file still reddens;
+                # NO_LINE_UNUSED below reddens when one of these gains a line.
+                lok += 1
+                nolinehit.add(f)
+            elif not loc or not mine:
                 lskip += 1
                 print("  LINE-UNLOCATED %s tychoc=%r tychoc1=%r" % (f, loc, mine))
             elif mine != loc:
@@ -247,6 +265,10 @@ def main():
     if tok + tbad2 + tskip != ntype_scored:
         print("parse-check: leg11 scored %d of %d TYPE files"
               % (tok + tbad2 + tskip, ntype_scored))
+        return 1
+    if nolinehit != NO_LINE:
+        print("parse-check: NO_LINE entries that are now located -- delete them: %s"
+              % " ".join(sorted(NO_LINE - nolinehit)))
         return 1
     if lok + lbad2 + lskip != n["NAME"]:
         print("parse-check: leg8 scored %d of %d NAME files" % (lok + lbad2 + lskip, n["NAME"]))

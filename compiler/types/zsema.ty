@@ -1187,6 +1187,13 @@ fn _sink_check(cs: inout C, name: string, s: FSig, args: [ast.Expr], line: int):
                     _cerr(&cs, "'" + v + "' is consumed by a `sink` parameter inside a loop, where the next iteration would consume it again; no named variable can be adopted in a loop, a copy made in the loop included. Lift the call out of the loop, or pass a fresh value (a literal, or a call's result)")
                 elif cs.ment.get(v, 0) != 1:
                     _cerr(&cs, "'" + v + "' is consumed by a `sink` parameter but is mentioned " + str(cs.ment.get(v, 0)) + " times in this function: a sink argument must be the variable's ONLY mention")
+                elif v in cs.mbind:
+                    # src/tychoc.c:10228, the arm this chain had no `else` for. A
+                    # match binding BORROWS the payload (cv_push with a NULL arena),
+                    # so can_move_into_sink fails on it however few times it is
+                    # mentioned. A binding the arm MUTATES is copied instead, and
+                    # that mutation is a second mention -- so the arm above owns it.
+                    _cerr(&cs, "'" + v + "' cannot be consumed by a `sink` parameter here; copy it first (`y := " + v + "`) and consume `y`")
             _: pass
 
 # src/tychoc.c@type_is_heap. A `sink` on a non-heap type is legal and enforces

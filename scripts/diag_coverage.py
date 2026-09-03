@@ -162,7 +162,27 @@ DEAD = ["reserve only supports arrays of scalars",
         "select needs at least one arm",
         "a struct needs at least one field",
         "an enum needs at least one variant",
-        "expected `if` or `match`"]
+        "expected `if` or `match`",
+        # Four more, measured 2026-09-03 by DOMINANCE rather than by argument.
+        # push/pop/reserve each strip E_FIELD/E_INDEX off the first argument and
+        # require an E_IDENT root, then require the result to be an array/soa, and
+        # ONLY then call src/tychoc.c@is_lvalue. is_lvalue returns 0 in exactly two
+        # ways: a root that is not a place (the root-strip guard already refused
+        # it, and E_TUPIDX is not even walked, so `t.0` dies there too), or an
+        # E_INDEX whose base is not composite/soa/map. src/tychoc.c:6212 NORMALISES
+        # that base off any newtype first, so the only bases left are the three
+        # scalar arrays plus string/bytes -- and every one of those yields an
+        # int/float/string element, which the is_array guard above refuses first.
+        # Nine probes, three per builtin, and not one reached the rule.
+        "cannot push through this expression",
+        "cannot pop through this expression",
+        "cannot reserve through this expression",
+        # src/tychoc.c:6778 is dominated by the IS_TASK test one line above it.
+        # `task_of` is called at exactly ONE site, src/tychoc.c:5986 (the E_SPAWN
+        # arm), a Task has no type syntax so no signature, field or element can
+        # carry one, and copying one is refused -- so a Task-typed expression is
+        # an E_SPAWN or the E_IDENT it was bound to, and nothing else.
+        "wait takes a task variable or a spawn expression"]
 # One more, measured 2026-09-03 by moving the BINARY rather than by argument.
 # `cannot find the corelib for import` (src/tychoc.c:5022) reports on the
 # INSTALLATION, not on the program: TYCHO_CORELIB is taken unchecked when set,
@@ -170,8 +190,16 @@ DEAD = ["reserve only supports arrays of scalars",
 # compiler in this tree. Copied to a bare directory, ./tychoc emits it for the
 # same `import "core:strings"` that compiles here -- so no .ty file can reach it.
 # It is an fprintf+exit like every other entry below, not a die_at.
+# One more, measured 2026-09-03: `internal: spread ... reached codegen`
+# (src/tychoc.c:10938) is a compiler-bug assertion, not a rule about a program.
+# E_SPREAD has exactly two dispositions -- the variadic call arm UNWRAPS it
+# (src/tychoc.c:7083 takes args[nfixed]->lhs, so no E_SPREAD node survives), and
+# every other position dies at src/tychoc.c:5963. Four spread positions probed
+# (a decl rhs, an array literal, a len() argument, and a second variadic
+# argument beside a spread); all four were refused before codegen.
 INTERNAL = ["oom", "cannot open", "cannot write", "read error", "unknown flag",
             "cannot find the corelib for import",
+            "internal: spread",
             "pkg-config", "C compilation failed", "already exists and was not written",
             "-g line info", "contains a NUL byte", "import cycle",
             "has no .ty files", "empty %s name", "illegal character in %s name",

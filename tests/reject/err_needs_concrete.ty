@@ -1,0 +1,7 @@
+# The Err half of src/tychoc.c:6054: E_OK always resolves to a PARTIAL Result,
+# so nesting one inside Err leaves the error type unfixed. Written beside the Ok
+# fixture because the two spellings are separate arms.
+# expect: Err(...) needs a concrete value
+fn main():
+    x := Err(Ok())
+    println(str(len(str(x))))
