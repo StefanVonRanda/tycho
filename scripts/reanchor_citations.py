@@ -67,8 +67,34 @@ USAGE
   python3 scripts/reanchor_citations.py --apply               # write
   python3 scripts/reanchor_citations.py runtime/tycho_rt.c --apply
   python3 scripts/reanchor_citations.py --ref HEAD~3 --apply
+  python3 scripts/reanchor_citations.py --selfcheck
+  python3 scripts/reanchor_citations.py --forget          # drop the state below
+
+RUNNING IT TWICE. It used to double-shift: the map is built from <ref> to the
+worktree, so a second `--apply` moved citations the first run had already
+moved, onto real lines that read plausibly, with the gate still green. Observed
+2026-09-03 -- `rewrote 68 file(s); 1 citation(s) need a human`, then `rewrote 68
+file(s); 7` -- and the tree had to be reset.
+
+The fix is state, not a refusal, because a bare `path:N` carries no token to
+verify against and "already correct" is therefore undecidable from content
+alone. On `--apply` each target's worktree bytes are written as a git blob and
+recorded in `$GIT_DIR/reanchor_citations.json`; the next run uses THAT as the
+old side instead of `<ref>:<path>`. A second run in a row then maps a file
+against itself, the identity map short-circuits, and nothing is written --
+idempotence falls out of using the right old side rather than out of a special
+case. Editing the target further and re-running is correct for the same reason:
+the delta is measured from where the citations actually point.
+
+The state can go stale (a reset, or a rewritten document edited by hand). If any
+file the last `--apply` wrote no longer matches what it wrote, the recorded
+anchor may be a lie, so `--apply` REFUSES rather than guessing; `--forget`
+clears the record and `--ignore-state` reproduces the old ref-relative
+behaviour deliberately.
 """
 import difflib
+import hashlib
+import json
 import os
 import re
 import subprocess
@@ -76,6 +102,9 @@ import sys
 
 ROOT = subprocess.run(["git", "rev-parse", "--show-toplevel"],
                       capture_output=True, text=True, check=True).stdout.strip()
+GITDIR = subprocess.run(["git", "rev-parse", "--absolute-git-dir"],
+                        capture_output=True, text=True, check=True).stdout.strip()
+STATE = os.path.join(GITDIR, "reanchor_citations.json")
 
 # `path:N`, `path:N-M`, `path:N-M@token` in Markdown, backticked; and the same
 # form unbackticked in a source file. Both mirror check_citations.py.
@@ -86,6 +115,50 @@ SRCCITE = re.compile(r'((?:[A-Za-z0-9_][A-Za-z0-9_./-]*\.[A-Za-z0-9]+)|Makefile)
 HOSTPORT = re.compile(r'^\d+(?:\.\d+)+$')   # 127.0.0.1 is not a path and a line
 
 SKIP = set()
+
+
+def git(*args, check=False):
+    return subprocess.run(["git"] + list(args), capture_output=True, text=True,
+                          check=check, cwd=ROOT)
+
+
+def digest(text):
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+def load_state():
+    """The recorded anchor, or {} if there is none or it can no longer be trusted."""
+    try:
+        st = json.load(open(STATE))
+    except (OSError, ValueError):
+        return {}
+    stale = []
+    for path, want in sorted(st.get("wrote", {}).items()):
+        full = os.path.join(ROOT, path)
+        got = digest(open(full).read()) if os.path.isfile(full) else None
+        if got != want:
+            stale.append(path)
+    if stale:
+        st["stale"] = stale
+    return st
+
+
+def save_state(targets, texts):
+    wrote = {p: digest(t) for p, t in texts.items()}
+    anchored = {}
+    for t in targets:
+        blob = git("hash-object", "-w", "--", os.path.join(ROOT, t), check=True)
+        anchored[t] = blob.stdout.strip()
+    json.dump({"anchored": anchored, "wrote": wrote}, open(STATE, "w"), indent=1)
+
+
+def old_side(target, ref, state):
+    """(lines, label) of the content the tree's citations currently point into."""
+    sha = state.get("anchored", {}).get(target)
+    if sha and git("cat-file", "-e", sha + "^{blob}").returncode == 0:
+        return git("cat-file", "blob", sha, check=True).stdout.split("\n"), \
+            "last --apply"
+    return git("show", "%s:%s" % (ref, target), check=True).stdout.split("\n"), ref
 
 
 def line_map(old, new):
@@ -121,15 +194,13 @@ def moved_files(ref):
         if p and os.path.isfile(os.path.join(ROOT, p))]
 
 
-def reanchor(target, ref, texts, touched):
+def reanchor(target, ref, texts, touched, state):
     """Rewrite every citation to `target` in `texts`; return (files, dropped)."""
-    old = subprocess.run(["git", "show", "%s:%s" % (ref, target)],
-                         capture_output=True, text=True, check=True
-                         ).stdout.split("\n")
+    old, label = old_side(target, ref, state)
     new = open(os.path.join(ROOT, target)).read().split("\n")
     lmap = line_map(old, new)
     print("%s: %d of %d lines survive %s..worktree (%d -> %d lines)"
-          % (target, len(lmap), len(old), ref, len(old), len(new)))
+          % (target, len(lmap), len(old), label, len(old), len(new)))
     if len(old) == len(new) and all(k == v for k, v in lmap.items()):
         print("  no line moved; nothing to re-anchor")
         return 0, 0
@@ -201,13 +272,119 @@ def reanchor(target, ref, texts, touched):
     return moved, dropped
 
 
+MARK = "int marker(void) { return 1; }"
+
+
+def selfcheck():
+    """Four cases in a sandbox repo; [2] is the control that must still fail."""
+    import tempfile
+
+    def me(repo, *a):
+        return subprocess.run([sys.executable, os.path.abspath(__file__)] + list(a),
+                              cwd=repo, capture_output=True, text=True)
+
+    def build(td, name):
+        repo = os.path.join(td, name)
+        os.makedirs(os.path.join(repo, "pkg"))
+        os.makedirs(os.path.join(repo, "notes"))
+        body = ["int pad%d(void) { return %d; }" % (i, i) for i in range(1, 21)]
+        body[9] = MARK
+        open(os.path.join(repo, "pkg/f.c"), "w").write("\n".join(body) + "\n")
+        open(os.path.join(repo, "notes/d.md"), "w").write(
+            "the marker is at `pkg/f.c:10@marker`.\n")
+        for a in (["init", "-q"], ["add", "-A"],
+                  ["-c", "user.email=s@x", "-c", "user.name=s", "commit", "-qm", "b"]):
+            subprocess.run(["git"] + a, cwd=repo, capture_output=True, check=True)
+        return repo
+
+    def insert(repo, n):
+        f = os.path.join(repo, "pkg/f.c")
+        old = open(f).read().split("\n")
+        open(f, "w").write("\n".join(["// added"] * n + old))
+
+    def doc(repo):
+        return open(os.path.join(repo, "notes/d.md")).read().strip()
+
+    def truth(repo):
+        return open(os.path.join(repo, "pkg/f.c")).read().split("\n").index(MARK) + 1
+
+    fails = []
+
+    def want(tag, got, exp):
+        print("  [%s] %s%s" % (tag, got, "" if got == exp else "   WANT %s" % (exp,)))
+        if got != exp:
+            fails.append(tag)
+
+    with tempfile.TemporaryDirectory() as td:
+        r = build(td, "idem")
+        insert(r, 5)
+        me(r, "--apply")
+        first = doc(r)
+        me(r, "--apply")
+        want("1a", first, "the marker is at `pkg/f.c:%d@marker`." % truth(r))
+        want("1b", doc(r), first)
+
+        r = build(td, "control")
+        insert(r, 5)
+        me(r, "--apply", "--ignore-state")
+        one = doc(r)
+        me(r, "--apply", "--ignore-state")
+        want("2", doc(r) != one, True)
+
+        r = build(td, "incremental")
+        insert(r, 5)
+        me(r, "--apply")
+        insert(r, 3)
+        me(r, "--apply")
+        want("3", doc(r), "the marker is at `pkg/f.c:%d@marker`." % truth(r))
+
+        r = build(td, "stale")
+        insert(r, 5)
+        me(r, "--apply")
+        d = os.path.join(r, "notes/d.md")
+        open(d, "a").write("a human edited this line\n")
+        before = doc(r)
+        rc = me(r, "--apply").returncode
+        want("4a", rc, 2)
+        want("4b", doc(r), before)
+
+    print("selfcheck: %s" % ("all green" if not fails else "FAILED " + " ".join(fails)))
+    return 1 if fails else 0
+
+
 def main():
+    if "--selfcheck" in sys.argv:
+        return selfcheck()
     args = [a for a in sys.argv[1:] if not a.startswith("-")]
     apply_ = "--apply" in sys.argv
     ref = "HEAD"
     if "--ref" in sys.argv:
         ref = sys.argv[sys.argv.index("--ref") + 1]
         args = [a for a in args if a != ref]
+
+    if "--forget" in sys.argv:
+        if os.path.exists(STATE):
+            os.remove(STATE)
+            print("forgot %s" % STATE)
+        else:
+            print("no recorded anchor to forget")
+        return 0
+
+    state = {} if "--ignore-state" in sys.argv else load_state()
+    if state.get("stale"):
+        print("recorded anchor is STALE -- these were rewritten by the last "
+              "--apply and have changed since:")
+        for q in state["stale"]:
+            print("  %s" % q)
+        print("so where the citations point is no longer known. Re-run with "
+              "--ignore-state to map from %s anyway, or --forget to drop the "
+              "record." % ref)
+        if apply_:
+            return 2
+        state = {}
+    elif state.get("anchored"):
+        print("anchored to the last --apply (%d file(s)), not to %s"
+              % (len(state["anchored"]), ref))
 
     texts = tracked_texts()
     if args:
@@ -232,13 +409,15 @@ def main():
 
     touched, dropped = set(), 0
     for t in targets:
-        _, d = reanchor(t, ref, texts, touched)
+        _, d = reanchor(t, ref, texts, touched, state)
         dropped += d
 
     for path in sorted(touched):
         print("  %s %s" % ("rewrote" if apply_ else "would rewrite", path))
         if apply_:
             open(os.path.join(ROOT, path), "w").write(texts[path])
+    if apply_:
+        save_state(targets, {q: texts[q] for q in touched})
 
     print("%s %d file(s); %d citation(s) need a human"
           % ("rewrote" if apply_ else "would rewrite", len(touched), dropped))

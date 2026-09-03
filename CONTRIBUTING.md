@@ -100,6 +100,16 @@ started from: `python3 scripts/reanchor_citations.py --ref <base> --apply`.
 Without that it compares your change against itself, reports `no line moved;
 nothing to re-anchor`, and leaves you stuck.
 
+**Running it twice is safe now, and was not before.** Each `--apply` records
+the target's bytes in `$GIT_DIR/reanchor_citations.json` and the next run maps
+from there rather than from `<ref>`, so a second run in a row moves nothing and
+a further edit to the same file re-anchors only its own delta. If the record
+goes stale — you reset, or hand-edited a file the last run rewrote — `--apply`
+refuses instead of guessing; `--forget` drops the record and `--ignore-state`
+maps from `<ref>` regardless. `--selfcheck` proves all of that in a sandbox
+repo, including the control that the old ref-relative mapping still
+double-shifts.
+
 **Given no target it re-anchors every file your diff moved** that something
 else cites, and names the changed files it skipped because nothing cites them —
 so one invocation covers a commit touching `src/tychoc.c` and
