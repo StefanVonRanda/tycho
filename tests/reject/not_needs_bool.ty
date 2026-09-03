@@ -1,0 +1,6 @@
+# src/tychoc.c:7258 -- `not` is bool-only; there is no truthiness here.
+# expect: `not` needs a bool operand
+fn main():
+    x := 1
+    if not x:
+        println("y")

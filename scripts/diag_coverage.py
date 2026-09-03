@@ -20,7 +20,8 @@ the pure pass-through formats (under 8 literal characters -- "%s") are dropped
 as helpers rather than rules, and the literals their callers pass in are
 collected instead.
 
-Not every site is a rule. Four buckets are held out rather than counted as gaps,
+Not every site is a rule. The buckets below are held out rather than counted as
+gaps,
 because a second compiler owing you the same behaviour is what "gap" means here:
   CAPACITY  a compiler ceiling ("too many enums", "block nesting too deep") --
             reachable only by a generated program, never by hand-written source
@@ -31,6 +32,8 @@ because a second compiler owing you the same behaviour is what "gap" means here:
             back from a message even in principle
   REMOVED   a rule inside a builtin the language no longer has -- the parser
             rejects the call before the rule can run
+  DEAD      a site guarded by a condition an EARLIER site in the same arm
+            already died on, so control never reaches it
 
 Divergence is measured at two levels, because both have shipped:
   VERDICT   ./tychoc refuses and ./tychoc1 --typecheck accepts (R4's parallel-for
@@ -82,6 +85,11 @@ REMOVED = ["map_set(m, key, value)", "map_set's first argument", "map_set key mu
            "map_has's first argument", "map_has key must be", "map_del(m, key) takes",
            "map_del's first argument", "map_del key must be",
            "map keys must be string or int"]
+# DEAD: reserve's second array/map test repeats its first one verbatim --
+# `if (!is_array(arrt) && !is_map(arrt))` at src/tychoc.c:7042 dies, and
+# src/tychoc.c:7052 asks the identical question with `arrt` never reassigned in
+# between. Nothing can reach it, so no fixture can name it.
+DEAD = ["reserve only supports arrays of scalars"]
 INTERNAL = ["oom", "cannot open", "cannot write", "read error", "unknown flag",
             "pkg-config", "C compilation failed", "already exists and was not written",
             "-g line info", "contains a NUL byte", "import cycle",
@@ -200,6 +208,8 @@ def rules():
             b = "INTERNAL"
         elif any(k in f for k in REMOVED):
             b = "REMOVED"
+        elif any(k in f for k in DEAD):
+            b = "DEAD"
         elif LIT(f) < 8:
             b = "UNMATCHABLE"
         else:

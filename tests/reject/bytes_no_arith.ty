@@ -1,0 +1,7 @@
+# src/tychoc.c:7526 -- bytes concatenates and indexes; it does not subtract.
+# The `# expect:` asserts only the shared PREFIX: tychoc spells the whole
+# suggestion after the types and tychoc1 stops at the closing parenthesis.
+# expect: bytes has no arithmetic (got bytes, bytes)
+fn main():
+    b := to_bytes("ab")
+    println(str(b - b))

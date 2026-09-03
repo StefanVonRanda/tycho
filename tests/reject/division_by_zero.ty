@@ -1,0 +1,7 @@
+# src/tychoc.c:7375 -- a literal zero divisor is refused at compile time
+# rather than left to trap at run time.
+# tychoc1 ACCEPTED this under --typecheck until the check was ported into
+# compiler/types/tcheck.ty; both now word it identically.
+# expect: division by zero
+fn main():
+    println(str(1 / 0))

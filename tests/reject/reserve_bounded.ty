@@ -1,0 +1,7 @@
+# src/tychoc.c:7044 -- a bounded[N]T's capacity is fixed at the type.
+# tychoc1 ACCEPTED this under --typecheck until the check was ported into
+# compiler/types/tcheck.ty; both now word it identically.
+# expect: reserve does not apply to a bounded[...] — its capacity is fixed
+fn main():
+    b: bounded[4]int = [1, 2]
+    reserve(b, 8)

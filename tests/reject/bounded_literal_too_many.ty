@@ -1,0 +1,5 @@
+# src/tychoc.c:7598 -- a bounded[N] literal may not exceed N.
+# expect: a bounded[2] holds at most 2 elements, got 3
+fn main():
+    b: bounded[2]int = [1, 2, 3]
+    println(str(len(b)))

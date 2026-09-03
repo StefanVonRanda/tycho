@@ -1,0 +1,10 @@
+# src/tychoc.c:7076 -- a variadic call may pass no trailing arguments, but it
+# must still pass every FIXED one.
+# tychoc1 ACCEPTED this under --typecheck until the check was ported into
+# compiler/types/tcheck.ty; both now word it identically.
+# expect: 'f' takes at least 1 argument(s), got 0
+fn f(a: int, rest: ...int) -> int:
+    return a + len(rest)
+
+fn main():
+    println(str(f()))

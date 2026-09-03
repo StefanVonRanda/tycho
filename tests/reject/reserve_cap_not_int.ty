@@ -1,0 +1,7 @@
+# src/tychoc.c:7058 -- the capacity is a count.
+# tychoc1 ACCEPTED this under --typecheck until the check was ported into
+# compiler/types/tcheck.ty; both now word it identically.
+# expect: reserve's capacity must be int
+fn main():
+    xs := [1, 2]
+    reserve(xs, "8")

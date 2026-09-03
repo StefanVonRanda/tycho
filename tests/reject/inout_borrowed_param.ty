@@ -1,0 +1,15 @@
+# src/tychoc.c:7163 -- a borrowed array parameter cannot be re-lent as inout.
+# `bump` itself is fine: an inout parameter IS mutable, which is what keeps
+# this rule from refusing every forwarding call.
+# tychoc1 ACCEPTED this under --typecheck until the check was ported into
+# compiler/types/tcheck.ty; both now word it identically.
+# expect: cannot pass borrowed parameter 'v' as inout (it is read-only; copy it first)
+fn bump(xs: inout [int]):
+    push(xs, 1)
+
+fn g(v: [int]):
+    bump(&v)
+
+fn main():
+    n := [1]
+    g(n)

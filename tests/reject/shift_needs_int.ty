@@ -1,0 +1,5 @@
+# src/tychoc.c:7383 -- both sides of a shift are integers.
+# expect: shift operators require integer operands (got float, int)
+fn main():
+    x := 1.5
+    println(str(x << 2))

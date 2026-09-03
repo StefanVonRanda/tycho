@@ -1,0 +1,10 @@
+# src/tychoc.c:7016 -- pop's argument must be rooted at a variable; a call
+# result is not a place.
+# tychoc1 ACCEPTED this under --typecheck until the check was ported into
+# compiler/types/tcheck.ty; both now word it identically.
+# expect: pop's first argument must be an array variable or field
+fn mk() -> [int]:
+    return [1, 2]
+
+fn main():
+    pop(mk())

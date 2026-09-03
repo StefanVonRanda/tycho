@@ -1367,6 +1367,8 @@ fn _binop(cs: inout C, op: string, k: [ast.Expr]) -> string:
         elif not _elem_arith_ok(op, et):
             _cerr(&cs, "`" + op + "` is not defined element-wise on " + at + " -- there is no element-wise `" + op + "` for " + et)
         return at
+    if (op == "/" or op == "%") and _is_zerolit(k[1]):
+        _cerr(&cs, "division by zero")
     if op == "%" or op == "&" or op == "|" or op == "^":
         if not _is_int(lt) or lt != rt:
             _cerr(&cs, "modulo / bitwise operators require two matching integers (got " + lt + ", " + rt + ")")
@@ -1448,6 +1450,15 @@ fn _check_args(cs: inout C, name: string, si: int, args: [ast.Expr], line: int):
             _ex(&cs, a)
         cs.in_arg = keep
         return
+    if variadic and len(args) < len(cs.sg[si].ptypes) - 1:
+        keep4 := cs.in_arg
+        cs.in_arg = true
+        for a in args:
+            _ex(&cs, a)
+        cs.in_arg = keep4
+        cs.line = line
+        _cerr(&cs, "'" + name + "' takes at least " + str(len(cs.sg[si].ptypes) - 1) + " argument(s), got " + str(len(args)))
+        return
     if not variadic and len(args) != len(cs.sg[si].ptypes):
         keep2 := cs.in_arg
         cs.in_arg = true
@@ -1479,6 +1490,10 @@ fn _check_args(cs: inout C, name: string, si: int, args: [ast.Expr], line: int):
                     _cerr(&cs, "argument " + str(i + 1) + " of '" + name + "' is inout; pass it as '&variable'")
                 elif not _is_place(&cs, ast.kids(args[i])[0]):
                     _cerr(&cs, "inout argument " + str(i + 1) + " of '" + name + "' must name a variable")
+                else:
+                    ri := _root_name(ast.kids(args[i])[0])
+                    if _ro_param(&cs, ri):
+                        _cerr(&cs, "cannot pass borrowed parameter '" + ri + "' as inout (it is read-only; copy it first)")
             elif args[i] is ast.Addr:
                 _cerr(&cs, "argument " + str(i + 1) + " of '" + name + "' is not inout; remove the '&'")
             # is_null asks whether an opener FAILED, so it takes a handle as well
@@ -1807,6 +1822,10 @@ fn _call_builtin(cs: inout C, l: int, n: string, args: [ast.Expr], want: string)
         if known(b0) and not (_is_arr(b0) or _head(b0) == "soa"):
             _cerr(&cs, "push's first argument must be an array or soa")
             return "void"
+        rn := _root_name(args[0])
+        if _ro_param(&cs, rn):
+            _cerr(&cs, "cannot mutate parameter '" + rn + "' (it is borrowed read-only; copy it with `y := " + rn + "` first)")
+            return "void"
         el := _elem_of(&cs, b0)
         _nest_aff_e(&cs, ats[1])
         if not compat(el, ats[1]):
@@ -1815,15 +1834,38 @@ fn _call_builtin(cs: inout C, l: int, n: string, args: [ast.Expr], want: string)
     if n == "pop":
         if not _arity(&cs, n, args, 1, "pop(arr) takes one argument"):
             return "?"
+        if not _is_place(&cs, args[0]):
+            _cerr(&cs, "pop's first argument must be an array variable or field")
+            return "?"
         if known(b0) and not (_is_arr(b0) or _head(b0) == "soa"):
             _cerr(&cs, "pop's first argument must be an array or soa")
+            return "?"
+        if _head(b0) == "bnd":
+            _cerr(&cs, "pop is not supported on a bounded[...] yet; read the last element via len()-1 and rebuild")
+            return "?"
+        rp := _root_name(args[0])
+        if _ro_param(&cs, rp):
+            _cerr(&cs, "cannot mutate parameter '" + rp + "' (it is borrowed read-only; copy it with `y := " + rp + "` first)")
             return "?"
         return _elem_of(&cs, b0)
     if n == "reserve":
         if not _arity(&cs, n, args, 2, "reserve(arr, n) takes two arguments"):
             return "void"
+        if not _is_place(&cs, args[0]):
+            _cerr(&cs, "reserve's first argument must be an array variable or field")
+            return "void"
         if known(b0) and not (_is_arr(b0) or _head(b0) == "map"):
             _cerr(&cs, "reserve's first argument must be an array or a map")
+            return "void"
+        if _head(b0) == "bnd":
+            _cerr(&cs, "reserve does not apply to a bounded[...] — its capacity is fixed")
+            return "void"
+        rr := _root_name(args[0])
+        if _ro_param(&cs, rr):
+            _cerr(&cs, "cannot mutate parameter '" + rr + "' (it is borrowed read-only)")
+            return "void"
+        if known(ats[1]) and not compat("int", ats[1]):
+            _cerr(&cs, "reserve's capacity must be int")
         return "void"
     # The four concurrency builtins used to fall through silently on a wrong
     # arity or a non-channel argument, leaving codegen to die with `unsupported
@@ -2198,6 +2240,39 @@ fn _is_place(cs: inout C, e: ast.Expr) -> bool:
         ast.Field(l, k, f): return _is_place(&cs, k[0])
         ast.Index(l, k): return _is_place(&cs, k[0])
         ast.Call(l, q, n, ts, a): return n in cs.subs
+        _: return false
+    return false
+
+# The identifier a place expression is rooted at, after stripping field and
+# index steps -- every place rule in `src/tychoc.c` walks E_FIELD/E_INDEX the
+# same way before testing the root. "" when
+# the root is not a name (a call, a tuple index), which no rule below fires on.
+fn _root_name(e: ast.Expr) -> string:
+    match e:
+        ast.Name(l, n): return n
+        ast.Field(l, k, f): return _root_name(k[0])
+        ast.Index(l, k): return _root_name(k[0])
+        _: return ""
+    return ""
+
+# An array, map or soa PARAMETER is borrowed read-only unless it is `sink`:
+# `src/tychoc.c@vars_can_mutate` answers exactly that, and the three mutating
+# builtins plus every `&` argument consult it.
+fn _ro_param(cs: inout C, n: string) -> bool:
+    if len(n) == 0 or not (n in cs.parms) or (n in cs.sinkp):
+        return false
+    si := _sigidx(&cs, cs.symfnm)
+    if si < 0:
+        return false
+    for i := 0; i < len(cs.sg[si].pnames); i += 1:
+        if cs.sg[si].pnames[i] == n and cs.sg[si].pflags[i] == "inout":
+            return false        # an inout container IS the caller's, by pointer
+    t := _vtype(&cs, n)
+    return _is_arr(t) or _head(t) == "map" or _head(t) == "soa"
+
+fn _is_zerolit(e: ast.Expr) -> bool:
+    match e:
+        ast.IntLit(l, v): return v == 0
         _: return false
     return false
 

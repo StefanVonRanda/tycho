@@ -1,0 +1,5 @@
+# src/tychoc.c:7492 -- modulo and the bitwise operators are integer-only.
+# expect: modulo / bitwise operators require two matching integers (got float, float)
+fn main():
+    x := 1.5
+    println(str(x % 2.0))

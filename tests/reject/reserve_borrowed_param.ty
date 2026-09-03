@@ -1,0 +1,12 @@
+# src/tychoc.c:7056 -- reserve mutates its array, and an array parameter is
+# borrowed read-only. The message is SHORTER than push's at src/tychoc.c:7004:
+# it carries no copy suggestion, which is why it is a rule of its own.
+# tychoc1 ACCEPTED this under --typecheck until the check was ported into
+# compiler/types/tcheck.ty; both now word it identically.
+# expect: cannot mutate parameter 'xs' (it is borrowed read-only)
+fn g(xs: [int]):
+    reserve(xs, 8)
+
+fn main():
+    ys := [1, 2]
+    g(ys)

@@ -1,0 +1,5 @@
+# src/tychoc.c:7021 -- pop takes an array or a soa, nothing else.
+# expect: pop's first argument must be an array or soa
+fn main():
+    x := 1
+    pop(x)

@@ -1,0 +1,6 @@
+# src/tychoc.c:7299 -- `and` and `or` take bools on both sides.
+# expect: `and` needs bool operands
+fn main():
+    x := 1
+    if x and true:
+        println("y")

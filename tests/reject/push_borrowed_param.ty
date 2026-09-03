@@ -1,0 +1,11 @@
+# src/tychoc.c:7004 -- an array parameter is borrowed read-only, so push
+# cannot regrow it in place.
+# tychoc1 ACCEPTED this under --typecheck until the check was ported into
+# compiler/types/tcheck.ty; both now word it identically.
+# expect: cannot mutate parameter 'xs' (it is borrowed read-only; copy it with `y := xs` first)
+fn g(xs: [int]):
+    push(xs, 3)
+
+fn main():
+    ys := [1, 2]
+    g(ys)
