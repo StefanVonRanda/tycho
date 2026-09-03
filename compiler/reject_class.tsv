@@ -64,6 +64,7 @@ tests/reject/chan_capture.ty	SEMANTIC	6009	a closure cannot capture a channel ha
 tests/reject/chan_in_container.ty	SEMANTIC	6786	a channel must be created directly in a declaration: ch := channel(T, cap)
 tests/reject/chan_inout_param.ty	SEMANTIC	4354	'ch' is inout, which an affine type cannot be -- it has one owner and is freed at that scope's exit, so there is nothing to consume or copy back. Pass it plainly: that is already a borrow
 tests/reject/chan_reassign.ty	SEMANTIC	8472	a channel variable cannot be reassigned
+tests/reject/channel_cap_not_int.ty	SEMANTIC	6789	channel(T, cap) needs an int capacity
 tests/reject/char_as_type.ty	TYPE	2675	unknown type 'char'
 tests/reject/char_at_arg_index_type.ty	TYPE	7198	argument 2 of 'char_at' is string, expected int
 tests/reject/char_at_arg_recv_type.ty	TYPE	7185	argument 1 of 'char_at' is int, expected string -- wrap it with str(...), e.g. char_at(str(x))
@@ -78,6 +79,8 @@ tests/reject/char_int_ord.ty	TYPE	7352	ordering compares two ints, two floats, t
 tests/reject/char_two_chars.ty	SYNTAX	820	char literal must be exactly one character
 tests/reject/char_unexpected.ty	SYNTAX	863	unexpected character '?'
 tests/reject/close_handle_nonvar.ty	SEMANTIC	6812	close(h) takes a handle variable
+tests/reject/close_not_channel.ty	SEMANTIC	6815	close takes a channel or a handle, got int
+tests/reject/close_two_args.ty	SEMANTIC	6808	close takes one channel or handle
 tests/reject/coerce_annot_narrow.ty	TYPE	8351	declared type int but value is float
 tests/reject/coerce_arg_narrow.ty	TYPE	7198	argument 1 of 'g' is float, expected int
 tests/reject/coerce_array_mixed.ty	TYPE	6204	array elements must all have the same type
@@ -193,6 +196,7 @@ tests/reject/handle_then_enum.ty	NAME	4318	'H' is already defined
 tests/reject/handle_then_newtype.ty	NAME	4318	'H' is already defined
 tests/reject/handle_then_struct.ty	NAME	4318	'H' is already defined
 tests/reject/hash_float.ty	TYPE	6850	hash(x) can't hash a float (hashable = the map-key types: int, string, their newtypes, fieldless enums, and composites of those)
+tests/reject/hash_two_args.ty	SEMANTIC	6844	hash(x) takes one argument
 tests/reject/hex_escape_in_string.ty	SYNTAX	0	unsupported escape \x (use \n \t \r \\ \")
 tests/reject/hex_escape_one_digit.ty	SYNTAX	813	\x takes exactly two hex digits (e.g. '\x41')
 tests/reject/if_expr_no_else.ty	SYNTAX	3458	an `if` used as a value must have an `else` — every path must produce a value
@@ -216,6 +220,8 @@ tests/reject/int_hex_no_digits.ty	SYNTAX	0	a hex literal needs at least one digi
 tests/reject/int_hex_overflow.ty	SYNTAX	662	integer literal out of range
 tests/reject/int_literal_overflow.ty	SYNTAX	662	integer literal out of range
 tests/reject/is_chain.ty	SYNTAX	3286	`is` does not chain -- write `a is X and a is Y`
+tests/reject/keys_not_map.ty	SEMANTIC	6973	keys's argument must be a map
+tests/reject/keys_two_args.ty	SEMANTIC	6970	keys(m) takes one argument
 tests/reject/kw_as_field_name.ty	SYNTAX	2076	'spawn' is a reserved keyword and cannot be used as a field name
 tests/reject/kw_as_local_name.ty	SYNTAX	3784	'spawn' is a reserved keyword and cannot be used as a variable name
 tests/reject/len_scalar.ty	TYPE	6917	len(...) takes an array, a string, bytes, a map, or a soa
@@ -290,10 +296,13 @@ tests/reject/place_call_receiver.ty	TYPE	8789	can only index-assign an array or 
 tests/reject/place_call_receiver_field.ty	TYPE	8836	cannot assign to a field of a temporary (only variables, fields, and composite-array elements are places)
 tests/reject/print_arity_zero.ty	TYPE	7142	'print' takes 1 argument(s), got 0
 tests/reject/println_arity_many.ty	TYPE	7142	'println' takes 1 argument(s), got 2
+tests/reject/push_one_arg.ty	SEMANTIC	6977	push(arr, value) takes two arguments
 tests/reject/push_scalar.ty	TYPE	6995	push's first argument must be an array or soa
 tests/reject/push_target_not_place.ty	TYPE	6985	push's first argument must be an array variable or field
 tests/reject/range_removed.ty	SYNTAX	4046	`range()` was removed: write `for i := 0; i < N; i += 1:` to count, or `parallel for i in 0..<N:` to count in parallel
 tests/reject/rawstring_unterminated.ty	SYNTAX	793	unterminated raw string literal
+tests/reject/recv_not_channel.ty	SEMANTIC	6804	recv(ch) takes a channel, got int
+tests/reject/recv_two_args.ty	SEMANTIC	6802	recv(ch) takes one channel
 tests/reject/result_bare_decl.ty	SEMANTIC	8390	cannot infer the Result type of Ok(...) — annotate it (x : Result(T, E) = Ok(...))
 tests/reject/result_void_arm_binds.ty	TYPE	8267	Ok carries no value here -- write a bare `Ok:` arm
 tests/reject/result_void_bind.ty	TYPE	8381	cannot bind a void value
@@ -305,6 +314,8 @@ tests/reject/scalar_coerce_reassign.ty	TYPE	8451	cannot assign float to 'x' of t
 tests/reject/scalar_coerce_struct_field.ty	TYPE	6723	field 'v' of S is int, got float
 tests/reject/select_arm_unknown.ty	SYNTAX	3899	a select arm is `recv(ch, x):`, `default:`, or `closed:`
 tests/reject/semi_no_grammar.ty	SYNTAX	2077	expected newline
+tests/reject/send_not_channel.ty	SEMANTIC	6795	send(ch, v) takes a channel, got int
+tests/reject/send_one_arg.ty	SEMANTIC	6793	send(ch, v) takes a channel and a value
 tests/reject/send_wrong_type.ty	SEMANTIC	6798	send on Channel(int) needs a int value
 tests/reject/sink_arg_newtype.ty	TYPE	7198	argument 1 of 'f' is int, expected Id
 tests/reject/sink_arg_scalar.ty	TYPE	7198	argument 1 of 'f' is float, expected int
@@ -318,6 +329,8 @@ tests/reject/slice_inout_alias.ty	SEMANTIC	7249	cannot pass a slice of 'a' and a
 tests/reject/spawn_not_a_call.ty	SYNTAX	2956	spawn requires a direct call: spawn f(args)
 tests/reject/str_as_type.ty	TYPE	2675	unknown type 'str'
 tests/reject/str_index_assign.ty	TYPE	8820	cannot index-assign an element of string (it is immutable)
+tests/reject/str_of_fn_value.ty	SEMANTIC	6832	str(x) can't stringify a fn()
+tests/reject/str_two_args.ty	SEMANTIC	6822	str(x) takes one argument
 tests/reject/string_escape.ty	SYNTAX	0	unsupported escape \  (use \n \t \r \\ \")
 tests/reject/string_raw_control.ty	SYNTAX	0	raw control byte in string literal (use an escape such as \n or \t)
 tests/reject/string_unterminated.ty	SYNTAX	688	unterminated string literal
@@ -341,11 +354,22 @@ tests/reject/sum_ctor_payload_mismatch.ty	TYPE	7636	declared type Option(int) bu
 tests/reject/tab_mix.ty	SYNTAX	515	mixed tabs and spaces in indentation; use one consistently
 tests/reject/tab_mix2.ty	SYNTAX	515	mixed tabs and spaces in indentation; use one consistently
 tests/reject/task_copy.ty	SEMANTIC	8398	a task handle cannot be copied or re-bound -- bind the spawn directly (t := spawn f(...))
+tests/reject/to_bool_not_newtype.ty	SEMANTIC	6902	to_bool(x) takes a bool newtype
+tests/reject/to_bool_two_args.ty	SEMANTIC	6899	to_bool(x) takes one argument
+tests/reject/to_bytes_not_string.ty	SEMANTIC	6895	to_bytes(x) takes a string or [int]
+tests/reject/to_bytes_two_args.ty	SEMANTIC	6892	to_bytes(s) takes one argument
 tests/reject/to_float_already_float.ty	TYPE	6859	to_float(n) takes an int, a sized int, f32, or a float newtype
 tests/reject/to_float_two_args.ty	TYPE	6856	to_float(n) takes one argument
 tests/reject/to_int_already_int.ty	TYPE	6866	to_int(x): x is already an int -- indexing a string (s[i]) yields the byte value as an int; use chr(x) for its one-character string
 tests/reject/to_int_string.ty	TYPE	6868	to_int(x) takes a float (truncates toward zero), a sized int, f32, a char, or an int newtype
 tests/reject/to_int_two_args.ty	TYPE	6863	to_int(x) takes one argument
+tests/reject/to_ptr_not_int.ty	SEMANTIC	6888	to_ptr(n) takes an int
+tests/reject/to_ptr_two_args.ty	SEMANTIC	6886	to_ptr(n) takes one argument
+tests/reject/to_str_not_bytes.ty	SEMANTIC	6882	to_str(x) takes bytes or a string newtype
+tests/reject/to_str_two_args.ty	SEMANTIC	6879	to_str(x) takes one argument
+tests/reject/to_u8_two_args.ty	SEMANTIC	6872	to_u8(x) takes one argument
+tests/reject/to_under_not_newtype.ty	SEMANTIC	6909	to_under(x) takes a newtype value, got int
+tests/reject/to_under_two_args.ty	SEMANTIC	6906	to_under(x) takes one argument
 tests/reject/tuple_arity_max.ty	SYNTAX	2454	a tuple has at most 8 elements
 tests/reject/tuple_arity_min.ty	SYNTAX	2459	a tuple type needs at least two elements; parentheses do not group a type, so write it bare
 tests/reject/tuple_elem_index_assign.ty	TYPE	8789	can only index-assign an array or map variable or field
@@ -381,6 +405,7 @@ tests/reject/void_bound_to_decl.ty	TYPE	8381	cannot bind a void value
 tests/reject/void_grounds_pending_push.ty	SEMANTIC	5879	cannot infer the type of 'xs' from this use
 tests/reject/void_not_a_type.ty	TYPE	2559	'void' is a type only as a Result's ok payload, as in Result(void, string)
 tests/reject/void_push_value.ty	TYPE	7008	push's value must be int
+tests/reject/wait_two_args.ty	SEMANTIC	6774	wait(t) takes one task
 tests/reject/where_bad_tp.ty	SYNTAX	4410	`where` refers to 'Q', which is not a type parameter of this function
 tests/reject/where_constraint_max.ty	SYNTAX	4387	at most 8 `where` constraints per function
 tests/reject/where_defaultable_bad.ty	SEMANTIC	9060	'total' instantiated with T = P, which does not satisfy `defaultable(T)`

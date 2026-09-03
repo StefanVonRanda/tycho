@@ -1,0 +1,8 @@
+# src/tychoc.c:6804 -- recv's argument must be a channel.
+# tychoc1 ACCEPTED this under --typecheck until the check was ported into
+# compiler/types/tcheck.ty; both now word it identically.
+# expect: recv(ch) takes a channel, got int
+fn main():
+    match recv(1):
+        Some(x): println(str(x))
+        None: println("none")

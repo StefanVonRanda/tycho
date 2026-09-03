@@ -1,0 +1,6 @@
+# src/tychoc.c:6795 -- send's first argument must be a channel.
+# tychoc1 ACCEPTED this under --typecheck until the check was ported into
+# compiler/types/tcheck.ty; both now word it identically.
+# expect: send(ch, v) takes a channel, got int
+fn main():
+    send(1, 2)

@@ -1,0 +1,6 @@
+# src/tychoc.c:6970
+# expect: keys(m) takes one argument
+fn main():
+    m := []string: int
+    ks := keys(m, 1)
+    println(str(len(ks)))

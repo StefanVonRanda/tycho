@@ -1,0 +1,5 @@
+# src/tychoc.c:6892
+# expect: to_bytes(s) takes one argument
+fn main():
+    b := to_bytes("a", "b")
+    println(str(len(b)))

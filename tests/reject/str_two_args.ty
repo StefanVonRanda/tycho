@@ -1,0 +1,4 @@
+# src/tychoc.c:6822 -- str takes exactly one value.
+# expect: str(x) takes one argument
+fn main():
+    println(str(1, 2))

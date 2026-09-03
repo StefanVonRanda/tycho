@@ -29,6 +29,8 @@ because a second compiler owing you the same behaviour is what "gap" means here:
   WARNING   warn_at: no verdict, so no reject fixture can cover it
   UNMATCHABLE  a format with under 8 literal characters, which cannot be matched
             back from a message even in principle
+  REMOVED   a rule inside a builtin the language no longer has -- the parser
+            rejects the call before the rule can run
 
 Divergence is measured at two levels, because both have shipped:
   VERDICT   ./tychoc refuses and ./tychoc1 --typecheck accepts (R4's parallel-for
@@ -67,6 +69,19 @@ CAPACITY = ["too many ", "nesting too deep", "indentation too deep",
             # generated programs, and both are the same family as the two
             # `has at most` entries above. ./tychoc1 --parse accepts each.
             "at most 16 explicit type arguments", "too deeply nested"]
+# REMOVED: the map_set/map_get/map_has/map_del builtins were taken OUT of the
+# language -- src/tychoc.c:3041-3044 turns every call into `map_set was removed;
+# use `m[k] = v`` (and its three siblings) at PARSE time, so nothing downstream
+# of that can ever run. Measured 2026-09-03 by probing all four in both
+# compilers: each died at the removal message, never at the rules below. Listed
+# one format at a time rather than by the bare builtin name, so the four live
+# removal diagnostics themselves stay rules.
+REMOVED = ["map_set(m, key, value)", "map_set's first argument", "map_set key must be",
+           "map_set value must be", "map_get(m, key, default)", "map_get's first argument",
+           "map_get key must be", "map_get default must be", "map_has(m, key) takes",
+           "map_has's first argument", "map_has key must be", "map_del(m, key) takes",
+           "map_del's first argument", "map_del key must be",
+           "map keys must be string or int"]
 INTERNAL = ["oom", "cannot open", "cannot write", "read error", "unknown flag",
             "pkg-config", "C compilation failed", "already exists and was not written",
             "-g line info", "contains a NUL byte", "import cycle",
@@ -183,6 +198,8 @@ def rules():
             b = "CAPACITY"
         elif any(k in f for k in INTERNAL):
             b = "INTERNAL"
+        elif any(k in f for k in REMOVED):
+            b = "REMOVED"
         elif LIT(f) < 8:
             b = "UNMATCHABLE"
         else:

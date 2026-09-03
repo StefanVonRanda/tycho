@@ -1,0 +1,6 @@
+# src/tychoc.c:6815 -- close's argument must be a channel or a handle.
+# tychoc1 ACCEPTED this under --typecheck until the check was ported into
+# compiler/types/tcheck.ty; both now word it identically.
+# expect: close takes a channel or a handle, got int
+fn main():
+    close(1)

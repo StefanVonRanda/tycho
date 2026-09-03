@@ -1,0 +1,7 @@
+# src/tychoc.c:6906
+# expect: to_under(x) takes one argument
+type N = int
+fn main():
+    n := N(1)
+    x := to_under(n, 1)
+    println(str(x))

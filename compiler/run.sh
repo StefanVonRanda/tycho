@@ -162,7 +162,7 @@ done < "$TSV"
 echo "leg2  tests/reject/*.ty --parse: SYNTAX=$((sr+sa)) rejected=$sr missed=$sa | NAME+SEMANTIC=$((ma+mr)) accepted=$ma wrongly-rejected=$mr"
 echo "leg2b tests/reject/*.ty --resolve: SYNTAX+NAME=$((rr+rm_)) rejected=$rr missed=$rm_ | TYPE+SEMANTIC=$((ra+rw)) accepted=$ra wrongly-rejected=$rw"
 echo "leg2c tests/reject/*.ty --typecheck: all=$((tr+tm)) rejected=$tr missed=$tm (KNOWN $(echo $KNOWN_TYPE_MISS | wc -w))"
-[ "$nsyn" = 93 ] && [ "$nname" = 33 ] && [ "$ntype" = 161 ] && [ "$nsem" = 105 ] || { echo "parse-check: the split moved -- expected SYNTAX=93 NAME=33 TYPE=161 SEMANTIC=105"; rc=1; }
+[ "$nsyn" = 93 ] && [ "$nname" = 33 ] && [ "$ntype" = 161 ] && [ "$nsem" = 130 ] || { echo "parse-check: the split moved -- expected SYNTAX=93 NAME=33 TYPE=161 SEMANTIC=130"; rc=1; }
 [ "$mr" = 0 ] || { echo "parse-check: a NAME or SEMANTIC fixture was rejected by --parse; a parser has no symbol table"; rc=1; }
 [ "$sa" = 0 ] || { echo "parse-check: a SYNTAX fixture was accepted; the parser must refuse it"; rc=1; }
 [ "$rm_" = 0 ] || { echo "parse-check: a NAME fixture resolved; the resolver must refuse it"; rc=1; }
@@ -172,7 +172,7 @@ echo "leg2c tests/reject/*.ty --typecheck: all=$((tr+tm)) rejected=$tr missed=$t
 got=$(echo $seen_miss | tr ' ' '\n' | LC_ALL=C sort | tr '\n' ' ')
 want=$(echo $KNOWN_TYPE_MISS | tr ' ' '\n' | LC_ALL=C sort | tr '\n' ' ')
 [ "$got" = "$want" ] || { echo "parse-check: the TYPE misses moved"; echo "    now:  $got"; echo "    was:  $want"; rc=1; }
-[ "$tr" = 388 ] || { echo "parse-check: --typecheck refused $tr of 392, expected 388"; rc=1; }
+[ "$tr" = 413 ] || { echo "parse-check: --typecheck refused $tr of 417, expected 413"; rc=1; }
 
 # [3] -- the census, against a recorded golden
 for f in $(ls tests/*.ty) $(find corelib -name '*.ty' | sort) $(find tools examples server bench -name '*.ty' | sort); do

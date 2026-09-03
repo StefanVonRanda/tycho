@@ -1,0 +1,9 @@
+# src/tychoc.c:6832 -- a function value is not renderable.
+# The expectation is the part BOTH print: tychoc spells the type `fn()` and
+# tychoc1 spells it `fun(void)`, and this lane scores against ./tychoc1.
+# expect: str(x) can't stringify a
+fn g():
+    println("g")
+fn main():
+    f := g
+    println(str(f))

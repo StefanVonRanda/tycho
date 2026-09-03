@@ -1163,7 +1163,13 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
                 _cerr(&cs, "'&' is only valid as the argument to an inout parameter, e.g. f(&x)")
             return _ex(&cs, k[0])
         ast.ChanE(l, t, k):
-            _exs(&cs, k)
+            # The capacity is exactly `int` (src/tychoc.c:6789); _exs discards
+            # the argument's type, so the check has to read it back here.
+            for ce in k:
+                ct := _ex(&cs, ce)
+                if known(ct) and ct != "int":
+                    cs.line = l
+                    _cerr(&cs, "channel(T, cap) needs an int capacity")
             cs.line = l
             if not chan_ok:
                 _cerr(&cs, "a channel must be created directly in a declaration: ch := channel(T, cap)")
@@ -1819,24 +1825,44 @@ fn _call_builtin(cs: inout C, l: int, n: string, args: [ast.Expr], want: string)
         if known(b0) and not (_is_arr(b0) or _head(b0) == "map"):
             _cerr(&cs, "reserve's first argument must be an array or a map")
         return "void"
+    # The four concurrency builtins used to fall through silently on a wrong
+    # arity or a non-channel argument, leaving codegen to die with `unsupported
+    # call` -- src/tychoc.c:6774-6815 refuses each here, so this does too.
     if n == "close":
-        if len(args) == 1 and _aff_kind(&cs, a0) == "handle" and not (args[0] is ast.Name):
-            _cerr(&cs, "close(h) takes a handle variable")
+        if not _arity(&cs, n, args, 1, "close takes one channel or handle"):
+            return "void"
+        if _aff_kind(&cs, a0) == "handle":
+            if not (args[0] is ast.Name):
+                _cerr(&cs, "close(h) takes a handle variable")
+            return "void"
+        if known(b0) and _head(b0) != "chan":
+            _cerr(&cs, "close takes a channel or a handle, got " + a0)
         return "void"
     if n == "send":
-        if len(args) == 2 and _head(b0) == "chan":
-            w := _targs(b0)[0]
-            if not compat(w, ats[1]):
-                _cerr(&cs, "send on " + b0 + " needs a " + w + " value")
+        if not _arity(&cs, n, args, 2, "send(ch, v) takes a channel and a value"):
+            return "void"
+        if _head(b0) != "chan":
+            if known(b0):
+                _cerr(&cs, "send(ch, v) takes a channel, got " + a0)
+            return "void"
+        w := _targs(b0)[0]
+        if not compat(w, ats[1]):
+            _cerr(&cs, "send on " + b0 + " needs a " + w + " value")
         return "void"
     if n == "wait":
-        if len(args) == 1 and _head(b0) == "task":
+        if not _arity(&cs, n, args, 1, "wait(t) takes one task"):
+            return "?"
+        if _head(b0) == "task":
             return _targs(b0)[0]
         return "?"
     if n == "recv":
-        if len(args) == 1 and _head(b0) == "chan":
-            return "opt(" + _targs(b0)[0] + ")"
-        return "?"
+        if not _arity(&cs, n, args, 1, "recv(ch) takes one channel"):
+            return "?"
+        if _head(b0) != "chan":
+            if known(b0):
+                _cerr(&cs, "recv(ch) takes a channel, got " + a0)
+            return "?"
+        return "opt(" + _targs(b0)[0] + ")"
     if n == "zero":
         return "?"
     si := _sigidx(&cs, n)

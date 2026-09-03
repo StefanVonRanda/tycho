@@ -1,0 +1,6 @@
+# src/tychoc.c:6977
+# expect: push(arr, value) takes two arguments
+fn main():
+    xs := []int
+    push(xs)
+    println(str(len(xs)))

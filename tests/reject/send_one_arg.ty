@@ -1,0 +1,8 @@
+# src/tychoc.c:6793 -- send takes a channel AND a value.
+# tychoc1 ACCEPTED this under --typecheck until the arity check was ported
+# into compiler/types/tcheck.ty; both now word it identically.
+# expect: send(ch, v) takes a channel and a value
+fn main():
+    ch := channel(int, 1)
+    send(ch)
+    close(ch)
