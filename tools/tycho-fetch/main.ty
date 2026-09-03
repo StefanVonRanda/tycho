@@ -6,25 +6,25 @@ import "core:io"
 
 fn main():
     a := args()
-    if len(a) < 3:
+    local := false
+    i := 1
+    if len(a) > 1 and a[1] == "--local":
+        local = true
+        i = 2
+    if len(a) < i + 2:
         println("usage: tycho-fetch <url> <name>")
+        println("       tycho-fetch --local <path> <name>")
         println("  vendor a package tarball into vendor/<name>")
         println("  the tarball must have a single top-level directory")
+        println("  <url> is fetched over http/https; --local reads an ordinary file")
         exit(2)
-    url := a[1]
-    name := a[2]
+    url := a[i]
+    name := a[i + 1]
     if not safe_name(name):
         die("tycho-fetch: <name> must be a plain directory name (letters, digits, '.', '_', '-')")
-    r := http.get(url)
-    st := http.status(r)
-    body := http.body_bytes(r)
-    http.release(r)
-    # core:http refuses every scheme but http/https now, so status 0 no longer
-    # means "a file:// download with no status line" -- it means the request did
-    # not complete. The 0-with-a-body arm is kept for a proxy that answers
-    # without a status line, and still fails closed on an empty body.
-    if st != 200 and (st != 0 or len(body) == 0):
-        die("tycho-fetch: " + url + " -> HTTP " + str(st))
+    if not local and has_prefix(url, "file://"):
+        die("tycho-fetch: file:// is not fetched over HTTP -- use: tycho-fetch --local <path> " + name)
+    body := load(local, url)
     sha := sha256.hex(to_str(body))
     println("tycho-fetch: " + url)
     println("  sha256 : " + sha)
@@ -46,6 +46,33 @@ fn main():
         die("tycho-fetch: " + url + " is not a tarball with a single top-level directory")
     _ := io.remove(arch)
     println("  vendored " + name + " -> " + dest)
+
+# `corelib/http/http_shim.c@CURLOPT_PROTOCOLS_STR` pins curl to http,https --
+# http.get("file:///etc/passwd") used to return the file. Reading a tarball off
+# local disk is not an HTTP operation, so --local goes straight to core:io and
+# never builds a URL. That is the only scheme this tool ever wanted beyond
+# http/https, so narrowing that list further cannot break tycho-fetch again.
+fn load(local: bool, src: string) -> bytes:
+    if local:
+        match io.read_bytes(src):
+            Ok(b):
+                return b
+            Err(_):
+                die("tycho-fetch: cannot read " + src)
+    r := http.get(src)
+    st := http.status(r)
+    body := http.body_bytes(r)
+    http.release(r)
+    # Status 0 means the request did not complete; the 0-with-a-body arm is kept
+    # for a proxy that answers without a status line, and fails closed on empty.
+    if st != 200 and (st != 0 or len(body) == 0):
+        die("tycho-fetch: " + src + " -> HTTP " + str(st))
+    return body
+
+fn has_prefix(s: string, p: string) -> bool:
+    if len(s) < len(p):
+        return false
+    return s[0:len(p)] == p
 
 extern fn tycho_run(cmd: string) -> int        # system(cmd); raw wait status, 0 == ok
 extern fn tycho_is_windows() -> int            # 1 under _WIN32: null device + quoting style

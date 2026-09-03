@@ -99,8 +99,9 @@ printf 'garbage line\n' > "$T/bad"
 printf 'a: b\nb: a\n    touch a\n' > "$T/cyc"
 "$T/tb" "$T/cyc" >/dev/null 2>&1;   [ $? -eq 2 ] || { echo "FAIL [6] cycle"; fail=1; }
 
-# [7] vendored dependencies through the build tool: fetch two packages with
-# tycho-fetch (local file:// tarballs), then build a project whose entry
+# [7] vendored dependencies through the build tool: vendor two packages with
+# tycho-fetch --local (core:http refuses file://, and a local tarball is not an
+# HTTP fetch), then build a project whose entry
 # imports "vendor/greet", which itself imports "../util" -- the whole
 # Go/Odin-style vendoring story end to end.
 if ! "$TYCHOC" "$D/../tycho-fetch/main.ty" --shim tools/tycho_shim.c -o "$T/tf" >"$T/tf.log" 2>&1; then
@@ -112,8 +113,14 @@ printf 'package util\nfn msg() -> string:\n    return "from vendored util"\n' > 
 ( cd "$T/vend" && tar -czf g.tar.gz g-src && tar -czf u.tar.gz u-src )
 printf 'package main\nimport "vendor/greet"\nfn main():\n    greet.hello()\n' > "$T/vend/main.ty"
 printf 'app: main.ty\n    %s main.ty -o app%s\n' "$(native "$PWD/tychoc")" "$EXE" > "$T/vend/buildfile"
-( cd "$T/vend" && "$T/tf" "$(url_of "$PWD/g.tar.gz")" greet && "$T/tf" "$(url_of "$PWD/u.tar.gz")" util ) > "$T/vend/fetch.log" 2>&1 \
+( cd "$T/vend" && "$T/tf" --local "$(native "$PWD/g.tar.gz")" greet && "$T/tf" --local "$(native "$PWD/u.tar.gz")" util ) > "$T/vend/fetch.log" 2>&1 \
     || { echo "FAIL [7] tycho-fetch"; cat "$T/vend/fetch.log"; fail=1; }
+# the hardening this lane used to depend on breaking: a file:// URL must be
+# refused rather than silently read, and must name the mode that does work.
+( cd "$T/vend" && "$T/tf" "$(url_of "$PWD/g.tar.gz")" nope ) > "$T/vend/refuse.log" 2>&1 \
+    && { echo "FAIL [7] file:// URL accepted"; fail=1; }
+grep -q -- "--local" "$T/vend/refuse.log" || { echo "FAIL [7] file:// refusal does not name --local"; cat "$T/vend/refuse.log"; fail=1; }
+[ -d "$T/vend/vendor/nope" ] && { echo "FAIL [7] refused fetch still made vendor/nope"; fail=1; }
 [ -f "$T/vend/vendor/greet/greet.ty" ] && [ -f "$T/vend/vendor/util/util.ty" ] \
     || { echo "FAIL [7] vendored files missing"; fail=1; }
 ( cd "$T/vend" && "$T/tb" buildfile ) > "$T/vend/build.out" 2>&1 \
