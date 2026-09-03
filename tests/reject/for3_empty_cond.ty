@@ -1,0 +1,4 @@
+# expect: the condition clause is required
+fn main():
+    for i := 0; ; i += 1:
+        println(str(i))

@@ -133,6 +133,10 @@ tests/reject/fn_named_ok.ty	NAME	4318	'Ok' is already defined
 tests/reject/fnty_arity.ty	SYNTAX	2438	a function type has at most 8 parameters
 tests/reject/fnval_local_generic.ty	SEMANTIC	6158	'mymin' is generic, so it has no single function value -- there is no instantiation to take. Wrap it in a lambda that fixes the types, e.g. fn(a: int, b: int) -> int: mymin(a, b)
 tests/reject/for3_empty_clause.ty	SYNTAX	3975	the init clause is required -- write `for:` for an infinite loop
+tests/reject/for3_empty_cond.ty	SYNTAX	3977	the condition clause is required -- write `for:` for an infinite loop
+tests/reject/for3_empty_post.ty	SYNTAX	3979	the post clause is required -- write `for cond:` for a loop that advances in its body
+tests/reject/for3_four_clauses.ty	SYNTAX	3966	a three-clause `for` has exactly three clauses: `for init; cond; post:`
+tests/reject/for_missing_colon.ty	SYNTAX	3973	expected ':' before the block
 tests/reject/for_two_binders.ty	SYNTAX	4012	a `for` binds one name -- write `for p in COLL:` then `k, q := p` in the body
 tests/reject/fstring_escape.ty	SYNTAX	0	unsupported escape \  (use \n \t \r \\ \")
 tests/reject/genenum_bare_nullary.ty	SEMANTIC	6129	Empty is a variant of generic enum Box; supply the type explicitly, e.g. Empty$(int)

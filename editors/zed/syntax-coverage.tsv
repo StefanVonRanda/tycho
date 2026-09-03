@@ -25,6 +25,10 @@ tests/reject/float_exp_bad.ty	ACCEPTED	`1e` lexes as INT then IDENT in both, and
 tests/reject/float_lit_overflow_neg.ty	ACCEPTED	`1e400` is a well-formed float token; out-of-range is a value check
 tests/reject/fnty_arity.ty	ACCEPTED	a ceiling (8 parameters in a function type)
 tests/reject/for3_empty_clause.ty	ACCEPTED	the grammar makes the three-clause `for` init optional; tychoc requires it
+tests/reject/for3_empty_cond.ty	ACCEPTED	every token is well-formed; the flat grammar has no `for` head that could require a condition clause
+tests/reject/for3_empty_post.ty	ACCEPTED	as above for the post clause -- a missing clause is an arity rule on a head this grammar does not build
+tests/reject/for3_four_clauses.ty	ACCEPTED	`;` is an ordinary operator token here; "exactly three clauses" counts them, which the flat grammar does not
+tests/reject/for_missing_colon.ty	ACCEPTED	`:=` and `:` are both ordinary operator tokens; which one may end a `for` head is a rule with no head to apply to
 tests/reject/for_two_binders.ty	ACCEPTED	`for k, v in xs:` parses; "a for binds one name" is an arity rule on the binder list
 tests/reject/fstring_escape.ty	ACCEPTED	the string rule takes any backslash byte; the escape ALPHABET is checked in tychoc's lexer
 tests/reject/hex_escape_in_string.ty	ACCEPTED	same string rule as fstring_escape -- \x is consumed, not validated

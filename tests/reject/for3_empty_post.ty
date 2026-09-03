@@ -1,0 +1,4 @@
+# expect: the post clause is required
+fn main():
+    for i := 0; i < 3; :
+        println(str(i))

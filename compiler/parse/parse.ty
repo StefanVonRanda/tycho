@@ -1322,12 +1322,17 @@ fn _simple_into(toks: [lex.Tok], i0: int, out: inout ast.Stmt) -> (int, bool):
     out = ast.ExprStmt(toks[ti].line, [e])
     return (i, true)
 
-fn _for3_semi(toks: [lex.Tok], i0: int) -> int:
+# The three-clause scan src/tychoc.c:3957-3967 does: the first two top-level
+# ';' and the LAST top-level ':' before the newline. A third ';' is the rule.
+fn _for3_scan(toks: [lex.Tok], i0: int, ft: lex.Tok) -> (int, int, int):
+    s1 := -1
+    s2 := -1
+    cl := -1
     depth := 0
     for k := i0; true; k += 1:
         kk := _k(toks, k)
         if kk == lex.K_NEWLINE or kk == lex.K_EOF:
-            return -1
+            return (s1, s2, cl)
         if kk == lex.K_OP:
             v := _at(toks, k).ival
             if v == lex.OP_LPAREN or v == lex.OP_LBRACK:
@@ -1335,8 +1340,22 @@ fn _for3_semi(toks: [lex.Tok], i0: int) -> int:
             elif v == lex.OP_RPAREN or v == lex.OP_RBRACK:
                 depth -= 1
             elif depth == 0 and v == lex.OP_SEMI:
-                return k
-    return -1
+                if s1 < 0:
+                    s1 = k
+                elif s2 < 0:
+                    s2 = k
+                else:
+                    _die(toks, ft, "a three-clause `for` has exactly three clauses: `for init; cond; post:`")
+            elif depth == 0 and v == lex.OP_COLON:
+                cl = k
+    return (s1, s2, cl)
+
+# src/tychoc.c@eat with "':' before the block" -- the generic `_op` reports the
+# token it found instead, which names no rule.
+fn _blockcolon(toks: [lex.Tok], i: int) -> int:
+    if not _isop(toks, i, lex.OP_COLON):
+        _diec(toks, _at(toks, i), "expected ':' before the block")
+    return i + 1
 
 fn _dotlt_ahead(toks: [lex.Tok], i0: int) -> bool:
     depth := 0
@@ -1363,11 +1382,19 @@ fn _forstmt_into(toks: [lex.Tok], i0: int, par: bool, out: inout ast.Stmt) -> in
         b, j := block(toks, i)
         out = ast.WhileS(toks[ti].line, [ast.BoolLit(toks[ti].line, true)], b)
         return j
-    if _for3_semi(toks, i) >= 0:
-        # An empty init clause reaches _simple_into as a bare ';' and reports
-        # `expected an expression`, which names no rule. src/tychoc.c:3975.
-        if _for3_semi(toks, i) == i:
+    s1, s2, cl := _for3_scan(toks, i, _at(toks, i0 - 1))
+    if s1 >= 0:
+        # Each empty clause reaches _simple_into or _expr_into as a bare ';'
+        # and reports `expected an expression`, which names no rule.
+        # src/tychoc.c:3972-3979, in that order.
+        if s2 >= 0 and cl < s2:
+            _die(toks, _at(toks, i0 - 1), "expected ':' before the block")
+        if s1 == i:
             _die(toks, _at(toks, i0 - 1), "the init clause is required -- write `for:` for an infinite loop")
+        if s2 == s1 + 1:
+            _die(toks, _at(toks, i0 - 1), "the condition clause is required -- write `for:` for an infinite loop")
+        if cl == s2 + 1:
+            _die(toks, _at(toks, i0 - 1), "the post clause is required -- write `for cond:` for a loop that advances in its body")
         init := ast.PassS(0)
         j, nl1 := _simple_into(toks, i, &init)
         i = _op(toks, j, lex.OP_SEMI)
@@ -1403,7 +1430,7 @@ fn _forstmt_into(toks: [lex.Tok], i0: int, par: bool, out: inout ast.Stmt) -> in
                 _die(toks, _at(toks, i0 - 1), "`parallel for` counts from zero: write `0..<N` -- a literal `0`, then `..<`, then the exclusive upper bound")
             hi := ast.NullLit(0)
             j := _expr_into(toks, i + 2, &hi)
-            i = _op(toks, j, lex.OP_COLON)
+            i = _blockcolon(toks, j)
             i = _expect(toks, i, lex.K_NEWLINE, "")
             b, k := block(toks, i)
             out = ast.ForRange(toks[ti].line, v, [ast.IntLit(toks[ti].line, 0), hi], b)
@@ -1416,7 +1443,7 @@ fn _forstmt_into(toks: [lex.Tok], i0: int, par: bool, out: inout ast.Stmt) -> in
         # handles, so the source must NAME one; a temp could alias a channel.
         if par and not (coll is ast.Name):
             _die(toks, _at(toks, i0 - 1), "parallel for over a collection or channel must name a variable (bind it first)")
-        i = _op(toks, j, lex.OP_COLON)
+        i = _blockcolon(toks, j)
         i = _expect(toks, i, lex.K_NEWLINE, "")
         b, k := block(toks, i)
         out = ast.ForIn(toks[ti].line, v, [coll], b)
@@ -1424,7 +1451,7 @@ fn _forstmt_into(toks: [lex.Tok], i0: int, par: bool, out: inout ast.Stmt) -> in
     # condition form `for cond:`
     c := ast.NullLit(0)
     j := _expr_into(toks, i, &c)
-    i = _op(toks, j, lex.OP_COLON)
+    i = _blockcolon(toks, j)
     i = _expect(toks, i, lex.K_NEWLINE, "")
     b, k := block(toks, i)
     out = ast.WhileS(toks[ti].line, [c], b)

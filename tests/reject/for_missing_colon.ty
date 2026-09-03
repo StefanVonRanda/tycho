@@ -1,0 +1,4 @@
+# expect: expected ':' before the block
+fn main():
+    for i := 0:
+        println(str(i))

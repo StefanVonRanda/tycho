@@ -1,0 +1,4 @@
+# expect: has exactly three clauses
+fn main():
+    for i := 0; i < 3; i += 1; i:
+        println(str(i))
