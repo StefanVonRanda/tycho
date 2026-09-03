@@ -8,6 +8,10 @@ carmichael 561: true
 n == p*q: ok
 e*d == 1 mod phi: ok
 p and q prime: ok
-encrypt->decrypt roundtrip: ok
-sign->verify roundtrip: ok
+modexp inverse roundtrip: ok
+modexp exponent-swap roundtrip: ok
 two keygens differ: ok
+oaep roundtrip: ok
+oaep is randomised: ok
+oaep ciphertext is a full modulus block: ok
+oaep length extremes: ok
