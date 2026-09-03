@@ -1,0 +1,4 @@
+# expect: unterminated string literal
+fn main():
+    s := "abc
+    println(s)

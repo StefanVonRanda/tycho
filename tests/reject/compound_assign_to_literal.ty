@@ -1,0 +1,4 @@
+# expect: cannot compound-assign to this expression
+fn main():
+    1 += 2
+    println("x")

@@ -1,0 +1,5 @@
+# expect: a handle body is exactly 'free: <c_free_fn>'
+handle H:
+    close: h_free
+fn main():
+    println("x")

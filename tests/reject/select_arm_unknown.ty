@@ -1,0 +1,6 @@
+# expect: a select arm is
+fn main():
+    ch := channel(int, 1)
+    select:
+        bogus:
+            println("x")

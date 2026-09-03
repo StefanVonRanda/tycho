@@ -1,0 +1,7 @@
+# expect: a subscript must yield an inout projection
+struct G:
+    v: [int]
+subscript G(i: int) -> int:
+    yield &self.v[i]
+fn main():
+    println("x")

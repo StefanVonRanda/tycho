@@ -1,0 +1,10 @@
+# No `# expect:`: the two compilers word this differently and `make test` scores the
+# expectation against ./tychoc1. Bootstrap src/tychoc.c:3513 says `expected a value
+# after '..' in the match arm`; tychoc1 stops one rule earlier, at `a match arm must
+# be a variant name, a scalar literal, a range, or `_``. See plan.md R21d-2.
+fn main():
+    x := 1
+    match x:
+        1: println("a")
+        2.."z": println("c")
+        _: println("b")

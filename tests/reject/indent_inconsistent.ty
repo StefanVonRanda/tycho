@@ -1,0 +1,6 @@
+# expect: inconsistent indentation
+fn main():
+    x := 1
+    if x == 1:
+        println("a")
+      println("b")

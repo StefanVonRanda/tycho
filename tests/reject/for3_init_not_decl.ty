@@ -1,0 +1,5 @@
+# expect: the init clause of a three-clause `for` is a declaration or an assignment
+fn main():
+    i := 0
+    for println("x"); i < 3; i += 1:
+        println(str(i))

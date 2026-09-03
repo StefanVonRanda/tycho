@@ -1,0 +1,4 @@
+# expect: raw control byte in string literal
+fn main():
+    s := "ab"
+    println(s)

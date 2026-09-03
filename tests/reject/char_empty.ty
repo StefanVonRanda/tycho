@@ -1,0 +1,4 @@
+# expect: empty or unterminated char literal
+fn main():
+    c := ''
+    println(str(c))

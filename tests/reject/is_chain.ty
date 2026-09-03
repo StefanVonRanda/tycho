@@ -1,0 +1,8 @@
+# expect: `is` does not chain
+enum E:
+    A
+    B
+fn main():
+    e := E.A
+    if e is A is B:
+        println("x")

@@ -1,0 +1,5 @@
+# expect: needs at least one explicit type argument
+fn id(x: $T) -> $T:
+    return x
+fn main():
+    println(str(id$()(1)))

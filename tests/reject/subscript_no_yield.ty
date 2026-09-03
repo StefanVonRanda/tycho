@@ -1,0 +1,7 @@
+# expect: a subscript body must be a single `yield &<place>`
+struct G:
+    v: [int]
+subscript G(i: int) -> inout int:
+    return 1
+fn main():
+    println("x")

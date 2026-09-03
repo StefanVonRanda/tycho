@@ -1,0 +1,4 @@
+# expect: unsupported char escape
+fn main():
+    c := '\q'
+    println(str(c))

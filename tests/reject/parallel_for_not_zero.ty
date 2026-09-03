@@ -1,0 +1,4 @@
+# expect: `parallel for` counts from zero
+fn main():
+    parallel for i in 1..<4:
+        println(str(i))

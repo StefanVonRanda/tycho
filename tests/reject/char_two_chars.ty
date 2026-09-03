@@ -1,0 +1,4 @@
+# expect: char literal must be exactly one character
+fn main():
+    c := 'ab'
+    println(str(c))

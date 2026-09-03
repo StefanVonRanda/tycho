@@ -1,0 +1,4 @@
+# expect: bounded needs a capacity
+fn main():
+    b: bounded["x"]int = [1]
+    println(str(len(b)))

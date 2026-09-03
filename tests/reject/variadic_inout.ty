@@ -1,0 +1,5 @@
+# expect: a variadic parameter cannot also be inout or sink
+fn f(xs: inout ...int) -> int:
+    return 1
+fn main():
+    println("x")

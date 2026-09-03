@@ -1,0 +1,4 @@
+# expect: expected 'for' after 'parallel'
+fn main():
+    parallel x := 1
+    println(str(x))

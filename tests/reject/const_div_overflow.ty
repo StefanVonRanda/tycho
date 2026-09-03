@@ -1,0 +1,8 @@
+# No `# expect:`: the two compilers word this differently and `make test` scores the
+# expectation against ./tychoc1. Bootstrap src/tychoc.c:5194 says `const expression
+# overflows: the smallest int divided by -1 has no int value`; tychoc1 TRAPS instead,
+# printing `tycho: division overflow` from its own const fold. See plan.md R21d-2.
+const LO = -9223372036854775807 - 1
+const C = LO / -1
+fn main():
+    println(str(C))

@@ -1300,6 +1300,10 @@ fn _simple_into(toks: [lex.Tok], i0: int, out: inout ast.Stmt) -> (int, bool):
                 out = ast.Assign(toks[ti].line, n, [b])
                 return (j, true)
             _:
+                # src/tychoc.c:4213 takes only an index, a field or a tuple index here;
+                # everything else falls through to the refusal below.
+                if not (e is ast.Index) and not (e is ast.Field) and not (e is ast.TupIdx):
+                    _die(toks, _at(toks, i0), "cannot compound-assign to this expression")
                 out = ast.PlaceSet(toks[ti].line, [e, b])
                 return (j, true)
     match e:
@@ -1526,6 +1530,14 @@ fn _stmt_into(toks: [lex.Tok], i0: int, out: inout ast.Stmt) -> int:
         j := _postfix_into(toks, i + 1, &e)
         if not (e is ast.Index):
             _die(toks, _at(toks, i0), "`delete` removes a map element: `delete m[k]`")
+        match e:
+            # src/tychoc.c:3837 -- the map itself must be a place, not a call result.
+            ast.Index(dl, dk):
+                mref := dk[0]
+                if not (mref is ast.Name) and not (mref is ast.Field) and
+                   not (mref is ast.Index) and not (mref is ast.TupIdx):
+                    _die(toks, _at(toks, i0), "cannot `delete` from this expression")
+            _: pass
         i = _expect(toks, j, lex.K_NEWLINE, "")
         out = ast.DeleteS(toks[ti].line, [e])
         return i

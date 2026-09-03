@@ -205,6 +205,8 @@ FALLBACK = [
     ("a function value cannot", "SEMANTIC"),           # fn-type affine rule, needs types
     ("is already used in this package", "NAME"),       # variant table
     ("unsupported escape", "SYNTAX"),                  # the lexer's escape set
+    ("unsupported char escape", "SYNTAX"),             # same defect, the char lexer
+    ("raw control byte in string literal", "SYNTAX"),  # same defect, the string lexer
     ("literal needs", "SYNTAX"),                       # the lexer's 0x / 0b scanners
     ("no 'main' procedure", "NAME"),                   # whole-program, but the Sig table alone decides it
     ("unclosed '(' or '['", "SYNTAX"),                 # the lexer, message built by snprintf

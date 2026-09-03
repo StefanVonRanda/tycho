@@ -1,0 +1,4 @@
+# expect: '//' is not valid in Tycho
+fn main():
+    x := 1  // a comment
+    println(str(x))

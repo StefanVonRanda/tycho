@@ -1,0 +1,5 @@
+# expect: `delete` removes a map element
+fn main():
+    m := []string: int
+    m["a"] = 1
+    delete m

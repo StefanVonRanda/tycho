@@ -1,0 +1,5 @@
+# expect: cannot `delete` from this expression
+fn f() -> [string: int]:
+    return []string: int
+fn main():
+    delete f()["a"]

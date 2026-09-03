@@ -1,0 +1,4 @@
+# expect: unexpected character
+fn main():
+    x := 1 ? 2
+    println(str(x))

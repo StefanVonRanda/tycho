@@ -1,0 +1,4 @@
+# expect: const expression shifts by a negative count
+const C = 1 << -1
+fn main():
+    println(str(C))

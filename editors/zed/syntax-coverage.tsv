@@ -10,11 +10,24 @@
 # no external scanner, so it is whitespace-insensitive, and it does no name
 # resolution, no arity counting and no value-range checking.  Each row says
 # which of those the fixture needs.
+tests/reject/assign_to_literal.ty	ACCEPTED	`1 = 2` is an assignment whose left side is an expression; which expressions are PLACES is a rule the flat grammar does not carry
 tests/reject/bare_expr_stmt.ty	ACCEPTED	an expression is a legal statement in grammar.js; "has no effect" is a check on the expression's KIND, not on its shape
+tests/reject/bounded_no_capacity.ty	ACCEPTED	`bounded["x"]int` is grammatical -- the capacity slot takes any expression, and "an integer literal or an int const" is a value check
+tests/reject/char_empty.ty	REJECTED	the char rule needs one character between the quotes, so `''` leaves it unmatched
+tests/reject/char_escape_unsupported.ty	ACCEPTED	the char rule takes any backslash byte; the escape ALPHABET is checked in tychoc's lexer
+tests/reject/char_two_chars.ty	REJECTED	the char rule spells exactly one character, so `'ab'` leaves the literal unterminated
+tests/reject/char_unexpected.ty	REJECTED	'?' is in no token rule, so the grammar has nothing to match it with
+tests/reject/comment_double_slash.ty	ACCEPTED	`//` lexes as two division operators; refusing it is tychoc's lexer telling a C programmer what went wrong
+tests/reject/compound_assign_to_literal.ty	ACCEPTED	same as assign_to_literal for `+=` -- the place rule is tychoc's, not the grammar's
+tests/reject/const_div_overflow.ty	ACCEPTED	needs the const initialiser EVALUATED; the division parses
 tests/reject/const_expr_divzero.ty	ACCEPTED	needs the const initialiser EVALUATED; the division parses
 tests/reject/const_expr_float.ty	ACCEPTED	needs "a const initialiser is one scalar literal"; the grammar admits any expression there
 tests/reject/const_expr_localref.ty	ACCEPTED	same rule as const_expr_float, reached through an identifier
 tests/reject/const_nonliteral.ty	ACCEPTED	same rule as const_expr_float, reached through a call
+tests/reject/const_shift_negative.ty	ACCEPTED	same as const_div_overflow, reached through a shift
+tests/reject/delete_from_call.ty	ACCEPTED	`delete f()["a"]` parses; "the map must be a place" is a rule on the KIND of the receiver
+tests/reject/delete_not_an_index.ty	ACCEPTED	`delete m` parses as a delete of an expression; requiring an index is tychoc's
+tests/reject/destructure_too_many.ty	ACCEPTED	a ceiling (8 destructuring targets); the grammar repeats without counting
 tests/reject/dotlt_sequential.ty	ACCEPTED	`0..<N` is grammatical everywhere; restricting it to a `parallel for` head is a context rule
 tests/reject/dup_field.ty	ACCEPTED	two fields named `x` parse; duplicate detection needs a symbol table
 tests/reject/enum_typaram_max.ty	ACCEPTED	a ceiling (16 type parameters); the grammar repeats without counting
@@ -28,16 +41,21 @@ tests/reject/for3_empty_clause.ty	ACCEPTED	the grammar makes the three-clause `f
 tests/reject/for3_empty_cond.ty	ACCEPTED	every token is well-formed; the flat grammar has no `for` head that could require a condition clause
 tests/reject/for3_empty_post.ty	ACCEPTED	as above for the post clause -- a missing clause is an arity rule on a head this grammar does not build
 tests/reject/for3_four_clauses.ty	ACCEPTED	`;` is an ordinary operator token here; "exactly three clauses" counts them, which the flat grammar does not
+tests/reject/for3_init_not_decl.ty	ACCEPTED	a call is a legal statement, so the init clause parses; "a declaration or an assignment" counts kinds
+tests/reject/for3_post_not_assign.ty	ACCEPTED	as above for the post clause
 tests/reject/for_missing_colon.ty	ACCEPTED	`:=` and `:` are both ordinary operator tokens; which one may end a `for` head is a rule with no head to apply to
 tests/reject/for_two_binders.ty	ACCEPTED	`for k, v in xs:` parses; "a for binds one name" is an arity rule on the binder list
 tests/reject/fstring_escape.ty	ACCEPTED	the string rule takes any backslash byte; the escape ALPHABET is checked in tychoc's lexer
+tests/reject/handle_body_not_free.ty	ACCEPTED	`close: h_free` is a well-formed body line; that the keyword must be `free` is a spelling rule inside the handle body
 tests/reject/hex_escape_in_string.ty	ACCEPTED	same string rule as fstring_escape -- \x is consumed, not validated
 tests/reject/hex_escape_one_digit.ty	REJECTED	the grammar spells \x with exactly two hex digits, so a one-digit escape leaves the string unterminated
 tests/reject/if_expr_no_else.ty	ACCEPTED	an `if` with no `else` is grammatical; requiring one in VALUE position needs to know the position
+tests/reject/indent_inconsistent.ty	ACCEPTED	grammar.js has no external scanner, so it is whitespace-insensitive and cannot see an indent level at all
 tests/reject/int_bin_bad_digit.ty	ACCEPTED	`0b2` lexes as `0` then `b2`, and with no newline rule the trailing identifier is its own expression
 tests/reject/int_hex_no_digits.ty	ACCEPTED	`0x` lexes as `0` then `x`, same as int_bin_bad_digit
 tests/reject/int_hex_overflow.ty	ACCEPTED	a well-formed hex token whose VALUE exceeds int64
 tests/reject/int_literal_overflow.ty	ACCEPTED	a well-formed decimal token whose VALUE exceeds int64
+tests/reject/is_chain.ty	ACCEPTED	`a is X is Y` chains a binary operator, which the grammar allows; forbidding the chain is tychoc's
 tests/reject/kw_as_field_name.ty	ACCEPTED	the grammar's identifier rule does not exclude reserved words in field position
 tests/reject/kw_as_local_name.ty	ACCEPTED	same identifier rule, in binding position
 tests/reject/map_del_removed.ty	ACCEPTED	`map_del(...)` is an ordinary call; the removal is enforced by name resolution
@@ -45,14 +63,23 @@ tests/reject/map_get_removed.ty	ACCEPTED	as map_del_removed
 tests/reject/map_has_removed.ty	ACCEPTED	as map_del_removed
 tests/reject/map_set_removed.ty	ACCEPTED	as map_del_removed
 tests/reject/map_type_as_value.ty	ACCEPTED	`[string: int]` parses as an index expression; telling type from value needs the context
+tests/reject/match_range_no_high.ty	ACCEPTED	`2.."z"` parses -- the range rule takes expressions on both sides, and which literals may be a match arm is tychoc's
 tests/reject/match_scalar_mixed_range.ty	ACCEPTED	`a..b` parses whatever the two ends are; "same kind of value" is a type check
 tests/reject/over_indent.ty	ACCEPTED	grammar.js has no external scanner and emits no INDENT/DEDENT, so indentation cannot be wrong
+tests/reject/parallel_for_not_zero.ty	ACCEPTED	`1..<4` is grammatical everywhere; requiring a literal `0` in a `parallel for` head is a value check
+tests/reject/parallel_not_for.ty	ACCEPTED	`parallel` then a declaration parses as two statements; that `parallel` must be followed by `for` is a context rule
 tests/reject/range_removed.ty	ACCEPTED	`range(N)` is an ordinary call; the removal is enforced by name resolution
 tests/reject/rawstring_unterminated.ty	REJECTED	the raw-string rule needs a closing backtick, and there is none
+tests/reject/select_arm_unknown.ty	ACCEPTED	`bogus:` is a well-formed arm head; the three legal spellings are checked by name in tychoc
 tests/reject/semi_no_grammar.ty	ACCEPTED	no newline rule, so a trailing `;` ends nothing and the statement still parses
+tests/reject/spawn_not_a_call.ty	ACCEPTED	`spawn x` parses; requiring the operand to be a CALL is a rule on its kind
 tests/reject/string_escape.ty	ACCEPTED	as fstring_escape -- the escape alphabet is not the grammar's
+tests/reject/string_raw_control.ty	ACCEPTED	the string rule takes any byte that is not a quote; refusing a raw control byte is tychoc's lexer
+tests/reject/string_unterminated.ty	REJECTED	the string rule needs a closing quote
 tests/reject/struct_typaram_max.ty	ACCEPTED	a ceiling (16 type parameters)
 tests/reject/subscript_dangling.ty	ACCEPTED	`yield &<expr>` parses; "rooted in a parameter" is a dataflow rule
+tests/reject/subscript_no_yield.ty	ACCEPTED	a `return` is a legal body; "a single `yield &<place>`" is a rule on what the body CONTAINS
+tests/reject/subscript_not_inout.ty	ACCEPTED	`-> int` is a well-formed return type; requiring `inout` there is tychoc's
 tests/reject/subscript_not_place.ty	ACCEPTED	`yield <expr>` parses; place-ness is not a syntactic property here
 tests/reject/subscript_param_twice.ty	ACCEPTED	counting uses of a parameter inside the yielded place needs name resolution
 tests/reject/tab_mix.ty	ACCEPTED	no external scanner, so tabs and spaces are both just whitespace
@@ -60,10 +87,12 @@ tests/reject/tab_mix2.ty	ACCEPTED	as tab_mix
 tests/reject/tuple_arity_max.ty	ACCEPTED	a ceiling (8 elements)
 tests/reject/tuple_arity_min.ty	ACCEPTED	a one-element parenthesised type parses as a grouping; the minimum is an arity rule
 tests/reject/two_stmts_one_line.ty	ACCEPTED	no newline rule, so two statements on one line are two statements
+tests/reject/typeargs_empty.ty	ACCEPTED	`id$()` parses as an empty type-argument list; requiring at least one is an arity rule
 tests/reject/typeset_badtp.ty	ACCEPTED	`where Q: ...` parses; whether `Q` is a type parameter needs the signature's scope
 tests/reject/upper_bind_local_used.ty	ACCEPTED	the grammar's identifier rule has no case classes, so `Ok` binds like any name
 tests/reject/upper_bind_param_used.ty	ACCEPTED	as upper_bind_local_used, in parameter position
 tests/reject/value_arm_no_tail.ty	ACCEPTED	a match arm ending in a statement parses; "must end in a value" needs the arm's position
+tests/reject/variadic_inout.ty	ACCEPTED	`inout ...int` is a well-formed parameter; that the two modifiers exclude each other is tychoc's
 tests/reject/variadic_not_last.ty	ACCEPTED	the parameter list parses in any order; "last" is a positional rule tychoc enforces
 tests/reject/variant_payload_max.ty	ACCEPTED	a ceiling (8 payload fields)
 tests/reject/where_bad_tp.ty	ACCEPTED	as typeset_badtp -- the name resolves, or does not, outside the grammar

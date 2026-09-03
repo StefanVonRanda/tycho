@@ -1,0 +1,4 @@
+# expect: spawn requires a direct call
+fn main():
+    x := 1
+    spawn x
