@@ -1,3 +1,4 @@
+# expect: declared type Option(string) but value is Some(int)
 fn main():
     x : Option(string) = Some(42)
     println("unreachable")

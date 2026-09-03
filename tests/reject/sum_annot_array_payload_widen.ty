@@ -1,3 +1,4 @@
+# expect: declared type Option([u32]) but value is Some([int])
 fn main():
     xs := [1]
     x : Option([u32]) = Some(xs)

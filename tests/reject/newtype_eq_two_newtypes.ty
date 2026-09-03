@@ -1,4 +1,4 @@
-
+# expect: cannot compare A with B
 type A = [int]
 type B = [int]
 

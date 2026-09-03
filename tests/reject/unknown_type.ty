@@ -1,3 +1,4 @@
+# expect: unknown type 'cool'; did you mean 'bool'?
 fn f(v: cool) -> int:
     return 0
 fn main():

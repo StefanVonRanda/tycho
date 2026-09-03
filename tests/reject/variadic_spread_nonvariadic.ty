@@ -1,3 +1,4 @@
+# expect: spread `...` is only valid as the argument to a variadic parameter
 fn f(x: int) -> int:
     return x
 fn main():

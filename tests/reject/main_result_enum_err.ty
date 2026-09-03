@@ -1,9 +1,4 @@
-# main's error type must be `string`. An Err reaching the entry point is PRINTED,
-# and `has_str` (src/tychoc.c) covers int/bool/float/string and no enum -- so an
-# enum error would arrive at the exit path with nothing to print. The error IS
-# the message.
-#
-#   error: 'main' returns nothing or Result(void, string), not Result(void, Fault)
+# expect: 'main' returns nothing or Result(void, string), not Result(void, Fault) -- an Err reaching the entry point is printed, so the error type is the message. For a status other than 0 or 1 (diff(1)'s 0/1/2, say), call the `exit(code)` builtin
 enum Fault:
     Io
     Bad(string)

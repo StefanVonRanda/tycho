@@ -1,3 +1,4 @@
+# expect: declared type Result(int, string) but value is Err(int)
 fn main():
     x : Result(int, string) = Err(5)
     println("unreachable")

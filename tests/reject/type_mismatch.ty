@@ -1,3 +1,3 @@
-# print takes a string; a bare int argument must be a type error
+# expect: argument 1 of 'print' is int, expected string -- wrap it with str(...), e.g. print(str(x))
 fn main():
     print(42)

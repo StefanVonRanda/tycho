@@ -1,8 +1,4 @@
-# No `# expect:`: src/tychoc.c:8815 says `cannot assign string to a int map
-# value`, tychoc1 says `... element` -- it does not distinguish the map arm from
-# the array one (src/tychoc.c:8823, covered by index_elem_type.ty). Asserting the
-# shared prefix would not tell the two rules apart, which is the whole point of
-# this fixture. Recorded, not ported.
+# expect: cannot assign string to a int map value
 fn main():
     m := []string: int
     m["a"] = "b"

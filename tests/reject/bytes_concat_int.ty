@@ -1,6 +1,4 @@
-# src/tychoc.c:7367. tychoc1 stops after "with int" and does not print the
-# "-- to_bytes(x) to widen ..." hint, so the expectation is the part both print.
-# expect: cannot concatenate bytes with int
+# expect: cannot concatenate bytes with int -- to_bytes(x) to widen, or to_str(b) to work in strings
 fn main():
     b := to_bytes("a")
     c := b + 1

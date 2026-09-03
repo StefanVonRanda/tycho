@@ -1,3 +1,4 @@
+# expect: declared type Option(string) but value is Some(int)
 fn g(o: Option(string)):
     match o:
         Some(s):

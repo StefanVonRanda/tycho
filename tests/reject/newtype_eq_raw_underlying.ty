@@ -1,4 +1,4 @@
-
+# expect: cannot compare A with [int]
 type A = [int]
 
 fn main():

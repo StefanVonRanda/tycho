@@ -1,3 +1,4 @@
+# expect: non-exhaustive match: missing variant image.NotPng of image.ImgErr
 package main
 import "core:image"
 

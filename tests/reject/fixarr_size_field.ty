@@ -1,4 +1,4 @@
-# A fixed-array SIZE mismatch at a struct field: [3]int into a [4]int field.
+# expect: field 'v' of S is [4]int, got [3]int
 struct S:
     v: [4]int
 fn main():

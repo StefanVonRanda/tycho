@@ -1,7 +1,4 @@
-# src/tychoc.c:7408 -- element-wise arithmetic is [T] and [N]T only. The two
-# compilers spell the type differently in the "(got ...)" tail (bounded[4]int vs
-# bnd(4,int)), so only the part before it is asserted.
-# expect: element-wise `+` is defined for [T] and [N]T only
+# expect: element-wise `+` is defined for [T] and [N]T only (got bounded[4]int, bounded[4]int)
 fn main():
     a: bounded[4]int = [1, 2]
     b: bounded[4]int = [1, 2]

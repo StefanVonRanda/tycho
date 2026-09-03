@@ -1,3 +1,4 @@
+# expect: declared type Option(string) but value is Some(int)
 struct B:
     o: Option(string)
 

@@ -1,8 +1,4 @@
-# No `# expect:`: src/tychoc.c:7602 says `element 2 of a bounded[4]int literal
-# is the wrong type`, tychoc1 says `array elements must all have the same type`.
-# The two name different subjects and neither is a substring of the other, so an
-# expectation could only assert one of them -- and `make test` scores it against
-# ./tychoc1 (tests/run.sh:102). Recorded, not ported.
+# expect: element 2 of a bounded[4]int literal is the wrong type
 fn main():
     b: bounded[4]int = [1, "a"]
     println(str(len(b)))

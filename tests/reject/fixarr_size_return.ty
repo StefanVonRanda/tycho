@@ -1,4 +1,4 @@
-# A fixed-array SIZE mismatch on a return: [3]int returned from a -> [4]int function.
+# expect: returning [3]int but proc returns [4]int
 fn f() -> [4]int:
     small: [3]int = [1, 2, 3]
     return small

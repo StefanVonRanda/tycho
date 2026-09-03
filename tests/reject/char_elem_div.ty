@@ -1,3 +1,4 @@
+# expect: `/` is not defined element-wise on [char] -- there is no element-wise `/` for char
 fn main():
     s := "ABC"
     a := [char_at(s, 0), char_at(s, 1)]

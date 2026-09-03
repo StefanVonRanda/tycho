@@ -1,3 +1,4 @@
+# expect: declared type Option(int) but value is Some(string)
 fn main():
     x : Option(int) = Some("hi")
     println("x")

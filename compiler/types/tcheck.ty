@@ -250,6 +250,16 @@ fn _tedit(a: string, b: string) -> int:
         prev = cur
     return prev[lb]
 
+# An imported enum's variant is named `pkg.Variant` by src/tychoc.c:8259
+# (nominal_name); a local one stays bare.
+fn _vq(tdname: string, v: string) -> string:
+    i := 1
+    for i < len(tdname):
+        if tdname[i] == 95 and tdname[i - 1] == 95:
+            return tdname[0:i - 1] + "." + v
+        i += 1
+    return v
+
 fn _tdym(name: string, cands: [string]) -> string:
     best := ""
     bestd := 99
@@ -267,10 +277,21 @@ fn _tdym(name: string, cands: [string]) -> string:
         return "; did you mean '" + best + "'?"
     return ""
 
+# a type carrying a `$N` size parameter or a `$T` type parameter
+fn _has_tp(t: string) -> bool:
+    for i := 0; i < len(t); i += 1:
+        if t[i] == 36:
+            return true
+    return false
+
 fn _tycands(cs: inout C) -> [string]:
     out := []string
     for td in cs.tds:
         push(out, _short(td.name))
+    push(out, "int")
+    push(out, "float")
+    push(out, "bool")
+    push(out, "string")
     return out
 
 fn _cwarn(cs: inout C, msg: string):
@@ -406,7 +427,7 @@ fn _enc(cs: inout C, t: ast.Ty) -> string:
                 return "?"             # `[$N]T` is a TEMPLATE pattern, not a type
             n := _fixsize(&cs, sz)
             if el == "bool" or el == "void":
-                _cperr(&cs, "a fixed-size array element cannot be bool or void")
+                _cperr(&cs, "a fixed-size array element cannot be bool or void -- a dynamic [bool] is legal")
             _nest_aff(&cs, el, "cont")
             return "fix(" + n + "," + el + ")"
         ast.TBnd(sz, k):
@@ -1227,6 +1248,13 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
                     cs.line = l
                     _cerr(&cs, "cannot infer the array's element type from None — put a Some(...) first")
                     return "?"
+                elif known(ew) and known(t) and not compat(t, ew) and not _has_tp(wb):
+                    cs.line = l
+                    kind9 := " array"
+                    if _head(wb) == "bnd":
+                        kind9 = " literal"
+                    _cerr(&cs, "element " + str(i + 1) + " of a " + _show(&cs, wb) + kind9 + " is the wrong type")
+                    return wb
                 elif et == "?":
                     et = t
                 elif not compat(t, et):
@@ -1311,6 +1339,9 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
                 cs.line = l
                 _cerr(&cs, "Some(...) needs a concrete value")
             _nest_aff_e(&cs, it_)
+            if known(w) and known(it_) and not compat(w, it_):
+                cs.line = l
+                _cerr(&cs, "declared type " + _show(&cs, want) + " but value is Some(" + _show(&cs, it_) + ")")
             return "opt(" + it_ + ")"
         ast.NoneE(l):
             if _head(_base(&cs, want)) == "opt":
@@ -1321,7 +1352,7 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
             if len(k) == 0:
                 if _head(wb) == "res":
                     if _targs(wb)[0] != "void" and known(_targs(wb)[0]):
-                        _cerr(&cs, "declared type " + want + " but value is Ok(); Ok() is only a Result(void, E)")
+                        _cerr(&cs, "declared type " + _show(&cs, want) + " but value is Ok(); Ok() is only a Result(void, E)")
                     return want
                 return "res(void,?)"
             w := "?"
@@ -1334,6 +1365,9 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
             if _no_concrete(ot):                   # src/tychoc.c:6054
                 cs.line = l
                 _cerr(&cs, "Ok(...) needs a concrete value")
+            if known(w) and known(ot) and not compat(w, ot):
+                cs.line = l
+                _cerr(&cs, "declared type " + _show(&cs, want) + " but value is Ok(" + _show(&cs, ot) + ")")
             return "res(" + ot + ",?)"
         ast.ErrE(l, k):
             wb := _base(&cs, want)
@@ -1344,6 +1378,9 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
             if _no_concrete(et):                   # src/tychoc.c:6054
                 cs.line = l
                 _cerr(&cs, "Err(...) needs a concrete value")
+            if known(w) and known(et) and not compat(w, et):
+                cs.line = l
+                _cerr(&cs, "declared type " + _show(&cs, want) + " but value is Err(" + _show(&cs, et) + ")")
             return "res(?," + et + ")"
         ast.SpawnE(l, k):
             # `task(T)`, not a bare `task`: wait(t) has to know what it yields.
@@ -1545,7 +1582,7 @@ fn _binop(cs: inout C, op: string, k: [ast.Expr]) -> string:
                                        # `f * 2` at an unknown `f` is not an int
     if op == "==" or op == "!=":
         if lt != rt:
-            _cerr(&cs, "cannot compare " + lt + " with " + rt)
+            _cerr(&cs, "cannot compare " + _show(&cs, lt) + " with " + _show(&cs, rt))
         elif lt == "void":             # src/tychoc.c:7330 -- void has no values to compare
             _cerr(&cs, "cannot compare void")
         elif _head(lt) == "fun":
@@ -1566,7 +1603,7 @@ fn _binop(cs: inout C, op: string, k: [ast.Expr]) -> string:
         return "string"
     if op == "+" and lt == "bytes":
         if rt != "bytes" and rt != "char":
-            _cerr(&cs, "cannot concatenate bytes with " + rt)
+            _cerr(&cs, "cannot concatenate bytes with " + _show(&cs, rt) + " -- to_bytes(x) to widen, or to_str(b) to work in strings")
         return "bytes"
     if op == "<<" or op == ">>":
         if not _is_int(lt) or not _is_int(rt):
@@ -1576,18 +1613,18 @@ fn _binop(cs: inout C, op: string, k: [ast.Expr]) -> string:
     ra := _is_arr(rt)
     if la and ra and _arith_op(op):
         if _head(lt) == "bnd" or _head(rt) == "bnd":
-            _cerr(&cs, "element-wise `" + op + "` is defined for [T] and [N]T only (got " + lt + ", " + rt + ")")
+            _cerr(&cs, "element-wise `" + op + "` is defined for [T] and [N]T only (got " + _show(&cs, lt) + ", " + _show(&cs, rt) + ")")
             return lt
         el := _elem_of(&cs, lt)
         er := _elem_of(&cs, rt)
         if el != er:
             _cerr(&cs, "element-wise `" + op + "` requires two arrays with the same element type (got " + _show(&cs, lt) + ", " + _show(&cs, rt) + ")")
         elif (_head(lt) == "fix") != (_head(rt) == "fix"):
-            _cerr(&cs, "cannot mix a fixed array and a growable array in element-wise `" + op + "`")
+            _cerr(&cs, "cannot mix a fixed array and a growable array in element-wise `" + op + "` (got " + _show(&cs, lt) + ", " + _show(&cs, rt) + ") -- copy one side into the other's kind first")
         elif lt != rt:
             _cerr(&cs, "element-wise `" + op + "` on a fixed array requires the same static length (got " + _show(&cs, lt) + " and " + _show(&cs, rt) + ")")
         elif not _elem_arith_ok(op, el):
-            _cerr(&cs, "`" + op + "` is not defined element-wise on " + lt + " -- there is no element-wise `" + op + "` for " + el)
+            _cerr(&cs, "`" + op + "` is not defined element-wise on " + _show(&cs, lt) + " -- there is no element-wise `" + op + "` for " + _show(&cs, el))
         return lt
     if (la or ra) and _arith_op(op):
         at := lt
@@ -1598,7 +1635,7 @@ fn _binop(cs: inout C, op: string, k: [ast.Expr]) -> string:
             st = lt
             sc = k[0]
         if _head(at) == "bnd":
-            _cerr(&cs, "element-wise `" + op + "` is defined for [T] and [N]T only (got " + lt + ", " + rt + ")")
+            _cerr(&cs, "element-wise `" + op + "` is defined for [T] and [N]T only (got " + _show(&cs, lt) + ", " + _show(&cs, rt) + ")")
             return at
         et := _elem_of(&cs, at)
         if _is_intlit(sc) and _is_int(et):
@@ -1610,7 +1647,7 @@ fn _binop(cs: inout C, op: string, k: [ast.Expr]) -> string:
         if st != et:
             _cerr(&cs, "element-wise `" + op + "` requires the scalar to have the array's element type (got " + _show(&cs, lt) + " and " + _show(&cs, rt) + ") -- a literal adapts, but a variable never widens")
         elif not _elem_arith_ok(op, et):
-            _cerr(&cs, "`" + op + "` is not defined element-wise on " + at + " -- there is no element-wise `" + op + "` for " + et)
+            _cerr(&cs, "`" + op + "` is not defined element-wise on " + _show(&cs, at) + " -- there is no element-wise `" + op + "` for " + _show(&cs, et))
         return at
     if (op == "/" or op == "%") and _is_zerolit(k[1]):
         _cerr(&cs, "division by zero")
@@ -1677,6 +1714,13 @@ fn _walk_args(cs: inout C, args: [ast.Expr]):
 # One call against one known, non-generic signature: arity, each argument's
 # type, and the two `&` rules. Skipped whole when a variadic or a named argument
 # is in play -- `?` is the answer to anything this pass cannot ground.
+fn _strable(cs: inout C, t: string) -> bool:
+    b := _base(&cs, t)
+    if _is_num(b) or b == "bool" or b == "char":
+        return true
+    h := _head(b)
+    return _is_arr(b) or h == "map" or h == "tup" or h == "opt" or h == "res" or _tdecl(&cs, b) >= 0
+
 fn _check_args(cs: inout C, name: string, si: int, args: [ast.Expr], line: int):
     # NOT `s := cs.sg[si]`: an FSig carries the generic TEMPLATE's body, so that
     # local copied a whole function body 4,217 times in a self-compile. The two
@@ -1727,6 +1771,12 @@ fn _check_args(cs: inout C, name: string, si: int, args: [ast.Expr], line: int):
         want := "?"
         if i < n:
             want = cs.sg[si].ptypes[i]
+        # src/tychoc.c:5963 -- a variadic call unwraps its spread args before
+        # resolving them, so a spread in a FIXED parameter slot is a misuse.
+        if i < n and (args[i] is ast.Spread):
+            cs.line = line
+            _cerr(&cs, "spread `...` is only valid as the argument to a variadic parameter")
+            return
         at := _ex2(&cs, args[i], want)
         cs.line = line
         if i < n:
@@ -1747,7 +1797,11 @@ fn _check_args(cs: inout C, name: string, si: int, args: [ast.Expr], line: int):
             if not ok9 and name == "is_null" and want == "ptr" and _aff_kind(&cs, at) == "handle":
                 ok9 = true
             if not ok9:
-                _cerr(&cs, "argument " + str(i + 1) + " of '" + name + "' is " + _show(&cs, at) + ", expected " + _show(&cs, want))
+                if cs.sg[si].builtin and want == "string" and _strable(&cs, at):
+                    _cerr(&cs, "argument " + str(i + 1) + " of '" + name + "' is " + _show(&cs, at) +
+                        ", expected string -- wrap it with str(...), e.g. " + name + "(str(x))")
+                else:
+                    _cerr(&cs, "argument " + str(i + 1) + " of '" + name + "' is " + _show(&cs, at) + ", expected " + _show(&cs, want))
                 _nt_note(&cs, at, want)
         cs.line = ast.line_of(args[i])
     cs.in_arg = keep3
@@ -1811,7 +1865,7 @@ fn _check_fields(cs: inout C, ti: int, args: [ast.Expr], line: int) -> string:
         at := _ex2(&cs, args[i], cs.tds[ti].ftypes[i])
         cs.line = line
         if not compat(at, cs.tds[ti].ftypes[i]):
-            _cerr(&cs, "field '" + cs.tds[ti].fnames[i] + "' of " + cs.tds[ti].name + " is " + cs.tds[ti].ftypes[i] + ", got " + at)
+            _cerr(&cs, "field '" + cs.tds[ti].fnames[i] + "' of " + cs.tds[ti].name + " is " + _show(&cs, cs.tds[ti].ftypes[i]) + ", got " + _show(&cs, at))
         cs.line = ast.line_of(args[i])
     cs.in_arg = keep2
     cs.line = line
@@ -2449,7 +2503,7 @@ fn _match(cs: inout C, l: int, subj: [ast.Expr], arms: [ast.Arm]):
             for v in names:
                 if not (v in covered):
                     cs.line = l
-                    _cerr(&cs, "non-exhaustive match: missing variant " + v + " of " + cs.tds[ti].name)
+                    _cerr(&cs, "non-exhaustive match: missing variant " + _vq(cs.tds[ti].name, v) + " of " + _show(&cs, "@" + cs.tds[ti].name))
         return
     if st == "int" or st == "char" or st == "bool" or not known(st):
         los := []int
@@ -2464,7 +2518,7 @@ fn _match(cs: inout C, l: int, subj: [ast.Expr], arms: [ast.Arm]):
                         if p.loname != "_":
                             cv := _const_int(&cs, p.loname)
                             if cv[0] == 0:
-                                _cerr(&cs, "'" + p.loname + "' is not an int constant (match arms for " + st + " are literals)")
+                                _cerr(&cs, "'" + p.loname + "' is not an int constant")
                             else:
                                 push(los, cv[1])
                                 push(his, cv[1])
@@ -2498,7 +2552,7 @@ fn _match(cs: inout C, l: int, subj: [ast.Expr], arms: [ast.Arm]):
                     if lns[j] < lns[i]:
                         cs.line = lns[i]
                     _cerr(&cs, "duplicate or overlapping match arm: [" + str(los[i]) + ".." + str(his[i]) +
-                          "] overlaps [" + str(los[j]) + ".." + str(his[j]) + "]")
+                          "] overlaps [" + str(los[j]) + ".." + str(his[j]) + "] from line " + str(lns[i]))
                     return
         if not wild and known(st):
             cs.line = l
@@ -2655,6 +2709,11 @@ fn _same_place(a: ast.Expr, b: ast.Expr) -> bool:
 
 # src/tychoc.c:8806 -- `m[k] op= v` reads and writes the value slot in place, so
 # it lowers to a plain C operator and is restricted to the scalar value types.
+fn _map_place(cs: inout C, place: ast.Expr) -> bool:
+    match place:
+        ast.Index(lp, kp): return _head(_base(&cs, _ex(&cs, kp[0]))) == "map"
+        _: return false
+
 fn _map_compound(cs: inout C, l: int, place: ast.Expr, val: ast.Expr, pt: string):
     if not known(pt) or not (place is ast.Index):
         return
@@ -2869,9 +2928,11 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
             cs.line = l
             if not compat(pt, vt):
                 if k[0] is ast.Field:
-                    _cerr(&cs, "cannot assign " + vt + " to a " + pt + " field")
+                    _cerr(&cs, "cannot assign " + _show(&cs, vt) + " to a " + _show(&cs, pt) + " field")
+                elif _map_place(&cs, k[0]):
+                    _cerr(&cs, "cannot assign " + _show(&cs, vt) + " to a " + _show(&cs, pt) + " map value")
                 else:
-                    _cerr(&cs, "cannot assign " + vt + " to a " + pt + " element")
+                    _cerr(&cs, "cannot assign " + _show(&cs, vt) + " to a " + _show(&cs, pt) + " element")
         ast.ConstS(l, name, v):
             t := _ex(&cs, v[0])
             cs.line = l
@@ -2886,7 +2947,7 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
                 if cs.ret == "void":
                     _cerr(&cs, "this proc returns nothing")
                 elif not compat(t, cs.ret):
-                    _cerr(&cs, "returning " + t + " but proc returns " + cs.ret)
+                    _cerr(&cs, "returning " + _show(&cs, t) + " but proc returns " + _show(&cs, cs.ret))
             elif known(cs.ret) and cs.ret != "void":
                 cs.line = l
                 _cerr(&cs, "missing return value (proc returns " + cs.ret + ")")
@@ -2937,7 +2998,7 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
             et := "?"
             h := _head(ct)
             if h == "map":
-                _cerr(&cs, "a map is not directly iterable -- `for k in m` indexes it by position. Loop over `keys(m)` instead: `for k in keys(m):`")
+                _cerr(&cs, "a map is not directly iterable -- `for k in m` indexes it by position. Loop over `keys(m)` instead: `for k in keys(m):` (the keys come back as " + _show(&cs, _targs(ct)[0]) + ", wrapped)")
             elif _is_arr(ct) or h == "soa":
                 et = _elem_of(&cs, ct)
             elif ct == "string" or ct == "bytes":
@@ -3181,16 +3242,35 @@ fn _infinite_check(cs: inout C):
             continue
         for ft in cs.tds[i].ftypes:
             if _contains(&cs, ft, "@" + cs.tds[i].name, []string: bool):
-                # A MUTUAL cycle makes every struct in it infinite; src/tychoc.c
-                # dies on the declaration that CLOSES the cycle, which is the
-                # last one read (tests/reject/struct_mutual_by_value.ty:6).
-                if best < 0 or cs.tds[i].line > cs.tds[best].line:
+                # A MUTUAL cycle makes every struct in it infinite. src/tychoc.c
+                # three-colours the emit graph (src/tychoc.c:12783), so the node it
+                # names is the one the walk ENTERED first -- the EARLIEST
+                # declaration, not the one that closes the cycle. Measured against
+                # ./tychoc on tests/reject/struct_mutual_by_value.ty, which it
+                # attributes to `A`; this comment previously said the opposite.
+                if best < 0 or cs.tds[i].line < cs.tds[best].line:
                     best = i
                 break
     if best >= 0:
-        cs.file = cs.tds[best].file
-        cs.line = cs.tds[best].line
-        _cerr(&cs, "infinite type: " + cs.tds[best].name + " contains itself by value -- use an array ([" + cs.tds[best].name + "]) or Option([" + cs.tds[best].name + "]) for indirection")
+        # The bootstrap's DFS NAMES the struct it entered first (the earliest
+        # declaration, `best`) but reports at `g_emit_line`, which is the
+        # declaration whose fields were being walked when the cycle closed --
+        # the LAST one on the path. So the two halves come from different
+        # structs: measured on tests/reject/struct_mutual_by_value.ty, ./tychoc
+        # says `A` at line 6, which is `struct B`. Only structs in the SAME
+        # cycle as `best` are eligible, or two disjoint cycles would mix.
+        last := best
+        for j := 0; j < len(cs.tds); j += 1:
+            if cs.tds[j].kind != "struct" or cs.tds[j].generic:
+                continue
+            if cs.tds[j].line <= cs.tds[last].line:
+                continue
+            if _contains(&cs, "@" + cs.tds[j].name, "@" + cs.tds[best].name, []string: bool) and
+                    _contains(&cs, "@" + cs.tds[best].name, "@" + cs.tds[j].name, []string: bool):
+                last = j
+        cs.file = cs.tds[last].file
+        cs.line = cs.tds[last].line
+        _cerr(&cs, "infinite type: " + cs.tds[best].name + " contains itself by value — use an array ([" + cs.tds[best].name + "]) or Option([" + cs.tds[best].name + "]) for indirection")
 
 # --symbols wants the INFERRED type of every local, which only the checker
 # knows. Same walk as check(), with the recording switched on.
@@ -3263,7 +3343,7 @@ fn check_on(p: Program, syms: bool) -> C:
             _cerr(&cs, "'main' takes no parameters -- the command line arrives through the `args()` builtin")
         r := cs.sg[mi].ret
         if r != "void" and r != "res(void,string)" and known(r):
-            _cerr(&cs, "'main' returns nothing or Result(void, string), not " + r +
+            _cerr(&cs, "'main' returns nothing or Result(void, string), not " + _show(&cs, r) +
                 " -- an Err reaching the entry point is printed, so the error type is the message." +
                 " For a status other than 0 or 1 (diff(1)'s 0/1/2, say), call the `exit(code)` builtin")
     for e in cs.errs:
@@ -3311,7 +3391,7 @@ fn _side_cov(cs: inout C, l: int, pay: string, cov: [string: bool], refined: boo
     for v in cs.tds[ti].fnames:
         if not (v in cov):
             cs.line = l
-            _cerr(&cs, "non-exhaustive match: missing variant " + v + " of " + cs.tds[ti].name)
+            _cerr(&cs, "non-exhaustive match: missing variant " + _vq(cs.tds[ti].name, v) + " of " + _show(&cs, "@" + cs.tds[ti].name))
             return
 
 # The nested variant an Option/Result arm refines, or "". `Err(Sized(n, why))`

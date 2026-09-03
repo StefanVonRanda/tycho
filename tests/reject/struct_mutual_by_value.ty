@@ -1,4 +1,4 @@
-
+# expect: infinite type: A contains itself by value — use an array ([A]) or Option([A]) for indirection
 struct A:
     b: B
     n: int

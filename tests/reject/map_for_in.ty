@@ -1,4 +1,4 @@
-
+# expect: a map is not directly iterable -- `for k in m` indexes it by position. Loop over `keys(m)` instead: `for k in keys(m):` (the keys come back as string, wrapped)
 fn main():
     m := []string: int
     m["a"] = 1

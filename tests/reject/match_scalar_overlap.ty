@@ -1,4 +1,4 @@
-# Overlapping arms are duplicates: `1..9` makes `5` dead. Both are rejected.
+# expect: duplicate or overlapping match arm: [1..9] overlaps [5..5] from line 5
 fn main():
     x := 5
     match x:

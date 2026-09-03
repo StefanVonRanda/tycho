@@ -1,3 +1,4 @@
+# expect: declared type Result(int, string) but value is Ok(); Ok() is only a Result(void, E)
 fn f() -> Result(int, string):
     return Ok()
 

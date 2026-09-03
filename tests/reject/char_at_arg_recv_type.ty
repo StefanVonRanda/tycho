@@ -1,4 +1,4 @@
-# char_at's receiver argument is a string, not an int.
+# expect: argument 1 of 'char_at' is int, expected string -- wrap it with str(...), e.g. char_at(str(x))
 fn main():
     c := char_at(5, 0)
     print(str(c))

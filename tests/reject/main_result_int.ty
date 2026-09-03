@@ -1,7 +1,3 @@
-# main's ok payload must be void. `Result(int, string)` would make the exit
-# status ambiguous -- is the int a status, or a value nobody reads? -- so the
-# shape is refused rather than given a meaning nobody asked for.
-#
-#   error: 'main' returns nothing or Result(void, string), not Result(int, string)
+# expect: 'main' returns nothing or Result(void, string), not Result(int, string) -- an Err reaching the entry point is printed, so the error type is the message. For a status other than 0 or 1 (diff(1)'s 0/1/2, say), call the `exit(code)` builtin
 fn main() -> Result(int, string):
     return Ok(0)

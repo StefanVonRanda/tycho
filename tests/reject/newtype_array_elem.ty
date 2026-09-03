@@ -1,3 +1,4 @@
+# expect: element 2 of a [Id] array is the wrong type
 type Id = int
 
 fn main():
