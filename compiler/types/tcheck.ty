@@ -661,6 +661,8 @@ fn _sig_of(cs: inout C, prefix: string, fd: ast.Fn) -> FSig:
         if pm.is_variadic:
             fl = "var"
         _aff_param_check(&cs, pm.name, t, fl)
+        if fd.is_extern and pm.is_inout and not _ffi_inout_ok(t):
+            _cperr(&cs, "extern fn '" + fd.name + "': an `inout` (out) parameter '" + pm.name + "' must be int/char/float/bool/ptr — string/bytes/handle/composite have no trivial out-param ABI")
         if fd.is_extern and not pm.is_inout and not _ffi_param_ok(&cs, t):
             _cperr(&cs, "extern fn '" + fd.name + "': parameter '" + pm.name + "' must be int/char/float/bool/string/ptr/bytes, [int]/[float]/[string], or a handle (no other composites across the C boundary)")
         push(pf, fl)

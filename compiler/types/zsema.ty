@@ -143,6 +143,13 @@ fn _ffi_scalar(t: string) -> bool:
         return true
     return t == "u8" or t == "u16" or t == "u32" or t == "u64" or t == "i8" or t == "i16" or t == "i32" or t == "i64"
 
+# src/tychoc.c:4626. An out-param's address must be a clean T* the C side fills;
+# string is length-headered, so a char** out-param would hand tycho a raw pointer.
+fn _ffi_inout_ok(t: string) -> bool:
+    if not known(t):
+        return true
+    return _ffi_scalar(t) and t != "string"
+
 fn _ffi_param_ok(cs: inout C, t: string) -> bool:
     if not known(t):
         return true
