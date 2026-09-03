@@ -37,6 +37,13 @@ run_lanes() {
 
 if [ "$LANE" = main ]; then
 ci_started=$(date +%s)
+# Captured BEFORE the sweep, not after: a sha read fifteen minutes later names
+# whatever the tree became, not what was tested. The fingerprint covers the
+# uncommitted changes too, and is re-read at the end -- if it moved, nothing is
+# recorded, because what was swept no longer exists.
+ci_sha="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
+ci_fp="$(sh scripts/status.sh --fingerprint)"
+ci_skipped=""
 bar
 printf ' tycho local CI   (no GitHub Actions -- runs here, on this machine)\n'
 printf ' fuzz seeds: %s\n' "$N"
@@ -64,22 +71,37 @@ run_lanes platform corelib apps rest
 if [ "$N" -gt 0 ]; then
     if [ "$IS_WINDOWS" = 1 ]; then
         step "[6/13] fuzz lanes skipped (Windows: the differential builds ASan binaries; mingw has no -lasan/-lubsan -- docs/internals/windows-port.md phase 2)"
+        ci_skipped="fuzz(windows)"
     else
         run_lanes fuzz-main fuzz-reject fuzz-leak
     fi
 else
     step "[6/13] fuzz lanes skipped (N=0)"
+    ci_skipped="fuzz(N=0)"
 fi
 
 bar
 printf ' CI GREEN -- tree is good (%ss)\n' "$(( $(date +%s) - ci_started ))"
-# Record WHICH commit was verified, so `make status` can say whether HEAD still
-# is. A green sweep whose sha nobody wrote down answers "was the tree ever good",
-# never "is it good now" -- and that gap is most of why the state of this project
-# became unreadable.
-mkdir -p build
-printf '%s %s %s\n' "$(git rev-parse HEAD 2>/dev/null || echo unknown)" \
-    "$(date '+%Y-%m-%d')" "$(( $(date +%s) - ci_started ))" > build/ci-status
+# Record WHAT was verified, so `make status` can say whether this tree still is
+# it. A green sweep whose content nobody wrote down answers "was the tree ever
+# good", never "is it good now" -- and that gap is most of why the state of this
+# project became unreadable. The record also carries the SCOPE: `make ci N=0`
+# runs no fuzz lane, and a record that does not say so is a full sweep as far as
+# any reader can tell.
+if [ "$(sh scripts/status.sh --fingerprint)" != "$ci_fp" ]; then
+    printf ' NOT RECORDED -- the tree changed while the sweep ran, so what was\n'
+    printf ' tested no longer exists. Re-run on a settled tree.\n'
+else
+    mkdir -p build
+    { printf 'tycho-ci-record v2\n'
+      printf 'sha %s\n' "$ci_sha"
+      printf 'fingerprint %s\n' "$ci_fp"
+      printf 'date %s\n' "$(date '+%Y-%m-%d')"
+      printf 'dur %s\n' "$(( $(date +%s) - ci_started ))"
+      printf 'fuzz %s\n' "$N"
+      printf 'skipped %s\n' "${ci_skipped:-none}"
+    } > build/ci-status
+fi
 bar
 exit 0
 fi
