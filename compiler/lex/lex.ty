@@ -512,7 +512,7 @@ fn scan_str(src: string, i0: int, line: int, interp: bool, file: string) -> int:
                 _die(file, src, line, "unterminated string literal")
             e := src[i]
             if e != 110 and e != 116 and e != 114 and e != 92 and e != 34:
-                _die(file, src, line, "unsupported escape (use \\n \\t \\r \\\\ \\\")")
+                _die(file, src, line, "unsupported escape \\" + src[i:i + 1] + " (use \\n \\t \\r \\\\ \\\")")
             i += 1
             continue
         if depth == 0 and c < 32 and c != 9:

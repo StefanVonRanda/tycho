@@ -1,4 +1,4 @@
-# expect: unsupported escape
+# expect: unsupported escape \  (use \n \t \r \\ \")
 fn main():
     x := 1
     println(f"oops\ {x}")

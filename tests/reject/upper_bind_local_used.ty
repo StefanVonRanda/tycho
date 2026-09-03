@@ -1,5 +1,5 @@
 # Same rule, the `:=` family, with the illegal local USED on a later line.
-# expect: 'Ok' cannot name a binding
+# expect: 'Ok' cannot name a binding -- a local, parameter or pattern binding must start with a lowercase letter or '_'; as a value it is a constructor: Ok(x)
 fn main():
     Ok := 5
     println(str(Ok))

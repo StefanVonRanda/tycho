@@ -1,5 +1,5 @@
 # A subscript must `yield &<place>`, not a value.
-# expect: a subscript must yield a place: `yield &<place>`
+# expect: a subscript must yield a place: `yield &<place>` (e.g. `yield &g.nodes[i]`)
 struct N:
     w: int
 subscript bad(g: [N], i: int) -> inout N:

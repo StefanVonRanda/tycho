@@ -1,3 +1,4 @@
+# expect: 'Ok' is already defined
 struct Ok:
     v: int
 

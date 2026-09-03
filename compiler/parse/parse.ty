@@ -626,7 +626,7 @@ fn _primary_into(toks: [lex.Tok], i0: int, out: inout ast.Expr) -> int:
             out = ast.NoneE(toks[ti].line)
             return i
         if not _isop(toks, i, lex.OP_LPAREN) and (nm == "Some" or nm == "Ok" or nm == "Err"):
-            _die(toks, _at(toks, i0), "'" + nm + "' cannot name a binding -- as a value it is a constructor: " + nm + "(x)")
+            _die(toks, _at(toks, i0), "'" + nm + "' cannot name a binding -- a local, parameter or pattern binding must start with a lowercase letter or '_'; as a value it is a constructor: " + nm + "(x)")
         if nm == "Some":
             i = _op(toks, i, lex.OP_LPAREN)
             a := ast.NullLit(0)
@@ -675,7 +675,7 @@ fn _primary_into(toks: [lex.Tok], i0: int, out: inout ast.Expr) -> int:
         return i
 
     if toks[ti].k == lex.K_INDENT:
-        _die(toks, _at(toks, i0), "unexpected indentation: this line is indented further than the block it belongs to")
+        _die(toks, _at(toks, i0), "unexpected indentation: this line is indented further than the block it belongs to, and nothing above it opens a new block")
     _diec(toks, _at(toks, i0), "expected an expression")
     out = ast.IntLit(toks[ti].line, 0)
     return i0
@@ -949,7 +949,7 @@ fn value_if(toks: [lex.Tok], i0: int) -> (ast.Stmt, int):
         els = e
         i = k
     else:
-        _die(toks, _at(toks, i0), "an `if` used as a value must have an `else`")
+        _die(toks, _at(toks, i0), "an `if` used as a value must have an `else` — every path must produce a value")
     return (ast.IfS(_ln(toks, i0), [c], body, els), i)
 
 fn value_ctrl(toks: [lex.Tok], i0: int) -> (ast.Stmt, int):
@@ -1312,7 +1312,7 @@ fn _simple_into(toks: [lex.Tok], i0: int, out: inout ast.Stmt) -> (int, bool):
                 _die(toks, _at(toks, i0), "Tycho has no `while` -- use `for cond:` for a conditional loop (e.g. `for i < 3:`)")
         _: pass
     if e is ast.SpawnE:
-        _die(toks, _at(toks, i0), "a `spawn` must be bound to a task handle -- write `t := spawn f(args)`")
+        _die(toks, _at(toks, i0), "a `spawn` must be bound to a task handle -- write `t := spawn f(args)`, because the implicit join at scope exit needs a handle to wait on (a Task cannot be discarded)")
     ok := e is ast.Call
     if e is ast.CallVal:
         ok = true
@@ -1412,7 +1412,7 @@ fn _forstmt_into(toks: [lex.Tok], i0: int, par: bool, out: inout ast.Stmt) -> in
         if not (init is ast.Decl) and not (init is ast.Assign) and not (init is ast.MDecl):
             _die(toks, _at(toks, i0 - 1), "the init clause of a three-clause `for` is a declaration or an assignment")
         if not (post is ast.Assign) and not (post is ast.PlaceSet):
-            _die(toks, _at(toks, i0 - 1), "the post clause of a three-clause `for` is an assignment")
+            _die(toks, _at(toks, i0 - 1), "the post clause of a three-clause `for` is an assignment to a variable (`i += 1`)")
         b, n := block(toks, i)
         out = ast.For3(toks[ti].line, [init, post], [cond], b)
         return n
@@ -1644,7 +1644,7 @@ fn block_into(toks: [lex.Tok], i0: int, out: inout [ast.Stmt]) -> int:
 # takes inout alone, and src/tychoc.c@parse_subscript goes straight to parse_type.
 # A marker this list does not take is left for `ty` to read as a type name, which
 # is exactly how tychoc reports it ("unknown type 'sink'").
-fn _params(toks: [lex.Tok], i0: int, mode: string) -> ([ast.Param], int):
+fn _params(toks: [lex.Tok], i0: int, mode: string, nm: string) -> ([ast.Param], int):
     i := i0
     out := []ast.Param
     for not _isop(toks, i, lex.OP_RPAREN):
@@ -1674,7 +1674,7 @@ fn _params(toks: [lex.Tok], i0: int, mode: string) -> ([ast.Param], int):
     i = _op(toks, i, lex.OP_RPAREN)
     for k := 0; k + 1 < len(out); k += 1:
         if out[k].is_variadic:
-            _die(toks, _at(toks, i0), "a variadic parameter must be the last parameter")
+            _die(toks, _at(toks, i0), "a variadic parameter must be the last parameter of '" + nm + "'")
     return (out, i)
 
 fn _is_where_pred(s: string) -> bool:
@@ -1810,7 +1810,7 @@ fn _func_into(ps0: inout PS, toks: [lex.Tok], i0: int, notes: [lex.DNote], out: 
     nm, j := _ident(toks, i, "a procedure name")
     dn := lex.dnote_above(notes, _at(toks, i).line)
     i = _op(toks, j, lex.OP_LPAREN)
-    ps, k := _params(toks, i, "fn")
+    ps, k := _params(toks, i, "fn", nm)
     i = k
     ret := []ast.Ty
     if _isop(toks, i, lex.OP_ARROW):
@@ -1858,7 +1858,7 @@ fn externfn(toks: [lex.Tok], i0: int) -> (ast.Fn, int):
     i = _expect(toks, i, lex.K_KW, "fn")
     nm, j := _ident(toks, i, "a C function name")
     i = _op(toks, j, lex.OP_LPAREN)
-    ps, k := _params(toks, i, "extern")
+    ps, k := _params(toks, i, "extern", nm)
     i = k
     ret := []ast.Ty
     if _isop(toks, i, lex.OP_ARROW):
@@ -2032,7 +2032,7 @@ fn subscriptd(toks: [lex.Tok], i0: int) -> (ast.SubscriptD, int):
     i := i0 + 1
     nm, j := _ident(toks, i, "a subscript name")
     i = _op(toks, j, lex.OP_LPAREN)
-    ps, k := _params(toks, i, "subscript")
+    ps, k := _params(toks, i, "subscript", nm)
     i = _op(toks, k, lex.OP_ARROW)
     if not _iskw(toks, i, lex.KW_INOUT):
         _die(toks, _at(toks, i), "a subscript must yield an inout projection: `-> inout <type>`")
@@ -2048,7 +2048,7 @@ fn subscriptd(toks: [lex.Tok], i0: int) -> (ast.SubscriptD, int):
     n := _expr_into(toks, i + 1, &y)
     i = n
     if not (y is ast.Addr):
-        _die(toks, _at(toks, i0), "a subscript must yield a place: `yield &<place>`")
+        _die(toks, _at(toks, i0), "a subscript must yield a place: `yield &<place>` (e.g. `yield &g.nodes[i]`)")
     for _kis(toks, i, lex.K_NEWLINE):
         i += 1
     i = _expect(toks, i, lex.K_DEDENT, "")

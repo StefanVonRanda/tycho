@@ -1,3 +1,4 @@
+# expect: 'X' is already defined
 enum X:
     A
 struct X:

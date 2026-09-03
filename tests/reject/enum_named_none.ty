@@ -1,3 +1,4 @@
+# expect: 'None' is already defined
 enum None:
     A
     B

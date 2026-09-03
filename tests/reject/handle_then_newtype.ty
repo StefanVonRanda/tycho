@@ -1,3 +1,4 @@
+# expect: 'H' is already defined
 handle H:
     free: hclose
 

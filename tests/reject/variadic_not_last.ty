@@ -1,4 +1,4 @@
-# expect: a variadic parameter must be the last parameter
+# expect: a variadic parameter must be the last parameter of 'f'
 fn f(xs: ...int, y: int) -> int:
     return y
 fn main():

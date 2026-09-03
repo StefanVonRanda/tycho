@@ -64,6 +64,18 @@ ROOTS = ("tests", "corelib", "tools", "examples", "server", "bench")
 DIE = ("die_at", "die", "warn_at", "diag_push")
 
 # Held out of the rule set. Matched as substrings of the FORMAT string.
+# COARSE: `eat()`'s one format hides 105 hand-written `what` phrases, and this
+# rule is scored on the FORMAT STRING ALONE. R21a, 2026-09-04. ./tychoc names
+# the position ("expected ':' after field name"); ./tychoc1 derives the wanted
+# token mechanically and appends what it FOUND ("expected ':', found op ','").
+# Both refuse, both name the same token, and the extra half of tychoc1's line is
+# information ./tychoc does not have at that point. Making them agree means
+# either threading 105 phrases through `_expect`'s hundred-odd call sites -- a
+# table nobody will maintain, and one where a stale phrase reads as a compiler
+# defect -- or deleting the ", found X" half, which makes the diagnostic worse
+# to buy a string compare. Neither is worth it, so the divergence is recorded
+# here instead of being carried in [b] as though it were going to be fixed.
+COARSE = ["expected %s"]
 CAPACITY = ["too many ", "nesting too deep", "indentation too deep",
             "string too long", "declares too many locals", "a function type has at most",
             "a tuple has at most",
@@ -311,6 +323,8 @@ def rules():
             continue
         if kind == "warn_at" or f.startswith("%s:%d: warning: "):
             b = "WARNING"
+        elif f in COARSE:
+            b = "COARSE"
         elif any(k in f for k in CAPACITY):
             b = "CAPACITY"
         elif any(k in f for k in INTERNAL):

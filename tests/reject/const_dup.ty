@@ -1,3 +1,4 @@
+# expect: 'MAX' is already defined
 const MAX = 5
 
 fn MAX() -> int:

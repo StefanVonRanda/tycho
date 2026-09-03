@@ -1,3 +1,4 @@
+# expect: 'foo' is already defined
 fn foo() -> int:
     return 1
 fn foo() -> int:

@@ -1,4 +1,4 @@
-# expect: an `if` used as a value must have an `else`
+# expect: an `if` used as a value must have an `else` — every path must produce a value
 fn main():
     x := if true:
         1

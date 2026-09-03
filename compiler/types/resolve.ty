@@ -369,7 +369,14 @@ fn _addl(rs: inout R, name: string, kind: string, file: string, pkg: string, dn:
 
     if name in rs.index:
         prev := rs.syms[rs.index[name]]
-        _err(&rs, "'" + name + "' is already defined (" + prev.kind + " in " + prev.file + ")")
+        if kind == "variant" and prev.kind == "variant":
+            _err(&rs, "variant name '" + _short(name) + "' is already used in this package")
+        elif prev.file != file and (kind == "fn" or kind == "generic" or kind == "extern"):
+            _err(&rs, "'" + name + "' is already defined -- also at " + prev.file + ":" + str(prev.line) +
+                 ", a DIFFERENT file in the same package: tychoc compiles every .ty beside the entry " +
+                 "file, so two unrelated programs cannot share one directory")
+        else:
+            _err(&rs, "'" + name + "' is already defined")
         return
     rs.index[name] = len(rs.syms)
     push(rs.syms, Sym(name, kind, file, pkg, dn, ln))
@@ -422,13 +429,13 @@ fn build_table(p: Program) -> R:
                 sd := f.unit.structs[d.idx]
                 rs.line = sd.line
                 if sd.name in ctors:
-                    _err(&rs, "'" + sd.name + "' collides with the builtin constructor")
+                    _err(&rs, "'" + sd.name + "' is already defined")
                 _add(&rs, f.prefix + sd.name, "struct", f.path, f.pkg)
             elif d.cat == 2:
                 ed := f.unit.enums[d.idx]
                 rs.line = ed.line
                 if ed.name in ctors:
-                    _err(&rs, "'" + ed.name + "' collides with the builtin constructor")
+                    _err(&rs, "'" + ed.name + "' is already defined")
                 _add(&rs, f.prefix + ed.name, "enum", f.path, f.pkg)
                 for v in ed.variants:
                     rs.line = v.line
@@ -439,7 +446,7 @@ fn build_table(p: Program) -> R:
                 nd := f.unit.newtypes[d.idx]
                 rs.line = nd.line
                 if nd.name in ctors:
-                    _err(&rs, "'" + nd.name + "' collides with the builtin constructor")
+                    _err(&rs, "'" + nd.name + "' is already defined")
                 _add(&rs, f.prefix + nd.name, "newtype", f.path, f.pkg)
             elif d.cat == 4:
                 hd := f.unit.handles[d.idx]
@@ -911,7 +918,7 @@ fn _call_bare(rs: inout R, bi: [string: bool], ctors: [string: bool], n: string)
 # binding that is an immutable local const, and a top-level const of this
 # package (src/tychoc.c:8459 -- a const is folded at each use, so there is
 # nothing to assign to).
-fn _assign_to(rs: inout R, name: string):
+fn _assign_to(rs: inout R, name: string, multi: bool):
     i := _lookup(&rs, name)
     if i >= 0:
         if rs.vars[i].kind == "lconst":
@@ -921,9 +928,17 @@ fn _assign_to(rs: inout R, name: string):
         _err(&rs, "cannot assign to constant '" + name + "'")
         return
     if name == "_":
-        _err(&rs, "`_` is not a discard -- it is an ordinary variable, and this one was never declared")
+        if multi:
+            _err(&rs, "`_` is not a discard -- it is an ordinary variable, and this one was never declared. " +
+                 "Name every element, or declare `_` once with `:=` and reuse it")
+        else:
+            _err(&rs, "`_` is not a discard -- it is an ordinary variable, and this one was never declared. " +
+                 "To drop a result, call it as a statement (`f(x)`); to keep it, name it (`x := f(x)`)")
         return
-    _err(&rs, "assignment to unknown variable '" + name + "'" + _dym(name, _vcands(&rs)))
+    hint := ""
+    if multi:
+        hint = " (use ':=' to declare)"
+    _err(&rs, "assignment to unknown variable '" + name + "'" + hint + _dym(name, _vcands(&rs)))
 
 # src/tychoc.c@resolve_block: a `:=` may not re-declare a name already live in
 # THIS block's duplicate scope. That scope is the block's own start, except in a
@@ -971,11 +986,11 @@ fn _stmt(rs: inout R, bi: [string: bool], ctors: [string: bool], s: ast.Stmt):
                     _push(&rs, nm, "local", false)
             else:
                 for nm in names:
-                    _assign_to(&rs, nm)
+                    _assign_to(&rs, nm, true)
         ast.Assign(l, name, rhs):
             _exprs(&rs, bi, ctors, rhs)
             rs.line = l
-            _assign_to(&rs, name)
+            _assign_to(&rs, name, false)
         ast.PlaceSet(l, k): _exprs(&rs, bi, ctors, k)
         ast.ConstS(l, name, v):
             _exprs(&rs, bi, ctors, v)

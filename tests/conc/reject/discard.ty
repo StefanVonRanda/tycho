@@ -1,3 +1,4 @@
+# expect: a `spawn` must be bound to a task handle -- write `t := spawn f(args)`, because the implicit join at scope exit needs a handle to wait on (a Task cannot be discarded)
 fn f(n: int) -> int:
     return n
 fn main():

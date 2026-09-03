@@ -1,4 +1,4 @@
-# expect: the post clause of a three-clause `for` is an assignment
+# expect: the post clause of a three-clause `for` is an assignment to a variable (`i += 1`)
 # tychoc1 stops at "... is an assignment"; the bootstrap adds "to a variable (`i += 1`)".
 fn main():
     for i := 0; i < 3; println("x"):

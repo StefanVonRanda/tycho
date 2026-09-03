@@ -1,3 +1,3 @@
-# expect: unsupported escape
+# expect: unsupported escape \  (use \n \t \r \\ \")
 fn main():
     println("oops\ here")

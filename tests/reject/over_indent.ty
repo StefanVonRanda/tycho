@@ -1,4 +1,4 @@
-# expect: unexpected indentation: this line is indented further than the block it belongs to
+# expect: unexpected indentation: this line is indented further than the block it belongs to, and nothing above it opens a new block
 fn main():
   x := 1
       y := 2

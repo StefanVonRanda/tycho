@@ -1,4 +1,4 @@
-# expect: cannot name a binding
+# expect: 'Ok' cannot name a binding -- a local, parameter or pattern binding must start with a lowercase letter or '_'; as a value it is a constructor: Ok(x)
 fn f(Ok: int) -> int:
     return Ok + 1
 

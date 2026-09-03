@@ -1,3 +1,4 @@
+# expect: variant name 'W' is already used in this package
 enum Wrap:
     W([int])
     W([int])

@@ -1,3 +1,4 @@
+# expect: `_` is not a discard -- it is an ordinary variable, and this one was never declared. Name every element, or declare `_` once with `:=` and reuse it
 fn two() -> (int, int):
     return (1, 2)
 

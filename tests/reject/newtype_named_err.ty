@@ -1,3 +1,4 @@
+# expect: 'Err' is already defined
 type Err = int
 
 fn main():

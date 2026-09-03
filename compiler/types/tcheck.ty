@@ -441,7 +441,7 @@ fn _enc(cs: inout C, t: ast.Ty) -> string:
             if hr:
                 np = len(k) - 1
                 r = _enc_noval(&cs, k[len(k) - 1])
-                _nest_aff(&cs, r, "fn")
+                _nest_aff(&cs, r, "fnret")
             out := "fun(" + r
             for i := 0; i < np; i += 1:
                 e := _enc_noval(&cs, k[i])

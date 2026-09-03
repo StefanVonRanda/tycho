@@ -53,11 +53,11 @@ fn _nest_aff(cs: inout C, t: string, mode: string):
     k := _aff_kind(&cs, t)
     if len(k) == 0:
         return
-    if mode == "fn":
+    if mode == "fn" or mode == "fnret":
         if k == "handle":
             return
-        if k == "task":
-            _cperr(&cs, "a function value cannot take a task or channel handle")
+        if mode == "fnret":
+            _cperr(&cs, "a function value cannot return a task or channel handle")
         else:
             _cperr(&cs, "a function value cannot take a task or channel handle")
         return

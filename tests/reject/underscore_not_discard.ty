@@ -1,3 +1,4 @@
+# expect: `_` is not a discard -- it is an ordinary variable, and this one was never declared. To drop a result, call it as a statement (`f(x)`); to keep it, name it (`x := f(x)`)
 fn f(n: int) -> int:
     return n
 
