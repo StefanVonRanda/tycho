@@ -91,12 +91,15 @@ printf 'extern "x" fn f(s: inout int)\nfn main():\n    print("x")\n' > "$T/r4ok.
 if ! "$TYCHOC" "$T/r4ok.ty" --emit-c -o "$T/r4ok" >/dev/null 2>&1; then
     echo "FAIL: inout-int control rejected -- the R4 leg cannot distinguish string from int"; fail=1
 fi
-# tychoc1 does not carry this ban (src/tychoc.c:4626 has it; see plan.md R3).
+# tychoc1 does not carry this ban (src/tychoc.c:4626 has it). Measured again
+# 2026-09-03: still a miss -- the phase that ported the other tcheck rules did
+# not port this one, so the exemption stays until an `inout string` ban lands
+# in `compiler/types/`.
 # Encoded BY NAME so a new miss reddens and a FIXED one reddens too, rather than
 # quietly widening the exemption.
 r4known=0; case "$TYCHOC" in *tychoc1) r4known=1 ;; esac
 if "$TYCHOC" "$T/r4rej.ty" --emit-c -o "$T/r4rej" >/dev/null 2>&1; then
-    if [ "$r4known" -eq 1 ]; then echo "KNOWN MISS: $TYCHOC accepts \`inout string\` (tychoc rejects it) -- plan.md R3"
+    if [ "$r4known" -eq 1 ]; then echo "KNOWN MISS: $TYCHOC accepts \`inout string\` (tychoc rejects it) -- no ban in compiler/types/ yet"
     else echo "FAIL: inout-string out-param accepted by $TYCHOC"; fail=1; fi
 elif [ "$r4known" -eq 1 ]; then
     echo "FAIL: known-miss list stale -- $TYCHOC now rejects \`inout string\`; drop the exemption in tests/ffi/run.sh"; fail=1

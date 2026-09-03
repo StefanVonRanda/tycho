@@ -45,11 +45,15 @@ row() { printf '  %-26s %s\n' "$1" "$2"; }
 # ---- the primitives, kept separate so --selfcheck can drive them -----------
 
 # The content this tree IS: the commit, plus every uncommitted change, in one
-# id. Untracked files contribute their NAME (from --porcelain) but not their
-# bytes, which is the one hole left in this and is cheap to live with.
+# id. --porcelain names untracked files and `diff HEAD` does not carry their
+# bytes, so the third line hashes each one's CONTENT: editing an untracked,
+# non-ignored file between a sweep and a status check moved nothing before it.
+# Measured 2026-09-03: 0 such files here, 0.01 s -- the gap was never the cost.
 tree_fingerprint() {
     { git rev-parse HEAD 2>/dev/null || echo unborn
       git status --porcelain 2>/dev/null
+      git ls-files --others --exclude-standard 2>/dev/null \
+          | git hash-object --stdin-paths 2>/dev/null
       git diff HEAD 2>/dev/null
     } | git hash-object --stdin 2>/dev/null || echo unknown
 }
@@ -174,7 +178,10 @@ if [ "$mode" = selfcheck ]; then
     git init -q .
     git config user.email selfcheck@localhost
     git config user.name selfcheck
-    echo one > a.txt; git add a.txt; git commit -q -m one
+    # /build/ and the ignore rule mirror the real repo: the ci record itself is
+    # ignored, so writing it must not move the fingerprint it stores.
+    printf '/build/\ni.txt\n' > .gitignore
+    echo one > a.txt; git add a.txt .gitignore; git commit -q -m one
     C1="$(git rev-parse HEAD)"
     mkdir -p build
 
@@ -259,6 +266,21 @@ if [ "$mode" = selfcheck ]; then
     else
         printf 'ok    fingerprint moves for a dirty tree\n'
     fi
+
+    # [13] the hole R14 named: an untracked, non-ignored file's BYTES. Its name
+    #      is in --porcelain, so [12]'s property held for creation and deletion
+    #      but not for an EDIT.
+    : > u.txt
+    F2="$(tree_fingerprint)"
+    printf 'edited\n' > u.txt
+    if [ "$F2" = "$(tree_fingerprint)" ]; then
+        printf 'FAIL  fingerprint moves for an edited untracked file\n'; sc_fail=$((sc_fail+1))
+    else
+        printf 'ok    fingerprint moves for an edited untracked file\n'
+    fi
+    F3="$(tree_fingerprint)"
+    printf 'edited\n' > i.txt
+    cke 'an ignored file is still invisible' "$F3" "$(tree_fingerprint)"
 
     cd "$_root" || exit 2
     printf '\n'

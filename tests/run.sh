@@ -30,6 +30,61 @@
 set -u
 cd "$(dirname "$0")/.." || exit 2          # repo root
 
+# The `passed:` line below counts CASES, not fixtures, so neither it nor
+# `make status`'s file count can catch a fixture DIRECTORY silently falling out
+# of the globs: both figures would simply move, and neither says which class.
+# This walks the class globs the loops below use -- the same variables, so a
+# narrowed glob moves both -- prints the total per class, and asserts two things
+# against literals -- no class may be empty, and every tracked directory under
+# tests/ holding a .ty must be claimed by a class glob or named in ELSEWHERE as
+# some other runner's corpus. `sh tests/run.sh --count` prints it; a normal run
+# checks it silently and fails the lane.
+CORPUS_ELSEWHERE="tests/conc tests/ffi tests/rtparity"   # roots owned by another runner
+G_positive="examples/*.ty tests/*.ty"
+G_pkg="tests/pkg/*/"
+G_reject="tests/reject/*.ty"
+G_rejectpkg="tests/reject/pkg/*/"
+G_abort="tests/abort/*.ty"
+G_diag="tests/diag/*.ty"
+G_warn="tests/warn/*.ty"
+G_warnpkg="tests/warn/pkg/*/"
+
+corpus_census() {
+    cc_show="$1"; cc_bad=''; cc_total=0; cc_classes=0
+    for cc_name in positive pkg reject rejectpkg abort diag warn warnpkg; do
+        eval "cc_pat=\$G_$cc_name"
+        cc_n=0
+        for cc_e in $cc_pat; do [ -e "$cc_e" ] && cc_n=$((cc_n + 1)); done
+        cc_total=$((cc_total + cc_n)); cc_classes=$((cc_classes + 1))
+        [ "$cc_show" = print ] && printf 'count %-10s %d\n' "$cc_name" "$cc_n"
+        [ "$cc_n" -gt 0 ] || cc_bad="$cc_bad empty-class:$cc_name"
+    done
+    cc_dirs=0
+    for cc_d in $(git ls-files tests 2>/dev/null | grep '\.ty$' | sed 's|/[^/]*$||' | sort -u); do
+        case "$cc_d" in
+            tests|tests/reject|tests/abort|tests/diag|tests/warn) cc_dirs=$((cc_dirs + 1)); continue ;;
+            tests/pkg/*|tests/reject/pkg/*|tests/warn/pkg/*) cc_dirs=$((cc_dirs + 1)); continue ;;
+        esac
+        cc_seen=0
+        for cc_k in $CORPUS_ELSEWHERE; do
+            case "$cc_d" in "$cc_k"|"$cc_k"/*) cc_seen=1 ;; esac
+        done
+        if [ "$cc_seen" = 1 ]; then cc_dirs=$((cc_dirs + 1)); continue; fi
+        cc_bad="$cc_bad unclaimed-dir:$cc_d"
+    done
+    if [ "$cc_show" = print ]; then
+        printf 'count %-10s %d\n' total "$cc_total"
+        printf 'census: %d classes, %d files, %d directories claimed\n' \
+            "$cc_classes" "$cc_total" "$cc_dirs"
+    fi
+    [ -z "$cc_bad" ] || { printf 'census FAILED:%s\n' "$cc_bad"; return 1; }
+    return 0
+}
+
+if [ "${1:-}" = "--count" ]; then
+    corpus_census print; exit $?
+fi
+
 TYCHOC="${TYCHOC:-./tychoc1}"
 [ -x "$TYCHOC" ] || { echo "no ./tychoc — run 'make' first"; exit 2; }
 
@@ -182,11 +237,11 @@ fi
 # the shell/cmp/grep oracle but spread positive fixtures over bounded workers;
 # each worker owns its temp directory, and reports are replayed in fixture order.
 if [ "$RECORD" = 1 ]; then
-    for hi in examples/*.ty tests/*.ty; do
+    for hi in $G_positive; do
         [ -e "$hi" ] || continue
         run_fixture "$hi"
     done
-    for d in tests/pkg/*/; do
+    for d in $G_pkg; do
         [ -d "$d" ] || continue
         name="$(basename "$d")"
         entry="$d/main.ty"
@@ -211,7 +266,7 @@ else
         printf '%s\0%s\0%s\0%s\0%s\0' "$index" "$1" "$2" "$3" "$4" >>"$job_file"
     }
 
-    for hi in examples/*.ty tests/*.ty; do
+    for hi in $G_positive; do
         [ -e "$hi" ] || continue
         name="$(basename "$hi" .ty)"
         gold="tests/$name.out"
@@ -220,7 +275,7 @@ else
     done
     # Package programs: each directory is one multi-file program whose entry is
     # main.ty and whose golden lives beside the package directory.
-    for d in tests/pkg/*/; do
+    for d in $G_pkg; do
         [ -d "$d" ] || continue
         name="$(basename "$d")"
         entry="$d/main.ty"
@@ -260,7 +315,7 @@ else
 fi
 
 
-for hi in tests/reject/*.ty; do
+for hi in $G_reject; do
     [ -e "$hi" ] || continue
     base="$(basename "$hi" .ty)"
     name="reject_$base"
@@ -298,7 +353,7 @@ done
 # package-private `_name`). Its own directory keeps the entry's package-merge
 # isolated from the single-file rejects above. Same discipline as above: tychoc
 # must exit nonzero AND print a diagnostic.
-for d in tests/reject/pkg/*/; do
+for d in $G_rejectpkg; do
     [ -d "$d" ] || continue
     name="rejectpkg_$(basename "$d")"
     entry="${d}main.ty"
@@ -325,7 +380,7 @@ for d in tests/reject/pkg/*/; do
         echo "ok    $name"; pass=$((pass + 1))
     fi
 done
-for hi in tests/abort/*.ty; do
+for hi in $G_abort; do
     [ -e "$hi" ] || continue
     name="abort_$(basename "$hi" .ty)"
     if ! "$TYCHOC" "$hi" --emit-c -o "$TMP/ab" >"$TMP/ab.log" 2>&1 \
@@ -442,7 +497,7 @@ else
     echo "ok    dashname_after_ddash"; pass=$((pass + 1))
 fi
 
-for hi in tests/diag/*.ty; do
+for hi in $G_diag; do
     [ -e "$hi" ] || continue
     name="diag_$(basename "$hi" .ty)"
     g="tests/diag/$(basename "$hi" .ty).err"
@@ -462,7 +517,7 @@ for hi in tests/diag/*.ty; do
     fi
 done
 
-for hi in tests/warn/*.ty; do
+for hi in $G_warn; do
     [ -e "$hi" ] || continue
     name="warn_$(basename "$hi" .ty)"
     g="tests/warn/$(basename "$hi" .ty).err"
@@ -495,7 +550,7 @@ done
 # what these fixtures assert is WHICH warnings a build prints, and "none from the
 # corelib package I merely imported" is the assertion (commit 8f4367d). An empty
 # golden is a legal answer here; in the flat lane it is a failure.
-for d in tests/warn/pkg/*/; do
+for d in $G_warnpkg; do
     [ -d "$d" ] || continue
     base="$(basename "$d")"
     name="warnpkg_$base"
@@ -518,6 +573,15 @@ for d in tests/warn/pkg/*/; do
         echo "ok    $name"; pass=$((pass + 1))
     fi
 done
+
+# Driver behaviour, like the clobber cases above: the corpus this runner walks
+# must still be the corpus on disk.
+if corpus_census quiet; then
+    echo "ok    corpus_census"; pass=$((pass + 1))
+else
+    note "corpus_census" "a tests/ directory is not claimed by any class glob"
+    fail=$((fail + 1)); fails="$fails corpus_census"
+fi
 
 echo "-----------------------------------------"
 if [ "$RECORD" = 1 ]; then

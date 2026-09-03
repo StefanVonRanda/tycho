@@ -43,6 +43,10 @@ fn run(cmd: string) -> Output:
     return res
 
 # Run argv with no shell, inheriting stdout/stderr; return its exit code.
+# It SPAWNS AND WAITS -- despite the name it never replaces the calling
+# process, so execution continues at the next statement (the shim uses
+# posix_spawnp, `corelib/os/os_shim.c:118-122` says why). There is no
+# process-replacing call in core:os.
 # The vector is BORROWED by the shim for the duration of the call and nothing is
 # copied or freed on either side; the shim appends the NULL execv wants to a
 # vector it owns, and refuses (-1) an empty or oversized argv.

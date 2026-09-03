@@ -452,7 +452,9 @@ element type instead of a family of per-type siblings.
   **`os.exec(argv)` / `os.exec_out(argv)`** are the array-argv pair and take a
   `[string]`: no shell is started at all (`posix_spawnp`), so an argument of
   `"; rm -rf /"` is one ordinary argument rather than a second command — prefer
-  them whenever the arguments are not compile-time constants. Same exit-code
+  them whenever the arguments are not compile-time constants. Neither REPLACES the
+  calling process despite the name — both spawn, wait, and return, so execution
+  continues at the next statement. Same exit-code
   contract; `exec_out` captures stdout. They **fail closed** with `-1` on an
   empty argv, more than 4096 entries, an allocation failure mid-build, or a
   program that cannot be spawned — never a silent fallback to the shell. The
