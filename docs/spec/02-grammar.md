@@ -11,7 +11,7 @@ a later static rule rejects (for example, a value `if` without an `else`, §4.4)
 Such forms are flagged here and constrained in the semantic chapters. A program
 is valid only if it parses **and** satisfies every static-semantic rule.
 
-> Provenance: parser entry `src/tychoc.c:4671-4688` (`parse_program`); the
+> Provenance: parser entry `src/tychoc.c:4696-4713` (`parse_program`); the
 > per-construct functions are cited at each section.
 
 ## 4.1 Program and top-level declarations
@@ -43,8 +43,8 @@ arithmetic, bitwise, unary, and backward references to earlier top-level
 constants); its rules are given in §8 and §13. Package resolution,
 visibility, and merging are specified in §28.
 
-> Provenance: `parse_package_decl` `src/tychoc.c:4900@parse_package_decl`, `parse_import_decl` `:4907@parse_import_decl`, `parse_const`
-> (`src/tychoc.c:4650-4669`).
+> Provenance: `parse_package_decl` `src/tychoc.c:4925@parse_package_decl`, `parse_import_decl` `:4932@parse_import_decl`, `parse_const`
+> (`src/tychoc.c:4675-4694`).
 
 ### 4.1.1 Functions
 
@@ -78,8 +78,8 @@ predicate is rejected) — this is the deliberate anti-traits stance (§7). The 
 set (up to 16 types). A `where` clause requires a generic function; at most 8
 constraints are allowed.
 
-> Provenance: `parse_fn`, `src/tychoc.c:4042-4134` (params `:4379-4418`,
-> variadic-last `:4405-4407`, `where` `:4097-4126`).
+> Provenance: `parse_fn`, `src/tychoc.c:4067-4159` (params `:4404-4443`,
+> variadic-last `:4430-4432`, `where` `:4122-4151`).
 
 ### 4.1.2 Structs, enums, newtypes, handles
 
@@ -102,7 +102,7 @@ only via a container (e.g. `[Node]`), never as a direct by-value self-field
 (§17).
 
 > Provenance: `parse_struct`/`parse_enum`/`parse_handle`/`parse_typedecl`,
-> `src/tychoc.c:4249-4398`.
+> `src/tychoc.c:4274-4423`.
 
 ### 4.1.3 Extern functions and subscripts
 
@@ -124,8 +124,8 @@ rooted in one of its parameters. Its rules — the place must be rooted in a
 parameter, each parameter used at most once — are given in §18.
 `Place` is defined in §4.4.
 
-> Provenance: `parse_extern_fn` (`src/tychoc.c:4166-4237`), `parse_subscript`
-> (`:4153-4205`).
+> Provenance: `parse_extern_fn` (`src/tychoc.c:4191-4262`), `parse_subscript`
+> (`:4178-4230`).
 
 ## 4.2 Types
 
@@ -174,7 +174,7 @@ Notes (constrained further in §5–§7):
   is a recursive self-reference.
 - There is no `char` or `void` type spelling (§3.6).
 
-> Provenance: `parse_type_inner`, `src/tychoc.c:2015-2316`.
+> Provenance: `parse_type_inner`, `src/tychoc.c:2015-2341`.
 
 ## 4.3 Blocks and statements
 
@@ -229,8 +229,8 @@ ExprStmt       ::= ( Call | Call "or_return" ) NEWLINE   /* or_return form: ok p
   only the resolver knows it.
 - `ConstExpr` and `ValueCtrl` are defined in §4.1 and §4.3.2.
 
-> Provenance: `parse_stmt`, `src/tychoc.c:3418-3906`; `ExprStmt` restriction
-> `:3988-3995`; compound-assign hoist `:3483-3525`.
+> Provenance: `parse_stmt`, `src/tychoc.c:3443-3931`; `ExprStmt` restriction
+> `:4013-4020`; compound-assign hoist `:3508-3550`.
 
 ### 4.3.2 Compound statements
 
@@ -295,14 +295,14 @@ ValueCtrl   ::= If | Match              /* value form: block branches ending in 
   unify to one type, and at least one branch MUST be non-diverging. These rules
   are given in §13/§14.
 
-> Provenance: `parse_if` (`src/tychoc.c:3334@parse_if`), `parse_match`
-> (`src/tychoc.c:3440@parse_match`, value form `src/tychoc.c:3571@parse_match`),
-> `for`/`parallel` (`src/tychoc.c:3551-3743`; the three-clause header
-> `src/tychoc.c:3595-3640`, `0..<N` `src/tychoc.c:3935-3960`, the `range`
-> refusal `src/tychoc.c:4020@"range"`), `select` (`src/tychoc.c:3505-3541`),
-> value-control routing (`src/tychoc.c:3818@parse_value_ctrl`,
-> `src/tychoc.c:4113@parse_value_ctrl`, `src/tychoc.c:4127@parse_value_ctrl`,
-> `src/tychoc.c:4113@parse_value_ctrl`, `src/tychoc.c:4158@parse_value_ctrl`).
+> Provenance: `parse_if` (`src/tychoc.c:3359@parse_if`), `parse_match`
+> (`src/tychoc.c:3465@parse_match`, value form `src/tychoc.c:3596@parse_match`),
+> `for`/`parallel` (`src/tychoc.c:3576-3768`; the three-clause header
+> `src/tychoc.c:3620-3665`, `0..<N` `src/tychoc.c:3960-3985`, the `range`
+> refusal `src/tychoc.c:4045@"range"`), `select` (`src/tychoc.c:3530-3566`),
+> value-control routing (`src/tychoc.c:3843@parse_value_ctrl`,
+> `src/tychoc.c:4138@parse_value_ctrl`, `src/tychoc.c:4152@parse_value_ctrl`,
+> `src/tychoc.c:4138@parse_value_ctrl`, `src/tychoc.c:4183@parse_value_ctrl`).
 > Every ref here was bare before 2026-07-29 and therefore unchecked: a
 > `> Provenance:` block that names no path leaves `check_citations.py` with no
 > path to bind `:N` to, so the mandatory-anchor rule never fired and all eight
@@ -384,8 +384,8 @@ operation is a call `(...)`. A `Subscript` (§4.1.3) parameter is likewise plain
   **statement-level** (§4.3.1); they are **not** expression operators and never
   appear inside `Expr`.
 
-> Provenance: precedence chain `src/tychoc.c:2990-3058`; postfix `:2835-2913`;
-> `parse_primary` `:2530-2832`; unary `:2921-2927`.
+> Provenance: precedence chain `src/tychoc.c:3015-3083`; postfix `:2860-2938`;
+> `parse_primary` `:2555-2857`; unary `:2946-2952`.
 
 ## 4.5 Operator precedence and associativity
 
@@ -416,4 +416,4 @@ argument and place sub-expression evaluation, is pinned in §13 —
 the grammar fixes only associativity, not side-effect order.
 
 > Provenance: `parse_mul`/`parse_add`/`parse_cmp`/`parse_not`/`parse_and`/
-> `parse_expr`, `src/tychoc.c:2990-3058`; postfix/unary `:2835-2927`.
+> `parse_expr`, `src/tychoc.c:3015-3083`; postfix/unary `:2860-2952`.

@@ -269,9 +269,39 @@ fn send_msg(body: string):
 fn send_result(id: Json, result: string):
     send_msg("{\"jsonrpc\":\"2.0\",\"id\":" + to_json(id) + ",\"result\":" + result + "}")
 
-# read one framed message body; "" on EOF
+# The largest body this server will read. An LSP message is JSON over a pipe;
+# 64 MiB is far past any real document and stops a header claiming 10^18 bytes
+# from being handed straight to realloc.
+fn max_body() -> int:
+    return 64 * 1024 * 1024
+
+# Parse a Content-Length value STRICTLY: every byte after the optional spaces
+# must be a digit, and the result must fit under max_body(). -1 = malformed.
+# `digits_to_int` skips whatever is not a digit, so it reads "abc" as 0 and
+# "1x2" as 12 -- a length nobody sent, silently.
+fn parse_content_length(s: string) -> int:
+    i := 0
+    for i < len(s) and (s[i] == 32 or s[i] == 9):
+        i = i + 1
+    if i >= len(s):
+        return 0 - 1
+    v := 0
+    for i < len(s):
+        c := s[i]
+        if c < 48 or c > 57:
+            return 0 - 1
+        v = v * 10 + (c - 48)
+        if v > max_body():
+            return 0 - 1
+        i = i + 1
+    return v
+
+# read one framed message body; "" on EOF. A malformed or oversized
+# Content-Length is a protocol violation with no way to resynchronise: say so on
+# stderr and exit, rather than reading 0 bytes and looking like a closed pipe.
 fn read_message() -> string:
     clen := 0 - 1
+    saw_len := false
     for true:
         line := tycho_read_line()
         if line == "":
@@ -280,9 +310,14 @@ fn read_message() -> string:
         if t == "":
             break                              # blank line ends the headers
         if starts_with(t, "Content-Length:"):
-            clen = digits_to_int(substr(t, 15, len(t)))
+            saw_len = true
+            clen = parse_content_length(substr(t, 15, len(t)))
     if clen < 0:
-        return ""
+        if saw_len:
+            eprint("tycho-lsp: malformed or oversized Content-Length (max " + str(max_body()) + " bytes)\n")
+        else:
+            eprint("tycho-lsp: message header carries no Content-Length\n")
+        exit(2)
     return tycho_read_n(clen)
 
 fn compiler() -> string:
@@ -1208,7 +1243,7 @@ fn handle_inlay(id: Json, uris: [string], texts: [string], syms: [string], param
 # src/tychoc.c:262 (or_return), :181 (parallel), :182 (select).
 # The four soft ones already here are NOT drift and stay: `handle` is a hard
 # token too (src/tychoc.c:275), while `const`, `sink`, `where` and `soa` are
-# TK_IDENT matched by text in the parser (src/tychoc.c:3426, :3681, :3715,
+# TK_IDENT matched by text in the parser (src/tychoc.c:3451, :3681, :3715,
 # :1911) -- keywords to a reader, contextual to the lexer, and both grammars
 # highlight them.
 fn sem_is_keyword(w: string) -> bool:

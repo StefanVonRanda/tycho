@@ -11,7 +11,10 @@
 # Scope: `open`/`close`, `exec` (a statement with no result rows, reporting the
 # change count), `query` (SELECT -- every column read as TEXT and returned as
 # `[[string]]`; ints/floats are coerced by SQLite's text conversion), and
-# `errmsg` for the last error. Parameter binding via `exec_params` /
+# `errmsg` for the last error. `query` flattens a SQL NULL to "" -- `query_null` /
+# `query_null_params` return `[[Option(string)]]` and keep the two apart, and both
+# refuse a TEXT value holding an interior NUL rather than truncating at it.
+# Parameter binding via `exec_params` /
 # `query_params`: parameters are bound as text (SQLite coerces `1` to INTEGER
 # contextually); the `?`/`?N`/`:name` placeholder forms all work. In-memory
 # databases are just `sqlite.open(":memory:")`. Fail-closed: every call that
@@ -31,6 +34,12 @@ extern "sqlite3" fn sqlite3_bind_text(st: ptr, i: int, s: string, n: int, dtor: 
 extern "sqlite3" fn sqlite3_step(st: ptr) -> int
 extern "sqlite3" fn sqlite3_column_count(st: ptr) -> int
 extern "sqlite3" fn sqlite3_column_text(st: ptr, i: int) -> string
+# Length and storage class of the column just read. `sqlite3_column_text` hands
+# back a NUL-terminated pointer, so a TEXT value holding an interior NUL is
+# silently truncated unless the byte count is checked; and a NULL column comes
+# back indistinguishable from '' unless the type is.
+extern "sqlite3" fn sqlite3_column_bytes(st: ptr, i: int) -> int
+extern "sqlite3" fn sqlite3_column_type(st: ptr, i: int) -> int
 extern "sqlite3" fn sqlite3_changes(db: ptr) -> int
 # Counts every row changed on this connection since it was opened. `exec` reports
 # a DELTA of it rather than sqlite3_changes, because sqlite3_changes describes the
@@ -81,24 +90,35 @@ fn run_stmt(d: inout Db, sql: string, params: [string]) -> Result(ptr, string):
             return Err(errmsg(d))
     return Ok(st)
 
-# SELECT (or any statement producing rows): every column read as text,
-# returned as [[string]].
-fn query(d: inout Db, sql: string) -> Result([[string]], string):
-    return query_params(&d, sql, []string)
+# SELECT (or any statement producing rows), with SQL NULL kept apart from the
+# empty string: a NULL column is None, every other column is Some(its text).
+# `query`/`query_params` are this with None flattened to "".
+fn query_null(d: inout Db, sql: string) -> Result([[Option(string)]], string):
+    return query_null_params(&d, sql, []string)
 
-fn query_params(d: inout Db, sql: string, params: [string]) -> Result([[string]], string):
+fn query_null_params(d: inout Db, sql: string, params: [string]) -> Result([[Option(string)]], string):
     match run_stmt(&d, sql, params):
         Err(m):
             return Err(m)
         Ok(st):
-            rows := [][string]
+            rows := [][Option(string)]
             ncols := sqlite3_column_count(st)
             for:
                 r := sqlite3_step(st)
                 if r == 100:                 # SQLITE_ROW
-                    row := []string
+                    row := []Option(string)
                     for c := 0; c < ncols; c += 1:
-                        push(row, sqlite3_column_text(st, c))
+                        if sqlite3_column_type(st, c) == 5:     # SQLITE_NULL
+                            push(row, None)
+                        else:
+                            t := sqlite3_column_text(st, c)
+                            # sqlite3_column_bytes AFTER column_text is the length of
+                            # that same UTF-8 text; a shorter `len(t)` means the value
+                            # holds an interior NUL and the tail would be dropped.
+                            if sqlite3_column_bytes(st, c) != len(t):
+                                sqlite3_finalize(st)
+                                return Err("column " + str(c) + " holds an interior NUL byte -- core:sqlite reads TEXT as a NUL-terminated string and cannot carry it")
+                            push(row, Some(t))
                     push(rows, row)
                 elif r == 101:               # SQLITE_DONE
                     break
@@ -107,6 +127,29 @@ fn query_params(d: inout Db, sql: string, params: [string]) -> Result([[string]]
                     sqlite3_finalize(st)
                     return Err(m)
             sqlite3_finalize(st)
+            return Ok(rows)
+
+# SELECT (or any statement producing rows): every column read as text,
+# returned as [[string]]. A SQL NULL flattens to "" -- use `query_null` when the
+# two must be told apart.
+fn query(d: inout Db, sql: string) -> Result([[string]], string):
+    return query_params(&d, sql, []string)
+
+fn query_params(d: inout Db, sql: string, params: [string]) -> Result([[string]], string):
+    match query_null_params(&d, sql, params):
+        Err(m):
+            return Err(m)
+        Ok(rs):
+            rows := [][string]
+            for i := 0; i < len(rs); i += 1:
+                row := []string
+                for c := 0; c < len(rs[i]); c += 1:
+                    match rs[i][c]:
+                        Some(t):
+                            push(row, t)
+                        None:
+                            push(row, "")
+                push(rows, row)
             return Ok(rows)
 
 # A parameterized statement with no result rows (INSERT/UPDATE with a ? or
@@ -118,6 +161,9 @@ fn exec_params(d: inout Db, sql: string, params: [string]) -> Result(int, string
         Ok(st):
             r := sqlite3_step(st)
             sqlite3_finalize(st)
+            if r == 100:                     # SQLITE_ROW -- sqlite raised no error, so
+                                             # errmsg would say "not an error"
+                return Err("this statement produces rows -- use query_params")
             if r != 101:                     # SQLITE_DONE
                 return Err(errmsg(d))
             return Ok(sqlite3_changes(d.h))

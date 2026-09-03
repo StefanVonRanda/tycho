@@ -5,8 +5,11 @@
 #ifndef _WIN32
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/time.h>  /* struct timeval -- SO_RCVTIMEO/SO_SNDTIMEO */
 #include <netdb.h>
 #include <unistd.h>
+#include <fcntl.h>     /* O_NONBLOCK -- the bounded connect below */
+#include <poll.h>
 #else
 /* Windows: the socket surface lives in Winsock (ws2_32, via the deps `_WIN32:`
  * section); winsock2.h must precede any header that pulls in windows.h.
@@ -77,8 +80,53 @@ static void tls_sig_end(TlsSigGuard *g)   { (void)g; }
 #endif
 
 /* Resolve host:port and open a blocking TCP connection; -1 on any failure. */
-static int tcp_connect(const char *host, tycho_int port) {
-    if (!host || port < 0 || port > 65535) return -1;
+/* Arm (ms > 0) or clear (ms == 0) both socket timeouts. A TLS read blocks in
+ * SSL_read on the underlying recv, so SO_RCVTIMEO is what bounds it; without one
+ * a peer that accepts and then says nothing pins the caller forever. */
+static int tls_set_sock_timeout(int fd, tycho_int ms) {
+    if (ms < 0) return 0;
+#ifndef _WIN32
+    struct timeval tv;
+    tv.tv_sec  = (long)(ms / 1000);
+    tv.tv_usec = (long)((ms % 1000) * 1000);
+    if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (const void *)&tv, sizeof tv) != 0) return 0;
+    return setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, (const void *)&tv, sizeof tv) == 0;
+#else
+    DWORD tv = (DWORD)ms;
+    if (setsockopt((SOCKET)fd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv, sizeof tv) != 0) return 0;
+    return setsockopt((SOCKET)fd, SOL_SOCKET, SO_SNDTIMEO, (const char *)&tv, sizeof tv) == 0;
+#endif
+}
+
+#ifndef _WIN32
+/* connect(2) bounded by `ms`: non-blocking connect, poll for writability, then
+ * read SO_ERROR -- a poll that returns ready still has to be asked whether the
+ * connect SUCCEEDED. The descriptor is put back to blocking on every path. */
+static int tcp_connect_timed(int fd, const struct sockaddr *sa, socklen_t salen, tycho_int ms) {
+    int flags = fcntl(fd, F_GETFL, 0);
+    if (flags < 0) return -1;
+    if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) != 0) return -1;
+    int rc = connect(fd, sa, salen);
+    if (rc != 0 && errno == EINPROGRESS) {
+        struct pollfd pfd;
+        pfd.fd = fd; pfd.events = POLLOUT; pfd.revents = 0;
+        int pr;
+        do { pr = poll(&pfd, 1, (int)ms); } while (pr < 0 && errno == EINTR);
+        if (pr <= 0) rc = -1;
+        else {
+            int soerr = 0;
+            socklen_t l = sizeof soerr;
+            if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &soerr, &l) != 0 || soerr != 0) rc = -1;
+            else rc = 0;
+        }
+    }
+    (void)fcntl(fd, F_SETFL, flags);
+    return rc;
+}
+#endif
+
+static int tcp_connect(const char *host, tycho_int port, tycho_int ms) {
+    if (!host || port < 0 || port > 65535 || ms < 0) return -1;
     char portstr[16];
     snprintf(portstr, sizeof portstr, "%d", (int)port);   /* port validated 0..65535 above */
     struct addrinfo hints, *res = NULL, *rp;
@@ -96,6 +144,14 @@ static int tcp_connect(const char *host, tycho_int port) {
             setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, sizeof on);
         }
 #endif
+#ifndef _WIN32
+        if (ms > 0) {
+            if (tcp_connect_timed(fd, rp->ai_addr, (socklen_t)rp->ai_addrlen, ms) == 0) break;
+            close(fd);
+            fd = -1;
+            continue;
+        }
+#endif
         if (connect(fd, rp->ai_addr, rp->ai_addrlen) == 0) break;
         close(fd);
         fd = -1;
@@ -104,9 +160,13 @@ static int tcp_connect(const char *host, tycho_int port) {
     return fd;
 }
 
-void *tlsx_connect(const char *host, tycho_int port) {
-    int fd = tcp_connect(host, port);
+/* `ms` == 0 keeps the old unbounded behaviour (the same default `net.connect`
+ * has); ms > 0 bounds the TCP connect AND the handshake, then clears the socket
+ * timeouts again so the connection reads the way the caller expects. */
+void *tlsx_connect_timeout(const char *host, tycho_int port, tycho_int ms) {
+    int fd = tcp_connect(host, port, ms);
     if (fd < 0) return NULL;
+    if (ms > 0 && !tls_set_sock_timeout(fd, ms)) { close(fd); return NULL; }
     SSL_CTX *ctx = SSL_CTX_new(TLS_client_method());
     if (!ctx) { close(fd); return NULL; }
     SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL);            /* require a valid cert */
@@ -122,10 +182,22 @@ void *tlsx_connect(const char *host, tycho_int port) {
     if (SSL_connect(ssl) != 1) {                               /* handshake + cert/hostname verification */
         SSL_free(ssl); SSL_CTX_free(ctx); close(fd); return NULL;
     }
+    if (ms > 0) (void)tls_set_sock_timeout(fd, 0);              /* handshake done: unbound again */
     Tls *t = (Tls *)malloc(sizeof *t);
     if (!t) { SSL_free(ssl); SSL_CTX_free(ctx); close(fd); return NULL; }
     t->ctx = ctx; t->ssl = ssl; t->fd = fd;
     return t;
+}
+
+void *tlsx_connect(const char *host, tycho_int port) {
+    return tlsx_connect_timeout(host, port, 0);
+}
+
+/* Bound every later read/write on an established connection. 0 clears it.
+ * Returns 1 on success, 0 on failure -- the net.set_read_timeout_ms shape. */
+tycho_int tlsx_set_timeout(void *p, tycho_int ms) {
+    if (!p || ms < 0) return 0;
+    return tls_set_sock_timeout(((Tls *)p)->fd, ms) ? 1 : 0;
 }
 
 /* Write the whole buffer over the encrypted stream; bytes sent (== len) or -1. */

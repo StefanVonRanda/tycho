@@ -74,7 +74,7 @@ fn _nest_aff_e(cs: inout C, t: string):
 
 # ------------------------------------------------------------ newtype `under`
 #
-# src/tychoc.c:4808. A fixed or bounded array is still an array (IS_ARRC covers
+# src/tychoc.c:4833. A fixed or bounded array is still an array (IS_ARRC covers
 # both), so `fix`/`bnd` are in the list; a generic instance is `?` and passes.
 fn _newtype_under_ok(cs: inout C, u: string) -> bool:
     if not known(u):
@@ -97,7 +97,7 @@ fn _newtype_check(cs: inout C, u: string):
 
 # -------------------------------------------------------------- bounded[N]T
 #
-# src/tychoc.c:2396-2403. Three rules, and the capacity one needs the const's
+# src/tychoc.c:2421-2428. Three rules, and the capacity one needs the const's
 # VALUE, not just its existence -- `bounded[CAP]int` at `const CAP = 0` is the
 # fixture, and a checker that only asked "is CAP a const" would accept it.
 fn _bnd_size(cs: inout C, sz: string) -> string:
@@ -132,7 +132,7 @@ fn _bnd_elem(cs: inout C, el: string):
 
 # ------------------------------------------------------------------- the FFI
 #
-# src/tychoc.c:4524-4543 and the two die sites at :4585 / :4611. The sized
+# src/tychoc.c:4549-4568 and the two die sites at :4585 / :4611. The sized
 # numerics are accepted because parse_type consumes the sized-type NAME in an
 # extern signature and hands back `int`; tychoc1 keeps the spelling, so the
 # names are listed.
@@ -163,7 +163,7 @@ fn _ffi_ret_ok(cs: inout C, t: string) -> bool:
 
 # ------------------------------------------------- affine `inout` and `sink`
 #
-# src/tychoc.c:4329. Passing an affine value plainly is ALREADY a borrow, so
+# src/tychoc.c:4354. Passing an affine value plainly is ALREADY a borrow, so
 # neither modifier has anything to do; the fixtures are affine_inout_chan,
 # affine_sink_param and chan_inout_param.
 fn _aff_param_check(cs: inout C, name: string, t: string, flag: string):
@@ -181,7 +181,7 @@ fn _aff_param_check(cs: inout C, name: string, t: string, flag: string):
 # every body diagnostic in the build.
 
 # A `[$N]T` size parameter is meaningful only in a generic fn parameter, where
-# the argument fixes N. src/tychoc.c:9262 / :9219 / :9226.
+# the argument fixes N. src/tychoc.c:9303 / :9219 / :9226.
 fn _has_sizeparam(t: ast.Ty) -> bool:
     match t:
         ast.TFix(sz, k):
@@ -214,7 +214,7 @@ fn _has_sizeparam(t: ast.Ty) -> bool:
         _: return false
     return false
 
-# A struct FIELD may not be a channel (src/tychoc.c:9252) nor a handle
+# A struct FIELD may not be a channel (src/tychoc.c:9293) nor a handle
 # (:4697); a task has no type syntax and cannot be written in one.
 fn _field_aff(cs: inout C, dline: int, t: string):
     k := _aff_kind(&cs, t)
@@ -225,14 +225,14 @@ fn _field_aff(cs: inout C, dline: int, t: string):
     if k == "chan":
         _cperr(&cs, "a struct field cannot be a channel")
     else:
-        # The handle arm (src/tychoc.c:4715) blames the FIELD, not the struct
+        # The handle arm (src/tychoc.c:4740) blames the FIELD, not the struct
         # header the channel arm blames.
         cs.line = keep
         _cperr(&cs, _aff_msg(k))
     cs.line = keep
 
 # Is this written type an instance of a DECLARED generic -- `Pool($T)` rather
-# than a bare name? src/tychoc.c:4458 refuses one as a subscript receiver.
+# than a bare name? src/tychoc.c:4483 refuses one as a subscript receiver.
 fn _ty_generic_inst(cs: inout C, t: ast.Ty) -> bool:
     match t:
         ast.TName(q, n, targs):
@@ -244,7 +244,7 @@ fn _ty_generic_inst(cs: inout C, t: ast.Ty) -> bool:
         _: return false
     return false
 
-# src/tychoc.c:8373-8387. An affine value may be BOUND only by the expression
+# src/tychoc.c:8398-8412. An affine value may be BOUND only by the expression
 # that creates it: `spawn` for a task, a call for a handle (only an `extern fn`
 # opener produces one), `channel(...)` for a channel. `e := c` is the copy this
 # refuses, and it is the shape a golden cannot see -- the program still runs.
@@ -260,7 +260,7 @@ fn _aff_bind_check(cs: inout C, t: string, rhs: ast.Expr):
         if not (rhs is ast.ChanE):
             _cerr(&cs, "a channel cannot be copied -- it is freed once, when its creating scope exits, and a second name hides every send and receive from the compiler's analysis; bind the channel(...) directly, or pass this one as an argument")
 
-# src/tychoc.c:8443-8449 -- rebinding orphans the value the scope-exit free
+# src/tychoc.c:8468-8474 -- rebinding orphans the value the scope-exit free
 # targets. `want` is the VARIABLE's type, read before the rhs is scored.
 fn _aff_reassign_check(cs: inout C, name: string, vt: string):
     k := _aff_kind(&cs, vt)
@@ -557,7 +557,7 @@ fn _generic_call2(cs: inout C, l: int, si: int, spelt: string, ts: [ast.Ty], arg
             return "?"
     # The instance's SUBSTITUTED parameter types, which is where the affine
     # rules bite: `inout $T` is legal until `$T` is bound at a channel
-    # (src/tychoc.c:9046, and the note beside check_inout_param_type).
+    # (src/tychoc.c:9071, and the note beside check_inout_param_type).
     for i := 0; i < len(cs.sg[si].pty) and i < len(cs.sg[si].pflags); i += 1:
         if cs.sg[si].pflags[i] == "inout" or cs.sg[si].pflags[i] == "sink":
             pt := _subst(&cs, cs.sg[si], cs.sg[si].pty[i], b)
@@ -709,7 +709,7 @@ fn _tp_in_params(cs: inout C, s: FSig, tp: string) -> bool:
                 return true
     return false
 
-# src/tychoc.c:8439 -- `x := Ok(1)` has no Result type of its own: the error
+# src/tychoc.c:8464 -- `x := Ok(1)` has no Result type of its own: the error
 # side is unknowable from the value. A call that RETURNS a Result is fine, and
 # an annotation supplies both sides, so the rule is narrow on purpose.
 fn _bare_result(cs: inout C, t: string, rhs: ast.Expr):
@@ -754,7 +754,7 @@ fn _alias_check(cs: inout C, name: string, s: FSig, args: [ast.Expr], line: int)
                 _cerr(&cs, "variable '" + r + "' passed to two inout parameters of '" + name + "' (overlapping mutable access)")
                 return
         # Scoped to a BARE by-value variable: `a[i]` and `a.f` are distinct
-        # extracted values and are left alone (src/tychoc.c:7197).
+        # extracted values and are left alone (src/tychoc.c:7222).
         for j := 0; j < len(args); j += 1:
             if j == i or (j < n and s.pflags[j] == "inout"):
                 continue
@@ -776,7 +776,7 @@ fn _alias_check(cs: inout C, name: string, s: FSig, args: [ast.Expr], line: int)
 
 # The variable an argument is ROOTED at: `&g.cells[i]` and `a[1:2]` are both
 # rooted at their bare name. `Addr` and `Slice` unwrap, then field and index
-# steps do, exactly as src/tychoc.c:7186 walks `E_FIELD`/`E_INDEX`.
+# steps do, exactly as src/tychoc.c:7211 walks `E_FIELD`/`E_INDEX`.
 fn _place_root(e: ast.Expr) -> string:
     match e:
         ast.Name(l, nm): return nm
@@ -805,7 +805,7 @@ fn _inst_key(m: string, enc: [string]) -> string:
         k = k + enc[i]
     return k
 
-# `Box(int)` written as a TYPE. src/tychoc.c:2605 / :2616: the arguments must be
+# `Box(int)` written as a TYPE. src/tychoc.c:2630 / :2616: the arguments must be
 # EITHER exactly the declaration's own parameters, in order (a recursive
 # reference from inside the template), OR all concrete. A list mixing the two --
 # `Box([$T])` -- is refused, and that is generic_partial_struct/_enum.
@@ -1376,7 +1376,7 @@ fn _pf_body(cs: inout C, b: [ast.Stmt], loc: [string: bool], depth: int,
                             _cerr(&cs, "reduction accumulator '" + n + "' may only be updated, not read, inside parallel for")
                         # one accumulator, one op: the runtime seeds each chunk's
                         # private copy from the op's identity, so + and * on the
-                        # same name have no single seed (src/tychoc.c:7842).
+                        # same name have no single seed (src/tychoc.c:7867).
                         o := _pf_op(r[0])
                         if n in accop and accop[n] != o:
                             _cerr(&cs, "accumulator '" + n + "' must use one reduction op consistently")

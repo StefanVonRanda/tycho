@@ -2247,12 +2247,31 @@ static void affine_slot_check(Type t, int line, const char *slot, const char *ow
     if (k) die_at(line, "%s cannot be a %s -- '%s' was instantiated at one", slot, k, owner);
 }
 
+/* Is `ex` the struct instance of `tmpl` at exactly these bindings? The mangled
+ * name alone cannot answer that: `__` is the separator and `_` is legal inside an
+ * identifier, so `Box$([]int)` and `Box$(arr_int)` -- a user struct of that name --
+ * both spell `Box__arr_int`. Reusing on the name alone hands back the wrong
+ * instance, so the callers below bump the name until it is free. */
+static int inst_binds_match(int from_tmpl, const Type *from_args, int nfrom,
+                            int tmpl, const Type *typarams, int ntp, const Type *binds) {
+    if (from_tmpl != tmpl || nfrom != ntp) return 0;
+    for (int i = 0; i < ntp; i++)
+        if (from_args[i] != binds[(int)(typarams[i] - T_TYPARAM_BASE)]) return 0;
+    return 1;
+}
+
 static int struct_instantiate(int tmpl, Type *binds) {
-    char *nm = g_structs[tmpl].name;
+    char *base = g_structs[tmpl].name;
     for (int i = 0; i < g_structs[tmpl].ntyparams; i++)
-        nm = sfmt("%s__%s", nm, type_mangle_ident(binds[(int)(g_structs[tmpl].typarams[i] - T_TYPARAM_BASE)]));
-    int ex = struct_find(nm);
-    if (ex >= 0) return ex;
+        base = sfmt("%s__%s", base, type_mangle_ident(binds[(int)(g_structs[tmpl].typarams[i] - T_TYPARAM_BASE)]));
+    char *nm = base;
+    int ex;
+    for (int bump = 2; (ex = struct_find(nm)) >= 0; bump++) {
+        if (inst_binds_match(g_structs[ex].from_tmpl, g_structs[ex].from_args, g_structs[ex].nfrom_args,
+                             tmpl, g_structs[tmpl].typarams, g_structs[tmpl].ntyparams, binds))
+            return ex;
+        nm = sfmt("%s_%d", base, bump);
+    }
     if (g_nstructs >= T_ARRC_BASE - T_STRUCT_BASE) die_at(g_structs[tmpl].line, "too many structs");
     TBL_ENSURE(g_structs, g_nstructs, g_structs_cap);
     int id = g_nstructs++;
@@ -2286,11 +2305,17 @@ static int struct_instantiate(int tmpl, Type *binds) {
  * `match` are keyed on the matched enum, not the global variant table), so the
  * instance is an ordinary (non-generic) enum from here on. */
 static int enum_instantiate(int tmpl, Type *binds) {
-    char *nm = g_enums[tmpl].name;
+    char *base = g_enums[tmpl].name;
     for (int i = 0; i < g_enums[tmpl].ntyparams; i++)
-        nm = sfmt("%s__%s", nm, type_mangle_ident(binds[(int)(g_enums[tmpl].typarams[i] - T_TYPARAM_BASE)]));
-    int ex = enum_find(nm);
-    if (ex >= 0) return ex;
+        base = sfmt("%s__%s", base, type_mangle_ident(binds[(int)(g_enums[tmpl].typarams[i] - T_TYPARAM_BASE)]));
+    char *nm = base;
+    int ex;
+    for (int bump = 2; (ex = enum_find(nm)) >= 0; bump++) {
+        if (inst_binds_match(g_enums[ex].from_tmpl, g_enums[ex].from_args, g_enums[ex].nfrom_args,
+                             tmpl, g_enums[tmpl].typarams, g_enums[tmpl].ntyparams, binds))
+            return ex;
+        nm = sfmt("%s_%d", base, bump);
+    }
     if (g_nenums >= T_TUP_BASE - T_ENUM_BASE) die_at(g_enums[tmpl].line, "too many enums");
     TBL_ENSURE(g_enums, g_nenums, g_enums_cap);
     int id = g_nenums++;
@@ -2525,7 +2550,7 @@ static Type parse_type_inner(Parser *ps) {
             return mt;
         }
         eat(ps, TK_RBRACKET, "']'");
-        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2468) sits after a die_at */
+        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2493) sits after a die_at */
             die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
         return arr_of(elem);   /* fixed [int]/[float]/[string] or a composite */
     }
@@ -2888,7 +2913,7 @@ static Expr *parse_primary(Parser *ps) {
                 e->ival = mt; e->op = TK_COLON;
                 return e;
             }
-            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2286): parse_type never yields T_VOID */
+            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2305): parse_type never yields T_VOID */
                 die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
             e->ival = arr_of(elem);   /* type carried to the resolver */
             return e;
@@ -5798,7 +5823,7 @@ static void collect_idents(Expr *e, const char **out, int *n, int cap) {
     }
     if (e->kind == E_CALL) {   /* Neither name on a call is a child expr: the callee lives in
                                 * sval (`g(x)` where g is a closure) and a method call's RECEIVER
-                                * lives in qual (`m.get(k)`, src/tychoc.c:3257), because the parser
+                                * lives in qual (`m.get(k)`, src/tychoc.c:3282), because the parser
                                 * cannot tell it from a package call. Both are outer reads; missing
                                 * qual let `m` reach the lifted body uncaptured and the C compiler,
                                 * not tychoc, reported `h_m undeclared`. pf_scan_expr already does
@@ -7116,7 +7141,7 @@ static Type resolve_expr_inner(Expr *e) {
             if (e->nargs != s->nparams)
                 die_at(e->line, "'%s' takes %d argument(s), got %d",
                        nominal_name(e->sval), s->nparams, e->nargs);
-            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:6583 */
+            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:6608 */
             for (int i = 0; i < e->nargs; i++) {
                 g_in_arg++;
                 Type at_ = resolve_exp(e->args[i], s->params[i]);   /* fixes a None arg */
@@ -7706,7 +7731,7 @@ static void pf_capture(Expr *id) {
 /* capture an outer local named by a STRING rather than by an E_IDENT node -- the
  * callee of `f(x)` and the receiver of `o.f(x)` live in E_CALL's sval/qual, not
  * in a child expr. The synthesized read is resolved in the enclosing scope with
- * every other capture (src/tychoc.c:8318). Non-locals (global fns, builtins,
+ * every other capture (src/tychoc.c:8343). Non-locals (global fns, builtins,
  * enum constructors, package qualifiers) fail vars_find and are dropped. */
 static void pf_capture_name(const char *n, int line) {
     Type vt;
@@ -7729,10 +7754,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7666),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7691),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:7940). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:7965). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
@@ -7753,7 +7778,7 @@ static void pf_scan_expr(Expr *e) {
     }
     /* A call's callee is NOT an E_IDENT child of the node: `f(x)` keeps the name
      * in sval, and `o.f(x)` keeps the receiver in qual because the parser cannot
-     * tell it from a package call (src/tychoc.c:3251). The generic descent below
+     * tell it from a package call (src/tychoc.c:3276). The generic descent below
      * visits lhs/rhs/args only, so a fn-typed local reached the lifted chunk proc
      * uncaptured and the C compiler -- not tychoc -- reported the undeclared name.
      * The lambda capture analysis already does the sval half (src/tychoc.c@collect_idents). */
@@ -9067,8 +9092,24 @@ static void instantiate_generic(Proc *gt, Expr *e) {
         die_at(e->line, "a function cannot return a channel -- create it in the owning scope and pass it down");
     for (int j = 0; j < gt->nparams; j++)
         check_inout_param_type(e->line, cparams[j], gt->params[j].is_inout, gt->params[j].name);
+    /* Same non-injectivity as struct_instantiate's: `ident$([]int)` and
+     * `ident$(arr_int)` both spell `ident__arr_int`, and reusing on the name alone
+     * resolved the second call to the first instance. Reuse only when the recorded
+     * GInst is this template at these bindings; otherwise bump until the name is free. */
+    for (int bump = 2; sig_find(nm); bump++) {
+        int same = 0;
+        for (int k = 0; k < g_nginsts && !same; k++) {
+            if (g_ginsts[k].tmpl != gt || strcmp(g_ginsts[k].name, nm)) continue;
+            same = 1;
+            for (int i = 0; i < gt->ntyparams; i++) {
+                int ti = (int)(gt->typarams[i] - T_TYPARAM_BASE);
+                if (g_ginsts[k].binds[ti] != binds[ti]) { same = 0; break; }
+            }
+        }
+        if (same) { e->sval = nm; g_sizebinds = saved_sb; return; }   /* already instantiated */
+        nm = sfmt("%s_%d", nm, bump);
+    }
     e->sval = nm;                                     /* rewrite the call to the instance */
-    if (sig_find(nm)) { g_sizebinds = saved_sb; return; }   /* already instantiated */
     Sig s; memset(&s, 0, sizeof s);
     s.name = nm; s.ret = cret; s.nparams = gt->nparams; s.builtin = 0;
     for (int j = 0; j < gt->nparams; j++) { s.params[j] = cparams[j]; s.inout[j] = gt->params[j].is_inout; s.sink[j] = gt->params[j].is_sink; s.variadic[j] = gt->params[j].is_variadic; }
@@ -9483,7 +9524,7 @@ static const char *for3_elidable_arr(Stmt *s) {
     if (!bound || bound->kind != E_CALL || !bound->sval || strcmp(bound->sval, "len") ||
         bound->nargs != 1 || !bound->args[0] || bound->args[0]->kind != E_IDENT) return NULL;
     if (IS_BOUNDED(bound->args[0]->type)) return NULL;   /* bounded stores in .v, not .data — elision emits .data[i], so never elide it */
-    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:4016-4021) */
+    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:4041-4046) */
     if (!post || post->kind != S_ASSIGN || !post->name || strcmp(post->name, iv)) return NULL;
     Expr *inc = post->expr;
     if (!inc || inc->kind != E_BINOP || inc->op != TK_PLUS) return NULL;

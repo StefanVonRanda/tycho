@@ -9,6 +9,12 @@
 # `bytes`. Built on the same POSIX sockets that core:net uses, wrapped in TLS.
 #
 #   tls.connect(host, port) -> ptr    Connect + TLS handshake + verify; null on failure.
+#   tls.connect_timeout(host, port, ms) -> ptr   The same, with the TCP connect and
+#                                     the handshake bounded at `ms` milliseconds --
+#                                     `connect` waits as long as the OS does, so a
+#                                     host that black-holes packets pins the caller.
+#   tls.set_timeout_ms(conn, ms) -> bool   Bound every later read/write on an
+#                                     established connection (0 clears it).
 #   tls.write(conn, data)   -> int    Send over the encrypted stream; bytes sent or -1.
 #   tls.read(conn, max)     -> bytes  Read up to `max` decrypted bytes; empty on close/error.
 #   tls.close_conn(conn)              Shut down and free (safe on a null handle).
@@ -17,12 +23,23 @@ package tls
 
 # ---- shim externs (OpenSSL; defined in tls_shim.c) ----
 extern fn tlsx_connect(host: string, port: int) -> ptr    # opaque TLS-connection handle; null on failure
+extern fn tlsx_connect_timeout(host: string, port: int, ms: int) -> ptr
+extern fn tlsx_set_timeout(conn: ptr, ms: int) -> int
 extern fn tlsx_write(conn: ptr, data: bytes) -> int
 extern fn tlsx_read(conn: ptr, max: int) -> bytes
 extern fn tlsx_close(conn: ptr)
 
 fn connect(host: string, port: int) -> ptr:
     return tlsx_connect(host, port)
+
+# Connect with the TCP connect and the TLS handshake each bounded at `ms`
+# milliseconds. `ms <= 0` is the unbounded `connect` above.
+fn connect_timeout(host: string, port: int, ms: int) -> ptr:
+    return tlsx_connect_timeout(host, port, ms)
+
+# Bound every later read and write on `conn`; 0 clears the bound. False on failure.
+fn set_timeout_ms(conn: ptr, ms: int) -> bool:
+    return tlsx_set_timeout(conn, ms) == 1
 
 fn write(conn: ptr, data: bytes) -> int:
     return tlsx_write(conn, data)

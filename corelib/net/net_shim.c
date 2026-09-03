@@ -142,7 +142,7 @@ tycho_int netx_port_of(tycho_int fd) {
  * one listening fd, so a single shared buffer would be a data race on the one
  * field an access log wants most (crypto_shim.c:43 sets the same precedent). The
  * caller only ever sees a copy anyway -- an extern `-> string` return is wrapped
- * in tycho_str_copy at the call site (src/tychoc.c:9390-9393), so the borrow ends
+ * in tycho_str_copy at the call site (src/tychoc.c:9431-9434), so the borrow ends
  * before the next request can overwrite it. */
 const char *netx_peer_addr(tycho_int fd) {
     static __thread char buf[INET6_ADDRSTRLEN];
@@ -289,7 +289,7 @@ void netx_udp_read(tycho_int fd, tycho_int max, unsigned char **out, tycho_int *
  * Returns -2 on timeout, -1 on failure, or the connected fd. */
 #ifndef _WIN32
 #include <fcntl.h>
-#include <sys/select.h>
+#include <poll.h>               /* not select(): select cannot see a listener at fd >= FD_SETSIZE */
 #endif
 #include <limits.h>
 static int ty_set_nonblocking(int fd, int on) {
@@ -304,34 +304,52 @@ static int ty_set_nonblocking(int fd, int on) {
 #endif
 }
 
+/* Wait up to `ms` for a connection, then accept it. The listener is put into
+ * non-blocking mode only for the accept and put BACK on every exit path: leaving
+ * it non-blocking made a later plain `net.accept` on the same listener return
+ * EAGAIN at once instead of waiting. poll() replaces select() because select's
+ * fd_set cannot represent a descriptor at or above FD_SETSIZE (1024) at all, so
+ * a busy process could not use this call. */
 tycho_int netx_accept_wait(tycho_int fd, tycho_int ms) {
     if (fd < 0 || ms < 0 || ms > INT_MAX) return -1;
 #ifndef _WIN32
-    if (fd >= FD_SETSIZE) return -1;
+    int was_flags = fcntl((int)fd, F_GETFL, 0);
+    if (was_flags < 0) return -1;
 #endif
     if (!ty_set_nonblocking((int)fd, 1)) return -1;
+#ifdef _WIN32
     fd_set ready;
     FD_ZERO(&ready);
-    FD_SET((int)fd, &ready);
+    FD_SET((SOCKET)fd, &ready);
     struct timeval tv;
     tv.tv_sec = (long)(ms / 1000);
     tv.tv_usec = (long)((ms % 1000) * 1000);
-#ifdef _WIN32
     int selected = select(0, &ready, NULL, NULL, &tv);
 #else
-    int selected = select((int)fd + 1, &ready, NULL, NULL, &tv);
+    struct pollfd pfd;
+    pfd.fd = (int)fd; pfd.events = POLLIN; pfd.revents = 0;
+    int selected;
+    do { selected = poll(&pfd, 1, (int)ms); } while (selected < 0 && errno == EINTR);
 #endif
-    if (selected == 0) return -2;
-    if (selected < 0) return -1;
-    tycho_int conn = netx_accept(fd);
-    if (conn < 0) {
+    tycho_int rc;
+    if (selected == 0) { rc = -2; goto done; }
+    if (selected < 0)  { rc = -1; goto done; }
+    rc = netx_accept(fd);
+    if (rc < 0) {
 #ifndef _WIN32
-        if (errno == EAGAIN || errno == EWOULDBLOCK) return -2;
+        if (errno == EAGAIN || errno == EWOULDBLOCK) rc = -2;
 #else
-        if (WSAGetLastError() == WSAEWOULDBLOCK) return -2;
+        if (WSAGetLastError() == WSAEWOULDBLOCK) rc = -2;
 #endif
-        return -1;
+        else rc = -1;
+        goto done;
     }
-    if (!ty_set_nonblocking((int)conn, 0)) { TY_CLOSE((int)conn); return -1; }
-    return conn;
+    if (!ty_set_nonblocking((int)rc, 0)) { TY_CLOSE((int)rc); rc = -1; }
+done:
+#ifndef _WIN32
+    (void)fcntl((int)fd, F_SETFL, was_flags);   /* restore the listener exactly as it was */
+#else
+    (void)ty_set_nonblocking((int)fd, 0);
+#endif
+    return rc;
 }

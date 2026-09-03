@@ -160,7 +160,11 @@ fn scheduler(jobs: Channel(int), done: Channel(Done), rules: [Rule], by_name: [s
             failed_dep := false
             for d in rules[r].deps:
                 di := by_name.get(d, -1)
-                if di >= 0 and st[di] == 3:
+                # 4 (skipped) as well as 3 (failed): a dep that was itself skipped
+                # never ran, so this rule's inputs are missing exactly as if the dep
+                # had failed. Checking only 3 propagated a failure ONE level and then
+                # ran everything above it.
+                if di >= 0 and (st[di] == 3 or st[di] == 4):
                     failed_dep = true
                     break
             if failed_dep:
