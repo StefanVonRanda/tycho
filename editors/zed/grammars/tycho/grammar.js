@@ -69,7 +69,7 @@ module.exports = grammar({
         "substr", "find", "read_file", "write_file", "read_all", "list_dir",
         "args", "getenv", "input", "chr", "die", "is_null", "sqrt", "pow",
         "floor", "fabs", "reserve",
-        // `map_get`/`map_set` were here and are NOT builtins: src/tychoc.c:3080-3083
+        // `map_get`/`map_set` were here and are NOT builtins: src/tychoc.c:3086-3089
         // rejects a user-typed call outright, so this painted names the compiler
         // refuses -- the same defect the `range` note above records.
         "channel", "char_at", "clock", "close", "eprint", "exit", "from_bytes",

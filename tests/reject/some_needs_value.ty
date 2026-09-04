@@ -1,4 +1,4 @@
-# src/tychoc.c:6138 -- Some(x) wraps a VALUE; a call to a procedure is none.
+# src/tychoc.c:6144 -- Some(x) wraps a VALUE; a call to a procedure is none.
 # expect: Some(...) needs a concrete value
 fn nop():
     println("x")

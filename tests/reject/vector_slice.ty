@@ -1,0 +1,7 @@
+# expect: cannot slice a vector[4]float value; copy it into a [float] first
+# Inherited from `[N]T`, not introduced by vectors -- the same program written
+# with [4]float is tests/reject/fixarr_slice.ty and fails identically.
+fn main():
+    v: vector[4]float = [1.0, 2.0, 3.0, 4.0]
+    w := v[0:2]
+    println(str(len(w)))

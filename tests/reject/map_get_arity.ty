@@ -1,4 +1,4 @@
-# src/tychoc.c:6529 -- the m.get sugar takes a key and an optional default.
+# src/tychoc.c:6538 -- the m.get sugar takes a key and an optional default.
 # expect: m.get(key) or m.get(key, default) takes one or two arguments (got 3)
 fn main():
     m := []string: int

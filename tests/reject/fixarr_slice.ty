@@ -1,0 +1,8 @@
+# expect: cannot slice a [4]float value; copy it into a [float] first
+# A `[N]T` stores its elements INLINE (a `.v[N]` member), so there is no `.data`
+# for a slice to view. `bounded[N]T` is refused for the same reason and always
+# was; the plain fixed array fell through and died as a gcc error instead.
+fn main():
+    v: [4]float = [1.0, 2.0, 3.0, 4.0]
+    w := v[1:3]
+    println(str(len(w)))

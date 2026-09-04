@@ -2,7 +2,7 @@
 # tuple BEFORE B is entered and the cycle closes on that node, not on B.
 # tychoc1 three-colours the same graph now, so the whole message is pinned.
 # expect: infinite type: a tuple contains itself by value
-# src/tychoc.c:13019
+# src/tychoc.c:13032
 struct A:
     b: (B, int)
 

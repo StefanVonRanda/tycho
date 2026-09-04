@@ -1,4 +1,4 @@
-# src/tychoc.c:7097
+# src/tychoc.c:7106
 # expect: push(arr, value) takes two arguments
 fn main():
     xs := []int

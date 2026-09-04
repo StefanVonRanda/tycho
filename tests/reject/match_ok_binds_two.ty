@@ -1,4 +1,4 @@
-# src/tychoc.c:8402 -- the Ok side carries ONE payload; two binding names have
+# src/tychoc.c:8415 -- the Ok side carries ONE payload; two binding names have
 # nothing to bind the second to.
 # expect: Ok(x) binds exactly one value
 fn mk() -> Result(int, string):

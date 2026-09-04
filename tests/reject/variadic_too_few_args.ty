@@ -1,4 +1,4 @@
-# src/tychoc.c:7196 -- a variadic call may pass no trailing arguments, but it
+# src/tychoc.c:7209 -- a variadic call may pass no trailing arguments, but it
 # must still pass every FIXED one.
 # tychoc1 ACCEPTED this under --typecheck until the check was ported into
 # compiler/types/tcheck.ty; both now word it identically.

@@ -1,0 +1,47 @@
+# Iterating a `[N]T` / `vector[N]T`, which is what the bounds-check ELISION got
+# wrong. Both loop shapes below -- `for x in v` and the C-style indexed one --
+# match the elision pattern `i := 0; i < len(A); i += 1`, and elision emits the
+# raw `A.data[i]`. An inline-storage array has `.v[N]` and no `.data`, so every
+# one of these died as a gcc error naming a generated struct. `bounded[N]T` was
+# excluded from elision and worked; `[N]T` and `vector[N]T` were not.
+#
+# The golden cannot see the elision -- a correct elided access and a correct
+# checked one print the same digits. What it pins is that the program COMPILES
+# and reads every lane, on all three inline kinds and through a struct field.
+
+struct Row:
+    cells: [3]int
+
+fn sum_fix(v: [4]float) -> float:
+    t := 0.0
+    for x in v:                      # desugars to the elidable indexed loop
+        t = t + x
+    return t
+
+fn main():
+    v: [4]float = [1.0, 2.0, 3.0, 4.0]
+    println(str(sum_fix(v)))
+    for i := 0; i < len(v); i += 1:  # the elision pattern written out by hand
+        print(str(v[i]) + " ")
+    println("")
+
+    w: vector[4]int = [10, 20, 30, 40]
+    s := 0
+    for x in w:
+        s = s + x
+    println(str(s))
+    for i := 0; i < len(w); i += 1:
+        print(str(w[i]) + " ")
+    println("")
+
+    b: bounded[4]int = [7, 8]        # the kind that already worked -- kept as the control
+    n := 0
+    for x in b:
+        n = n + x
+    println(str(n))
+
+    r := Row([5, 6, 7])              # inline array reached through a struct field
+    m := 0
+    for i := 0; i < len(r.cells); i += 1:
+        m = m + r.cells[i]
+    println(str(m))

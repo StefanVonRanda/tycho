@@ -95,9 +95,9 @@ precedent — Go, Swift, and Odin all reject a bare `nil`/`None` declaration out
 / `None` pending convenience, so Tycho keeps it and documents the `Result` limit
 instead.)
 
-> Provenance: pending deferral `src/tychoc.c:7944-7956`, grounding `pend_ground`
-> `:5588-5620`; rejection of ungrounded `None` / immediate rejection of bare
-> `Ok`/`Err` `:8239-8244`.
+> Provenance: pending deferral `src/tychoc.c:7957-7969`, grounding `pend_ground`
+> `:5594-5626`; rejection of ungrounded `None` / immediate rejection of bare
+> `Ok`/`Err` `:8252-8257`.
 
 ## 6.5 Branch unification for value `if` / `match`
 

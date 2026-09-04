@@ -252,7 +252,7 @@ fn _tup_of(cs: inout C, es: [string]) -> string:
 
 # A map type is stamped out per (key, value) pair exactly as a tuple kind is:
 # the registry key is "K|V" and the type string is "M~<index>". The emitted C
-# mirrors src/tychoc.c:13181's compact indexed dict -- an int32 index table over
+# mirrors src/tychoc.c:13194's compact indexed dict -- an int32 index table over
 # dense insertion-ordered entries -- so keys() order and str() form agree.
 # The `$N` a parameter's written type names, if it is `[$N]T`. Emit lowers every
 # array to the dynamic one, so N is not a monomorphisation key here: inside the
@@ -371,7 +371,7 @@ fn _mpfx(cs: inout C, t: string) -> string:
     return "tycho_mapM" + _tname(t)
 
 # A soa type is stamped out per ELEMENT STRUCT, keyed by the struct's type
-# string, and spelled "O~<index>". src/tychoc.c:13321 emits the same shape: one
+# string, and spelled "O~<index>". src/tychoc.c:13334 emits the same shape: one
 # growable arena buffer per field plus a shared len/cap.
 fn _is_soa(t: string) -> bool:
     return strings.starts_with(t, "O~")
@@ -407,7 +407,7 @@ fn _soafld(cs: inout C, bc: string, bt: string, ic: string, f: string) -> (strin
     return ("", "")
 
 # How a key is REPRESENTED in the entry table: a fieldless enum is stored as its
-# tag, so `keys()` has to rebuild the singleton (src/tychoc.c:13213).
+# tag, so `keys()` has to rebuild the singleton (src/tychoc.c:13226).
 fn _kclass(cs: inout C, k: string) -> string:
     if k == "string":
         return "str"
@@ -462,7 +462,7 @@ fn _kcopy(cs: inout C, k: string) -> string:
     return _copy(&cs, "k", k, "a")
 
 # A struct/tuple key hashes field-wise, FNV-folded from the per-process seed --
-# src/tychoc.c:10389's gen_hash, which is what makes `==`-equal values hash equal.
+# src/tychoc.c:10402's gen_hash, which is what makes `==`-equal values hash equal.
 fn _hashable(cs: inout C, t: string) -> bool:
     return _hashable_d(&cs, t, 0)
 
@@ -762,7 +762,7 @@ fn _apfx(cs: inout C, elem: string) -> string:
     return "tycho_arr_K" + str(_akind(&cs, elem))
 
 # --- generics: monomorphised, one deep instance per distinct binding ---------
-# src/tychoc.c:13060 clones the template body per instance and resolves it; the
+# src/tychoc.c:13073 clones the template body per instance and resolves it; the
 # same shape here, with a `tpn/tpv` binding stack instead of a substitution pass.
 # A binding is pushed while an instance's types (or body) are resolved and popped
 # after, so a nested instantiation sees only its own parameters.
@@ -893,7 +893,7 @@ fn _tmang(cs: inout C, t: string) -> string:
         return _tname(t)
     return ""
 
-# src/tychoc.c:2263 and :2273 append one `__<type>` per type PARAMETER.
+# src/tychoc.c:2269 and :2273 append one `__<type>` per type PARAMETER.
 fn _instname(cs: inout C, gn: string, targs: [string]) -> string:
     out := gn
     for i := 0; i < len(targs); i += 1:
@@ -1494,7 +1494,7 @@ fn _fresh(cs: inout C, p: string) -> string:
     cs.tmp += 1
     return p + str(n)
 
-# --- the per-iteration loop scratch arena (src/tychoc.c:12535-12555) ---------
+# --- the per-iteration loop scratch arena (src/tychoc.c:12548-12568) ---------
 #
 # A loop opens `Arena _scrN = arena_child(<enclosing>)`, resets it as the FIRST
 # statement of every iteration and frees it after. Correctness comes from the
@@ -1885,7 +1885,7 @@ fn _zero(cs: inout C, t: string) -> string:
 
 fn _eq(cs: inout C, a: string, b: string, t: string) -> string:
     if _is_fn(t):
-        # identity: same thunk and same env -- src/tychoc.c:10433
+        # identity: same thunk and same env -- src/tychoc.c:10446
         return "((" + a + ").call == (" + b + ").call && (" + a + ").env == (" + b + ").env)"
     if t == "string" or t == "bytes":
         # EQUALITY, not order: tycho_str_eq settles on the length headers and
@@ -2128,7 +2128,7 @@ fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
                 return ("(" + rc + ").data[" + ic + "]", et)
             return (_arrf(&cs, et, "_get") + "(" + rc + ", " + ic + ")", et)
         ast.Slice(l, hl, hh, k):
-            # src/tychoc.c:11268-11316 -- the block id is taken BEFORE the subject
+            # src/tychoc.c:11281-11329 -- the block id is taken BEFORE the subject
             # is generated, and one id serves whichever of the three branches runs.
             sid9 := _fresh(&cs, "")
             rc, rt := _ex(&cs, k[0])
@@ -2475,7 +2475,7 @@ fn _fchain(cs: inout C, ps: [string], n: int) -> string:
     return "({ " + pre + out + "); })"
 
 # --- function values --------------------------------------------------------
-# A fn value is the same 3-word FAT POINTER src/tychoc.c:13294 emits:
+# A fn value is the same 3-word FAT POINTER src/tychoc.c:13307 emits:
 # `{ void *env; RET (*call)(void*, Arena*, P...); void *(*copyenv)(Arena*, void*); }`.
 # A reference to a named function has env == 0; a capturing lambda allocates an
 # Env in the arena that owns the value and carries a copier so a returned
@@ -2848,7 +2848,7 @@ fn _tag(cs: inout C, ei: int, vn: string) -> int:
 # form (`*..._ptr`) over the rvalue form (`..._get`), which is the only thing
 # that differs between a write through the projection and a read of it.
 # `g.edge(1)` parses as CallVal with a Field callee, not as Call -- the same
-# split Phase 4 found at src/tychoc.c:4218, where one E_CALL covers both.
+# split Phase 4 found at src/tychoc.c:4224, where one E_CALL covers both.
 fn _subcallval(cs: inout C, k: [ast.Expr], lv: bool) -> (string, string, bool):
     match k[0]:
         ast.Field(l6, r6, f6):
@@ -3289,7 +3289,7 @@ fn _binop(cs: inout C, op: string, ea: ast.Expr, eb: ast.Expr) -> (string, strin
         rt := _num2(at, bt)
         a, b = _widen(a, at, b, bt)
         if rt == "char":
-            # char is one byte, so its arithmetic stays 0..255 -- src/tychoc.c:10955
+            # char is one byte, so its arithmetic stays 0..255 -- src/tychoc.c:10968
             return ("((tycho_int)(unsigned char)((" + a + " " + op + " " + b + ")))", rt)
         if _is_sized(rt):
             return ("(" + _cty(&cs, rt) + ")((" + a + " " + op + " " + b + "))", rt)
@@ -3965,7 +3965,7 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
         c, t := _ex(&cs, args[0])
         if _is_arr(t):
             # [int] -> bytes is a real conversion (each element & 0xFF);
-            # string -> bytes is the same buffer -- src/tychoc.c:10847
+            # string -> bytes is the same buffer -- src/tychoc.c:10860
             return ("tycho_bytes_from_intarr(" + cs.arena + ", " + c + ")", "bytes")
         if _is_struct(t):
             v := _fresh(&cs, "_pkv")
@@ -4161,7 +4161,7 @@ fn _lvalue(cs: inout C, e: ast.Expr) -> (string, string):
 # and is never moved.
 
 # --- bounds-check elision for monotone loop indices -------------------------
-# src/tychoc.c:9569-9673. Inside `for i := 0; i < len(A); i += 1:` the access
+# src/tychoc.c:9582-9686. Inside `for i := 0; i < len(A); i += 1:` the access
 # `A[i]` is provably in [0, len(A)): `len` is an un-redefinable builtin over the
 # true length, Tycho has no in-place array-shrink op, and the body is verified
 # below never to reassign or shadow A or i and never to pass A whole to a call
@@ -4649,7 +4649,7 @@ fn _block(cs: inout C, body: [ast.Stmt], ind: string) -> string:
     m := _mark(&cs)
     out := ""
     for s in body:
-        # -g: src/tychoc.c:11780 puts a `#line` before every statement so a
+        # -g: src/tychoc.c:11793 puts a `#line` before every statement so a
         # debugger steps the .ty source rather than the generated C.
         if len(cs.dbgfile) > 0:
             out = out + "#line " + str(ast.sline_of(s)) + " \"" + cs.dbgfile + "\"\n"
@@ -4708,7 +4708,7 @@ fn _parfor(cs: inout C, b: [ast.Stmt], ind: string, w: [ast.Expr]) -> string:
             _: pass
     # A DECLARED width is the programmer's, so it fails closed rather than
     # clamping silently; the bare form is ncpu() and clamps by design
-    # (src/tychoc.c:11735).
+    # (src/tychoc.c:11748).
     pkg := ""
     if len(w) == 1:
         pkg = "    if (_pk < 1 || _pk > 64) tycho_die(\"parallel width out of range 1..64\");\n"
@@ -5244,7 +5244,7 @@ fn _cunwrap(s: string) -> string:
 fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
     match s:
         ast.PassS(l):
-            return ""                  # src/tychoc.c:12514 -- the no-op emits none
+            return ""                  # src/tychoc.c:12527 -- the no-op emits none
         ast.ExprStmt(l, es):
             # src/tychoc.c@S_EXPR: a top-level statement's transients live in a
             # per-statement arena. Only at the proc top level, and never around
@@ -5313,7 +5313,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             # something builds that call's transients in a per-statement arena.
             sav5 := cs.arena
             uset := sav5 == "&_scope" and _hascall(rhs[0]) and not _hasorr(rhs[0])
-            # src/tychoc.c:11807 -- the return-slot move. A local this function
+            # src/tychoc.c:11820 -- the return-slot move. A local this function
             # hands back by name is built in the caller's arena from birth, so
             # the return copies nothing. Top level only (_curown is still the
             # proc's own &_scope), never a loop or if-body scratch. The arena
@@ -5338,7 +5338,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                 c = _sub_t(c, own5)
             if uset and not _uses_t(c):
                 uset = false
-            # src/tychoc.c:11848 -- `y := f(y)` must land in a temp declared
+            # src/tychoc.c:11861 -- `y := f(y)` must land in a temp declared
             # BEFORE the new C local, or the initialiser reads the inner
             # uninitialised one.
             # A place rooted in a CALL result -- `op := cur(ts, p).text` -- is the
@@ -5378,7 +5378,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                     cn + ")[-1]; tycho_int _cap_" + cn + " = 0;\n"
             return out9
         ast.ConstS(l, n, k):
-            # src/tychoc.c:12513 -- a local const emits NO runtime storage; each
+            # src/tychoc.c:12526 -- a local const emits NO runtime storage; each
             # use folds to the literal. Binding the C "name" to the literal code
             # itself makes _vcname do the folding at every read.
             c, t := _ex(&cs, k[0])
@@ -5441,14 +5441,14 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                                 # intermediates die with the statement -- in the
                                 # function's arena they lived to the end of the
                                 # run (bench/json: 5.7 GiB).
-                                # src/tychoc.c:11970-11976 -- the appended terms
+                                # src/tychoc.c:11983-11989 -- the appended terms
                                 # are built in the ACCUMULATOR'S arena, one plain
                                 # statement each. The `_t` scratch this used was
                                 # an optimisation the reference does not have.
                                 ow9 := _ownerof(&cs, ast.Name(l, n))
                                 sav9 := cs.arena
                                 cs.arena = ow9
-                                # src/tychoc.c:11958-11968 -- two or more pieces
+                                # src/tychoc.c:11971-11981 -- two or more pieces
                                 # are pre-evaluated into `_ap<n>` temps against
                                 # the accumulator's ORIGINAL value, THEN appended
                                 # in source order. The first append grows the
@@ -5602,7 +5602,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             rt := cs.cur_ret
             if rt == "float" and t == "int":
                 c = "(double)(" + c + ")"
-            # src/tychoc.c:12289@cv_in_parent -- a return-slot local already
+            # src/tychoc.c:12302@cv_in_parent -- a return-slot local already
             # lives in the caller's arena, so the copy would duplicate it.
             if not tmpret and not _shares(&cs, k[0], rt, "_parent") and
                     not _inparent(&cs, k[0]):
@@ -5615,7 +5615,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             # finalizers sit after this jump and never run.
             return ind + "{ " + _oneline(_lpfin(&cs)) + "break; }\n"
         ast.ContinueS(l):
-            # src/tychoc.c:12529 -- inside a three-clause `for` the post clause
+            # src/tychoc.c:12542 -- inside a three-clause `for` the post clause
             # sits at the body's end, so `continue` must jump TO it, not over it.
             if len(cs.lpost) > 0 and cs.lpost[len(cs.lpost) - 1] >= 0:
                 return ind + "{ " + _oneline(_lpfin(&cs)) + "goto _post" + str(cs.lpost[len(cs.lpost) - 1]) + "; }\n"
@@ -5629,7 +5629,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             return out + "\n"
         ast.WhileS(l, c, b):
             # the condition is re-evaluated every iteration but belongs to the
-            # ENCLOSING arena, exactly as src/tychoc.c:12541 generates it
+            # ENCLOSING arena, exactly as src/tychoc.c:12554 generates it
             svw := cs.arena
             idw := _fresh(&cs, "_scr")
             lw := cs.lbl
@@ -5669,7 +5669,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             m := _mark(&cs)
             # init runs once and the loop variable is written by the post clause
             # and by the body, so its storage must NOT be the scratch a reset
-            # recycles -- src/tychoc.c:12559-12566 says exactly this.
+            # recycles -- src/tychoc.c:12572-12579 says exactly this.
             sv3 := cs.arena
             k3 := cs.tmp
             id3 := _fresh(&cs, "_scr")
@@ -5689,7 +5689,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                 push(cs.elv, ev3)
                 push(cs.ela, ea3)
             # the post clause is the LAST statement of the body, not a C for
-            # header -- src/tychoc.c:12557-12591 -- and it is generated after it
+            # header -- src/tychoc.c:12570-12604 -- and it is generated after it
             fo3, fn3 := _fuse_open(&cs, b, ind + "    ", c)
             bd3 := _block(&cs, b, ind + "        ")
             post := _stmt(&cs, ip[1], ind + "        ")
@@ -6056,7 +6056,7 @@ fn _patv(cs: inout C, kind: string, v: int, nm: string) -> string:
         _bad("unknown name '" + nm + "' in a match pattern")
     return _ilit(v)
 
-# src/tychoc.c:12429 prints the arm's resolved value with %lld -- no suffix.
+# src/tychoc.c:12442 prints the arm's resolved value with %lld -- no suffix.
 fn _pats(cs: inout C, kind: string, v: int, nm: string) -> string:
     if kind == "name":
         return _patv(&cs, kind, v, nm)
@@ -6187,7 +6187,7 @@ fn _match(cs: inout C, subj: ast.Expr, arms: [ast.Arm], ind: string) -> string:
             push(pats, ast.Pat("name", 0, 0, a.name, "", false))
         elif a.kind != "scalar":
             _bad("unsupported match arm on a scalar")
-        # src/tychoc.c:12428-12435 -- each piece is bare `_mN == K`, the
+        # src/tychoc.c:12441-12448 -- each piece is bare `_mN == K`, the
         # literal in plain decimal (the subject is already its own C type, so
         # the LL suffix an int expression carries is not written here), and the
         # pieces are joined by `||` with no parentheses at all.
@@ -6213,7 +6213,7 @@ fn _match(cs: inout C, subj: ast.Expr, arms: [ast.Arm], ind: string) -> string:
     if hasdef2:
         out2 = out2 + ind + "    else {\n" + deflt2 + ind + "    }\n"
     else:
-        # src/tychoc.c:12453 -- unreachable, and emitted anyway so the generated
+        # src/tychoc.c:12466 -- unreachable, and emitted anyway so the generated
         # C provably returns on every path.
         out2 = out2 + ind + "    else { fprintf(stderr, \"tycho: non-exhaustive match\\n\"); exit(1); }\n"
     return out2 + ind + "}\n"
@@ -6707,7 +6707,7 @@ fn _map_defs(cs: inout C) -> (string, string, string, string):
     return (td, sb, pr, fb)
 
 # A deep hash per hashable struct/tuple, folded FNV-style from the per-process
-# seed so that ==-equal values always hash equal (src/tychoc.c:13542).
+# seed so that ==-equal values always hash equal (src/tychoc.c:13555).
 fn _hash_defs(cs: inout C) -> (string, string):
     pr := ""
     fb := ""
@@ -7010,7 +7010,7 @@ fn _enum_support(cs: inout C) -> (string, string, string):
                 else:
                     allbare = false
             # a fieldless enum is stored in a map's key table as its TAG, so keys()
-            # rebuilds the value through this table (src/tychoc.c:13387).
+            # rebuilds the value through this table (src/tychoc.c:13400).
             if allbare and len(cs.eds[i].vnames) > 0:
                 tab := "static E_" + n + " *const _sing_tab_" + n + "[] = {"
                 for t := 0; t < len(cs.eds[i].vnames); t += 1:
@@ -7651,7 +7651,7 @@ fn program(pfx: [string], us: [ast.Unit], dbgf: string) -> string:
     # `extern double strx_parse_double(char *, tycho_int *);` -- the foreign
     # symbol's prototype, matching ./tychoc. An inout parameter is a pointer.
     # ./tychoc emits these INTERLEAVED with the ordinary prototypes (one loop
-    # over the whole proc list, src/tychoc.c:14091), so the block lands directly
+    # over the whole proc list, src/tychoc.c:14104), so the block lands directly
     # in front of them -- not up in the type header.
     xpro := ""
     for xi := 0; xi < len(cs.fds); xi += 1:
@@ -7812,7 +7812,7 @@ fn program(pfx: [string], us: [ast.Unit], dbgf: string) -> string:
         tpr + mpr + hpr + "\n" + afb + sbody + ebody + tfb + hfb + mfb + ofb + "\n"
 
     # `fn main() -> Result(void, string)`: an Err reaching the entry point is
-    # PRINTED and exits 1 -- the error type is the message (src/tychoc.c:9529).
+    # PRINTED and exits 1 -- the error type is the message (src/tychoc.c:9542).
     mfi := _fidx(&cs, "main")
     mcall := "    h_main(&_root);\n"
     mtail := "    arena_free(&_root);\n    return 0;\n"

@@ -1,5 +1,5 @@
 # An int LITERAL adapting to a fixed-width destination it cannot hold. This used
-# to truncate in silence through a C cast. src/tychoc.c:6025.
+# to truncate in silence through a C cast. src/tychoc.c:6031.
 # expect: 4294967296 does not fit u32 (its range is 0..4294967295)
 fn main():
     x: u32 = 4294967296

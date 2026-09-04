@@ -1,5 +1,5 @@
 # Ok(x) whose x has no concrete type of its own: a bare None is only typed by
-# context, and there is none here. src/tychoc.c:6146.
+# context, and there is none here. src/tychoc.c:6152.
 # expect: Ok(...) needs a concrete value
 fn main():
     x := Ok(None)

@@ -1150,6 +1150,12 @@ static int64_t bounded_cap(Type t) { return g_arrtypes[ARRC_ID(t)].size; }
 /* const generics 1.6B: `[$N]T` — the size is a *parameter* (encoded as a NEGATIVE
  * size, see sizeparam_enc). Template-only: never a concrete fixed array, never emitted. */
 #define IS_SIZEPARAM_ARR(t) (IS_ARRC(t) && g_arrtypes[ARRC_ID(t)].size < 0)
+/* Stores its elements INLINE (`[N]T`, `bounded[N]T`, `vector[N]T`): the C body has
+ * a `.v[N]` member and NO `.data`, so the bounds-elision fast path -- which emits
+ * `A.data[i]` -- must never fire for one. `bounded` alone was excluded here; a plain
+ * fixed array and a vector fell through and every indexed loop over one died as a
+ * gcc error. */
+#define IS_INLINE_ARR(t) (IS_ARRC(t) && g_arrtypes[ARRC_ID(t)].size != 0)
 static int64_t fixarr_size(Type t) { return g_arrtypes[ARRC_ID(t)].size; }
 static int is_array(Type t) {
     return t == T_ARRAY_INT || t == T_ARRAY_STRING || t == T_ARRAY_FLOAT || IS_ARRC(t);
@@ -2589,7 +2595,7 @@ static Type parse_type_inner(Parser *ps) {
             return mt;
         }
         eat(ps, TK_RBRACKET, "']'");
-        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2532) sits after a die_at */
+        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2538) sits after a die_at */
             die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
         return arr_of(elem);   /* fixed [int]/[float]/[string] or a composite */
     }
@@ -2952,7 +2958,7 @@ static Expr *parse_primary(Parser *ps) {
                 e->ival = mt; e->op = TK_COLON;
                 return e;
             }
-            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2316): parse_type never yields T_VOID */
+            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2322): parse_type never yields T_VOID */
                 die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
             e->ival = arr_of(elem);   /* type carried to the resolver */
             return e;
@@ -5915,7 +5921,7 @@ static void collect_idents(Expr *e, const char **out, int *n, int cap) {
     }
     if (e->kind == E_CALL) {   /* Neither name on a call is a child expr: the callee lives in
                                 * sval (`g(x)` where g is a closure) and a method call's RECEIVER
-                                * lives in qual (`m.get(k)`, src/tychoc.c:3321), because the parser
+                                * lives in qual (`m.get(k)`, src/tychoc.c:3327), because the parser
                                 * cannot tell it from a package call. Both are outer reads; missing
                                 * qual let `m` reach the lifted body uncaptured and the C compiler,
                                 * not tychoc, reported `h_m undeclared`. pf_scan_expr already does
@@ -6368,6 +6374,9 @@ static Type resolve_expr_inner(Expr *e) {
             if (bt == T_BYTES) return e->type = T_BYTES;     /* bytes: same substr, stays bytes */
             if (IS_BOUNDED(bt))   /* a slice would need a .data view; bounded stores inline */
                 die_at(e->line, "cannot slice a bounded[...] value; copy it into a [%s] first", type_name(arr_elem(bt)));
+            if (IS_FIXARR(bt))   /* same reason: `[N]T` and `vector[N]T` store inline, so there is no .data to view */
+                die_at(e->line, "cannot slice a %s value; copy it into a [%s] first",
+                       type_name(bt), type_name(arr_elem(bt)));
             if (!is_array(bt) && !IS_SOA(bt))
                 die_at(e->line, "can only slice an array, soa, a string, or bytes");
             return e->type = bt;
@@ -7113,6 +7122,10 @@ static Type resolve_expr_inner(Expr *e) {
                 g_place = 0;
                 if (!is_array(arrt) && !IS_SOA(arrt))
                     die_at(e->line, "push's first argument must be an array or soa");
+                if (IS_FIXARR(arrt))   /* the length IS the type; bounded is the inline array that grows */
+                    die_at(e->line, "cannot push to a %s -- its length is fixed; use a bounded[%lld]%s or a [%s]",
+                           type_name(arrt), (long long)fixarr_size(arrt),
+                           type_name(arr_elem(arrt)), type_name(arr_elem(arrt)));
                 if (!is_lvalue(e->args[0]))
                     die_at(e->line, "cannot push through this expression — the array must be a "
                                     "variable, field, or composite-array element");
@@ -7261,7 +7274,7 @@ static Type resolve_expr_inner(Expr *e) {
             if (e->nargs != s->nparams)
                 die_at(e->line, "'%s' takes %d argument(s), got %d",
                        nominal_name(e->sval), s->nparams, e->nargs);
-            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:6727 */
+            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:6736 */
             for (int i = 0; i < e->nargs; i++) {
                 g_in_arg++;
                 Type at_ = resolve_exp(e->args[i], s->params[i]);   /* fixes a None arg */
@@ -7859,7 +7872,7 @@ static void pf_capture(Expr *id) {
 /* capture an outer local named by a STRING rather than by an E_IDENT node -- the
  * callee of `f(x)` and the receiver of `o.f(x)` live in E_CALL's sval/qual, not
  * in a child expr. The synthesized read is resolved in the enclosing scope with
- * every other capture (src/tychoc.c:8471). Non-locals (global fns, builtins,
+ * every other capture (src/tychoc.c:8484). Non-locals (global fns, builtins,
  * enum constructors, package qualifiers) fail vars_find and are dropped. */
 static void pf_capture_name(const char *n, int line) {
     Type vt;
@@ -7882,10 +7895,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7819),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7832),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:8093). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:8106). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
@@ -7906,7 +7919,7 @@ static void pf_scan_expr(Expr *e) {
     }
     /* A call's callee is NOT an E_IDENT child of the node: `f(x)` keeps the name
      * in sval, and `o.f(x)` keeps the receiver in qual because the parser cannot
-     * tell it from a package call (src/tychoc.c:3315). The generic descent below
+     * tell it from a package call (src/tychoc.c:3321). The generic descent below
      * visits lhs/rhs/args only, so a fn-typed local reached the lifted chunk proc
      * uncaptured and the C compiler -- not tychoc -- reported the undeclared name.
      * The lambda capture analysis already does the sval half (src/tychoc.c@collect_idents). */
@@ -9651,8 +9664,8 @@ static const char *for3_elidable_arr(Stmt *s) {
     Expr *bound = cond->rhs;
     if (!bound || bound->kind != E_CALL || !bound->sval || strcmp(bound->sval, "len") ||
         bound->nargs != 1 || !bound->args[0] || bound->args[0]->kind != E_IDENT) return NULL;
-    if (IS_BOUNDED(bound->args[0]->type)) return NULL;   /* bounded stores in .v, not .data — elision emits .data[i], so never elide it */
-    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:4080-4085) */
+    if (IS_INLINE_ARR(bound->args[0]->type)) return NULL;   /* [N]T / bounded / vector store in .v, not .data — elision emits .data[i], so never elide it */
+    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:4086-4091) */
     if (!post || post->kind != S_ASSIGN || !post->name || strcmp(post->name, iv)) return NULL;
     Expr *inc = post->expr;
     if (!inc || inc->kind != E_BINOP || inc->op != TK_PLUS) return NULL;
@@ -12696,7 +12709,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                 s->r_stop->kind == E_CALL && s->r_stop->sval &&
                 !strcmp(s->r_stop->sval, "len") && s->r_stop->nargs == 1 &&
                 s->r_stop->args[0]->kind == E_IDENT && g_nelide < 64 &&
-                !IS_BOUNDED(s->r_stop->args[0]->type) &&   /* bounded stores in .v, not .data — elision emits .data[i], so never elide it */
+                !IS_INLINE_ARR(s->r_stop->args[0]->type) &&   /* [N]T / bounded / vector store in .v, not .data — elision emits .data[i], so never elide it */
                 !stmts_unsafe(s->body, s->nbody, s->name, s->r_stop->args[0]->sval)) {
                 g_elide[g_nelide].iv = s->name;
                 g_elide[g_nelide].arr = s->r_stop->args[0]->sval;

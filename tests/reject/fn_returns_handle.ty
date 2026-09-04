@@ -1,4 +1,4 @@
-# src/tychoc.c:4413 -- an `extern fn` opener is the only producer of a handle. A
+# src/tychoc.c:4419 -- an `extern fn` opener is the only producer of a handle. A
 # Tycho fn returning one hands out a second owner of a pointer its own scope
 # exit has already freed. The generic form is tests/reject/generic_ret_handle.ty.
 # expect: a Tycho fn cannot return a handle -- only an `extern fn` opener may

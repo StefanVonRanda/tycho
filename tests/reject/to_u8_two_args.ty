@@ -1,4 +1,4 @@
-# src/tychoc.c:6991 -- the sized conversions (to_u8..to_i64, to_f32) take one value.
+# src/tychoc.c:7000 -- the sized conversions (to_u8..to_i64, to_f32) take one value.
 # expect: to_u8(x) takes one argument
 fn main():
     x := to_u8(1, 2)

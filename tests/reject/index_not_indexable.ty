@@ -1,4 +1,4 @@
-# src/tychoc.c:6354 -- `x[i]` on a scalar. tests/reject/tuple_index.ty is the
+# src/tychoc.c:6360 -- `x[i]` on a scalar. tests/reject/tuple_index.ty is the
 # tuple near miss, which gets its own message.
 # expect: can only index an array, a string, bytes, or a map (as a place)
 fn main():

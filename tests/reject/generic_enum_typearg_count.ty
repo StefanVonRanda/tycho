@@ -1,4 +1,4 @@
-# src/tychoc.c:6858 -- explicit type arguments bind the ENUM's parameters, so
+# src/tychoc.c:6867 -- explicit type arguments bind the ENUM's parameters, so
 # the count is the enum's, not the variant's.
 # expect: Tree expects 1 type argument(s), got 2
 enum Tree($T):

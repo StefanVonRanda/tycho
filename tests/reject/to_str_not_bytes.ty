@@ -1,4 +1,4 @@
-# src/tychoc.c:7001 -- to_str reinterprets bytes or unwraps a string newtype.
+# src/tychoc.c:7010 -- to_str reinterprets bytes or unwraps a string newtype.
 # expect: to_str(x) takes bytes or a string newtype
 fn main():
     println(to_str(1))

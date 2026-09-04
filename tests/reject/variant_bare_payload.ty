@@ -1,4 +1,4 @@
-# src/tychoc.c:6219 -- a payload-carrying variant written bare is not a value.
+# src/tychoc.c:6225 -- a payload-carrying variant written bare is not a value.
 # The match below exists so tychoc1 reaches the rule rather than dying first on
 # `'e' declared and not used`.
 # expect: A carries a payload — write A(...)

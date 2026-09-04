@@ -1,4 +1,4 @@
-# src/tychoc.c:6708 -- the argument types of a call through a fn-typed local.
+# src/tychoc.c:6717 -- the argument types of a call through a fn-typed local.
 # expect: argument 2 to 'f' must be int
 fn add(a: int, b: int) -> int:
     return a + b

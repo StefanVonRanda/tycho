@@ -1,4 +1,4 @@
-# src/tychoc.c:7011
+# src/tychoc.c:7020
 # expect: to_bytes(s) takes one argument
 fn main():
     b := to_bytes("a", "b")

@@ -1,4 +1,4 @@
-# src/tychoc.c:9407 -- two files in one package defining the same function.
+# src/tychoc.c:9420 -- two files in one package defining the same function.
 # tychoc compiles every .ty beside the entry, so this needs its own directory.
 # expect: 'helper' is already defined -- also at tests/reject/pkg/dup_across_files/main.ty:6, a DIFFERENT file in the same package: tychoc compiles every .ty beside the entry file, so two unrelated programs cannot share one directory
 package main

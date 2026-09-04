@@ -1,5 +1,5 @@
 # A bare `[]` declaration is PENDING: its first typed use grounds it, and only an
-# array, map or soa can. src/tychoc.c:5978.
+# array, map or soa can. src/tychoc.c:5984.
 # expect: 'xs' was declared with [] but its first use makes it int
 fn main():
     xs := []

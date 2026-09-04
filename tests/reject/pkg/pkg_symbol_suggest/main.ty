@@ -1,4 +1,4 @@
-# src/tychoc.c:6753 -- an unknown package member CALLED, close enough to a real
+# src/tychoc.c:6762 -- an unknown package member CALLED, close enough to a real
 # one that both compilers suggest it. `make test` scores `# expect:` against
 # ./tychoc1, so this pins the WHOLE message including the suggestion.
 # expect: package 'strings' has no symbol 'to_uppe'; did you mean 'to_upper'?

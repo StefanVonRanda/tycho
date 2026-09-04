@@ -1,7 +1,7 @@
 # expect: expected a value after '..' in the match arm
 # Both compilers name this rule since _pat_end took the message to use when no
 # value follows; tychoc1 used to stop one rule earlier, at `a match arm must be
-# a variant name, ...`. src/tychoc.c:3552.
+# a variant name, ...`. src/tychoc.c:3558.
 fn main():
     x := 1
     match x:

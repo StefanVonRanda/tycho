@@ -1,0 +1,6 @@
+# expect: cannot push to a [4]int -- its length is fixed; use a bounded[4]int or a [int]
+# The length IS the type. `bounded[N]T` is the inline array that grows.
+fn main():
+    v: [4]int = [1, 2, 3, 4]
+    push(v, 5)
+    println(str(len(v)))

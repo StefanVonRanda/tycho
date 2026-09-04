@@ -37,7 +37,7 @@ for f in tests/conc/*.ty; do
     # then `mv "${f%.ty}.c" "$c"`, i.e. it created tests/conc/<name>.c inside the
     # tree on every run and moved it out again -- the stray-artifact behaviour
     # the loops-cleanup plan removed. `--emit-c` with no -o now writes to stdout
-    # (src/tychoc.c:14616), which this line's `>/dev/null` swallowed, and all 13
+    # (src/tychoc.c:14629), which this line's `>/dev/null` swallowed, and all 13
     # fixtures failed with `FAIL <name> (tychoc)`.
     if ! $TYCHOC "$f" --emit-c -o "${c%.c}" >/dev/null 2>"$TMP/$name.log"; then
         note "$name" "tychoc"; sed 's/^/      /' "$TMP/$name.log"; fail=$((fail+1)); continue

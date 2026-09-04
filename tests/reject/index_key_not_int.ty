@@ -1,4 +1,4 @@
-# src/tychoc.c:6339 -- a positional index is exactly int, so a string subscript
+# src/tychoc.c:6345 -- a positional index is exactly int, so a string subscript
 # on an ARRAY is not a map lookup by another spelling.
 # expect: index must be int
 fn main():

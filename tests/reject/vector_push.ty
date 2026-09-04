@@ -1,0 +1,7 @@
+# expect: cannot push to a vector[4]int -- its length is fixed; use a bounded[4]int or a [int]
+# A vector's width is its type and its lowering; growing one is not a resize,
+# it is a different machine type.
+fn main():
+    v: vector[4]int = [1, 2, 3, 4]
+    push(v, 5)
+    println(str(len(v)))

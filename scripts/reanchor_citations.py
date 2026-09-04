@@ -32,7 +32,7 @@ the correct fix. **Read the dry run before `--apply`; it is not a formality.**
 
 LIMITATION, measured rather than assumed. The "changed hunk" guard above is NOT
 a reliable safety net, because difflib aligns on text, not identity. Deleting
-`src/tychoc.c:10566` -- a line whose exact text occurs 5 times in the file --
+`src/tychoc.c:10579` -- a line whose exact text occurs 5 times in the file --
 produced no DROPPED at all: the matcher realigned against one of the duplicates
 and the citation was silently remapped to a different line that happens to read
 the same. The guard catches a citation into genuinely unique deleted text and
@@ -48,7 +48,7 @@ WHAT IT DOES NOT REACH, so check these by hand afterwards (none is policed by
 check_citations.py either, which is why they drift silently):
 
   1. a bare `:N` continuation after a real citation on the same line of a
-     SOURCE file -- `src/tychoc.c:10508, :9666`. The checker's SRCCITE pattern
+     SOURCE file -- `src/tychoc.c:10521, :9666`. The checker's SRCCITE pattern
      requires a path, so the second ref is unchecked.
   2. the same inside `.ty` fixture comments.
   3. a file's own `(:4592)`-style self-references.
@@ -158,7 +158,10 @@ def old_side(target, ref, state):
     if sha and git("cat-file", "-e", sha + "^{blob}").returncode == 0:
         return git("cat-file", "blob", sha, check=True).stdout.split("\n"), \
             "last --apply"
-    return git("show", "%s:%s" % (ref, target), check=True).stdout.split("\n"), ref
+    r = git("show", "%s:%s" % (ref, target))
+    if r.returncode != 0:
+        return None, ref   # absent at <ref>: no old line numbers exist to map FROM
+    return r.stdout.split("\n"), ref
 
 
 def line_map(old, new):
@@ -197,6 +200,14 @@ def moved_files(ref):
 def reanchor(target, ref, texts, touched, state):
     """Rewrite every citation to `target` in `texts`; return (files, dropped)."""
     old, label = old_side(target, ref, state)
+    if old is None:
+        # A file NEW in the working tree has no old side. Every citation to it was
+        # written against the copy on disk, so there is nothing to shift -- but
+        # aborting the whole run on it (exit 128) meant a phase that added a lane
+        # and edited src/tychoc.c in one commit could not re-anchor at all.
+        print("%s: new since %s; no old line numbers to map from -- skipped"
+              % (target, label))
+        return 0, 0
     new = open(os.path.join(ROOT, target)).read().split("\n")
     lmap = line_map(old, new)
     print("%s: %d of %d lines survive %s..worktree (%d -> %d lines)"
@@ -276,7 +287,7 @@ MARK = "int marker(void) { return 1; }"
 
 
 def selfcheck():
-    """Four cases in a sandbox repo; [2] is the control that must still fail."""
+    """Five cases in a sandbox repo; [2] is the control that must still fail."""
     import tempfile
 
     def me(repo, *a):
@@ -347,6 +358,21 @@ def selfcheck():
         rc = me(r, "--apply").returncode
         want("4a", rc, 2)
         want("4b", doc(r), before)
+
+        # [5] a file NEW in the working tree, staged and CITED. It has no old
+        # side, and aborting on it (exit 128) used to kill the whole run --
+        # including the re-anchoring of every file that did have one.
+        r = build(td, "newfile")
+        insert(r, 5)
+        open(os.path.join(r, "pkg/g.c"), "w").write("// fresh\n" + MARK + "\n")
+        open(os.path.join(r, "notes/d.md"), "a").write(
+            "and a new one at `pkg/g.c:2@marker`.\n")
+        subprocess.run(["git", "add", "-A"], cwd=r, capture_output=True, check=True)
+        out = me(r, "--apply")
+        want("5a", out.returncode, 0)
+        want("5b", doc(r).split("\n")[0],
+             "the marker is at `pkg/f.c:%d@marker`." % truth(r))
+        want("5c", "pkg/g.c: new since HEAD" in out.stdout, True)
 
     print("selfcheck: %s" % ("all green" if not fails else "FAILED " + " ".join(fails)))
     return 1 if fails else 0

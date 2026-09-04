@@ -1,4 +1,4 @@
-# src/tychoc.c:8733 -- the plain-enum twin of match_bind_payload_variant: `A(Q)`
+# src/tychoc.c:8746 -- the plain-enum twin of match_bind_payload_variant: `A(Q)`
 # would bind a name that is already a variant of the payload enum, and match every A.
 # expect: 'Q' is a variant of Inner, not a binding name
 enum Inner:

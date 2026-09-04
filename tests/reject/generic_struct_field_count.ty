@@ -1,4 +1,4 @@
-# src/tychoc.c:6820 -- a generic struct's field count is fixed by its
+# src/tychoc.c:6829 -- a generic struct's field count is fixed by its
 # declaration; the type arguments are what the values infer, not the arity.
 # expect: Box takes 1 field value(s), got 2
 struct Box($T):
