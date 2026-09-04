@@ -1,9 +1,7 @@
-# tychoc reaches this arm by rooting the walk at an EARLIER-declared struct that
-# only REFERENCES the cycle: src/tychoc.c:12863 visits every struct before any
-# Option, Result or tuple, so the first grey node re-entered here is the Result,
-# not B. tychoc1 attributes the same cycle to the struct that closes it, so only
-# the shared prefix can be pinned.
-# expect: infinite type:
+# tychoc roots its DFS at every struct in declaration order, so A greys the
+# Result BEFORE B is entered and the cycle closes on that node, not on B.
+# tychoc1 three-colours the same graph now, so the whole message is pinned.
+# expect: infinite type: a Result contains itself by value — use indirection (e.g. Result([T], E))
 # src/tychoc.c:12816
 struct A:
     b: Result(B, string)

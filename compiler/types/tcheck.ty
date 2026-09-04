@@ -3373,73 +3373,89 @@ fn _fill_decls(cs: inout C, p: Program):
             cs.skip = false
             _typarams_of(&cs, []string)
 
-# src/tychoc.c:12783 -- a struct that contains itself BY VALUE has no size. An
-# An array or a map breaks the cycle; a tuple, a fixed array and a plain field do
-# not -- and neither does an Option or a Result, which embed their payloads BY
-# VALUE (src/tychoc.c:12811 emits `struct TychoOpt%d_ { char has; T val; }` and
-# :12826 the Result twin). This comment used to say Option broke it, and tychoc1
-# accordingly accepted `b: Option(S)` inside S, which the bootstrap refuses.
-fn _contains(cs: inout C, t: string, target: string, seen: [string: bool]) -> bool:
+# src/tychoc.c@check_finite_types -- a THREE-COLOUR DFS over the emit type
+# graph, rooted at every struct in declaration order. A type that contains
+# itself by value has no size; an array or a map breaks the cycle, a tuple, an
+# inline array, an Option and a Result do not (src/tychoc.c:12811 emits
+# `struct TychoOpt%d_ { char has; T val; }` and :12826 the Result twin).
+# Which arm fires is decided by which GREY node the walk re-enters, so the
+# Option, Result or tuple that closes a cycle names ITSELF
+# (src/tychoc.c:12805, src/tychoc.c:12816, src/tychoc.c:12832). Walking struct
+# DECLARATIONS alone, as this did until 2026-09-04, could only ever reach the
+# struct arm (src/tychoc.c:12783).
+# The line reported is the declaration whose fields were being walked when the
+# cycle closed -- g_emit_line, saved and restored per struct at :12789/:12794.
+fn _fin_dfs(cs: inout C, t0: string, ln: int, fl: string, col: inout [string: int]) -> bool:
+    t := _base(&cs, t0)
     h := _head(t)
-    if h == "tup" or h == "fix" or h == "opt" or h == "res":
-        for a in _targs(t):
-            if _contains(&cs, a, target, seen) and _head(a) != "?":
+    a := _targs(t)
+    if h == "fix" or h == "bnd":
+        if len(a) != 2:
+            return false
+        if col.get(t, 0) == 2:
+            return false
+        if col.get(t, 0) == 1:
+            cs.file = fl
+            cs.line = ln
+            _cerr(&cs, "infinite type: " + _show(&cs, t) + " contains itself by value — use a dynamic array ([" + _show(&cs, a[1]) + "]) for indirection")
+            return true
+        col[t] = 1
+        if _fin_dfs(&cs, a[1], ln, fl, &col):
+            return true
+        col[t] = 2
+        return false
+    if h == "opt" or h == "res" or h == "tup":
+        if len(a) == 0:
+            return false
+        if col.get(t, 0) == 2:
+            return false
+        if col.get(t, 0) == 1:
+            cs.file = fl
+            cs.line = ln
+            if h == "opt":
+                _cerr(&cs, "infinite type: an Option contains itself by value — use Option([T]) for indirection")
+            elif h == "res":
+                _cerr(&cs, "infinite type: a Result contains itself by value — use indirection (e.g. Result([T], E))")
+            else:
+                _cerr(&cs, "infinite type: a tuple contains itself by value")
+            return true
+        col[t] = 1
+        for arg in a:
+            if _fin_dfs(&cs, arg, ln, fl, &col):
                 return true
+        col[t] = 2
         return false
     i := _tdecl(&cs, t)
     if i < 0:
         return false
-    if t == target:
+    # read in place: this is a whole declaration, and only three fields are wanted
+    if cs.tds[i].kind != "struct" or cs.tds[i].generic:
+        return false
+    if col.get(t, 0) == 2:
+        return false
+    if col.get(t, 0) == 1:
+        cs.file = fl
+        cs.line = ln
+        _cerr(&cs, "infinite type: " + cs.tds[i].name + " contains itself by value — use an array ([" + cs.tds[i].name + "]) or Option([" + cs.tds[i].name + "]) for indirection")
         return true
-    if t in seen:
-        return false
-    s2 := seen
-    s2[t] = true
-    # read in place: this is a whole declaration, and only fields are wanted
-    if cs.tds[i].kind != "struct" and cs.tds[i].kind != "newtype":
-        return false
-    for ft in cs.tds[i].ftypes:
-        if _contains(&cs, ft, target, s2):
+    fts := cs.tds[i].ftypes
+    dl := cs.tds[i].line
+    df := cs.tds[i].file
+    col[t] = 1
+    for ft in fts:
+        if _fin_dfs(&cs, ft, dl, df, &col):
             return true
+    col[t] = 2
     return false
 
 fn _infinite_check(cs: inout C):
-    best := -1
+    col := []string: int
     for i := 0; i < len(cs.tds); i += 1:
-        # read in place: this is a whole declaration, and only fields are wanted
+        # read in place: this is a whole declaration, and only the name is wanted
         if cs.tds[i].kind != "struct" or cs.tds[i].generic:
             continue
-        for ft in cs.tds[i].ftypes:
-            if _contains(&cs, ft, "@" + cs.tds[i].name, []string: bool):
-                # A MUTUAL cycle makes every struct in it infinite. src/tychoc.c
-                # three-colours the emit graph (src/tychoc.c:12783), so the node it
-                # names is the one the walk ENTERED first -- the EARLIEST
-                # declaration, not the one that closes the cycle. Measured against
-                # ./tychoc on tests/reject/struct_mutual_by_value.ty, which it
-                # attributes to `A`; this comment previously said the opposite.
-                if best < 0 or cs.tds[i].line < cs.tds[best].line:
-                    best = i
-                break
-    if best >= 0:
-        # The bootstrap's DFS NAMES the struct it entered first (the earliest
-        # declaration, `best`) but reports at `g_emit_line`, which is the
-        # declaration whose fields were being walked when the cycle closed --
-        # the LAST one on the path. So the two halves come from different
-        # structs: measured on tests/reject/struct_mutual_by_value.ty, ./tychoc
-        # says `A` at line 6, which is `struct B`. Only structs in the SAME
-        # cycle as `best` are eligible, or two disjoint cycles would mix.
-        last := best
-        for j := 0; j < len(cs.tds); j += 1:
-            if cs.tds[j].kind != "struct" or cs.tds[j].generic:
-                continue
-            if cs.tds[j].line <= cs.tds[last].line:
-                continue
-            if _contains(&cs, "@" + cs.tds[j].name, "@" + cs.tds[best].name, []string: bool) and
-                    _contains(&cs, "@" + cs.tds[best].name, "@" + cs.tds[j].name, []string: bool):
-                last = j
-        cs.file = cs.tds[last].file
-        cs.line = cs.tds[last].line
-        _cerr(&cs, "infinite type: " + cs.tds[best].name + " contains itself by value — use an array ([" + cs.tds[best].name + "]) or Option([" + cs.tds[best].name + "]) for indirection")
+        if _fin_dfs(&cs, "@" + cs.tds[i].name, cs.tds[i].line, cs.tds[i].file, &col):
+            return
 
 # --symbols wants the INFERRED type of every local, which only the checker
 # knows. Same walk as check(), with the recording switched on.
