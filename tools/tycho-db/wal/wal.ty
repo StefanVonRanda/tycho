@@ -7,8 +7,20 @@ import "../store"
 
 const MAGIC = "TYWAL"
 const VERSION = 1
-const HDR = 17             # 5 magic + 4 version + 8 base_lsn
-const FRAME = 8            # 4 length + 4 checksum
+const HDR = 17             # 5 magic + size_of$(WalHdr)
+
+# The two FIXED-WIDTH records in this format are stated as layouts (spec
+# s17.1a). Everything else in a frame is variable -- a tag, a length-prefixed
+# string, a count, N tagged unions -- and stays hand-encoded through store's
+# exported primitives. to_bytes/from_bytes are little-endian on every host
+# (s17.1b), which is the order store.put_u32/put_u64 wrote.
+packed struct WalHdr:      # 12 bytes, at offset 5, after the "TYWAL" magic
+    version: u32
+    base_lsn: u64
+
+packed struct Frame:       # 8 bytes, the prefix of every log frame
+    nbytes: u32
+    sum: u32
 
 const R_CREATE = 1
 const R_INSERT = 2
@@ -129,7 +141,7 @@ fn take_rec(b: bytes, off: inout int) -> Result(Rec, store.StoreErr):
     return Ok(RInsert(name, vals))
 
 fn _header(base_lsn: int) -> bytes:
-    return to_bytes(MAGIC) + store.put_u32(VERSION) + store.put_u64(base_lsn)
+    return to_bytes(MAGIC) + to_bytes(WalHdr(to_u32(VERSION), to_u64(base_lsn)))
 
 # ---- reading the log ------------------------------------------------------
 
@@ -150,12 +162,13 @@ fn scan(path: string) -> Result(Scan, WalErr):
     if len(blob) < HDR or to_str(blob[0:5]) != MAGIC:
         return Err(BadLog(path))
     off := 5
-    version := store.get_u32(blob, off)
-    off += 4
-    if version != VERSION:
+    # HDR is 5 + size_of$(WalHdr), so the guard above is exactly the length
+    # from_bytes$(WalHdr) demands -- it DIES on any other.
+    hd := from_bytes$(WalHdr)(blob[off:off + size_of$(WalHdr)])
+    if to_int(hd.version) != VERSION:
         return Err(BadLog(path))
-    base := store.get_u64(blob, off)
-    off += 8
+    base := to_int(hd.base_lsn)
+    off += size_of$(WalHdr)
 
     recs: [Rec] = []
     end := off
@@ -166,12 +179,13 @@ fn scan(path: string) -> Result(Scan, WalErr):
     for i := 0; i < len(blob); i += 1:
         if off >= len(blob):
             break
-        if off + FRAME > len(blob):
+        if off + size_of$(Frame) > len(blob):
             torn = true
             break
-        n := store.get_u32(blob, off)
-        want := store.get_u32(blob, off + 4)
-        body := off + FRAME
+        fr := from_bytes$(Frame)(blob[off:off + size_of$(Frame)])
+        n := to_int(fr.nbytes)
+        want := to_int(fr.sum)
+        body := off + size_of$(Frame)
         if n <= 0 or body + n > len(blob):
             torn = true
             break
@@ -203,7 +217,7 @@ fn append(lg: inout Log, r: Rec) -> Result(int, WalErr):
         lg.end = HDR
         created = true
     body := put_rec(r)
-    frame := store.put_u32(len(body)) + store.put_u32(checksum(body, 0, len(body))) + body
+    frame := to_bytes(Frame(to_u32(len(body)), to_u32(checksum(body, 0, len(body))))) + body
     # Written AT lg.end, which is the end of the last VALID record -- so a torn
     # tail left by an earlier crash is overwritten rather than preserved.
     match io.write_at(lg.path, lg.end, frame):
@@ -308,7 +322,7 @@ fn open_db(store_path: string) -> Result(Session, WalErr):
         out := _header(base)
         for r in sc.recs:
             body := put_rec(r)
-            out = out + store.put_u32(len(body)) + store.put_u32(checksum(body, 0, len(body))) + body
+            out = out + to_bytes(Frame(to_u32(len(body)), to_u32(checksum(body, 0, len(body))))) + body
         match io.write_bytes(lp, out):
             Ok(): pass
             Err(e): return Err(NotWritten(lp))

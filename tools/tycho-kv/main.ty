@@ -46,6 +46,14 @@ fn nop():
 # serialization -- the VM's .tyc pattern: manual bytes, no padding surprises
 # ---------------------------------------------------------------------------
 
+# The superblock's tail is a fixed-width record and is STATED as a layout
+# (spec s17.1a); `to_bytes`/`from_bytes` are little-endian on every host
+# (s17.1b), which is the order put_u32 wrote and get_u32 read below.
+packed struct Super:              # 12 bytes, at offset 5, after the "TYKV1" magic
+    version: u32
+    npages: u32
+    root: u32
+
 fn put_u32(v: int) -> bytes:
     return to_bytes([v % 256, (v / 256) % 256, (v / 65536) % 256, (v / 16777216) % 256])
 
@@ -132,11 +140,14 @@ fn store_load(path: string) -> Store:
         Ok(blob):
             if len(blob) < SUPER_L or to_str(blob[0:5]) != "TYKV1":
                 die_kv(path + " is not a tycho-kv store (bad magic)")
-            version := get_u32(blob, 5)
+            # SUPER_L is 5 + size_of$(Super), so the guard above is exactly
+            # the length from_bytes$(Super) demands -- it DIES on any other.
+            sp := from_bytes$(Super)(blob[5:5 + size_of$(Super)])
+            version := to_int(sp.version)
             if version != 1:
                 die_kv(path + " has unknown version " + str(version))
-            npages := get_u32(blob, 9)
-            root := get_u32(blob, 13)
+            npages := to_int(sp.npages)
+            root := to_int(sp.root)
             nodes := []int: Node
             for p := 1; p < npages; p += 1:
                 off := SUPER_L + (p - 1) * (NODE_L)
@@ -156,7 +167,7 @@ fn store_flush(path: string, st: Store):
     # the superpage always (the root/npages live there), then only the DIRTY
     # pages, each at its own offset -- io.write_at, the phase-1 addition. The
     # extent is unchanged: untouched pages keep their on-disk bytes.
-    super := to_bytes("TYKV1") + put_u32(1) + put_u32(st.npages) + put_u32(st.root)
+    super := to_bytes("TYKV1") + to_bytes(Super(to_u32(1), to_u32(st.npages), to_u32(st.root)))
     match io.write_at(path, 0, super):
         Ok():
             nop()
