@@ -35,10 +35,22 @@ because a second compiler owing you the same behaviour is what "gap" means here:
   DEAD      a site guarded by a condition an EARLIER site in the same arm
             already died on, so control never reaches it
 
-Divergence is measured at two levels, because both have shipped:
+Divergence is measured at three levels, because the owner's 2026-09-04 call
+made byte-identical wording a non-goal and it is only a non-goal for one of them:
   VERDICT   ./tychoc refuses and ./tychoc1 --typecheck accepts (R4's parallel-for
-            class -- the file compiles clean under the shipped compiler)
-  MESSAGE   both refuse, with different text (R16c-5's class)
+            class -- the file compiles clean under the shipped compiler). Defect.
+  IDENTITY  both refuse, but tychoc1's sentence maps back to a DIFFERENT rule of
+            the bootstrap's, or to no diagnostic at all (a trap). The refusal did
+            not come from the rule under test, so the fixture's green verdict is
+            not coverage. Defect -- R21c, R21f-9 and the f-string mechanism phase
+            each found exactly this shape wearing a passing verdict.
+  WORDING   both refuse from the SAME rule, worded differently (R16c-5's class).
+            Recorded, and NOT counted against coverage.
+The key is the format string, not the sentence: a rule's message is matched back
+through the same table both compilers' output is matched against, so a changed
+subject or a changed suffix stays one rule and another rule's sentence does not.
+Measured 2026-09-04, all 15 of [b] are IDENTITY and none is WORDING -- so the
+wording concession costs nothing today, which only the split can show.
 
 Two limits this cannot see, and both make the answer OPTIMISTIC:
 
@@ -373,6 +385,34 @@ def match(msg, rx):
     return max(hits, key=LIT) if hits else None
 
 
+def outcome(m, k, rc1, m1, rx):
+    """How the two compilers differ on one file, scored on the RULE not the text.
+
+    The owner's 2026-09-04 call: byte-identical wording is not a goal, agreement
+    on ACCEPT/REJECT and on WHICH RULE refused is. So the sentence is not the
+    key -- it is mapped back through the same format table to ask which of the
+    bootstrap's rules tychoc1 is speaking as.
+
+      VERDICT   tychoc1 accepts what tychoc refuses -- a behaviour defect
+      IDENTITY  both refuse, but tychoc1's message IS another bootstrap rule, or
+                is no diagnostic at all (a trap). The refusal did not come from
+                the rule under test, so the fixture's green verdict is not
+                coverage -- R21c, R21f-9 and the f-string mechanism phase each
+                found exactly this wearing a passing verdict. Still a defect.
+      WORDING   both refuse from the same rule, worded differently. RECORDED,
+                and not counted against coverage.
+      AGREE     identical.
+    """
+    if rc1 == 0:
+        return "VERDICT"
+    if m1 == m:
+        return "AGREE"
+    if not m1:
+        return "IDENTITY"                      # refused by no diagnostic at all
+    k1 = match(m1, rx)
+    return "IDENTITY" if (k1 is not None and k1 != k) else "WORDING"
+
+
 def measure(rs, allfmt, extra=()):
     # Matched against EVERY format, then filtered to the rule set: a fixture that
     # reaches a held-out ceiling ("too many parameters (max 16)") is not an
@@ -393,14 +433,24 @@ def measure(rs, allfmt, extra=()):
         if k not in keep:
             continue
         t = subprocess.run(["./tychoc1", f, "--typecheck"], capture_output=True, text=True)
-        if t.returncode == 0:
-            how = "VERDICT"                    # tychoc1 compiles what tychoc refuses
-        elif msg_of(t.stderr) != m:
-            how = "MESSAGE"
-        else:
-            how = "AGREE"
+        how = outcome(m, k, t.returncode, msg_of(t.stderr), rx)
         hit.setdefault(k, []).append((f, how))
     return hit, unmatched
+
+
+def split_b(b, hit):
+    """[b] split three ways, worst outcome first.
+
+    A format is scored by the worst thing any of its fixtures showed: a VERDICT
+    divergence outranks an IDENTITY one, which outranks WORDING. Wording is a
+    recorded difference and not a defect (the owner's 2026-09-04 call); the
+    other two are defects, and IDENTITY is the one that call could have thrown
+    away -- a refusal arriving from the WRONG RULE reads as coverage and is not.
+    """
+    v = [f for f in b if any(h == "VERDICT" for _, h in hit[f])]
+    i = [f for f in b if f not in v and any(h == "IDENTITY" for _, h in hit[f])]
+    w = [f for f in b if f not in v and f not in i]
+    return v, i, w
 
 
 def main():
@@ -441,12 +491,50 @@ def main():
             print("  selfcheck [c3] an unfixtured rule leaves [c] when a fixture reaches it")
         else:
             print("  selfcheck [c3] FAILED: the probe did not move `division by zero`"); rc = 1
+        # [c4] the classifier, driven on message pairs rather than on whichever
+        # defects the tree happens to have today. WORDING is the half that could
+        # make this decoration: if every divergence scored IDENTITY the identity
+        # leg would pass while measuring nothing, so the same-rule pair must come
+        # back WORDING and only the wrong-rule pair IDENTITY.
+        rx = [(f, C.fmt_to_re(f)) for f in rs]
+        K = "field '%s' of %s is %s, got %s"
+        OTHER = "unknown variable '%s'"
+        assert K in rs and OTHER in rs, "the control's two formats are not rules"
+        cases = [("same rule, different subject", "field 'xs' of Box__int is bounded[4]int, got [4]int",
+                  1, "field 'xs' of Box is bounded[4]int, got [4]int", "WORDING"),
+                 ("another rule's sentence", "field 'xs' of Box__int is bounded[4]int, got [4]int",
+                  1, "unknown variable 'xs'", "IDENTITY"),
+                 ("no diagnostic at all (a trap)", "field 'xs' of Box__int is bounded[4]int, got [4]int",
+                  1, "", "IDENTITY"),
+                 ("tychoc1 accepts", "field 'xs' of Box__int is bounded[4]int, got [4]int",
+                  0, "", "VERDICT"),
+                 ("identical", "unknown variable 'xs'", 1, "unknown variable 'xs'", "AGREE")]
+        bad = [(w, e, outcome(m0, match(m0, rx), r1, m1, rx))
+               for w, m0, r1, m1, e in cases
+               if outcome(m0, match(m0, rx), r1, m1, rx) != e]
+        if bad:
+            print("  selfcheck [c4] FAILED: %s" % bad); rc = 1
+        else:
+            print("  selfcheck [c4] the five outcomes are told apart: a wrong-rule refusal "
+                  "scores IDENTITY where the same rule reworded scores WORDING")
+        # [c5] the same thing end to end, through both real compilers. RE-POINT
+        # this at another b/identity entry when the rule below is ported -- a
+        # green [c4] with a dead [c5] means the classifier is right and nothing
+        # is driving it.
+        LIVE = "tests/reject/value_ctrl_bare_none.ty"
+        got = dict((p, h) for v in hit.values() for p, h in v).get(LIVE)
+        if got == "IDENTITY":
+            print("  selfcheck [c5] %s: tychoc refuses on its own rule and tychoc1 on the "
+                  "unused-local rule -- scored IDENTITY, not coverage" % LIVE)
+        else:
+            print("  selfcheck [c5] FAILED: %s scored %s, expected IDENTITY" % (LIVE, got)); rc = 1
         return rc
     names = sorted(f for f, v in rs.items() if v[2] == "RULE")
     hit, unmatched = measure(names, list(rs))
     a = sorted(f for f in names if f in hit and all(h == "AGREE" for _, h in hit[f]))
     b = sorted(f for f in names if f in hit and any(h != "AGREE" for _, h in hit[f]))
     c = sorted(f for f in names if f not in hit)
+    bv, bi, bw = split_b(b, hit)
     held = {}
     for f, (_, _, bu) in rs.items():
         if bu != "RULE":
@@ -463,8 +551,7 @@ def main():
             if any(k in f for k in C.TYPE_SITES) and not any(k in f for k in C.TYPE_EXCLUDE):
                 return "TYPE"
             return "SEMANTIC"
-        for tag, group in (("b/verdict", [f for f in b if any(h == "VERDICT" for _, h in hit[f])]),
-                           ("b/message", [f for f in b if all(h != "VERDICT" for _, h in hit[f])]),
+        for tag, group in (("b/verdict", bv), ("b/identity", bi), ("b/wording", bw),
                            ("c", c)):
             n = {}
             for f in group:
@@ -486,11 +573,14 @@ def main():
     print("held out: " + ", ".join("%s %d" % (k, held[k]) for k in sorted(held)))
     print("rules: %d" % len(names))
     print("  [a] covered, both compilers agree : %d" % len(a))
-    print("  [b] covered, the two DIVERGE      : %d  (verdict %d, message %d)"
-          % (len(b),
-             sum(1 for f in b if any(h == "VERDICT" for _, h in hit[f])),
-             sum(1 for f in b if all(h != "VERDICT" for _, h in hit[f]))))
+    print("  [b] covered, the two DIVERGE      : %d  (verdict %d, identity %d, wording %d)"
+          % (len(b), len(bv), len(bi), len(bw)))
     print("  [c] NO fixture anywhere in the tree: %d" % len(c))
+    # The owner's 2026-09-04 call: byte-identical diagnostic wording is not a
+    # goal, so a wording divergence does not count against coverage. A verdict
+    # or an identity divergence still does.
+    print("  agreeing on VERDICT and RULE      : %d  (= [a] %d + wording %d)"
+          % (len(a) + len(bw), len(a), len(bw)))
     for f, m in unmatched:
         print("  UNMATCHED %s :: %s" % (f, m[:90]))
     return 0
