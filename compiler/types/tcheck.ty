@@ -976,7 +976,17 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
         ast.IntLit(l, v): return "int"
         ast.FloatLit(l, v): return "float"
         ast.StrLit(l, v): return "string"
-        ast.FStrLit(l, v): return "string"
+        ast.FStrLit(l, v, hs):
+            # src/tychoc.c@desugar_interp wraps every hole in `str(...)`, so a
+            # hole is checked exactly as that call's argument is (the `str`
+            # arm below), and the whole literal is a string either way.
+            for hi := 0; hi < len(hs); hi += 1:
+                ht := _ex2(&cs, hs[hi], "?")
+                cs.line = ast.line_of(hs[hi])
+                if not _str_ok(&cs, ht):
+                    _cerr(&cs, "str(x) can't stringify a " + ht)
+            cs.line = l
+            return "string"
         ast.CharLit(l, v): return "char"
         ast.BoolLit(l, v): return "bool"
         ast.NullLit(l): return "ptr"

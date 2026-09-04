@@ -42,7 +42,7 @@ enum Expr:
     IntLit(int, int)                   # line, value
     FloatLit(int, float)
     StrLit(int, string)
-    FStrLit(int, string)               # f"..." -- the body, interpolation deferred
+    FStrLit(int, string, [Expr])       # f"..." -- the raw body, then one Expr per `{...}` hole
     CharLit(int, int)
     BoolLit(int, bool)
     NullLit(int)                       # line only
@@ -79,7 +79,7 @@ fn line_of(e: Expr) -> int:
         IntLit(l, v): return l
         FloatLit(l, v): return l
         StrLit(l, v): return l
-        FStrLit(l, v): return l
+        FStrLit(l, v, hs): return l
         CharLit(l, v): return l
         BoolLit(l, v): return l
         NullLit(l): return l

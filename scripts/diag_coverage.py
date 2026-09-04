@@ -50,6 +50,13 @@ Two limits this cannot see, and both make the answer OPTIMISTIC:
     2026-09-03 they do not agree: tychoc says `expected ':' after field name`
     where tychoc1 says `expected ':', found newline ''`.
 
+A third limit was here until 2026-09-04 and is GONE: a fixture whose subject sat
+inside an f-string interpolation hole read as agreeing because tychoc1 kept the
+hole as raw text and never ran the rule at all. Holes are parsed into real
+expressions now (compiler/parse/parse.ty@_fholes) and resolved and typechecked
+like any other expression, so a rule reached only from inside one is genuinely
+scored -- `tests/reject/len_scalar.ty` moved from b/verdict to [a] on that fix.
+
   python3 scripts/diag_coverage.py            counts
   python3 scripts/diag_coverage.py --list c   the rules with no fixture
   python3 scripts/diag_coverage.py --selfcheck  the extractor's own controls

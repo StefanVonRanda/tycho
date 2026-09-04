@@ -63,7 +63,6 @@ SITES = C.load_sites()
 KNOWN_TYPE_MISS = {
     "tests/reject/generic_recur_grow.ty",
     "tests/reject/infer_use_before_ground.ty",
-    "tests/reject/len_scalar.ty",
     "tests/reject/void_grounds_pending_push.ty",
     # THE CONCURRENCY RULES: what `spawn` may be applied to, capturing a task,
     # and wait's argument. Not type rules -- statement SHAPES -- and they are

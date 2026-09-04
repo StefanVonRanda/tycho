@@ -71,7 +71,9 @@ fn _ce(e: Expr, acc: [string]) -> [string]:
         IntLit(l, v): push(out, "e.IntLit")
         FloatLit(l, v): push(out, "e.FloatLit")
         StrLit(l, v): push(out, "e.StrLit")
-        FStrLit(l, v): push(out, "e.FStrLit")
+        FStrLit(l, v, hs):
+            push(out, "e.FStrLit")
+            out = _ces(hs, out)
         CharLit(l, v): push(out, "e.CharLit")
         BoolLit(l, v): push(out, "e.BoolLit")
         NullLit(l): push(out, "e.NullLit")

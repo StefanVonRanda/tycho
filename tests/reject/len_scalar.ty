@@ -1,3 +1,7 @@
+# `len(x)` at an int, written INSIDE an f-string hole. Until 2026-09-04 tychoc1
+# kept the hole as raw text and accepted this; the expect line pins the whole
+# message, which both compilers now print at the same line.
+# expect: len(...) takes an array, a string, bytes, a map, or a soa
 fn main():
     x := 5
     print(f"{len(x)}\n")

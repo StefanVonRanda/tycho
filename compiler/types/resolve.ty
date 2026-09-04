@@ -560,57 +560,6 @@ fn _pkg_sym(rs: inout R, q: string, n: string) -> string:
         _err(&rs, "'" + q + "." + n + "' is package-private: a leading-underscore name is not accessible from another package")
     return _prefix_for(&rs, q) + n
 
-# --- f-strings and types: USE marking without resolution --------------------
-
-# Phase 3 kept an f-string's body as raw text (ast.FStrLit) -- src/tychoc.c
-# parses the interpolations into real expressions at line 2712. Every name in
-# one is a genuine use, and reading them as nothing at all reported `ys` in
-# tests/closures.ty as an unused local, which src/tychoc.c accepts. So the
-# braces are scanned for identifiers and each is MARKED used. Nothing here
-# resolves or refuses: an f-string cannot make this pass reject.
-fn _fstring_uses(rs: inout R, body: string):
-    depth := 0
-    i := 0
-    for i < len(body):
-        c := body[i]
-        if c == 123:
-            depth += 1
-            i += 1
-            continue
-        if c == 125:
-            if depth > 0:
-                depth -= 1
-            i += 1
-            continue
-        if depth > 0 and ((c >= 97 and c <= 122) or (c >= 65 and c <= 90) or c == 95):
-            j := i
-            for j < len(body):
-                d := body[j]
-                if (d >= 97 and d <= 122) or (d >= 65 and d <= 90) or (d >= 48 and d <= 57) or d == 95:
-                    j += 1
-                else:
-                    break
-            w := body[i:j]
-            if _lookup(&rs, w) >= 0:
-                _note(&rs, "fstring.local")
-            elif _imported_here(&rs, w):
-                rs.pkg_used[w] = true
-                _note(&rs, "fstring.pkg")
-            else:
-                _note(&rs, "fstring.name")
-                # A call inside an interpolation is a real use, and report_dead
-                # counts uses: `apply(sq, 7)` written only inside an f-string
-                # had every one of its callers invisible.
-                if i == 0 or body[i - 1] != 46:
-                    if _kindof(&rs, w) == "fn" or _kindof(&rs, w) == "generic":
-                        _note(&rs, "call:" + w)
-                    if len(rs.prefix) > 0 and (_kindof(&rs, rs.prefix + w) == "fn" or
-                            _kindof(&rs, rs.prefix + w) == "generic"):
-                        _note(&rs, "call:" + rs.prefix + w)
-            i = j
-            continue
-        i += 1
-
 # A type is not RESOLVED here -- `unknown type` is Phase 6 (the reject corpus
 # still classes it SEMANTIC). Two things a type does decide at this layer: a
 # qualified type is what makes its import used (corelib/test/fmath was reported
@@ -846,7 +795,7 @@ fn _expr(rs: inout R, bi: [string: bool], ctors: [string: bool], e: ast.Expr):
         ast.ChanE(l, t, k):
             _tys(&rs, t)
             _exprs(&rs, bi, ctors, k)
-        ast.FStrLit(l, body): _fstring_uses(&rs, body)
+        ast.FStrLit(l, body, hs): _exprs(&rs, bi, ctors, hs)
         ast.EmptyArr(l, t): _tys(&rs, t)
         ast.EmptyMap(l, t): _tys(&rs, t)
         ast.SoaLit(l, t): _tys(&rs, t)

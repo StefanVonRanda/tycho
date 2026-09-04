@@ -464,6 +464,76 @@ fn _lambda(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
     j := _expr_into(toks, i, &b)
     return (ast.Lambda(ln, ps, ret, [b]), j)
 
+# --- f-string holes ---------------------------------------------------------
+# src/tychoc.c@desugar_interp parses every `{...}` into a real expression, so
+# every name and type rule reaches inside one. Keeping the body as text made all
+# of them unreachable: `f"{nosuchvar}"` typechecked clean here while ./tychoc
+# reported an unknown variable. The split mirrors emit/emit.ty@_fsplit; a
+# MALFORMED body yields NO holes rather than a diagnostic, because emit still
+# owns those three messages and this pass may only ever accept more.
+fn _hole(toks: [lex.Tok], src: string, line: int) -> ast.Expr:
+    ht := lex.tokenize(src)
+    # lex restarts its line counter at 1 and a hole's columns are body-relative,
+    # so stamp the f-string's own line on every sub-token and drop the caret.
+    # The path rides on the K_EOF token (lex/lex.ty:46), which _where reads.
+    fl := lex.file_of(toks)
+    for k := 0; k < len(ht); k += 1:
+        ht[k].line = line
+        ht[k].col = 0
+    if len(ht) > 0:
+        ht[len(ht) - 1].text = fl
+    e := ast.NullLit(line)
+    _expr_into(ht, 0, &e)
+    return e
+
+fn _fholes(toks: [lex.Tok], ti: int) -> [ast.Expr]:
+    body := toks[ti].text
+    line := toks[ti].line
+    out := []ast.Expr
+    none := []ast.Expr
+    i := 0
+    n := len(body)
+    for i < n:
+        c := body[i]
+        if (c == 123 or c == 125) and i + 1 < n and body[i + 1] == c:
+            i += 2
+            continue
+        if c == 125:
+            return none
+        if c == 92:
+            i += 2
+            continue
+        if c != 123:
+            i += 1
+            continue
+        i += 1
+        start := i
+        depth := 1
+        for i < n and depth > 0:
+            d := body[i]
+            if d == 34:
+                i += 1
+                for i < n and body[i] != 34:
+                    if body[i] == 92:
+                        i += 1
+                    i += 1
+                if i >= n:
+                    return none
+                i += 1
+                continue
+            if d == 123:
+                depth += 1
+            elif d == 125:
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        if depth != 0 or i == start:
+            return none
+        push(out, _hole(toks, body[start:i], line))
+        i += 1
+    return out
+
 fn _primary_into(toks: [lex.Tok], i0: int, out: inout ast.Expr) -> int:
     # The clamped INDEX, not the token: `_at` returns a Tok by value and a Tok
     # carries four strings, every one deep-copied on the way out -- paid once
@@ -486,7 +556,7 @@ fn _primary_into(toks: [lex.Tok], i0: int, out: inout ast.Expr) -> int:
         return i + 1
     if toks[ti].k == lex.K_STR:
         if toks[ti].ival == 1:
-            out = ast.FStrLit(toks[ti].line, toks[ti].text)
+            out = ast.FStrLit(toks[ti].line, toks[ti].text, _fholes(toks, ti))
             return i + 1
         s := toks[ti].text
         i += 1

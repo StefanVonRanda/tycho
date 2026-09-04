@@ -2288,7 +2288,7 @@ fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
             return _variant(&cs, _eidx(&cs, _tname(cs.want)), "Err", k)
         ast.OrRet(l, k):
             return _orret(&cs, k[0])
-        ast.FStrLit(l, v): return _fstr(&cs, v)
+        ast.FStrLit(l, v, hs): return _fstr(&cs, v)
         ast.NullLit(l):
             # `null` is the ptr literal; ptr is void* in the ABI.
             return ("((void *)0)", "ptr")
@@ -2582,7 +2582,7 @@ fn _fv(cs: inout C, e: ast.Expr, bs: [string], out: inout [string]):
         ast.BoolLit(l, v): pass
         ast.NullLit(l): pass
         ast.NoneE(l): pass
-        ast.FStrLit(l, v):
+        ast.FStrLit(l, v, hs):
             txt, kind := _fsplit(v)
             for i := 0; i < len(txt); i += 1:
                 if kind[i] == 1:
@@ -7194,7 +7194,7 @@ fn _ref_idents(s: string, m: inout [string: bool]):
 fn _ref_e(e: ast.Expr, m: inout [string: bool]):
     match e:
         ast.Name(l, n): m[n] = true
-        ast.FStrLit(l, v): _ref_idents(v, &m)
+        ast.FStrLit(l, v, hs): _ref_idents(v, &m)
         ast.Field(l, k, f):
             m[f] = true
             _ref_es(k, &m)
