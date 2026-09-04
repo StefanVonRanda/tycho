@@ -1,4 +1,5 @@
 # 14-ffi.md:21-22: same boundary rule, an enum parameter.
+# expect: must be int/char/float/bool/string/ptr/bytes
 enum E:
     X
 

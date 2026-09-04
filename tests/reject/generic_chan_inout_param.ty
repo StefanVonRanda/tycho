@@ -1,3 +1,4 @@
+# expect: which an affine type cannot be
 fn f(c: inout Channel(int), p: $T) -> int:
     return 1
 

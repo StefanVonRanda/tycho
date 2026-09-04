@@ -1,3 +1,4 @@
+# expect: a function value can't be inout
 fn add1(x: int) -> int:
     return x + 1
 

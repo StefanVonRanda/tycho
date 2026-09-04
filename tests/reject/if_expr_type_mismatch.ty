@@ -1,3 +1,4 @@
+# expect: branches produce different types
 fn main():
     x := if true:
         1

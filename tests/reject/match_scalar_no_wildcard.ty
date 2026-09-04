@@ -1,5 +1,6 @@
 # An int match MUST carry a `_` arm: the domain is unbounded, so exhaustiveness
 # is unprovable. Omitting it is a compile error (design: D2).
+# expect: arm (the domain is unbounded)
 fn main():
     x := 5
     match x:

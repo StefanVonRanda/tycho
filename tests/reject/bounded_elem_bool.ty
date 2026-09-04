@@ -1,6 +1,7 @@
 # bounded[N]bool has no codegen (mirrors [N]bool). The diagnostic must name the
 # real rule -- bool and void are the ONLY element types a bounded refuses -- not
 # an allow-list that leaves out struct/tuple/map/bytes, which all work.
+# expect: bounded element cannot be bool or void
 fn main():
     a: bounded[4]bool = []
     println(str(len(a)))

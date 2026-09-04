@@ -1,4 +1,5 @@
 # a closure cannot capture an affine channel handle. Both reject.
+# expect: a closure cannot capture a channel handle
 fn main():
     ch := channel(int, 2)
     g := fn(x: int) -> int: recv(ch)

@@ -1,5 +1,6 @@
 # A char arm on an int subject is a type error: arms must be the subject's own
 # kind.
+# expect: match on an int takes int literal arms
 fn main():
     x := 5
     match x:

@@ -3,5 +3,6 @@
 # the widened signature check still enforces all three.
 #
 #   error: 'main' takes no parameters -- the command line arrives through the `args()` builtin
+# expect: takes no parameters -- the command line arrives through
 fn main(argc: int):
     println(str(argc))

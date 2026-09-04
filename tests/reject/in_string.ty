@@ -1,3 +1,4 @@
+# expect: tests membership in a map
 fn main():
     s := "abc"
     if 'a' in s:

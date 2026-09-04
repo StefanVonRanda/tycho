@@ -1,3 +1,4 @@
+# expect: which an affine type cannot be
 fn f(c: inout $T) -> int:
     return 1
 

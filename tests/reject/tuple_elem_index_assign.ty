@@ -1,3 +1,4 @@
+# expect: can only index-assign an array or map variable or field
 fn main():
     t := ([]int: int, 9)
     t.0[1] = 10

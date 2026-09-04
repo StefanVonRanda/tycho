@@ -1,3 +1,4 @@
+# expect: an enum payload cannot be a channel
 
 enum Holder($T):
     Empty

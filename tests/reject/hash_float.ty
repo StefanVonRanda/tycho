@@ -1,5 +1,6 @@
 # hash(x) takes any map-key type (the `where hashable(T)` set); a bare float is
 # not a legal map key, so hashing one is refused at compile time.
+# expect: can't hash a float
 fn main():
     x := hash(3.14)
     print(str(x))

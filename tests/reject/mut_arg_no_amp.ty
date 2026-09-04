@@ -1,3 +1,4 @@
+# expect: is inout; pass it as
 fn g(n: inout int):
     n = n + 1
 fn f(n: inout int):

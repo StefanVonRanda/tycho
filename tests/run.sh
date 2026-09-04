@@ -109,7 +109,11 @@ corpus_census() {
     # Plus the 4 inline-array fixtures (V3a, 2026-09-04): slice and push on a
     # [N]T and on a vector[N]T, all four SEMANTIC and word-for-word in both.
     # Plus fstring_hole_name (2026-09-04): the NAME rule inside an f-string hole.
-    [ "$cc_exp" -eq 370 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=370"
+    # Plus the 177 R16c-2 added (2026-09-04), every substring taken from
+    # ./tychoc1's own diagnostic and naming the RULE -- never an instance name,
+    # a line number or a path. Its remaining 21 carry none: the argument- and
+    # assignment-type family words its rule entirely in the instance types.
+    [ "$cc_exp" -eq 547 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=547"
 
     cc_dirs=0
     for cc_d in $(git ls-files tests 2>/dev/null | grep '\.ty$' | sed 's|/[^/]*$||' | sort -u); do

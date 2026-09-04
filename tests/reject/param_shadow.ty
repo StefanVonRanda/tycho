@@ -1,3 +1,4 @@
+# expect: is already declared in this scope
 fn f(x: int) -> int:
     x := 5
     return x

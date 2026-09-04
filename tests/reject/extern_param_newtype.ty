@@ -1,4 +1,5 @@
 # 14-ffi.md:21-22: same boundary rule, a newtype parameter.
+# expect: must be int/char/float/bool/string/ptr/bytes
 type NT = int
 
 extern fn ffi_take(s: NT) -> int

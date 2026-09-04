@@ -1,3 +1,4 @@
+# expect: bounded capacity must be an integer literal
 fn main():
     v: bounded[NOPE]int = []
     println(str(len(v)))

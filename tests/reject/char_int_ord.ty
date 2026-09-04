@@ -1,3 +1,4 @@
+# expect: ordering compares two ints
 fn main():
     c := 'A'
     println(str(c < 66))

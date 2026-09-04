@@ -1,3 +1,4 @@
+# expect: needs a type here -- no expected fn type supplies it
 fn main():
     g := fn(x): x + 1
     print(str(g(1)))

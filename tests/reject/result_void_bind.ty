@@ -1,3 +1,4 @@
+# expect: cannot bind a void value
 fn f() -> Result(void, string):
     return Ok()
 

@@ -1,5 +1,6 @@
 # A bool match with only `true` covered is not exhaustive; `_` or `false` is
 # required.
+# expect: match on a bool must cover both true and false
 fn main():
     b := true
     match b:

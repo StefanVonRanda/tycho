@@ -1,5 +1,6 @@
 # A `[$N]T` may only appear in a function parameter (where the argument fixes N),
 # never in a stored position such as a struct field.
+# expect: size-parameterized array
 struct Box:
     v: [$N]int
 fn main():

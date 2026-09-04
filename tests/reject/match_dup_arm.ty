@@ -1,3 +1,4 @@
+# expect: duplicate arm
 enum Color:
     Red
     Green

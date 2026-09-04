@@ -1,3 +1,4 @@
+# expect: push's value must be
 fn nop():
     print("x")
 

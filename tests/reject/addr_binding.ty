@@ -2,6 +2,7 @@
 # a feature (the design-aggregate-ref finding: the compatible constructs are
 # in-place inout and yielding subscripts); it would emit a C initializer taken
 # from a pointer, which is invalid C.
+# expect: is only valid as the argument to an inout parameter
 fn main():
     a: [int] = []
     r := &a

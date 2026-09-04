@@ -1,3 +1,4 @@
+# expect: match on an Option must cover both Some and None
 fn main():
     o := Some(3)
     x := match o:

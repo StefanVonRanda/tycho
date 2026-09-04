@@ -1,3 +1,4 @@
+# expect: `in` key must be
 fn main():
     m := []string: int
     m["a"] = 1

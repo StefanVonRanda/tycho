@@ -1,3 +1,4 @@
+# expect: in one call (the inout may reallocate
 fn f(s: [int], x: inout [int]):
     push(x, 99)
 fn main():

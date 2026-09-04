@@ -1,5 +1,6 @@
 # An enum with a payload-carrying variant cannot key a map: two values with
 # equal tags are not equal values. Must be a type error.
+# expect: map keys must be string, int
 enum Shape:
     Dot
     Circle(int)

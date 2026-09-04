@@ -7,6 +7,7 @@
 # of which reaches codegen as a C `void` field or parameter.
 #
 #   error: 'void' is a type only as a Result's ok payload, as in Result(void, string)
+# expect: is a type only as a Result's ok payload
 fn f() -> Result(Option(void), string):
     return Err("x")
 

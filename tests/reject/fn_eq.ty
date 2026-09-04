@@ -1,3 +1,4 @@
+# expect: functions are not comparable
 fn a(x: int) -> int:
     return x
 fn b(x: int) -> int:

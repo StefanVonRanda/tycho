@@ -1,5 +1,6 @@
 # src/tychoc.c@parse_extern_fn: an `inout` out-param must be a scalar the C side
 # can fill through a T*; string is length-headered, so char** has no trivial ABI.
+# expect: must be int/char/float/bool/ptr
 extern fn ffi_get(s: inout string)
 
 fn main():

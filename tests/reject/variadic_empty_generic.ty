@@ -1,3 +1,4 @@
+# expect: cannot infer the element type of an empty variadic call
 fn count(xs: ...$T) -> int:
     return len(xs)
 fn main():

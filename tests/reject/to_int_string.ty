@@ -1,3 +1,4 @@
+# expect: to_int(x) takes a float
 fn main():
     s := "hi"
     println(str(to_int(s)))

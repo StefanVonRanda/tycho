@@ -1,3 +1,4 @@
+# expect: but value is
 fn gimme() -> string:
     return "x"
 fn main():

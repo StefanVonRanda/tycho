@@ -1,3 +1,4 @@
+# expect: map keys must be string, int
 fn main():
     inner := []int: int
     inner[1] = 2

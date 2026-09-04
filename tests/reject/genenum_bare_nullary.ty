@@ -1,3 +1,4 @@
+# expect: supply the type explicitly
 enum Box($T):
     Has($T)
     Empty

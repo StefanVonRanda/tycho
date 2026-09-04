@@ -8,6 +8,7 @@
 # stays as a defensive backstop.
 #
 #   error: 'void' is a type only as a Result's ok payload, as in Result(void, string)
+# expect: is a type only as a Result's ok payload
 fn f() -> Result(int, void):
     return Ok(1)
 

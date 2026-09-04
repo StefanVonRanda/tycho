@@ -1,3 +1,4 @@
+# expect: function value cannot take a task or channel handle
 fn f(g: fn(Channel(int)) -> int) -> int:
     return 1
 

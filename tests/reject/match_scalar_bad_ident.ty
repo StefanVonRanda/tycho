@@ -1,5 +1,6 @@
 # An arm identifier on an int subject must be an int constant; a bare name is
 # rejected.
+# expect: is not an int constant (match arms for int are literals)
 fn main():
     x := 5
     match x:

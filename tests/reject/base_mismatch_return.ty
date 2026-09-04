@@ -1,4 +1,5 @@
 # A base-type mismatch on a return (string from a -> int function): clean diagnostic.
+# expect: but proc returns
 fn f() -> int:
     return "h"
 fn main():

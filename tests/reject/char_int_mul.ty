@@ -1,3 +1,4 @@
+# expect: arithmetic requires two ints or two floats
 fn main():
     c := 'A'
     d := c * 2

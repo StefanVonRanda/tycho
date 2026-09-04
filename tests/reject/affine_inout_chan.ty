@@ -1,3 +1,4 @@
+# expect: which an affine type cannot be
 
 fn drain(ch: inout Channel(int)) -> int:
     return 0

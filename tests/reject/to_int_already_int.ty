@@ -1,3 +1,4 @@
+# expect: is already an int -- indexing a string
 fn main():
     x := 5
     println(str(to_int(x)))

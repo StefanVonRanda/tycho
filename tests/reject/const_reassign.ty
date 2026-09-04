@@ -1,3 +1,4 @@
+# expect: cannot assign to constant
 const X = 5
 
 fn main():

@@ -1,3 +1,4 @@
+# expect: must be the only variadic argument
 fn sum(xs: ...int) -> int:
     return 0
 fn main():

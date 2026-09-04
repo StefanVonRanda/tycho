@@ -1,3 +1,4 @@
+# expect: newtype's underlying type must be
 type A = Option(int)
 
 fn main():

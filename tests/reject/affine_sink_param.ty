@@ -1,3 +1,4 @@
+# expect: which an affine type cannot be
 
 handle R:
     free: hc

@@ -1,3 +1,4 @@
+# expect: argument(s), got
 
 fn main():
     s := "hi"

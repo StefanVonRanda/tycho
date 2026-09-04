@@ -1,3 +1,4 @@
+# expect: which this statement discards
 fn f() -> Result(int, string):
     return Ok(1)
 

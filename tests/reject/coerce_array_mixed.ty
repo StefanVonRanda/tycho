@@ -1,3 +1,4 @@
+# expect: array elements must all have the same type
 fn main():
     xs := [1, 2.5, 3]
     println(str(xs[1]))

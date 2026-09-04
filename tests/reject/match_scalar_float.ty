@@ -1,5 +1,6 @@
 # match on a float is refused: equality on a continuous domain is a trap, and
 # there is no customer (design: D1).
+# expect: match on float is refused
 fn main():
     x := 1.5
     match x:

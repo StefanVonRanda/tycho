@@ -1,3 +1,4 @@
+# expect: must be int/char/float/bool/string/ptr/bytes
 struct P:
     x: int
 

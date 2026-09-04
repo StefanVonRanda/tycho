@@ -1,3 +1,4 @@
+# expect: already defined
 handle Some:
     free: c_free
 

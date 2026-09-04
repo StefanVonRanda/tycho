@@ -1,3 +1,4 @@
+# expect: an array element cannot be void
 fn nothing():
     println("no return type, so this call has no value")
 

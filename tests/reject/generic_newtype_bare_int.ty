@@ -1,3 +1,4 @@
+# expect: which does not fit the parameter pattern
 type Handle = int
 struct Box($T):
     v: $T

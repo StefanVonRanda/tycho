@@ -1,4 +1,5 @@
 # The declared `-> inout U` must match the yielded place's type.
+# expect: but yields a place of type
 struct Row:
     cells: [int]
 subscript at(r: Row, i: int) -> inout string:

@@ -1,3 +1,4 @@
+# expect: passed to two inout parameters
 fn swap2(x: inout int, y: inout int):
     t := x
     x = y

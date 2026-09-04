@@ -1,3 +1,4 @@
+# expect: bounded capacity must be positive
 const CAP = 0
 
 fn main():

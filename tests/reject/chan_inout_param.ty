@@ -1,3 +1,4 @@
+# expect: which an affine type cannot be
 fn pump(ch: inout Channel(int)):
     send(ch, 7)
 

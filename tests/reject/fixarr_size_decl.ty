@@ -1,5 +1,6 @@
 # A fixed-array SIZE mismatch on an annotated decl: [3]int value into a [4]int slot.
 # Same fail-open as fixarr_size_arg (the size was erased before the type compare).
+# expect: but value is
 fn main():
     small: [3]int = [1, 2, 3]
     big: [4]int = small

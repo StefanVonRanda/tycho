@@ -1,3 +1,4 @@
+# expect: which does not satisfy
 fn sm(xs: [$T]) -> $T where numeric(T):
     return xs[0] + xs[0]
 

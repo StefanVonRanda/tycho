@@ -1,3 +1,4 @@
+# expect: but value is
 fn main():
     t : (int, int) = (1, "h")
     println("unreachable")

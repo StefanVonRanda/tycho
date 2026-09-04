@@ -1,3 +1,4 @@
+# expect: which is not in the type set
 fn pick(a: $T, b: $T) -> $T where T: int | string:
     return a
 fn main():

@@ -7,6 +7,7 @@
 # read -- gen_match_side emits the body and binds nothing.
 #
 #   error: Ok carries no value here -- write a bare `Ok:` arm
+# expect: Ok carries no value here
 fn f() -> Result(void, string):
     return Ok()
 

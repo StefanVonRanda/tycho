@@ -1,3 +1,4 @@
+# expect: cannot assign to a field of a temporary
 struct Inner:
     v: [int]
 

@@ -1,5 +1,6 @@
 # The over-supply half of print_arity_zero.ty: `println` takes exactly one string.
 # tychoc: "'println' takes 1 argument(s), got 2".
+# expect: argument(s), got
 
 fn main():
     println("a", "b")

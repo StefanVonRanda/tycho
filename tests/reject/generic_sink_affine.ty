@@ -1,3 +1,4 @@
+# expect: which an affine type cannot be
 
 fn take(x: sink $T):
     pass

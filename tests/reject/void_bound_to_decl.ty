@@ -2,6 +2,7 @@
 # `nop()` stays legal -- only a decl that would take `void` as its type is
 # rejected. Same guard covers `ys := [nop()]` and `t := (1, nop())`, whose
 # composed types carry a `void` component.
+# expect: cannot bind a void value
 fn nop():
     print("x")
 

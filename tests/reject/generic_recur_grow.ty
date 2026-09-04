@@ -1,3 +1,4 @@
+# expect: too many generic instantiations
 fn grow(x: $T) -> int:
     return grow([x])
 

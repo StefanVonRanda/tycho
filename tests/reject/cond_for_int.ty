@@ -1,3 +1,4 @@
+# expect: for condition must be bool
 fn main():
     for 1:
         break

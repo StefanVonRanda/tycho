@@ -1,3 +1,4 @@
+# expect: close(h) takes a handle variable
 handle H:
     free: hclose
 

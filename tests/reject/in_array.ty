@@ -1,3 +1,4 @@
+# expect: tests membership in a map
 fn main():
     a := [1, 2, 3]
     if 5 in a:

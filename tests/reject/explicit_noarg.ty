@@ -1,3 +1,4 @@
+# expect: it appears only in the return type
 fn empty() -> [$T]:
     return []T
 fn main():

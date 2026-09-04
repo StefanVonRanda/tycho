@@ -1,3 +1,4 @@
+# expect: a Tycho fn cannot return a handle
 
 handle R:
     free: hc

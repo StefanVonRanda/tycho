@@ -1,4 +1,5 @@
 # A `$N` that no argument mentions (return-only) cannot be inferred.
+# expect: has a type parameter not fixed by any argument
 fn mk() -> [$N]int:
     return [1, 2, 3]
 fn main():

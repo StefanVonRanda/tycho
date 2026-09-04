@@ -1,4 +1,5 @@
 # 03-types.md:334-338: a newtype MUST NOT wrap a typed handle.
+# expect: newtype's underlying type must be
 handle H:
     free: hfree
 

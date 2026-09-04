@@ -1,4 +1,5 @@
 # A fixed-array length must be an int literal or an int const, not an arbitrary name.
+# expect: fixed-size array length must be an integer literal
 fn main():
     n := 3
     v: [n]int = [1, 2, 3]

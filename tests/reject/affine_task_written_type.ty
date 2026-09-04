@@ -1,3 +1,4 @@
+# expect: unknown type
 fn f(v: Task(int)) -> int:
     return 1
 

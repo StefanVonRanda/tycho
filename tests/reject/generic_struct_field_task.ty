@@ -1,3 +1,4 @@
+# expect: a struct field cannot be a task
 
 struct Box($T):
     t: $T

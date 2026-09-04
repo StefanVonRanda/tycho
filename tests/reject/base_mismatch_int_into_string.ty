@@ -1,3 +1,4 @@
+# expect: but value is
 fn main():
     x : string = 5
     println("unreachable")

@@ -1,3 +1,4 @@
+# expect: which does not satisfy
 fn distinct(xs: [$K]) -> int where hashable(K):
     m := []$K: int
     for x in xs:

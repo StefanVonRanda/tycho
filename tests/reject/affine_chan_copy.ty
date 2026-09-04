@@ -1,3 +1,4 @@
+# expect: a channel cannot be copied
 
 fn main():
     c := channel(int, 2)

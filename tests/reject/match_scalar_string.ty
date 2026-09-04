@@ -1,5 +1,6 @@
 # match on a string is refused: no dispatch customer in the tree; use if/elif
 # (design: D1).
+# expect: match on string is refused
 fn main():
     s := "hi"
     match s:

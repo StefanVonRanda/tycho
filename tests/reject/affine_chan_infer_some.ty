@@ -1,3 +1,4 @@
+# expect: channel handle cannot be stored in a container or aggregate
 fn main():
     ch := channel(int, 4)
     o := Some(ch)

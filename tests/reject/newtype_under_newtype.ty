@@ -1,4 +1,5 @@
 # 03-types.md:334-338: a newtype MUST NOT wrap another newtype.
+# expect: newtype's underlying type must be
 type B = int
 type A = B
 

@@ -1,4 +1,5 @@
 # 05-generics.md:80-82 / src/tychoc.c:2312: same rule, generic enum.
+# expect: its type arguments must be EITHER exactly its own parameters
 enum Opt($T):
     N
     S($T)

@@ -1,4 +1,5 @@
 # a map key must have the map exact key type on READ too, not only write (newtype identity)
+# expect: map key must be
 type Slot = int
 fn main():
     m : [Slot: int] = []

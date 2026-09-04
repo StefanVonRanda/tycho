@@ -1,3 +1,4 @@
+# expect: len(...) takes one argument
 
 fn main():
     xs := [1, 2]

@@ -1,3 +1,4 @@
+# expect: wildcard must be the last match arm
 enum Color:
     Red
     Green

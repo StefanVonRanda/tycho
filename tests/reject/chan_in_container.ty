@@ -1,4 +1,5 @@
 # a channel is created only in a declaration -- not nested in a container/arg. Both reject.
+# expect: a channel must be created directly in a declaration
 fn main():
     cs := [channel(int, 2)]
     print("x")

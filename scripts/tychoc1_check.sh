@@ -37,19 +37,31 @@ trap 'rm -rf "$T"' EXIT
 
 echo "tychoc1-check: $($C --version 2>/dev/null || echo tychoc1)"
 
-# [1] The fixture corpus, through its own runner -- the same fixtures, the
-# same goldens, the same ASan leg. The pass count is asserted below against a
-# literal, because "passed: 0 failed: 0" is also a zero-failure run.
+# [1] The fixture corpus, through its own runner -- the same fixtures, the same
+# goldens, the same ASan leg. The pass count is asserted, because "passed: 0
+# failed: 0" is also a zero-failure run -- but NOT against a corpus literal: this
+# said `-ge 755` while the corpus was 1001, so a quarter of it could vanish and
+# this lane stayed green. `tests/run.sh --count` walks the same class globs the
+# runner does, so the corpus half tracks the tree. The literal is only the 8
+# STANDALONE cases the runner adds on top of it -- clobber_refused_{bare,out,shim},
+# clobber_emit_c, bundle_clean, bundle_blames_right_file, dashname_after_ddash and
+# corpus_census -- which move when a CASE is added, never when a fixture is.
+STANDALONE=8
 if [ "$ONLY" = all ] || [ "$ONLY" = tests ]; then
     n=$((n + 1))
+    census=$(sh tests/run.sh --count 2>&1); crc=$?
+    corpus=$(printf '%s\n' "$census" | sed -n 's/^count total *\([0-9]*\).*/\1/p' | tail -1)
+    want=$(( ${corpus:-0} + STANDALONE ))
     TYCHOC="$C" sh tests/run.sh >"$T/tests.log" 2>&1
     got=$(sed -n 's/^passed: *\([0-9]*\).*/\1/p' "$T/tests.log" | tail -1)
     bad=$(sed -n 's/^passed: *[0-9]* *failed: *\([0-9]*\).*/\1/p' "$T/tests.log" | tail -1)
-    if [ "${bad:-1}" = 0 ] && [ "${got:-0}" -ge 755 ]; then
-        printf '  %-22s ok (passed=%s failed=%s)\n' tests "$got" "$bad"
+    if [ "$crc" = 0 ] && [ -n "${corpus:-}" ] && [ "${bad:-1}" = 0 ] && [ "${got:-0}" = "$want" ]; then
+        printf '  %-22s ok (passed=%s failed=%s = corpus %s + %s standalone)\n' \
+            tests "$got" "$bad" "$corpus" "$STANDALONE"
     else
-        printf '  %-22s FAIL (passed=%s failed=%s, expected failed=0 passed>=755)\n' \
-            tests "${got:-?}" "${bad:-?}"
+        printf '  %-22s FAIL (passed=%s failed=%s, expected failed=0 passed=%s from corpus %s + %s)\n' \
+            tests "${got:-?}" "${bad:-?}" "$want" "${corpus:-?}" "$STANDALONE"
+        [ "$crc" = 0 ] || printf '%s\n' "$census" | tail -2 | sed 's/^/      /'
         grep '^failed:' "$T/tests.log" | tail -1 | cut -c1-400
         fails=$((fails + 1))
     fi

@@ -1,3 +1,4 @@
+# expect: duplicate parameter
 fn f(x: int, x: int) -> int:
     return x
 fn main():

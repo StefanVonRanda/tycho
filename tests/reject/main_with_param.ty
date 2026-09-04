@@ -1,2 +1,3 @@
+# expect: takes no parameters -- the command line arrives through
 fn main(x: int):
     print(str(x))

@@ -1,3 +1,4 @@
+# expect: unknown type
 fn main():
     x: str = "h"
     println(x)

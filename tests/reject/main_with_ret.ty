@@ -1,3 +1,4 @@
 # 15-program.md:27-32: `main` MUST return void.
+# expect: returns nothing or Result(void, string)
 fn main() -> int:
     return 0

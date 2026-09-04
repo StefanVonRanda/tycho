@@ -1,3 +1,4 @@
+# expect: channel handle cannot be stored in a container or aggregate
 fn take(a: bounded[4]Channel(int)) -> int:
     return len(a)
 

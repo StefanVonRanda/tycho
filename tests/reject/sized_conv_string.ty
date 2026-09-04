@@ -1,3 +1,4 @@
+# expect: to_u8(x) takes a numeric value
 fn main():
     s := "hi"
     println(str(to_u8(s)))

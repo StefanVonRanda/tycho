@@ -3,6 +3,7 @@
 # message names the one spelling that works instead of only refusing this one.
 #
 #   error: Result(void, string) carries no ok value -- write Ok(), not Ok(x)
+# expect: carries no ok value -- write Ok(), not Ok(x)
 fn f() -> Result(void, string):
     return Ok(1)
 

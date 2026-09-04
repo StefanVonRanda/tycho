@@ -1,3 +1,4 @@
+# expect: channel handle cannot be stored in a container or aggregate
 fn f(v: Result(Channel(int), string)) -> int:
     return 1
 

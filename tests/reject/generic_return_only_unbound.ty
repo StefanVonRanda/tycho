@@ -1,3 +1,4 @@
+# expect: it appears only in the return type
 struct Box($T):
     items: [$T]
 

@@ -1,3 +1,4 @@
+# expect: is not a generic function
 fn f() -> int:
     return 1
 fn main():

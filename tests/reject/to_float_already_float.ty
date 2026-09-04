@@ -1,3 +1,4 @@
+# expect: to_float(n) takes an int
 fn main():
     x := 2.5
     println(str(to_float(x)))

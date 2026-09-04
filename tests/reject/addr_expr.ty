@@ -1,4 +1,5 @@
 # `&` is only valid as an inout argument; it is not an address operator.
+# expect: is only valid as the argument to an inout parameter
 fn main():
     a: [int] = []
     x := &a + 1

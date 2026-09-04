@@ -1,3 +1,4 @@
+# expect: channel handle cannot be stored in a container or aggregate
 fn f(v: Option(Channel(int))) -> int:
     return 1
 

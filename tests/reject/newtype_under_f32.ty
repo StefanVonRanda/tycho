@@ -1,4 +1,5 @@
 # 03-types.md:334-338: a newtype MUST NOT wrap `f32`.
+# expect: newtype's underlying type must be
 type A = f32
 
 fn main():

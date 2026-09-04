@@ -1,4 +1,5 @@
 # A range whose start exceeds its end is rejected.
+# expect: the start must not exceed the end
 fn main():
     x := 5
     match x:
