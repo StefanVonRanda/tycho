@@ -11,7 +11,7 @@ TYCHOC  ?= ./tychoc
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: packed-check status status-net status-check parse-check tychoc1-check script-check friction-check surface-check version-check all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check shim-warn source-bytes goldens-check tls-verify http-verify format-diff math-diff traversal-check ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check flow-check ed-check sheet-check sim-check make-check snap-check tally-check agg-check tmpl-check stat-check ledger-check fh-check grid-check chess-check rsa-check kvsrv-check sat-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check docs-fences check-links server server-check wiki ci release-check hooks ilp32 asan-self editors-check clean
+.PHONY: packed-check status status-net status-check parse-check tychoc1-check script-check friction-check surface-check version-check all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check shim-warn source-bytes goldens-check tls-verify http-verify format-diff math-diff traversal-check ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check flow-check ed-check sheet-check sim-check make-check snap-check tally-check agg-check tmpl-check stat-check ledger-check fh-check grid-check chess-check rsa-check kvsrv-check sat-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check spec-fast docs-fences check-links server server-check wiki ci release-check hooks ilp32 asan-self editors-check clean
 
 # tychoc1, the self-hosted compiler, is what `make` produces and what ships.
 # It still depends on tychoc: src/tychoc.c is the bootstrap stage that builds it.
@@ -80,6 +80,12 @@ entrypoints: tychoc1
 
 spec-check:
 	@sh scripts/spec_check.sh
+
+# The text half of spec-check -- Appendix A vs the chapters, and Appendix E's
+# fixture citations. ~0.03s against ~20s for the whole gate, which is what makes
+# it affordable in .githooks/pre-push. See scripts/spec_check.sh.
+spec-fast:
+	@sh scripts/spec_check.sh --fast
 
 docs-fences: tychoc1
 	@python3 scripts/docs_fences.py
@@ -412,7 +418,7 @@ release-check: tychoc1
 hooks:
 	@git config core.hooksPath "$$(git rev-parse --show-toplevel)/.githooks"
 	@echo "git hooks activated: core.hooksPath -> $$(git config core.hooksPath)"
-	@echo "  pre-push: check-links + fuzz-quick, and on a gh-pages push, contrast-check"
+	@echo "  pre-push: script-check + check-links + version-check + spec-fast + fuzz-quick, and on a gh-pages push, contrast-check + site-code-check"
 
 contrast-check:
 	@python3 scripts/check_contrast.py --selfcheck

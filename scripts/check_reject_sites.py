@@ -12,10 +12,17 @@ The check reuses classify_rejects.load_sites(), so it reads the same
 die_at/die/warn_at/diag_push sites the table was built from -- and needs no
 ./tychoc run, which is what makes it cheap enough to be a leg.
 
---selfcheck runs the two controls: a line bumped by one must be caught, and the
-committed table must be clean.
+Column 2, the CLASS, is checked the same way and for the same reason: the
+SYNTAX boundary was a typed line number until 2026-09-04, and when it went stale
+three fixtures moved SYNTAX -> SEMANTIC with every cited line still holding its
+own message -- invisible to the line leg above. The boundary is derived now
+(classify_rejects.find_parse_end), and [c4]/[c5]/[c6] are what say so.
+
+--selfcheck runs six controls: the committed table clean on both legs, a line
+bumped by one caught, a moved boundary caught and restored, an insertion above
+parse_program following, and a renamed parse_program raising.
 """
-import re, sys, os
+import re, sys, os, tempfile
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__))))
 import classify_rejects as C
 
@@ -24,6 +31,29 @@ TSV = "compiler/reject_class.tsv"
 
 def score(f):
     return len(re.sub(r"%[-0-9.*]*(?:ll)?[a-zA-Z]", "", f))
+
+
+def check_class(rows, sites):
+    """Rows whose recorded CLASS is no longer what their site decides.
+
+    The line leg above cannot see this: a boundary that moves reclassifies a
+    fixture while every cited line still holds its own message. That happened on
+    2026-09-04 -- three const-folding sites crossed the hard-coded SYNTAX
+    boundary and the table would have carried SEMANTIC as the truth.
+    """
+    by_line = {l: f for l, f, _ in sites}
+    bad = []
+    for path, cls, line, msg in rows:
+        n = int(line)
+        if n == 0:
+            continue            # FALLBACK rows are classified by hand, no site
+        f = by_line.get(n)
+        if f is None:
+            continue            # already reported by check()
+        got = C.classify_site(n, f)
+        if got != cls:
+            bad.append((path, n, "the site there is %s, the table says %s" % (got, cls)))
+    return bad
 
 
 def check(rows, sites):
@@ -61,15 +91,60 @@ def main():
             print("  selfcheck [c2] FAILED: every line bumped by 1 and nothing was caught"); rc = 1
         else:
             print("  selfcheck [c2] every line bumped by 1 is caught")
+        if check_class(rows, sites):
+            print("  selfcheck [c3] FAILED: a committed row's class is not what its site decides"); rc = 1
+        else:
+            print("  selfcheck [c3] every row's class is what its site decides")
+        # [c4] the real V2b condition: the SYNTAX boundary moves and fixtures
+        # reclassify while every cited line still holds its message. Pulled back
+        # to the highest SYNTAX row's own line, so the shift is derived from the
+        # table rather than typed, and asserted to have moved.
+        syn = [int(l) for _, c, l, _ in rows if c == "SYNTAX" and int(l) > 0]
+        moved = max(syn)
+        old = C.PARSE_END
+        assert moved != old, "boundary control did not move the boundary"
+        C.PARSE_END = moved                      # the row at `moved` is no longer < the boundary
+        drift = check_class(rows, sites)
+        C.PARSE_END = old
+        if not drift:
+            print("  selfcheck [c4] FAILED: boundary %d -> %d and no row reclassified" % (old, moved)); rc = 1
+        else:
+            print("  selfcheck [c4] boundary %d -> %d reclassifies %d row(s), caught"
+                  % (old, moved, len(drift)))
+        if check_class(rows, sites):
+            print("  selfcheck [c4] FAILED: the boundary was not restored"); rc = 1
+        # [c5] the boundary is derived, and the derivation follows an insertion
+        # above parse_program rather than needing a human to retype it.
+        src = open(C.SRC, encoding="utf-8", errors="replace").read().split("\n")
+        i = [k for k, ln in enumerate(src) if ln.startswith(C.PARSE_FN)][0]
+        tmpdir = tempfile.mkdtemp(prefix="reject-sites-")
+        tmp = tmpdir + "/shifted.c"
+        open(tmp, "w").write("\n".join(src[:i] + [""] * 23 + src[i:]))
+        got = C.find_parse_end(tmp)
+        if got != old + 23:
+            print("  selfcheck [c5] FAILED: 23 lines inserted above parse_program, "
+                  "boundary %d -> %d" % (old, got)); rc = 1
+        else:
+            print("  selfcheck [c5] 23 lines above parse_program move the boundary %d -> %d"
+                  % (old, got))
+        # [c6] and it fails loudly rather than guessing when the anchor is gone.
+        open(tmp, "w").write("\n".join(src).replace(C.PARSE_FN, "static ProcVec parse_prog2(", 1))
+        try:
+            C.find_parse_end(tmp)
+            print("  selfcheck [c6] FAILED: parse_program renamed and a boundary came back anyway"); rc = 1
+        except LookupError:
+            print("  selfcheck [c6] a renamed parse_program raises instead of guessing")
+        os.remove(tmp); os.rmdir(tmpdir)
         return rc
-    bad = check(rows, sites)
+    bad = check(rows, sites) + check_class(rows, sites)
     for p, n, why in bad[:20]:
         print("  STALE %s cites src/tycho" "c.c:%d -- %s" % (p, n, why))
     if bad:
-        print("reject-sites: %d of %d rows cite a line that moved -- "
+        print("reject-sites: %d of %d rows cite a line that moved or changed class -- "
               "rerun scripts/classify_rejects.py %s" % (len(bad), len(rows), TSV))
         return 1
-    print("reject-sites: %d rows, every cited diagnostic site still holds its message" % len(rows))
+    print("reject-sites: %d rows, every cited diagnostic site still holds its message "
+          "and its class (SYNTAX boundary: line %d, derived)" % (len(rows), C.PARSE_END))
     return 0
 
 

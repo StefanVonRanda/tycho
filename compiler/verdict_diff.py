@@ -120,15 +120,7 @@ def tychoc_verdict(path):
     if not hits:
         return (C.fallback(msg) or "UNMATCHED"), msg, loc
     best = max(hits, key=lambda h: LIT(h[1]))
-    needs = any(k in best[1] for k in C.NEEDS_SYMBOLS)
-    if best[0] < C.PARSE_END and not needs:
-        return "SYNTAX", msg, loc
-    if any(k in best[1] for k in C.NAME_SITES):
-        return "NAME", msg, loc
-    if (any(k in best[1] for k in C.TYPE_SITES)
-            and not any(k in best[1] for k in C.TYPE_EXCLUDE)):
-        return "TYPE", msg, loc
-    return "SEMANTIC", msg, loc
+    return C.classify_site(best[0], best[1]), msg, loc
 
 
 def main():

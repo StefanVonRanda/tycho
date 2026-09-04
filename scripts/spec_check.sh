@@ -7,6 +7,15 @@ end='<!-- END GENERATED -->'
 
 fail=0
 
+# --fast: checks 1 and 2 only -- both are text comparisons over docs/spec/ and
+# cost ~0.05s, against ~20s for spec_examples.sh, which builds and runs every
+# runnable example in the spec. That split is what makes the drift check cheap
+# enough for .githooks/pre-push, where the whole gate is not: `packed` reached
+# origin with Appendix A and 02-grammar.md disagreeing, and nothing between the
+# two commits could notice.
+fast=0
+[ "${1:-}" = "--fast" ] && fast=1
+
 # --- Check 1: Appendix A collected grammar matches the chapters -------------
 # Slice the region strictly between the marker lines (markers excluded).
 committed=$(awk -v b="$begin" -v e="$end" '
@@ -57,7 +66,9 @@ else
     fail=1
 fi
 
-if sh "$root/scripts/spec_examples.sh"; then
+if [ "$fast" = 1 ]; then
+    echo "spec-check: --fast, NOT run: spec_examples.sh (the runnable examples in docs/spec/). Run \`sh scripts/spec_check.sh\` for those."
+elif sh "$root/scripts/spec_examples.sh"; then
     :
 else
     fail=1

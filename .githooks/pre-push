@@ -1,6 +1,7 @@
 #!/bin/sh
-# tycho pre-push gate. (Local. No GitHub Actions, ever.) Two cheap checks: the
-# link + `path:line` citation gate, and a quick fuzz smoke.
+# tycho pre-push gate. (Local. No GitHub Actions, ever.) Cheap checks only: the
+# link + `path:line` citation gate, the script parse, the version bump, the
+# grammar-drift half of spec-check, and a quick fuzz smoke.
 #
 # IT DOES NOT RUN THE SWEEP, since 2026-08-10. `make ci N=0` was here and was
 # removed on the owner's instruction: ~274s on every push, usually re-running
@@ -105,8 +106,16 @@ if printf '%s\n' "$REFS" | awk '$3 != "refs/heads/gh-pages" { found = 1 } END { 
     # 0.15s, and the moment it exists for is a push: the 0.6->0.7 bump left five
     # files announcing the old release and every gate stayed green.
     gate "make version-check (docs name the shipped version)" version-check
+    # 0.03s, and the push it exists for already happened: `packed` shipped with
+    # Appendix A carrying a production that docs/spec/02-grammar.md did not, and
+    # spec_check.sh was RED at HEAD for two commits. The ~20s examples half stays
+    # out -- it builds and runs every runnable snippet in the spec, which is a
+    # `make spec-check` job, and --fast says on every run that it skipped it.
+    gate "make spec-fast (Appendix A vs the chapters, Appendix E citations)" spec-fast
     gate "make fuzz-quick (soundness smoke)"     fuzz-quick
 fi
 
 rm -f "$LOG"
-printf 'pre-push: gates green -- allowing push. `make ci` is NOT run here; run it yourself before a substantial push.\n'
+printf 'pre-push: gates green -- allowing push. NOT run here: `make ci`, and the\n'
+printf '  runnable-examples half of `make spec-check` (~20s). Run them yourself before a\n'
+printf '  substantial push.\n'

@@ -27,7 +27,33 @@ decides the class.
 import re, subprocess, sys, os
 
 SRC = "src/tycho" + "c.c"          # assembled: a literal path:line in a string is a citation
-PARSE_END = 5268                   # end of parse_program
+PARSE_FN = "static ProcVec parse_program("
+
+
+def find_parse_end(path=SRC):
+    """Line of parse_program's closing brace -- the end of the parse region.
+
+    DERIVED, never typed. It was a hard-coded 5245 until 2026-09-04; an edit
+    inserting 23 lines above it moved three const-folding sites across the
+    boundary and reclassified them SYNTAX -> SEMANTIC in silence, and no gate in
+    the tree could see it (a bare Python integer is not a `path:line`, so the
+    citation gate never looks at it). Bumping the literal by 23 restored those
+    three and left the boundary 81 lines short of the function it names.
+    """
+    lines = open(path, encoding="utf-8", errors="replace").read().split("\n")
+    starts = [i for i, ln in enumerate(lines) if ln.startswith(PARSE_FN)]
+    if len(starts) != 1:
+        raise LookupError("%d definitions of parse_program in %s" % (len(starts), path))
+    for j in range(starts[0] + 1, len(lines)):
+        if lines[j] == "}":            # column 0: the function's own closing brace
+            return j + 1
+    raise LookupError("parse_program has no closing brace in %s" % path)
+
+
+try:
+    PARSE_END = find_parse_end()
+except LookupError as e:
+    sys.exit("classify_rejects: " + str(e))
 
 # Parse-region sites that consult a table tychoc1 has not built yet. Matched as
 # substrings of the FORMAT string, so each names a rule rather than a line.
@@ -239,6 +265,22 @@ def fallback(msg):
     return None
 
 
+def classify_site(line, f):
+    """The class a diagnostic SITE decides: its line and its format string.
+
+    The single copy of the split. compiler/verdict_diff.py and
+    scripts/check_reject_sites.py call this rather than restating it, so a
+    boundary or a rule list cannot mean two things in one tree.
+    """
+    if line < PARSE_END and not any(k in f for k in NEEDS_SYMBOLS):
+        return "SYNTAX"
+    if any(k in f for k in NAME_SITES):
+        return "NAME"
+    if any(k in f for k in TYPE_SITES) and not any(k in f for k in TYPE_EXCLUDE):
+        return "TYPE"
+    return "SEMANTIC"
+
+
 def fmt_to_re(f):
     out, i = [], 0
     while i < len(f):
@@ -322,16 +364,7 @@ def main():
             continue
         best = max(hits, key=lambda h: len(re.sub(r"%[-0-9.*]*(?:ll)?[a-zA-Z]", "", h[1])))
         line, f = best[0], best[1]
-        needs = any(k in f for k in NEEDS_SYMBOLS)
-        if line < PARSE_END and not needs:
-            cls = "SYNTAX"          # the SYNTAX boundary is Phase 4's, untouched
-        elif any(k in f for k in NAME_SITES):
-            cls = "NAME"
-        elif any(k in f for k in TYPE_SITES) and not any(k in f for k in TYPE_EXCLUDE):
-            cls = "TYPE"
-        else:
-            cls = "SEMANTIC"
-        out.append((p, cls, line, msg))
+        out.append((p, classify_site(line, f), line, msg))
     with open(sys.argv[1], "w") as fh:
         for p, cls, line, msg in out:
             fh.write("%s\t%s\t%d\t%s\n" % (p, cls, line, msg))

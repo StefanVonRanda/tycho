@@ -93,7 +93,11 @@ n_new=$(find tools examples server bench -name '*.ty' | wc -l)
 # nothing gated it, so it rotted silently: 310 of 337 rows cited a line that had
 # moved (2026-09-03) while every class was still right. Cheap -- it re-reads the
 # diagnostic sites, it does not run ./tychoc.
+# Column 2, the CLASS, is checked alongside it since 2026-09-04: the SYNTAX
+# boundary was a typed line and its drift reclassified three fixtures in silence.
+# The selfcheck is the proof both legs can still fail; it runs no ./tychoc either.
 python3 scripts/check_reject_sites.py || rc=1
+python3 scripts/check_reject_sites.py --selfcheck || rc=1
 
 # [1] and [1b] -- the accept corpora
 leg_accept() {
