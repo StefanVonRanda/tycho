@@ -1,7 +1,7 @@
-# No `# expect:`: the two compilers word this differently and `make test` scores the
-# expectation against ./tychoc1. Bootstrap src/tychoc.c:3513 says `expected a value
-# after '..' in the match arm`; tychoc1 stops one rule earlier, at `a match arm must
-# be a variant name, a scalar literal, a range, or `_``. See plan.md R21d-2.
+# expect: expected a value after '..' in the match arm
+# Both compilers name this rule since _pat_end took the message to use when no
+# value follows; tychoc1 used to stop one rule earlier, at `a match arm must be
+# a variant name, ...`. src/tychoc.c:3513.
 fn main():
     x := 1
     match x:

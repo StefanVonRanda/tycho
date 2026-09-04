@@ -78,11 +78,16 @@ corpus_census() {
     # the 2k soa element bans, the fn-returns-a-handle rule, the closure handle
     # capture and the two spawn rules, plus 5 of the 10 R21f-10 added for the 8k
     # value-if/match, map compound-assign, nested-pattern and place block.
-    # R21f-10's other 5 carry none for the same reason as the 4 above -- each
+    # R21f-10's other 4 carry none for the same reason as the 1 below -- each
     # says in its own header which tychoc1 rule words the refusal differently.
-    # The other 4 carry none on purpose: this lane scores the expectation against
-    # ./tychoc1, and on those rules the two compilers word it differently, so an
-    # `# expect:` here could only assert one of the two. Each says so in its header.
+    # (`pass_as_value` was the fifth and carries one now: R21a-3 moved tychoc1 to
+    # src/tychoc.c:6164's rule.)
+    # `parfor_not_collection` carries none on purpose: this lane scores the
+    # expectation against ./tychoc1, and on that rule the two compilers word it
+    # differently, so an `# expect:` here could only assert one of the two. Its
+    # header says so. Its three former siblings -- `for3_two_clauses`,
+    # `match_range_no_high` and `const_div_overflow` -- were closed by R21a-3 and
+    # are pinned on the whole message now.
     # Plus all 5 flat ones R21f-11 added for the 5k const-fold and pending-decl
     # block and the two lambda ceilings; its 6th is a package fixture and is not
     # in this count, which walks the flat lane only.
@@ -97,7 +102,7 @@ corpus_census() {
         grep -q '^# expect: ' "$cc_e" && cc_exp=$((cc_exp + 1))
     done
     [ "$cc_show" = print ] && printf 'count %-10s %d\n' reject-expect "$cc_exp"
-    [ "$cc_exp" -eq 338 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=338"
+    [ "$cc_exp" -eq 342 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=342"
 
     cc_dirs=0
     for cc_d in $(git ls-files tests 2>/dev/null | grep '\.ty$' | sed 's|/[^/]*$||' | sort -u); do

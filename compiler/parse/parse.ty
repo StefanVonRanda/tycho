@@ -1090,7 +1090,9 @@ fn _scalar_arm_ahead(toks: [lex.Tok], i: int) -> bool:
         return true
     return k == lex.K_IDENT and (_isop(toks, i + 1, lex.OP_DOTDOT) or _isop(toks, i + 1, lex.OP_PIPE))
 
-fn _pat_end(toks: [lex.Tok], i0: int) -> (ast.Pat, int, bool):
+# `miss` is the rule to name when no value follows: src/tychoc.c:3514 has a
+# dedicated one for the HIGH end of a range, where :3527 names the arm forms.
+fn _pat_end(toks: [lex.Tok], i0: int, miss: string) -> (ast.Pat, int, bool):
     # one end of a scalar pattern: an int/char/bool literal or a const NAME
     i := i0
     neg := false
@@ -1118,17 +1120,17 @@ fn _pat_end(toks: [lex.Tok], i0: int) -> (ast.Pat, int, bool):
         if neg:
             _die(toks, _at(toks, i), "'-' is only valid before an int literal in a match arm")
         return (ast.Pat("name", 0, 0, toks[ti].text, "", false), i + 1, true)
-    _die(toks, _at(toks, i), "a match arm must be a variant name, a scalar literal, a range, or `_`")
+    _die(toks, _at(toks, i), miss)
     return (ast.Pat("int", 0, 0, "", "", false), i0, false)
 
 fn _scalar_arm(toks: [lex.Tok], i0: int) -> ([ast.Pat], int):
     i := i0
     pats := []ast.Pat
     for true:
-        p, j, ok := _pat_end(toks, i)
+        p, j, ok := _pat_end(toks, i, "a match arm must be a variant name, a scalar literal, a range, or `_`")
         i = j
         if _isop(toks, i, lex.OP_DOTDOT):
-            h, k, ok2 := _pat_end(toks, i + 1)
+            h, k, ok2 := _pat_end(toks, i + 1, "expected a value after '..' in the match arm")
             i = k
             if h.kind != p.kind:
                 _die(toks, _at(toks, i0), "a range's two ends must be the same kind of value")
@@ -1461,7 +1463,11 @@ fn _forstmt_into(toks: [lex.Tok], i0: int, par: bool, out: inout ast.Stmt) -> in
         # Each empty clause reaches _simple_into or _expr_into as a bare ';'
         # and reports `expected an expression`, which names no rule.
         # src/tychoc.c:3972-3979, in that order.
-        if s2 >= 0 and cl < s2:
+        # src/tychoc.c:3970 -- with only ONE ';' the generic `_op` reports the
+        # token it found, which names no rule.
+        if s2 < 0:
+            _die(toks, _at(toks, i0 - 1), "a three-clause `for` is `for init; cond; post:` -- two ';' separating three clauses")
+        if cl < s2:
             _die(toks, _at(toks, i0 - 1), "expected ':' before the block")
         if s1 == i:
             _die(toks, _at(toks, i0 - 1), "the init clause is required -- write `for:` for an infinite loop")
@@ -2216,8 +2222,15 @@ fn _const_fold(toks: [lex.Tok], e: ast.Expr, cs: [ast.ConstD], t: lex.Tok) -> as
             if o == "/" or o == "%":
                 if y == 0:
                     _die(toks, t, "const expression divides by zero")
+                # src/tychoc.c:5194: min/-1 is 2^63 and has no int value -- folding
+                # it TRAPS this compiler instead of diagnosing. The remainder is 0.
+                lo := -9223372036854775807 - 1
                 if o == "/":
+                    if x == lo and y == -1:
+                        _die(toks, t, "const expression overflows: the smallest int divided by -1 has no int value")
                     return ast.IntLit(l, x / y)
+                if x == lo and y == -1:
+                    return ast.IntLit(l, 0)
                 return ast.IntLit(l, x % y)
             if o == "&":
                 return ast.IntLit(l, x & y)

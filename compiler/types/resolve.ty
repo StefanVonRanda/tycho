@@ -700,6 +700,11 @@ fn _expr(rs: inout R, bi: [string: bool], ctors: [string: bool], e: ast.Expr):
                 _note(&rs, "fnval:" + n)
                 _dwarn(&rs, n)
                 return
+            # src/tychoc.c:6163 -- `pass` is a statement, so here it can only be
+            # a value branch's tail, and that rule outranks did-you-mean.
+            if n == "pass":
+                _err(&rs, "`pass` is a statement and produces no value -- a value if/match needs one in every branch, so write this as a plain statement")
+                return
             _err(&rs, "unknown variable '" + n + "'" + _dym(n, _vcands(&rs)))
         ast.Call(l, q, n, ts, args):
             _tys(&rs, ts)

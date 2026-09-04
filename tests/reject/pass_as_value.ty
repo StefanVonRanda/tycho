@@ -1,3 +1,4 @@
+# expect: `pass` is a statement and produces no value -- a value if/match needs one in every branch, so write this as a plain statement
 fn main():
     x := if true:
         pass
