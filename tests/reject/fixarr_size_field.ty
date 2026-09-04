@@ -1,4 +1,8 @@
-# expect: field 'v' of S is [4]int, got [3]int
+# The rule is what is pinned; the second line is the ONE load-bearing token.
+# This fixture's subject is the SIZE, so [4]int/[3]int stays -- the field and
+# struct names are the accident R16c-1 forbids freezing, and are gone.
+# expect: field type mismatch
+# expect: is [4]int, got [3]int
 struct S:
     v: [4]int
 fn main():

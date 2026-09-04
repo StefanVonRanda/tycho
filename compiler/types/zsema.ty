@@ -1178,7 +1178,7 @@ fn _inst_ctor(cs: inout C, l: int, ti: int, args: [ast.Expr], at0: int, npay: in
             # subject is the TEMPLATE's name here; the bootstrap names the
             # instance (`Box__int`), which tychoc1 does not materialise.
             if len(vn) > 0:
-                _cerr(&cs, vn + " payload " + str(bad + 1) + " is " + _show(&cs, badb) + ", got " + _show(&cs, ats[bad]))
+                _cerr(&cs, "payload type mismatch: " + vn + " payload " + str(bad + 1) + " is " + _show(&cs, badb) + ", got " + _show(&cs, ats[bad]))
             else:
                 _cerr(&cs, "field type mismatch: field '" + cs.tds[ti].fnames[bad] + "' of " + _short(cs.tds[ti].name) +
                     " is " + _show(&cs, badb) + ", got " + _show(&cs, ats[bad]))

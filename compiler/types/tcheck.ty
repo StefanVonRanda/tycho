@@ -2088,7 +2088,7 @@ fn _check_variant(cs: inout C, m: string, args: [ast.Expr], line: int) -> string
         at := _ex2(&cs, args[i], pay[i])
         cs.line = line
         if not compat(at, pay[i]):
-            _cerr(&cs, _short(m) + " payload " + str(i + 1) + " is " + _show(&cs, pay[i]) + ", got " + _show(&cs, at))
+            _cerr(&cs, "payload type mismatch: " + _short(m) + " payload " + str(i + 1) + " is " + _show(&cs, pay[i]) + ", got " + _show(&cs, at))
         cs.line = ast.line_of(args[i])
     cs.in_arg = keep
     cs.line = line

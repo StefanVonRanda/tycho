@@ -6866,7 +6866,7 @@ static Type resolve_expr_inner(Expr *e) {
                     for (int i = 0; i < e->nargs; i++) {
                         Type at_ = resolve_exp(e->args[i], var->payload[i]);   /* coerces a None */
                         if (at_ != var->payload[i])
-                            die_at(e->line, "%s payload %d is %s, got %s", var->name, i + 1,
+                            die_at(e->line, "payload type mismatch: %s payload %d is %s, got %s", var->name, i + 1,
                                    type_name(var->payload[i]), type_name(at_));
                     }
                     e->op = TK_ENUM; e->ival = evi;   /* mark as an enum ctor; carry the variant index */

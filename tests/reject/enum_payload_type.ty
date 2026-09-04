@@ -1,6 +1,6 @@
 # src/tychoc.c:6869 -- a payload value must have the declared payload type;
 # there is no widening from string.
-# expect: Circle payload 1 is float, got string
+# expect: payload type mismatch
 enum Shape:
     Circle(float)
 fn main():

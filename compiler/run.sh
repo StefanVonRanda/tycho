@@ -661,6 +661,41 @@ done
 echo "leg14 newtype distinctness: refused=$n14r/4 accepted=$n14a/2 (no message names a mangled type)"
 [ "$l14" = 0 ] || { echo "parse-check: a newtype rule moved"; rc=1; }
 
+# [15] -- THE CONCURRENCY AND MATCH-ARM FAMILIES, BY MESSAGE. leg [5] below
+# reaches tests/conc/reject and tests/reject/pkg, but it scores a VERDICT: a
+# fixture refused for the WRONG reason is a refusal either way, and every one of
+# these rules is a statement SHAPE with a sibling shape next to it, so refusing
+# by a neighbour's rule is the likely regression rather than accepting. So each
+# fixture's first diagnostic MESSAGE is compared against ./tychoc's, and the
+# legal programs beside them must still typecheck -- the accepting twin, without
+# which "refuses everything" scores full marks on a corpus of rejections.
+l15=0; n15r=0; n15a=0; n15d=0
+# The first diagnostic MESSAGE, location and driver prefix stripped, so the
+# two are comparable. merge_pkg's two package-header refusals carry NO
+# `error:` and name the FILE -- an unlocated `tychoc: <msg>` is a message
+# like any other, and matching only the located form scored those two as an
+# empty string, i.e. as not refused at all (observed while writing this).
+m1() { sed -n -e 's/^.*: error: //p' -e 's/^tychoc1\{0,1\}: \([^ ].*\)$/\1/p' \
+           | grep -v ': error: ' | head -1; }
+for f in tests/conc/reject/*.ty tests/reject/pkg/*/main.ty; do
+    a=$("./tychoc" "$f" --emit-c -o "$T/_l15.c" 2>&1 | m1)
+    b=$("$TYCHOC1" "$f" --typecheck 2>&1 | m1)
+    if [ -z "$b" ]; then echo "  CONC-NOT-REFUSED $f"; l15=1; continue; fi
+    n15r=$((n15r+1))
+    if [ "$a" != "$b" ]; then
+        n15d=$((n15d+1)); l15=1
+        echo "  CONC-RULE-MOVED $f"; echo "    tychoc : $a"; echo "    tychoc1: $b"
+    fi
+done
+for f in tests/conc/*.ty tests/pkg/*/main.ty; do
+    [ -f "$f" ] || continue
+    if "$TYCHOC1" "$f" --typecheck >/dev/null 2>&1; then n15a=$((n15a+1))
+    else echo "  CONC-WRONGLY-REFUSED $f :: $("$TYCHOC1" "$f" --typecheck 2>&1 | head -1)"; l15=1; fi
+done
+echo "leg15 conc + pkg rules by MESSAGE: refused=$n15r/50 disagree=$n15d accepted=$n15a/39"
+[ "$n15r" = 50 ] && [ "$n15a" = 39 ] || { echo "parse-check: leg15 corpus moved -- update the literals"; l15=1; }
+[ "$l15" = 0 ] || { echo "parse-check: a concurrency or match-arm rule moved"; rc=1; }
+
 # [5] -- the whole tree, both verdicts, split by the same site table. See the
 # header of compiler/verdict_diff.py; it is the only leg that reaches
 # tests/conc, tests/diag and tests/reject/pkg.

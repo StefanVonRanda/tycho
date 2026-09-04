@@ -8,7 +8,7 @@
 # Pinned since compiler/types/zsema.ty@_bnd_stage2 gave tychoc1 the bootstrap's
 # second stage; ./tychoc names the INSTANCE (`Box__int`), which tychoc1 has not
 # materialised, so the expectation stops at the shared prefix.
-# expect: field 'xs' of Box
+# expect: field type mismatch
 # expect: is bounded[4]int, got [4]int
 
 struct Box($T):
