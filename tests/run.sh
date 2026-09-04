@@ -109,7 +109,7 @@ corpus_census() {
     # Plus the 4 inline-array fixtures (V3a, 2026-09-04): slice and push on a
     # [N]T and on a vector[N]T, all four SEMANTIC and word-for-word in both.
     # Plus fstring_hole_name (2026-09-04): the NAME rule inside an f-string hole.
-    [ "$cc_exp" -eq 369 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=369"
+    [ "$cc_exp" -eq 370 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=370"
 
     cc_dirs=0
     for cc_d in $(git ls-files tests 2>/dev/null | grep '\.ty$' | sed 's|/[^/]*$||' | sort -u); do

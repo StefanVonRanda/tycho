@@ -80,7 +80,7 @@ tests/reject/char_elem_div.ty	TYPE	7569	`/` is not defined element-wise on [char
 tests/reject/char_elem_mod.ty	TYPE	7569	`%` is not defined element-wise on [char] -- there is no element-wise `%` for char
 tests/reject/char_elem_mul.ty	TYPE	7569	`*` is not defined element-wise on [char] -- there is no element-wise `*` for char
 tests/reject/char_empty.ty	SYNTAX	819	empty or unterminated char literal
-tests/reject/char_escape_unsupported.ty	SYNTAX	0	unsupported char escape (use \n \t \r \0 \xNN \\ \')
+tests/reject/char_escape_unsupported.ty	SYNTAX	815	unsupported char escape (use \n \t \r \0 \xNN \\ \')
 tests/reject/char_int_eq.ty	TYPE	7462	cannot compare char with int
 tests/reject/char_int_mul.ty	TYPE	7677	arithmetic requires two ints or two floats (got char, int) -- convert one side, e.g. to_float(x) to compute in floats, or to_int(x) in ints
 tests/reject/char_int_ord.ty	TYPE	7485	ordering compares two ints, two floats, two strings, or two values of the same numeric newtype
@@ -119,6 +119,7 @@ tests/reject/const_shift_negative.ty	SYNTAX	5298	const expression shifts by a ne
 tests/reject/decl_not_used.ty	SEMANTIC	0	'x' declared and not used
 tests/reject/delete_from_call.ty	SYNTAX	3882	cannot `delete` from this expression
 tests/reject/delete_not_an_index.ty	SYNTAX	3865	`delete` removes a map element: `delete m[k]`
+tests/reject/destructure_dup_name.ty	NAME	8568	duplicate name 'a' in the destructuring list
 tests/reject/destructure_too_many.ty	SYNTAX	4160	at most 8 destructuring targets
 tests/reject/division_by_zero.ty	SEMANTIC	7508	division by zero
 tests/reject/dotlt_sequential.ty	SYNTAX	4075	`0..<N` counts only in a `parallel for` -- write `for i := 0; i < N; i += 1:` for a sequential count
@@ -129,7 +130,7 @@ tests/reject/dup_fn_variant_fn_first.ty	NAME	4363	'Alpha' is already defined
 tests/reject/dup_local.ty	NAME	9028	'a' is already declared in this scope
 tests/reject/dup_param.ty	NAME	9532	duplicate parameter 'x'
 tests/reject/dup_struct_enum.ty	NAME	4363	'X' is already defined
-tests/reject/dup_variant.ty	NAME	0	variant name 'W' is already used in this package
+tests/reject/dup_variant.ty	NAME	4883	variant name 'W' is already used in this package
 tests/reject/elementwise_bounded.ty	TYPE	7541	element-wise `+` is defined for [T] and [N]T only (got bounded[4]int, bounded[4]int)
 tests/reject/elementwise_elem_type.ty	TYPE	7552	element-wise `+` requires two arrays with the same element type (got [int], [float])
 tests/reject/elementwise_mix_kinds.ty	TYPE	7558	cannot mix a fixed array and a growable array in element-wise `+` (got [2]int, [int]) -- copy one side into the other's kind first
@@ -195,7 +196,7 @@ tests/reject/from_bytes_not_bytes.ty	SEMANTIC	6500	from_bytes$(T)(b) takes bytes
 tests/reject/from_bytes_not_packed.ty	SEMANTIC	6498	from_bytes$(Loose): only a packed struct can be read from bytes
 tests/reject/from_bytes_two_args.ty	SEMANTIC	6494	from_bytes$(T)(b) takes one value argument
 tests/reject/from_bytes_two_typeargs.ty	SEMANTIC	6495	from_bytes$(T)(b) takes exactly one type argument
-tests/reject/fstring_escape.ty	SYNTAX	0	unsupported escape \  (use \n \t \r \\ \")
+tests/reject/fstring_escape.ty	SYNTAX	731	unsupported escape \  (use \n \t \r \\ \")
 tests/reject/fstring_hole_name.ty	NAME	6264	unknown variable 'nosuchvar'
 tests/reject/genenum_bare_nullary.ty	SEMANTIC	6227	Empty is a variant of generic enum Box; supply the type explicitly, e.g. Empty$(int)
 tests/reject/generic_bounded_field_degraded.ty	TYPE	6851	field 'xs' of Box__int is bounded[4]int, got [4]int
@@ -234,7 +235,7 @@ tests/reject/handle_then_newtype.ty	NAME	4363	'H' is already defined
 tests/reject/handle_then_struct.ty	NAME	4363	'H' is already defined
 tests/reject/hash_float.ty	TYPE	6978	hash(x) can't hash a float (hashable = the map-key types: int, string, their newtypes, fieldless enums, and composites of those)
 tests/reject/hash_two_args.ty	SEMANTIC	6972	hash(x) takes one argument
-tests/reject/hex_escape_in_string.ty	SYNTAX	0	unsupported escape \x (use \n \t \r \\ \")
+tests/reject/hex_escape_in_string.ty	SYNTAX	731	unsupported escape \x (use \n \t \r \\ \")
 tests/reject/hex_escape_one_digit.ty	SYNTAX	813	\x takes exactly two hex digits (e.g. '\x41')
 tests/reject/if_expr_no_else.ty	SYNTAX	3503	an `if` used as a value must have an `else` — every path must produce a value
 tests/reject/if_expr_type_mismatch.ty	TYPE	8487	if/match branches produce different types (int and string)
@@ -259,8 +260,8 @@ tests/reject/inout_arg_not_place.ty	TYPE	7294	inout argument 1 of 'bump' must na
 tests/reject/inout_borrowed_param.ty	SEMANTIC	7296	cannot pass borrowed parameter 'v' as inout (it is read-only; copy it first)
 tests/reject/inout_byval_alias.ty	SEMANTIC	7366	variable 'a' is passed to an inout parameter and also by value in the same call to 'f' (overlapping access — the by-value copy would alias the inout'd value)
 tests/reject/inout_fnvalue.ty	TYPE	9150	inout parameter 'h': a function value can't be inout (a callee could write a closure back into the caller and it would dangle)
-tests/reject/int_bin_bad_digit.ty	SYNTAX	0	a binary literal needs digits 0 or 1 after `0b`
-tests/reject/int_hex_no_digits.ty	SYNTAX	0	a hex literal needs at least one digit after `0x`
+tests/reject/int_bin_bad_digit.ty	SYNTAX	619	a binary literal needs digits 0 or 1 after `0b`
+tests/reject/int_hex_no_digits.ty	SYNTAX	619	a hex literal needs at least one digit after `0x`
 tests/reject/int_hex_overflow.ty	SYNTAX	662	integer literal out of range
 tests/reject/int_literal_overflow.ty	SYNTAX	662	integer literal out of range
 tests/reject/is_chain.ty	SYNTAX	3331	`is` does not chain -- write `a is X and a is Y`
@@ -457,8 +458,8 @@ tests/reject/str_as_type.ty	TYPE	2720	unknown type 'str'
 tests/reject/str_index_assign.ty	TYPE	8961	cannot index-assign an element of string (it is immutable)
 tests/reject/str_of_fn_value.ty	SEMANTIC	6960	str(x) can't stringify a fn()
 tests/reject/str_two_args.ty	SEMANTIC	6950	str(x) takes one argument
-tests/reject/string_escape.ty	SYNTAX	0	unsupported escape \  (use \n \t \r \\ \")
-tests/reject/string_raw_control.ty	SYNTAX	0	raw control byte in string literal (use an escape such as \n or \t)
+tests/reject/string_escape.ty	SYNTAX	731	unsupported escape \  (use \n \t \r \\ \")
+tests/reject/string_raw_control.ty	SYNTAX	740	raw control byte in string literal (use an escape such as \n or \t)
 tests/reject/string_unterminated.ty	SYNTAX	688	unterminated string literal
 tests/reject/struct_field_unknown.ty	SEMANTIC	6454	struct S has no field 'zzzzzz'
 tests/reject/struct_mix_named_positional.ty	SEMANTIC	6801	P: cannot mix named and positional fields

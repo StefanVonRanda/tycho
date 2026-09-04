@@ -37,7 +37,7 @@ trap 'rm -rf "$T"' EXIT
 
 echo "tychoc1-check: $($C --version 2>/dev/null || echo tychoc1)"
 
-# [1] The fixture corpus, through its own runner -- the same 755 fixtures, the
+# [1] The fixture corpus, through its own runner -- the same fixtures, the
 # same goldens, the same ASan leg. The pass count is asserted below against a
 # literal, because "passed: 0 failed: 0" is also a zero-failure run.
 if [ "$ONLY" = all ] || [ "$ONLY" = tests ]; then

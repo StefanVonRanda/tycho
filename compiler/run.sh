@@ -16,7 +16,8 @@
 #   [3]  the AST node-kind census, compared to a recorded golden. An accept/
 #        reject verdict is blind to a parse that SUCCEEDS with the wrong tree:
 #        dropping the ast.Named wrapper from a `name: value` call argument left
-#        legs 1 and 2 fully green on all 611 files and only moved the census.
+#        legs 1 and 2 fully green on every file in the corpus and only
+#        moved the census.
 #   [4]  the declaration rules that NO fixture in tests/reject/ covers, each
 #        written here as a whole program. Every refusal is paired with an
 #        accepting twin one token away -- a leg that only ever refuses is
@@ -49,7 +50,7 @@
 #   [9]  the TYPE census: the type this pass INFERRED at every declaration,
 #        parameter, return, loop variable, call, field, index and operator.
 #        Making `str(x)` answer `?` instead of `string` left every verdict leg
-#        on all 1,078 files green and moved 9,742 counted sites here.
+#        on every file in the corpus green and moved 9,742 counted sites here.
 #   [10] the whole tree under `--typecheck`, and [11] every TYPE file's
 #        `file:line` against ./tychoc's -- leg8's argument, for the new class.
 #   [12] how many accepted programs use a generic/newtype/handle/bounded, all of
@@ -57,7 +58,8 @@
 #
 # The split in compiler/reject_class.tsv is COMMITTED, not recomputed: it is
 # grounded in src/tychoc.c's diagnostic sites (see scripts/classify_rejects.py),
-# costs a full ./tychoc run over 337 fixtures to rebuild, and is the half of
+# costs a full ./tychoc run over every tests/reject/*.ty to rebuild, and is
+# the half of
 # this evidence that is expensive and auditable rather than cheap and derived.
 #
 # RECORD=1 re-records the census golden. It cannot bless a lost count: legs 1,
@@ -123,10 +125,10 @@ leg_accept "leg1c tools+examples+server+bench" "$(find tools examples server ben
 
 # [2] -- the reject corpus, split. There is no exemption list: Phase 2b closed
 # the three literal-range misses this leg used to name, so every SYNTAX fixture
-# must be rejected and `missed` must be 0. The split moved 47/290 -> 57/280 in
-# Phase 4: eight rules were misjudged as needing a symbol table when each is
-# decided by the signature, the five-name predicate set, or a parse-time const
-# fold. scripts/classify_rejects.py carries the reasoning; rerun it to rebuild.
+# must be rejected and `missed` must be 0. The split moved 47/290 -> 57/280 when
+# eight rules were re-read off their sites (2026-08): each had been misjudged as
+# needing a symbol table when it is decided by the signature, the five-name
+# predicate set, or a parse-time const fold. scripts/classify_rejects.py carries the reasoning; rerun it to rebuild.
 sr=0; sa=0; ma=0; mr=0
 nsyn=0; nname=0; nsem=0; ntype=0
 rr=0; rm_=0; ra=0; rw=0
@@ -184,7 +186,9 @@ echo "leg2c tests/reject/*.ty --typecheck: all=$((tr+tm)) rejected=$tr missed=$t
 # SEMANTIC 267 -> 271: V3a -- slice and push refused on a [N]T and on a vector[N]T.
 # NAME 33 -> 34: tests/reject/fstring_hole_name.ty -- the NAME rule reached
 # only from inside an f-string interpolation hole.
-[ "$nsyn" = 98 ] && [ "$nname" = 34 ] && [ "$ntype" = 164 ] && [ "$nsem" = 271 ] || { echo "parse-check: the split moved -- expected SYNTAX=98 NAME=34 TYPE=164 SEMANTIC=271"; rc=1; }
+# NAME 34 -> 35: tests/reject/destructure_dup_name.ty -- a duplicate BINDING in a
+# destructuring list, which tychoc1 refuses in its resolver.
+[ "$nsyn" = 98 ] && [ "$nname" = 35 ] && [ "$ntype" = 164 ] && [ "$nsem" = 271 ] || { echo "parse-check: the split moved -- expected SYNTAX=98 NAME=35 TYPE=164 SEMANTIC=271"; rc=1; }
 [ "$mr" = 0 ] || { echo "parse-check: a NAME or SEMANTIC fixture was rejected by --parse; a parser has no symbol table"; rc=1; }
 [ "$sa" = 0 ] || { echo "parse-check: a SYNTAX fixture was accepted; the parser must refuse it"; rc=1; }
 [ "$rm_" = 0 ] || { echo "parse-check: a NAME fixture resolved; the resolver must refuse it"; rc=1; }
@@ -194,7 +198,7 @@ echo "leg2c tests/reject/*.ty --typecheck: all=$((tr+tm)) rejected=$tr missed=$t
 got=$(echo $seen_miss | tr ' ' '\n' | LC_ALL=C sort | tr '\n' ' ')
 want=$(echo $KNOWN_TYPE_MISS | tr ' ' '\n' | LC_ALL=C sort | tr '\n' ' ')
 [ "$got" = "$want" ] || { echo "parse-check: the TYPE misses moved"; echo "    now:  $got"; echo "    was:  $want"; rc=1; }
-[ "$tr" = 566 ] || { echo "parse-check: --typecheck refused $tr of 567, expected 566"; rc=1; }
+[ "$tr" = 567 ] || { echo "parse-check: --typecheck refused $tr of 568, expected 567"; rc=1; }
 
 # [3] -- the census, against a recorded golden
 for f in $(ls tests/*.ty) $(find corelib -name '*.ty' | sort) $(find tools examples server bench -name '*.ty' | sort); do

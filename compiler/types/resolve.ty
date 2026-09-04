@@ -979,7 +979,7 @@ fn _stmt(rs: inout R, bi: [string: bool], ctors: [string: bool], s: ast.Stmt):
                 seen := []string: bool
                 for nm in names:
                     if nm in seen:
-                        _err(&rs, "duplicate name `" + nm + "` in the destructuring list")
+                        _err(&rs, "duplicate name '" + nm + "' in the destructuring list")
                     seen[nm] = true
                     _push(&rs, nm, "local", false)
             else:

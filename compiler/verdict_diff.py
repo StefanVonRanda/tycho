@@ -38,7 +38,7 @@ sys.path.insert(0, "scripts")
 import classify_rejects as C
 
 ROOTS = ("tests", "corelib", "tools", "examples", "server", "bench")
-EXPECT = 1331          # a leg that scores 0 of 0 is green by accident
+EXPECT = 1332          # a leg that scores 0 of 0 is green by accident
                        # 1308 -> 1311: the three V2 `packed` fixtures (2026-09-04)
                        # 1311 -> 1319: the eight V2b bytes-bridge fixtures
                        # 1330 -> 1331: tests/reject/fstring_hole_name.ty

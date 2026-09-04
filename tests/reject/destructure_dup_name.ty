@@ -1,0 +1,10 @@
+# expect: duplicate name 'a' in the destructuring list
+# A duplicate BINDING, not a type error: both compilers refuse it, tychoc1 in its
+# resolver (compiler/types/resolve.ty:982), which is why the rule
+# is NAME in scripts/classify_rejects.py@NAME_SITES and not SEMANTIC.
+fn two() -> (int, int):
+    return 1, 2
+
+fn main():
+    a, a := two()
+    println(str(a))

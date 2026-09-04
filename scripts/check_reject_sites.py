@@ -33,6 +33,17 @@ def score(f):
     return len(re.sub(r"%[-0-9.*]*(?:ll)?[a-zA-Z]", "", f))
 
 
+def group(sites):
+    """{line: [(format, regex)]} -- a LIST, because one line can hold two rules.
+    A ternary (`cond ? "a" : "b"`) is two formats at one line, and a dict keyed
+    on the line silently kept only the second: src/tychoc.c:619 reported the
+    binary-literal rule as the site of the hex-literal fixture."""
+    by = {}
+    for l, f, rx in sites:
+        by.setdefault(l, []).append((f, rx))
+    return by
+
+
 def check_class(rows, sites):
     """Rows whose recorded CLASS is no longer what their site decides.
 
@@ -41,16 +52,16 @@ def check_class(rows, sites):
     2026-09-04 -- three const-folding sites crossed the hard-coded SYNTAX
     boundary and the table would have carried SEMANTIC as the truth.
     """
-    by_line = {l: f for l, f, _ in sites}
+    by_line = group(sites)
     bad = []
     for path, cls, line, msg in rows:
         n = int(line)
         if n == 0:
             continue            # FALLBACK rows are classified by hand, no site
-        f = by_line.get(n)
-        if f is None:
+        hits = [(f, rx) for f, rx in by_line.get(n, []) if rx.match(msg)]
+        if not hits:
             continue            # already reported by check()
-        got = C.classify_site(n, f)
+        got = C.classify_site(n, hits[0][0])
         if got != cls:
             bad.append((path, n, "the site there is %s, the table says %s" % (got, cls)))
     return bad
@@ -58,17 +69,17 @@ def check_class(rows, sites):
 
 def check(rows, sites):
     """Rows whose cited line does not hold a site matching their message."""
-    by_line = {l: (f, rx) for l, f, rx in sites}
+    by_line = group(sites)
     bad = []
     for path, cls, line, msg in rows:
         n = int(line)
         if n == 0:
             continue            # FALLBACK rows are classified by hand, no site
-        hit = by_line.get(n)
-        if hit is None:
+        hits = by_line.get(n, [])
+        if not hits:
             bad.append((path, n, "no diagnostic site at that line"))
-        elif not hit[1].match(msg):
-            bad.append((path, n, "the site there emits: " + hit[0][:60]))
+        elif not any(rx.match(msg) for _, rx in hits):
+            bad.append((path, n, "the site there emits: " + hits[0][0][:60]))
     return bad
 
 

@@ -28,6 +28,7 @@ import re, subprocess, sys, os
 
 SRC = "src/tycho" + "c.c"          # assembled: a literal path:line in a string is a citation
 PARSE_FN = "static ProcVec parse_program("
+DIE = ("die_at", "die", "warn_at", "diag_push")
 
 
 def find_parse_end(path=SRC):
@@ -70,11 +71,19 @@ NAME_SITES = [
     "unknown variable '%s'",
     "assignment to unknown variable",
     "unknown procedure '%s'",
+    # The hard-coded sibling of the line above (src/tychoc.c:7269). It reached
+    # NAME only once load_sites() stopped mangling the `\n` inside its message;
+    # before that it matched no site at all and fell through to SEMANTIC.
+    "unknown procedure 'eprintln'",
     "'%s' is already defined",
     "variant name '%s' is already used in this package",
     "cannot name a binding",
     "is not a discard",
     "duplicate parameter",
+    # A duplicate BINDING, decided by the scope stack alone: tychoc1 refuses it in
+    # its resolver (compiler/types/resolve.ty:982), so SEMANTIC
+    # would redden parse-check's leg2b by construction.
+    "duplicate name '%s' in the destructuring list",
     "cannot assign to constant",
     "`pass` is a statement and produces no value",
     "is package-private",
@@ -225,17 +234,13 @@ NEEDS_SYMBOLS = [
 ]
 
 
-# Messages assembled by a helper (the affine container errors) or carrying a
-# backslash the format-string extractor cannot reproduce. Classified by hand,
-# each with the reason: a lexer message is SYNTAX, a type rule is SEMANTIC.
+# Messages assembled by a helper (the affine container errors) or by an fprintf
+# loop load_sites() cannot see. Classified by hand, each with the reason.
+# Five entries were deleted 2026-09-04 -- the ternary, escape and comment defects
+# in load_sites() were what pushed them here, and their sites are matched now.
 FALLBACK = [
     ("cannot be stored in a container", "SEMANTIC"),   # affine_slot_check, needs types
     ("a function value cannot", "SEMANTIC"),           # fn-type affine rule, needs types
-    ("is already used in this package", "NAME"),       # variant table
-    ("unsupported escape", "SYNTAX"),                  # the lexer's escape set
-    ("unsupported char escape", "SYNTAX"),             # same defect, the char lexer
-    ("raw control byte in string literal", "SYNTAX"),  # same defect, the string lexer
-    ("literal needs", "SYNTAX"),                       # the lexer's 0x / 0b scanners
     ("no 'main' procedure", "NAME"),                   # whole-program, but the Sig table alone decides it
     ("unclosed '(' or '['", "SYNTAX"),                 # the lexer, message built by snprintf
     ("must declare its own package first", "NAME"),    # the package header, an fprintf after parsing
@@ -298,42 +303,123 @@ def fmt_to_re(f):
     return re.compile("^" + "".join(out) + "$", re.S)
 
 
+def scan(text):
+    """Offsets of real code, with string/char literals and comments blanked out.
+
+    A `die("cannot bind")` written inside a C comment as a Tycho EXAMPLE was read
+    as a live diagnostic site until 2026-09-04 (src/tychoc.c:3653).
+    """
+    out, i, n = [], 0, len(text)
+    while i < n:
+        c = text[i]
+        if c == '"' or c == "'":
+            q, j = c, i + 1
+            while j < n and text[j] != q:
+                j += 2 if text[j] == "\\" else 1
+            out.append(" " * (j - i + 1)); i = j + 1; continue
+        if text.startswith("/*", i):
+            j = text.find("*/", i + 2); j = n if j < 0 else j + 2
+            out.append("".join(ch if ch == "\n" else " " for ch in text[i:j])); i = j; continue
+        out.append(c); i += 1
+    return "".join(out)
+
+
+def unescape(f):
+    """One left-to-right pass. A chain of str.replace() unescapes `\\n` TWICE --
+    the `\\` collapses and the surviving backslash then eats the `n` -- so every
+    message ABOUT escapes failed to match its own output (five sites)."""
+    out, i = [], 0
+    m = {"n": "\n", "t": "\t", "r": "\r", "0": "\0", "\\": "\\", '"': '"', "'": "'"}
+    while i < len(f):
+        if f[i] == "\\" and i + 1 < len(f):
+            out.append(m.get(f[i + 1], f[i:i + 2])); i += 2; continue
+        out.append(f[i]); i += 1
+    return "".join(out)
+
+
+# die_at is handed its location; a driver-level die() and an fprintf write their
+# own. Stripped so every family is matched against what the user sees.
+PREFIX = ("%s:%d: error: ", "%s: error: ", "%s:%d: warning: ", "tychoc: ")
+
+
+def literals(text, start):
+    """Format strings in the argument list opening at start.
+
+    C concatenates ADJACENT string literals, so a run separated only by
+    whitespace is one format -- but a ternary (`cond ? "a" : "b"`, which is how
+    the hex and binary literal rules are written at src/tychoc.c:619) puts two
+    RULES in one call, and joining them invents a message no user ever sees.
+    """
+    i, depth, out, cur, gap = start, 1, [], [], ""
+    while i < len(text) and depth:
+        ch = text[i]
+        if ch == '"':
+            if cur and gap.strip():
+                out.append("".join(cur)); cur = []
+            j, buf = i + 1, []
+            while j < len(text) and text[j] != '"':
+                if text[j] == "\\":
+                    buf.append(text[j:j + 2]); j += 2; continue
+                buf.append(text[j]); j += 1
+            cur.append("".join(buf)); gap = ""; i = j + 1
+            continue
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+        elif ch == "," and depth == 1 and cur:
+            break
+        gap += ch
+        i += 1
+    if cur:
+        out.append("".join(cur))
+    res = []
+    for f in out:
+        f = unescape(f).rstrip("\n")
+        for p in PREFIX:
+            if f.startswith(p):
+                f = f[len(p):]
+        if f:
+            res.append(f)
+    return res
+
+
 def load_sites():
     """(line, format string, compiled regex) for every diagnostic in the C source."""
-    src = open(SRC, encoding="utf-8", errors="replace").read().split("\n")
+    text = open(SRC, encoding="utf-8", errors="replace").read()
+    code = scan(text)
     sites = []
-    joined = "\n".join(src)
-    for m in re.finditer(r'\b(die_at|die|warn_at|diag_push)\s*\(', joined):
-        line = joined.count("\n", 0, m.start()) + 1
-        # walk the argument list, collecting the first run of adjacent string literals
-        i, depth, lits, seen = m.end(), 1, [], False
-        while i < len(joined) and depth:
-            ch = joined[i]
-            if ch == '"':
-                j, buf = i + 1, []
-                while j < len(joined) and joined[j] != '"':
-                    if joined[j] == '\\':
-                        buf.append(joined[j:j + 2]); j += 2; continue
-                    buf.append(joined[j]); j += 1
-                lits.append("".join(buf)); seen = True
-                i = j + 1
-                continue
-            if ch == '(':
-                depth += 1
-            elif ch == ')':
-                depth -= 1
-            elif ch == ',' and depth == 1 and seen:
-                break
-            i += 1
-        if not lits:
-            continue
-        f = "".join(lits)
-        f = f.replace("\\n", "\n").replace("\\t", "\t").replace('\\"', '"').replace("\\\\", "\\")
-        sites.append((line, f, fmt_to_re(f)))
+    for m in re.finditer(r"\b(%s)\s*\(" % "|".join(DIE), code):
+        line = code.count("\n", 0, m.start()) + 1
+        for f in literals(text, m.end()):
+            sites.append((line, f, fmt_to_re(f)))
     return sites
 
 
+USAGE = "usage: classify_rejects.py <out.tsv>   (regenerates compiler/reject_class.tsv)"
+
+
+def out_path(argv):
+    """The one argument, validated. It used to be sys.argv[1] unchecked, so
+    `--help` classified the corpus and wrote 64 KB to a file called `--help`."""
+    if argv[1:2] in (["-h"], ["--help"]):
+        print(USAGE)
+        print(__doc__)
+        sys.exit(0)
+    if len(argv) != 2:
+        sys.exit("classify_rejects: expected exactly one argument, got %d.\n%s"
+                 % (len(argv) - 1, USAGE))
+    if argv[1].startswith("-"):
+        sys.exit("classify_rejects: refusing to write to %r -- it looks like a flag.\n%s"
+                 % (argv[1], USAGE))
+    if not argv[1].endswith(".tsv"):
+        sys.exit("classify_rejects: refusing to write to %r -- it must end in .tsv.\n%s"
+                 % (argv[1], USAGE))
+    return argv[1]
+
+
 def main():
+    dest = out_path(sys.argv)
     sites = load_sites()
     files = sorted(f for f in os.listdir("tests/reject") if f.endswith(".ty"))
     out = []
@@ -367,7 +453,7 @@ def main():
         best = max(hits, key=lambda h: len(re.sub(r"%[-0-9.*]*(?:ll)?[a-zA-Z]", "", h[1])))
         line, f = best[0], best[1]
         out.append((p, classify_site(line, f), line, msg))
-    with open(sys.argv[1], "w") as fh:
+    with open(dest, "w") as fh:
         for p, cls, line, msg in out:
             fh.write("%s\t%s\t%d\t%s\n" % (p, cls, line, msg))
     n = {}

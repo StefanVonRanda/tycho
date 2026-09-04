@@ -240,78 +240,11 @@ INTERNAL = ["oom", "cannot open", "cannot write", "read error", "unknown flag",
 LIT = lambda f: len(re.sub(r"%[-0-9.*]*(?:ll)?[a-zA-Z]", "", f))
 
 
-def scan(text):
-    """Offsets of real code, with string/char literals and comments blanked out."""
-    out, i, n = [], 0, len(text)
-    while i < n:
-        c = text[i]
-        if c == '"' or c == "'":
-            q, j = c, i + 1
-            while j < n and text[j] != q:
-                j += 2 if text[j] == "\\" else 1
-            out.append(" " * (j - i + 1)); i = j + 1; continue
-        if text.startswith("/*", i):
-            j = text.find("*/", i + 2); j = n if j < 0 else j + 2
-            out.append("".join(ch if ch == "\n" else " " for ch in text[i:j])); i = j; continue
-        out.append(c); i += 1
-    return "".join(out)
-
-
-def unescape(f):
-    out, i = [], 0
-    m = {"n": "\n", "t": "\t", "r": "\r", "0": "\0", "\\": "\\", '"': '"', "'": "'"}
-    while i < len(f):
-        if f[i] == "\\" and i + 1 < len(f):
-            out.append(m.get(f[i + 1], f[i:i + 2])); i += 2; continue
-        out.append(f[i]); i += 1
-    return "".join(out)
-
-
-# fprintf writes its own location prefix; die_at is handed one. Stripped so both
-# families are matched against the same thing the user sees.
-PREFIX = ("%s:%d: error: ", "%s: error: ", "%s:%d: warning: ", "tychoc: ")
-
-
-def literals(text, start):
-    """Format strings in the argument list opening at start.
-
-    C concatenates ADJACENT string literals, so a run separated only by
-    whitespace is one format -- but a ternary (`cond ? "a" : "b"`, which is how
-    the hex and binary literal rules are written at src/tychoc.c:619) puts two
-    RULES in one call, and joining them invents a message no user ever sees.
-    """
-    i, depth, out, cur, gap = start, 1, [], [], ""
-    while i < len(text) and depth:
-        ch = text[i]
-        if ch == '"':
-            if cur and gap.strip():
-                out.append("".join(cur)); cur = []
-            j, buf = i + 1, []
-            while j < len(text) and text[j] != '"':
-                if text[j] == "\\":
-                    buf.append(text[j:j + 2]); j += 2; continue
-                buf.append(text[j]); j += 1
-            cur.append("".join(buf)); gap = ""; i = j + 1
-            continue
-        if ch == "(":
-            depth += 1
-        elif ch == ")":
-            depth -= 1
-        elif ch == "," and depth == 1 and cur:
-            break
-        gap += ch
-        i += 1
-    if cur:
-        out.append("".join(cur))
-    res = []
-    for f in out:
-        f = unescape(f).rstrip("\n")
-        for p in PREFIX:
-            if f.startswith(p):
-                f = f[len(p):]
-        if f:
-            res.append(f)
-    return res
+# The C-source reader is classify_rejects': ONE extractor, so a ternary, an
+# escape or a commented-out example cannot mean two things in one tree. Its
+# three defects (a glued ternary, `\\n` unescaped twice, a `die()` inside a C
+# comment) were fixed 2026-09-04 and are pinned by [c1a-c] below.
+scan, unescape, literals, PREFIX = C.scan, C.unescape, C.literals, C.PREFIX
 
 
 def sites():
@@ -459,20 +392,43 @@ def main():
         mine = {(l, f) for l, k, f in sites() if k in DIE}
         theirs = {(l, f) for l, f, _ in C.load_sites()}
         rc = 0
-        # The extraction differs from load_sites() at eight lines, and every
-        # difference is one of three defects in THAT extractor, which is why the
-        # control names the lines rather than asserting equality:
-        #   619, 4795  two rules in one ternary, glued into a message no user sees
-        #   731, 740, 784, 815, 7136  `\\n` in a message about escapes, unescaped
-        #              once too often, so the format cannot match its own output
-        #   3608       `die("cannot bind")` inside a C COMMENT -- a Tycho example
-        KNOWN_DIFF = {619, 731, 740, 784, 815, 3608, 4795, 7136}
-        diff = {l for l, _ in mine ^ theirs}
-        if diff == KNOWN_DIFF:
+        # The two extractions must be IDENTICAL. They were not until 2026-09-04:
+        # load_sites() had three defects and this control named the eight lines
+        # instead of asserting equality. Both readers share C.literals now, so
+        # [c1] alone would be near-vacuous -- [c1a-c] drive that shared reader
+        # over the three shapes, and each fails if its fix is reverted.
+        if mine == theirs:
             print("  selfcheck [c1] the die-family extraction matches "
-                  "classify_rejects.load_sites() at every line but its eight known defects")
+                  "classify_rejects.load_sites() at every line (%d sites)" % len(mine))
         else:
-            print("  selfcheck [c1] FAILED: differs at %s" % sorted(diff ^ KNOWN_DIFF)); rc = 1
+            print("  selfcheck [c1] FAILED: differs at %s"
+                  % sorted({l for l, _ in mine ^ theirs})); rc = 1
+        # [c1a] a ternary is two RULES, not one glued message no user ever sees.
+        t = C.literals('cond ? "left rule here" : "right rule here");', 0)
+        if t == ["left rule here", "right rule here"]:
+            print("  selfcheck [c1a] a ternary yields two formats, not one glued message")
+        else:
+            print("  selfcheck [c1a] FAILED: %r" % (t,)); rc = 1
+        # [c1b] a message ABOUT escapes must survive unescaping: `\\n` is a
+        # backslash and an `n`, not a newline. A str.replace() chain ate both.
+        t = C.literals(r'"unsupported escape \\%c (use \\n)");', 0)
+        if t == ["unsupported escape \\%c (use \\n)"]:
+            print("  selfcheck [c1b] `\\\\n` unescapes once, so an escape rule matches its own output")
+        else:
+            print("  selfcheck [c1b] FAILED: %r" % (t,)); rc = 1
+        # [c1c] a die() inside a C comment is an EXAMPLE, not a site.
+        # Matched on the FORMAT, not on a line: a reader that stops blanking
+        # comments also scrambles every line number, so a line-anchored leg
+        # would evade its own control (observed while writing it).
+        text = open(SRC, encoding="utf-8", errors="replace").read()
+        cmt = [i + 1 for i, ln in enumerate(text.split("\n"))
+               if ln.lstrip().startswith("*") and 'die("cannot bind")' in ln]
+        t = [l for l, f, _ in C.load_sites() if f == "cannot bind"]
+        if cmt and not t:
+            print("  selfcheck [c1c] the commented-out `die(\"cannot bind\")` example "
+                  "at line %d is not read as a site" % cmt[0])
+        else:
+            print("  selfcheck [c1c] FAILED: comment lines=%s extracted=%s" % (cmt, t)); rc = 1
         if any(b == "RULE" and "too many enums" in f for f, (_, _, b) in rs.items()):
             print("  selfcheck [c2] FAILED: a capacity ceiling was counted as a rule"); rc = 1
         else:
