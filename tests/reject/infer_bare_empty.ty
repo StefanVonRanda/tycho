@@ -1,4 +1,4 @@
-# src/tychoc.c:8909 -- a pending `xs := []` must GROUND in its own block. tychoc1
+# src/tychoc.c:8941 -- a pending `xs := []` must GROUND in its own block. tychoc1
 # refused this before, but by the unused-local rule, which is a refusal from a
 # DIFFERENT rule and not coverage of this one.
 # expect: could not infer the type of 'xs' -- no grounding use in its block (annotate: xs : [T] = [] / Option(T) = None)

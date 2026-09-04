@@ -56,12 +56,14 @@ Three features are accepted in principle and deliberately not built yet. They
 are recorded here so the freeze does not quietly become a decision never to
 revisit:
 
-- **Alignment and packed layout.** Nothing in the type system currently lets a
-  struct state its alignment or pack its fields. That costs twice: every binary
-  header in the tree is read byte by byte and reassembled by hand, and an `soa`
-  column starts wherever the allocator put it rather than on a boundary the
-  language promised. Both are attributes in the emitted C, so the cost is in the
-  surface, not the backend.
+- **Alignment and packed layout.** The `packed` half SHIPPED on 2026-09-04 and
+  is the freeze's first deliberate exception: `packed struct` is a declaration
+  attribute that gives an aggregate a byte-exact C layout
+  ([spec 17.1a](docs/spec/12-aggregates.md#171a-packed-layout)), recorded in
+  `surface.lock` in the same commit. It was measured first: 141 sites across 7
+  files hand-assemble a binary record one byte at a time today. The `align` half
+  is NOT shipped -- it has one caller, and that caller is vectors, so it lands
+  with them.
 - **Vectors.** `soa` gives contiguous columns; vector types are what consume
   them. Without them, vectorisation is whatever the C compiler happens to do,
   which is the wrong thing to leave to luck in a data-oriented language.
@@ -70,7 +72,8 @@ revisit:
   swap needs today.
 
 Alignment comes first, because vectors without it buy little, and groups follow
-vectors because that is where the notation earns its keep.
+vectors because that is where the notation earns its keep. `packed` is done; the
+remaining order is `align`, then vectors, then groups.
 
 Not queued: compile-time execution, and field promotion (`using`). The first is
 deferred, the second refused -- a bare field name should say where it came from.

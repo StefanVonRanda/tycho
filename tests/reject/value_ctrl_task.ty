@@ -1,4 +1,4 @@
-# src/tychoc.c:8355 -- a Task is affine and scope-bound; binding one through a
+# src/tychoc.c:8387 -- a Task is affine and scope-bound; binding one through a
 # value if/match would hand it out of the arm it was spawned in. tychoc1
 # ACCEPTED this before 2026-09-03.
 # expect: a value if/match cannot produce a task handle

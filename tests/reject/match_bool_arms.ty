@@ -1,4 +1,4 @@
-# src/tychoc.c:8676 -- the bool twin of match_char_arms.
+# src/tychoc.c:8708 -- the bool twin of match_char_arms.
 # expect: a match on a bool takes true/false arms
 fn main():
     b := true

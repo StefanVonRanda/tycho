@@ -1,5 +1,5 @@
-# src/tychoc.c:7056 -- reserve mutates its array, and an array parameter is
-# borrowed read-only. The message is SHORTER than push's at src/tychoc.c:7004:
+# src/tychoc.c:7088 -- reserve mutates its array, and an array parameter is
+# borrowed read-only. The message is SHORTER than push's at src/tychoc.c:7036:
 # it carries no copy suggestion, which is why it is a rule of its own.
 # tychoc1 ACCEPTED this under --typecheck until the check was ported into
 # compiler/types/tcheck.ty; both now word it identically.

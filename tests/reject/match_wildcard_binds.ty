@@ -1,4 +1,4 @@
-# src/tychoc.c:8521 -- `_` is a catch-all, not a variant: there is no payload for
+# src/tychoc.c:8553 -- `_` is a catch-all, not a variant: there is no payload for
 # it to hand to a binding name.
 # expect: a `_` wildcard binds nothing
 fn main():

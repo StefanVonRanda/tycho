@@ -20,7 +20,7 @@ u32     u64
 (`src/tychoc.c@keyword`), which never hands back an identifier token for one.
 `soa` is the exception — it lexes as an ordinary identifier and is reserved by
 the **parser**, which requires a `[` after it in every expression position
-(`src/tychoc.c:2961-2964`). The difference is invisible to a program and shows
+(`src/tychoc.c:2963-2966`). The difference is invisible to a program and shows
 only in the diagnostic: `soa := 5` is accepted at its declaration, and the next
 mention of the name dies with `expected '[' after soa`, so the binding is
 declarable and permanently unusable. It is listed here, with the reserved words,
@@ -51,6 +51,7 @@ variable of the same name is unaffected).
 | `Option`, `Result`, `Channel` | type / expression position. These are not reserved either, but §3.5.1 bars **every** uppercase name from a run-time binding position, so `Option := 5` is refused for the same reason `Foo := 5` is; they remain legal as a user's own type name, which shadows the builtin |
 | `void` | a `Result`'s ok payload, and nowhere else ([§5.3.6](03-types.md#536-enums-option-result)). Not a primitive type keyword: `int`/`float`/`bool`/`string`/… are lexed as keywords, `void` is an ordinary identifier the type parser recognises in that one slot, so a variable named `void` is still legal |
 | `pass` | a whole statement, and only then — the no-op ([§14.1](10-statements.md#141-blocks)). `pass := 0` and `pass = pass + 1` stay ordinary code, which is why it is not reserved: two files in this tree already used the name |
+| `packed` | immediately before `struct` in a top-level declaration ([§17.1a](12-aggregates.md#171a-packed-layout)). Ordinary everywhere else, including as a field or variable name |
 | `sink` | parameter modifier |
 | `yield` | `subscript` body |
 | `free` | `handle` body |

@@ -1,5 +1,5 @@
-# src/tychoc.c:9316 -- the newtype sibling of enum_payload_sizeparam.ty. It gets
-# PAST the underlying-type rule at src/tychoc.c:4833 because `[$N]int` is an array;
+# src/tychoc.c:9348 -- the newtype sibling of enum_payload_sizeparam.ty. It gets
+# PAST the underlying-type rule at src/tychoc.c:4855 because `[$N]int` is an array;
 # the channel arm of the same sweep does not, which is why that one has no fixture.
 # expect: a newtype cannot wrap a `[$N]T` size-parameterized array
 fn take(a: [$N]int) -> int:

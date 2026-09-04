@@ -1,0 +1,9 @@
+# expect: field 'name' of a packed struct must be a fixed-width value type
+# A packed struct states a byte-exact layout, so a heap field -- which is a
+# pointer at a misaligned offset whose address the generated copy/eq/str
+# helpers take -- is refused at the declaration.
+packed struct Bad:
+    name: string
+
+fn main():
+    print(Bad("x").name)

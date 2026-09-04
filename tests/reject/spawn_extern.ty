@@ -1,4 +1,4 @@
-# src/tychoc.c:5977 -- an FFI function has no thread-safety contract, so it may
+# src/tychoc.c:6009 -- an FFI function has no thread-safety contract, so it may
 # not be the body of a spawned task.
 # expect: cannot spawn an extern (FFI) function
 extern fn getpid() -> int

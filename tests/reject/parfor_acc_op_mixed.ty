@@ -1,4 +1,4 @@
-# src/tychoc.c:7867 -- a chunk's private partial is seeded from the op's identity,
+# src/tychoc.c:7899 -- a chunk's private partial is seeded from the op's identity,
 # so + and * on one name have no single seed.
 # expect: accumulator 't' must use one reduction op consistently
 fn main():

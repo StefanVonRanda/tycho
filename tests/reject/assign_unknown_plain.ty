@@ -1,4 +1,4 @@
-# src/tychoc.c:8447 -- the same, with no near-miss name for the suggester.
+# src/tychoc.c:8479 -- the same, with no near-miss name for the suggester.
 # expect: assignment to unknown variable 'zzqqww' (use ':=' to declare)
 fn two() -> (int, int):
     return 1, 2

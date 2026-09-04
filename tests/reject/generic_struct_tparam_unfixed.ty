@@ -1,4 +1,4 @@
-# src/tychoc.c:6711 -- $U appears in no field, so no field value can fix it and
+# src/tychoc.c:6743 -- $U appears in no field, so no field value can fix it and
 # the instance would have an unknown type argument.
 # expect: type parameter $U of Box is not fixed by any field value
 struct Box($T, $U):

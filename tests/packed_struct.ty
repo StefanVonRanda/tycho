@@ -1,0 +1,29 @@
+# `packed struct` (V2): a declaration attribute that gives the aggregate a
+# byte-exact C layout. 141 sites in this tree hand-assemble binary records one
+# byte at a time because no struct could state its layout; this is the
+# declaration half of that. The attribute is a property of the AGGREGATE, so it
+# never touches the interned array-type table `bounded[N]T` uses.
+packed struct Ins:
+    op: u8
+    a: i32
+    b: i32
+
+struct Loose:            # the same fields, natural layout -- the control
+    op: u8
+    a: i32
+    b: i32
+
+packed struct Frame:     # a packed struct nests inside a packed struct
+    magic: u32
+    ins: Ins
+
+fn main():
+    i := Ins(to_u8(3), to_i32(-1), to_i32(7))
+    l := Loose(to_u8(3), to_i32(-1), to_i32(7))
+    println(str(i.op) + " " + str(i.a) + " " + str(i.b))
+    println(str(l.op) + " " + str(l.a) + " " + str(l.b))
+    f := Frame(to_u32(1), i)
+    println(str(f.magic) + " " + str(f.ins.b))
+    # a packed value copies, compares and prints like any other struct
+    j := i
+    println(str(j == i))

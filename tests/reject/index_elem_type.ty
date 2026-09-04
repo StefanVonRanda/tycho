@@ -1,4 +1,4 @@
-# src/tychoc.c:8823 -- the array arm, the sibling of map_value_type.ty. Both
+# src/tychoc.c:8855 -- the array arm, the sibling of map_value_type.ty. Both
 # compilers word it identically.
 # expect: cannot assign string to a int element
 fn main():

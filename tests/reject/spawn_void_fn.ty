@@ -1,4 +1,4 @@
-# src/tychoc.c:5979 -- `wait(t)` yields the spawned function's value, so a task
+# src/tychoc.c:6011 -- `wait(t)` yields the spawned function's value, so a task
 # over a fn with no return type would yield nothing.
 # expect: a spawned function must return a value (wait(t) yields it)
 fn nop(i: int):

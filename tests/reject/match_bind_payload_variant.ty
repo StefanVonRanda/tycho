@@ -1,4 +1,4 @@
-# src/tychoc.c:8283 -- `Ok(A)` reads as a binding named A, which would silently
+# src/tychoc.c:8315 -- `Ok(A)` reads as a binding named A, which would silently
 # shadow the variant and match every Ok. A carries a payload, so say so.
 # expect: 'A' is a variant of E that carries a payload
 enum E:

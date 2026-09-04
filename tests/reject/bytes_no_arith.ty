@@ -1,4 +1,4 @@
-# src/tychoc.c:7526 -- bytes concatenates and indexes; it does not subtract.
+# src/tychoc.c:7558 -- bytes concatenates and indexes; it does not subtract.
 # expect: bytes has no arithmetic (got bytes, bytes) -- bytes supports `a + b` and `b + 'c'` (concat), `b[i]` (the byte value, an int) and `b[i:j]` (a sub-buffer); for anything else use to_str(b)
 fn main():
     b := to_bytes("ab")

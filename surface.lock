@@ -667,6 +667,7 @@
   "or",
   "or_return",
   "package",
+  "packed",
   "parallel",
   "pass",
   "pop",

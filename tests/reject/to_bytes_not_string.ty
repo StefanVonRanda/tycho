@@ -1,4 +1,4 @@
-# src/tychoc.c:6895 -- to_bytes takes a string, bytes, or [int].
+# src/tychoc.c:6927 -- to_bytes takes a string, bytes, or [int].
 # expect: to_bytes(x) takes a string or [int]
 fn main():
     b := to_bytes(1)

@@ -1,4 +1,4 @@
-# src/tychoc.c:8343 -- a value if/match branch whose tail is a void call.
+# src/tychoc.c:8375 -- a value if/match branch whose tail is a void call.
 # expect: a value if/match branch must produce a value, not void
 fn nop():
     println("n")

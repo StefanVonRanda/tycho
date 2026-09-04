@@ -1,4 +1,4 @@
-# src/tychoc.c:6888
+# src/tychoc.c:6920
 # expect: to_ptr(n) takes an int
 fn main():
     p := to_ptr("a")

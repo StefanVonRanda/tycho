@@ -208,6 +208,7 @@ struct StructD:
     typarams: [string]
     fields: [FieldD]
     line: int
+    packed: bool                       # `packed struct`: byte-exact C layout
 
 struct Variant:
     name: string

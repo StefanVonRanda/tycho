@@ -1,4 +1,4 @@
-# 05-generics.md:80-82 / src/tychoc.c:2295: same rule, generic enum.
+# 05-generics.md:80-82 / src/tychoc.c:2297: same rule, generic enum.
 enum Opt($T):
     N
     S($T)

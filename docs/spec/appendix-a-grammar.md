@@ -78,7 +78,7 @@ WhereClause ::= "where" Constraint ( "," Constraint )*
 Constraint  ::= Predicate "(" IDENT ")"
               | IDENT ":" Type ( "|" Type )*
 Predicate   ::= "numeric" | "comparable" | "has_str" | "hashable" | "defaultable"
-Struct     ::= "struct" IDENT TypeParams? ":" NEWLINE INDENT FieldDecl+ DEDENT
+Struct     ::= "packed"? "struct" IDENT TypeParams? ":" NEWLINE INDENT FieldDecl+ DEDENT
 FieldDecl  ::= IDENT ":" Type NEWLINE
 Enum       ::= "enum" IDENT TypeParams? ":" NEWLINE INDENT VariantDecl+ DEDENT
 VariantDecl::= IDENT ( "(" Type ( "," Type )* ")" )? NEWLINE
@@ -206,7 +206,7 @@ escape either, so it cannot contain a backtick; one is written by joining a
 `StrPiece`, so it joins with adjacent pieces of either kind, and there is no
 `` f`…` `` interpolated raw form.
 
-> Provenance: `src/tychoc.c:497-573`; adjacent join `:2492-2526`;
+> Provenance: `src/tychoc.c:497-573`; adjacent join `:2494-2528`;
 > [§3.9.4](01-lexical.md#394-string-literals). Fixtures:
 > `tests/rawstring.ty`, `tests/reject/rawstring_unterminated.ty`.
 

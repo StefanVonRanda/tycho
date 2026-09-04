@@ -1,4 +1,4 @@
-# src/tychoc.c:7728 -- the lifted chunk proc takes each capture as a parameter and
+# src/tychoc.c:7760 -- the lifted chunk proc takes each capture as a parameter and
 # the frame holds fourteen. Fifteen READS, no assignment: an outer write would hit
 # the reduction rule first.
 # expect: parallel for captures at most 14 outer variables

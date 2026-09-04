@@ -1,6 +1,6 @@
 # The scalar-arm parser is entered by `1 | ...`, and the SET separator is `|`,
 # not `,` -- which is why R21d could not reach this rule and left it in [c].
-# src/tychoc.c:3498. Both compilers word it identically.
+# src/tychoc.c:3500. Both compilers word it identically.
 # expect: a match arm must be a variant name, a scalar literal, a range, or `_`
 fn main():
     x := 1

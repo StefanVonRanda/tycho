@@ -69,6 +69,8 @@ tests/reject/match_arm_set_not_scalar.ty	ACCEPTED	a string in a `|` set parses a
 tests/reject/match_range_no_high.ty	ACCEPTED	`2.."z"` parses -- the range rule takes expressions on both sides, and which literals may be a match arm is tychoc's
 tests/reject/match_scalar_mixed_range.ty	ACCEPTED	`a..b` parses whatever the two ends are; "same kind of value" is a type check
 tests/reject/over_indent.ty	ACCEPTED	grammar.js has no external scanner and emits no INDENT/DEDENT, so indentation cannot be wrong
+tests/reject/packed_heap_field.ty	ACCEPTED	`packed struct` has no rule in grammar.js -- `packed` parses as an ordinary identifier and the field-type rule needs the symbol table anyway
+tests/reject/packed_on_enum.ty	ACCEPTED	`packed` before a non-struct declaration is refused by parse_struct; the flat grammar has no `packed` rule and reads the word as an identifier
 tests/reject/parallel_for_not_zero.ty	ACCEPTED	`1..<4` is grammatical everywhere; requiring a literal `0` in a `parallel for` head is a value check
 tests/reject/parallel_not_for.ty	ACCEPTED	`parallel` then a declaration parses as two statements; that `parallel` must be followed by `for` is a context rule
 tests/reject/range_removed.ty	ACCEPTED	`range(N)` is an ordinary call; the removal is enforced by name resolution

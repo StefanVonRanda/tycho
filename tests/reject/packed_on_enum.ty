@@ -1,0 +1,8 @@
+# expect: 'packed' may only be applied to a struct
+# Layout control is a property of an aggregate with fields. An enum value is a
+# pointer to a tagged cell, so there is no layout for the attribute to state.
+packed enum E:
+    A
+
+fn main():
+    print("hi")
