@@ -406,6 +406,33 @@ fn _unify(cs: inout C, pat: ast.Ty, at: string, b: inout [string: string]) -> bo
         _: return true
     return true
 
+# src/tychoc.c@match_type's array arm against the exact compare that follows
+# instantiation (`src/tychoc.c:6723`, `:6763`, `:7198`) -- TWO stages, fused
+# here at the one place they disagree. match_type ignores the BOUNDED flag, so
+# `bounded[N]$T` unifies with a plain `[N]T`; subst_type keeps it
+# (`src/tychoc.c:2123`), so the instance's field/parameter is still
+# `bounded[N]T` and stage two refuses it by name. `_unify` above is left STRICT
+# on purpose: loosening it without a post-substitution check would make every
+# caller ACCEPT this. Answers the substituted `bounded[N]T` when the flag is
+# the only difference, "" otherwise -- so no verdict can move either way.
+fn _bnd_stage2(cs: inout C, pat: ast.Ty, at: string) -> string:
+    match pat:
+        ast.TBnd(sz, k):
+            if len(sz) == 0 or sz[0] < 48 or sz[0] > 57:
+                return ""              # a `const` capacity: not decoded here
+            ab := _base(&cs, at)
+            if _head(ab) != "fix":
+                return ""              # dynamic [T] is size 0: a real mismatch
+            g := _targs(ab)
+            if _dec(sz) != g[0]:
+                return ""              # [3]T against bounded[4]T: distinct
+            b2 := []string: string
+            if not _unify(&cs, k[0], g[1], &b2):
+                return ""
+            return "bnd(" + g[0] + "," + g[1] + ")"
+        _: return ""
+    return ""
+
 # The five closed predicates, src/tychoc.c@constraint_ok. The first four see
 # through a newtype (`base_of`); `defaultable` does NOT, and that asymmetry is
 # the whole of tests/reject/where_defaultable_bad.ty.
@@ -532,12 +559,20 @@ fn _generic_call2(cs: inout C, l: int, si: int, spelt: string, ts: [ast.Ty], arg
         return "?"
     for i := 0; i < np; i += 1:
         if not _unify(&cs, cs.sg[si].pty[i], ats[i], &b):
+            s2 := _bnd_stage2(&cs, cs.sg[si].pty[i], ats[i])
+            if len(s2) > 0:
+                _cerr(&cs, "argument " + str(i + 1) + " of '" + spelt + "' is " + _show(&cs, ats[i]) + ", expected " + _show(&cs, s2))
+                return "?"
             _cerr(&cs, "argument " + str(i + 1) + " of '" + spelt + "' is " + _show(&cs, ats[i]) + ", which does not fit the parameter pattern")
             return "?"
     if variadic:
         vp := cs.sg[si].pty[len(cs.sg[si].pty) - 1]
         for i := np; i < len(args); i += 1:
             if not _unify(&cs, vp, ats[i], &b):
+                s3 := _bnd_stage2(&cs, vp, ats[i])
+                if len(s3) > 0:
+                    _cerr(&cs, "argument " + str(i + 1) + " of '" + spelt + "' is " + _show(&cs, ats[i]) + ", expected " + _show(&cs, s3))
+                    return "?"
                 _cerr(&cs, "argument " + str(i + 1) + " of '" + spelt + "' is " + _show(&cs, ats[i]) + ", which does not fit the parameter pattern")
                 return "?"
         if len(args) == np:
@@ -1053,14 +1088,28 @@ fn _inst_ctor(cs: inout C, l: int, ti: int, args: [ast.Expr], at0: int, npay: in
     cs.prefix = cs.tds[ti].pfx
     b := []string: string
     bad := -1
+    badb := ""
     for i := 0; i < npay; i += 1:
         if not _unify(&cs, cs.tds[ti].pats[at0 + i], ats[i], &b):
             if bad < 0:
                 bad = i
+                # inside the loop: `cs.typarams` is restored a line below, and
+                # `_bnd_stage2` unifies the element against it
+                badb = _bnd_stage2(&cs, cs.tds[ti].pats[at0 + i], ats[i])
     cs.typarams = ktp
     cs.prefix = kp
     cs.line = l
     if bad >= 0:
+        if len(badb) > 0:
+            # src/tychoc.c:6723 / :6763 -- stage two, after instantiation. The
+            # subject is the TEMPLATE's name here; the bootstrap names the
+            # instance (`Box__int`), which tychoc1 does not materialise.
+            if len(vn) > 0:
+                _cerr(&cs, vn + " payload " + str(bad + 1) + " is " + _show(&cs, badb) + ", got " + _show(&cs, ats[bad]))
+            else:
+                _cerr(&cs, "field '" + cs.tds[ti].fnames[bad] + "' of " + _short(cs.tds[ti].name) +
+                    " is " + _show(&cs, badb) + ", got " + _show(&cs, ats[bad]))
+            return "?"
         # src/tychoc.c:6706 / :6748 -- name the argument that failed, not "1"
         if len(vn) > 0:
             _cerr(&cs, vn + " payload " + str(bad + 1) + " does not fit a " + _show(&cs, ats[bad]) + " argument")

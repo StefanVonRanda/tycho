@@ -5,6 +5,11 @@
 # capacity rule was gone with nothing on stderr to say so. The two positive
 # fixtures cannot catch this: they pass real bounded values, so they fail loudly.
 # A `[4]int` here must be refused because the field is bounded[4]int.
+# Pinned since compiler/types/zsema.ty@_bnd_stage2 gave tychoc1 the bootstrap's
+# second stage; ./tychoc names the INSTANCE (`Box__int`), which tychoc1 has not
+# materialised, so the expectation stops at the shared prefix.
+# expect: field 'xs' of Box
+# expect: is bounded[4]int, got [4]int
 
 struct Box($T):
     xs: bounded[4]$T

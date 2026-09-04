@@ -517,17 +517,43 @@ def main():
         else:
             print("  selfcheck [c4] the five outcomes are told apart: a wrong-rule refusal "
                   "scores IDENTITY where the same rule reworded scores WORDING")
-        # [c5] the same thing end to end, through both real compilers. RE-POINT
-        # this at another b/identity entry when the rule below is ported -- a
-        # green [c4] with a dead [c5] means the classifier is right and nothing
-        # is driving it.
-        LIVE = "tests/reject/generic_bounded_field_degraded.ty"
-        got = dict((p, h) for v in hit.values() for p, h in v).get(LIVE)
-        if got == "IDENTITY":
-            print("  selfcheck [c5] %s: tychoc refuses on its own rule and tychoc1 on "
-                  "another -- scored IDENTITY, not coverage" % LIVE)
+        # [c5] the same thing end to end, through both real compilers. Since
+        # b/identity reached 0 on 2026-09-04 there is no live entry left to
+        # point at, and waiting for the next defect is how a control dies
+        # quietly -- so this CROSSES two real runs instead: tychoc's refusal of
+        # A scored against tychoc1's refusal of B, both messages produced by a
+        # real compiler on a real fixture. Both halves are required. The crossed
+        # pair must score IDENTITY (that is the arm a `return "WORDING"`
+        # regression kills), and the UNCROSSED pair must not -- without the
+        # second, an all-IDENTITY classifier passes this leg measuring nothing.
+        A = "tests/reject/generic_bounded_field_degraded.ty"
+        B = "tests/reject/unknown_var.ty"
+        rA = subprocess.run(["./tychoc", A, "--emit-c", "-o", "/tmp/_dc_out"],
+                            capture_output=True, text=True)
+        t1A = subprocess.run(["./tychoc1", A, "--typecheck"], capture_output=True, text=True)
+        t1B = subprocess.run(["./tychoc1", B, "--typecheck"], capture_output=True, text=True)
+        mA, m1A, m1B = msg_of(rA.stderr), msg_of(t1A.stderr), msg_of(t1B.stderr)
+        kA = match(mA, rx)
+        why = []
+        if rA.returncode == 0 or t1A.returncode == 0 or t1B.returncode == 0:
+            why.append("a fixture was accepted: rc %d/%d/%d"
+                       % (rA.returncode, t1A.returncode, t1B.returncode))
+        if kA is None:
+            why.append("%s's bootstrap message matches no rule: %r" % (A, mA))
+        if match(m1B, rx) == kA:
+            why.append("%s speaks the same rule as %s -- the cross is not a cross" % (B, A))
+        crossed = outcome(mA, kA, 1, m1B, rx)
+        same = outcome(mA, kA, 1, m1A, rx)
+        if crossed != "IDENTITY":
+            why.append("crossed: expected IDENTITY, got %s" % crossed)
+        if same == "IDENTITY":
+            why.append("uncrossed: %s scored IDENTITY -- the rule is not ported" % A)
+        if why:
+            print("  selfcheck [c5] FAILED: %s" % "; ".join(why)); rc = 1
         else:
-            print("  selfcheck [c5] FAILED: %s scored %s, expected IDENTITY" % (LIVE, got)); rc = 1
+            print("  selfcheck [c5] two real runs crossed: tychoc's %s refusal against "
+                  "tychoc1's %s one scores IDENTITY, and the uncrossed pair scores %s"
+                  % (os.path.basename(A), os.path.basename(B), same))
         return rc
     names = sorted(f for f, v in rs.items() if v[2] == "RULE")
     hit, unmatched = measure(names, list(rs))
