@@ -50,7 +50,15 @@ module.exports = grammar({
     constant: ($) => choice("true", "false", "null"),
 
     // `bytes` is TK_KW_BYTES in src/tychoc.c@keyword -- a reserved type name.
-    type: ($) => choice("int", "float", "string", "bool", "char", "ptr", "void", "bytes"),
+    // The nine sized names are as hard-reserved as `int` (each returns its own
+    // TK_KW_* from src/tychoc.c@keyword) and were in neither grammar until V2l,
+    // because scripts/surface_lock.py's extractor held no digit and the coverage
+    // table could not name a word the lock had never seen.
+    type: ($) =>
+      choice(
+        "int", "float", "string", "bool", "char", "ptr", "void", "bytes",
+        "u8", "u16", "u32", "u64", "i8", "i16", "i32", "i64", "f32",
+      ),
 
     builtin: ($) =>
       choice(
@@ -66,7 +74,8 @@ module.exports = grammar({
         // refuses -- the same defect the `range` note above records.
         "channel", "char_at", "clock", "close", "eprint", "exit", "from_bytes",
         "get", "hash", "keys", "ncpu", "now", "recv", "send", "size_of",
-        "to_bool", "to_bytes", "to_char", "to_float", "to_int", "to_ptr",
+        "to_bool", "to_bytes", "to_char", "to_float", "to_i32", "to_int",
+        "to_ptr", "to_u32",
         "to_str", "to_under", "wait", "zero",
       ),
 

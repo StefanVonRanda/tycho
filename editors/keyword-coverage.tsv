@@ -1,4 +1,4 @@
-# Which of the language's 104 lexer words each editor integration actually knows.
+# Which of the language's 113 lexer words each editor integration actually knows.
 # One row per word in surface.lock's `keywords` (the lexer's own word set), with
 # the verdict MEASURED rather than read off the grammar source: the `zed` column
 # is the tree-sitter node kind the word lexes to, the `vscode` column is the
@@ -116,3 +116,12 @@ while	keyword	keyword.control.tycho	control-flow keyword
 write_file	builtin	support.function.builtin.tycho	built-in function, listed by both grammars
 yield	keyword	keyword.other.tycho	contextual declaration keyword; compiles under ./tychoc, measured 2026-09-04 -- added to both grammars by phase V2k
 zero	builtin	support.function.builtin.tycho	built-in function; compiles under ./tychoc, measured 2026-09-04 -- added to both grammars by phase V2k
+f32	type	storage.type.tycho	hard-reserved sized type (TK_KW_F32 in src/tychoc.c@keyword) -- added to both grammars by phase V2l
+i16	type	storage.type.tycho	hard-reserved sized type (TK_KW_I16 in src/tychoc.c@keyword) -- added to both grammars by phase V2l
+i32	type	storage.type.tycho	hard-reserved sized type (TK_KW_I32 in src/tychoc.c@keyword) -- added to both grammars by phase V2l
+i64	type	storage.type.tycho	hard-reserved sized type (TK_KW_I64 in src/tychoc.c@keyword) -- added to both grammars by phase V2l
+i8	type	storage.type.tycho	hard-reserved sized type (TK_KW_I8 in src/tychoc.c@keyword) -- added to both grammars by phase V2l
+u16	type	storage.type.tycho	hard-reserved sized type (TK_KW_U16 in src/tychoc.c@keyword) -- added to both grammars by phase V2l
+u32	type	storage.type.tycho	hard-reserved sized type (TK_KW_U32 in src/tychoc.c@keyword) -- added to both grammars by phase V2l
+u64	type	storage.type.tycho	hard-reserved sized type (TK_KW_U64 in src/tychoc.c@keyword) -- added to both grammars by phase V2l
+u8	type	storage.type.tycho	hard-reserved sized type (TK_KW_U8 in src/tychoc.c@keyword) -- added to both grammars by phase V2l

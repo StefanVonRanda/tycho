@@ -43,8 +43,8 @@
     { "name": "keyword.other.tycho", "match": "\\b(fn|struct|packed|enum|type|import|package|extern|inout|soa|handle|const|delete|bounded|sink|subscript|where|yield)\\b" },
     { "name": "keyword.operator.word.tycho", "match": "\\b(and|or|not|is)\\b" },
     { "name": "constant.language.tycho", "match": "\\b(true|false|null)\\b" },
-    { "name": "storage.type.tycho", "match": "\\b(int|float|string|bool|char|ptr|void|bytes)\\b" },
-    { "name": "support.function.builtin.tycho", "match": "\\b(print|println|str|len|push|pop|split|substr|find|read_file|write_file|read_all|list_dir|args|getenv|input|chr|die|is_null|sqrt|pow|floor|fabs|reserve|channel|char_at|clock|close|eprint|exit|from_bytes|get|hash|keys|ncpu|now|recv|send|size_of|to_bool|to_bytes|to_char|to_float|to_int|to_ptr|to_str|to_under|wait|zero)\\b" },
+    { "name": "storage.type.tycho", "match": "\\b(int|float|string|bool|char|ptr|void|bytes|u8|u16|u32|u64|i8|i16|i32|i64|f32)\\b" },
+    { "name": "support.function.builtin.tycho", "match": "\\b(print|println|str|len|push|pop|split|substr|find|read_file|write_file|read_all|list_dir|args|getenv|input|chr|die|is_null|sqrt|pow|floor|fabs|reserve|channel|char_at|clock|close|eprint|exit|from_bytes|get|hash|keys|ncpu|now|recv|send|size_of|to_bool|to_bytes|to_char|to_float|to_i32|to_int|to_u32|to_ptr|to_str|to_under|wait|zero)\\b" },
     {
       "comment": "`..<` (src/tychoc.c:710) must precede the general operator rule: it is three characters and TextMate takes the first matching pattern, not the longest, so the `<` alternative below would otherwise claim it",
       "name": "keyword.operator.range.tycho",

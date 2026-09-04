@@ -327,6 +327,10 @@
     "named": false
   },
   {
+    "type": "f32",
+    "named": false
+  },
+  {
     "type": "fabs",
     "named": false
   },
@@ -376,6 +380,22 @@
   },
   {
     "type": "hash",
+    "named": false
+  },
+  {
+    "type": "i16",
+    "named": false
+  },
+  {
+    "type": "i32",
+    "named": false
+  },
+  {
+    "type": "i64",
+    "named": false
+  },
+  {
+    "type": "i8",
     "named": false
   },
   {
@@ -591,6 +611,10 @@
     "named": false
   },
   {
+    "type": "to_i32",
+    "named": false
+  },
+  {
     "type": "to_int",
     "named": false
   },
@@ -600,6 +624,10 @@
   },
   {
     "type": "to_str",
+    "named": false
+  },
+  {
+    "type": "to_u32",
     "named": false
   },
   {
@@ -616,6 +644,22 @@
   },
   {
     "type": "type",
+    "named": false
+  },
+  {
+    "type": "u16",
+    "named": false
+  },
+  {
+    "type": "u32",
+    "named": false
+  },
+  {
+    "type": "u64",
+    "named": false
+  },
+  {
+    "type": "u8",
     "named": false
   },
   {

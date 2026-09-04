@@ -39,7 +39,14 @@ import subprocess
 import sys
 
 LOCK = "surface.lock"
-KW = re.compile(r'!strcmp\(s,\s*"([a-z_]+)"\)\s*\)\s*return\s+TK_')
+# Every class here carries 0-9. It did not until 2026-09-04, and `([a-z_]+)`
+# held nine hard-reserved type names OUT of the freeze for as long as they have
+# existed: `u8` `u16` `u32` `u64` `i8` `i16` `i32` `i64` `f32` each return their
+# own TK_KW_* and none of them matched, so the surface the lock claims to freeze
+# was missing nine words and no lane could say so. Widening cost nothing -- it
+# gained exactly those nine and no false positive. The regex is still a regex,
+# which is why leg [11] below reads the lexer's table a second way.
+KW = re.compile(r'!strcmp\(s,\s*"([a-z_0-9]+)"\)\s*\)\s*return\s+TK_')
 # A CONTEXTUAL keyword is lexed as an identifier and matched on its text
 # (`soa`, `sink`, `where`, `subscript`...). It is surface a user must learn, so
 # freezing only the TK_ ones would have left `soa` free to change -- caught
@@ -51,18 +58,42 @@ KW = re.compile(r'!strcmp\(s,\s*"([a-z_]+)"\)\s*\)\s*return\s+TK_')
 # list measured by hand on 2026-08-14. Over-inclusion is the safe direction: it
 # catches a few internal spellings too, and the cost of that is one deliberate
 # --record on a rename.
-KWCTX = re.compile(r'!strcmp\([\w>()&\s,.\-]*->(?:text|sval),\s*"([a-z_]+)"\)')
+KWCTX = re.compile(r'!strcmp\([\w>()&\s,.\-]*->(?:text|sval),\s*"([a-z_0-9]+)"\)')
 # Both the plain `name(` form and the method form `m.get(`.
 BUILTIN = re.compile(r"^\|\s*`(?:[a-z_0-9]+\.)?([a-z_0-9]+)\(")
 FN = re.compile(r"^fn\s+([a-z_0-9]+)\s*\((.*?)\)\s*(->.*?)?:\s*(#.*)?$")
 # A marker matched by strncmp rather than an identifier compare: `# deprecated:`
 # is language surface (grid-check exists for it) and no ->text pattern reaches it.
-KWMARK = re.compile(r'strncmp\(\w+,\s*"([a-z_]+):",')
+KWMARK = re.compile(r'strncmp\(\w+,\s*"([a-z_0-9]+):",')
 
 
 def keywords(src="src/tychoc.c"):
     t = open(src).read()
     return sorted(set(KW.findall(t)) | set(KWCTX.findall(t)) | set(KWMARK.findall(t)))
+
+
+# The three patterns above are a REGEX over a hand-written table, and a regex is
+# exactly the thing that stops matching in silence -- that is how the nine sized
+# types were lost. This reads the same table a SECOND way, as a block: take
+# keyword()'s whole body and every string literal in it, with no notion of what
+# the surrounding line looks like. A word the compiler reserves and the
+# extractor cannot see is then a red lane instead of a silent gap.
+KWFN = re.compile(r"static TokKind keyword\(const char \*s\) \{(.*?)\n\}", re.S)
+LIT = re.compile(r'"([^"\\]+)"')
+
+
+def lexer_table(src="src/tychoc.c"):
+    """Every literal in the lexer's keyword() body, or None if it is not there."""
+    m = KWFN.search(open(src).read())
+    return None if not m else sorted(set(LIT.findall(m.group(1))))
+
+
+def unreachable(kws, src="src/tychoc.c"):
+    tbl = lexer_table(src)
+    if tbl is None:
+        return ["lexer keyword() NOT FOUND in %s -- this leg cannot run" % src]
+    return ["RESERVED but not extracted: %s -- keyword() returns a token for it "
+            "and no pattern above reaches it" % w for w in tbl if w not in kws]
 
 
 def builtins(doc="docs/reference/builtins.md"):
@@ -177,6 +208,22 @@ def selfcheck():
              "pass", "deprecated", "select", "spawn", "handle", "inout", "match"]
     leg("[10] every hand-measured construct is reachable",
         [w for w in KNOWN if w not in keywords()], [])
+    # [11]-[13] are the legs V2l added. [10] is a hand-written list and could
+    # only ever catch a word somebody thought to write down; these read the
+    # lexer's own table, so a word nobody remembered is covered too.
+    leg("[11] every word keyword() reserves is extracted", unreachable(keywords()), [])
+    leg("[11b] and the table itself was found", lexer_table() is not None, True)
+    tbl = lexer_table() or []
+    leg("[12] a table word missing from the surface is REPORTED",
+        len(unreachable([w for w in keywords() if w != tbl[0]])), 1)
+    # [13] is the defect itself, replayed: the class this file carried until
+    # 2026-09-04 held no digit, so `u32` and eight siblings were reserved by the
+    # compiler and in NEITHER surface list. A pre-fix extractor must redden.
+    narrow = re.compile(r'!strcmp\(s,\s*"([a-z_]+)"\)\s*\)\s*return\s+TK_')
+    t = open("src/tychoc.c").read()
+    pre = sorted(set(narrow.findall(t)) | set(KWCTX.findall(t)) | set(KWMARK.findall(t)))
+    leg("[13] the pre-fix extractor is caught, naming 9 sized types",
+        len(unreachable(pre)), 9)
     print("surface selfcheck: %s" % ("ok" if ok else "FAILED"))
     return 0 if ok else 1
 
@@ -186,6 +233,12 @@ def main():
         return selfcheck()
     new = snapshot()
     if "--record" in sys.argv:
+        miss = unreachable(new["keywords"])
+        if miss:
+            for line in miss:
+                print("FROZEN %s" % line)
+            print("surface lock: REFUSING to record -- fix the extractor first")
+            return 1
         json.dump(new, open(LOCK, "w"), indent=1, sort_keys=True)
         print("surface lock: recorded %d keywords, %d builtins, %d corelib functions"
               % (len(new["keywords"]), len(new["builtins"]), len(new["corelib"])))
@@ -194,6 +247,7 @@ def main():
         print("surface lock: no %s -- run --record once" % LOCK)
         return 2
     bad, added = compare(json.load(open(LOCK)), new)
+    bad += unreachable(new["keywords"])
     for line in added:
         print("UNRECORDED %s" % line)
     for line in bad:
