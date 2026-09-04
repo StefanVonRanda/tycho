@@ -984,7 +984,7 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
                 ht := _ex2(&cs, hs[hi], "?")
                 cs.line = ast.line_of(hs[hi])
                 if not _str_ok(&cs, ht):
-                    _cerr(&cs, "str(x) can't stringify a " + ht)
+                    _cerr(&cs, "str(x) can't stringify a " + _show(&cs, ht))
             cs.line = l
             return "string"
         ast.CharLit(l, v): return "char"
@@ -1010,7 +1010,7 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
                 si = _sigidx(&cs, cs.prefix + n)
             if si >= 0 and cs.sg[si].generic:
                 cs.line = l
-                _cerr(&cs, "'" + n + "' is generic, so it has no single function value -- there is no instantiation to take. Wrap it in a lambda that fixes the types")
+                _cerr(&cs, "'" + n + "' is generic, so it has no single function value -- there is no instantiation to take. Wrap it in a lambda that fixes the types, e.g. fn(a: int, b: int) -> int: " + n + "(a, b)")
                 return "?"
             if si >= 0:
                 # src/tychoc.c:6140-6143 -- the shape rules for a fn VALUE. A
@@ -1049,7 +1049,7 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
                         si := _sigidx(&cs, m)
                         if si >= 0 and cs.sg[si].generic:
                             cs.line = l
-                            _cerr(&cs, "'" + q + "." + f + "' is generic, so it has no single function value -- there is no instantiation to take. Wrap it in a lambda that fixes the types")
+                            _cerr(&cs, "'" + q + "." + f + "' is generic, so it has no single function value -- there is no instantiation to take. Wrap it in a lambda that fixes the types, e.g. fn(a: int, b: int) -> int: " + q + "." + f + "(a, b)")
                             return "?"
                         if si >= 0:
                             # src/tychoc.c:6314 -- the same shape rule the bare-name
@@ -1151,7 +1151,7 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
             cvt := _base(&cs, _ex(&cs, k[0]))
             if known(cvt) and _head(cvt) != "fun":
                 cs.line = l
-                _cerr(&cs, "this value has type " + cvt + ", not a procedure -- it cannot be called")
+                _cerr(&cs, "calling a value that isn't a function (" + _show(&cs, cvt) + ")")
             cs.callee = true
             ct := _base(&cs, _ex(&cs, k[0]))
             # fun(R,P...) keeps the RETURN first, so the parameters start at 1.
@@ -1397,15 +1397,35 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
             rt := "void"
             if len(k) > 0:
                 rt = _ex(&cs, k[0])          # src/tychoc.c:5966, resolved first
+                # src/tychoc.c:5971-5982, leg for leg and in ITS order: a direct
+                # call to a named USER function, not extern, returning a value,
+                # with no inout parameter.
+                cs.line = l
+                si := -1
+                direct := false
                 match k[0]:
                     ast.Call(l2, q2, n2, ts2, ar2):
-                        if len(q2) == 0 and n2 in cs.extfn:          # :5977
-                            cs.line = l
-                            _cerr(&cs, "cannot spawn an extern (FFI) function")
-                    _: pass
-                if rt == "void":                                     # :5979
-                    cs.line = l
+                        if len(q2) > 0:
+                            si = _sigidx(&cs, _prefix_of(&cs, q2) + n2)
+                            direct = true
+                        elif len(_vtype(&cs, n2)) > 0 or (n2 in cs.tindex) or (n2 in cs.vowner):
+                            direct = false           # a fn VALUE, a constructor or a newtype wrap
+                        else:
+                            direct = true
+                            si = _sigidx(&cs, n2)
+                            if si < 0 and len(cs.prefix) > 0:
+                                si = _sigidx(&cs, cs.prefix + n2)
+                    _: direct = false
+                if not direct:                                       # :5972
+                    _cerr(&cs, "spawn requires a direct call to a named function (closures/constructors cannot be spawned yet)")
+                elif si < 0 or cs.sg[si].builtin:                   # :5975
+                    _cerr(&cs, "spawn requires a user-defined function ('" + _spawn_callee(k[0]) + "' is not one)")
+                elif _spawn_extern(&cs, k[0]):                        # :5977
+                    _cerr(&cs, "cannot spawn an extern (FFI) function")
+                elif rt == "void":                                    # :5979
                     _cerr(&cs, "a spawned function must return a value (wait(t) yields it)")
+                elif _has_inout(cs.sg[si]):                         # :5982
+                    _cerr(&cs, "cannot spawn a function with inout parameters (no shared state across threads)")
             return "task(" + rt + ")"
         ast.OrRet(l, k):
             # src/tychoc.c:6078-6094, leg for leg. Every one is guarded on the
@@ -1685,7 +1705,7 @@ fn _binop(cs: inout C, op: string, k: [ast.Expr]) -> string:
     if rt == "float" and lt == "int" and _is_intlit(k[0]):
         return "float"
     if lt == "bytes" or rt == "bytes":
-        _cerr(&cs, "bytes has no arithmetic (got " + lt + ", " + rt + ")")
+        _cerr(&cs, "bytes has no arithmetic (got " + _show(&cs, lt) + ", " + _show(&cs, rt) + ") -- bytes supports `a + b` and `b + 'c'` (concat), `b[i]` (the byte value, an int) and `b[i:j]` (a sub-buffer); for anything else use to_str(b)")
         return lt
     li := _tdecl(&cs, lt)
     ri := _tdecl(&cs, rt)
@@ -1953,7 +1973,7 @@ fn _call(cs: inout C, l: int, q: string, n: string, ts: [ast.Ty], args: [ast.Exp
     # in the entry package is registered UNMANGLED, so without this ordering the
     # bare `len(b)` inside core:strings found it and refused a program ./tychoc
     # accepts (tests/warn/pkg/corelib_mute/main.ty).
-    if _shape_builtin(n):
+    if _shape_builtin(n) or n == "to_ptr":
         return _call_builtin(&cs, l, n, args, want)
     vt := _vtype(&cs, n)
     if len(vt) > 0 and known(vt) and _head(_base(&cs, vt)) != "fun":
@@ -2108,8 +2128,14 @@ fn _call_builtin(cs: inout C, l: int, n: string, args: [ast.Expr], want: string)
         if not _arity(&cs, n, args, 1, "str(x) takes one argument"):
             return "string"
         if not _str_ok(&cs, a0):
-            _cerr(&cs, "str(x) can't stringify a " + a0)
+            _cerr(&cs, "str(x) can't stringify a " + _show(&cs, a0))
         return "string"
+    if n == "to_ptr":
+        if not _arity(&cs, n, args, 1, "to_ptr(n) takes one argument"):
+            return "ptr"
+        if known(a0) and a0 != "int":
+            _cerr(&cs, "to_ptr(n) takes an int")
+        return "ptr"
     if n == "hash":
         if not _arity(&cs, n, args, 1, "hash(x) takes one argument"):
             return "int"
@@ -2255,13 +2281,15 @@ fn _call_builtin(cs: inout C, l: int, n: string, args: [ast.Expr], want: string)
             return "void"
         w := _targs(b0)[0]
         if not compat(w, ats[1]):
-            _cerr(&cs, "send on " + b0 + " needs a " + w + " value")
+            _cerr(&cs, "send on " + _show(&cs, b0) + " needs a " + w + " value")
         return "void"
     if n == "wait":
         if not _arity(&cs, n, args, 1, "wait(t) takes one task"):
             return "?"
         if _head(b0) == "task":
             return _targs(b0)[0]
+        if known(b0):                                   # src/tychoc.c:6776
+            _cerr(&cs, "wait(t) takes a task from spawn, got " + _show(&cs, a0))
         return "?"
     if n == "recv":
         if not _arity(&cs, n, args, 1, "recv(ch) takes one channel"):
@@ -2583,7 +2611,7 @@ fn _match(cs: inout C, l: int, subj: [ast.Expr], arms: [ast.Arm]):
     if st == "string" or st == "bytes" or st == "float":
         _cerr(&cs, "match on " + st + " is refused: nothing in the tree dispatches on it -- use if/elif (see docs/internals/design-scalar-match.md D1)")
     else:
-        _cerr(&cs, "match expects an Option, Result, or enum value, or an int/char/bool, got " + st)
+        _cerr(&cs, "match expects an Option, Result, or enum value, or an int/char/bool, got " + _show(&cs, st))
     for a in arms:
         m := _vmark(&cs)
         _tblock(&cs, a.body)
@@ -2927,9 +2955,10 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
             want := "?"
             if len(vt) > 0:
                 want = vt
-            t := _ex2(&cs, rhs[0], want)
             cs.line = l
             _aff_reassign_check(&cs, name, want)
+            t := _ex2(&cs, rhs[0], want)
+            cs.line = l
             _assign_check(&cs, name, t)
         ast.PlaceSet(l, k):
             pt := _place_ty(&cs, k[0])
@@ -3159,9 +3188,7 @@ fn _fill_decls(cs: inout C, p: Program):
                 u := []string
                 ut := _enc(&cs, nd.under)
                 push(u, ut)
-                if _head(ut) == "chan":
-                    _cperr(&cs, "a newtype cannot wrap a channel")
-                elif _has_sizeparam(nd.under):
+                if _has_sizeparam(nd.under):
                     _cperr(&cs, "a newtype cannot wrap a `[$N]T` size-parameterized array")
                 else:
                     _newtype_check(&cs, ut)
@@ -3181,7 +3208,7 @@ fn _fill_decls(cs: inout C, p: Program):
                 cs.subs[sb.name] = true
                 cs.line = sb.line
                 if len(sb.params) > 0 and len(sb.params[0].ty) == 1 and _ty_generic_inst(&cs, sb.params[0].ty[0]):
-                    _cperr(&cs, "a subscript receiver may not be generic: declare the subscript on a concrete instance")
+                    _cperr(&cs, "a subscript receiver may not be generic ('" + _ty_inst_spell(sb.params[0].ty[0]) + "'): declare the subscript on a concrete instance")
                 _typarams_of(&cs, []string)
                 cs.skip = false
                 rt2 := _enc(&cs, sb.ret)
@@ -3383,6 +3410,24 @@ fn _known_generic(cs: inout C, q: string, n: string) -> bool:
     if len(cs.prefix) > 0 and (cs.prefix + n) in cs.tindex:
         return true
     return (n in cs.tindex) or (n in cs.typarams)
+
+fn _spawn_callee(e: ast.Expr) -> string:
+    match e:
+        ast.Call(l, q, n, ts, a): return n
+        _: return "?"
+    return "?"
+
+fn _spawn_extern(cs: inout C, e: ast.Expr) -> bool:
+    match e:
+        ast.Call(l, q, n, ts, a): return len(q) == 0 and (n in cs.extfn)
+        _: return false
+    return false
+
+fn _has_inout(s: FSig) -> bool:
+    for f in s.pflags:
+        if f == "inout":
+            return true
+    return false
 
 fn _shape_builtin(n: string) -> bool:
     if n == "len" or n == "push" or n == "pop" or n == "keys" or n == "reserve":

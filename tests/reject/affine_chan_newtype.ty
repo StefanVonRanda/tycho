@@ -1,3 +1,4 @@
+# expect: a newtype's underlying type must be int, float, string, bool, an array, a map, or a struct (got Channel(int))
 type C = Channel(int)
 
 fn main():

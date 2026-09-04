@@ -1,3 +1,4 @@
+# expect: 'total' instantiated with T = P, which does not satisfy `defaultable(T)`
 
 struct P:
     x: int

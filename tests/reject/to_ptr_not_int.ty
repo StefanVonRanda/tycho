@@ -1,5 +1,5 @@
 # src/tychoc.c:6888
-# No `# expect:`: tychoc1 says `argument 1 of 'to_ptr' is string, expected int`.
+# expect: to_ptr(n) takes an int
 fn main():
     p := to_ptr("a")
     println(str(len(str(1))))

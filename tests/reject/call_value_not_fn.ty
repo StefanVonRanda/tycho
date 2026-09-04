@@ -1,9 +1,5 @@
 # src/tychoc.c:6569 -- calling something that is not a function.
-# NO `# expect:` on purpose: this lane scores the expectation against ./tychoc1,
-# and the two compilers word this one differently -- ./tychoc says
-# `calling a value that isn't a function (int)`, ./tychoc1 says
-# `this value has type int, not a procedure -- it cannot be called`. They share
-# no substring worth asserting, so this fixture is scored on the verdict alone.
+# expect: calling a value that isn't a function (int)
 fn main():
     xs := [1, 2]
     println(str(xs[0](3)))

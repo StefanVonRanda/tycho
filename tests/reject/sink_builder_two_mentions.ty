@@ -2,6 +2,7 @@
 # builder shape is inexpressible and the composition has to be point-free.
 # Deliberate: src/tychoc.c@sink_arg_into makes the move-vs-copy visible instead
 # of silently copying.
+# expect: 'f' is consumed by a `sink` parameter but is mentioned 2 times in this function: a sink argument must be the variable's ONLY mention. One textual mention is how the compiler proves the consume is the last use on every path, with no dataflow analysis -- so `len(f)`, `f[0]`, `f[0] = ...` and passing `f` anywhere else all disqualify it, even before this line. Copy it first (`y := f`) and consume `y`
 struct Doc:
     body: string
 

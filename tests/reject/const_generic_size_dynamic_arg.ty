@@ -1,5 +1,6 @@
 # A `[$N]T` size parameter can only bind from a FIXED-size argument; a dynamic
 # `[int]` has no compile-time length to infer N from.
+# expect: argument 1 of 'f' is [int], which does not fit the parameter pattern
 fn f(xs: [$N]int) -> int:
     return N
 fn main():

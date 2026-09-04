@@ -1,6 +1,5 @@
 # src/tychoc.c:6886
-# No `# expect:`: tychoc1 routes to_ptr through its fixed-signature table and
-# says `'to_ptr' takes 1 argument(s), got 2`.
+# expect: to_ptr(n) takes one argument
 fn main():
     p := to_ptr(1, 2)
     println(str(len(str(1))))

@@ -1,4 +1,5 @@
 # send payload must match the channel element type. Both reject.
+# expect: send on Channel(int) needs a int value
 fn main():
     ch := channel(int, 2)
     send(ch, "hi")

@@ -1,3 +1,4 @@
+# expect: a subscript receiver may not be generic ('Pool($T)'): declare the subscript on a concrete instance
 struct Pool($T):
     items: [$T]
 

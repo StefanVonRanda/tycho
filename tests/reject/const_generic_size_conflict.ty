@@ -1,5 +1,6 @@
 # One `$N` shared by two parameters must bind to a single length; a [3] and a [4]
 # argument conflict.
+# expect: argument 2 of 'g' is [4]int, which does not fit the parameter pattern
 fn g(a: [$N]int, b: [$N]int) -> int:
     return N
 fn main():

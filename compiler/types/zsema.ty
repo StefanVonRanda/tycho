@@ -240,6 +240,27 @@ fn _field_aff(cs: inout C, dline: int, t: string):
 
 # Is this written type an instance of a DECLARED generic -- `Pool($T)` rather
 # than a bare name? src/tychoc.c:4483 refuses one as a subscript receiver.
+# The receiver AS WRITTEN -- src/tychoc.c:4483 names it in the refusal.
+fn _ty_inst_spell(t: ast.Ty) -> string:
+    match t:
+        ast.TParam(pn): return "$" + pn
+        ast.TPrim(pv): return pv
+        ast.TName(q2, n2, ta2):
+            out := q2
+            if len(q2) > 0:
+                out = out + "."
+            out = out + n2
+            if len(ta2) == 0:
+                return out
+            out = out + "("
+            for i := 0; i < len(ta2); i += 1:
+                if i > 0:
+                    out = out + ", "
+                out = out + _ty_inst_spell(ta2[i])
+            return out + ")"
+        _: return "?"
+    return "?"
+
 fn _ty_generic_inst(cs: inout C, t: ast.Ty) -> bool:
     match t:
         ast.TName(q, n, targs):
@@ -511,13 +532,13 @@ fn _generic_call2(cs: inout C, l: int, si: int, spelt: string, ts: [ast.Ty], arg
         return "?"
     for i := 0; i < np; i += 1:
         if not _unify(&cs, cs.sg[si].pty[i], ats[i], &b):
-            _cerr(&cs, "argument " + str(i + 1) + " of '" + spelt + "' is " + ats[i] + ", which does not fit the parameter pattern")
+            _cerr(&cs, "argument " + str(i + 1) + " of '" + spelt + "' is " + _show(&cs, ats[i]) + ", which does not fit the parameter pattern")
             return "?"
     if variadic:
         vp := cs.sg[si].pty[len(cs.sg[si].pty) - 1]
         for i := np; i < len(args); i += 1:
             if not _unify(&cs, vp, ats[i], &b):
-                _cerr(&cs, "argument " + str(i + 1) + " of '" + spelt + "' is " + ats[i] + ", which does not fit the parameter pattern")
+                _cerr(&cs, "argument " + str(i + 1) + " of '" + spelt + "' is " + _show(&cs, ats[i]) + ", which does not fit the parameter pattern")
                 return "?"
         if len(args) == np:
             for tp in _pat_params(vp, cs.sg[si].tps, []string):
@@ -568,7 +589,7 @@ fn _generic_call2(cs: inout C, l: int, si: int, spelt: string, ts: [ast.Ty], arg
         pred := w[0:i]
         tp := w[i + 1:len(w) - 1]
         if tp in b and not _pred_ok(&cs, pred, b[tp]):
-            _cerr(&cs, "'" + spelt + "' instantiated with " + tp + " = " + b[tp] + ", which does not satisfy `" + pred + "(" + tp + ")`")
+            _cerr(&cs, "'" + spelt + "' instantiated with " + tp + " = " + _show(&cs, b[tp]) + ", which does not satisfy `" + pred + "(" + tp + ")`")
             return "?"
     # The instance's SUBSTITUTED parameter types, which is where the affine
     # rules bite: `inout $T` is legal until `$T` is bound at a channel
@@ -685,7 +706,7 @@ fn _explicit_call(cs: inout C, l: int, q: string, n: string, ts: [ast.Ty], args:
             return "?"
         t := _enc(&cs, ts[0])
         if known(t) and not _pred_ok(&cs, "defaultable", t):
-            _cerr(&cs, "zero$(" + t + "): only int, float, bool, and string are defaultable")
+            _cerr(&cs, "zero$(" + _show(&cs, t) + "): only int, float, bool, and string are defaultable")
         return t
     si := -1
     spelt := n
@@ -760,7 +781,7 @@ fn _bare_result(cs: inout C, t: string, rhs: ast.Expr):
     w := "Ok(...)"
     if rhs is ast.ErrE:
         w = "Err(...)"
-    _cerr(&cs, "cannot infer the Result type of " + w + " -- annotate it (x : Result(T, E) = " + w + ")")
+    _cerr(&cs, "cannot infer the Result type of " + w + " — annotate it (x : Result(T, E) = " + w + ")")
 
 # A nullary variant of a GENERIC enum, written bare, fixes nothing.
 fn _bare_variant(cs: inout C, l: int, n: string, mang: string, owner: string) -> string:
@@ -803,7 +824,7 @@ fn _alias_check(cs: inout C, name: string, s: FSig, args: [ast.Expr], line: int)
                 continue
             if (args[j] is ast.Name) and _place_root(args[j]) == r:
                 cs.line = line
-                _cerr(&cs, "variable '" + r + "' is passed to an inout parameter and also by value in the same call to '" + name + "' (overlapping access -- the by-value copy would alias the inout'd value)")
+                _cerr(&cs, "variable '" + r + "' is passed to an inout parameter and also by value in the same call to '" + name + "' (overlapping access — the by-value copy would alias the inout'd value)")
                 return
     for i := 0; i < len(args); i += 1:
         if not (args[i] is ast.Slice):
@@ -1121,7 +1142,9 @@ fn _count_s(s: ast.Stmt, m: inout [string: int]):
                 for n in ns:
                     m[n] = m.get(n, 0) + 1
         ast.Assign(l, n, rhs):
-            m[n] = m.get(n, 0) + 1
+            # src/tychoc.c@count_reads_b counts READS: an S_ASSIGN's target is
+            # `s->name`, a char*, so count_reads_e never sees it. Counting it here
+            # made `f = g(f)` three mentions where the bootstrap says two.
             _count_es(rhs, &m)
         ast.PlaceSet(l, k): _count_es(k, &m)
         ast.ConstS(l, n, v): _count_es(v, &m)
@@ -1186,7 +1209,7 @@ fn _sink_check(cs: inout C, name: string, s: FSig, args: [ast.Expr], line: int):
                 elif cs.loopd > 0:
                     _cerr(&cs, "'" + v + "' is consumed by a `sink` parameter inside a loop, where the next iteration would consume it again; no named variable can be adopted in a loop, a copy made in the loop included. Lift the call out of the loop, or pass a fresh value (a literal, or a call's result)")
                 elif cs.ment.get(v, 0) != 1:
-                    _cerr(&cs, "'" + v + "' is consumed by a `sink` parameter but is mentioned " + str(cs.ment.get(v, 0)) + " times in this function: a sink argument must be the variable's ONLY mention")
+                    _cerr(&cs, "'" + v + "' is consumed by a `sink` parameter but is mentioned " + str(cs.ment.get(v, 0)) + " times in this function: a sink argument must be the variable's ONLY mention. One textual mention is how the compiler proves the consume is the last use on every path, with no dataflow analysis -- so `len(" + v + ")`, `" + v + "[0]`, `" + v + "[0] = ...` and passing `" + v + "` anywhere else all disqualify it, even before this line. Copy it first (`y := " + v + "`) and consume `y`")
                 elif v in cs.mbind:
                     # src/tychoc.c:10228, the arm this chain had no `else` for. A
                     # match binding BORROWS the payload (cv_push with a NULL arena),
@@ -1343,6 +1366,8 @@ fn _show(cs: inout C, t: string) -> string:
         return "Result(" + _show(&cs, a[0]) + ", " + _show(&cs, a[1]) + ")"
     if h == "chan" and len(a) == 1:
         return "Channel(" + _show(&cs, a[0]) + ")"
+    if h == "soa" and len(a) == 1:
+        return "soa [" + _show(&cs, a[0]) + "]"
     if h == "tup" and len(a) > 0:
         out := "("
         for i := 0; i < len(a); i += 1:

@@ -1,3 +1,4 @@
+# expect: variable 'a' is passed to an inout parameter and also by value in the same call to 'f' (overlapping access — the by-value copy would alias the inout'd value)
 fn f(x: inout [int], y: [int]) -> int:
     x[0] = 99
     return y[0]

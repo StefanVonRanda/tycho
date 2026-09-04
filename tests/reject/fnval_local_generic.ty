@@ -1,3 +1,4 @@
+# expect: 'mymin' is generic, so it has no single function value -- there is no instantiation to take. Wrap it in a lambda that fixes the types, e.g. fn(a: int, b: int) -> int: mymin(a, b)
 
 fn mymin(a: $T, b: $T) -> $T where comparable(T):
     if a < b:

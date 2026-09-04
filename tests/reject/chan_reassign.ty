@@ -1,4 +1,5 @@
 # a task/channel variable cannot be reassigned (orphans the task/queue). Both reject.
+# expect: a channel variable cannot be reassigned
 fn main():
     ch := channel(int, 2)
     ch = channel(int, 2)

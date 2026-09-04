@@ -89,13 +89,15 @@ corpus_census() {
     # Plus the 14 flat ones R21a added: its 16 SYNTAX and NAME wording ports to
     # compiler/ mean these fixtures' diagnostics now agree word for word, so each
     # is pinned on the WHOLE message instead of a shared prefix.
+    # Plus the 18 flat ones R21c added, for the same reason: its 21 SEMANTIC
+    # wording ports mean those fixtures' diagnostics now agree word for word.
     cc_exp=0
     for cc_e in $G_reject; do
         [ -e "$cc_e" ] || continue
         grep -q '^# expect: ' "$cc_e" && cc_exp=$((cc_exp + 1))
     done
     [ "$cc_show" = print ] && printf 'count %-10s %d\n' reject-expect "$cc_exp"
-    [ "$cc_exp" -eq 316 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=316"
+    [ "$cc_exp" -eq 334 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=334"
 
     cc_dirs=0
     for cc_d in $(git ls-files tests 2>/dev/null | grep '\.ty$' | sed 's|/[^/]*$||' | sort -u); do

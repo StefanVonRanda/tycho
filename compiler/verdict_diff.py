@@ -64,16 +64,9 @@ KNOWN_TYPE_MISS = {
     "tests/reject/generic_recur_grow.ty",
     "tests/reject/infer_use_before_ground.ty",
     "tests/reject/void_grounds_pending_push.ty",
-    # THE CONCURRENCY RULES: what `spawn` may be applied to, capturing a task,
-    # and wait's argument. Not type rules -- statement SHAPES -- and they are
-    # Phase 6c item 2's, named there. The seven `parallel for` siblings that
-    # used to sit here left the list when Phase R4 implemented them, and
-    # builtin.ty left it under R21f-9: `spawn println(...)` is now refused, by
-    # the void-return rule (src/tychoc.c:5979) rather than by :5975's own
-    # wording, so that rule is a MESSAGE divergence now instead of a verdict one.
-    "tests/conc/reject/closure.ty",
-    "tests/conc/reject/inout.ty",
-    "tests/conc/reject/wait_nontask.ty",
+    # THE CONCURRENCY RULES left this list under R21c, which ported the five
+    # spawn legs (src/tychoc.c:5971-5982) and wait's argument (:6776) into
+    # compiler/types/tcheck.ty in the bootstrap's own order.
 }
 LIT = lambda f: len(re.sub(r"%[-0-9.*]*(?:ll)?[a-zA-Z]", "", f))
 

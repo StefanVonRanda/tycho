@@ -350,11 +350,15 @@ def rules():
 
 def msg_of(stderr):
     for ln in stderr.split("\n"):
-        m = re.match(r"^(?:tychoc: )?(?:(\S+?(?::\d+)?): )?error: (.*)$", ln)
+        m = re.match(r"^(?:tychoc1?: )?(?:(\S+?(?::\d+)?): )?error: (.*)$", ln)
         if m:
             return m.group(2).strip()
-        if ln.startswith("tychoc: ") and ": error:" not in ln:
-            return ln[8:].strip()
+        # A driver-level die() carries no file:line, only the program's own name.
+        # Matching "tychoc: " alone scored every such message as a divergence for
+        # tychoc1 whatever it said -- the two pkg-header rules were the fixtures.
+        m2 = re.match(r"^tychoc1?: (.*)$", ln)
+        if m2 and ": error:" not in ln:
+            return m2.group(1).strip()
     return ""
 
 

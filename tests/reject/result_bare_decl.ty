@@ -1,3 +1,4 @@
+# expect: cannot infer the Result type of Ok(...) — annotate it (x : Result(T, E) = Ok(...))
 fn main():
     x := Ok(1)
     print("x")
