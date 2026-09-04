@@ -200,6 +200,7 @@ tests/reject/from_bytes_two_typeargs.ty	SEMANTIC	6473	from_bytes$(T)(b) takes ex
 tests/reject/fstr_empty_hole.ty	SYNTAX	2761	empty '{}' in an interpolated string
 tests/reject/fstr_hole_unterminated_string.ty	SYNTAX	2753	unterminated string in an interpolated hole
 tests/reject/fstr_unmatched_brace.ty	SYNTAX	2744	unmatched '}' in an interpolated string (use '}}' for a literal brace)
+tests/reject/fstr_unterminated_brace.ty	SYNTAX	2760	unterminated '{' in an interpolated string
 tests/reject/fstring_escape.ty	SYNTAX	709	unsupported escape \  (use \n \t \r \\ \")
 tests/reject/fstring_hole_name.ty	NAME	6242	unknown variable 'nosuchvar'
 tests/reject/genenum_bare_nullary.ty	SEMANTIC	6205	Empty is a variant of generic enum Box; supply the type explicitly, e.g. Empty$(int)

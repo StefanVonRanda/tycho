@@ -116,7 +116,10 @@ corpus_census() {
     # expected int` has no fragment that is not an instance.
     # Plus the 2 struct/enum `$Name` typaram fixtures (2026-09-05), both ported
     # into tychoc1 and word-for-word in both compilers.
-    [ "$cc_exp" -eq 573 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=573"
+    # Plus fstr_unterminated_brace (2026-09-05): the fourth malformed f-string
+    # body, whose minimal witness is nine characters and was missed by a
+    # length-<=6 search that filed the rule as a DEAD candidate.
+    [ "$cc_exp" -eq 574 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=574"
 
     cc_dirs=0
     for cc_d in $(git ls-files tests 2>/dev/null | grep '\.ty$' | sed 's|/[^/]*$||' | sort -u); do

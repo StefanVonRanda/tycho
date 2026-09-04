@@ -175,7 +175,18 @@ REMOVED = ["map_set(m, key, value)", "map_set's first argument", "map_set key mu
 # (src/tychoc.c:6062, the E_SPAWN arm), and a bare `spawn f()` statement is
 # refused while it is PARSED (src/tychoc.c:4252) with the rule stated in full; a
 # bare task VARIABLE is refused as `a bare expression has no effect`. Both probed.
+# One more, measured 2026-09-05 by six probes. The ARRC arm of the infinite-type
+# check needs to re-enter one fixed-size array type while emitting it, so the
+# cycle must pass through a NAMED by-value container: Option/Result/tuple/array
+# are structural and cannot name themselves, and an enum payload is a POINTER
+# (`E_E * v[2]` in the emitted C for `enum E: A([2]E)`, which compiles). That
+# leaves a struct, and the struct-level cycle check at resolve time dominates
+# every route to one: `[4]S`, `[4]Option(S)`, `[4]Result(S, string)`,
+# `[4](S, int)`, mutual A/B and the generic instantiation `Node(S)` were each
+# fed to ./tychoc and each died on `... use an array ([S]) or Option([S]) for
+# indirection` instead. Anchored on the tail, which the struct sentence lacks.
 DEAD = ["reserve only supports arrays of scalars",
+        "contains itself by value — use a dynamic array",
         "cannot infer the type of None",
         "a counting `for` needs int bounds",
         "a spawned task must be bound and waited",

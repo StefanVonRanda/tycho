@@ -1,0 +1,12 @@
+# A hole the splitter never closes. Minimal witness, found 2026-09-05 by a
+# bounded search over `{ } " \ a` (a length-<=6 search in the R21f-13b batch
+# found none and the rule was filed as a DEAD candidate; the shortest body is
+# nine characters). The two automata diverge on `\"`: inside a hole the LEXER
+# reads it as an escape and copies both bytes, while the splitter reads the
+# copied `"` as a nested-string opener. Two such pairs open and close one
+# splitter-string, hiding the `}` that the lexer used to return to depth 0 --
+# so the lexer ends the token with balanced braces and the splitter runs off
+# the end still inside the hole. tests/fstring_braces.ty is the accepting twin.
+# expect: unterminated '{' in an interpolated string
+fn main():
+    print(f"{\""{\""}")
