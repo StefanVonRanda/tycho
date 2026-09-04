@@ -1,3 +1,4 @@
+# expect: argument type mismatch
 fn take(a: bounded[4]int) -> int:
     return a[0]
 fn main():

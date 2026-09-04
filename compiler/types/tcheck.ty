@@ -1984,10 +1984,10 @@ fn _check_args(cs: inout C, name: string, si: int, args: [ast.Expr], line: int):
                 ok9 = true
             if not ok9:
                 if cs.sg[si].builtin and want == "string" and _strable(&cs, at):
-                    _cerr(&cs, "argument " + str(i + 1) + " of '" + name + "' is " + _show(&cs, at) +
+                    _cerr(&cs, "argument type mismatch: argument " + str(i + 1) + " of '" + name + "' is " + _show(&cs, at) +
                         ", expected string -- wrap it with str(...), e.g. " + name + "(str(x))")
                 else:
-                    _cerr(&cs, "argument " + str(i + 1) + " of '" + name + "' is " + _show(&cs, at) + ", expected " + _show(&cs, want))
+                    _cerr(&cs, "argument type mismatch: argument " + str(i + 1) + " of '" + name + "' is " + _show(&cs, at) + ", expected " + _show(&cs, want))
                 _nt_note(&cs, at, want)
         cs.line = ast.line_of(args[i])
     cs.in_arg = keep3
@@ -2051,7 +2051,7 @@ fn _check_fields(cs: inout C, ti: int, args: [ast.Expr], line: int) -> string:
         at := _ex2(&cs, args[i], cs.tds[ti].ftypes[i])
         cs.line = line
         if not compat(at, cs.tds[ti].ftypes[i]):
-            _cerr(&cs, "field '" + cs.tds[ti].fnames[i] + "' of " + cs.tds[ti].name + " is " + _show(&cs, cs.tds[ti].ftypes[i]) + ", got " + _show(&cs, at))
+            _cerr(&cs, "field type mismatch: field '" + cs.tds[ti].fnames[i] + "' of " + cs.tds[ti].name + " is " + _show(&cs, cs.tds[ti].ftypes[i]) + ", got " + _show(&cs, at))
         cs.line = ast.line_of(args[i])
     cs.in_arg = keep2
     cs.line = line
@@ -3263,11 +3263,11 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
             cs.line = l
             if not compat(pt, vt):
                 if k[0] is ast.Field:
-                    _cerr(&cs, "cannot assign " + _show(&cs, vt) + " to a " + _show(&cs, pt) + " field")
+                    _cerr(&cs, "assignment type mismatch: cannot assign " + _show(&cs, vt) + " to a " + _show(&cs, pt) + " field")
                 elif _map_place(&cs, k[0]):
-                    _cerr(&cs, "cannot assign " + _show(&cs, vt) + " to a " + _show(&cs, pt) + " map value")
+                    _cerr(&cs, "assignment type mismatch: cannot assign " + _show(&cs, vt) + " to a " + _show(&cs, pt) + " map value")
                 else:
-                    _cerr(&cs, "cannot assign " + _show(&cs, vt) + " to a " + _show(&cs, pt) + " element")
+                    _cerr(&cs, "assignment type mismatch: cannot assign " + _show(&cs, vt) + " to a " + _show(&cs, pt) + " element")
         ast.ConstS(l, name, v):
             t := _ex(&cs, v[0])
             cs.line = l
@@ -3431,7 +3431,7 @@ fn _assign_check(cs: inout C, name: string, t: string):
         _cerr(&cs, "'" + name + "' was declared with None but its first use makes it " + _show(&cs, t))
         return
     if not compat(vt, t):
-        _cerr(&cs, "cannot assign " + t + " to '" + name + "' of type " + vt)
+        _cerr(&cs, "assignment type mismatch: cannot assign " + t + " to '" + name + "' of type " + vt)
 
 # ---------------------------------------------------------------- the pass
 

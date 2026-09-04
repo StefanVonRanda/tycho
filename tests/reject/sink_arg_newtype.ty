@@ -1,3 +1,4 @@
+# expect: argument type mismatch
 type Id = int
 
 fn f(x: sink Id) -> int:

@@ -6826,7 +6826,7 @@ static Type resolve_expr_inner(Expr *e) {
                 for (int i = 0; i < e->nargs; i++) {
                     Type at_ = resolve_exp(e->args[i], sd->fields[i].type);   /* fixes a None field */
                     if (at_ != sd->fields[i].type)
-                        die_at(e->line, "field '%s' of %s is %s, got %s",
+                        die_at(e->line, "field type mismatch: field '%s' of %s is %s, got %s",
                                sd->fields[i].name, sd->name,
                                type_name(sd->fields[i].type), type_name(at_));
                 }
@@ -7293,7 +7293,7 @@ static Type resolve_expr_inner(Expr *e) {
                         && !strcmp(e->sval, "is_null"))
                         continue;
                     if (s->builtin && s->params[i] == T_STRING && strable)
-                        die_at(e->line, "argument %d of '%s' is %s, expected string -- wrap it with str(...), e.g. %s(str(x))",
+                        die_at(e->line, "argument type mismatch: argument %d of '%s' is %s, expected string -- wrap it with str(...), e.g. %s(str(x))",
                                i + 1, nominal_name(e->sval), type_name(at_), nominal_name(e->sval));
                     {   /* a newtype is erased in lowering, so "is int, expected Cents" reads
                          * as a compiler quirk until you see that Cents IS an int, declared here. */
@@ -7306,7 +7306,7 @@ static Type resolve_expr_inner(Expr *e) {
                                         nominal_name(g_newtypes[nid2].name), type_name(g_newtypes[nid2].under));
                         }
                     }
-                    die_at(e->line, "argument %d of '%s' is %s, expected %s",
+                    die_at(e->line, "argument type mismatch: argument %d of '%s' is %s, expected %s",
                            i + 1, nominal_name(e->sval), type_name(at_), type_name(s->params[i]));
                 }
             }
@@ -8567,7 +8567,7 @@ static void resolve_stmt(Stmt *s, Type ret) {
                 }
                 s->mtypes[i] = tup_elem(rt, i);
                 if (s->mtypes[i] != vt)
-                    die_at(s->line, "cannot assign %s to '%s' of type %s",
+                    die_at(s->line, "assignment type mismatch: cannot assign %s to '%s' of type %s",
                            type_name(s->mtypes[i]), s->names[i], type_name(vt));
             }
             break;
@@ -8598,7 +8598,7 @@ static void resolve_stmt(Stmt *s, Type ret) {
             }
             Type t = resolve_exp(s->expr, vt);
             if (t != vt)
-                die_at(s->line, "cannot assign %s to '%s' of type %s",
+                die_at(s->line, "assignment type mismatch: cannot assign %s to '%s' of type %s",
                        type_name(t), s->name, type_name(vt));
             break;
         }
@@ -8931,7 +8931,7 @@ static void resolve_stmt(Stmt *s, Type ret) {
                 } else {
                     Type vt = resolve_exp(s->expr, tt);   /* coerces a None value */
                     if (tt != vt)
-                        die_at(s->line, "cannot assign %s to a %s map value", type_name(vt), type_name(tt));
+                        die_at(s->line, "assignment type mismatch: cannot assign %s to a %s map value", type_name(vt), type_name(tt));
                 }
                 break;
             }
@@ -8939,7 +8939,7 @@ static void resolve_stmt(Stmt *s, Type ret) {
                 die_at(s->line, "cannot index-assign an element of %s (it is immutable)", type_name(baset));
             Type vt = resolve_exp(s->expr, tt);   /* coerces a None value */
             if (tt != vt)
-                die_at(s->line, "cannot assign %s to a %s element", type_name(vt), type_name(tt));
+                die_at(s->line, "assignment type mismatch: cannot assign %s to a %s element", type_name(vt), type_name(tt));
             break;
         }
         case S_FIELDSET: {
@@ -8955,7 +8955,7 @@ static void resolve_stmt(Stmt *s, Type ret) {
                 die_at(s->line, "cannot assign to a field of a temporary (only variables, fields, and composite-array elements are places)");
             Type vt = resolve_exp(s->expr, tt);  /* coerces a None value */
             if (tt != vt)
-                die_at(s->line, "cannot assign %s to a %s field", type_name(vt), type_name(tt));
+                die_at(s->line, "assignment type mismatch: cannot assign %s to a %s field", type_name(vt), type_name(tt));
             break;
         }
         case S_EXPR: {

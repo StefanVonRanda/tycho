@@ -31,6 +31,9 @@ refused with or without the right number in it. So each NAME file's location is
 compared against ./tychoc's for the same input. It found 7 on its first run: the
 six parse-time declaration categories were being registered in ARRAY order, so
 of two colliding declarations tychoc1 named the wrong one.
+
+Phase 5d added leg8b beside it, one step further in: a line that agrees says
+nothing about the WORDS, and a NAME file is refused either way.
 """
 import os, re, subprocess, sys
 
@@ -102,6 +105,21 @@ late_of = lambda r: next((w for w in r.stdout.split() if w.startswith("late=")),
 err1 = lambda r: next((l.strip() for l in r.stderr.split("\n") if ": error: " in l), "")
 
 
+def msg1(r):
+    """tychoc1's first diagnostic MESSAGE, stripped of location and driver prefix
+    exactly as tychoc_verdict strips tychoc's -- so the two are comparable. The
+    `tychoc1: <msg>` form with no `error:` is merge_pkg's, and it is a message
+    like any other; matching only the located form scored those two as an empty
+    string and made a byte-identical pair look like a divergence."""
+    for ln in r.stderr.split("\n"):
+        m = re.match(r"^(?:tychoc1: )?(?:(?:\S+?(?::\d+)?): )?error: (.*)$", ln)
+        if m:
+            return m.group(1).strip()
+        if ln.startswith("tychoc1: ") and ": error:" not in ln:
+            return ln[9:].strip()
+    return ""
+
+
 def tychoc_verdict(path):
     r = subprocess.run(["./tychoc", path, "--emit-c", "-o", "/tmp/_vd_out"],
                        capture_output=True, text=True)
@@ -132,6 +150,7 @@ def main():
     bad = rbad = lbad = tbad = abad = pabad = tabad = 0
     known_hit = set()
     lok = lbad2 = lskip = 0
+    mok = mbad = 0
     nolinehit = set()
     tok = tbad2 = tskip = 0
     sixb = 0
@@ -189,6 +208,16 @@ def main():
                 print("  LINE-DISAGREE %s tychoc=%s tychoc1=%s" % (f, loc, mine))
             else:
                 lok += 1
+            # Phase 5d: the LINE agreeing says nothing about the words. Both
+            # compilers refuse a NAME file with or without the right sentence in
+            # it, so legs 5, 6 and 8 stay green while the text drifts -- which is
+            # how `(<kind> in <file>)` sat on seven resolve.ty sites unseen.
+            his = msg1(q)
+            if his == msg:
+                mok += 1
+            else:
+                mbad += 1
+                print("  MSG-DISAGREE %s\n    tychoc : %s\n    tychoc1: %s" % (f, msg, his))
         t = subprocess.run(["./tychoc1", f, "--typecheck"], capture_output=True, text=True)
         typed = t.returncode == 0
         ta = subprocess.run(["./tychoc1", f, "--typecheck"], capture_output=True,
@@ -233,6 +262,8 @@ def main():
     print("leg6c whole-tree PARSE under the same absolute root: disagreements=%d" % pabad)
     print("leg8  NAME diagnostic file:line vs ./tychoc: scored=%d agree=%d disagree=%d unlocated=%d"
           % (lok + lbad2 + lskip, lok, lbad2, lskip))
+    print("leg8b NAME diagnostic MESSAGE vs ./tychoc: scored=%d agree=%d disagree=%d"
+          % (mok + mbad, mok, mbad))
     print("leg10 whole-tree typecheck: disagreements=%d (%d TYPE files known-missed)"
           % (tbad, len(KNOWN_TYPE_MISS)))
     print("leg10c whole-tree TYPECHECK under the same absolute root: disagreements=%d" % tabad)
@@ -262,11 +293,14 @@ def main():
     if lok + lbad2 + lskip != n["NAME"]:
         print("parse-check: leg8 scored %d of %d NAME files" % (lok + lbad2 + lskip, n["NAME"]))
         return 1
+    if mok + mbad != n["NAME"]:
+        print("parse-check: leg8b scored %d of %d NAME files" % (mok + mbad, n["NAME"]))
+        return 1
     if len(files) != EXPECT:
         print("parse-check: the tree is %d .ty files, expected %d" % (len(files), EXPECT))
         return 1
-    return 1 if (bad or rbad or lbad or lbad2 or lskip or tbad or tbad2 or tskip
-                  or abad or pabad or tabad) else 0
+    return 1 if (bad or rbad or lbad or lbad2 or lskip or mbad or tbad or tbad2
+                  or tskip or abad or pabad or tabad) else 0
 
 
 if __name__ == "__main__":

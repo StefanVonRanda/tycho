@@ -1,2 +1,3 @@
+# expect: no 'main' procedure
 fn helper() -> int:
     return 1

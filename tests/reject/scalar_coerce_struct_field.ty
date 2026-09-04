@@ -1,3 +1,4 @@
+# expect: field type mismatch
 struct S:
     v: int
 

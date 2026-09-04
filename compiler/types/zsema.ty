@@ -598,7 +598,7 @@ fn _generic_call2(cs: inout C, l: int, si: int, spelt: string, ts: [ast.Ty], arg
         if not _unify(&cs, cs.sg[si].pty[i], ats[i], &b):
             s2 := _bnd_stage2(&cs, cs.sg[si].pty[i], ats[i])
             if len(s2) > 0:
-                _cerr(&cs, "argument " + str(i + 1) + " of '" + spelt + "' is " + _show(&cs, ats[i]) + ", expected " + _show(&cs, s2))
+                _cerr(&cs, "argument type mismatch: argument " + str(i + 1) + " of '" + spelt + "' is " + _show(&cs, ats[i]) + ", expected " + _show(&cs, s2))
                 return "?"
             _cerr(&cs, "argument " + str(i + 1) + " of '" + spelt + "' is " + _show(&cs, ats[i]) + ", which does not fit the parameter pattern")
             return "?"
@@ -608,7 +608,7 @@ fn _generic_call2(cs: inout C, l: int, si: int, spelt: string, ts: [ast.Ty], arg
             if not _unify(&cs, vp, ats[i], &b):
                 s3 := _bnd_stage2(&cs, vp, ats[i])
                 if len(s3) > 0:
-                    _cerr(&cs, "argument " + str(i + 1) + " of '" + spelt + "' is " + _show(&cs, ats[i]) + ", expected " + _show(&cs, s3))
+                    _cerr(&cs, "argument type mismatch: argument " + str(i + 1) + " of '" + spelt + "' is " + _show(&cs, ats[i]) + ", expected " + _show(&cs, s3))
                     return "?"
                 _cerr(&cs, "argument " + str(i + 1) + " of '" + spelt + "' is " + _show(&cs, ats[i]) + ", which does not fit the parameter pattern")
                 return "?"
@@ -1180,7 +1180,7 @@ fn _inst_ctor(cs: inout C, l: int, ti: int, args: [ast.Expr], at0: int, npay: in
             if len(vn) > 0:
                 _cerr(&cs, vn + " payload " + str(bad + 1) + " is " + _show(&cs, badb) + ", got " + _show(&cs, ats[bad]))
             else:
-                _cerr(&cs, "field '" + cs.tds[ti].fnames[bad] + "' of " + _short(cs.tds[ti].name) +
+                _cerr(&cs, "field type mismatch: field '" + cs.tds[ti].fnames[bad] + "' of " + _short(cs.tds[ti].name) +
                     " is " + _show(&cs, badb) + ", got " + _show(&cs, ats[bad]))
             return "?"
         # src/tychoc.c:6812 / :6748 -- name the argument that failed, not "1"

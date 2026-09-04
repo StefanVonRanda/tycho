@@ -1,4 +1,4 @@
-tests/diag/note_newtype.ty:9: error: argument 2 of 'add' is int, expected Cents
+tests/diag/note_newtype.ty:9: error: argument type mismatch: argument 2 of 'add' is int, expected Cents
      9 |     println(str(add(c, 7)))
 tests/diag/note_newtype.ty:2: note: `Cents` is a distinct type over int, declared here -- it does not accept its underlying type implicitly
      2 | type Cents = int

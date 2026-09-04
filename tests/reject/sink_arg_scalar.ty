@@ -1,3 +1,4 @@
+# expect: argument type mismatch
 fn f(x: sink int) -> int:
     return x
 

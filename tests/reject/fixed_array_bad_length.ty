@@ -1,4 +1,5 @@
 # A fixed-array literal must have exactly N elements.
+# expect: a fixed-size array of length
 fn main():
     v: [3]int = [1, 2]
     print(str(v[0]))

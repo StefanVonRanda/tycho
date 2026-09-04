@@ -1,3 +1,4 @@
+# expect: assignment type mismatch
 fn main():
     x : int = 7
     x = 2.5

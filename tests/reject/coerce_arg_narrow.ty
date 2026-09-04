@@ -1,3 +1,4 @@
+# expect: argument type mismatch
 fn g(n: int) -> int:
     return n
 fn main():

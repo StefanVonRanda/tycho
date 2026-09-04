@@ -7537,8 +7537,12 @@ fn program(pfx: [string], us: [ast.Unit], dbgf: string) -> string:
         cs.cf = i
         _collect2(&cs, us[i])
     cs.cf = -1
+    # UNREACHABLE via the driver: driver.ty@check_into resolves before emit_to
+    # on both compile paths, and the only two `main` kinds resolve accepts (fn,
+    # extern) are exactly the two that reach cs.fds under the spelling _fidx
+    # looks up. An invariant, not a user diagnostic -- worded as one.
     if _fidx(&cs, "main") < 0:
-        _bad("no 'main' procedure")
+        _bad("internal error: emit reached a program with no 'main' -- types.resolve owns that rule (compiler/types/resolve.ty@resolve) and refuses first")
 
     # Every name any body, const initialiser or subscript place mentions. A
     # generic's body is walked too: it is emitted only when instantiated, but

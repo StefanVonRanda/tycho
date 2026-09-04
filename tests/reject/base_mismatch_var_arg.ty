@@ -1,3 +1,4 @@
+# expect: argument type mismatch
 fn need_int(n: int) -> int:
     return n
 fn main():

@@ -260,11 +260,30 @@ def sites():
         line = code.count("\n", 0, m.start()) + 1
         for f in literals(text, m.end()):
             out.append((line, name, f))
-    # One rule the extractors cannot see: built by snprintf into a heap buffer and
-    # handed to diag_push (src/tychoc.c:541).
-    out.append((541, "snprintf", "unclosed '(' or '[' opened on line %d -- `%s` here can only "
-                                 "start a declaration, so the bracket was never closed"))
+    out.append(snprintf_rule(text, code))
     return sorted(out)
+
+
+def snprintf_rule(text, code):
+    """The one rule no extractor above can see: built by snprintf into a heap
+    buffer and handed to diag_push, so neither the call name nor the literal sits
+    where the die_at/fprintf sweep looks.
+
+    DERIVED, never typed -- line AND format both. It was the pair `538, :563`
+    typed into this file, then moved by hand to 541 while re-anchoring; a bare
+    Python integer is not a `path:line`, so check_citations.py cannot see one go
+    stale. Same blindness classify_rejects.find_parse_end closed on 2026-09-04,
+    and the same fix: read it out of the file that owns it, and refuse rather
+    than guess when the shape moves.
+    """
+    hits = []
+    for m in re.finditer(r"\bsnprintf\s*\(", code):
+        fs = literals(text, m.end())
+        if fs and fs[0].startswith("unclosed '(' or '['"):
+            hits.append((code.count("\n", 0, m.start()) + 1, "snprintf", fs[0]))
+    if len(hits) != 1:
+        raise LookupError("%d snprintf-into-diag_push rules in %s, expected 1" % (len(hits), SRC))
+    return hits[0]
 
 
 def rules():
@@ -453,16 +472,18 @@ def main():
         # leg would pass while measuring nothing, so the same-rule pair must come
         # back WORDING and only the wrong-rule pair IDENTITY.
         rx = [(f, C.fmt_to_re(f)) for f in rs]
-        K = "field '%s' of %s is %s, got %s"
+        # A COPY of a live format string, and the assert below is what caught it
+        # going stale when R16c-6 prefixed the rule name onto this diagnostic.
+        K = "field type mismatch: field '%s' of %s is %s, got %s"
         OTHER = "unknown variable '%s'"
         assert K in rs and OTHER in rs, "the control's two formats are not rules"
-        cases = [("same rule, different subject", "field 'xs' of Box__int is bounded[4]int, got [4]int",
-                  1, "field 'xs' of Box is bounded[4]int, got [4]int", "WORDING"),
-                 ("another rule's sentence", "field 'xs' of Box__int is bounded[4]int, got [4]int",
+        cases = [("same rule, different subject", "field type mismatch: field 'xs' of Box__int is bounded[4]int, got [4]int",
+                  1, "field type mismatch: field 'xs' of Box is bounded[4]int, got [4]int", "WORDING"),
+                 ("another rule's sentence", "field type mismatch: field 'xs' of Box__int is bounded[4]int, got [4]int",
                   1, "unknown variable 'xs'", "IDENTITY"),
-                 ("no diagnostic at all (a trap)", "field 'xs' of Box__int is bounded[4]int, got [4]int",
+                 ("no diagnostic at all (a trap)", "field type mismatch: field 'xs' of Box__int is bounded[4]int, got [4]int",
                   1, "", "IDENTITY"),
-                 ("tychoc1 accepts", "field 'xs' of Box__int is bounded[4]int, got [4]int",
+                 ("tychoc1 accepts", "field type mismatch: field 'xs' of Box__int is bounded[4]int, got [4]int",
                   0, "", "VERDICT"),
                  ("identical", "unknown variable 'xs'", 1, "unknown variable 'xs'", "AGREE")]
         bad = [(w, e, outcome(m0, match(m0, rx), r1, m1, rx))

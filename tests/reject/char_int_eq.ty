@@ -1,3 +1,4 @@
+# expect: cannot compare
 fn main():
     c := 'A'
     println(str(c == 66))

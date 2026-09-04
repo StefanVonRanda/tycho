@@ -1,3 +1,4 @@
+# expect: argument type mismatch
 type Ids = [int]
 
 fn takes_raw(x: [int]) -> int:

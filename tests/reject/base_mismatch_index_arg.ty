@@ -1,3 +1,4 @@
+# expect: argument type mismatch
 fn need_str(s: string) -> int:
     return len(s)
 fn main():

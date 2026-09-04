@@ -1,3 +1,4 @@
+# expect: cannot compare
 fn main():
     f := 3.5
     println(str(f == 0))

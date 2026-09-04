@@ -247,7 +247,7 @@ FALLBACK = [
     # report_unused_locals (src/tychoc.c:5652) is an fprintf loop, not a die_at, so
     # load_sites cannot see it. SEMANTIC, not NAME: it is a whole-program pass run
     # AFTER name resolution in both compilers, and the NAME class means "the
-    # resolver refuses it" (compiler/verdict_diff.py:161).
+    # resolver refuses it" (compiler/verdict_diff.py:180).
     ("declared and not used", "SEMANTIC"),
     # report_unused_imports (src/tychoc.c@report_unused_imports) is the sibling of
     # the line above and invisible to load_sites for the same reason: an fprintf
