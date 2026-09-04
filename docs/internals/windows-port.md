@@ -191,7 +191,7 @@ Windows tests (which need Windows-native mechanisms) parked for phase 6.
 
 - The pure-Tycho tools (`tychofmt`, `tycho-lsp`, `tycho-ar`, `tycho-q`,
   `tycho-vm`, `tycho-scheme`, `tycho-fetch`, `tycho-build`, `tycho-kv`,
-  `tycho-chess`, `tycho-rsa`, `tycho-sat`, `tycho-kvsrv`, `tycho-scheme`)
+  `tycho-chess`, `tycho-sat`, `tycho-kvsrv`, `tycho-scheme`)
   compile once runtime+corelib do; the ones that shell out (`tar`, build
   recipes) need MSYS2's tools, which are present.
 - `tycho-debug`: the Windows interrupt story — replace `setpgid`/SIGINT-to-

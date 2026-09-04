@@ -1,5 +1,9 @@
 # What the next program says the language needs
 
+> The program this plan built was DELETED on 2026-09-04: no constant-time
+> routine can be written in Tycho, so a safe RSA would have to be a C shim.
+> This file is kept as the record of what the exercise taught the language.
+
 > This plan is a fresh clone, 2026-08-04: the completed tycho-chess plan
 > lives at `docs/internals/plan-tycho-chess-DONE.md`. The rule from that plan
 > holds here: *does anything that is not the program written to want it need

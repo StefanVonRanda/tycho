@@ -328,8 +328,8 @@ element type instead of a family of per-type siblings.
   constant-time and **pure Tycho cannot be**: `/` and `%` lower to a runtime helper that
   branches on its operands (`runtime/tycho_rt.c@tycho_imod`), so a routine written over
   secret values branches on those values however the source is written. That is why these
-  primitives are bound to OpenSSL rather than reimplemented, and why `tools/tycho-rsa/main.ty`
-  — a correct RSA — still leaks its private key to anyone who can time repeated decryptions. Every value (keys, nonces, ciphertext, signatures,
+  primitives are bound to OpenSSL rather than reimplemented: a correct pure-Tycho RSA
+  would still leak its private key to anyone who can time repeated decryptions. Every value (keys, nonces, ciphertext, signatures,
   digests) crosses as lowercase hex, because a Tycho string can't hold a `0x00`; use
   `core:hex` to convert text. Checked against independent known-answer vectors (RFC 4231 HMAC,
   RFC 7914 PBKDF2, RFC 8439 ChaCha20-Poly1305, Ed25519/X25519).

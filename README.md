@@ -115,7 +115,6 @@ language held: no compiler or runtime defect was filed by any of them.
 | `tycho-vm` | a bytecode assembler/disassembler/VM | `dis` round-trips `asm` byte-for-byte; 10 runtime traps; `make vm-check` |
 | `tycho-kv` | a persistent B+ tree store | every command script byte-identical against a naive map backend; `make kv-check` |
 | `tycho-chess` | bitboards, perft, alpha-beta search | published perft totals (start, Kiwipete, Position 3); `make chess-check` |
-| `tycho-rsa` | RSA keygen and RSAES-OAEP on `core:bignum` — correct, and **not constant time**: timing a decryption leaks the private key ([SECURITY.md](SECURITY.md)) | the textbook vector plus python `pow()` as the oracle, and an OAEP known-answer test against python `cryptography` in both directions; `make rsa-check` |
 | `tycho-kvsrv` | a concurrent HTTP key-value server | a daemon gate: 4 parallel clients, every write intact; `make kvsrv-check` |
 | `tycho-sat` | a DPLL/CDCL SAT solver | the pigeonhole theorem (PHP(2..9) unsat) and planted instances whose models the runner verifies clause by clause; `make sat-check` |
 

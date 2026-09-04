@@ -178,8 +178,6 @@ step "[3i/15] make kv-check  (tycho-kv: 3 command scripts byte-identical B+ tree
 make -s kv-check
 step "[3j/16] make chess-check  (tycho-chess: perft totals vs published values on start/kiwipete/pos3 + ep/promo/castling vs oracle; search deterministic + TT-invariant with exact tactical probes)"
 make -s chess-check
-step "[3k/17] make rsa-check  (tycho-rsa: textbook vector, 3 python-pow modexp sizes, Miller-Rabin probes incl. Carmichael 561, CSPRNG keygen invariants; RSAES-OAEP round trip through the CLI and a known-answer test vs python cryptography BOTH ways; the same plaintext encrypting twice to different ciphertexts, with a fixed-seed copy as the control)"
-make -s rsa-check
 step "[3l/18] make kvsrv-check  (tycho-kvsrv: HTTP KV round-trips + 405/404 + keep-alive + 4-way concurrent PUT/GET intact through the actor store)"
 make -s kvsrv-check
 step "[3m/19] make sat-check  (tycho-sat: PHP(2..9) all UNSAT; planted instances SAT with runner-verified models; deterministic; learning comparison recorded)"

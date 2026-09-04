@@ -4938,8 +4938,9 @@ Both now say so and point at `crypto.random_hex`, which is `RAND_bytes`-backed.
 > the warning on one surface and not the other is the same failure this entry is
 > about, one level up. Now on both.
 
-`tools/tycho-rsa` was checked and is fine -- it seeds from a fixed constant on
-purpose and says so in its header, being a teaching implementation.
+tycho-rsa (deleted 2026-09-04) was checked and was fine -- it seeded from a fixed constant on
+purpose and said so in its header, being a teaching implementation. (Deleted because
+pure-Tycho RSA cannot be constant time.)
 
 **Not fixed, deliberately: there is still no CSPRNG-backed UUID.** Adding one is
 an API decision (a `v4_secure` taking bytes, or a `uuid` that depends on

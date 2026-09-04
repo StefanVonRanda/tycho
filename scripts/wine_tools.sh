@@ -77,7 +77,6 @@ build_tool tycho-vm    tools/tycho-vm/main.ty       -        -
 build_tool tycho-scheme tools/tycho-scheme/main.ty  -        -
 build_tool tycho-kv    tools/tycho-kv/main.ty       -        -
 build_tool tycho-chess tools/tycho-chess/main.ty    -        -
-build_tool tycho-rsa   tools/tycho-rsa/main.ty      -        -
 build_tool tycho-sat   tools/tycho-sat/main.ty      -        -
 build_tool tycho-kvsrv tools/tycho-kvsrv/main.ty    -        -lws2_32
 build_tool tycho-build tools/tycho-build/main.ty    -        -

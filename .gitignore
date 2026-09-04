@@ -178,10 +178,6 @@ gmon.out
 # the map backend's locked output over the three command scripts. Same line,
 # same reason; the runner works in a `mktemp -d`.
 !/tools/tycho-kv/*.out
-# the tycho-rsa selfcheck transcript golden (tools/tycho-rsa/expected.out) is
-# tracked too, same line, same reason as the four above; the runner works in a
-# `mktemp -d`.
-!/tools/tycho-rsa/*.out
 # the tycho-kvsrv daemon gate's transcript golden (tools/tycho-kvsrv/expected.out)
 # is tracked too, same line, same reason; the runner works in a `mktemp -d`.
 !/tools/tycho-kvsrv/*.out
