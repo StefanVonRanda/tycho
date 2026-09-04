@@ -1,0 +1,8 @@
+# The ACCEPTING twin of the three tests/reject/fstr_*.ty fixtures: every shape
+# they are one character away from must still compile and run.
+fn main():
+    x := 2
+    print(f"{{}} literal braces\n")
+    print(f"{{{str(x)}}}\n")
+    print(f"nested {str(len("abc"))}\n")
+    print(f"}} and {{ alone\n")

@@ -1,0 +1,7 @@
+# A bare `}` outside a hole. `}}` is the literal-brace spelling; the message
+# says so. src/tychoc.c@desugar_interp refuses it in the parser, and since
+# 2026-09-05 so does compiler/parse/parse.ty@_fholes -- before that tychoc1
+# only refused it in emit, so `--typecheck` accepted this file.
+# expect: unmatched '}' in an interpolated string (use '}}' for a literal brace)
+fn main():
+    print(f"a}b\n")

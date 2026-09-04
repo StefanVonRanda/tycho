@@ -1,0 +1,8 @@
+# Inside a hole the LEXER reads `\"` as a string escape and copies both bytes
+# through, while the hole splitter reads the copied `"` as a nested-string
+# opener that never closes -- two readings of the same bytes, filed as R21d-4.
+# Both compilers refuse it with this sentence. The supported spelling needs no
+# escape at all: `f"a{"b"}"`, which tests/fstring_braces.ty exercises.
+# expect: unterminated string in an interpolated hole
+fn main():
+    print(f"a{\"b}\n")

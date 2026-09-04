@@ -1,0 +1,5 @@
+# `{}` interpolates nothing. Its accepting twin is tests/fstring_braces.ty,
+# where `{{}}` is the literal two-brace text.
+# expect: empty '{}' in an interpolated string
+fn main():
+    print(f"a{}b\n")

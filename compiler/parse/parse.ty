@@ -484,9 +484,10 @@ fn _lambda(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
 # src/tychoc.c@desugar_interp parses every `{...}` into a real expression, so
 # every name and type rule reaches inside one. Keeping the body as text made all
 # of them unreachable: `f"{nosuchvar}"` typechecked clean here while ./tychoc
-# reported an unknown variable. The split mirrors emit/emit.ty@_fsplit; a
-# MALFORMED body yields NO holes rather than a diagnostic, because emit still
-# owns those three messages and this pass may only ever accept more.
+# reported an unknown variable. The split mirrors emit/emit.ty@_fsplit, and
+# since 2026-09-05 it also owns that pass's three malformed-body diagnostics:
+# emit's copies print `tychoc1: <msg>` with no location and are reached only
+# through `--emit-c`, so `--typecheck` ACCEPTED what ./tychoc refuses.
 fn _hole(toks: [lex.Tok], src: string, line: int) -> ast.Expr:
     ht := lex.tokenize(src)
     # lex restarts its line counter at 1 and a hole's columns are body-relative,
@@ -506,7 +507,6 @@ fn _fholes(toks: [lex.Tok], ti: int) -> [ast.Expr]:
     body := toks[ti].text
     line := toks[ti].line
     out := []ast.Expr
-    none := []ast.Expr
     i := 0
     n := len(body)
     for i < n:
@@ -515,7 +515,7 @@ fn _fholes(toks: [lex.Tok], ti: int) -> [ast.Expr]:
             i += 2
             continue
         if c == 125:
-            return none
+            _die(toks, _at(toks, ti), "unmatched '}' in an interpolated string (use '}}' for a literal brace)")
         if c == 92:
             i += 2
             continue
@@ -534,7 +534,7 @@ fn _fholes(toks: [lex.Tok], ti: int) -> [ast.Expr]:
                         i += 1
                     i += 1
                 if i >= n:
-                    return none
+                    _die(toks, _at(toks, ti), "unterminated string in an interpolated hole")
                 i += 1
                 continue
             if d == 123:
@@ -544,8 +544,10 @@ fn _fholes(toks: [lex.Tok], ti: int) -> [ast.Expr]:
                 if depth == 0:
                     break
             i += 1
-        if depth != 0 or i == start:
-            return none
+        if depth != 0:
+            _die(toks, _at(toks, ti), "unterminated '{' in an interpolated string")
+        if i == start:
+            _die(toks, _at(toks, ti), "empty '{}' in an interpolated string")
         push(out, _hole(toks, body[start:i], line))
         i += 1
     return out

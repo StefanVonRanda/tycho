@@ -114,7 +114,7 @@ corpus_census() {
     # a line number or a path. Plus R16c-6's last 21 (2026-09-04): 15 of them
     # needed the DIAGNOSTIC reworded first, since `argument 1 of 'f' is string,
     # expected int` has no fragment that is not an instance.
-    [ "$cc_exp" -eq 568 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=568"
+    [ "$cc_exp" -eq 571 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=571"
 
     cc_dirs=0
     for cc_d in $(git ls-files tests 2>/dev/null | grep '\.ty$' | sed 's|/[^/]*$||' | sort -u); do

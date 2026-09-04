@@ -86,7 +86,7 @@ n_lib=$(find corelib -name '*.ty' | wc -l)
 n_rej=$(ls tests/reject/*.ty | wc -l)
 n_tsv=$(wc -l < "$TSV")
 n_new=$(find tools examples server bench -name '*.ty' | wc -l)
-[ "$n_acc" = 280 ] || { echo "parse-check: tests/*.ty is $n_acc, expected 280"; rc=1; }   # +1 each: tests/packed_struct.ty (V2), tests/vector_type.ty (V3), tests/fixarr_iter.ty (V3a)
+[ "$n_acc" = 281 ] || { echo "parse-check: tests/*.ty is $n_acc, expected 280"; rc=1; }   # +1 each: tests/packed_struct.ty (V2), tests/vector_type.ty (V3), tests/fixarr_iter.ty (V3a)
 [ "$n_lib" = 91 ]  || { echo "parse-check: corelib/**.ty is $n_lib, expected 91"; rc=1; }
 [ "$n_new" = 178 ] || { echo "parse-check: tools+examples+server+bench .ty is $n_new, expected 178"; rc=1; }   # -1: tools/tycho-rsa/ removed in 0888bf28, which left this literal at 179 and the lane red
 [ "$n_rej" = "$n_tsv" ] || { echo "parse-check: $n_rej reject fixtures but $n_tsv classified rows -- rerun scripts/classify_rejects.py"; rc=1; }
@@ -119,7 +119,7 @@ leg_accept() {
     echo "$1: files=$((ok+bad)) parse-ok=$ok fail=$bad"
     [ "$ok" = "$3" ] && [ "$bad" = 0 ] || { echo "parse-check: $1 expected $3 ok, 0 fail"; rc=1; }
 }
-leg_accept "leg1  tests/*.ty" "$(ls tests/*.ty)" 280
+leg_accept "leg1  tests/*.ty" "$(ls tests/*.ty)" 281
 leg_accept "leg1b corelib/**.ty" "$(find corelib -name '*.ty' | sort)" 91
 leg_accept "leg1c tools+examples+server+bench" "$(find tools examples server bench -name '*.ty' | sort)" 178
 
@@ -188,7 +188,9 @@ echo "leg2c tests/reject/*.ty --typecheck: all=$((tr+tm)) rejected=$tr missed=$t
 # only from inside an f-string interpolation hole.
 # NAME 34 -> 35: tests/reject/destructure_dup_name.ty -- a duplicate BINDING in a
 # destructuring list, which tychoc1 refuses in its resolver.
-[ "$nsyn" = 98 ] && [ "$nname" = 35 ] && [ "$ntype" = 164 ] && [ "$nsem" = 271 ] || { echo "parse-check: the split moved -- expected SYNTAX=98 NAME=35 TYPE=164 SEMANTIC=271"; rc=1; }
+# SYNTAX 98 -> 101: the three malformed f-string bodies, which tychoc1 refused
+# only in emit until 2026-09-05 and now refuses in compiler/parse/parse.ty@_fholes.
+[ "$nsyn" = 101 ] && [ "$nname" = 35 ] && [ "$ntype" = 164 ] && [ "$nsem" = 271 ] || { echo "parse-check: the split moved -- expected SYNTAX=101 NAME=35 TYPE=164 SEMANTIC=271"; rc=1; }
 [ "$mr" = 0 ] || { echo "parse-check: a NAME or SEMANTIC fixture was rejected by --parse; a parser has no symbol table"; rc=1; }
 [ "$sa" = 0 ] || { echo "parse-check: a SYNTAX fixture was accepted; the parser must refuse it"; rc=1; }
 [ "$rm_" = 0 ] || { echo "parse-check: a NAME fixture resolved; the resolver must refuse it"; rc=1; }
@@ -198,7 +200,7 @@ echo "leg2c tests/reject/*.ty --typecheck: all=$((tr+tm)) rejected=$tr missed=$t
 got=$(echo $seen_miss | tr ' ' '\n' | LC_ALL=C sort | tr '\n' ' ')
 want=$(echo $KNOWN_TYPE_MISS | tr ' ' '\n' | LC_ALL=C sort | tr '\n' ' ')
 [ "$got" = "$want" ] || { echo "parse-check: the TYPE misses moved"; echo "    now:  $got"; echo "    was:  $want"; rc=1; }
-[ "$tr" = 567 ] || { echo "parse-check: --typecheck refused $tr of 568, expected 567"; rc=1; }
+[ "$tr" = 570 ] || { echo "parse-check: --typecheck refused $tr of 571, expected 570"; rc=1; }
 
 # [3] -- the census, against a recorded golden
 for f in $(ls tests/*.ty) $(find corelib -name '*.ty' | sort) $(find tools examples server bench -name '*.ty' | sort); do

@@ -13,6 +13,10 @@ lane does and compares it to the literal EXTRACTED from the owning file -- it
 keeps no copy of any number, so it cannot itself rot. A red here is a literal to
 update; a green here means parse-check's opening counts will pass.
 
+leg15's two corpus sizes are here too since 2026-09-05: adding one
+tests/conc/reject/ or tests/reject/pkg/ fixture used to redden the 13-second
+lane and nothing cheaper.
+
 Not covered, deliberately: the three census goldens and `--typecheck`'s refusal
 count, which cannot be known without running tychoc1. tests/run.sh's own literals
 are already cheap -- `sh tests/run.sh --count` asserts them and exits non-zero.
@@ -36,6 +40,12 @@ def walk(root):
 
 def flat(root):
     return [n for n in os.listdir(root) if n.endswith(".ty")]
+
+
+def mains(root):
+    """`<root>/*/main.ty` -- the shape leg15's package corpora are globbed with."""
+    return [d for d in sorted(os.listdir(root))
+            if os.path.isfile(os.path.join(root, d, "main.ty"))]
 
 
 def tsv_split():
@@ -62,6 +72,11 @@ def counts():
         "SYNTAX": n.get("SYNTAX", 0), "NAME": n.get("NAME", 0),
         "TYPE": n.get("TYPE", 0), "SEMANTIC": n.get("SEMANTIC", 0),
         "n_rej": len(flat("tests/reject")), "n_tsv": nrows,
+        # leg15 -- the two corpora it scores by MESSAGE, globbed its way:
+        # `tests/conc/reject/*.ty tests/reject/pkg/*/main.ty` must all be
+        # refused, `tests/conc/*.ty tests/pkg/*/main.ty` must all be accepted.
+        "l15r": len(flat("tests/conc/reject")) + len(mains("tests/reject/pkg")),
+        "l15a": len(flat("tests/conc")) + len(mains("tests/pkg")),
     }
 
 
@@ -79,6 +94,10 @@ LEGS = [
     ("run.sh TYPE",   RUNSH, r'\[ "\$ntype" = (\d+) \]', "TYPE"),
     ("run.sh SEMANTIC", RUNSH, r'\[ "\$nsem" = (\d+) \]', "SEMANTIC"),
     ("verdict_diff EXPECT", VDIFF, r'^EXPECT = (\d+)', "tree"),
+    ("run.sh leg15 refused",  RUNSH, r'\[ "\$n15r" = (\d+) \]', "l15r"),
+    ("run.sh leg15 accepted", RUNSH, r'\[ "\$n15a" = (\d+) \]', "l15a"),
+    ("run.sh leg15 echo refused",  RUNSH, r'refused=\$n15r/(\d+) ', "l15r"),
+    ("run.sh leg15 echo accepted", RUNSH, r'accepted=\$n15a/(\d+)"', "l15a"),
 ]
 
 
