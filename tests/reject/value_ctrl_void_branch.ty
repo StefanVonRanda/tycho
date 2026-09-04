@@ -1,6 +1,5 @@
 # src/tychoc.c:8343 -- a value if/match branch whose tail is a void call.
-# No pinned expectation: scored against ./tychoc1, which refuses this as
-# `cannot bind a void value` from the Decl arm -- see value_ctrl_all_diverge.ty.
+# expect: a value if/match branch must produce a value, not void
 fn nop():
     println("n")
 

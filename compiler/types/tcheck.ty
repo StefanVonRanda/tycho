@@ -137,6 +137,14 @@ struct Pend:
     line: int
     done: bool
 
+# One branch result of a value if/match -- src/tychoc.c@ctrl_collect_tails.
+# `_value_type` returns ONE type, so a void tail, an all-diverging if/match and
+# a bare `None` tail are the same observation to it; the LIST is what tells them
+# apart (src/tychoc.c:8336, :8341, :8343).
+struct Tail:
+    line: int
+    ty: string
+
 struct C:
     cwarns: [string]                   # non-fatal, drained by the driver
     errbase: int                       # errs at the current proc's entry; -1 outside one
@@ -219,6 +227,11 @@ struct C:
     npend: int                         # live length of `pend`; blocks mark/restore it
     pendok: string                     # the one pending name a read may see ungrounded:
                                        # `push`/`map_set`'s receiver, which GROUNDS it
+    tail: [Tail]                       # the non-diverging branch tails of the value
+                                       # if/match being typed right now
+    ntail: int                         # live length of `tail`; each value decl
+                                       # marks and restores it, so a nested one nests
+    tcol: int                          # >0 while a value decl is collecting tails
 
 fn _cexcerpt(cs: inout C, file: string, line: int) -> string:
     if line <= 0:
@@ -2780,6 +2793,53 @@ fn _tblock(cs: inout C, body: [ast.Stmt]):
     cs.npend = pm
     _vrestore(&cs, m)
 
+fn _tail_add(cs: inout C, line: int, t: string):
+    if cs.tcol <= 0:
+        return
+    e := Tail(line, t)
+    if cs.ntail < len(cs.tail):
+        cs.tail[cs.ntail] = e
+    else:
+        push(cs.tail, e)
+    cs.ntail += 1
+
+# src/tychoc.c@expr_diverges -- an unqualified call to `die` or `exit` and
+# nothing else. A diverging tail is NOT a branch result.
+fn _tail_diverges(e: ast.Expr) -> bool:
+    match e:
+        ast.Call(l, q, n, ts, a): return len(q) == 0 and (n == "die" or n == "exit")
+        _: return false
+    return false
+
+# A bare Ok/Err/None: src/tychoc.c's T_NONE / T_OK_PARTIAL / T_ERR_PARTIAL, which
+# this pass encodes as an unfilled side rather than as its own head.
+fn _tail_partial(t: string) -> bool:
+    if t == "opt(?)":
+        return true
+    if _head(t) != "res":
+        return false
+    a := _targs(t)
+    return len(a) == 2 and (a[0] == "?" or a[1] == "?")
+
+# The three rules the tail LIST makes reachable. Returns true when one fired, so
+# the caller drops the type and the generic `cannot bind a void value` stays quiet.
+fn _tail_rules(cs: inout C, m: int, l: int, name: string) -> bool:
+    if cs.ntail == m:
+        cs.line = l
+        _cerr(&cs, "every branch of this value if/match diverges, so there is no value to bind to '" +
+            name + "' -- write the if/match as a plain statement")
+        return true
+    for i := m; i < cs.ntail; i += 1:
+        if _tail_partial(cs.tail[i].ty):
+            cs.line = cs.tail[i].line
+            _cerr(&cs, "cannot infer the type of this branch — a bare Ok/Err/None is fixed only by a destination type, and neither := nor x : T = flows one in; write the branch with a concrete type, or bind it via an assignment/return")
+            return true
+        if cs.tail[i].ty == "void":
+            cs.line = cs.tail[i].line
+            _cerr(&cs, "a value if/match branch must produce a value, not void")
+            return true
+    return false
+
 # The type an if/match VALUE block produces, and the rule that its branches must
 # agree (src/tychoc.c:8346). The parser rewrote each tail into a Decl/Assign of
 # the same target, so the branch types are read back off those tails.
@@ -2801,10 +2861,20 @@ fn _tail_type(cs: inout C, s: ast.Stmt, want: string) -> string:
     match s:
         ast.Decl(l, n, ty, rhs, vb):
             if len(rhs) == 1:
-                return _ex2(&cs, rhs[0], want)
+                t0 := _ex2(&cs, rhs[0], want)
+                _tail_add(&cs, l, t0)
+                return t0
+            _tail_add(&cs, l, "?")
             return "?"
-        ast.Assign(l, n, rhs): return _ex2(&cs, rhs[0], want)
-        ast.ExprStmt(l, k): return _ex2(&cs, k[0], want)
+        ast.Assign(l, n, rhs):
+            t1 := _ex2(&cs, rhs[0], want)
+            _tail_add(&cs, l, t1)
+            return t1
+        ast.ExprStmt(l, k):
+            t2 := _ex2(&cs, k[0], want)
+            if not _tail_diverges(k[0]):     # die()/exit(): no branch result at all
+                _tail_add(&cs, l, t2)
+            return t2
         ast.IfS(l, c, b, e):
             t := _ex(&cs, c[0])
             cs.line = l
@@ -2825,9 +2895,11 @@ fn _tail_type(cs: inout C, s: ast.Stmt, want: string) -> string:
             return ta
         ast.MatchS(l, subj, arms):
             _match(&cs, l, subj, arms)
+            _tail_add(&cs, l, "?")     # arms are typed by _match, which returns no list
             return "?"
         _:
             _tstmt(&cs, s)
+            _tail_add(&cs, ast.sline_of(s), "?")
             return "?"
     return "?"
 
@@ -3026,7 +3098,13 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
                 t = _ex2(&cs, rhs[0], want)
                 cs.chan_decl = false
             elif len(vb) > 0:
+                tm := cs.ntail
+                cs.tcol += 1
                 t = _value_type(&cs, vb, want)
+                cs.tcol -= 1
+                if _tail_rules(&cs, tm, l, name):
+                    t = "?"
+                cs.ntail = tm
             cs.line = l
             if len(rhs) == 1:
                 _aff_bind_check(&cs, t, rhs[0])
@@ -3478,7 +3556,7 @@ fn check(p: Program) -> C:
     return check_on(p, false)
 
 fn check_on(p: Program, syms: bool) -> C:
-    cs := C([]string, -1, []string: bool, []string: bool, 0, []string, []string, []TDecl, []string: int, []FSig, []string: int, []string: string, []string: string, []string: string, []string: int, []string: bool, []string: string, []string: bool, []VBind, 0, []string, []string, []string: int, "", 0, "", "?", false, false, []ast.ImportD, []ast.ImportD, false, 0, 0, false, 0, []string: int, []string: bool, []string: bool, 0, 0, false, []string, []string, false, 0, false, "", []string: bool, []string: bool, []Pend, 0, "")
+    cs := C([]string, -1, []string: bool, []string: bool, 0, []string, []string, []TDecl, []string: int, []FSig, []string: int, []string: string, []string: string, []string: string, []string: int, []string: bool, []string: string, []string: bool, []VBind, 0, []string, []string, []string: int, "", 0, "", "?", false, false, []ast.ImportD, []ast.ImportD, false, 0, 0, false, 0, []string: int, []string: bool, []string: bool, 0, 0, false, []string, []string, false, 0, false, "", []string: bool, []string: bool, []Pend, 0, "", []Tail, 0, 0)
     cs.symon = syms
     for f in p.files:
         push(cs.srcp, f.path)
