@@ -1,4 +1,4 @@
-# src/tychoc.c:9345 -- a `[$N]T` size parameter is fixed by a generic fn's ARGUMENT.
+# src/tychoc.c:9396 -- a `[$N]T` size parameter is fixed by a generic fn's ARGUMENT.
 # In a stored position nothing infers N, so it is refused rather than emitted as a
 # phantom array type.
 # expect: an enum payload cannot be a `[$N]T` size-parameterized array -- use a fixed `[N]T` or a dynamic `[T]`

@@ -1,5 +1,5 @@
 # The `None` half of the pending pair above: a bare `None` declaration needs an
-# Option to ground it. src/tychoc.c:5922.
+# Option to ground it. src/tychoc.c:5945.
 # expect: 'x' was declared with None but its first use makes it int
 fn main():
     x := None

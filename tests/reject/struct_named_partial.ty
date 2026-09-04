@@ -1,4 +1,4 @@
-# src/tychoc.c:6713 -- named construction has no defaulting: every field is
+# src/tychoc.c:6763 -- named construction has no defaulting: every field is
 # given, or the value would be part-initialised.
 # expect: P: named construction must give all 2 field(s), got 1
 struct P:

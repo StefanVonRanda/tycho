@@ -1,5 +1,5 @@
-# src/tychoc.c:7876 -- the DESTRUCTURING arm. A single `a = ...` is diverted to the
-# reduction rule at src/tychoc.c:7888; a multi-assign has no reduction form at all,
+# src/tychoc.c:7927 -- the DESTRUCTURING arm. A single `a = ...` is diverted to the
+# reduction rule at src/tychoc.c:7939; a multi-assign has no reduction form at all,
 # and the message names the first offending name.
 # expect: parallel for cannot assign to captured variable 'a'
 fn two() -> (int, int):

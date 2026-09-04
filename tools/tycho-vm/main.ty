@@ -415,29 +415,28 @@ fn assemble(src: string, table: [$NT]Meta) -> Program:
 # encode / decode
 # ---------------------------------------------------------------------------
 
+# The 9-byte instruction record on the wire, stated once as a layout instead of
+# assembled a byte at a time. `packed` bars every heap field, so the whole record
+# is fixed-width; to_bytes/from_bytes are LITTLE-ENDIAN on every host, which is
+# the order put_u32 below already wrote by hand.
+packed struct InsWire:
+    op: u8
+    a: i32
+    b: i32
+
 fn put_u32(v: int) -> string:
     return chr(v % 256) + chr((v / 256) % 256) + chr((v / 65536) % 256) + chr((v / 16777216) % 256)
 
-fn put_i32(v: int) -> string:
-    if v < 0:
-        return put_u32(v + 4294967296)
-    return put_u32(v)
-
 fn get_u32(s: string, off: int) -> int:
     return s[off] + s[off + 1] * 256 + s[off + 2] * 65536 + s[off + 3] * 16777216
-
-fn get_i32(s: string, off: int) -> int:
-    v := get_u32(s, off)
-    if v >= 2147483648:
-        return v - 4294967296
-    return v
 
 fn encode(p: Program) -> string:
     out := "TYC1" + put_u32(len(p.consts)) + put_u32(len(p.code))
     for i := 0; i < len(p.consts); i += 1:
         out = out + put_u32(len(p.consts[i])) + p.consts[i]
     for i := 0; i < len(p.code); i += 1:
-        out = out + chr(p.code[i].op) + put_i32(p.code[i].a) + put_i32(p.code[i].b)
+        out = out + to_str(to_bytes(InsWire(to_u8(p.code[i].op),
+            to_i32(p.code[i].a), to_i32(p.code[i].b))))
     return out
 
 fn decode(blob: string, table: [$NT]Meta) -> Program:
@@ -458,13 +457,14 @@ fn decode(blob: string, table: [$NT]Meta) -> Program:
         off += n
     code := soa []Ins
     for i := 0; i < ncode; i += 1:
-        if off + 9 > len(blob):
+        if off + size_of$(InsWire) > len(blob):
             die("truncated code section")
-        op := blob[off]
+        w := from_bytes$(InsWire)(to_bytes(substr(blob, off, off + size_of$(InsWire))))
+        op := to_int(w.op)
         if op >= NOPCODES:
             die("unknown opcode " + str(op) + " at pc " + str(i))
-        push(code, Ins(op, get_i32(blob, off + 1), get_i32(blob, off + 5), 0))
-        off += 9
+        push(code, Ins(op, to_int(w.a), to_int(w.b), 0))
+        off += size_of$(InsWire)
     return Program(consts, code)
 
 # ---------------------------------------------------------------------------

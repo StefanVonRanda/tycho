@@ -1,4 +1,4 @@
-# src/tychoc.c:8567 -- None is nullary, so a second None arm is unreachable.
+# src/tychoc.c:8618 -- None is nullary, so a second None arm is unreachable.
 # expect: duplicate None arm
 fn main():
     x : Option(int) = Some(1)

@@ -8,7 +8,7 @@ import "../lex"
 # node rather than living in a mutable parser struct, because a Tycho struct is
 # a value and a `p.i += 1` inside a callee would not be seen by its caller.
 #
-# The grammar is src/tychoc.c's parser (src/tychoc.c:2059-4945), read rather
+# The grammar is src/tychoc.c's parser (src/tychoc.c:2059-4968), read rather
 # than inferred from fixtures. Precedence, tightest first:
 #   postfix > unary(- & ~) > * / % << >> & > + - | ^ > is > == != < > <= >= in
 #          > not > and > or
@@ -1799,7 +1799,7 @@ fn _wheres(toks: [lex.Tok], i0: int, tps: [string]) -> ([string], int):
             if nset > 16:
                 _die(toks, _at(toks, i0), "at most 16 types in a `where` type set")
             # The SET is kept, not just the parameter name: the checker needs it
-            # to refuse an instantiation outside it (src/tychoc.c:9088).
+            # to refuse an instantiation outside it (src/tychoc.c:9139).
             push(out, p + ":" + set)
         else:
             if not _is_where_pred(p):
@@ -2246,7 +2246,7 @@ fn _const_fold(toks: [lex.Tok], e: ast.Expr, cs: [ast.ConstD], t: lex.Tok) -> as
             if o == "/" or o == "%":
                 if y == 0:
                     _die(toks, t, "const expression divides by zero")
-                # src/tychoc.c:5225: min/-1 is 2^63 and has no int value -- folding
+                # src/tychoc.c:5248: min/-1 is 2^63 and has no int value -- folding
                 # it TRAPS this compiler instead of diagnosing. The remainder is 0.
                 lo := -9223372036854775807 - 1
                 if o == "/":

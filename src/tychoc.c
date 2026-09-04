@@ -4707,6 +4707,29 @@ static int packed_field_ok(Type t) {
         || t == T_I8 || t == T_I16 || t == T_I32 || t == T_I64 || t == T_F32;
 }
 
+static int g_pk_id = 0;   /* unique names for the pack/unpack statement-expression temporaries */
+
+/* The leaf scalars of a packed struct, in declaration order, spelled as
+ * `sizeof(<C type>)` -- the width table tycho_pack/tycho_unpack walk. Written
+ * with sizeof rather than a width this compiler picked, so ilp32 and lp64 agree
+ * by construction. A nested packed struct flattens; a newtype is its base. */
+static void packed_widths(Type t, char **acc, int *n) {
+    if (IS_NEWTYPE(t)) { packed_widths(nt_under(t), acc, n); return; }
+    if (IS_STRUCT(t)) {
+        StructDef *sd = &g_structs[STRUCT_ID(t)];
+        for (int i = 0; i < sd->nfields; i++) packed_widths(sd->fields[i].type, acc, n);
+        return;
+    }
+    *acc = sfmt("%s%s(int)sizeof(%s)", *acc, *n ? ", " : "", c_type(t));
+    (*n)++;
+}
+
+static int packed_nfields(Type t) {
+    char *acc = sfmt("%s", ""); int n = 0;
+    packed_widths(t, &acc, &n);
+    return n;
+}
+
 static void parse_struct(Parser *ps) {
     int packed = at(ps, TK_IDENT) && !strcmp(cur(ps)->text, "packed");
     if (packed) {          /* contextual: `packed` stays an ordinary identifier everywhere else */
@@ -6412,6 +6435,33 @@ static Type resolve_expr_inner(Expr *e) {
                 *e = *z;
                 return e->type = zt;
             }
+            /* from_bytes$(T)(b) / size_of$(T): the READ half of `packed`, and the
+             * only way a program can observe a struct's layout from inside the
+             * language. Both are restricted to a packed struct because only a
+             * packed struct states a byte-exact layout -- and because `packed`'s
+             * own field rule already bars every heap and pointer field, which is
+             * what makes reading one out of attacker-shaped bytes safe at all.
+             * The length check is EXACT and lives in the runtime; size_of is what
+             * lets a caller slice the right window before calling. Guarded on
+             * ntypeargs so a user function by either name is untouched. */
+            if (e->sval && !strcmp(e->sval, "from_bytes") && e->ntypeargs > 0) {
+                if (e->nargs != 1) die_at(e->line, "from_bytes$(T)(b) takes one value argument");
+                if (e->ntypeargs != 1) die_at(e->line, "from_bytes$(T)(b) takes exactly one type argument");
+                Type ft = e->typeargs[0], fb = base_of(ft);
+                if (!(IS_STRUCT(fb) && g_structs[STRUCT_ID(fb)].packed))
+                    die_at(e->line, "from_bytes$(%s): only a packed struct can be read from bytes", type_name(ft));
+                if (base_of(resolve_expr(e->args[0])) != T_BYTES)
+                    die_at(e->line, "from_bytes$(T)(b) takes bytes");
+                return e->type = ft;
+            }
+            if (e->sval && !strcmp(e->sval, "size_of") && e->ntypeargs > 0) {
+                if (e->nargs != 0) die_at(e->line, "size_of$(T) takes no value arguments");
+                if (e->ntypeargs != 1) die_at(e->line, "size_of$(T) takes exactly one type argument");
+                Type st = base_of(e->typeargs[0]);
+                if (!(IS_STRUCT(st) && g_structs[STRUCT_ID(st)].packed))
+                    die_at(e->line, "size_of$(%s): only a packed struct has a stated byte size", type_name(e->typeargs[0]));
+                return e->type = T_INT;
+            }
             /* t.wait() / ch.send(v) / ch.recv() / ch.close() sugar on task- and
              * channel-typed locals: rewrite to the free-call form up front.
              * These live outside the Sig table, so the UFCS machinery below
@@ -6923,8 +6973,9 @@ static Type resolve_expr_inner(Expr *e) {
             if (!strcmp(e->sval, "to_bytes")) {   /* string -> bytes (same byte buffer); or [int] -> bytes (each elem & 0xFF: build a binary buffer a string can't hold) */
                 if (e->nargs != 1) die_at(e->line, "to_bytes(s) takes one argument");
                 Type at_ = base_of(resolve_expr(e->args[0]));
-                if (at_ != T_STRING && at_ != T_BYTES && at_ != T_ARRAY_INT)
-                    die_at(e->line, "to_bytes(x) takes a string or [int]");
+                if (at_ != T_STRING && at_ != T_BYTES && at_ != T_ARRAY_INT
+                    && !(IS_STRUCT(at_) && g_structs[STRUCT_ID(at_)].packed))
+                    die_at(e->line, "to_bytes(x) takes a string, [int] or a packed struct");
                 return e->type = T_BYTES;
             }
             if (!strcmp(e->sval, "to_bool")) {   /* unwrap a bool newtype -> bool */
@@ -7173,7 +7224,7 @@ static Type resolve_expr_inner(Expr *e) {
             if (e->nargs != s->nparams)
                 die_at(e->line, "'%s' takes %d argument(s), got %d",
                        nominal_name(e->sval), s->nparams, e->nargs);
-            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:6640 */
+            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:6690 */
             for (int i = 0; i < e->nargs; i++) {
                 g_in_arg++;
                 Type at_ = resolve_exp(e->args[i], s->params[i]);   /* fixes a None arg */
@@ -7763,7 +7814,7 @@ static void pf_capture(Expr *id) {
 /* capture an outer local named by a STRING rather than by an E_IDENT node -- the
  * callee of `f(x)` and the receiver of `o.f(x)` live in E_CALL's sval/qual, not
  * in a child expr. The synthesized read is resolved in the enclosing scope with
- * every other capture (src/tychoc.c:8375). Non-locals (global fns, builtins,
+ * every other capture (src/tychoc.c:8426). Non-locals (global fns, builtins,
  * enum constructors, package qualifiers) fail vars_find and are dropped. */
 static void pf_capture_name(const char *n, int line) {
     Type vt;
@@ -7786,10 +7837,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7723),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7774),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:7997). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:8048). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
@@ -10136,6 +10187,7 @@ static int is_reinterpret_of_place(Expr *e) {
     if (e->kind != E_CALL || e->nargs != 1 || e->lhs || !e->sval) return 0;
     if (strcmp(e->sval, "to_str") && strcmp(e->sval, "to_bytes") && strcmp(e->sval, "to_under")) return 0;
     if (!strcmp(e->sval, "to_bytes") && base_of(e->args[0]->type) == T_ARRAY_INT) return 0;   /* a real conversion */
+    if (!strcmp(e->sval, "to_bytes") && IS_STRUCT(base_of(e->args[0]->type))) return 0;      /* a packed struct: a real conversion too */
     return is_place(e->args[0]);
 }
 
@@ -10749,6 +10801,23 @@ static char *gen_call(Expr *e, const char *arena) {
     }
     if (!strcmp(e->sval, "to_bytes") && base_of(e->args[0]->type) == T_ARRAY_INT)   /* [int] -> bytes: real conversion (each elem & 0xFF into a fresh binary buffer) */
         return sfmt("tycho_bytes_from_intarr(%s, %s)", arena, gen_expr(e->args[0], arena));
+    if (!strcmp(e->sval, "to_bytes") && IS_STRUCT(base_of(e->args[0]->type))) {   /* packed struct -> bytes: little-endian, field-wise */
+        Type pt = base_of(e->args[0]->type);
+        int id = ++g_pk_id;
+        return sfmt("(__extension__ ({ %s_pkv%d = %s; tycho_pack(%s, &_pkv%d, Pk_%s_, %d, (tycho_int)sizeof(%s)); }))",
+                    c_type(pt), id, gen_expr(e->args[0], arena), arena, id,
+                    g_structs[STRUCT_ID(pt)].name, packed_nfields(pt), c_type(pt));
+    }
+    if (!strcmp(e->sval, "size_of"))   /* the struct's stated byte size, as C sees it */
+        return sfmt("((tycho_int)sizeof(%s))", c_type(base_of(e->typeargs[0])));
+    if (!strcmp(e->sval, "from_bytes")) {   /* bytes -> packed struct; the runtime refuses any other length */
+        Type pt = base_of(e->type);
+        int id = ++g_pk_id;
+        return sfmt("(__extension__ ({ %s_pkr%d; tycho_unpack(&_pkr%d, Pk_%s_, %d, (tycho_int)sizeof(%s), %s, \"%s\"); _pkr%d; }))",
+                    c_type(e->type), id, id, g_structs[STRUCT_ID(pt)].name,
+                    packed_nfields(pt), c_type(pt), gen_expr(e->args[0], arena),
+                    type_name(e->type), id);
+    }
     if (!strcmp(e->sval, "to_str") || !strcmp(e->sval, "to_bool") || !strcmp(e->sval, "to_under") || !strcmp(e->sval, "to_bytes"))   /* zero-cost newtype unwrap / bytes<->string reinterpret (identical char* repr) */
         return gen_expr(e->args[0], arena);
     if (!strcmp(e->sval, "sqrt") || !strcmp(e->sval, "floor") || !strcmp(e->sval, "fabs"))   /* libm, 1 float arg */
@@ -12829,6 +12898,11 @@ static void emit_aggregate(FILE *o, Type t) {
             for (int j = 0; j < sd->nfields; j++)
                 fprintf(o, "    %sf_%s;\n", c_type(sd->fields[j].type), sd->fields[j].name);
             fprintf(o, "}%s;\n", sd->packed ? " __attribute__((packed))" : "");
+            if (sd->packed) {   /* the width table to_bytes/from_bytes walk (see packed_widths) */
+                char *acc = sfmt("%s", ""); int nw = 0;
+                packed_widths(t, &acc, &nw);
+                fprintf(o, "static const int Pk_%s_[] = { %s };\n", sd->name, nw ? acc : "0");
+            }
         }
     } else if (IS_OPT(t)) {
         int id = OPT_ID(t);

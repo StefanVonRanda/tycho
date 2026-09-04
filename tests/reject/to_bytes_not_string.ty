@@ -1,5 +1,5 @@
 # src/tychoc.c:6927 -- to_bytes takes a string, bytes, or [int].
-# expect: to_bytes(x) takes a string or [int]
+# expect: to_bytes(x) takes a string, [int] or a packed struct
 fn main():
     b := to_bytes(1)
     println(str(len(b)))

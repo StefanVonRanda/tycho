@@ -13,7 +13,7 @@ diagnostic text is not ([§1.1](00-conventions.md)).
 
 > Provenance: `tycho_idiv`/`imod` `runtime/tycho_rt.c:149-161`, bounds
 > `:1607-1613`,`:1190-1197`, `pop` `:1496-1508`, `substr` `:1211-1221`, string
-> header `:1115-1133`, map hashing `:2150-2153`, channels/tasks `:663-1102`.
+> header `:1115-1133`, map hashing `:2217-2220`, channels/tasks `:663-1102`.
 > Behaviors marked *(probed)* were
 > confirmed against the implementation.
 

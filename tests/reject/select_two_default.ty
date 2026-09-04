@@ -1,4 +1,4 @@
-# src/tychoc.c:8800 -- the second default can never run.
+# src/tychoc.c:8851 -- the second default can never run.
 # expect: select takes at most one default and one closed arm
 fn main():
     ch := channel(int, 1)

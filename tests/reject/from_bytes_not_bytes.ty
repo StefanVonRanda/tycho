@@ -1,0 +1,7 @@
+# expect: from_bytes$(T)(b) takes bytes
+packed struct Ins:
+    op: u8
+
+fn main():
+    i := from_bytes$(Ins)(7)
+    println(str(i.op))

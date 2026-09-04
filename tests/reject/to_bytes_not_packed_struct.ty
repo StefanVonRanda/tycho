@@ -1,0 +1,7 @@
+# expect: to_bytes(x) takes a string, [int] or a packed struct
+struct Loose:
+    op: int
+
+fn main():
+    b := to_bytes(Loose(1))
+    println(str(len(b)))

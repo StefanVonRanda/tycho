@@ -1,4 +1,4 @@
-# src/tychoc.c:6720 -- one field, one value. The count check passes here, so
+# src/tychoc.c:6770 -- one field, one value. The count check passes here, so
 # only the duplicate itself can catch this.
 # expect: P: field 'x' given more than once
 struct P:

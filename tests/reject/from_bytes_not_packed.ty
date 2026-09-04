@@ -1,0 +1,9 @@
+# expect: from_bytes$(Loose): only a packed struct can be read from bytes
+# Only a packed struct states a byte-exact layout, so only a packed struct can
+# be reconstructed from a byte buffer.
+struct Loose:
+    op: int
+
+fn main():
+    i := from_bytes$(Loose)(to_bytes("a"))
+    println(str(i.op))

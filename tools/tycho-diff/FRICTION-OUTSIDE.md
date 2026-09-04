@@ -75,7 +75,7 @@ puts errors on stdout, where they corrupt whatever the tool is piped into. This
 program's own gate asserts stdout stays empty on all five error paths, which is
 the rule the suggestion quietly breaks.
 
-`eprint` is documented, at `docs/reference/builtins.md:107` — ninety lines below
+`eprint` is documented, at `docs/reference/builtins.md:110` — ninety lines below
 `print` and `println` at `docs/reference/builtins.md:16-17`, in a different table. A newcomer reading the
 print family does not scroll past the intervening sections.
 

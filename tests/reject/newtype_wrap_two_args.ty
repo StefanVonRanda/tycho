@@ -1,4 +1,4 @@
-# src/tychoc.c:6683 -- a newtype wrap is one value, not a constructor call:
+# src/tychoc.c:6733 -- a newtype wrap is one value, not a constructor call:
 # there is exactly one underlying field to fill.
 # expect: Meters(x) takes one float
 type Meters = float

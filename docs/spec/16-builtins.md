@@ -14,10 +14,10 @@ Operators and keywords that read as calls but are **not** builtins — `m[k]`,
 `k in m`, `delete m[k]`, `for x in xs`, `&place`, `or_return` — are specified in
 their own chapters and are out of scope here.
 
-> Provenance: `Sig` builtins `src/tychoc.c:4850-4966`; conversion magic
-> `:6624-6689`; `len` `:6691-6697`; `keys`/`push`/`pop`/`reserve` `:6749-6844`;
-> `m.get` sugar `:6166-6179`,`:6031-6046`; `zero$` `:6114-6140`; concurrency
-> magic `:6498-6581`; `map_*` removal `:2821-2822`; `die` codegen `:11009-11010`.
+> Provenance: `Sig` builtins `src/tychoc.c:4873-4989`; conversion magic
+> `:6674-6739`; `len` `:6741-6747`; `keys`/`push`/`pop`/`reserve` `:6799-6894`;
+> `m.get` sugar `:6189-6202`,`:6054-6069`; `zero$` `:6137-6163`; concurrency
+> magic `:6548-6631`; `map_*` removal `:2821-2822`; `die` codegen `:11078-11079`.
 
 ## 29.1 Builtins are part of the language
 
@@ -30,7 +30,7 @@ distinguished from user functions only by being predefined.
 The line between the **language** and the **corelib** is drawn precisely:
 
 - A name is a **builtin** (part of the language) iff `register_builtins`
-  (`src/tychoc.c:4850-4966`) registers it **or** a case in `resolve_expr` /
+  (`src/tychoc.c:4873-4989`) registers it **or** a case in `resolve_expr` /
   codegen special-cases it by name (§29.2). Such a name is available with no
   import.
 - Every other predefined function is a **corelib** procedure, reached only
@@ -82,8 +82,8 @@ numeric-polymorphic like `str`.
 `print`, `println`, and `eprint` accept a `string` only; they do not implicitly
 stringify. All nine are `Sig` builtins with fixed signatures.
 
-> Provenance: `src/tychoc.c:4973-4980`,`:5056-5057`,`:5066-5067`; `eprint` codegen `:10619@tycho_eprint`; `die` codegen
-> `:11009-11010`.
+> Provenance: `src/tychoc.c:4996-5003`,`:5079-5080`,`:5089-5090`; `eprint` codegen `:10671@tycho_eprint`; `die` codegen
+> `:11078-11079`.
 
 ## 29.4 Conversions
 
@@ -100,7 +100,7 @@ duplicated here; this section states only each builtin's kind and one-line role.
 | `to_float(n)` | `int`/`u32`/`u64`/`f32` or a `float`-newtype → `float`. | magic |
 | `to_u32(x)` / `to_u64(x)` / `to_f32(x)` | Any numeric scalar (`int`/`char`/`float`/`u32`/`u64`/`f32`, through `base_of`) → the sized type. | magic |
 | `to_str(x)` | `bytes`, or a `string`-newtype → `string` (zero-cost reinterpret). | magic |
-| `to_bytes(x)` | `string`/`bytes` (through `base_of`) → `bytes` (same buffer, distinct type — zero-cost reinterpret); **or `[int]` → `bytes`**, each element truncated `& 0xFF` into a fresh buffer (the only way to construct a binary `bytes` with interior `0x00`). | magic |
+| `to_bytes(x)` | `string`/`bytes` (through `base_of`) → `bytes` (same buffer, distinct type — zero-cost reinterpret); **or `[int]` → `bytes`**, each element truncated `& 0xFF` into a fresh buffer (the only way to construct a binary `bytes` with interior `0x00`); **or a packed struct → `bytes`**, its exact `size_of$(T)` bytes, little-endian ([§17.1b](12-aggregates.md#171b-the-bytes-bridge)). | magic |
 | `to_bool(x)` | A `bool`-newtype → `bool` (unwrap). | magic |
 | `to_under(x)` | Any newtype → its underlying type (generic zero-cost unwrap). | magic |
 | `chr(n)` | `int -> string`: the one-byte string for byte value `n` (`0`–`255`); a value outside `0..255` **aborts**. | Sig |
@@ -126,11 +126,11 @@ the abort message names `chr` even when the call was `to_char` (one runtime trap
 serves both), and `to_char` is not in the UFCS builtin set, so `to_char(n)` is the
 only spelling — `n.to_char()` is not.
 
-> Provenance: conversion magic `src/tychoc.c:6351-6407`; `chr` and `to_char` `Sig`
-> `:5489@.name="to_char"`, their shared codegen `:10372-10374`;
-> `is_null`/`to_ptr` `Sig` `:5068-5069`. `to_i32` (and the rest of
+> Provenance: conversion magic `src/tychoc.c:6374-6430`; `chr` and `to_char` `Sig`
+> `:5512@.name="to_char"`, their shared codegen `:10424-10426`;
+> `is_null`/`to_ptr` `Sig` `:5091-5092`. `to_i32` (and the rest of
 > `to_u8`..`to_f32`) is **not** a `Sig`: it is `is_sized_conv` `:1266-1270` /
-> `sized_conv_target` `:1255-1265`, resolved inline at `:6649-6655`. The abort
+> `sized_conv_target` `:1255-1265`, resolved inline at `:6699-6705`. The abort
 > both share is `runtime/tycho_rt.c:1682@out of byte range`. Conformance:
 > `tests/char_to_char.ty`, `tests/abort/chr_oob.ty`.
 
@@ -171,8 +171,8 @@ rejected — so they may grow or shrink the value in the owning arena.
 | `pop(a)` | `[T] -> T` | magic | Remove and return the last element; aborts at run time if empty. `a` MUST be mutable. |
 | `reserve(a, n)` | `([T], int) -> void` | magic | Capacity hint: preallocate room for `n` elements. `len` is unchanged and pushing past `n` still grows; an unallocatable capacity aborts. Restricted to arrays of scalars, structs, tuples, or nested arrays (not `soa`), and to **maps** — `reserve(m, n)` pre-sizes a map's entry + index arrays, so a known-size workload skips the retained growth intermediates (the lru bench's one-line fix; entries survive a later re-size). |
 
-> Provenance: `len` `src/tychoc.c:6691-6697`; `push` `:6756-6796`; `pop`
-> `:6797-6817`; `reserve` `:6818-6844`.
+> Provenance: `len` `src/tychoc.c:6741-6747`; `push` `:6806-6846`; `pop`
+> `:6847-6867`; `reserve` `:6868-6894`.
 
 ## 29.7 Maps
 
@@ -229,11 +229,23 @@ is rejected (fails closed). It takes **no** value arguments and is lowered to th
 scalar zero literal, so it needs no runtime support. It exists to seed a generic
 accumulator (`acc := zero$(T)`) that must work on an empty input.
 
+| Builtin | Signature | Kind | Semantics |
+|---|---|---|---|
+| `size_of$(T)` | `-> int` | magic | The size of the packed struct `T` in bytes. |
+| `from_bytes$(T)(b)` | `bytes -> T` | magic | Read a packed struct back out of exactly `size_of$(T)` bytes. |
+
+Both use the same explicit type-argument call form as `zero$(T)`, and both
+restrict `T` to a **packed struct** (or a newtype over one) — no other type has
+a stated layout to read or write. `from_bytes$(T)` requires the length to match
+**exactly**; any other length is a runtime error naming the type and both
+lengths. The byte order is little-endian on every host.
+[§17.1b](12-aggregates.md#171b-the-bytes-bridge) is the normative description.
+
 There is **no** `empty$(T)` builtin. An `empty()` returning `[$T]` is an ordinary
 user-written generic, and `empty$(int)` is merely the `name$(…)` call form
 applied to it ([§7.5](05-generics.md)).
 
-> Provenance: `zero$` `src/tychoc.c:6114-6140`; `defaultable` predicate `:9023@"defaultable"`.
+> Provenance: `zero$` `src/tychoc.c:6137-6163`; `defaultable` predicate `:9074@"defaultable"`.
 
 ## 29.9 Concurrency
 
@@ -257,12 +269,12 @@ builtins below are their only consumers.
 likewise as `t.wait()`. `close` is overloaded across a channel and an FFI handle;
 `ncpu` is the sole `Sig` builtin here.
 
-> Provenance: `wait` `src/tychoc.c:6523-6530`; `channel` `:6531-6546`; `send`
-> `:6547-6555`; `recv` `:6556-6561`; `close` `:6537-6581`; `ncpu` `Sig` `:5488@.name="ncpu"`;
-> task/channel method sugar `:6141-6155`. `ncpu()`'s value is
+> Provenance: `wait` `src/tychoc.c:6573-6580`; `channel` `:6581-6596`; `send`
+> `:6597-6605`; `recv` `:6606-6611`; `close` `:6587-6631`; `ncpu` `Sig` `:5511@.name="ncpu"`;
+> task/channel method sugar `:6164-6178`. `ncpu()`'s value is
 > `runtime/tycho_rt.c:1108-1123` (`TYCHO_THREADS` first, else
 > `sysconf(_SC_NPROCESSORS_ONLN)`); the fan-out that does **not** follow it above
-> 64 is `src/tychoc.c:11608@_pk > 64`.
+> 64 is `src/tychoc.c:11677@_pk > 64`.
 
 ## 29.10 Filesystem and time
 
@@ -278,8 +290,8 @@ aborting.
 | `clock()` | `-> int` | Sig | Monotonic nanoseconds — differences are meaningful; the absolute value is not. |
 | `now()` | `-> int` | Sig | Wall-clock seconds since the UNIX epoch. |
 
-> Provenance: `clock`/`now` `src/tychoc.c:4943-4944`;
-> `read_file`/`write_file`/`list_dir` `:5063-5065`.
+> Provenance: `clock`/`now` `src/tychoc.c:4966-4967`;
+> `read_file`/`write_file`/`list_dir` `:5086-5088`.
 
 ## 29.11 Float math (libm)
 
@@ -297,7 +309,7 @@ Other numeric functions — `min`, `max`, `clamp`, and the trigonometric functio
 — are **not** builtins; they are provided by the standard library (§31)
 and require an import.
 
-> Provenance: `src/tychoc.c:4962-4965`.
+> Provenance: `src/tychoc.c:4985-4988`.
 
 ## 29.12 Abnormal termination
 
@@ -356,10 +368,10 @@ and a conforming program cannot invoke them directly. This is the language's
 **fail-closed** posture ([§1.3](00-conventions.md#13-conformance)) — abnormal
 conditions terminate rather than proceed into undefined behavior.
 
-> Provenance: `die` `Sig` `src/tychoc.c:5490@.name="die"`, codegen `:11009-11010`; `exit` `Sig`
+> Provenance: `die` `Sig` `src/tychoc.c:5513@.name="die"`, codegen `:11078-11079`; `exit` `Sig`
 > beside it and codegen beside `die`'s; divergence `expr_diverges`, with the tail
 > skips in `ctrl_rewrite_tails` / `ctrl_collect_tails` and the all-diverge
 > rejection in the `S_DECL` value-`ctrl` arm of `resolve_stmt`; no
-> `assert`/`panic`/`abort` name in `register_builtins` `:4968-5075` or the
-> `resolve_expr` magic block (`case E_CALL:` `:6397@case E_CALL:`, running
-> through `reserve` at `:7064@"reserve"`).
+> `assert`/`panic`/`abort` name in `register_builtins` `:4991-5098` or the
+> `resolve_expr` magic block (`case E_CALL:` `:6420@case E_CALL:`, running
+> through `reserve` at `:7115@"reserve"`).

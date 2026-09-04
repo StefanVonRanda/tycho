@@ -27,3 +27,18 @@ fn main():
     # a packed value copies, compares and prints like any other struct
     j := i
     println(str(j == i))
+
+    # V2b: the bytes bridge. LITTLE-ENDIAN on every host, so the same program
+    # writes the same file everywhere; size_of$(T) is what lets a caller slice
+    # the exact window before reading it.
+    b := to_bytes(i)
+    println(str(size_of$(Ins)) + " " + str(len(b)))
+    hx := ""
+    for k := 0; k < len(b); k += 1:
+        hx = hx + str(b[k]) + " "
+    println(hx)
+    r := from_bytes$(Ins)(b)
+    println(str(r.op) + " " + str(r.a) + " " + str(r.b))
+    fb := to_bytes(f)
+    g := from_bytes$(Frame)(fb)
+    println(str(size_of$(Frame)) + " " + str(g.magic) + " " + str(g.ins.b))

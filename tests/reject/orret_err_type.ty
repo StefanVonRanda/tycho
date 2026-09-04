@@ -1,4 +1,4 @@
-# src/tychoc.c:6124 -- the propagated Err must be the error type the enclosing
+# src/tychoc.c:6147 -- the propagated Err must be the error type the enclosing
 # function declares; there is no conversion at the `or_return`.
 # expect: or_return propagates a string error, but the function's error type is int
 fn g() -> Result(int, string):

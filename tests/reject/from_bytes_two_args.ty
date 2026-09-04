@@ -1,0 +1,7 @@
+# expect: from_bytes$(T)(b) takes one value argument
+packed struct Ins:
+    op: u8
+
+fn main():
+    i := from_bytes$(Ins)(to_bytes("a"), to_bytes("b"))
+    println(str(i.op))

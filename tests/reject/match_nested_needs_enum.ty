@@ -1,4 +1,4 @@
-# src/tychoc.c:8321 -- a nested pattern refines a payload by VARIANT, so the
+# src/tychoc.c:8372 -- a nested pattern refines a payload by VARIANT, so the
 # payload has to be an enum. Here it is an int.
 # expect: a nested pattern needs an enum payload, but Ok here carries int
 fn mk() -> Result(int, string):

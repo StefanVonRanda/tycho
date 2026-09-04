@@ -1885,6 +1885,73 @@ char *tycho_bytes_from_intarr(Arena *a, TychoArrInt arr) {
     return tycho_bytes_from_c(a, p, n);
 }
 
+/* --- packed struct <-> bytes (V2b) -----------------------------------------
+ * The wire order is LITTLE-ENDIAN on every host, never the host's own. Every
+ * binary record this tree hand-assembles -- ZIP, BMP, the .tyc container, the
+ * db log frame -- is little-endian by its own specification, and a host-order
+ * bridge would be silently wrong on a big-endian machine in a way no test run
+ * here could ever see. The field-width table is emitted by the compiler with
+ * `sizeof`, so ilp32 and lp64 agree by construction rather than by a width the
+ * compiler guessed; the widths are re-summed here and compared against the
+ * struct's own sizeof, which is the control on that agreement.
+ *
+ * A packed struct has no padding, so its storage IS the record: one memcpy of
+ * exactly `size` bytes moves it either way, and the only remaining work is
+ * per-field byte reversal, which runs on a big-endian host and nowhere else. */
+void tycho_pk_check(const int *w, int nw, tycho_int size) {
+    tycho_int tot = 0;
+    for (int i = 0; i < nw; i++) {
+        if (w[i] != 1 && w[i] != 2 && w[i] != 4 && w[i] != 8)
+            tycho_die("tycho: a packed field width is not 1, 2, 4 or 8");
+        tot += w[i];
+    }
+    if (tot != size)
+        tycho_die("tycho: a packed struct's field widths do not sum to its size");
+}
+
+int tycho_pk_is_le(void) { const unsigned short p = 1; return *(const unsigned char *)&p; }
+
+/* Reverse each field in place: host order <-> little-endian, involutive, so the
+ * same pass serves both directions. */
+static void tycho_pk_swap(unsigned char *o, const int *w, int nw) {
+    tycho_int off = 0;
+    for (int i = 0; i < nw; i++) {
+        for (int k = 0; k < w[i] / 2; k++) {
+            unsigned char t = o[off + k];
+            o[off + k] = o[off + w[i] - 1 - k];
+            o[off + w[i] - 1 - k] = t;
+        }
+        off += w[i];
+    }
+}
+
+/* to_bytes(v) over a packed struct: exactly `size` bytes, fields in declaration
+ * order, each little-endian. */
+char *tycho_pack(Arena *a, const void *v, const int *w, int nw, tycho_int size) {
+    tycho_pk_check(w, nw, size);
+    char *r = tycho_str_alloc(a, size);
+    memcpy(r, v, (size_t)size);
+    if (!tycho_pk_is_le()) tycho_pk_swap((unsigned char *)r, w, nw);
+    return r;
+}
+
+/* from_bytes$(T)(b): the length must be EXACTLY the struct's size. A lower bound
+ * would accept a truncated record and read whatever followed it, which is the
+ * failure mode every hand-rolled reader in this tree guards by hand. */
+void tycho_unpack(void *out, const int *w, int nw, tycho_int size,
+                  const char *b, const char *tname) {
+    tycho_int n = tycho_str_len(b);
+    if (n != size) {
+        char m[192];
+        snprintf(m, sizeof m, "from_bytes$(%s): expected %lld bytes, got %lld",
+                 tname, (long long)size, (long long)n);
+        tycho_die(m);
+    }
+    tycho_pk_check(w, nw, size);
+    memcpy(out, b, (size_t)size);
+    if (!tycho_pk_is_le()) tycho_pk_swap((unsigned char *)out, w, nw);
+}
+
 /* FFI: copy a C-owned (ptr, len) tycho_int buffer (from an extern `-> [int]`, out-param
  * shim) into an arena array, then free it -- the [int] analogue of
  * tycho_bytes_from_c. NULL p yields the empty array (nothing to free). */

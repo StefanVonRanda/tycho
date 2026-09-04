@@ -1,10 +1,10 @@
-tests/reject/addr_binding.ty	TYPE	6393	'&' is only valid as the argument to an inout parameter, e.g. f(&x)
-tests/reject/addr_expr.ty	TYPE	6393	'&' is only valid as the argument to an inout parameter, e.g. f(&x)
-tests/reject/addr_on_plain_param.ty	TYPE	7197	argument 1 of 'plain' is not inout; remove the '&'
+tests/reject/addr_binding.ty	TYPE	6416	'&' is only valid as the argument to an inout parameter, e.g. f(&x)
+tests/reject/addr_expr.ty	TYPE	6416	'&' is only valid as the argument to an inout parameter, e.g. f(&x)
+tests/reject/addr_on_plain_param.ty	TYPE	7248	argument 1 of 'plain' is not inout; remove the '&'
 tests/reject/affine_chan_arr_elem.ty	SEMANTIC	0	a channel handle cannot be stored in a container or aggregate -- pass it as an argument instead
 tests/reject/affine_chan_container.ty	SEMANTIC	0	a channel handle cannot be stored in a container or aggregate -- pass it as an argument instead
-tests/reject/affine_chan_copy.ty	SEMANTIC	8442	a channel cannot be copied -- it is freed once, when its creating scope exits, and a second name hides every send and receive from the compiler's analysis; bind the channel(...) directly, or pass this one as an argument
-tests/reject/affine_chan_enum_payload.ty	SEMANTIC	9330	an enum payload cannot be a channel
+tests/reject/affine_chan_copy.ty	SEMANTIC	8493	a channel cannot be copied -- it is freed once, when its creating scope exits, and a second name hides every send and receive from the compiler's analysis; bind the channel(...) directly, or pass this one as an argument
+tests/reject/affine_chan_enum_payload.ty	SEMANTIC	9381	an enum payload cannot be a channel
 tests/reject/affine_chan_fixarr_elem.ty	SEMANTIC	0	a channel handle cannot be stored in a container or aggregate -- pass it as an argument instead
 tests/reject/affine_chan_fnty_param.ty	SEMANTIC	0	a function value cannot take a task or channel handle
 tests/reject/affine_chan_fnty_ret.ty	SEMANTIC	0	a function value cannot return a task or channel handle
@@ -15,16 +15,16 @@ tests/reject/affine_chan_infer_push.ty	SEMANTIC	0	a channel handle cannot be sto
 tests/reject/affine_chan_infer_some.ty	SEMANTIC	0	a channel handle cannot be stored in a container or aggregate -- pass it as an argument instead
 tests/reject/affine_chan_infer_tuple.ty	SEMANTIC	0	a channel handle cannot be stored in a container or aggregate -- pass it as an argument instead
 tests/reject/affine_chan_map_val.ty	SEMANTIC	0	a channel handle cannot be stored in a container or aggregate -- pass it as an argument instead
-tests/reject/affine_chan_newtype.ty	SEMANTIC	4855	a newtype's underlying type must be int, float, string, bool, an array, a map, or a struct (got Channel(int))
+tests/reject/affine_chan_newtype.ty	SEMANTIC	4878	a newtype's underlying type must be int, float, string, bool, an array, a map, or a struct (got Channel(int))
 tests/reject/affine_chan_of_chan.ty	SEMANTIC	0	a channel handle cannot be stored in a container or aggregate -- pass it as an argument instead
 tests/reject/affine_chan_opt_inner.ty	SEMANTIC	0	a channel handle cannot be stored in a container or aggregate -- pass it as an argument instead
 tests/reject/affine_chan_result_inner.ty	SEMANTIC	0	a channel handle cannot be stored in a container or aggregate -- pass it as an argument instead
-tests/reject/affine_chan_soa_field.ty	SEMANTIC	9325	a struct field cannot be a channel
-tests/reject/affine_chan_struct_field.ty	SEMANTIC	9325	a struct field cannot be a channel
+tests/reject/affine_chan_soa_field.ty	SEMANTIC	9376	a struct field cannot be a channel
+tests/reject/affine_chan_struct_field.ty	SEMANTIC	9376	a struct field cannot be a channel
 tests/reject/affine_chan_tuple_elem.ty	SEMANTIC	0	a channel handle cannot be stored in a container or aggregate -- pass it as an argument instead
 tests/reject/affine_handle_container.ty	SEMANTIC	0	a handle cannot be stored in a container/aggregate, captured, or returned -- it is freed at the end of its scope
 tests/reject/affine_handle_container_type.ty	SEMANTIC	0	a handle cannot be stored in a container/aggregate, captured, or returned -- it is freed at the end of its scope
-tests/reject/affine_handle_copy.ty	SEMANTIC	8439	a handle cannot be copied -- it is freed once, at the end of its scope, and a second name would free it twice; bind the opener directly (f := open(...)), or pass this one as an argument, which borrows it
+tests/reject/affine_handle_copy.ty	SEMANTIC	8490	a handle cannot be copied -- it is freed once, at the end of its scope, and a second name would free it twice; bind the opener directly (f := open(...)), or pass this one as an argument, which borrows it
 tests/reject/affine_handle_struct_field.ty	SEMANTIC	0	a handle cannot be stored in a container/aggregate, captured, or returned -- it is freed at the end of its scope
 tests/reject/affine_inout_chan.ty	SEMANTIC	4356	'ch' is inout, which an affine type cannot be -- it has one owner and is freed at that scope's exit, so there is nothing to consume or copy back. Pass it plainly: that is already a borrow
 tests/reject/affine_sink_param.ty	SEMANTIC	4356	'h' is sink, which an affine type cannot be -- it has one owner and is freed at that scope's exit, so there is nothing to consume or copy back. Pass it plainly: that is already a borrow
@@ -32,153 +32,153 @@ tests/reject/affine_task_arr_elem.ty	TYPE	2677	unknown type 'Task'
 tests/reject/affine_task_container.ty	SEMANTIC	0	a task handle cannot be stored in a container or aggregate -- wait(t) first
 tests/reject/affine_task_infer_arr.ty	SEMANTIC	0	a task handle cannot be stored in a container or aggregate -- wait(t) first
 tests/reject/affine_task_written_type.ty	TYPE	2677	unknown type 'Task'
-tests/reject/and_needs_bool.ty	SEMANTIC	7331	`and` needs bool operands
-tests/reject/arr_elem_void.ty	TYPE	6231	an array element cannot be void -- this element produces no value (a call to a procedure that returns nothing?)
-tests/reject/arr_lit_none_first.ty	SEMANTIC	6233	cannot infer the array's element type from None — put a Some(...) first
-tests/reject/array_arith_fixlen.ty	TYPE	7457	element-wise `*` on a fixed array requires the same static length (got [3]int and [2]int)
+tests/reject/and_needs_bool.ty	SEMANTIC	7382	`and` needs bool operands
+tests/reject/arr_elem_void.ty	TYPE	6254	an array element cannot be void -- this element produces no value (a call to a procedure that returns nothing?)
+tests/reject/arr_lit_none_first.ty	SEMANTIC	6256	cannot infer the array's element type from None — put a Some(...) first
+tests/reject/array_arith_fixlen.ty	TYPE	7508	element-wise `*` on a fixed array requires the same static length (got [3]int and [2]int)
 tests/reject/assign_to_literal.ty	SYNTAX	4182	cannot assign to this expression
-tests/reject/assign_unknown_plain.ty	NAME	8479	assignment to unknown variable 'zzqqww' (use ':=' to declare)
-tests/reject/assign_unknown_suggest.ty	NAME	8478	assignment to unknown variable 'counr' (use ':=' to declare); did you mean 'count'?
-tests/reject/bare_arr_no_context.ty	SEMANTIC	6225	cannot type a bare [] here -- no expected type (write []T, or use it where the element type is known)
+tests/reject/assign_unknown_plain.ty	NAME	8530	assignment to unknown variable 'zzqqww' (use ':=' to declare)
+tests/reject/assign_unknown_suggest.ty	NAME	8529	assignment to unknown variable 'counr' (use ':=' to declare); did you mean 'count'?
+tests/reject/bare_arr_no_context.ty	SEMANTIC	6248	cannot type a bare [] here -- no expected type (write []T, or use it where the element type is known)
 tests/reject/bare_expr_stmt.ty	SYNTAX	4237	a statement must be a declaration, assignment, or call -- a bare expression has no effect
-tests/reject/base_mismatch_arg.ty	TYPE	7230	argument 1 of 'f' is string, expected int
-tests/reject/base_mismatch_call_decl.ty	TYPE	8383	declared type int but value is string
-tests/reject/base_mismatch_decl.ty	TYPE	8383	declared type int but value is string
-tests/reject/base_mismatch_index_arg.ty	TYPE	7230	argument 1 of 'need_str' is int, expected string
-tests/reject/base_mismatch_inout.ty	TYPE	7230	argument 1 of 'f' is float, expected int
-tests/reject/base_mismatch_int_into_string.ty	TYPE	8383	declared type string but value is int
-tests/reject/base_mismatch_return.ty	TYPE	8523	returning string but proc returns int
-tests/reject/base_mismatch_tuple.ty	TYPE	7682	declared type (int, int) but value is (int, string)
-tests/reject/base_mismatch_var_arg.ty	TYPE	7230	argument 1 of 'need_int' is string, expected int
-tests/reject/bitnot_needs_int.ty	SEMANTIC	7302	unary `~` needs an integer
+tests/reject/base_mismatch_arg.ty	TYPE	7281	argument 1 of 'f' is string, expected int
+tests/reject/base_mismatch_call_decl.ty	TYPE	8434	declared type int but value is string
+tests/reject/base_mismatch_decl.ty	TYPE	8434	declared type int but value is string
+tests/reject/base_mismatch_index_arg.ty	TYPE	7281	argument 1 of 'need_str' is int, expected string
+tests/reject/base_mismatch_inout.ty	TYPE	7281	argument 1 of 'f' is float, expected int
+tests/reject/base_mismatch_int_into_string.ty	TYPE	8434	declared type string but value is int
+tests/reject/base_mismatch_return.ty	TYPE	8574	returning string but proc returns int
+tests/reject/base_mismatch_tuple.ty	TYPE	7733	declared type (int, int) but value is (int, string)
+tests/reject/base_mismatch_var_arg.ty	TYPE	7281	argument 1 of 'need_int' is string, expected int
+tests/reject/bitnot_needs_int.ty	SEMANTIC	7353	unary `~` needs an integer
 tests/reject/bounded_chan_elem.ty	SEMANTIC	0	a channel handle cannot be stored in a container or aggregate -- pass it as an argument instead
 tests/reject/bounded_const_cap_zero.ty	SEMANTIC	2426	a bounded capacity must be positive
 tests/reject/bounded_elem_bool.ty	SEMANTIC	2430	a bounded element cannot be bool or void
-tests/reject/bounded_literal_elem_type.ty	TYPE	7634	element 2 of a bounded[4]int literal is the wrong type
-tests/reject/bounded_literal_too_many.ty	SEMANTIC	7630	a bounded[2] holds at most 2 elements, got 3
+tests/reject/bounded_literal_elem_type.ty	TYPE	7685	element 2 of a bounded[4]int literal is the wrong type
+tests/reject/bounded_literal_too_many.ty	SEMANTIC	7681	a bounded[2] holds at most 2 elements, got 3
 tests/reject/bounded_no_capacity.ty	SYNTAX	2425	bounded needs a capacity: bounded[N]T
 tests/reject/bounded_nonconst_cap.ty	SEMANTIC	2423	a bounded capacity must be an integer literal or an int `const` -- 'NOPE' is not
 tests/reject/bounded_task_elem.ty	TYPE	2677	unknown type 'Task'
-tests/reject/break_outside_loop.ty	SEMANTIC	12384	'break' outside a loop
-tests/reject/builtin_arity_char_at.ty	TYPE	7174	'char_at' takes 2 argument(s), got 1
-tests/reject/builtin_arity_niladic.ty	TYPE	7174	'clock' takes 0 argument(s), got 1
-tests/reject/builtin_arity_too_few.ty	TYPE	7174	'substr' takes 3 argument(s), got 1
-tests/reject/builtin_arity_too_many.ty	TYPE	6946	len(...) takes one argument
-tests/reject/builtin_arity_zero_args.ty	TYPE	7044	pop(arr) takes one argument
-tests/reject/bytes_concat_int.ty	TYPE	7399	cannot concatenate bytes with int -- to_bytes(x) to widen, or to_str(b) to work in strings
-tests/reject/bytes_no_arith.ty	SEMANTIC	7558	bytes has no arithmetic (got bytes, bytes) -- bytes supports `a + b` and `b + 'c'` (concat), `b[i]` (the byte value, an int) and `b[i:j]` (a sub-buffer); for anything else use to_str(b)
-tests/reject/call_value_not_fn.ty	SEMANTIC	6601	calling a value that isn't a function (int)
-tests/reject/chan_capture.ty	SEMANTIC	6041	a closure cannot capture a channel handle -- take it as a parameter instead
-tests/reject/chan_in_container.ty	SEMANTIC	6818	a channel must be created directly in a declaration: ch := channel(T, cap)
+tests/reject/break_outside_loop.ty	SEMANTIC	12453	'break' outside a loop
+tests/reject/builtin_arity_char_at.ty	TYPE	7225	'char_at' takes 2 argument(s), got 1
+tests/reject/builtin_arity_niladic.ty	TYPE	7225	'clock' takes 0 argument(s), got 1
+tests/reject/builtin_arity_too_few.ty	TYPE	7225	'substr' takes 3 argument(s), got 1
+tests/reject/builtin_arity_too_many.ty	TYPE	6997	len(...) takes one argument
+tests/reject/builtin_arity_zero_args.ty	TYPE	7095	pop(arr) takes one argument
+tests/reject/bytes_concat_int.ty	TYPE	7450	cannot concatenate bytes with int -- to_bytes(x) to widen, or to_str(b) to work in strings
+tests/reject/bytes_no_arith.ty	SEMANTIC	7609	bytes has no arithmetic (got bytes, bytes) -- bytes supports `a + b` and `b + 'c'` (concat), `b[i]` (the byte value, an int) and `b[i:j]` (a sub-buffer); for anything else use to_str(b)
+tests/reject/call_value_not_fn.ty	SEMANTIC	6651	calling a value that isn't a function (int)
+tests/reject/chan_capture.ty	SEMANTIC	6064	a closure cannot capture a channel handle -- take it as a parameter instead
+tests/reject/chan_in_container.ty	SEMANTIC	6868	a channel must be created directly in a declaration: ch := channel(T, cap)
 tests/reject/chan_inout_param.ty	SEMANTIC	4356	'ch' is inout, which an affine type cannot be -- it has one owner and is freed at that scope's exit, so there is nothing to consume or copy back. Pass it plainly: that is already a borrow
-tests/reject/chan_reassign.ty	SEMANTIC	8504	a channel variable cannot be reassigned
-tests/reject/channel_cap_not_int.ty	SEMANTIC	6821	channel(T, cap) needs an int capacity
+tests/reject/chan_reassign.ty	SEMANTIC	8555	a channel variable cannot be reassigned
+tests/reject/channel_cap_not_int.ty	SEMANTIC	6871	channel(T, cap) needs an int capacity
 tests/reject/char_as_type.ty	TYPE	2677	unknown type 'char'
-tests/reject/char_at_arg_index_type.ty	TYPE	7230	argument 2 of 'char_at' is string, expected int
-tests/reject/char_at_arg_recv_type.ty	TYPE	7217	argument 1 of 'char_at' is int, expected string -- wrap it with str(...), e.g. char_at(str(x))
-tests/reject/char_elem_div.ty	TYPE	7460	`/` is not defined element-wise on [char] -- there is no element-wise `/` for char
-tests/reject/char_elem_mod.ty	TYPE	7460	`%` is not defined element-wise on [char] -- there is no element-wise `%` for char
-tests/reject/char_elem_mul.ty	TYPE	7460	`*` is not defined element-wise on [char] -- there is no element-wise `*` for char
+tests/reject/char_at_arg_index_type.ty	TYPE	7281	argument 2 of 'char_at' is string, expected int
+tests/reject/char_at_arg_recv_type.ty	TYPE	7268	argument 1 of 'char_at' is int, expected string -- wrap it with str(...), e.g. char_at(str(x))
+tests/reject/char_elem_div.ty	TYPE	7511	`/` is not defined element-wise on [char] -- there is no element-wise `/` for char
+tests/reject/char_elem_mod.ty	TYPE	7511	`%` is not defined element-wise on [char] -- there is no element-wise `%` for char
+tests/reject/char_elem_mul.ty	TYPE	7511	`*` is not defined element-wise on [char] -- there is no element-wise `*` for char
 tests/reject/char_empty.ty	SYNTAX	819	empty or unterminated char literal
 tests/reject/char_escape_unsupported.ty	SYNTAX	0	unsupported char escape (use \n \t \r \0 \xNN \\ \')
-tests/reject/char_int_eq.ty	TYPE	7361	cannot compare char with int
-tests/reject/char_int_mul.ty	TYPE	7568	arithmetic requires two ints or two floats (got char, int) -- convert one side, e.g. to_float(x) to compute in floats, or to_int(x) in ints
-tests/reject/char_int_ord.ty	TYPE	7384	ordering compares two ints, two floats, two strings, or two values of the same numeric newtype
+tests/reject/char_int_eq.ty	TYPE	7412	cannot compare char with int
+tests/reject/char_int_mul.ty	TYPE	7619	arithmetic requires two ints or two floats (got char, int) -- convert one side, e.g. to_float(x) to compute in floats, or to_int(x) in ints
+tests/reject/char_int_ord.ty	TYPE	7435	ordering compares two ints, two floats, two strings, or two values of the same numeric newtype
 tests/reject/char_two_chars.ty	SYNTAX	820	char literal must be exactly one character
 tests/reject/char_unexpected.ty	SYNTAX	863	unexpected character '?'
-tests/reject/close_handle_nonvar.ty	SEMANTIC	6844	close(h) takes a handle variable
-tests/reject/close_not_channel.ty	SEMANTIC	6847	close takes a channel or a handle, got int
-tests/reject/close_two_args.ty	SEMANTIC	6840	close takes one channel or handle
-tests/reject/closure_capture_handle.ty	SEMANTIC	6040	a closure cannot capture a handle -- it is freed at the end of its scope
-tests/reject/coerce_annot_narrow.ty	TYPE	8383	declared type int but value is float
-tests/reject/coerce_arg_narrow.ty	TYPE	7230	argument 1 of 'g' is float, expected int
-tests/reject/coerce_array_mixed.ty	TYPE	6236	array elements must all have the same type
-tests/reject/coerce_return_narrow.ty	TYPE	8523	returning float but proc returns int
+tests/reject/close_handle_nonvar.ty	SEMANTIC	6894	close(h) takes a handle variable
+tests/reject/close_not_channel.ty	SEMANTIC	6897	close takes a channel or a handle, got int
+tests/reject/close_two_args.ty	SEMANTIC	6890	close takes one channel or handle
+tests/reject/closure_capture_handle.ty	SEMANTIC	6063	a closure cannot capture a handle -- it is freed at the end of its scope
+tests/reject/coerce_annot_narrow.ty	TYPE	8434	declared type int but value is float
+tests/reject/coerce_arg_narrow.ty	TYPE	7281	argument 1 of 'g' is float, expected int
+tests/reject/coerce_array_mixed.ty	TYPE	6259	array elements must all have the same type
+tests/reject/coerce_return_narrow.ty	TYPE	8574	returning float but proc returns int
 tests/reject/comment_double_slash.ty	SYNTAX	829	'//' is not valid in Tycho -- use '#' for comments, or '/' for division
-tests/reject/compare_void.ty	TYPE	7362	cannot compare void
+tests/reject/compare_void.ty	TYPE	7413	cannot compare void
 tests/reject/compound_assign_to_literal.ty	SYNTAX	4220	cannot compound-assign to this expression
-tests/reject/cond_elif_str.ty	TYPE	8540	if condition must be bool
-tests/reject/cond_for_int.ty	TYPE	8754	for condition must be bool
-tests/reject/cond_if_int.ty	TYPE	8540	if condition must be bool
-tests/reject/cond_if_str.ty	TYPE	8540	if condition must be bool
-tests/reject/cond_if_void.ty	TYPE	8540	if condition must be bool
-tests/reject/cond_value_if_int.ty	TYPE	8540	if condition must be bool
-tests/reject/const_div_overflow.ty	SYNTAX	5225	const expression overflows: the smallest int divided by -1 has no int value
+tests/reject/cond_elif_str.ty	TYPE	8591	if condition must be bool
+tests/reject/cond_for_int.ty	TYPE	8805	for condition must be bool
+tests/reject/cond_if_int.ty	TYPE	8591	if condition must be bool
+tests/reject/cond_if_str.ty	TYPE	8591	if condition must be bool
+tests/reject/cond_if_void.ty	TYPE	8591	if condition must be bool
+tests/reject/cond_value_if_int.ty	TYPE	8591	if condition must be bool
+tests/reject/const_div_overflow.ty	SYNTAX	5248	const expression overflows: the smallest int divided by -1 has no int value
 tests/reject/const_dup.ty	NAME	4320	'MAX' is already defined
-tests/reject/const_expr_divzero.ty	SYNTAX	5224	const expression divides by zero
+tests/reject/const_expr_divzero.ty	SYNTAX	5247	const expression divides by zero
 tests/reject/const_expr_float.ty	SYNTAX	3799	a `const` must be a single scalar literal -- an int, float, string, bool or char. Arrays, maps and struct literals are not allowed, and neither is an expression
 tests/reject/const_expr_localref.ty	SYNTAX	3799	a `const` must be a single scalar literal -- an int, float, string, bool or char. Arrays, maps and struct literals are not allowed, and neither is an expression
-tests/reject/const_generic_size_conflict.ty	SEMANTIC	9066	argument 2 of 'g' is [4]int, which does not fit the parameter pattern
-tests/reject/const_generic_size_dynamic_arg.ty	SEMANTIC	9066	argument 1 of 'f' is [int], which does not fit the parameter pattern
-tests/reject/const_generic_size_return_only.ty	SEMANTIC	9122	the return type of 'mk' has a type parameter not fixed by any argument; pass it explicitly, e.g. mk$(int)
-tests/reject/const_generic_size_struct_field.ty	SEMANTIC	9340	a struct field cannot be a `[$N]T` size-parameterized array -- use a fixed `[N]T` or a dynamic `[T]`
+tests/reject/const_generic_size_conflict.ty	SEMANTIC	9117	argument 2 of 'g' is [4]int, which does not fit the parameter pattern
+tests/reject/const_generic_size_dynamic_arg.ty	SEMANTIC	9117	argument 1 of 'f' is [int], which does not fit the parameter pattern
+tests/reject/const_generic_size_return_only.ty	SEMANTIC	9173	the return type of 'mk' has a type parameter not fixed by any argument; pass it explicitly, e.g. mk$(int)
+tests/reject/const_generic_size_struct_field.ty	SEMANTIC	9391	a struct field cannot be a `[$N]T` size-parameterized array -- use a fixed `[N]T` or a dynamic `[T]`
 tests/reject/const_named_none.ty	NAME	4320	'None' is already defined
 tests/reject/const_nonliteral.ty	SYNTAX	3799	a `const` must be a single scalar literal -- an int, float, string, bool or char. Arrays, maps and struct literals are not allowed, and neither is an expression
-tests/reject/const_reassign.ty	NAME	8491	cannot assign to constant 'X'
-tests/reject/const_shift_negative.ty	SYNTAX	5232	const expression shifts by a negative count
+tests/reject/const_reassign.ty	NAME	8542	cannot assign to constant 'X'
+tests/reject/const_shift_negative.ty	SYNTAX	5255	const expression shifts by a negative count
 tests/reject/decl_not_used.ty	SEMANTIC	0	'x' declared and not used
 tests/reject/delete_from_call.ty	SYNTAX	3839	cannot `delete` from this expression
 tests/reject/delete_not_an_index.ty	SYNTAX	3822	`delete` removes a map element: `delete m[k]`
 tests/reject/destructure_too_many.ty	SYNTAX	4117	at most 8 destructuring targets
-tests/reject/division_by_zero.ty	SEMANTIC	7407	division by zero
+tests/reject/division_by_zero.ty	SEMANTIC	7458	division by zero
 tests/reject/dotlt_sequential.ty	SYNTAX	4032	`0..<N` counts only in a `parallel for` -- write `for i := 0; i < N; i += 1:` for a sequential count
-tests/reject/dup_field.ty	SYNTAX	4757	duplicate field 'x'
+tests/reject/dup_field.ty	SYNTAX	4780	duplicate field 'x'
 tests/reject/dup_fn.ty	NAME	4320	'foo' is already defined
 tests/reject/dup_fn_variant.ty	NAME	4320	'Alpha' is already defined
 tests/reject/dup_fn_variant_fn_first.ty	NAME	4320	'Alpha' is already defined
-tests/reject/dup_local.ty	NAME	8919	'a' is already declared in this scope
-tests/reject/dup_param.ty	NAME	9423	duplicate parameter 'x'
+tests/reject/dup_local.ty	NAME	8970	'a' is already declared in this scope
+tests/reject/dup_param.ty	NAME	9474	duplicate parameter 'x'
 tests/reject/dup_struct_enum.ty	NAME	4320	'X' is already defined
 tests/reject/dup_variant.ty	NAME	0	variant name 'W' is already used in this package
-tests/reject/elementwise_bounded.ty	TYPE	7440	element-wise `+` is defined for [T] and [N]T only (got bounded[4]int, bounded[4]int)
-tests/reject/elementwise_elem_type.ty	TYPE	7443	element-wise `+` requires two arrays with the same element type (got [int], [float])
-tests/reject/elementwise_mix_kinds.ty	TYPE	7449	cannot mix a fixed array and a growable array in element-wise `+` (got [2]int, [int]) -- copy one side into the other's kind first
-tests/reject/enum_is_not_an_enum.ty	TYPE	7319	`is` asks an enum, Option or Result value which variant it holds; int is none of those
+tests/reject/elementwise_bounded.ty	TYPE	7491	element-wise `+` is defined for [T] and [N]T only (got bounded[4]int, bounded[4]int)
+tests/reject/elementwise_elem_type.ty	TYPE	7494	element-wise `+` requires two arrays with the same element type (got [int], [float])
+tests/reject/elementwise_mix_kinds.ty	TYPE	7500	cannot mix a fixed array and a growable array in element-wise `+` (got [2]int, [int]) -- copy one side into the other's kind first
+tests/reject/enum_is_not_an_enum.ty	TYPE	7370	`is` asks an enum, Option or Result value which variant it holds; int is none of those
 tests/reject/enum_is_unknown_variant.ty	TYPE	1322	'VFloat' is not a variant of Value
 tests/reject/enum_key_payload.ty	TYPE	2551	map keys must be string, int (directly or through a newtype), a fieldless enum, or a hashable struct/tuple/array
 tests/reject/enum_named_none.ty	NAME	4320	'None' is already defined
-tests/reject/enum_payload_sizeparam.ty	SEMANTIC	9345	an enum payload cannot be a `[$N]T` size-parameterized array -- use a fixed `[N]T` or a dynamic `[T]`
-tests/reject/enum_payload_type.ty	SEMANTIC	6795	Circle payload 1 is float, got string
-tests/reject/enum_typaram_max.ty	SYNTAX	4784	too many enum type parameters (max 16)
+tests/reject/enum_payload_sizeparam.ty	SEMANTIC	9396	an enum payload cannot be a `[$N]T` size-parameterized array -- use a fixed `[N]T` or a dynamic `[T]`
+tests/reject/enum_payload_type.ty	SEMANTIC	6845	Circle payload 1 is float, got string
+tests/reject/enum_typaram_max.ty	SYNTAX	4807	too many enum type parameters (max 16)
 tests/reject/err_empty.ty	SYNTAX	2999	Err() carries no value -- a Result's error type cannot be void
-tests/reject/err_needs_concrete.ty	SEMANTIC	6086	Err(...) needs a concrete value
+tests/reject/err_needs_concrete.ty	SEMANTIC	6109	Err(...) needs a concrete value
 tests/reject/explicit_count.ty	TYPE	2677	unknown type 'str'
-tests/reject/explicit_noarg.ty	SEMANTIC	9072	no argument fixes 'empty''s type parameter $T -- it appears only in the return type. Give it explicitly: empty$(<the type for $T>)(...)
-tests/reject/explicit_nongeneric.ty	SEMANTIC	7152	explicit type arguments given, but 'f' is not a generic function
+tests/reject/explicit_noarg.ty	SEMANTIC	9123	no argument fixes 'empty''s type parameter $T -- it appears only in the return type. Give it explicitly: empty$(<the type for $T>)(...)
+tests/reject/explicit_nongeneric.ty	SEMANTIC	7203	explicit type arguments given, but 'f' is not a generic function
 tests/reject/extern_inout_string.ty	SEMANTIC	4628	extern fn 'ffi_get': an `inout` (out) parameter 's' must be int/char/float/bool/ptr — string/bytes/handle/composite have no trivial out-param ABI
 tests/reject/extern_param_enum.ty	SEMANTIC	4630	extern fn 'ffi_take': parameter 's' must be int/char/float/bool/string/ptr/bytes, [int]/[float]/[string], or a handle (no other composites across the C boundary)
 tests/reject/extern_param_newtype.ty	SEMANTIC	4630	extern fn 'ffi_take': parameter 's' must be int/char/float/bool/string/ptr/bytes, [int]/[float]/[string], or a handle (no other composites across the C boundary)
 tests/reject/extern_param_struct.ty	SEMANTIC	4630	extern fn 'ffi_take': parameter 's' must be int/char/float/bool/string/ptr/bytes, [int]/[float]/[string], or a handle (no other composites across the C boundary)
-tests/reject/extern_params_17.ty	TYPE	9353	too many parameters (max 16)
+tests/reject/extern_params_17.ty	TYPE	9404	too many parameters (max 16)
 tests/reject/extern_ret_arr_string.ty	SEMANTIC	4656	extern fn 'ffi_names': return type must be int/char/float/bool/string/ptr/bytes, [int]/[float], Option(string), a handle, or omitted
 tests/reject/extern_ret_struct.ty	SEMANTIC	4656	extern fn 'ffi_make': return type must be int/char/float/bool/string/ptr/bytes, [int]/[float], Option(string), a handle, or omitted
-tests/reject/field_on_non_struct.ty	SEMANTIC	6378	'.foo' on a non-struct value
+tests/reject/field_on_non_struct.ty	SEMANTIC	6401	'.foo' on a non-struct value
 tests/reject/fixarr_elem_bool.ty	TYPE	2498	a fixed-size array element cannot be bool or void -- a dynamic [bool] is legal
-tests/reject/fixarr_into_bounded_arg.ty	TYPE	7230	argument 1 of 'take' is [3]int, expected bounded[4]int
-tests/reject/fixarr_into_dynamic_arg.ty	TYPE	7230	argument 1 of 'take' is [3]int, expected [int]
+tests/reject/fixarr_into_bounded_arg.ty	TYPE	7281	argument 1 of 'take' is [3]int, expected bounded[4]int
+tests/reject/fixarr_into_dynamic_arg.ty	TYPE	7281	argument 1 of 'take' is [3]int, expected [int]
 tests/reject/fixarr_qualified_const.ty	SYNTAX	2510	a fixed-size array length cannot be an imported const ('lim.MAX') -- its value is not known at parse time. Use an unqualified `const` declared in this file, or a dynamic [T]
-tests/reject/fixarr_size_arg.ty	TYPE	7230	argument 1 of 'take' is [3]int, expected [4]int
-tests/reject/fixarr_size_decl.ty	TYPE	8383	declared type [4]int but value is [3]int
-tests/reject/fixarr_size_field.ty	TYPE	6755	field 'v' of S is [4]int, got [3]int
-tests/reject/fixarr_size_return.ty	TYPE	8523	returning [3]int but proc returns [4]int
-tests/reject/fixed_array_bad_length.ty	TYPE	7618	a fixed-size array of length 3 needs 3 elements, got 2
+tests/reject/fixarr_size_arg.ty	TYPE	7281	argument 1 of 'take' is [3]int, expected [4]int
+tests/reject/fixarr_size_decl.ty	TYPE	8434	declared type [4]int but value is [3]int
+tests/reject/fixarr_size_field.ty	TYPE	6805	field 'v' of S is [4]int, got [3]int
+tests/reject/fixarr_size_return.ty	TYPE	8574	returning [3]int but proc returns [4]int
+tests/reject/fixed_array_bad_length.ty	TYPE	7669	a fixed-size array of length 3 needs 3 elements, got 2
 tests/reject/fixed_array_nonconst_size.ty	TYPE	2532	a fixed-size array length must be an integer literal or an int `const` -- 'n' is not
 tests/reject/fixed_array_zero_size.ty	SYNTAX	2535	a fixed-size array length must be positive
 tests/reject/float_exp_bad.ty	SYNTAX	2078	expected newline
-tests/reject/float_int_eq.ty	TYPE	7361	cannot compare float with int
-tests/reject/float_int_var_ord.ty	TYPE	7384	ordering compares two ints, two floats, two strings, or two values of the same numeric newtype
+tests/reject/float_int_eq.ty	TYPE	7412	cannot compare float with int
+tests/reject/float_int_var_ord.ty	TYPE	7435	ordering compares two ints, two floats, two strings, or two values of the same numeric newtype
 tests/reject/float_lit_overflow_neg.ty	SYNTAX	651	float literal out of range: `1e400` exceeds the largest float (IEEE-754 binary64); write 1.0/0.0 for an infinity
-tests/reject/fn_eq.ty	TYPE	7368	functions are not comparable -- closures have no structural equality; compare the values they produce instead
+tests/reject/fn_eq.ty	TYPE	7419	functions are not comparable -- closures have no structural equality; compare the values they produce instead
 tests/reject/fn_named_ok.ty	NAME	4320	'Ok' is already defined
 tests/reject/fn_returns_handle.ty	SEMANTIC	4376	a Tycho fn cannot return a handle -- only an `extern fn` opener may; a handle is freed at the end of its scope and cannot escape it
 tests/reject/fnty_arity.ty	SYNTAX	2440	a function type has at most 8 parameters
-tests/reject/fnval_local_generic.ty	SEMANTIC	6190	'mymin' is generic, so it has no single function value -- there is no instantiation to take. Wrap it in a lambda that fixes the types, e.g. fn(a: int, b: int) -> int: mymin(a, b)
-tests/reject/fnvalue_call_arg_type.ty	SEMANTIC	6608	argument 2 must be int
-tests/reject/fnvalue_call_arity.ty	SEMANTIC	6603	this function value expects 2 argument(s), got 1
-tests/reject/fnvalue_inout_param.ty	SEMANTIC	6175	'bump' has an inout parameter, so it can't be a function value
-tests/reject/fnvalue_param_max.ty	SEMANTIC	6173	a function value supports at most 8 parameters
-tests/reject/fnvar_call_arg_type.ty	SEMANTIC	6621	argument 2 to 'f' must be int
-tests/reject/fnvar_call_arity.ty	SEMANTIC	6616	'f' expects 2 argument(s), got 1
+tests/reject/fnval_local_generic.ty	SEMANTIC	6213	'mymin' is generic, so it has no single function value -- there is no instantiation to take. Wrap it in a lambda that fixes the types, e.g. fn(a: int, b: int) -> int: mymin(a, b)
+tests/reject/fnvalue_call_arg_type.ty	SEMANTIC	6658	argument 2 must be int
+tests/reject/fnvalue_call_arity.ty	SEMANTIC	6653	this function value expects 2 argument(s), got 1
+tests/reject/fnvalue_inout_param.ty	SEMANTIC	6198	'bump' has an inout parameter, so it can't be a function value
+tests/reject/fnvalue_param_max.ty	SEMANTIC	6196	a function value supports at most 8 parameters
+tests/reject/fnvar_call_arg_type.ty	SEMANTIC	6671	argument 2 to 'f' must be int
+tests/reject/fnvar_call_arity.ty	SEMANTIC	6666	'f' expects 2 argument(s), got 1
 tests/reject/for3_empty_clause.ty	SYNTAX	3977	the init clause is required -- write `for:` for an infinite loop
 tests/reject/for3_empty_cond.ty	SYNTAX	3979	the condition clause is required -- write `for:` for an infinite loop
 tests/reject/for3_empty_post.ty	SYNTAX	3981	the post clause is required -- write `for cond:` for a loop that advances in its body
@@ -188,361 +188,369 @@ tests/reject/for3_post_not_assign.ty	SYNTAX	3996	the post clause of a three-clau
 tests/reject/for3_two_clauses.ty	SYNTAX	3973	a three-clause `for` is `for init; cond; post:` -- two ';' separating three clauses
 tests/reject/for_missing_colon.ty	SYNTAX	3975	expected ':' before the block
 tests/reject/for_two_binders.ty	SYNTAX	4014	a `for` binds one name -- write `for p in COLL:` then `k, q := p` in the body
+tests/reject/from_bytes_not_bytes.ty	SEMANTIC	6454	from_bytes$(T)(b) takes bytes
+tests/reject/from_bytes_not_packed.ty	SEMANTIC	6452	from_bytes$(Loose): only a packed struct can be read from bytes
+tests/reject/from_bytes_two_args.ty	SEMANTIC	6448	from_bytes$(T)(b) takes one value argument
+tests/reject/from_bytes_two_typeargs.ty	SEMANTIC	6449	from_bytes$(T)(b) takes exactly one type argument
 tests/reject/fstring_escape.ty	SYNTAX	0	unsupported escape \  (use \n \t \r \\ \")
-tests/reject/genenum_bare_nullary.ty	SEMANTIC	6161	Empty is a variant of generic enum Box; supply the type explicitly, e.g. Empty$(int)
-tests/reject/generic_bounded_field_degraded.ty	TYPE	6755	field 'xs' of Box__int is bounded[4]int, got [4]int
+tests/reject/genenum_bare_nullary.ty	SEMANTIC	6184	Empty is a variant of generic enum Box; supply the type explicitly, e.g. Empty$(int)
+tests/reject/generic_bounded_field_degraded.ty	TYPE	6805	field 'xs' of Box__int is bounded[4]int, got [4]int
 tests/reject/generic_chan_inout_param.ty	SEMANTIC	4356	'c' is inout, which an affine type cannot be -- it has one owner and is freed at that scope's exit, so there is nothing to consume or copy back. Pass it plainly: that is already a borrow
 tests/reject/generic_enum_payload_chan.ty	SEMANTIC	2248	an enum payload cannot be a channel -- 'Holder' was instantiated at one
-tests/reject/generic_enum_payload_count.ty	SEMANTIC	6776	Node takes 1 payload value(s), got 2
-tests/reject/generic_enum_payload_pattern.ty	SEMANTIC	6780	Wrap payload 1 does not fit a int argument
-tests/reject/generic_enum_tparam_unfixed.ty	SEMANTIC	6784	type parameter $T of Tree is not fixed by any payload value; supply it explicitly, e.g. Leaf$(int)
-tests/reject/generic_enum_typearg_count.ty	SEMANTIC	6771	Tree expects 1 type argument(s), got 2
-tests/reject/generic_inout_fnvalue.ty	TYPE	9041	inout parameter 'g': a function value can't be inout (a callee could write a closure back into the caller and it would dangle)
-tests/reject/generic_inst_chan_inout.ty	SEMANTIC	9103	'c' is inout, which an affine type cannot be -- 'f' was instantiated at one. Pass it plainly: that is already a borrow
-tests/reject/generic_inst_inout_fnvalue.ty	TYPE	9041	inout parameter 'g': a function value can't be inout (a callee could write a closure back into the caller and it would dangle)
-tests/reject/generic_map_key_unhashable.ty	SEMANTIC	9092	'distinct' instantiated with K = float, which does not satisfy `hashable(K)`
-tests/reject/generic_newtype_bare_int.ty	SEMANTIC	9066	argument 2 of 'slot' is int, which does not fit the parameter pattern
-tests/reject/generic_params_17.ty	TYPE	9353	too many parameters (max 16)
+tests/reject/generic_enum_payload_count.ty	SEMANTIC	6826	Node takes 1 payload value(s), got 2
+tests/reject/generic_enum_payload_pattern.ty	SEMANTIC	6830	Wrap payload 1 does not fit a int argument
+tests/reject/generic_enum_tparam_unfixed.ty	SEMANTIC	6834	type parameter $T of Tree is not fixed by any payload value; supply it explicitly, e.g. Leaf$(int)
+tests/reject/generic_enum_typearg_count.ty	SEMANTIC	6821	Tree expects 1 type argument(s), got 2
+tests/reject/generic_inout_fnvalue.ty	TYPE	9092	inout parameter 'g': a function value can't be inout (a callee could write a closure back into the caller and it would dangle)
+tests/reject/generic_inst_chan_inout.ty	SEMANTIC	9154	'c' is inout, which an affine type cannot be -- 'f' was instantiated at one. Pass it plainly: that is already a borrow
+tests/reject/generic_inst_inout_fnvalue.ty	TYPE	9092	inout parameter 'g': a function value can't be inout (a callee could write a closure back into the caller and it would dangle)
+tests/reject/generic_map_key_unhashable.ty	SEMANTIC	9143	'distinct' instantiated with K = float, which does not satisfy `hashable(K)`
+tests/reject/generic_newtype_bare_int.ty	SEMANTIC	9117	argument 2 of 'slot' is int, which does not fit the parameter pattern
+tests/reject/generic_params_17.ty	TYPE	9404	too many parameters (max 16)
 tests/reject/generic_partial_enum.ty	SEMANTIC	2661	generic enum 'Opt': its type arguments must be EITHER exactly its own parameters, in order (a recursive reference), OR all concrete -- a list mixing the two is not supported, even where each argument alone would be legal
 tests/reject/generic_partial_struct.ty	SEMANTIC	2632	generic struct 'Box': its type arguments must be EITHER exactly its own parameters, in order (a recursive reference), OR all concrete -- a list mixing the two is not supported, even where each argument alone would be legal
-tests/reject/generic_recur_grow.ty	SEMANTIC	9162	too many generic instantiations (> 1024) -- a recursive generic at a growing type?
-tests/reject/generic_ret_chan.ty	SEMANTIC	9124	a function cannot return a channel -- create it in the owning scope and pass it down
-tests/reject/generic_ret_handle.ty	SEMANTIC	9119	a Tycho fn cannot return a handle -- 'ident' was instantiated at one; only an `extern fn` opener may, because a handle is freed at the end of its scope
-tests/reject/generic_return_only_unbound.ty	SEMANTIC	9072	no argument fixes 'empty''s type parameter $T -- it appears only in the return type. Give it explicitly: empty$(<the type for $T>)(...)
-tests/reject/generic_sink_affine.ty	SEMANTIC	9103	'x' is sink, which an affine type cannot be -- 'take' was instantiated at one. Pass it plainly: that is already a borrow
+tests/reject/generic_recur_grow.ty	SEMANTIC	9213	too many generic instantiations (> 1024) -- a recursive generic at a growing type?
+tests/reject/generic_ret_chan.ty	SEMANTIC	9175	a function cannot return a channel -- create it in the owning scope and pass it down
+tests/reject/generic_ret_handle.ty	SEMANTIC	9170	a Tycho fn cannot return a handle -- 'ident' was instantiated at one; only an `extern fn` opener may, because a handle is freed at the end of its scope
+tests/reject/generic_return_only_unbound.ty	SEMANTIC	9123	no argument fixes 'empty''s type parameter $T -- it appears only in the return type. Give it explicitly: empty$(<the type for $T>)(...)
+tests/reject/generic_sink_affine.ty	SEMANTIC	9154	'x' is sink, which an affine type cannot be -- 'take' was instantiated at one. Pass it plainly: that is already a borrow
 tests/reject/generic_sizeparam_max.ty	SEMANTIC	2491	too many size parameters (max 16)
 tests/reject/generic_struct_field_chan.ty	SEMANTIC	2248	a struct field cannot be a channel -- 'Box' was instantiated at one
-tests/reject/generic_struct_field_count.ty	SEMANTIC	6733	Box takes 1 field value(s), got 2
-tests/reject/generic_struct_field_pattern.ty	SEMANTIC	6738	field 'b' of Pair does not fit a string argument
+tests/reject/generic_struct_field_count.ty	SEMANTIC	6783	Box takes 1 field value(s), got 2
+tests/reject/generic_struct_field_pattern.ty	SEMANTIC	6788	field 'b' of Pair does not fit a string argument
 tests/reject/generic_struct_field_task.ty	SEMANTIC	2248	a struct field cannot be a task -- 'Box' was instantiated at one
-tests/reject/generic_struct_tparam_unfixed.ty	SEMANTIC	6743	type parameter $U of Box is not fixed by any field value
+tests/reject/generic_struct_tparam_unfixed.ty	SEMANTIC	6793	type parameter $U of Box is not fixed by any field value
 tests/reject/generic_typaram_max.ty	SEMANTIC	2402	too many type parameters (max 16)
 tests/reject/handle_body_not_free.ty	SYNTAX	4685	a handle body is exactly 'free: <c_free_fn>'
 tests/reject/handle_dup_name.ty	NAME	4320	'H' is already defined
 tests/reject/handle_named_some.ty	NAME	4320	'Some' is already defined
-tests/reject/handle_reassign.ty	SEMANTIC	8506	a handle variable cannot be reassigned -- it is freed once, at the end of its scope
+tests/reject/handle_reassign.ty	SEMANTIC	8557	a handle variable cannot be reassigned -- it is freed once, at the end of its scope
 tests/reject/handle_then_enum.ty	NAME	4320	'H' is already defined
 tests/reject/handle_then_newtype.ty	NAME	4320	'H' is already defined
 tests/reject/handle_then_struct.ty	NAME	4320	'H' is already defined
-tests/reject/hash_float.ty	TYPE	6882	hash(x) can't hash a float (hashable = the map-key types: int, string, their newtypes, fieldless enums, and composites of those)
-tests/reject/hash_two_args.ty	SEMANTIC	6876	hash(x) takes one argument
+tests/reject/hash_float.ty	TYPE	6932	hash(x) can't hash a float (hashable = the map-key types: int, string, their newtypes, fieldless enums, and composites of those)
+tests/reject/hash_two_args.ty	SEMANTIC	6926	hash(x) takes one argument
 tests/reject/hex_escape_in_string.ty	SYNTAX	0	unsupported escape \x (use \n \t \r \\ \")
 tests/reject/hex_escape_one_digit.ty	SYNTAX	813	\x takes exactly two hex digits (e.g. '\x41')
 tests/reject/if_expr_no_else.ty	SYNTAX	3460	an `if` used as a value must have an `else` — every path must produce a value
-tests/reject/if_expr_type_mismatch.ty	TYPE	8378	if/match branches produce different types (int and string)
-tests/reject/in_array.ty	TYPE	7336	`in` tests membership in a map; the right operand must be a map
-tests/reject/in_string.ty	TYPE	7336	`in` tests membership in a map; the right operand must be a map
-tests/reject/in_wrong_key.ty	TYPE	7338	`in` key must be string
+tests/reject/if_expr_type_mismatch.ty	TYPE	8429	if/match branches produce different types (int and string)
+tests/reject/in_array.ty	TYPE	7387	`in` tests membership in a map; the right operand must be a map
+tests/reject/in_string.ty	TYPE	7387	`in` tests membership in a map; the right operand must be a map
+tests/reject/in_wrong_key.ty	TYPE	7389	`in` key must be string
 tests/reject/indent_inconsistent.ty	SYNTAX	591	inconsistent indentation
-tests/reject/index_assign_string_elem.ty	SEMANTIC	8829	cannot index-assign through this expression (only a variable, field, composite-array element, or map value is a place)
-tests/reject/index_elem_type.ty	TYPE	8855	cannot assign string to a int element
-tests/reject/index_key_not_int.ty	SEMANTIC	6279	index must be int
-tests/reject/index_not_indexable.ty	SEMANTIC	6294	can only index an array, a string, bytes, or a map (as a place)
-tests/reject/infer_bare_empty.ty	SEMANTIC	8941	could not infer the type of 'xs' -- no grounding use in its block (annotate: xs : [T] = [] / Option(T) = None)
-tests/reject/infer_lambda_param.ty	SEMANTIC	6028	lambda parameter 'x' needs a type here -- no expected fn type supplies it (annotate: fn(x: T))
-tests/reject/infer_use_before_ground.ty	SEMANTIC	6140	'xs' is used before its type can be inferred -- assign/push/pass it first, or annotate the declaration
-tests/reject/infinite_option_arm.ty	TYPE	12837	infinite type: an Option contains itself by value — use Option([T]) for indirection
-tests/reject/infinite_result_arm.ty	TYPE	12848	infinite type: a Result contains itself by value — use indirection (e.g. Result([T], E))
-tests/reject/infinite_tuple_arm.ty	TYPE	12864	infinite type: a tuple contains itself by value
-tests/reject/inline_arr_self_elem.ty	TYPE	12815	infinite type: Node contains itself by value — use an array ([Node]) or Option([Node]) for indirection
-tests/reject/inout_alias.ty	SEMANTIC	7247	variable 'n' passed to two inout parameters of 'swap2' (overlapping mutable access)
-tests/reject/inout_arg_newtype.ty	TYPE	7230	argument 1 of 'f' is int, expected Id
-tests/reject/inout_arg_not_place.ty	TYPE	7193	inout argument 1 of 'bump' must name a variable
-tests/reject/inout_borrowed_param.ty	SEMANTIC	7195	cannot pass borrowed parameter 'v' as inout (it is read-only; copy it first)
-tests/reject/inout_byval_alias.ty	SEMANTIC	7265	variable 'a' is passed to an inout parameter and also by value in the same call to 'f' (overlapping access — the by-value copy would alias the inout'd value)
-tests/reject/inout_fnvalue.ty	TYPE	9041	inout parameter 'h': a function value can't be inout (a callee could write a closure back into the caller and it would dangle)
+tests/reject/index_assign_string_elem.ty	SEMANTIC	8880	cannot index-assign through this expression (only a variable, field, composite-array element, or map value is a place)
+tests/reject/index_elem_type.ty	TYPE	8906	cannot assign string to a int element
+tests/reject/index_key_not_int.ty	SEMANTIC	6302	index must be int
+tests/reject/index_not_indexable.ty	SEMANTIC	6317	can only index an array, a string, bytes, or a map (as a place)
+tests/reject/infer_bare_empty.ty	SEMANTIC	8992	could not infer the type of 'xs' -- no grounding use in its block (annotate: xs : [T] = [] / Option(T) = None)
+tests/reject/infer_lambda_param.ty	SEMANTIC	6051	lambda parameter 'x' needs a type here -- no expected fn type supplies it (annotate: fn(x: T))
+tests/reject/infer_use_before_ground.ty	SEMANTIC	6163	'xs' is used before its type can be inferred -- assign/push/pass it first, or annotate the declaration
+tests/reject/infinite_option_arm.ty	TYPE	12911	infinite type: an Option contains itself by value — use Option([T]) for indirection
+tests/reject/infinite_result_arm.ty	TYPE	12922	infinite type: a Result contains itself by value — use indirection (e.g. Result([T], E))
+tests/reject/infinite_tuple_arm.ty	TYPE	12938	infinite type: a tuple contains itself by value
+tests/reject/inline_arr_self_elem.ty	TYPE	12884	infinite type: Node contains itself by value — use an array ([Node]) or Option([Node]) for indirection
+tests/reject/inout_alias.ty	SEMANTIC	7298	variable 'n' passed to two inout parameters of 'swap2' (overlapping mutable access)
+tests/reject/inout_arg_newtype.ty	TYPE	7281	argument 1 of 'f' is int, expected Id
+tests/reject/inout_arg_not_place.ty	TYPE	7244	inout argument 1 of 'bump' must name a variable
+tests/reject/inout_borrowed_param.ty	SEMANTIC	7246	cannot pass borrowed parameter 'v' as inout (it is read-only; copy it first)
+tests/reject/inout_byval_alias.ty	SEMANTIC	7316	variable 'a' is passed to an inout parameter and also by value in the same call to 'f' (overlapping access — the by-value copy would alias the inout'd value)
+tests/reject/inout_fnvalue.ty	TYPE	9092	inout parameter 'h': a function value can't be inout (a callee could write a closure back into the caller and it would dangle)
 tests/reject/int_bin_bad_digit.ty	SYNTAX	0	a binary literal needs digits 0 or 1 after `0b`
 tests/reject/int_hex_no_digits.ty	SYNTAX	0	a hex literal needs at least one digit after `0x`
 tests/reject/int_hex_overflow.ty	SYNTAX	662	integer literal out of range
 tests/reject/int_literal_overflow.ty	SYNTAX	662	integer literal out of range
 tests/reject/is_chain.ty	SYNTAX	3288	`is` does not chain -- write `a is X and a is Y`
-tests/reject/keys_not_map.ty	SEMANTIC	7005	keys's argument must be a map
-tests/reject/keys_two_args.ty	SEMANTIC	7002	keys(m) takes one argument
+tests/reject/keys_not_map.ty	SEMANTIC	7056	keys's argument must be a map
+tests/reject/keys_two_args.ty	SEMANTIC	7053	keys(m) takes one argument
 tests/reject/kw_as_field_name.ty	SYNTAX	2077	'spawn' is a reserved keyword and cannot be used as a field name
 tests/reject/kw_as_local_name.ty	SYNTAX	3786	'spawn' is a reserved keyword and cannot be used as a variable name
-tests/reject/lambda_captures_max.ty	SEMANTIC	6042	a lambda captures at most 16 variables
-tests/reject/lambda_params_max.ty	SEMANTIC	6025	a lambda has at most 8 parameters
-tests/reject/len_scalar.ty	TYPE	6949	len(...) takes an array, a string, bytes, a map, or a soa
-tests/reject/main_params.ty	TYPE	9432	'main' takes no parameters -- the command line arrives through the `args()` builtin
-tests/reject/main_result_enum_err.ty	TYPE	9435	'main' returns nothing or Result(void, string), not Result(void, Fault) -- an Err reaching the entry point is printed, so the error type is the message. For a status other than 0 or 1 (diff(1)'s 0/1/2, say), call the `exit(code)` builtin
-tests/reject/main_result_int.ty	TYPE	9435	'main' returns nothing or Result(void, string), not Result(int, string) -- an Err reaching the entry point is printed, so the error type is the message. For a status other than 0 or 1 (diff(1)'s 0/1/2, say), call the `exit(code)` builtin
-tests/reject/main_with_param.ty	TYPE	9432	'main' takes no parameters -- the command line arrives through the `args()` builtin
-tests/reject/main_with_ret.ty	TYPE	9435	'main' returns nothing or Result(void, string), not int -- an Err reaching the entry point is printed, so the error type is the message. For a status other than 0 or 1 (diff(1)'s 0/1/2, say), call the `exit(code)` builtin
+tests/reject/lambda_captures_max.ty	SEMANTIC	6065	a lambda captures at most 16 variables
+tests/reject/lambda_params_max.ty	SEMANTIC	6048	a lambda has at most 8 parameters
+tests/reject/len_scalar.ty	TYPE	7000	len(...) takes an array, a string, bytes, a map, or a soa
+tests/reject/main_params.ty	TYPE	9483	'main' takes no parameters -- the command line arrives through the `args()` builtin
+tests/reject/main_result_enum_err.ty	TYPE	9486	'main' returns nothing or Result(void, string), not Result(void, Fault) -- an Err reaching the entry point is printed, so the error type is the message. For a status other than 0 or 1 (diff(1)'s 0/1/2, say), call the `exit(code)` builtin
+tests/reject/main_result_int.ty	TYPE	9486	'main' returns nothing or Result(void, string), not Result(int, string) -- an Err reaching the entry point is printed, so the error type is the message. For a status other than 0 or 1 (diff(1)'s 0/1/2, say), call the `exit(code)` builtin
+tests/reject/main_with_param.ty	TYPE	9483	'main' takes no parameters -- the command line arrives through the `args()` builtin
+tests/reject/main_with_ret.ty	TYPE	9486	'main' returns nothing or Result(void, string), not int -- an Err reaching the entry point is printed, so the error type is the message. For a status other than 0 or 1 (diff(1)'s 0/1/2, say), call the `exit(code)` builtin
 tests/reject/map_as_key.ty	TYPE	2551	map keys must be string, int (directly or through a newtype), a fieldless enum, or a hashable struct/tuple/array
-tests/reject/map_compound_composite.ty	SEMANTIC	8838	compound assignment `m[k] op= ...` is only supported for int/float/char map values; for a composite value use push(m[k], ...) or `m[k] = <expr>`
-tests/reject/map_compound_value_type.ty	SEMANTIC	8842	cannot compound-assign float to a int map value
+tests/reject/map_compound_composite.ty	SEMANTIC	8889	compound assignment `m[k] op= ...` is only supported for int/float/char map values; for a composite value use push(m[k], ...) or `m[k] = <expr>`
+tests/reject/map_compound_value_type.ty	SEMANTIC	8893	cannot compound-assign float to a int map value
 tests/reject/map_del_removed.ty	SYNTAX	3045	map_del was removed; use `delete m[k]`
-tests/reject/map_for_in.ty	TYPE	6255	a map is not directly iterable -- `for k in m` indexes it by position. Loop over `keys(m)` instead: `for k in keys(m):` (the keys come back as string, wrapped)
-tests/reject/map_get_arity.ty	SEMANTIC	6442	m.get(key) or m.get(key, default) takes one or two arguments (got 3)
+tests/reject/map_for_in.ty	TYPE	6278	a map is not directly iterable -- `for k in m` indexes it by position. Loop over `keys(m)` instead: `for k in keys(m):` (the keys come back as string, wrapped)
+tests/reject/map_get_arity.ty	SEMANTIC	6492	m.get(key) or m.get(key, default) takes one or two arguments (got 3)
 tests/reject/map_get_removed.ty	SYNTAX	3046	map_get was removed; use `m.get(k, default)`
 tests/reject/map_has_removed.ty	SYNTAX	3044	map_has was removed; use `k in m`
-tests/reject/map_key_wrong_read.ty	TYPE	6256	map key must be Slot, got int
-tests/reject/map_lit_key_types.ty	SEMANTIC	6217	map keys must all have the same type
-tests/reject/map_lit_value_types.ty	SEMANTIC	6219	map values must all have the same type
+tests/reject/map_key_wrong_read.ty	TYPE	6279	map key must be Slot, got int
+tests/reject/map_lit_key_types.ty	SEMANTIC	6240	map keys must all have the same type
+tests/reject/map_lit_value_types.ty	SEMANTIC	6242	map values must all have the same type
 tests/reject/map_set_removed.ty	SYNTAX	3043	map_set was removed; use `m[k] = v`
 tests/reject/map_type_as_value.ty	SYNTAX	2880	`[string: int]` is the TYPE, not a value -- for an empty map write `[]string: int`, or annotate the declaration: `m : [string: int] = []`
-tests/reject/map_value_type.ty	TYPE	8847	cannot assign string to a int map value
-tests/reject/massign_arity.ty	SEMANTIC	8470	assigning 3 name(s) from a 2-element tuple
-tests/reject/massign_not_tuple.ty	SEMANTIC	8468	the right side of a multi-assign must be a tuple, got int
+tests/reject/map_value_type.ty	TYPE	8898	cannot assign string to a int map value
+tests/reject/massign_arity.ty	SEMANTIC	8521	assigning 3 name(s) from a 2-element tuple
+tests/reject/massign_not_tuple.ty	SEMANTIC	8519	the right side of a multi-assign must be a tuple, got int
 tests/reject/match_arm_neg_not_int.ty	SYNTAX	3501	'-' is only valid before an int literal in a match arm
 tests/reject/match_arm_set_not_scalar.ty	SYNTAX	3500	a match arm must be a variant name, a scalar literal, a range, or `_`
-tests/reject/match_bad_subject.ty	SEMANTIC	8748	match expects an Option, Result, or enum value, or an int/char/bool, got S
-tests/reject/match_bind_is_variant.ty	SEMANTIC	8637	'Q' is a variant of Inner, not a binding name -- match it in its own match, or rename the binding
-tests/reject/match_bind_payload_variant.ty	SEMANTIC	8315	'A' is a variant of E that carries a payload -- write Ok(A(x)) to match it, or rename the binding
-tests/reject/match_bool_arms.ty	SEMANTIC	8708	a match on a bool takes true/false arms
-tests/reject/match_char_arms.ty	SEMANTIC	8706	a match on a char takes char literal arms
-tests/reject/match_const_list_not_int.ty	TYPE	8689	'C' is not an int constant
-tests/reject/match_dup_arm.ty	TYPE	8623	duplicate arm for Red
-tests/reject/match_dup_nested_arm.ty	SEMANTIC	8334	duplicate Ok(A) arm
-tests/reject/match_dup_none_arm.ty	SEMANTIC	8567	duplicate None arm
-tests/reject/match_dup_ok_arm.ty	SEMANTIC	8296	duplicate Ok arm
-tests/reject/match_expr_nonexhaustive.ty	TYPE	8579	match on an Option must cover both Some and None
-tests/reject/match_nested_arity.ty	SEMANTIC	8329	A binds 1 value(s), got 2
-tests/reject/match_nested_needs_enum.ty	SEMANTIC	8321	a nested pattern needs an enum payload, but Ok here carries int
-tests/reject/match_nested_plain_enum.ty	SEMANTIC	8632	a nested pattern is only supported inside Ok(...), Err(...) or Some(...) -- match Nil's payload in its own match
-tests/reject/match_non_exhaustive.ty	TYPE	8291	non-exhaustive match: missing variant B of E
-tests/reject/match_none_binds.ty	SEMANTIC	8568	None binds nothing
-tests/reject/match_ok_binds_two.ty	SEMANTIC	8306	Ok(x) binds exactly one value
-tests/reject/match_option_bad_arm.ty	SEMANTIC	8571	an Option's arms are Some(x), None, and _, not 'Nope'
+tests/reject/match_bad_subject.ty	SEMANTIC	8799	match expects an Option, Result, or enum value, or an int/char/bool, got S
+tests/reject/match_bind_is_variant.ty	SEMANTIC	8688	'Q' is a variant of Inner, not a binding name -- match it in its own match, or rename the binding
+tests/reject/match_bind_payload_variant.ty	SEMANTIC	8366	'A' is a variant of E that carries a payload -- write Ok(A(x)) to match it, or rename the binding
+tests/reject/match_bool_arms.ty	SEMANTIC	8759	a match on a bool takes true/false arms
+tests/reject/match_char_arms.ty	SEMANTIC	8757	a match on a char takes char literal arms
+tests/reject/match_const_list_not_int.ty	TYPE	8740	'C' is not an int constant
+tests/reject/match_dup_arm.ty	TYPE	8674	duplicate arm for Red
+tests/reject/match_dup_nested_arm.ty	SEMANTIC	8385	duplicate Ok(A) arm
+tests/reject/match_dup_none_arm.ty	SEMANTIC	8618	duplicate None arm
+tests/reject/match_dup_ok_arm.ty	SEMANTIC	8347	duplicate Ok arm
+tests/reject/match_expr_nonexhaustive.ty	TYPE	8630	match on an Option must cover both Some and None
+tests/reject/match_nested_arity.ty	SEMANTIC	8380	A binds 1 value(s), got 2
+tests/reject/match_nested_needs_enum.ty	SEMANTIC	8372	a nested pattern needs an enum payload, but Ok here carries int
+tests/reject/match_nested_plain_enum.ty	SEMANTIC	8683	a nested pattern is only supported inside Ok(...), Err(...) or Some(...) -- match Nil's payload in its own match
+tests/reject/match_non_exhaustive.ty	TYPE	8342	non-exhaustive match: missing variant B of E
+tests/reject/match_none_binds.ty	SEMANTIC	8619	None binds nothing
+tests/reject/match_ok_binds_two.ty	SEMANTIC	8357	Ok(x) binds exactly one value
+tests/reject/match_option_bad_arm.ty	SEMANTIC	8622	an Option's arms are Some(x), None, and _, not 'Nope'
 tests/reject/match_range_no_high.ty	SYNTAX	3515	expected a value after '..' in the match arm
-tests/reject/match_result_missing_side.ty	TYPE	8605	match on a Result must cover both Ok and Err
-tests/reject/match_result_partial_err.ty	TYPE	8291	non-exhaustive match: missing variant B of E
-tests/reject/match_result_void_missing_err.ty	TYPE	8605	match on a Result must cover both Ok and Err
-tests/reject/match_scalar_bad_ident.ty	TYPE	8667	'NotAConst' is not an int constant (match arms for int are literals)
-tests/reject/match_scalar_bool_incomplete.ty	TYPE	8740	a match on a bool must cover both true and false, or carry a `_` arm
-tests/reject/match_scalar_float.ty	TYPE	8745	match on float is refused: nothing in the tree dispatches on it -- use if/elif (see docs/internals/design-scalar-match.md D1)
-tests/reject/match_scalar_mismatch.ty	TYPE	8703	a match on an int takes int literal arms, not a char
+tests/reject/match_result_missing_side.ty	TYPE	8656	match on a Result must cover both Ok and Err
+tests/reject/match_result_partial_err.ty	TYPE	8342	non-exhaustive match: missing variant B of E
+tests/reject/match_result_void_missing_err.ty	TYPE	8656	match on a Result must cover both Ok and Err
+tests/reject/match_scalar_bad_ident.ty	TYPE	8718	'NotAConst' is not an int constant (match arms for int are literals)
+tests/reject/match_scalar_bool_incomplete.ty	TYPE	8791	a match on a bool must cover both true and false, or carry a `_` arm
+tests/reject/match_scalar_float.ty	TYPE	8796	match on float is refused: nothing in the tree dispatches on it -- use if/elif (see docs/internals/design-scalar-match.md D1)
+tests/reject/match_scalar_mismatch.ty	TYPE	8754	a match on an int takes int literal arms, not a char
 tests/reject/match_scalar_mixed_range.ty	SYNTAX	3517	a range's two ends must be the same kind of value
-tests/reject/match_scalar_no_wildcard.ty	TYPE	8731	a match on int must carry a `_` arm (the domain is unbounded)
-tests/reject/match_scalar_overlap.ty	TYPE	8726	duplicate or overlapping match arm: [1..9] overlaps [5..5] from line 5
-tests/reject/match_scalar_range_flipped.ty	TYPE	8710	a range starts at 9 and ends at 3 (the start must not exceed the end)
-tests/reject/match_scalar_string.ty	TYPE	8745	match on string is refused: nothing in the tree dispatches on it -- use if/elif (see docs/internals/design-scalar-match.md D1)
-tests/reject/match_underscore_use.ty	NAME	6197	unknown variable '_'; did you mean 'r'?
-tests/reject/match_wildcard_binds.ty	SEMANTIC	8553	a `_` wildcard binds nothing
-tests/reject/match_wildcard_not_last.ty	TYPE	8552	a `_` wildcard must be the last match arm
-tests/reject/mdecl_arity.ty	SEMANTIC	8454	destructuring 3 name(s) from a 2-element tuple
-tests/reject/mdecl_not_tuple.ty	SEMANTIC	8451	the right side of a destructuring `:=` must be a tuple, got int
-tests/reject/missing_return_value.ty	SEMANTIC	8530	missing return value (proc returns int)
-tests/reject/modulo_needs_int.ty	SEMANTIC	7524	modulo / bitwise operators require two matching integers (got float, float)
-tests/reject/mut_arg_no_amp.ty	TYPE	7187	argument 1 of 'g' is inout; pass it as '&variable'
-tests/reject/named_arg_not_struct.ty	SEMANTIC	6701	named arguments are only valid for struct construction
-tests/reject/neg_needs_number.ty	SEMANTIC	7296	unary `-` needs an int or a float
-tests/reject/newtype_agg_mix.ty	TYPE	7230	argument 1 of 'total' is [int], expected Ids
-tests/reject/newtype_agg_still_distinct.ty	TYPE	7230	argument 1 of 'takes_raw' is Ids, expected [int]
-tests/reject/newtype_array_elem.ty	TYPE	7622	element 2 of a [Id] array is the wrong type
-tests/reject/newtype_eq_raw_underlying.ty	TYPE	7361	cannot compare A with [int]
-tests/reject/newtype_eq_two_newtypes.ty	TYPE	7361	cannot compare A with B
-tests/reject/newtype_key_mix.ty	TYPE	6256	map key must be UserId, got string
+tests/reject/match_scalar_no_wildcard.ty	TYPE	8782	a match on int must carry a `_` arm (the domain is unbounded)
+tests/reject/match_scalar_overlap.ty	TYPE	8777	duplicate or overlapping match arm: [1..9] overlaps [5..5] from line 5
+tests/reject/match_scalar_range_flipped.ty	TYPE	8761	a range starts at 9 and ends at 3 (the start must not exceed the end)
+tests/reject/match_scalar_string.ty	TYPE	8796	match on string is refused: nothing in the tree dispatches on it -- use if/elif (see docs/internals/design-scalar-match.md D1)
+tests/reject/match_underscore_use.ty	NAME	6220	unknown variable '_'; did you mean 'r'?
+tests/reject/match_wildcard_binds.ty	SEMANTIC	8604	a `_` wildcard binds nothing
+tests/reject/match_wildcard_not_last.ty	TYPE	8603	a `_` wildcard must be the last match arm
+tests/reject/mdecl_arity.ty	SEMANTIC	8505	destructuring 3 name(s) from a 2-element tuple
+tests/reject/mdecl_not_tuple.ty	SEMANTIC	8502	the right side of a destructuring `:=` must be a tuple, got int
+tests/reject/missing_return_value.ty	SEMANTIC	8581	missing return value (proc returns int)
+tests/reject/modulo_needs_int.ty	SEMANTIC	7575	modulo / bitwise operators require two matching integers (got float, float)
+tests/reject/mut_arg_no_amp.ty	TYPE	7238	argument 1 of 'g' is inout; pass it as '&variable'
+tests/reject/named_arg_not_struct.ty	SEMANTIC	6751	named arguments are only valid for struct construction
+tests/reject/neg_needs_number.ty	SEMANTIC	7347	unary `-` needs an int or a float
+tests/reject/newtype_agg_mix.ty	TYPE	7281	argument 1 of 'total' is [int], expected Ids
+tests/reject/newtype_agg_still_distinct.ty	TYPE	7281	argument 1 of 'takes_raw' is Ids, expected [int]
+tests/reject/newtype_array_elem.ty	TYPE	7673	element 2 of a [Id] array is the wrong type
+tests/reject/newtype_eq_raw_underlying.ty	TYPE	7412	cannot compare A with [int]
+tests/reject/newtype_eq_two_newtypes.ty	TYPE	7412	cannot compare A with B
+tests/reject/newtype_key_mix.ty	TYPE	6279	map key must be UserId, got string
 tests/reject/newtype_named_err.ty	NAME	4320	'Err' is already defined
-tests/reject/newtype_sizeparam.ty	SEMANTIC	9348	a newtype cannot wrap a `[$N]T` size-parameterized array
-tests/reject/newtype_under_bytes.ty	SEMANTIC	4855	a newtype's underlying type must be int, float, string, bool, an array, a map, or a struct (got bytes)
-tests/reject/newtype_under_enum.ty	SEMANTIC	4855	a newtype's underlying type must be int, float, string, bool, an array, a map, or a struct (got E)
-tests/reject/newtype_under_f32.ty	SEMANTIC	4855	a newtype's underlying type must be int, float, string, bool, an array, a map, or a struct (got f32)
-tests/reject/newtype_under_fnty.ty	SEMANTIC	4855	a newtype's underlying type must be int, float, string, bool, an array, a map, or a struct (got fn(int) -> int)
-tests/reject/newtype_under_handle.ty	SEMANTIC	4855	a newtype's underlying type must be int, float, string, bool, an array, a map, or a struct (got H)
-tests/reject/newtype_under_newtype.ty	SEMANTIC	4855	a newtype's underlying type must be int, float, string, bool, an array, a map, or a struct (got B)
-tests/reject/newtype_under_option.ty	SEMANTIC	4855	a newtype's underlying type must be int, float, string, bool, an array, a map, or a struct (got Option(int))
-tests/reject/newtype_under_ptr.ty	SEMANTIC	4855	a newtype's underlying type must be int, float, string, bool, an array, a map, or a struct (got ptr)
-tests/reject/newtype_under_result.ty	SEMANTIC	4855	a newtype's underlying type must be int, float, string, bool, an array, a map, or a struct (got Result(int, string))
-tests/reject/newtype_under_soa.ty	SEMANTIC	4855	a newtype's underlying type must be int, float, string, bool, an array, a map, or a struct (got soa [P])
-tests/reject/newtype_under_tuple.ty	SEMANTIC	4855	a newtype's underlying type must be int, float, string, bool, an array, a map, or a struct (got (int, int))
-tests/reject/newtype_under_u8.ty	SEMANTIC	4855	a newtype's underlying type must be int, float, string, bool, an array, a map, or a struct (got u8)
-tests/reject/newtype_wrap_two_args.ty	SEMANTIC	6683	Meters(x) takes one float
-tests/reject/newtype_wrap_wrong_type.ty	SEMANTIC	6686	Meters(x) needs a float, got string
+tests/reject/newtype_sizeparam.ty	SEMANTIC	9399	a newtype cannot wrap a `[$N]T` size-parameterized array
+tests/reject/newtype_under_bytes.ty	SEMANTIC	4878	a newtype's underlying type must be int, float, string, bool, an array, a map, or a struct (got bytes)
+tests/reject/newtype_under_enum.ty	SEMANTIC	4878	a newtype's underlying type must be int, float, string, bool, an array, a map, or a struct (got E)
+tests/reject/newtype_under_f32.ty	SEMANTIC	4878	a newtype's underlying type must be int, float, string, bool, an array, a map, or a struct (got f32)
+tests/reject/newtype_under_fnty.ty	SEMANTIC	4878	a newtype's underlying type must be int, float, string, bool, an array, a map, or a struct (got fn(int) -> int)
+tests/reject/newtype_under_handle.ty	SEMANTIC	4878	a newtype's underlying type must be int, float, string, bool, an array, a map, or a struct (got H)
+tests/reject/newtype_under_newtype.ty	SEMANTIC	4878	a newtype's underlying type must be int, float, string, bool, an array, a map, or a struct (got B)
+tests/reject/newtype_under_option.ty	SEMANTIC	4878	a newtype's underlying type must be int, float, string, bool, an array, a map, or a struct (got Option(int))
+tests/reject/newtype_under_ptr.ty	SEMANTIC	4878	a newtype's underlying type must be int, float, string, bool, an array, a map, or a struct (got ptr)
+tests/reject/newtype_under_result.ty	SEMANTIC	4878	a newtype's underlying type must be int, float, string, bool, an array, a map, or a struct (got Result(int, string))
+tests/reject/newtype_under_soa.ty	SEMANTIC	4878	a newtype's underlying type must be int, float, string, bool, an array, a map, or a struct (got soa [P])
+tests/reject/newtype_under_tuple.ty	SEMANTIC	4878	a newtype's underlying type must be int, float, string, bool, an array, a map, or a struct (got (int, int))
+tests/reject/newtype_under_u8.ty	SEMANTIC	4878	a newtype's underlying type must be int, float, string, bool, an array, a map, or a struct (got u8)
+tests/reject/newtype_wrap_two_args.ty	SEMANTIC	6733	Meters(x) takes one float
+tests/reject/newtype_wrap_wrong_type.ty	SEMANTIC	6736	Meters(x) needs a float, got string
 tests/reject/no_main.ty	NAME	0	no 'main' procedure
-tests/reject/not_needs_bool.ty	SEMANTIC	7290	`not` needs a bool operand
-tests/reject/ok_empty_nonvoid.ty	TYPE	7675	declared type Result(int, string) but value is Ok(); Ok() is only a Result(void, E)
-tests/reject/ok_needs_concrete.ty	SEMANTIC	6086	Ok(...) needs a concrete value
+tests/reject/not_needs_bool.ty	SEMANTIC	7341	`not` needs a bool operand
+tests/reject/ok_empty_nonvoid.ty	TYPE	7726	declared type Result(int, string) but value is Ok(); Ok() is only a Result(void, E)
+tests/reject/ok_needs_concrete.ty	SEMANTIC	6109	Ok(...) needs a concrete value
 tests/reject/option_void.ty	TYPE	2561	'void' is a type only as a Result's ok payload, as in Result(void, string)
-tests/reject/optres_is_wrong_family.ty	TYPE	7314	'Some' is not a variant of Result(int, string); write `Ok` or `Err`
-tests/reject/orret_err_type.ty	SEMANTIC	6124	or_return propagates a string error, but the function's error type is int
-tests/reject/orret_not_result.ty	SEMANTIC	6119	or_return applies to a Result or Option value, got int
-tests/reject/orret_option_fn.ty	SEMANTIC	6114	or_return on an Option requires the enclosing function to return an Option, but it returns int
-tests/reject/orret_result_fn.ty	SEMANTIC	6121	or_return requires the enclosing function to return a Result, but it returns int
-tests/reject/orreturn_stmt_value.ty	TYPE	8890	`or_return` here produces int, which this statement discards -- bind it (x := ... or_return)
+tests/reject/optres_is_wrong_family.ty	TYPE	7365	'Some' is not a variant of Result(int, string); write `Ok` or `Err`
+tests/reject/orret_err_type.ty	SEMANTIC	6147	or_return propagates a string error, but the function's error type is int
+tests/reject/orret_not_result.ty	SEMANTIC	6142	or_return applies to a Result or Option value, got int
+tests/reject/orret_option_fn.ty	SEMANTIC	6137	or_return on an Option requires the enclosing function to return an Option, but it returns int
+tests/reject/orret_result_fn.ty	SEMANTIC	6144	or_return requires the enclosing function to return a Result, but it returns int
+tests/reject/orreturn_stmt_value.ty	TYPE	8941	`or_return` here produces int, which this statement discards -- bind it (x := ... or_return)
 tests/reject/over_indent.ty	SYNTAX	3086	unexpected indentation: this line is indented further than the block it belongs to, and nothing above it opens a new block
-tests/reject/packed_heap_field.ty	SYNTAX	4762	field 'name' of a packed struct must be a fixed-width value type
-tests/reject/packed_on_enum.ty	SYNTAX	4713	'packed' may only be applied to a struct
-tests/reject/parallel_for_assign_unknown.ty	NAME	7882	assignment to unknown variable 'zzqq'
+tests/reject/packed_heap_field.ty	SYNTAX	4785	field 'name' of a packed struct must be a fixed-width value type
+tests/reject/packed_on_enum.ty	SYNTAX	4736	'packed' may only be applied to a struct
+tests/reject/parallel_for_assign_unknown.ty	NAME	7933	assignment to unknown variable 'zzqq'
 tests/reject/parallel_for_not_zero.ty	SYNTAX	4035	`parallel for` counts from zero: write `0..<N` -- a literal `0`, then `..<`, then the exclusive upper bound
 tests/reject/parallel_not_for.ty	SYNTAX	3932	expected 'for' after 'parallel'
-tests/reject/param_shadow.ty	NAME	8919	'x' is already declared in this scope
-tests/reject/params_17.ty	TYPE	9353	too many parameters (max 16)
-tests/reject/parfor_acc_limit.ty	SEMANTIC	7894	parallel for supports at most 4 reduction accumulators
-tests/reject/parfor_acc_op_mixed.ty	SEMANTIC	7899	accumulator 't' must use one reduction op consistently
-tests/reject/parfor_capture_handle.ty	SEMANTIC	7772	a parallel for cannot capture a handle -- it is freed at the end of its scope
-tests/reject/parfor_capture_limit.ty	SEMANTIC	7760	parallel for captures at most 14 outer variables
-tests/reject/parfor_capture_task.ty	SEMANTIC	7771	a parallel for cannot capture a task handle -- wait it first
-tests/reject/parfor_inout_capture.ty	SEMANTIC	7786	parallel for cannot pass a captured variable as inout (no shared mutation across chunks)
-tests/reject/parfor_massign_captured.ty	SEMANTIC	7876	parallel for cannot assign to captured variable 'a'
-tests/reject/parfor_not_collection.ty	SEMANTIC	8040	parallel for expects an array, string, or channel
-tests/reject/parfor_or_return.ty	SEMANTIC	7780	or_return cannot cross a parallel for (no early exit from a chunk)
-tests/reject/parfor_range_not_int.ty	SEMANTIC	8044	parallel for needs an int range
-tests/reject/pass_as_value.ty	NAME	6196	`pass` is a statement and produces no value -- a value if/match needs one in every branch, so write this as a plain statement
-tests/reject/pend_arr_ground_scalar.ty	SEMANTIC	5918	'xs' was declared with [] but its first use makes it int
-tests/reject/pend_none_ground_scalar.ty	SEMANTIC	5922	'x' was declared with None but its first use makes it int
-tests/reject/place_call_receiver.ty	TYPE	8821	can only index-assign an array or map variable or field
-tests/reject/place_call_receiver_field.ty	TYPE	8868	cannot assign to a field of a temporary (only variables, fields, and composite-array elements are places)
-tests/reject/pop_bounded.ty	SEMANTIC	7055	pop is not supported on a bounded[...] yet; read the last element via len()-1 and rebuild
-tests/reject/pop_not_array.ty	SEMANTIC	7053	pop's first argument must be an array or soa
-tests/reject/pop_not_place.ty	SEMANTIC	7048	pop's first argument must be an array variable or field
-tests/reject/print_arity_zero.ty	TYPE	7174	'print' takes 1 argument(s), got 0
-tests/reject/println_arity_many.ty	TYPE	7174	'println' takes 1 argument(s), got 2
-tests/reject/push_borrowed_param.ty	SEMANTIC	7036	cannot mutate parameter 'xs' (it is borrowed read-only; copy it with `y := xs` first)
-tests/reject/push_one_arg.ty	SEMANTIC	7009	push(arr, value) takes two arguments
-tests/reject/push_scalar.ty	TYPE	7027	push's first argument must be an array or soa
-tests/reject/push_target_not_place.ty	TYPE	7017	push's first argument must be an array variable or field
+tests/reject/param_shadow.ty	NAME	8970	'x' is already declared in this scope
+tests/reject/params_17.ty	TYPE	9404	too many parameters (max 16)
+tests/reject/parfor_acc_limit.ty	SEMANTIC	7945	parallel for supports at most 4 reduction accumulators
+tests/reject/parfor_acc_op_mixed.ty	SEMANTIC	7950	accumulator 't' must use one reduction op consistently
+tests/reject/parfor_capture_handle.ty	SEMANTIC	7823	a parallel for cannot capture a handle -- it is freed at the end of its scope
+tests/reject/parfor_capture_limit.ty	SEMANTIC	7811	parallel for captures at most 14 outer variables
+tests/reject/parfor_capture_task.ty	SEMANTIC	7822	a parallel for cannot capture a task handle -- wait it first
+tests/reject/parfor_inout_capture.ty	SEMANTIC	7837	parallel for cannot pass a captured variable as inout (no shared mutation across chunks)
+tests/reject/parfor_massign_captured.ty	SEMANTIC	7927	parallel for cannot assign to captured variable 'a'
+tests/reject/parfor_not_collection.ty	SEMANTIC	8091	parallel for expects an array, string, or channel
+tests/reject/parfor_or_return.ty	SEMANTIC	7831	or_return cannot cross a parallel for (no early exit from a chunk)
+tests/reject/parfor_range_not_int.ty	SEMANTIC	8095	parallel for needs an int range
+tests/reject/pass_as_value.ty	NAME	6219	`pass` is a statement and produces no value -- a value if/match needs one in every branch, so write this as a plain statement
+tests/reject/pend_arr_ground_scalar.ty	SEMANTIC	5941	'xs' was declared with [] but its first use makes it int
+tests/reject/pend_none_ground_scalar.ty	SEMANTIC	5945	'x' was declared with None but its first use makes it int
+tests/reject/place_call_receiver.ty	TYPE	8872	can only index-assign an array or map variable or field
+tests/reject/place_call_receiver_field.ty	TYPE	8919	cannot assign to a field of a temporary (only variables, fields, and composite-array elements are places)
+tests/reject/pop_bounded.ty	SEMANTIC	7106	pop is not supported on a bounded[...] yet; read the last element via len()-1 and rebuild
+tests/reject/pop_not_array.ty	SEMANTIC	7104	pop's first argument must be an array or soa
+tests/reject/pop_not_place.ty	SEMANTIC	7099	pop's first argument must be an array variable or field
+tests/reject/print_arity_zero.ty	TYPE	7225	'print' takes 1 argument(s), got 0
+tests/reject/println_arity_many.ty	TYPE	7225	'println' takes 1 argument(s), got 2
+tests/reject/push_borrowed_param.ty	SEMANTIC	7087	cannot mutate parameter 'xs' (it is borrowed read-only; copy it with `y := xs` first)
+tests/reject/push_one_arg.ty	SEMANTIC	7060	push(arr, value) takes two arguments
+tests/reject/push_scalar.ty	TYPE	7078	push's first argument must be an array or soa
+tests/reject/push_target_not_place.ty	TYPE	7068	push's first argument must be an array variable or field
 tests/reject/range_removed.ty	SYNTAX	4048	`range()` was removed: write `for i := 0; i < N; i += 1:` to count, or `parallel for i in 0..<N:` to count in parallel
 tests/reject/rawstring_unterminated.ty	SYNTAX	793	unterminated raw string literal
-tests/reject/recv_not_channel.ty	SEMANTIC	6836	recv(ch) takes a channel, got int
-tests/reject/recv_two_args.ty	SEMANTIC	6834	recv(ch) takes one channel
-tests/reject/reserve_arity.ty	SEMANTIC	7065	reserve(arr, n) takes two arguments
-tests/reject/reserve_borrowed_param.ty	SEMANTIC	7088	cannot mutate parameter 'xs' (it is borrowed read-only)
-tests/reject/reserve_bounded.ty	SEMANTIC	7076	reserve does not apply to a bounded[...] — its capacity is fixed
-tests/reject/reserve_cap_not_int.ty	SEMANTIC	7090	reserve's capacity must be int
-tests/reject/reserve_not_array.ty	SEMANTIC	7074	reserve's first argument must be an array or a map
-tests/reject/reserve_not_place.ty	SEMANTIC	7069	reserve's first argument must be an array variable or field
-tests/reject/result_bare_decl.ty	SEMANTIC	8422	cannot infer the Result type of Ok(...) — annotate it (x : Result(T, E) = Ok(...))
-tests/reject/result_void_arm_binds.ty	TYPE	8299	Ok carries no value here -- write a bare `Ok:` arm
-tests/reject/result_void_bind.ty	TYPE	8413	cannot bind a void value
+tests/reject/recv_not_channel.ty	SEMANTIC	6886	recv(ch) takes a channel, got int
+tests/reject/recv_two_args.ty	SEMANTIC	6884	recv(ch) takes one channel
+tests/reject/reserve_arity.ty	SEMANTIC	7116	reserve(arr, n) takes two arguments
+tests/reject/reserve_borrowed_param.ty	SEMANTIC	7139	cannot mutate parameter 'xs' (it is borrowed read-only)
+tests/reject/reserve_bounded.ty	SEMANTIC	7127	reserve does not apply to a bounded[...] — its capacity is fixed
+tests/reject/reserve_cap_not_int.ty	SEMANTIC	7141	reserve's capacity must be int
+tests/reject/reserve_not_array.ty	SEMANTIC	7125	reserve's first argument must be an array or a map
+tests/reject/reserve_not_place.ty	SEMANTIC	7120	reserve's first argument must be an array variable or field
+tests/reject/result_bare_decl.ty	SEMANTIC	8473	cannot infer the Result type of Ok(...) — annotate it (x : Result(T, E) = Ok(...))
+tests/reject/result_void_arm_binds.ty	TYPE	8350	Ok carries no value here -- write a bare `Ok:` arm
+tests/reject/result_void_bind.ty	TYPE	8464	cannot bind a void value
 tests/reject/result_void_err.ty	TYPE	2561	'void' is a type only as a Result's ok payload, as in Result(void, string)
-tests/reject/result_void_ok_arg.ty	TYPE	7679	Result(void, string) carries no ok value -- write Ok(), not Ok(x)
-tests/reject/return_value_in_void_proc.ty	SEMANTIC	8521	this proc returns nothing
-tests/reject/scalar_coerce_map_key.ty	TYPE	6256	map key must be int, got float
-tests/reject/scalar_coerce_place.ty	TYPE	8871	cannot assign float to a int field
-tests/reject/scalar_coerce_reassign.ty	TYPE	8483	cannot assign float to 'x' of type int
-tests/reject/scalar_coerce_struct_field.ty	TYPE	6755	field 'v' of S is int, got float
+tests/reject/result_void_ok_arg.ty	TYPE	7730	Result(void, string) carries no ok value -- write Ok(), not Ok(x)
+tests/reject/return_value_in_void_proc.ty	SEMANTIC	8572	this proc returns nothing
+tests/reject/scalar_coerce_map_key.ty	TYPE	6279	map key must be int, got float
+tests/reject/scalar_coerce_place.ty	TYPE	8922	cannot assign float to a int field
+tests/reject/scalar_coerce_reassign.ty	TYPE	8534	cannot assign float to 'x' of type int
+tests/reject/scalar_coerce_struct_field.ty	TYPE	6805	field 'v' of S is int, got float
 tests/reject/select_arm_unknown.ty	SYNTAX	3901	a select arm is `recv(ch, x):`, `default:`, or `closed:`
-tests/reject/select_no_recv.ty	SEMANTIC	8799	select needs at least one recv arm
-tests/reject/select_recv_not_chan.ty	SEMANTIC	8789	select recv needs a channel, got int
-tests/reject/select_two_default.ty	SEMANTIC	8800	select takes at most one default and one closed arm
+tests/reject/select_no_recv.ty	SEMANTIC	8850	select needs at least one recv arm
+tests/reject/select_recv_not_chan.ty	SEMANTIC	8840	select recv needs a channel, got int
+tests/reject/select_two_default.ty	SEMANTIC	8851	select takes at most one default and one closed arm
 tests/reject/semi_no_grammar.ty	SYNTAX	2078	expected newline
-tests/reject/send_not_channel.ty	SEMANTIC	6827	send(ch, v) takes a channel, got int
-tests/reject/send_one_arg.ty	SEMANTIC	6825	send(ch, v) takes a channel and a value
-tests/reject/send_wrong_type.ty	SEMANTIC	6830	send on Channel(int) needs a int value
-tests/reject/shift_needs_int.ty	SEMANTIC	7415	shift operators require integer operands (got float, int)
-tests/reject/sink_arg_newtype.ty	TYPE	7230	argument 1 of 'f' is int, expected Id
-tests/reject/sink_arg_scalar.ty	TYPE	7230	argument 1 of 'f' is float, expected int
-tests/reject/sink_builder_two_mentions.ty	SEMANTIC	10252	'f' is consumed by a `sink` parameter but is mentioned 2 times in this function: a sink argument must be the variable's ONLY mention. One textual mention is how the compiler proves the consume is the last use on every path, with no dataflow analysis -- so `len(f)`, `f[0]`, `f[0] = ...` and passing `f` anywhere else all disqualify it, even before this line. Copy it first (`y := f`) and consume `y`
-tests/reject/sink_consume_in_loop.ty	SEMANTIC	10247	'w' is consumed by a `sink` parameter inside a loop, where the next iteration would consume it again; no named variable can be adopted in a loop, a copy made in the loop included. Lift the call out of the loop, or pass a fresh value (a literal, or a call's result)
-tests/reject/sink_consume_mentions.ty	SEMANTIC	10252	'w' is consumed by a `sink` parameter but is mentioned 2 times in this function: a sink argument must be the variable's ONLY mention. One textual mention is how the compiler proves the consume is the last use on every path, with no dataflow analysis -- so `len(w)`, `w[0]`, `w[0] = ...` and passing `w` anywhere else all disqualify it, even before this line. Copy it first (`y := w`) and consume `y`
-tests/reject/sink_consume_param.ty	SEMANTIC	10243	'ys' is a `sink` parameter and cannot be handed to another `sink` parameter: a parameter's buffer is never adopted, however it was declared. Copy it first (`y := ys`) and consume `y`
-tests/reject/sink_match_binding.ty	SEMANTIC	10260	'v' cannot be consumed by a `sink` parameter here; copy it first (`y := v`) and consume `y`
-tests/reject/sink_use_after.ty	SEMANTIC	10252	'b' is consumed by a `sink` parameter but is mentioned 2 times in this function: a sink argument must be the variable's ONLY mention. One textual mention is how the compiler proves the consume is the last use on every path, with no dataflow analysis -- so `len(b)`, `b[0]`, `b[0] = ...` and passing `b` anywhere else all disqualify it, even before this line. Copy it first (`y := b`) and consume `y`
-tests/reject/sized_conv_string.ty	TYPE	6907	to_u8(x) takes a numeric value
-tests/reject/sized_lit_range.ty	SEMANTIC	5965	4294967296 does not fit u32 (its range is 0..4294967295) -- write to_u32(x) to convert with wraparound
-tests/reject/slice_bounded_value.ty	SEMANTIC	6310	cannot slice a bounded[...] value; copy it into a [int] first
-tests/reject/slice_end_not_int.ty	SEMANTIC	6306	slice end must be int
-tests/reject/slice_inout_alias.ty	SEMANTIC	7281	cannot pass a slice of 'a' and an inout of 'a' in one call (the inout may reallocate the buffer the slice views)
-tests/reject/slice_not_sliceable.ty	SEMANTIC	6312	can only slice an array, soa, a string, or bytes
-tests/reject/slice_start_not_int.ty	SEMANTIC	6304	slice start must be int
+tests/reject/send_not_channel.ty	SEMANTIC	6877	send(ch, v) takes a channel, got int
+tests/reject/send_one_arg.ty	SEMANTIC	6875	send(ch, v) takes a channel and a value
+tests/reject/send_wrong_type.ty	SEMANTIC	6880	send on Channel(int) needs a int value
+tests/reject/shift_needs_int.ty	SEMANTIC	7466	shift operators require integer operands (got float, int)
+tests/reject/sink_arg_newtype.ty	TYPE	7281	argument 1 of 'f' is int, expected Id
+tests/reject/sink_arg_scalar.ty	TYPE	7281	argument 1 of 'f' is float, expected int
+tests/reject/sink_builder_two_mentions.ty	SEMANTIC	10304	'f' is consumed by a `sink` parameter but is mentioned 2 times in this function: a sink argument must be the variable's ONLY mention. One textual mention is how the compiler proves the consume is the last use on every path, with no dataflow analysis -- so `len(f)`, `f[0]`, `f[0] = ...` and passing `f` anywhere else all disqualify it, even before this line. Copy it first (`y := f`) and consume `y`
+tests/reject/sink_consume_in_loop.ty	SEMANTIC	10299	'w' is consumed by a `sink` parameter inside a loop, where the next iteration would consume it again; no named variable can be adopted in a loop, a copy made in the loop included. Lift the call out of the loop, or pass a fresh value (a literal, or a call's result)
+tests/reject/sink_consume_mentions.ty	SEMANTIC	10304	'w' is consumed by a `sink` parameter but is mentioned 2 times in this function: a sink argument must be the variable's ONLY mention. One textual mention is how the compiler proves the consume is the last use on every path, with no dataflow analysis -- so `len(w)`, `w[0]`, `w[0] = ...` and passing `w` anywhere else all disqualify it, even before this line. Copy it first (`y := w`) and consume `y`
+tests/reject/sink_consume_param.ty	SEMANTIC	10295	'ys' is a `sink` parameter and cannot be handed to another `sink` parameter: a parameter's buffer is never adopted, however it was declared. Copy it first (`y := ys`) and consume `y`
+tests/reject/sink_match_binding.ty	SEMANTIC	10312	'v' cannot be consumed by a `sink` parameter here; copy it first (`y := v`) and consume `y`
+tests/reject/sink_use_after.ty	SEMANTIC	10304	'b' is consumed by a `sink` parameter but is mentioned 2 times in this function: a sink argument must be the variable's ONLY mention. One textual mention is how the compiler proves the consume is the last use on every path, with no dataflow analysis -- so `len(b)`, `b[0]`, `b[0] = ...` and passing `b` anywhere else all disqualify it, even before this line. Copy it first (`y := b`) and consume `y`
+tests/reject/size_of_not_packed.ty	SEMANTIC	6462	size_of$(int): only a packed struct has a stated byte size
+tests/reject/size_of_two_typeargs.ty	SEMANTIC	6459	size_of$(T) takes exactly one type argument
+tests/reject/size_of_value_args.ty	SEMANTIC	6458	size_of$(T) takes no value arguments
+tests/reject/sized_conv_string.ty	TYPE	6957	to_u8(x) takes a numeric value
+tests/reject/sized_lit_range.ty	SEMANTIC	5988	4294967296 does not fit u32 (its range is 0..4294967295) -- write to_u32(x) to convert with wraparound
+tests/reject/slice_bounded_value.ty	SEMANTIC	6333	cannot slice a bounded[...] value; copy it into a [int] first
+tests/reject/slice_end_not_int.ty	SEMANTIC	6329	slice end must be int
+tests/reject/slice_inout_alias.ty	SEMANTIC	7332	cannot pass a slice of 'a' and an inout of 'a' in one call (the inout may reallocate the buffer the slice views)
+tests/reject/slice_not_sliceable.ty	SEMANTIC	6335	can only slice an array, soa, a string, or bytes
+tests/reject/slice_start_not_int.ty	SEMANTIC	6327	slice start must be int
 tests/reject/soa_lit_elem_not_struct.ty	SEMANTIC	2969	soa requires a struct element type, e.g. soa []Point
 tests/reject/soa_type_elem_not_struct.ty	SEMANTIC	2412	soa requires a struct element type, e.g. soa [Point]
-tests/reject/some_needs_value.ty	SEMANTIC	6078	Some(...) needs a concrete value
-tests/reject/spawn_extern.ty	SEMANTIC	6009	cannot spawn an extern (FFI) function
+tests/reject/some_needs_value.ty	SEMANTIC	6101	Some(...) needs a concrete value
+tests/reject/spawn_extern.ty	SEMANTIC	6032	cannot spawn an extern (FFI) function
 tests/reject/spawn_not_a_call.ty	SYNTAX	2958	spawn requires a direct call: spawn f(args)
-tests/reject/spawn_void_fn.ty	SEMANTIC	6011	a spawned function must return a value (wait(t) yields it)
+tests/reject/spawn_void_fn.ty	SEMANTIC	6034	a spawned function must return a value (wait(t) yields it)
 tests/reject/str_as_type.ty	TYPE	2677	unknown type 'str'
-tests/reject/str_index_assign.ty	TYPE	8852	cannot index-assign an element of string (it is immutable)
-tests/reject/str_of_fn_value.ty	SEMANTIC	6864	str(x) can't stringify a fn()
-tests/reject/str_two_args.ty	SEMANTIC	6854	str(x) takes one argument
+tests/reject/str_index_assign.ty	TYPE	8903	cannot index-assign an element of string (it is immutable)
+tests/reject/str_of_fn_value.ty	SEMANTIC	6914	str(x) can't stringify a fn()
+tests/reject/str_two_args.ty	SEMANTIC	6904	str(x) takes one argument
 tests/reject/string_escape.ty	SYNTAX	0	unsupported escape \  (use \n \t \r \\ \")
 tests/reject/string_raw_control.ty	SYNTAX	0	raw control byte in string literal (use an escape such as \n or \t)
 tests/reject/string_unterminated.ty	SYNTAX	688	unterminated string literal
-tests/reject/struct_field_unknown.ty	SEMANTIC	6385	struct S has no field 'zzzzzz'
-tests/reject/struct_mix_named_positional.ty	SEMANTIC	6705	P: cannot mix named and positional fields
-tests/reject/struct_mutual_by_value.ty	TYPE	12815	infinite type: A contains itself by value — use an array ([A]) or Option([A]) for indirection
-tests/reject/struct_named_dup_field.ty	SEMANTIC	6720	P: field 'x' given more than once
+tests/reject/struct_field_unknown.ty	SEMANTIC	6408	struct S has no field 'zzzzzz'
+tests/reject/struct_mix_named_positional.ty	SEMANTIC	6755	P: cannot mix named and positional fields
+tests/reject/struct_mutual_by_value.ty	TYPE	12884	infinite type: A contains itself by value — use an array ([A]) or Option([A]) for indirection
+tests/reject/struct_named_dup_field.ty	SEMANTIC	6770	P: field 'x' given more than once
 tests/reject/struct_named_ok.ty	NAME	4320	'Ok' is already defined
-tests/reject/struct_named_partial.ty	SEMANTIC	6713	P: named construction must give all 2 field(s), got 1
-tests/reject/struct_named_unknown_field.ty	SEMANTIC	6710	P has no field 'z'
-tests/reject/struct_typaram_max.ty	SYNTAX	4724	too many struct type parameters (max 16)
+tests/reject/struct_named_partial.ty	SEMANTIC	6763	P: named construction must give all 2 field(s), got 1
+tests/reject/struct_named_unknown_field.ty	SEMANTIC	6760	P has no field 'z'
+tests/reject/struct_typaram_max.ty	SYNTAX	4747	too many struct type parameters (max 16)
 tests/reject/subscript_dangling.ty	SYNTAX	4509	a subscript must yield a place rooted in one of its parameters (else the projection would dangle)
 tests/reject/subscript_generic_recv.ty	SEMANTIC	4485	a subscript receiver may not be generic ('Pool($T)'): declare the subscript on a concrete instance
 tests/reject/subscript_no_yield.ty	SYNTAX	4496	a subscript body must be a single `yield &<place>`
 tests/reject/subscript_not_inout.ty	SYNTAX	4489	a subscript must yield an inout projection: `-> inout <type>`
 tests/reject/subscript_not_place.ty	SYNTAX	4500	a subscript must yield a place: `yield &<place>` (e.g. `yield &g.nodes[i]`)
 tests/reject/subscript_param_twice.ty	SYNTAX	4513	subscript parameter 'i' is used more than once in the yielded place (v1: at most once)
-tests/reject/subscript_type_mismatch.ty	SEMANTIC	6467	subscript 'at' is declared `-> inout string` but yields a place of type int
-tests/reject/sum_annot_arg_payload.ty	TYPE	7668	declared type Option(string) but value is Some(int)
-tests/reject/sum_annot_array_payload_widen.ty	TYPE	7668	declared type Option([u32]) but value is Some([int])
-tests/reject/sum_annot_err_payload_mismatch.ty	TYPE	7682	declared type Result(int, string) but value is Err(int)
-tests/reject/sum_annot_int_payload_nonnumeric.ty	TYPE	7668	declared type Option(string) but value is Some(int)
-tests/reject/sum_annot_place_payload.ty	TYPE	7668	declared type Option(string) but value is Some(int)
-tests/reject/sum_annot_return_payload.ty	TYPE	7668	declared type Option(string) but value is Some(int)
-tests/reject/sum_ctor_payload_mismatch.ty	TYPE	7668	declared type Option(int) but value is Some(string)
+tests/reject/subscript_type_mismatch.ty	SEMANTIC	6517	subscript 'at' is declared `-> inout string` but yields a place of type int
+tests/reject/sum_annot_arg_payload.ty	TYPE	7719	declared type Option(string) but value is Some(int)
+tests/reject/sum_annot_array_payload_widen.ty	TYPE	7719	declared type Option([u32]) but value is Some([int])
+tests/reject/sum_annot_err_payload_mismatch.ty	TYPE	7733	declared type Result(int, string) but value is Err(int)
+tests/reject/sum_annot_int_payload_nonnumeric.ty	TYPE	7719	declared type Option(string) but value is Some(int)
+tests/reject/sum_annot_place_payload.ty	TYPE	7719	declared type Option(string) but value is Some(int)
+tests/reject/sum_annot_return_payload.ty	TYPE	7719	declared type Option(string) but value is Some(int)
+tests/reject/sum_ctor_payload_mismatch.ty	TYPE	7719	declared type Option(int) but value is Some(string)
 tests/reject/tab_mix.ty	SYNTAX	515	mixed tabs and spaces in indentation; use one consistently
 tests/reject/tab_mix2.ty	SYNTAX	515	mixed tabs and spaces in indentation; use one consistently
-tests/reject/task_copy.ty	SEMANTIC	8430	a task handle cannot be copied or re-bound -- bind the spawn directly (t := spawn f(...))
-tests/reject/to_bool_not_newtype.ty	SEMANTIC	6934	to_bool(x) takes a bool newtype
-tests/reject/to_bool_two_args.ty	SEMANTIC	6931	to_bool(x) takes one argument
-tests/reject/to_bytes_not_string.ty	SEMANTIC	6927	to_bytes(x) takes a string or [int]
-tests/reject/to_bytes_two_args.ty	SEMANTIC	6924	to_bytes(s) takes one argument
-tests/reject/to_float_already_float.ty	TYPE	6891	to_float(n) takes an int, a sized int, f32, or a float newtype
-tests/reject/to_float_two_args.ty	TYPE	6888	to_float(n) takes one argument
-tests/reject/to_int_already_int.ty	TYPE	6898	to_int(x): x is already an int -- indexing a string (s[i]) yields the byte value as an int; use chr(x) for its one-character string
-tests/reject/to_int_string.ty	TYPE	6900	to_int(x) takes a float (truncates toward zero), a sized int, f32, a char, or an int newtype
-tests/reject/to_int_two_args.ty	TYPE	6895	to_int(x) takes one argument
-tests/reject/to_ptr_not_int.ty	SEMANTIC	6920	to_ptr(n) takes an int
-tests/reject/to_ptr_two_args.ty	SEMANTIC	6918	to_ptr(n) takes one argument
-tests/reject/to_str_not_bytes.ty	SEMANTIC	6914	to_str(x) takes bytes or a string newtype
-tests/reject/to_str_two_args.ty	SEMANTIC	6911	to_str(x) takes one argument
-tests/reject/to_u8_two_args.ty	SEMANTIC	6904	to_u8(x) takes one argument
-tests/reject/to_under_not_newtype.ty	SEMANTIC	6941	to_under(x) takes a newtype value, got int
-tests/reject/to_under_two_args.ty	SEMANTIC	6938	to_under(x) takes one argument
-tests/reject/tupidx_non_tuple.ty	SEMANTIC	6105	tuple index .0 on a non-tuple value (int)
+tests/reject/task_copy.ty	SEMANTIC	8481	a task handle cannot be copied or re-bound -- bind the spawn directly (t := spawn f(...))
+tests/reject/to_bool_not_newtype.ty	SEMANTIC	6985	to_bool(x) takes a bool newtype
+tests/reject/to_bool_two_args.ty	SEMANTIC	6982	to_bool(x) takes one argument
+tests/reject/to_bytes_not_packed_struct.ty	SEMANTIC	6978	to_bytes(x) takes a string, [int] or a packed struct
+tests/reject/to_bytes_not_string.ty	SEMANTIC	6978	to_bytes(x) takes a string, [int] or a packed struct
+tests/reject/to_bytes_two_args.ty	SEMANTIC	6974	to_bytes(s) takes one argument
+tests/reject/to_float_already_float.ty	TYPE	6941	to_float(n) takes an int, a sized int, f32, or a float newtype
+tests/reject/to_float_two_args.ty	TYPE	6938	to_float(n) takes one argument
+tests/reject/to_int_already_int.ty	TYPE	6948	to_int(x): x is already an int -- indexing a string (s[i]) yields the byte value as an int; use chr(x) for its one-character string
+tests/reject/to_int_string.ty	TYPE	6950	to_int(x) takes a float (truncates toward zero), a sized int, f32, a char, or an int newtype
+tests/reject/to_int_two_args.ty	TYPE	6945	to_int(x) takes one argument
+tests/reject/to_ptr_not_int.ty	SEMANTIC	6970	to_ptr(n) takes an int
+tests/reject/to_ptr_two_args.ty	SEMANTIC	6968	to_ptr(n) takes one argument
+tests/reject/to_str_not_bytes.ty	SEMANTIC	6964	to_str(x) takes bytes or a string newtype
+tests/reject/to_str_two_args.ty	SEMANTIC	6961	to_str(x) takes one argument
+tests/reject/to_u8_two_args.ty	SEMANTIC	6954	to_u8(x) takes one argument
+tests/reject/to_under_not_newtype.ty	SEMANTIC	6992	to_under(x) takes a newtype value, got int
+tests/reject/to_under_two_args.ty	SEMANTIC	6989	to_under(x) takes one argument
+tests/reject/tupidx_non_tuple.ty	SEMANTIC	6128	tuple index .0 on a non-tuple value (int)
 tests/reject/tuple_arity_max.ty	SYNTAX	2456	a tuple has at most 8 elements
 tests/reject/tuple_arity_min.ty	SYNTAX	2461	a tuple type needs at least two elements; parentheses do not group a type, so write it bare
-tests/reject/tuple_elem_index_assign.ty	TYPE	8821	can only index-assign an array or map variable or field
-tests/reject/tuple_index.ty	TYPE	6292	a tuple element is named `.0`, `.1`, ... not `[i]` -- the index must be a constant position, so it is not a subscript
-tests/reject/tuple_index_range.ty	TYPE	6107	tuple index 10 out of range (the tuple has 2 elements)
-tests/reject/tuple_lit_arity_min.ty	SEMANTIC	6090	a tuple needs at least two elements
-tests/reject/tuple_lit_elem_void.ty	SEMANTIC	6096	tuple element 2 needs a concrete value
+tests/reject/tuple_elem_index_assign.ty	TYPE	8872	can only index-assign an array or map variable or field
+tests/reject/tuple_index.ty	TYPE	6315	a tuple element is named `.0`, `.1`, ... not `[i]` -- the index must be a constant position, so it is not a subscript
+tests/reject/tuple_index_range.ty	TYPE	6130	tuple index 10 out of range (the tuple has 2 elements)
+tests/reject/tuple_lit_arity_min.ty	SEMANTIC	6113	a tuple needs at least two elements
+tests/reject/tuple_lit_elem_void.ty	SEMANTIC	6119	tuple element 2 needs a concrete value
 tests/reject/two_stmts_one_line.ty	SYNTAX	2078	expected newline
 tests/reject/type_forward_unknown.ty	TYPE	2676	unknown type 'Q'; did you mean 'S'?
-tests/reject/type_mismatch.ty	TYPE	7217	argument 1 of 'print' is int, expected string -- wrap it with str(...), e.g. print(str(x))
+tests/reject/type_mismatch.ty	TYPE	7268	argument 1 of 'print' is int, expected string -- wrap it with str(...), e.g. print(str(x))
 tests/reject/typeargs_empty.ty	SYNTAX	3022	'id$()' needs at least one explicit type argument
 tests/reject/typeset_badtp.ty	SYNTAX	4394	`where Q: ...`: 'Q' is not a type parameter of this function
-tests/reject/typeset_notin.ty	SEMANTIC	9088	'pick' instantiated with T = float, which is not in the type set { int | string }
-tests/reject/ufcs_builtin_bad_recv.ty	TYPE	7027	push's first argument must be an array or soa
-tests/reject/underscore_not_discard.ty	NAME	8495	`_` is not a discard -- it is an ordinary variable, and this one was never declared. To drop a result, call it as a statement (`f(x)`); to keep it, name it (`x := f(x)`)
-tests/reject/underscore_tuple_not_discard.ty	NAME	8475	`_` is not a discard -- it is an ordinary variable, and this one was never declared. Name every element, or declare `_` once with `:=` and reuse it
-tests/reject/unknown_fn_stmt.ty	NAME	7171	unknown procedure 'nofunc'
+tests/reject/typeset_notin.ty	SEMANTIC	9139	'pick' instantiated with T = float, which is not in the type set { int | string }
+tests/reject/ufcs_builtin_bad_recv.ty	TYPE	7078	push's first argument must be an array or soa
+tests/reject/underscore_not_discard.ty	NAME	8546	`_` is not a discard -- it is an ordinary variable, and this one was never declared. To drop a result, call it as a statement (`f(x)`); to keep it, name it (`x := f(x)`)
+tests/reject/underscore_tuple_not_discard.ty	NAME	8526	`_` is not a discard -- it is an ordinary variable, and this one was never declared. Name every element, or declare `_` once with `:=` and reuse it
+tests/reject/unknown_fn_stmt.ty	NAME	7222	unknown procedure 'nofunc'
 tests/reject/unknown_type.ty	TYPE	2676	unknown type 'cool'; did you mean 'bool'?
-tests/reject/unknown_var.ty	NAME	6198	unknown variable 'nosuchvar'
+tests/reject/unknown_var.ty	NAME	6221	unknown variable 'nosuchvar'
 tests/reject/upper_bind_local_used.ty	SYNTAX	2987	'Ok' cannot name a binding -- a local, parameter or pattern binding must start with a lowercase letter or '_'; as a value it is a constructor: Ok(x)
 tests/reject/upper_bind_param_used.ty	SYNTAX	2987	'Ok' cannot name a binding -- a local, parameter or pattern binding must start with a lowercase letter or '_'; as a value it is a constructor: Ok(x)
-tests/reject/upper_local.ty	NAME	5618	'Total' cannot name a binding -- a local, parameter or pattern binding must start with a lowercase letter or '_'
-tests/reject/upper_param.ty	NAME	5618	'Limit' cannot name a binding -- a local, parameter or pattern binding must start with a lowercase letter or '_'
+tests/reject/upper_local.ty	NAME	5641	'Total' cannot name a binding -- a local, parameter or pattern binding must start with a lowercase letter or '_'
+tests/reject/upper_param.ty	NAME	5641	'Limit' cannot name a binding -- a local, parameter or pattern binding must start with a lowercase letter or '_'
 tests/reject/value_arm_no_tail.ty	SYNTAX	3418	a value branch must end in a value expression
-tests/reject/value_ctrl_all_diverge.ty	SEMANTIC	8368	every branch of this value if/match diverges, so there is no value to bind to 'x' -- write the if/match as a plain statement
-tests/reject/value_ctrl_bare_none.ty	SEMANTIC	8373	cannot infer the type of this branch — a bare Ok/Err/None is fixed only by a destination type, and neither := nor x : T = flows one in; write the branch with a concrete type, or bind it via an assignment/return
-tests/reject/value_ctrl_task.ty	SEMANTIC	8387	a value if/match cannot produce a task handle
-tests/reject/value_ctrl_void_branch.ty	SEMANTIC	8375	a value if/match branch must produce a value, not void
-tests/reject/variadic_empty_generic.ty	SEMANTIC	7132	cannot infer the element type of an empty variadic call to generic 'count'; pass at least one argument, or name the type: count$(<type>)()
-tests/reject/variadic_empty_untyped.ty	SEMANTIC	7132	cannot infer the element type of an empty variadic call to generic 'count'; pass at least one argument, or name the type: count$(<type>)()
+tests/reject/value_ctrl_all_diverge.ty	SEMANTIC	8419	every branch of this value if/match diverges, so there is no value to bind to 'x' -- write the if/match as a plain statement
+tests/reject/value_ctrl_bare_none.ty	SEMANTIC	8424	cannot infer the type of this branch — a bare Ok/Err/None is fixed only by a destination type, and neither := nor x : T = flows one in; write the branch with a concrete type, or bind it via an assignment/return
+tests/reject/value_ctrl_task.ty	SEMANTIC	8438	a value if/match cannot produce a task handle
+tests/reject/value_ctrl_void_branch.ty	SEMANTIC	8426	a value if/match branch must produce a value, not void
+tests/reject/variadic_empty_generic.ty	SEMANTIC	7183	cannot infer the element type of an empty variadic call to generic 'count'; pass at least one argument, or name the type: count$(<type>)()
+tests/reject/variadic_empty_untyped.ty	SEMANTIC	7183	cannot infer the element type of an empty variadic call to generic 'count'; pass at least one argument, or name the type: count$(<type>)()
 tests/reject/variadic_inout.ty	SYNTAX	4353	a variadic parameter cannot also be inout or sink
 tests/reject/variadic_not_last.ty	SYNTAX	4371	a variadic parameter must be the last parameter of 'f'
-tests/reject/variadic_spread_mixed.ty	TYPE	7114	a spread argument `x...` must be the only variadic argument to 'sum'
-tests/reject/variadic_spread_nonvariadic.ty	TYPE	5995	spread `...` is only valid as the argument to a variadic parameter
-tests/reject/variadic_too_few_args.ty	SEMANTIC	7108	'f' takes at least 1 argument(s), got 0
-tests/reject/variant_bare_payload.ty	SEMANTIC	6159	A carries a payload — write A(...)
+tests/reject/variadic_spread_mixed.ty	TYPE	7165	a spread argument `x...` must be the only variadic argument to 'sum'
+tests/reject/variadic_spread_nonvariadic.ty	TYPE	6018	spread `...` is only valid as the argument to a variadic parameter
+tests/reject/variadic_too_few_args.ty	SEMANTIC	7159	'f' takes at least 1 argument(s), got 0
+tests/reject/variant_bare_payload.ty	SEMANTIC	6182	A carries a payload — write A(...)
 tests/reject/variant_named_ok.ty	NAME	4320	'Ok' is already defined
-tests/reject/variant_payload_max.ty	SYNTAX	4824	too many payload fields (max 8)
+tests/reject/variant_payload_max.ty	SYNTAX	4847	too many payload fields (max 8)
 tests/reject/void_as_type.ty	TYPE	2561	'void' is a type only as a Result's ok payload, as in Result(void, string)
-tests/reject/void_bound_to_decl.ty	TYPE	8413	cannot bind a void value
-tests/reject/void_grounds_pending_push.ty	SEMANTIC	5911	cannot infer the type of 'xs' from this use
+tests/reject/void_bound_to_decl.ty	TYPE	8464	cannot bind a void value
+tests/reject/void_grounds_pending_push.ty	SEMANTIC	5934	cannot infer the type of 'xs' from this use
 tests/reject/void_not_a_type.ty	TYPE	2561	'void' is a type only as a Result's ok payload, as in Result(void, string)
-tests/reject/void_push_value.ty	TYPE	7040	push's value must be int
-tests/reject/wait_two_args.ty	SEMANTIC	6806	wait(t) takes one task
+tests/reject/void_push_value.ty	TYPE	7091	push's value must be int
+tests/reject/wait_two_args.ty	SEMANTIC	6856	wait(t) takes one task
 tests/reject/where_bad_tp.ty	SYNTAX	4412	`where` refers to 'Q', which is not a type parameter of this function
 tests/reject/where_constraint_max.ty	SYNTAX	4389	at most 8 `where` constraints per function
-tests/reject/where_defaultable_bad.ty	SEMANTIC	9092	'total' instantiated with T = P, which does not satisfy `defaultable(T)`
-tests/reject/where_hashable_bad.ty	SEMANTIC	9092	'distinct' instantiated with T = float, which does not satisfy `hashable(T)`
+tests/reject/where_defaultable_bad.ty	SEMANTIC	9143	'total' instantiated with T = P, which does not satisfy `defaultable(T)`
+tests/reject/where_hashable_bad.ty	SEMANTIC	9143	'distinct' instantiated with T = float, which does not satisfy `hashable(T)`
 tests/reject/where_nongeneric.ty	SYNTAX	4386	`where` constraints require a generic function (one with a `$T` parameter)
-tests/reject/where_numeric.ty	SEMANTIC	9092	'sm' instantiated with T = string, which does not satisfy `numeric(T)`
+tests/reject/where_numeric.ty	SEMANTIC	9143	'sm' instantiated with T = string, which does not satisfy `numeric(T)`
 tests/reject/where_typeset_max.ty	SYNTAX	4401	at most 16 types in a `where` type set
 tests/reject/where_unknown_pred.ty	SYNTAX	4407	unknown `where` predicate 'fancy' (known: numeric, comparable, has_str, hashable, defaultable -- or use a type set, `T: int | float`)
-tests/reject/zero_bad_type.ty	SEMANTIC	6411	zero$([int]): only int, float, bool, and string are defaultable
-tests/reject/zero_two_typeargs.ty	SEMANTIC	6408	zero$(T) takes exactly one type argument
-tests/reject/zero_value_args.ty	SEMANTIC	6407	zero$(T) takes no value arguments
+tests/reject/zero_bad_type.ty	SEMANTIC	6434	zero$([int]): only int, float, bool, and string are defaultable
+tests/reject/zero_two_typeargs.ty	SEMANTIC	6431	zero$(T) takes exactly one type argument
+tests/reject/zero_value_args.ty	SEMANTIC	6430	zero$(T) takes no value arguments

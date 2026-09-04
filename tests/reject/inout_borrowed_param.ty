@@ -1,4 +1,4 @@
-# src/tychoc.c:7195 -- a borrowed array parameter cannot be re-lent as inout.
+# src/tychoc.c:7246 -- a borrowed array parameter cannot be re-lent as inout.
 # `bump` itself is fine: an inout parameter IS mutable, which is what keeps
 # this rule from refusing every forwarding call.
 # tychoc1 ACCEPTED this under --typecheck until the check was ported into

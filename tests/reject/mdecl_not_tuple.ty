@@ -1,4 +1,4 @@
-# src/tychoc.c:8451 -- a destructuring `:=` takes a tuple apart; an int has no
+# src/tychoc.c:8502 -- a destructuring `:=` takes a tuple apart; an int has no
 # elements to hand out.
 # expect: the right side of a destructuring `:=` must be a tuple, got int
 fn f() -> int:

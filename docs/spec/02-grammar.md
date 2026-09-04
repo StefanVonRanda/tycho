@@ -11,7 +11,7 @@ a later static rule rejects (for example, a value `if` without an `else`, §4.4)
 Such forms are flagged here and constrained in the semantic chapters. A program
 is valid only if it parses **and** satisfies every static-semantic rule.
 
-> Provenance: parser entry `src/tychoc.c:4710-4732` (`parse_program`); the
+> Provenance: parser entry `src/tychoc.c:4733-4755` (`parse_program`); the
 > per-construct functions are cited at each section.
 
 ## 4.1 Program and top-level declarations
@@ -43,7 +43,7 @@ arithmetic, bitwise, unary, and backward references to earlier top-level
 constants); its rules are given in §8 and §13. Package resolution,
 visibility, and merging are specified in §28.
 
-> Provenance: `parse_package_decl` `src/tychoc.c:4956@parse_package_decl`, `parse_import_decl` `:4963@parse_import_decl`, `parse_const`
+> Provenance: `parse_package_decl` `src/tychoc.c:4979@parse_package_decl`, `parse_import_decl` `:4986@parse_import_decl`, `parse_const`
 > (`src/tychoc.c:4677-4696`).
 
 ### 4.1.1 Functions
@@ -84,7 +84,7 @@ constraints are allowed.
 ### 4.1.2 Structs, enums, newtypes, handles
 
 ```ebnf
-Struct     ::= "struct" IDENT TypeParams? ":" NEWLINE INDENT FieldDecl+ DEDENT
+Struct     ::= "packed"? "struct" IDENT TypeParams? ":" NEWLINE INDENT FieldDecl+ DEDENT
 FieldDecl  ::= IDENT ":" Type NEWLINE
 Enum       ::= "enum" IDENT TypeParams? ":" NEWLINE INDENT VariantDecl+ DEDENT
 VariantDecl::= IDENT ( "(" Type ( "," Type )* ")" )? NEWLINE

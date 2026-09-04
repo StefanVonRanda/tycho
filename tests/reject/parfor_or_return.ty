@@ -1,4 +1,4 @@
-# src/tychoc.c:7780 -- a chunk has no early exit, so or_return has nowhere to go.
+# src/tychoc.c:7831 -- a chunk has no early exit, so or_return has nowhere to go.
 # `run` rather than `main`: main may not return Result(int, string).
 # expect: or_return cannot cross a parallel for (no early exit from a chunk)
 fn g(n: int) -> Result(int, string):

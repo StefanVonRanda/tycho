@@ -1,4 +1,4 @@
-# src/tychoc.c:6356 -- a package-qualified name taken as a VALUE, with no
+# src/tychoc.c:6379 -- a package-qualified name taken as a VALUE, with no
 # near-miss for the suggester (fnval_pkg_missing.ty covers the suggesting arm).
 # Both compilers word it identically.
 # expect: package 'strings' has no variant, const or function 'zzqqww'

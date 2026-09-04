@@ -1,0 +1,6 @@
+# expect: size_of$(T) takes no value arguments
+packed struct Ins:
+    op: u8
+
+fn main():
+    println(str(size_of$(Ins)(1)))

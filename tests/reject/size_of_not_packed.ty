@@ -1,0 +1,5 @@
+# expect: size_of$(int): only a packed struct has a stated byte size
+# A byte size is only stated by a packed struct; every other type's layout is
+# the C compiler's business and this language does not promise it.
+fn main():
+    println(str(size_of$(int)()))

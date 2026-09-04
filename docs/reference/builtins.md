@@ -30,6 +30,9 @@ as an operator or keyword (`m[k]`, `k in m`, `delete`, `for x in xs`) lives on i
 | `to_int(x)` | `float -> int` | Truncate toward zero. |
 | `to_bytes(s)` / `to_str(b)` | `string <-> bytes` | Same byte buffer; `bytes` may carry interior NULs. |
 | `to_bytes(xs)` | `[int] -> bytes` | Each element `& 0xFF` into a fresh buffer — builds a binary `bytes` (interior NULs and all) that a `string` can't hold. |
+| `to_bytes(v)` | packed struct `-> bytes` | Exactly `size_of$(T)` bytes, little-endian, fields in declaration order. |
+| `size_of$(T)` | `-> int` | The byte size of a packed struct. |
+| `from_bytes$(T)(b)` | `bytes -> T` | Read a packed struct back. `len(b)` must equal `size_of$(T)` exactly; any other length aborts, naming the type and both lengths. |
 | `chr(n)` | `int -> string` | The one-byte string for byte value `n` (`0`–`255`). |
 | `to_char(n)` | `int -> char` | The byte value `n` as a `char`. Outside `0..255` it **aborts** — where `chr(n)` returns a one-byte *string*, this returns a `char`. |
 

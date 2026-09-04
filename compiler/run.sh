@@ -163,7 +163,10 @@ echo "leg2b tests/reject/*.ty --resolve: SYNTAX+NAME=$((rr+rm_)) rejected=$rr mi
 echo "leg2c tests/reject/*.ty --typecheck: all=$((tr+tm)) rejected=$tr missed=$tm (KNOWN $(echo $KNOWN_TYPE_MISS | wc -w))"
 # SYNTAX 93 -> 95: the two `packed struct` fixtures (V2, 2026-09-04), both
 # raised inside parse_struct and so both the parser's to refuse.
-[ "$nsyn" = 95 ] && [ "$nname" = 33 ] && [ "$ntype" = 164 ] && [ "$nsem" = 256 ] || { echo "parse-check: the split moved -- expected SYNTAX=95 NAME=33 TYPE=164 SEMANTIC=256"; rc=1; }
+# SEMANTIC 256 -> 264: the bytes bridge (V2b) -- seven new rules for
+# from_bytes$(T)/size_of$(T) plus to_bytes over a packed struct, all raised
+# after the parse region and so none of them the parser's.
+[ "$nsyn" = 95 ] && [ "$nname" = 33 ] && [ "$ntype" = 164 ] && [ "$nsem" = 264 ] || { echo "parse-check: the split moved -- expected SYNTAX=95 NAME=33 TYPE=164 SEMANTIC=264"; rc=1; }
 [ "$mr" = 0 ] || { echo "parse-check: a NAME or SEMANTIC fixture was rejected by --parse; a parser has no symbol table"; rc=1; }
 [ "$sa" = 0 ] || { echo "parse-check: a SYNTAX fixture was accepted; the parser must refuse it"; rc=1; }
 [ "$rm_" = 0 ] || { echo "parse-check: a NAME fixture resolved; the resolver must refuse it"; rc=1; }
@@ -173,7 +176,7 @@ echo "leg2c tests/reject/*.ty --typecheck: all=$((tr+tm)) rejected=$tr missed=$t
 got=$(echo $seen_miss | tr ' ' '\n' | LC_ALL=C sort | tr '\n' ' ')
 want=$(echo $KNOWN_TYPE_MISS | tr ' ' '\n' | LC_ALL=C sort | tr '\n' ' ')
 [ "$got" = "$want" ] || { echo "parse-check: the TYPE misses moved"; echo "    now:  $got"; echo "    was:  $want"; rc=1; }
-[ "$tr" = 547 ] || { echo "parse-check: --typecheck refused $tr of 548, expected 547"; rc=1; }
+[ "$tr" = 555 ] || { echo "parse-check: --typecheck refused $tr of 556, expected 555"; rc=1; }
 
 # [3] -- the census, against a recorded golden
 for f in $(ls tests/*.ty) $(find corelib -name '*.ty' | sort) $(find tools examples server bench -name '*.ty' | sort); do
@@ -333,8 +336,8 @@ echo "leg4  declaration rules: refused=$nref/5 accepted=$nacc/5"
 
 # [4b] -- the two package-member formats, which NO verdict leg can see: both
 # spellings are a refusal, so leg2b/5/6/8 are green either way and the wording
-# is decoration until Phase 9 pins message text. src/tychoc.c:6356 answers
-# `pkg.Name` written with NO call; src/tychoc.c:6667 answers `pkg.name(...)`.
+# is decoration until Phase 9 pins message text. src/tychoc.c:6379 answers
+# `pkg.Name` written with NO call; src/tychoc.c:6717 answers `pkg.name(...)`.
 # Both measured against ./tychoc 2026-08-23. The accepting twin is required for
 # the usual reason: two refusals alone are satisfied by refusing everything.
 pr r3_field <<'EOF'
