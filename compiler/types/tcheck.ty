@@ -2916,6 +2916,31 @@ fn _is_place(cs: inout C, e: ast.Expr) -> bool:
         _: return false
     return false
 
+# src/tychoc.c@is_lvalue's E_INDEX arm, which `_is_place` above deliberately is
+# NOT: that one mirrors the STRUCTURAL root walk C spells inline (a root that is
+# not an identifier), and the inout rule at src/tychoc.c:7159 wants exactly that.
+# This one is TYPE-AWARE -- an index step is a mutable interior only over a
+# composite array, an soa or a map, because src/tychoc.c@arr_of sends
+# [int]/[string]/[float] to the scalar array types, which are not ARRC. The raw
+# type is read, not `_base`'d, because is_lvalue reads `e->lhs->type` raw.
+fn _mutable_interior(t: string) -> bool:
+    h := _head(t)
+    if h == "map" or h == "soa" or h == "fix" or h == "bnd":
+        return true
+    if h != "arr":
+        return not known(t)      # unground says nothing either way: fail open
+    el := _targs(t)[0]
+    return el != "int" and el != "string" and el != "float"
+
+fn _is_lvalue(cs: inout C, e: ast.Expr) -> bool:
+    match e:
+        ast.Name(l, n): return true
+        ast.Field(l, k, f): return _is_lvalue(&cs, k[0])
+        ast.Index(l, k): return _mutable_interior(_ex(&cs, k[0])) and _is_lvalue(&cs, k[0])
+        ast.Call(l, q, n, ts, a): return n in cs.subs
+        _: return false
+    return false
+
 # The identifier a place expression is rooted at, after stripping field and
 # index steps -- every place rule in `src/tychoc.c` walks E_FIELD/E_INDEX the
 # same way before testing the root. "" when
@@ -3023,11 +3048,20 @@ fn _place_ty(cs: inout C, e: ast.Expr) -> string:
             rt := _base(&cs, _ex(&cs, k[0]))
             h := _head(rt)
             cs.line = l
+            # src/tychoc.c:8788 (the root walk), :8797 (is_lvalue), then :8820
+            # (the container type) -- three rules in that order, where this arm
+            # used to test the container first and fold the other two together.
+            if not _is_place(&cs, k[0]):
+                _cerr(&cs, "can only index-assign an array or map variable or field")
+                return "?"
+            if not _is_lvalue(&cs, k[0]):
+                _cerr(&cs, "cannot index-assign through this expression (only a variable, field, composite-array element, or map value is a place)")
+                return "?"
+            cs.line = l
             if rt == "string":
                 _cerr(&cs, "cannot index-assign an element of string (it is immutable)")
                 return "?"
-            if _head(rt) == "tup" or (known(rt) and not (_is_arr(rt) or h == "map" or h == "soa")) or
-                    not _is_place(&cs, k[0]):
+            if _head(rt) == "tup" or (known(rt) and not (_is_arr(rt) or h == "map" or h == "soa")):
                 _cerr(&cs, "can only index-assign an array or map variable or field")
                 return "?"
             it := _ex(&cs, k[1])

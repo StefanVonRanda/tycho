@@ -1,8 +1,7 @@
 # src/tychoc.c:8797 -- the base being indexed must itself be a place, and
-# `rows[0]` is a string, which is not.
-# No pinned expectation: scored against ./tychoc1, whose `_place_ty` reaches
-# the string-element rule (`cannot index-assign an element of string`) before
-# the place test, the reverse of the bootstrap's order.
+# `rows[0]` is a string element of a SCALAR array, which is not. Pinned since
+# compiler/types/tcheck.ty@_is_lvalue made tychoc1's place test type-aware too.
+# expect: cannot index-assign through this expression (only a variable, field, composite-array element, or map value is a place)
 fn main():
     rows := ["ab", "cd"]
     rows[0][1] = 'z'

@@ -521,11 +521,11 @@ def main():
         # this at another b/identity entry when the rule below is ported -- a
         # green [c4] with a dead [c5] means the classifier is right and nothing
         # is driving it.
-        LIVE = "tests/reject/index_assign_string_elem.ty"
+        LIVE = "tests/reject/generic_bounded_field_degraded.ty"
         got = dict((p, h) for v in hit.values() for p, h in v).get(LIVE)
         if got == "IDENTITY":
-            print("  selfcheck [c5] %s: tychoc refuses on its own rule and tychoc1 on the "
-                  "string-element rule -- scored IDENTITY, not coverage" % LIVE)
+            print("  selfcheck [c5] %s: tychoc refuses on its own rule and tychoc1 on "
+                  "another -- scored IDENTITY, not coverage" % LIVE)
         else:
             print("  selfcheck [c5] FAILED: %s scored %s, expected IDENTITY" % (LIVE, got)); rc = 1
         return rc

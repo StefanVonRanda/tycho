@@ -100,7 +100,7 @@ corpus_census() {
         grep -q '^# expect: ' "$cc_e" && cc_exp=$((cc_exp + 1))
     done
     [ "$cc_show" = print ] && printf 'count %-10s %d\n' reject-expect "$cc_exp"
-    [ "$cc_exp" -eq 346 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=346"
+    [ "$cc_exp" -eq 347 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=347"
 
     cc_dirs=0
     for cc_d in $(git ls-files tests 2>/dev/null | grep '\.ty$' | sed 's|/[^/]*$||' | sort -u); do
