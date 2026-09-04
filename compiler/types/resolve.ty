@@ -204,7 +204,7 @@ fn _edit(a: string, b: string) -> int:
         prev = cur
     return prev[lb]
 
-fn _dym(name: string, cands: [string]) -> string:
+fn _dym_best(name: string, cands: [string]) -> string:
     best := ""
     bestd := 99
     for c in cands:
@@ -218,7 +218,13 @@ fn _dym(name: string, cands: [string]) -> string:
     if len(name) <= 4:
         lim = 1
     if bestd <= lim and len(best) > 0:
-        return "; did you mean '" + best + "'?"
+        return best
+    return ""
+
+fn _dym(name: string, cands: [string]) -> string:
+    b := _dym_best(name, cands)
+    if len(b) > 0:
+        return "; did you mean '" + b + "'?"
     return ""
 
 # The candidate sets each site draws from: locals in scope, and table symbols
@@ -235,6 +241,40 @@ fn _scands(rs: inout R, kind: string) -> [string]:
         if sy.kind == kind:
             push(out, _short(sy.name))
     return out
+
+# The package did-you-mean is NOT the plain edit-distance one. `suggest_pkg_symbol`
+# has a SECOND arm: when no candidate is close enough, the first symbol where one
+# of the two names is a prefix of the other and both are at least 4 bytes long is
+# offered instead (`to_uppe` ~ `to_upper`). Porting only the first arm would agree
+# on the two fixtures here and disagree elsewhere, so both are carried over.
+# Candidates are the package's entries in the SIG table, which is fns and externs:
+# an UNINSTANTIATED generic is absent there too, and the bootstrap checks
+# `generic_find` on its own before ever reaching this.
+fn _pkg_cands(rs: inout R, prefix: string) -> [string]:
+    out := []string
+    for sy in rs.syms:
+        if sy.kind != "fn" and sy.kind != "extern":
+            continue
+        if len(sy.name) <= len(prefix):
+            continue
+        if not strings.starts_with(sy.name, prefix):
+            continue
+        push(out, sy.name[len(prefix):])
+    return out
+
+fn _pkg_dym(rs: inout R, q: string, name: string) -> string:
+    cands := _pkg_cands(&rs, _prefix_for(&rs, q))
+    b := _dym_best(name, cands)
+    if len(b) == 0 and len(name) >= 4:
+        for c in cands:
+            if len(c) < 4:
+                continue
+            if strings.starts_with(name, c) or strings.starts_with(c, name):
+                b = c
+                break
+    if len(b) == 0:
+        return ""
+    return "; did you mean '" + b + "'?"
 
 # A warning is never fatal: it is collected and printed to stderr after the
 # build succeeds, which is what the tests/warn goldens capture.
@@ -725,7 +765,8 @@ fn _expr(rs: inout R, bi: [string: bool], ctors: [string: bool], e: ast.Expr):
                     imp := ""
                     if not _imported_here(&rs, q):
                         imp = " -- and this file does not `import` it; add the import first"
-                    _err(&rs, "package '" + q + "' has no symbol '" + n + "'" + imp)
+                    sg := _pkg_dym(&rs, q, n)
+                    _err(&rs, "package '" + q + "' has no symbol '" + n + "'" + sg + imp)
             else:
                 # UFCS: `b.twice()` calls `twice`, and report_dead counts calls.
                 _note(&rs, "method:" + n)
@@ -749,7 +790,8 @@ fn _expr(rs: inout R, bi: [string: bool], ctors: [string: bool], e: ast.Expr):
                                 _note(&rs, "fnval:" + m)
                                 _dwarnq(&rs, m, q + "." + f)
                         else:
-                            _err(&rs, "package '" + q + "' has no variant, const or function '" + f + "'")
+                            sg := _pkg_dym(&rs, q, f)
+                            _err(&rs, "package '" + q + "' has no variant, const or function '" + f + "'" + sg)
                         return
                     _note(&rs, "field")
                     return
