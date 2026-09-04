@@ -1,0 +1,9 @@
+# expect: cannot mix a vector and an array in element-wise `+` (got vector[4]float, [4]float) -- copy one side into the other's kind first
+# Same element type, same length, and they still lower differently: one machine
+# instruction against a loop. Refused by its own rule rather than by the static
+# length rule, which would be a false sentence here.
+fn main():
+    a: vector[4]float = [1.0, 2.0, 3.0, 4.0]
+    b: [4]float = [1.0, 2.0, 3.0, 4.0]
+    c := a + b
+    println(str(len(c)))

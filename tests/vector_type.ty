@@ -1,0 +1,60 @@
+# `vector[N]T` (V3): a fixed array whose arithmetic lowers to ONE machine vector
+# instruction instead of a loop the optimiser may or may not vectorise. Q2 (V0)
+# chose generic-over-the-count, power-of-two constrained -- where Zig, Odin and
+# Rust's portable SIMD all landed -- because a width the target lacks is split
+# by gcc/clang below us.
+#
+# This golden CANNOT see the feature: every line below prints the same answer
+# through a plain [N]T. What it pins is the SEMANTICS -- lane order under a
+# non-commutative broadcast, int `/` still trapping through the runtime guard,
+# equality staying all-lanes. The lowering itself is scripts/vector_check.sh's
+# subject, because only the emitted C and the assembly can show it.
+
+struct Body:                 # a vector is a plain value: it nests by value
+    pos: vector[4]float
+    id: int
+
+fn axpy(a: float, x: vector[4]float, y: vector[4]float) -> vector[4]float:
+    return x * a + y       # passed and returned by value, no arena involved
+
+fn main():
+    a: vector[4]float = [1.0, 2.0, 3.0, 4.0]
+    b: vector[4]float = [10.0, 20.0, 30.0, 40.0]
+    println(str(len(a)) + " " + str(a[0]) + " " + str(a[3]))
+
+    s := a + b
+    d := b - a
+    p := a * b
+    q := b / a
+    println(str(s[0]) + " " + str(d[1]) + " " + str(p[2]) + " " + str(q[3]))
+
+    # broadcast, and the ORDER is kept: `2.0 - a` is not `a - 2.0`
+    println(str((a * 2.0)[1]) + " " + str((2.0 - a)[0]) + " " + str((a - 2.0)[0]))
+
+    println(str(axpy(3.0, a, b)[2]))
+
+    # write through a lane, then read it back
+    m := a
+    m[0] = 99.0
+    println(str(m[0]) + " " + str(a[0]))
+
+    # equality is all-lanes, and it is the whole vector that is compared
+    println(str(a == a) + " " + str(a == b) + " " + str(m == a))
+
+    # integers: `/` and `%` keep the runtime guard, so they stay lane-wise
+    i: vector[2]int = [17, -9]
+    j: vector[2]int = [5, 4]
+    println(str((i + j)[0]) + " " + str((i * j)[1]) + " " + str((i / j)[0]) + " " + str((i % j)[1]))
+
+    # f32 is the third element type
+    f: vector[2]f32 = [1.5, 2.5]
+    g := f + f
+    println(str(to_float(g[0])) + " " + str(to_float(g[1])))
+
+    # a power-of-two count larger than one register's worth: gcc splits it
+    w: vector[8]float = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+    z := w * w
+    println(str(len(z)) + " " + str(z[0]) + " " + str(z[7]))
+
+    bd := Body(a, 7)
+    println(str(bd.pos[3]) + " " + str(bd.id))

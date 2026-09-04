@@ -1,4 +1,4 @@
-# src/tychoc.c:6248. A bare `[]` where NOTHING can type it: `len(x)` synthesizes
+# src/tychoc.c:6285. A bare `[]` where NOTHING can type it: `len(x)` synthesizes
 # its argument, so no expected type reaches the literal. tychoc1 accepted this
 # until `_ex2` grew a spelling for NO expected type ("") distinct from one this
 # pass could not compute ("?") -- with a single "?" for both, exempting the

@@ -52,9 +52,8 @@ the diff says exactly what grew.
 
 ### Queued behind the freeze
 
-Three features are accepted in principle and deliberately not built yet. They
-are recorded here so the freeze does not quietly become a decision never to
-revisit:
+Two of the three features below have shipped; the third is recorded here so the
+freeze does not quietly become a decision never to revisit it:
 
 - **Alignment and packed layout.** The `packed` half SHIPPED on 2026-09-04 and
   is the freeze's first deliberate exception: `packed struct` is a declaration
@@ -62,18 +61,25 @@ revisit:
   ([spec 17.1a](docs/spec/12-aggregates.md#171a-packed-layout)), recorded in
   `surface.lock` in the same commit. It was measured first: 141 sites across 7
   files hand-assemble a binary record one byte at a time today. The `align` half
-  is NOT shipped -- it has one caller, and that caller is vectors, so it lands
-  with them.
-- **Vectors.** `soa` gives contiguous columns; vector types are what consume
-  them. Without them, vectorisation is whatever the C compiler happens to do,
-  which is the wrong thing to leave to luck in a data-oriented language.
+  is NOT shipped and no longer has a claimed caller -- see the vectors entry
+  below, which was that caller and turned out not to need it.
+- **Vectors.** SHIPPED on 2026-09-04, the freeze's second deliberate exception.
+  `vector[N]T` is a fixed array whose arithmetic lowers to one machine vector
+  operation ([spec 5.3.11](docs/spec/03-types.md#5311-vectornt)); the count is
+  generic and power-of-two constrained, which is where Zig, Odin and Rust's
+  portable SIMD all landed, and a width the target lacks is split by the C
+  compiler below us. `vector` is recorded in `surface.lock` in the same commit.
+  The claim that this needed `align` first turned out to be FALSE, and measuring
+  it is what settled it: the emitted aggregate is pinned to the 8-byte alignment
+  the arena already guarantees, and the arithmetic is still a single instruction
+  there. No allocator change was made.
 - **Groups.** Simultaneous assignment, and the field form that permutes several
   fields at once. It pairs with vectors, and it replaces the temporaries that a
   swap needs today.
 
-Alignment comes first, because vectors without it buy little, and groups follow
-vectors because that is where the notation earns its keep. `packed` is done; the
-remaining order is `align`, then vectors, then groups.
+`packed` and vectors are done. `align` is no longer on the path to anything --
+its one claimed caller was vectors, and vectors did not need it -- so it is now
+a feature waiting for a caller rather than a prerequisite. Groups are next.
 
 Not queued: compile-time execution, and field promotion (`using`). The first is
 deferred, the second refused -- a bare field name should say where it came from.

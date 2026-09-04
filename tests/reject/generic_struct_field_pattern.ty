@@ -1,4 +1,4 @@
-# src/tychoc.c:6788 -- both fields are $T, so the second value must unify with
+# src/tychoc.c:6825 -- both fields are $T, so the second value must unify with
 # the binding the first one made.
 # expect: field 'b' of Pair does not fit a string argument
 struct Pair($T):

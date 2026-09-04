@@ -1,4 +1,4 @@
-# src/tychoc.c:6063 -- the closure sibling of tests/reject/parfor_capture_handle.ty.
+# src/tychoc.c:6100 -- the closure sibling of tests/reject/parfor_capture_handle.ty.
 # The closure outlives the scope that frees the handle.
 # expect: a closure cannot capture a handle -- it is freed at the end of its scope
 handle R:

@@ -369,7 +369,7 @@ fn _heapish(t: string) -> bool:
     if t == "string" or t == "bytes":
         return true
     h := _head(t)
-    return h == "arr" or h == "map" or h == "soa" or h == "tup" or h == "fix" or h == "bnd"
+    return h == "arr" or h == "map" or h == "soa" or h == "tup" or h == "fix" or h == "bnd" or h == "vec"
 
 fn _agg_names(e: ast.Expr, out: inout [string]):
     match e:

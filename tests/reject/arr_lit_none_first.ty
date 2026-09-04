@@ -1,4 +1,4 @@
-# src/tychoc.c:6256 -- the first element fixes the array's type, and a bare None
+# src/tychoc.c:6293 -- the first element fixes the array's type, and a bare None
 # names no Option. With a DECLARED element type it is fine, which is why this
 # fixture must not annotate: `xs: [Option(int)] = [None, Some(1)]` compiles.
 # expect: cannot infer the array's element type from None

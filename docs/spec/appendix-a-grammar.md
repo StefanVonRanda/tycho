@@ -91,6 +91,7 @@ Subscript  ::= "subscript" IDENT "(" ParamList? ")" "->" "inout" Type ":" NEWLIN
 Type      ::= "$" IDENT                                        /* type parameter */
             | "soa" "[" Type "]"                               /* struct-of-arrays */
             | "bounded" "[" ( INT | IDENT ) "]" Type            /* bounded[N]T / bounded[C]T, C an int const */
+            | "vector" "[" ( INT | IDENT ) "]" Type             /* vector[N]T, N a power of two 2..64 */
             | "fn" "(" ( Type ( "," Type )* )? ")" ( "->" Type )?
             | "(" Type ( "," Type )+ ")"                       /* tuple, 2..8 elements */
             | "[" ArrayOrMap
@@ -206,7 +207,7 @@ escape either, so it cannot contain a backtick; one is written by joining a
 `StrPiece`, so it joins with adjacent pieces of either kind, and there is no
 `` f`…` `` interpolated raw form.
 
-> Provenance: `src/tychoc.c:497-573`; adjacent join `:2494-2528`;
+> Provenance: `src/tychoc.c:497-573`; adjacent join `:2531-2565`;
 > [§3.9.4](01-lexical.md#394-string-literals). Fixtures:
 > `tests/rawstring.ty`, `tests/reject/rawstring_unterminated.ty`.
 

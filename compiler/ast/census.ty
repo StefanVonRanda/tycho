@@ -38,6 +38,9 @@ fn _ct(t: Ty, acc: [string]) -> [string]:
         TBnd(sz, k):
             push(out, "t.TBnd")
             out = _ct(k[0], out)
+        TVec(sz, k):
+            push(out, "t.TVec")
+            out = _ct(k[0], out)
     return out
 
 fn _cts(ts: [Ty], acc: [string]) -> [string]:

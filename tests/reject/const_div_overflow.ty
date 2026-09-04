@@ -1,7 +1,7 @@
 # expect: const expression overflows: the smallest int divided by -1 has no int value
 # Both compilers diagnose this since the const fold in compiler/parse/parse.ty
 # grew the min/-1 guard; tychoc1 used to TRAP, printing `tycho: division
-# overflow`. src/tychoc.c:5248.
+# overflow`. src/tychoc.c:5285.
 const LO = -9223372036854775807 - 1
 const C = LO / -1
 fn main():

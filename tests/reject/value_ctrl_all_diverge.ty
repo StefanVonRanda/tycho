@@ -1,4 +1,4 @@
-# src/tychoc.c:8419 -- every branch dies, so the value if/match has no tail to
+# src/tychoc.c:8464 -- every branch dies, so the value if/match has no tail to
 # bind and the local would be declared void.
 # expect: every branch of this value if/match diverges, so there is no value to bind to 'x' -- write the if/match as a plain statement
 fn main():

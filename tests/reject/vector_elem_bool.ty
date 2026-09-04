@@ -1,0 +1,6 @@
+# expect: a vector element must be int, float or f32 -- bool is not
+# The element set is an ALLOW-list, unlike bounded's refuse-list, because every
+# admitted type has to survive being applied lane-wise by one C operator.
+fn main():
+    v: vector[4]bool = [true, false, true, false]
+    println(str(len(v)))

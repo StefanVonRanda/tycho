@@ -14,8 +14,8 @@ types differ (for example, a C backend MUST realize `int` as a 64-bit type even
 on a target where C `long` is 32 bits).
 
 > Provenance: scalar tags `src/tychoc.c:766-787`; C lowering `c_type`
-> `:1570-1610`; equality/ordering `:7099-7132`; newtype decl `parse_typedecl`
-> `:4509-4528`.
+> `:1578-1618`; equality/ordering `:7136-7169`; newtype decl `parse_typedecl`
+> `:4546-4565`.
 
 ## 5.1 The type-identity model
 
@@ -229,9 +229,9 @@ dynamic element — `[bool]` is a supported array type — and is rejected only 
 the inline fixed-capacity forms `[N]T`, `[$N]T` and `bounded[N]T`, which have no
 bool codegen.
 
-> Provenance: dynamic `[T]` tests `void` alone (`src/tychoc.c:2538@elem`); the
-> fixed forms test both (`src/tychoc.c:2162-2163`), as does `bounded[N]T`
-> (`src/tychoc.c:2053-2054`). Detailed in
+> Provenance: dynamic `[T]` tests `void` alone (`src/tychoc.c:2575@elem`); the
+> fixed forms test both (`src/tychoc.c:2171-2172`), as does `bounded[N]T`
+> (`src/tychoc.c:2062-2063`). Detailed in
 > [§16.7](12-aggregates.md#167-element-type-restriction).
 
 ### 5.3.2 Fixed-size arrays `[N]T`
@@ -332,7 +332,7 @@ as a top-level key type.
 Map operations (`m[k]` as a place, absent-key read yielding the value's zero,
 `k in m`, `delete m[k]`, `m.get`) are specified in §18.
 
-> Provenance: `map_of` `src/tychoc.c:1505-1534`; `key_hashable` `:1457-1471`.
+> Provenance: `map_of` `src/tychoc.c:1513-1542`; `key_hashable` `:1465-1479`.
 
 ### 5.3.6 Enums, `Option`, `Result`
 
@@ -446,6 +446,61 @@ compile time. Indexing, index assignment, `==`, value copy, `str`, and `for … 
 iteration behave as they do for a fixed-size array. `pop`, slicing, and
 `reserve` MUST be rejected on a `bounded` value.
 
+### 5.3.11 `vector[N]T`
+
+`vector[N]T` is a fixed-size array whose arithmetic is defined to lower to a
+**single machine vector operation** rather than to a loop over its lanes. In
+every other respect it behaves as a [`[N]T`](#532-fixed-size-arrays-nt): it is
+an inline value of exactly `N` elements, copied by value, initialised from an
+array literal, indexed and index-assigned, compared with `==` lane by lane, and
+`len` yields `N`.
+
+The count `N` MUST be written either as an integer **literal** or as the name of
+an `int` `const`, and its value MUST be a **power of two between 2 and 64**. A
+count of `1` is a power of two and is nevertheless rejected: a one-lane vector
+is a scalar under another spelling. The count is part of the type, so
+`vector[4]float` and `vector[8]float` are distinct types, and both are distinct
+from `[4]float`.
+
+A width no target register holds is **not** an error: the C backend's vector
+attribute takes any power-of-two size and the C compiler splits it across as
+many registers as the machine has. `vector[8]float` is legal on a machine with
+128-bit registers and lowers to two operations there.
+
+The element type `T` MUST be `int`, `float` or `f32`. The set is an allow-list
+rather than a refuse-list because every admitted type has to survive being
+applied lane-wise by one operator; a type parameter `$T` is not in it, so a
+`vector` never appears in a generic template's own signature.
+
+Element-wise arithmetic ([§16.8](12-aggregates.md#168-element-wise-arithmetic)) applies with the same operator set a `[N]T` has,
+including the scalar broadcast and its operand order. A `vector` and an array of
+the same element type and length are **distinct** and MUST NOT be mixed in one
+element-wise expression, even though they hold the same values: the two lower
+differently, and the diagnostic says so rather than reporting a length mismatch.
+
+Integer `/` and `%` keep the runtime divide guard of §16.8 and are therefore
+evaluated lane by lane; every other admitted operator is a single vector
+operation.
+
+```tycho
+fn main():
+    a: vector[4]float = [1.0, 2.0, 3.0, 4.0]
+    b: vector[4]float = [10.0, 20.0, 30.0, 40.0]
+    c := a * 2.0 + b
+    println(str(len(c)) + " " + str(c[0]) + " " + str(c[3]))
+```
+
+```output
+4 12.0 48.0
+```
+
+> Provenance: `src/tychoc.c@vec_of`, and the lowering at
+> `src/tychoc.c@gen_ew_arith`. The alignment the emitted aggregate asks for is
+> pinned to the 8 bytes `runtime/tycho_rt.c@arena_alloc_slow` guarantees, so a
+> vector-holding value is never under-aligned in an arena. Gated by
+> `scripts/vector_check.sh`, which is the only lane in this tree whose subject
+> is a machine instruction.
+
 ## 5.4 Newtypes
 
 ```ebnf
@@ -497,5 +552,5 @@ One asymmetry follows and is intentional: `bool` is comparable and `str`-able bu
 is not ordered. (`char` is comparable, ordered, and `str`-able — its `str` is the
 one-byte glyph.)
 
-> Provenance: `src/tychoc.c:6825-6858` (equality/ordering resolver); function-
-> value identity equality `:10388@identity equality`.
+> Provenance: `src/tychoc.c:6862-6895` (equality/ordering resolver); function-
+> value identity equality `:10433@identity equality`.

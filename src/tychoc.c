@@ -1136,9 +1136,17 @@ static Type arrc_sized(Type elem, int64_t size) { return arrc_sized_b(elem, size
 static Type arrc_of(Type elem) { return arrc_sized(elem, 0); }             /* dynamic [elem] */
 static Type fixarr_of(Type elem, int64_t n) { return arrc_sized(elem, n); }   /* fixed [n]elem */
 static Type bounded_of(Type elem, int64_t n) { return arrc_sized_b(elem, n, 1); }  /* bounded[n]elem */
-#define IS_BOUNDED(t) (IS_ARRC(t) && g_arrtypes[ARRC_ID(t)].bnd)
+/* `bnd` is a three-valued kind tag, not a flag: 0 plain, 1 bounded, 2 vector.
+ * A `vector[N]T` IS a fixed array in every rule that already exists -- inline
+ * v[N] storage, a literal, len(), ==, str(), element-wise arithmetic -- and
+ * differs only in the C body it emits (one GCC vector member) and in the two
+ * legality rules its own parse arm raises. That is why IS_FIXARR admits it and
+ * IS_BOUNDED had to stop testing `bnd` for truth. */
+static Type vec_of(Type elem, int64_t n) { return arrc_sized_b(elem, n, 2); }      /* vector[n]elem */
+#define IS_BOUNDED(t) (IS_ARRC(t) && g_arrtypes[ARRC_ID(t)].bnd == 1)
+#define IS_VEC(t)     (IS_ARRC(t) && g_arrtypes[ARRC_ID(t)].bnd == 2)
 static int64_t bounded_cap(Type t) { return g_arrtypes[ARRC_ID(t)].size; }
-#define IS_FIXARR(t) (IS_ARRC(t) && g_arrtypes[ARRC_ID(t)].size > 0 && !g_arrtypes[ARRC_ID(t)].bnd)
+#define IS_FIXARR(t) (IS_ARRC(t) && g_arrtypes[ARRC_ID(t)].size > 0 && g_arrtypes[ARRC_ID(t)].bnd != 1)
 /* const generics 1.6B: `[$N]T` — the size is a *parameter* (encoded as a NEGATIVE
  * size, see sizeparam_enc). Template-only: never a concrete fixed array, never emitted. */
 #define IS_SIZEPARAM_ARR(t) (IS_ARRC(t) && g_arrtypes[ARRC_ID(t)].size < 0)
@@ -1824,6 +1832,7 @@ static const char *type_name(Type t) {
     if (IS_ARRC(t)) {   /* [T] dynamic, [N]T fixed (1.6), [$N]T size-param (1.6B), bounded[N]T */
         int64_t sz = g_arrtypes[ARRC_ID(t)].size;
         if (IS_BOUNDED(t)) return sfmt("bounded[%lld]%s", (long long)sz, type_name(arr_elem(t)));
+        if (IS_VEC(t)) return sfmt("vector[%lld]%s", (long long)sz, type_name(arr_elem(t)));
         if (sz > 0) return sfmt("[%lld]%s", (long long)sz, type_name(arr_elem(t)));
         if (sz < 0) return sfmt("[$%s]%s", g_sizeparams[sizeparam_id(sz)].name, type_name(arr_elem(t)));
         return sfmt("[%s]", type_name(arr_elem(t)));
@@ -2430,6 +2439,34 @@ static Type parse_type_inner(Parser *ps) {
             die_at(t->line, "a bounded element cannot be bool or void");
         return bounded_of(belem, cap);
     }
+    if (t->kind == TK_IDENT && !strcmp(t->text, "vector")) {   /* vector[N]T: a fixed array that lowers to one machine vector */
+        ps->p++;
+        eat(ps, TK_LBRACKET, "'[' after vector");
+        int64_t n;   /* lane count N: an int literal or an int `const` name, same as bounded[N]T */
+        if (at(ps, TK_INT)) { n = cur(ps)->ival; ps->p++; }
+        else if (at(ps, TK_IDENT)) {
+            Expr *cf = consts_find(pkg_mangle(cur(ps)->text));
+            if (!cf || cf->kind != E_INT)
+                die_at(cur(ps)->line, "a vector count must be an integer literal or an int `const` -- '%s' is not", cur(ps)->text);
+            n = cf->ival; ps->p++;
+        } else die_at(cur(ps)->line, "vector needs a count: vector[N]T");
+        /* Q2 (V0): generic over the count, POWER-OF-TWO constrained -- where Zig,
+         * Odin and Rust's portable SIMD all landed. A width the target lacks is
+         * split by gcc/clang below us, so the ceiling is about the emitted C
+         * staying sane, not about any one machine. 1 is a power of two and is
+         * excluded deliberately: a one-lane vector is a scalar spelt oddly. */
+        if (n < 2 || n > 64 || (n & (n - 1)) != 0)
+            die_at(t->line, "a vector count must be a power of two between 2 and 64 -- %lld is not", (long long)n);
+        eat(ps, TK_RBRACKET, "']' after the vector count");
+        Type velem = parse_type(ps);
+        /* int, float and f32 only. Every one is a fixed-width numeric whose C
+         * operator set survives being applied lane-wise unchanged; the sized
+         * ints truncate through trunc_result and a `$T` would let subst_type
+         * rebuild a vector over anything at all. */
+        if (velem != T_INT && velem != T_FLOAT && velem != T_F32)
+            die_at(t->line, "a vector element must be int, float or f32 -- %s is not", type_name(velem));
+        return vec_of(velem, n);
+    }
     if (t->kind == TK_FN) {              /* function type: fn(P1, ..., Pn) [-> R] */
         ps->p++;
         eat(ps, TK_LPAREN, "'(' after fn in a function type");
@@ -2552,7 +2589,7 @@ static Type parse_type_inner(Parser *ps) {
             return mt;
         }
         eat(ps, TK_RBRACKET, "']'");
-        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2495) sits after a die_at */
+        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2532) sits after a die_at */
             die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
         return arr_of(elem);   /* fixed [int]/[float]/[string] or a composite */
     }
@@ -2915,7 +2952,7 @@ static Expr *parse_primary(Parser *ps) {
                 e->ival = mt; e->op = TK_COLON;
                 return e;
             }
-            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2307): parse_type never yields T_VOID */
+            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2316): parse_type never yields T_VOID */
                 die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
             e->ival = arr_of(elem);   /* type carried to the resolver */
             return e;
@@ -5878,7 +5915,7 @@ static void collect_idents(Expr *e, const char **out, int *n, int cap) {
     }
     if (e->kind == E_CALL) {   /* Neither name on a call is a child expr: the callee lives in
                                 * sval (`g(x)` where g is a closure) and a method call's RECEIVER
-                                * lives in qual (`m.get(k)`, src/tychoc.c:3284), because the parser
+                                * lives in qual (`m.get(k)`, src/tychoc.c:3321), because the parser
                                 * cannot tell it from a package call. Both are outer reads; missing
                                 * qual let `m` reach the lifted body uncaptured and the C compiler,
                                 * not tychoc, reported `h_m undeclared`. pf_scan_expr already does
@@ -7224,7 +7261,7 @@ static Type resolve_expr_inner(Expr *e) {
             if (e->nargs != s->nparams)
                 die_at(e->line, "'%s' takes %d argument(s), got %d",
                        nominal_name(e->sval), s->nparams, e->nargs);
-            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:6690 */
+            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:6727 */
             for (int i = 0; i < e->nargs; i++) {
                 g_in_arg++;
                 Type at_ = resolve_exp(e->args[i], s->params[i]);   /* fixes a None arg */
@@ -7489,6 +7526,14 @@ static Type resolve_expr_inner(Expr *e) {
                  * element-wise meaning, so refuse rather than guess. */
                 if (IS_BOUNDED(lt) || IS_BOUNDED(rt) || IS_SIZEPARAM_ARR(lt) || IS_SIZEPARAM_ARR(rt))
                     die_at(e->line, "element-wise `%s` is defined for [T] and [N]T only (got %s, %s)",
+                           arith_op_spell(e->op), type_name(lt), type_name(rt));
+                /* a vector and an array agree on element type and length and
+                 * STILL lower differently -- one instruction against a loop. The
+                 * `lt != rt` arm below would refuse the pair anyway, but under a
+                 * message about static length that is false here. Say the rule. */
+                if (IS_VEC(lt) != IS_VEC(rt))
+                    die_at(e->line, "cannot mix a vector and an array in element-wise `%s` (got %s, %s) -- "
+                           "copy one side into the other's kind first",
                            arith_op_spell(e->op), type_name(lt), type_name(rt));
                 if (arr_elem(lt) != arr_elem(rt))
                     die_at(e->line, "element-wise `%s` requires two arrays with the same element type (got %s, %s)",
@@ -7814,7 +7859,7 @@ static void pf_capture(Expr *id) {
 /* capture an outer local named by a STRING rather than by an E_IDENT node -- the
  * callee of `f(x)` and the receiver of `o.f(x)` live in E_CALL's sval/qual, not
  * in a child expr. The synthesized read is resolved in the enclosing scope with
- * every other capture (src/tychoc.c:8426). Non-locals (global fns, builtins,
+ * every other capture (src/tychoc.c:8471). Non-locals (global fns, builtins,
  * enum constructors, package qualifiers) fail vars_find and are dropped. */
 static void pf_capture_name(const char *n, int line) {
     Type vt;
@@ -7837,10 +7882,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7774),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7819),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:8048). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:8093). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
@@ -7861,7 +7906,7 @@ static void pf_scan_expr(Expr *e) {
     }
     /* A call's callee is NOT an E_IDENT child of the node: `f(x)` keeps the name
      * in sval, and `o.f(x)` keeps the receiver in qual because the parser cannot
-     * tell it from a package call (src/tychoc.c:3278). The generic descent below
+     * tell it from a package call (src/tychoc.c:3315). The generic descent below
      * visits lhs/rhs/args only, so a fn-typed local reached the lifted chunk proc
      * uncaptured and the C compiler -- not tychoc -- reported the undeclared name.
      * The lambda capture analysis already does the sval half (src/tychoc.c@collect_idents). */
@@ -9607,7 +9652,7 @@ static const char *for3_elidable_arr(Stmt *s) {
     if (!bound || bound->kind != E_CALL || !bound->sval || strcmp(bound->sval, "len") ||
         bound->nargs != 1 || !bound->args[0] || bound->args[0]->kind != E_IDENT) return NULL;
     if (IS_BOUNDED(bound->args[0]->type)) return NULL;   /* bounded stores in .v, not .data — elision emits .data[i], so never elide it */
-    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:4043-4048) */
+    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:4080-4085) */
     if (!post || post->kind != S_ASSIGN || !post->name || strcmp(post->name, iv)) return NULL;
     Expr *inc = post->expr;
     if (!inc || inc->kind != E_BINOP || inc->op != TK_PLUS) return NULL;
@@ -11015,6 +11060,26 @@ static char *gen_ew_arith(Expr *e, char *l, char *r, const char *arena) {
      * array operands, and a side-effecting scalar is not re-run per element). */
     const char *lct = la ? act : ect, *rct = ra ? act : ect;
     const char *src = la ? "_ewa" : "_ewb";   /* the array side: length + shape */
+    /* vector[N]T: the whole operation is ONE C expression on the vector members,
+     * which is what makes this a SIMD instruction rather than a loop gcc may or
+     * may not vectorise. Only where gen_arith_op would have produced a raw C
+     * operator, though -- int `/` and `%` route through tycho_idiv/tycho_imod
+     * for the LONG_MIN/-1 and divide-by-zero traps, and a guard call cannot be
+     * applied to a whole vector, so those two fall through to the lane loop
+     * below and keep the trap. (x86 has no integer vector divide either way.)
+     * A broadcast scalar needs no splat: gcc applies `vec OP scalar` lane-wise
+     * itself, on either side, order preserved. */
+    if (IS_VEC(at)) {
+        Type b = base_of(et);
+        int raw = (e->op == TK_PLUS || e->op == TK_MINUS || e->op == TK_STAR)
+                  || (e->op == TK_SLASH && (b == T_FLOAT || b == T_F32));
+        if (raw)
+            return sfmt("({ %s_ewa = (%s); %s_ewb = (%s); %s_ewr = %s;\n"
+                        "   _ewr.v = %s %s %s;\n"
+                        "   _ewr; })",
+                        lct, l, rct, r, act, src,
+                        la ? "_ewa.v" : "_ewa", op_str(e->op), ra ? "_ewb.v" : "_ewb");
+    }
     if (IS_FIXARR(at))
         return sfmt("({ %s_ewa = (%s); %s_ewb = (%s); %s_ewr = %s;\n"
                     "   for (tycho_int _ewi = 0; _ewi < %lld; _ewi++) _ewr.v[_ewi] = %s;\n"
@@ -12867,9 +12932,25 @@ static void emit_aggregate(FILE *o, Type t) {
         if (needs_body_first(el)) emit_aggregate(o, el);
         g_arrc_color[id] = 2;
         if (o) {
-            if (g_arrtypes[id].bnd)   /* bounded[N]T: inline storage + a runtime count */
+            if (g_arrtypes[id].bnd == 1)   /* bounded[N]T: inline storage + a runtime count */
                 fprintf(o, "struct TychoArrC%d_ { %s v[%lld]; tycho_int len; };\n",
                         id, c_type(el), (long long)g_arrtypes[id].size);
+            else if (g_arrtypes[id].bnd == 2)
+                /* vector[N]T. The member is a GCC/clang vector, so `v[i]`,
+                 * `&v[i]`, struct assignment and the generated get/set/copy/eq
+                 * loops below all keep working verbatim -- only the arithmetic
+                 * emit differs. Two attributes carry the whole alignment answer
+                 * V0 asked for: `vector_size` alone would demand 16- or 32-byte
+                 * alignment, and runtime/tycho_rt.c@arena_alloc_slow rounds every
+                 * arena allocation to 8. `packed, aligned(8)` pins the aggregate
+                 * at exactly the alignment the arena already guarantees, so no
+                 * allocator change is needed and none was made; gcc then uses
+                 * unaligned moves and the arithmetic is still ONE instruction
+                 * (measured: `addpd %%xmm1, %%xmm0` + `ret`). The size is written
+                 * `N * sizeof(T)` rather than a literal so a 32-bit rebuild
+                 * (make ilp32) computes its own width. */
+                fprintf(o, "struct TychoArrC%d_ { %s v __attribute__((vector_size(%lld * sizeof(%s)))); } __attribute__((packed, aligned(8)));\n",
+                        id, c_type(el), (long long)g_arrtypes[id].size, c_type(el));
             else                      /* fixed-size [N]T (1.6): inline storage, no heap descriptor */
                 fprintf(o, "struct TychoArrC%d_ { %s v[%lld]; };\n",
                         id, c_type(el), (long long)g_arrtypes[id].size);
@@ -13357,7 +13438,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
     for (int i = 0; i < g_narrtypes; i++) {         /* (4) array-op prototypes */
         if (has_typaram(T_ARRC_BASE + i)) continue;   /* generics: `[$T]` from a template -- transient */
         const char *ct = c_type(g_arrtypes[i].elem);
-        if (g_arrtypes[i].bnd) {                       /* bounded[N]T: read/copy/eq like a fixarr, PLUS a trap-on-full push */
+        if (g_arrtypes[i].bnd == 1) {                  /* bounded[N]T: read/copy/eq like a fixarr, PLUS a trap-on-full push */
             fprintf(o, "static void tycho_arr_C%d_push(Arena*, TychoArrC%d*, %s);\n", i, i, ct);
             fprintf(o, "static %stycho_arr_C%d_get(TychoArrC%d, tycho_int);\n", ct, i, i);
             fprintf(o, "static %s*tycho_arr_C%d_ptr(TychoArrC%d*, tycho_int);\n", ct, i, i);
@@ -13507,7 +13588,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
         if (has_typaram(T_ARRC_BASE + i)) continue;   /* generics: `[$T]` from a template -- transient */
         Type et = g_arrtypes[i].elem;
         const char *ct = c_type(et);              /* element C type (trailing space) */
-        if (g_arrtypes[i].bnd) {                  /* bounded[N]T: inline v[N] + runtime len; push traps on overflow */
+        if (g_arrtypes[i].bnd == 1) {             /* bounded[N]T: inline v[N] + runtime len; push traps on overflow */
             int64_t n = g_arrtypes[i].size;          /* capacity */
             fprintf(o,   /* push: trap when full instead of growing (the whole point of a bounded) */
                 "static void tycho_arr_C%d_push(Arena *a, TychoArrC%d *xs, %sv) {\n"
@@ -13960,7 +14041,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
         Type et = g_arrtypes[i].elem;
         fprintf(o, "static char *tycho_str_arr_C%d(Arena *a, TychoArrC%d xs) {\n", i, i);
         fprintf(o, "    char *r = tycho_str_from_c(a, \"[\");\n");
-        if (g_arrtypes[i].bnd) {   /* bounded[N]T: inline storage xs.v[i], runtime count xs.len */
+        if (g_arrtypes[i].bnd == 1) {   /* bounded[N]T: inline storage xs.v[i], runtime count xs.len */
             fprintf(o, "    for (tycho_int i = 0; i < xs.len; i++) {\n");
             fprintf(o, "        if (i) r = tycho_str_concat(a, r, tycho_str_from_c(a, \", \"));\n");
             fprintf(o, "        r = tycho_str_concat(a, r, %s);\n", gen_str(et, "a", "xs.v[i]"));

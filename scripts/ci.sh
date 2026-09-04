@@ -152,6 +152,8 @@ make -s shim-check
 
 step "[3d2/13] make packed-check  (packed struct layout, both compilers, with the attribute-stripped control)"
 make -s packed-check
+step "[3d3/13] make vector-check  (vector[N]T: the emitted GCC vector, its alignment against the arena, and the packed instruction at -O0 where the auto-vectoriser is off)"
+make -s vector-check
 
 step "[3d2/13] make shim-warn  (the shims' warnings, against a locked baseline)"
 make -s shim-warn

@@ -100,6 +100,9 @@ tests/reject/value_arm_no_tail.ty	ACCEPTED	a match arm ending in a statement par
 tests/reject/variadic_inout.ty	ACCEPTED	`inout ...int` is a well-formed parameter; that the two modifiers exclude each other is tychoc's
 tests/reject/variadic_not_last.ty	ACCEPTED	the parameter list parses in any order; "last" is a positional rule tychoc enforces
 tests/reject/variant_payload_max.ty	ACCEPTED	a ceiling (8 payload fields)
+tests/reject/vector_count_not_pow2.ty	ACCEPTED	`vector[3]float` is grammatical -- the count slot takes any expression, and "a power of two between 2 and 64" is a value check
+tests/reject/vector_count_one.ty	ACCEPTED	same slot as the row above: 1 is a perfectly grammatical count, and the exclusion is a value rule
+tests/reject/vector_no_count.ty	ACCEPTED	`vector["x"]float` is grammatical for the same reason `bounded["x"]int` is -- a string literal is an expression
 tests/reject/where_bad_tp.ty	ACCEPTED	as typeset_badtp -- the name resolves, or does not, outside the grammar
 tests/reject/where_constraint_max.ty	ACCEPTED	a ceiling (8 constraints)
 tests/reject/where_nongeneric.ty	ACCEPTED	a `where` clause parses on any signature; requiring a `$T` is a signature rule

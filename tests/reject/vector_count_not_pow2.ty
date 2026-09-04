@@ -1,0 +1,7 @@
+# expect: a vector count must be a power of two between 2 and 64 -- 3 is not
+# Three is the count the ONE real vector caller in this tree wants
+# (examples/raytrace/main.ty's Vec3), and it is refused rather than rounded up:
+# a silent dead fourth lane would change what len() and == mean.
+fn main():
+    v: vector[3]float = [1.0, 2.0, 3.0]
+    println(str(v[0]))

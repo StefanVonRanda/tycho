@@ -216,6 +216,10 @@
         },
         {
           "type": "STRING",
+          "value": "vector"
+        },
+        {
+          "type": "STRING",
           "value": "sink"
         },
         {

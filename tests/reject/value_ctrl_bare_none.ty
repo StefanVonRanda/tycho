@@ -1,4 +1,4 @@
-# src/tychoc.c:8424 -- a bare None in a value-if branch is fixed only by a
+# src/tychoc.c:8469 -- a bare None in a value-if branch is fixed only by a
 # destination type, and neither `:=` nor `x : T =` flows one in.
 # expect: cannot infer the type of this branch — a bare Ok/Err/None is fixed only by a destination type, and neither := nor x : T = flows one in; write the branch with a concrete type, or bind it via an assignment/return
 fn main():

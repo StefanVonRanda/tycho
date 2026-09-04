@@ -44,7 +44,7 @@ module.exports = grammar({
         "and", "or", "not", "is",
         // Contextual declaration words, plus `handle` which is hard-reserved in
         // src/tychoc.c@keyword. Each was measured to compile before being added.
-        "handle", "const", "delete", "bounded", "sink", "subscript", "where", "yield",
+        "handle", "const", "delete", "bounded", "vector", "sink", "subscript", "where", "yield",
       ),
 
     constant: ($) => choice("true", "false", "null"),
@@ -69,7 +69,7 @@ module.exports = grammar({
         "substr", "find", "read_file", "write_file", "read_all", "list_dir",
         "args", "getenv", "input", "chr", "die", "is_null", "sqrt", "pow",
         "floor", "fabs", "reserve",
-        // `map_get`/`map_set` were here and are NOT builtins: src/tychoc.c:3043-3046
+        // `map_get`/`map_set` were here and are NOT builtins: src/tychoc.c:3080-3083
         // rejects a user-typed call outright, so this painted names the compiler
         // refuses -- the same defect the `range` note above records.
         "channel", "char_at", "clock", "close", "eprint", "exit", "from_bytes",

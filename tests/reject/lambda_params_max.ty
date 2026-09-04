@@ -1,5 +1,5 @@
 # The lifted proc takes [captures][params] and the arity is bounded. Nine
-# parameters is one past the ceiling. src/tychoc.c:6048.
+# parameters is one past the ceiling. src/tychoc.c:6085.
 # expect: a lambda has at most 8 parameters
 fn main():
     f := fn(a: int, b: int, c: int, d: int, e: int, g: int, h: int, i: int, j: int): a + b + c + d + e + g + h + i + j

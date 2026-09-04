@@ -1,4 +1,4 @@
-# src/tychoc.c:8683 -- a nested pattern is an Option/Result payload spelling
+# src/tychoc.c:8728 -- a nested pattern is an Option/Result payload spelling
 # only. tychoc1 ACCEPTED this before 2026-09-03: `_pay_shape` carried the rule
 # for the Ok/Err/Some arms and the user-enum arm beside it bound `sub` silently.
 # expect: a nested pattern is only supported inside Ok(...), Err(...) or Some(...)

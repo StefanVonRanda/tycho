@@ -1,4 +1,4 @@
-# Which of the language's 113 lexer words each editor integration actually knows.
+# Which of the language's 114 lexer words each editor integration actually knows.
 # One row per word in surface.lock's `keywords` (the lexer's own word set), with
 # the verdict MEASURED rather than read off the grammar source: the `zed` column
 # is the tree-sitter node kind the word lexes to, the `vscode` column is the
@@ -25,7 +25,7 @@ clock	builtin	support.function.builtin.tycho	built-in function; compiles under .
 close	builtin	support.function.builtin.tycho	built-in function; compiles under ./tychoc, measured 2026-09-04 -- added to both grammars by phase V2k
 const	keyword	keyword.other.tycho	contextual declaration keyword; compiles under ./tychoc, measured 2026-09-04 -- added to both grammars by phase V2k
 continue	keyword	keyword.control.tycho	control-flow keyword
-core	identifier	none	only ever the `core:` prefix inside an import-path STRING (src/tychoc.c:5013); the bare word is an ordinary name -- stays plain (phase V2k)
+core	identifier	none	only ever the `core:` prefix inside an import-path STRING (src/tychoc.c:5050); the bare word is an ordinary name -- stays plain (phase V2k)
 delete	keyword	keyword.other.tycho	contextual declaration keyword; compiles under ./tychoc, measured 2026-09-04 -- added to both grammars by phase V2k
 deprecated	identifier	none	only ever the `# deprecated:` comment marker (src/tychoc.c:144); the comment rule already colours it -- stays plain (phase V2k)
 die	builtin	support.function.builtin.tycho	built-in function, listed by both grammars
@@ -33,9 +33,10 @@ elif	keyword	keyword.control.tycho	control-flow keyword
 else	keyword	keyword.control.tycho	control-flow keyword
 enum	keyword	keyword.other.tycho	declaration keyword
 eprint	builtin	support.function.builtin.tycho	built-in function; compiles under ./tychoc, measured 2026-09-04 -- added to both grammars by phase V2k
-eprintln	identifier	none	NOT a procedure: src/tychoc.c:7218 refuses it and names `eprint(s + "\n")`; highlighting it would paint a name the compiler rejects -- stays plain (phase V2k)
+eprintln	identifier	none	NOT a procedure: src/tychoc.c:7255 refuses it and names `eprint(s + "\n")`; highlighting it would paint a name the compiler rejects -- stays plain (phase V2k)
 exit	builtin	support.function.builtin.tycho	built-in function; compiles under ./tychoc, measured 2026-09-04 -- added to both grammars by phase V2k
 extern	keyword	keyword.other.tycho	declaration keyword
+f32	type	storage.type.tycho	hard-reserved sized type (TK_KW_F32 in src/tychoc.c@keyword) -- added to both grammars by phase V2l
 fabs	builtin	support.function.builtin.tycho	built-in function, listed by both grammars
 false	constant	constant.language.tycho	literal constant
 find	builtin	support.function.builtin.tycho	built-in function, listed by both grammars
@@ -48,6 +49,10 @@ get	builtin	support.function.builtin.tycho	built-in function; compiles under ./t
 getenv	builtin	support.function.builtin.tycho	built-in function, listed by both grammars
 handle	keyword	keyword.other.tycho	hard-reserved declaration keyword (TK_HANDLE in src/tychoc.c@keyword) -- added to both grammars by phase V2k
 hash	builtin	support.function.builtin.tycho	built-in function; compiles under ./tychoc, measured 2026-09-04 -- added to both grammars by phase V2k
+i16	type	storage.type.tycho	hard-reserved sized type (TK_KW_I16 in src/tychoc.c@keyword) -- added to both grammars by phase V2l
+i32	type	storage.type.tycho	hard-reserved sized type (TK_KW_I32 in src/tychoc.c@keyword) -- added to both grammars by phase V2l
+i64	type	storage.type.tycho	hard-reserved sized type (TK_KW_I64 in src/tychoc.c@keyword) -- added to both grammars by phase V2l
+i8	type	storage.type.tycho	hard-reserved sized type (TK_KW_I8 in src/tychoc.c@keyword) -- added to both grammars by phase V2l
 if	keyword	keyword.control.tycho	control-flow keyword
 import	keyword	keyword.other.tycho	declaration keyword
 in	keyword	keyword.control.tycho	control-flow keyword
@@ -59,10 +64,10 @@ is_null	builtin	support.function.builtin.tycho	built-in function, listed by both
 keys	builtin	support.function.builtin.tycho	built-in function; compiles under ./tychoc, measured 2026-09-04 -- added to both grammars by phase V2k
 len	builtin	support.function.builtin.tycho	built-in function, listed by both grammars
 list_dir	builtin	support.function.builtin.tycho	built-in function, listed by both grammars
-map_del	identifier	none	removed from the language: src/tychoc.c:3045 refuses a user-typed call; use `delete m[k]` -- stays plain (phase V2k)
-map_get	identifier	none	removed from the language: src/tychoc.c:3046 refuses a user-typed call; use `m.get(k, default)`. It WAS painted as a builtin by both grammars until phase V2k
-map_has	identifier	none	removed from the language: src/tychoc.c:3044 refuses a user-typed call; use `k in m` -- stays plain (phase V2k)
-map_set	identifier	none	removed from the language: src/tychoc.c:3043 refuses a user-typed call. It WAS painted as a builtin by both grammars until phase V2k -- the same defect the `range` row records
+map_del	identifier	none	removed from the language: src/tychoc.c:3082 refuses a user-typed call; use `delete m[k]` -- stays plain (phase V2k)
+map_get	identifier	none	removed from the language: src/tychoc.c:3083 refuses a user-typed call; use `m.get(k, default)`. It WAS painted as a builtin by both grammars until phase V2k
+map_has	identifier	none	removed from the language: src/tychoc.c:3081 refuses a user-typed call; use `k in m` -- stays plain (phase V2k)
+map_set	identifier	none	removed from the language: src/tychoc.c:3080 refuses a user-typed call. It WAS painted as a builtin by both grammars until phase V2k -- the same defect the `range` row records
 match	keyword	keyword.control.tycho	control-flow keyword
 ncpu	builtin	support.function.builtin.tycho	built-in function; compiles under ./tychoc, measured 2026-09-04 -- added to both grammars by phase V2k
 not	keyword	keyword.operator.word.tycho	word operator
@@ -109,6 +114,11 @@ to_str	builtin	support.function.builtin.tycho	built-in function; compiles under 
 to_under	builtin	support.function.builtin.tycho	built-in function; compiles under ./tychoc, measured 2026-09-04 -- added to both grammars by phase V2k
 true	constant	constant.language.tycho	literal constant
 type	keyword	keyword.other.tycho	declaration keyword
+u16	type	storage.type.tycho	hard-reserved sized type (TK_KW_U16 in src/tychoc.c@keyword) -- added to both grammars by phase V2l
+u32	type	storage.type.tycho	hard-reserved sized type (TK_KW_U32 in src/tychoc.c@keyword) -- added to both grammars by phase V2l
+u64	type	storage.type.tycho	hard-reserved sized type (TK_KW_U64 in src/tychoc.c@keyword) -- added to both grammars by phase V2l
+u8	type	storage.type.tycho	hard-reserved sized type (TK_KW_U8 in src/tychoc.c@keyword) -- added to both grammars by phase V2l
+vector	keyword	keyword.other.tycho	contextual type keyword (spec 5.3.11); added to both grammars 2026-09-04, phase V3 -- like `bounded`, it is a word only in type position and stays a legal identifier elsewhere
 void	type	storage.type.tycho	built-in type name
 wait	builtin	support.function.builtin.tycho	built-in function; compiles under ./tychoc, measured 2026-09-04 -- added to both grammars by phase V2k
 where	keyword	keyword.other.tycho	contextual declaration keyword; compiles under ./tychoc, measured 2026-09-04 -- added to both grammars by phase V2k
@@ -116,12 +126,3 @@ while	keyword	keyword.control.tycho	control-flow keyword
 write_file	builtin	support.function.builtin.tycho	built-in function, listed by both grammars
 yield	keyword	keyword.other.tycho	contextual declaration keyword; compiles under ./tychoc, measured 2026-09-04 -- added to both grammars by phase V2k
 zero	builtin	support.function.builtin.tycho	built-in function; compiles under ./tychoc, measured 2026-09-04 -- added to both grammars by phase V2k
-f32	type	storage.type.tycho	hard-reserved sized type (TK_KW_F32 in src/tychoc.c@keyword) -- added to both grammars by phase V2l
-i16	type	storage.type.tycho	hard-reserved sized type (TK_KW_I16 in src/tychoc.c@keyword) -- added to both grammars by phase V2l
-i32	type	storage.type.tycho	hard-reserved sized type (TK_KW_I32 in src/tychoc.c@keyword) -- added to both grammars by phase V2l
-i64	type	storage.type.tycho	hard-reserved sized type (TK_KW_I64 in src/tychoc.c@keyword) -- added to both grammars by phase V2l
-i8	type	storage.type.tycho	hard-reserved sized type (TK_KW_I8 in src/tychoc.c@keyword) -- added to both grammars by phase V2l
-u16	type	storage.type.tycho	hard-reserved sized type (TK_KW_U16 in src/tychoc.c@keyword) -- added to both grammars by phase V2l
-u32	type	storage.type.tycho	hard-reserved sized type (TK_KW_U32 in src/tychoc.c@keyword) -- added to both grammars by phase V2l
-u64	type	storage.type.tycho	hard-reserved sized type (TK_KW_U64 in src/tychoc.c@keyword) -- added to both grammars by phase V2l
-u8	type	storage.type.tycho	hard-reserved sized type (TK_KW_U8 in src/tychoc.c@keyword) -- added to both grammars by phase V2l

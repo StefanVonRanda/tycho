@@ -20,7 +20,7 @@ u32     u64
 (`src/tychoc.c@keyword`), which never hands back an identifier token for one.
 `soa` is the exception — it lexes as an ordinary identifier and is reserved by
 the **parser**, which requires a `[` after it in every expression position
-(`src/tychoc.c:2963-2966`). The difference is invisible to a program and shows
+(`src/tychoc.c:3000-3003`). The difference is invisible to a program and shows
 only in the diagnostic: `soa := 5` is accepted at its declaration, and the next
 mention of the name dies with `expected '[' after soa`, so the binding is
 declarable and permanently unusable. It is listed here, with the reserved words,

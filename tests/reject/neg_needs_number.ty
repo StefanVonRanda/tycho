@@ -1,4 +1,4 @@
-# src/tychoc.c:7347 -- unary minus is arithmetic.
+# src/tychoc.c:7384 -- unary minus is arithmetic.
 # expect: unary `-` needs an int or a float
 fn main():
     s := "a"

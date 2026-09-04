@@ -1,0 +1,4 @@
+# expect: a vector count must be an integer literal or an int `const` -- 'NOPE' is not
+fn main():
+    v: vector[NOPE]float = [1.0, 2.0]
+    println(str(len(v)))

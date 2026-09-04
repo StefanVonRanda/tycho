@@ -1,4 +1,4 @@
-# src/tychoc.c:7494. Both compilers word it identically.
+# src/tychoc.c:7539. Both compilers word it identically.
 # expect: element-wise `+` requires two arrays with the same element type (got [int], [float])
 fn main():
     a := [1, 2]

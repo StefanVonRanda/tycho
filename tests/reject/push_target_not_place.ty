@@ -1,4 +1,4 @@
-# src/tychoc.c:7068 -- push's first argument must bottom out at a variable, not
+# src/tychoc.c:7105 -- push's first argument must bottom out at a variable, not
 # at a call result. tychoc1 ACCEPTED this until the rule was ported into
 # compiler/types/tcheck.ty; both now word it identically.
 # expect: push's first argument must be an array variable or field

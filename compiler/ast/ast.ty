@@ -22,6 +22,7 @@ enum Ty:
     TFn(bool, [Ty])                    # has_ret; params in order, the return type last
     TSoa([Ty])                         # soa [S]
     TBnd(string, [Ty])                 # bounded[N]T
+    TVec(string, [Ty])                 # vector[N]T -- a fixed array that lowers to one machine vector
 
 struct Param:
     name: string

@@ -1,4 +1,4 @@
-# src/tychoc.c:6196 -- the fat function value carries at most 8 parameters.
+# src/tychoc.c:6233 -- the fat function value carries at most 8 parameters.
 # expect: a function value supports at most 8 parameters
 fn nine(a: int, b: int, c: int, d: int, e: int, g: int, h: int, i: int, j: int) -> int:
     return a

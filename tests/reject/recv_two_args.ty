@@ -1,4 +1,4 @@
-# src/tychoc.c:6884 -- recv takes exactly one channel.
+# src/tychoc.c:6921 -- recv takes exactly one channel.
 # tychoc1 ACCEPTED this under --typecheck until the arity check was ported
 # into compiler/types/tcheck.ty; both now word it identically.
 # expect: recv(ch) takes one channel

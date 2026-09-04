@@ -1,4 +1,4 @@
-# src/tychoc.c:7341 -- `not` is bool-only; there is no truthiness here.
+# src/tychoc.c:7378 -- `not` is bool-only; there is no truthiness here.
 # expect: `not` needs a bool operand
 fn main():
     x := 1

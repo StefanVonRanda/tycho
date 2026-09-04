@@ -1,0 +1,7 @@
+# expect: a vector count must be a power of two between 2 and 64 -- 1 is not
+# 1 IS a power of two. It is excluded on purpose: a one-lane vector is a scalar
+# spelt oddly, and admitting it would make `vector[1]float + vector[1]float` a
+# second, slower spelling of `float + float`.
+fn main():
+    v: vector[1]float = [1.0]
+    println(str(v[0]))

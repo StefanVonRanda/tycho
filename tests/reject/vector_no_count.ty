@@ -1,0 +1,4 @@
+# expect: vector needs a count: vector[N]T
+fn main():
+    v: vector["x"]float = [1.0, 2.0]
+    println(str(len(v)))

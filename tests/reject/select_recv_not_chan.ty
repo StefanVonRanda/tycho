@@ -1,4 +1,4 @@
-# src/tychoc.c:8840 -- a select recv arm waits on a channel; an int has nothing
+# src/tychoc.c:8885 -- a select recv arm waits on a channel; an int has nothing
 # to wait on.
 # expect: select recv needs a channel, got int
 fn main():

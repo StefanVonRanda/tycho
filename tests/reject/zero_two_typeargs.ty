@@ -1,4 +1,4 @@
-# src/tychoc.c:6431 -- one type argument, exactly.
+# src/tychoc.c:6468 -- one type argument, exactly.
 # expect: zero$(T) takes exactly one type argument
 fn main():
     x := zero$(int, string)()

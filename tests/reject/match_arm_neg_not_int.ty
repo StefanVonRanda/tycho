@@ -1,5 +1,5 @@
 # `-` is accepted before any scalar in the set loop and only then checked, so a
-# second set element reaches it: src/tychoc.c:3501. Both compilers agree.
+# second set element reaches it: src/tychoc.c:3538. Both compilers agree.
 # expect: '-' is only valid before an int literal in a match arm
 fn main():
     x := 1

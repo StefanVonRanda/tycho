@@ -8,7 +8,7 @@ import "../lex"
 # node rather than living in a mutable parser struct, because a Tycho struct is
 # a value and a `p.i += 1` inside a callee would not be seen by its caller.
 #
-# The grammar is src/tychoc.c's parser (src/tychoc.c:2059-4968), read rather
+# The grammar is src/tychoc.c's parser (src/tychoc.c:2068-5005), read rather
 # than inferred from fixtures. Precedence, tightest first:
 #   postfix > unary(- & ~) > * / % << >> & > + - | ^ > is > == != < > <= >= in
 #          > not > and > or
@@ -160,7 +160,7 @@ fn _fail(toks: [lex.Tok], t: lex.Tok, want: string):
 fn _die(toks: [lex.Tok], t: lex.Tok, msg: string):
     die(_where(toks, t, msg, false))
 
-# The two `_die` sites ./tychoc carets (src/tychoc.c:3080 and :3740).
+# The two `_die` sites ./tychoc carets (src/tychoc.c:3117 and :3740).
 fn _diec(toks: [lex.Tok], t: lex.Tok, msg: string):
     die(_where(toks, t, msg, true))
 
@@ -270,6 +270,22 @@ fn _ty_d(toks: [lex.Tok], i0: int, depth: int) -> (ast.Ty, int):
         i = _op(toks, i + 1, lex.OP_RBRACK)
         el, j := _ty_d(toks, i, depth + 1)
         return (ast.TBnd(cap.text, [el]), j)
+
+    if toks[ti].k == lex.K_IDENT and toks[ti].text == "vector":
+        vt := toks[ti]
+        i = _op(toks, i + 1, lex.OP_LBRACK)
+        n := _at(toks, i)
+        if n.k != lex.K_INT and n.k != lex.K_IDENT:
+            _die(toks, n, "vector needs a count: vector[N]T")
+        # src/tychoc.c@vec_of raises the power-of-two rule in parse_type, so the
+        # classifier calls it SYNTAX and this parser has to reach it too. Only
+        # the LITERAL form can be decided here; a `const` count is deferred to
+        # compiler/types/zsema.ty@_vec_count, which repeats the same sentence.
+        if n.k == lex.K_INT and (n.ival < 2 or n.ival > 64 or (n.ival & (n.ival - 1)) != 0):
+            _die(toks, vt, "a vector count must be a power of two between 2 and 64 -- " + str(n.ival) + " is not")
+        i = _op(toks, i + 1, lex.OP_RBRACK)
+        el2, j2 := _ty_d(toks, i, depth + 1)
+        return (ast.TVec(n.text, [el2]), j2)
 
     if toks[ti].k == lex.K_KW and toks[ti].text == "fn":
         i = _op(toks, i + 1, lex.OP_LPAREN)
@@ -604,7 +620,7 @@ fn _primary_into(toks: [lex.Tok], i0: int, out: inout ast.Expr) -> int:
         # `xs := [string]` -- the TYPE spelling where a value goes. "expected an
         # expression" is true and useless. Only for a primitive type KEYWORD,
         # which can never be an expression: `[Foo]` stays a one-element literal
-        # of a variable named Foo (src/tychoc.c:2865).
+        # of a variable named Foo (src/tychoc.c:2902).
         k0 := _at(toks, i)
         if k0.k == lex.K_KW and _is_prim(k0.text):
             if _isop(toks, i + 1, lex.OP_RBRACK):
@@ -1090,7 +1106,7 @@ fn _scalar_arm_ahead(toks: [lex.Tok], i: int) -> bool:
         return true
     return k == lex.K_IDENT and (_isop(toks, i + 1, lex.OP_DOTDOT) or _isop(toks, i + 1, lex.OP_PIPE))
 
-# `miss` is the rule to name when no value follows: src/tychoc.c:3516 has a
+# `miss` is the rule to name when no value follows: src/tychoc.c:3553 has a
 # dedicated one for the HIGH end of a range, where :3527 names the arm forms.
 fn _pat_end(toks: [lex.Tok], i0: int, miss: string) -> (ast.Pat, int, bool):
     # one end of a scalar pattern: an int/char/bool literal or a const NAME
@@ -1349,7 +1365,7 @@ fn _simple_into(toks: [lex.Tok], i0: int, out: inout ast.Stmt) -> (int, bool):
     i = i2
     if _isop(toks, i, lex.OP_EQ):
         i += 1
-        # src/tychoc.c:4181 allows E_CALL as a target; its E_CALL covers BOTH the
+        # src/tychoc.c:4218 allows E_CALL as a target; its E_CALL covers BOTH the
         # named form and the indirect one, which split here into Call/CallVal.
         if not (e is ast.Index) and not (e is ast.Field) and not (e is ast.TupIdx) and
            not (e is ast.Call) and not (e is ast.CallVal):
@@ -1372,7 +1388,7 @@ fn _simple_into(toks: [lex.Tok], i0: int, out: inout ast.Stmt) -> (int, bool):
                 out = ast.Assign(toks[ti].line, n, [b])
                 return (j, true)
             _:
-                # src/tychoc.c:4215 takes only an index, a field or a tuple index here;
+                # src/tychoc.c:4252 takes only an index, a field or a tuple index here;
                 # everything else falls through to the refusal below.
                 if not (e is ast.Index) and not (e is ast.Field) and not (e is ast.TupIdx):
                     _die(toks, _at(toks, i0), "cannot compound-assign to this expression")
@@ -1398,7 +1414,7 @@ fn _simple_into(toks: [lex.Tok], i0: int, out: inout ast.Stmt) -> (int, bool):
     out = ast.ExprStmt(toks[ti].line, [e])
     return (i, true)
 
-# The three-clause scan src/tychoc.c:3959-3969 does: the first two top-level
+# The three-clause scan src/tychoc.c:3996-4006 does: the first two top-level
 # ';' and the LAST top-level ':' before the newline. A third ';' is the rule.
 fn _for3_scan(toks: [lex.Tok], i0: int, ft: lex.Tok) -> (int, int, int):
     s1 := -1
@@ -1462,8 +1478,8 @@ fn _forstmt_into(toks: [lex.Tok], i0: int, par: bool, out: inout ast.Stmt) -> in
     if s1 >= 0:
         # Each empty clause reaches _simple_into or _expr_into as a bare ';'
         # and reports `expected an expression`, which names no rule.
-        # src/tychoc.c:3974-3981, in that order.
-        # src/tychoc.c:3972 -- with only ONE ';' the generic `_op` reports the
+        # src/tychoc.c:4011-4018, in that order.
+        # src/tychoc.c:4009 -- with only ONE ';' the generic `_op` reports the
         # token it found, which names no rule.
         if s2 < 0:
             _die(toks, _at(toks, i0 - 1), "a three-clause `for` is `for init; cond; post:` -- two ';' separating three clauses")
@@ -1493,7 +1509,7 @@ fn _forstmt_into(toks: [lex.Tok], i0: int, par: bool, out: inout ast.Stmt) -> in
         out = ast.For3(toks[ti].line, [init, post], [cond], b)
         return n
     # `for k, q in xs:` -- without this the comma reaches the condition form and
-    # reports `expected ':', found op ','`. src/tychoc.c:4014.
+    # reports `expected ':', found op ','`. src/tychoc.c:4051.
     if _kis(toks, i, lex.K_IDENT) and _isop(toks, i + 1, lex.OP_COMMA):
         k := 0
         for _kis(toks, i + k, lex.K_IDENT) and _isop(toks, i + k + 1, lex.OP_COMMA):
@@ -1519,7 +1535,7 @@ fn _forstmt_into(toks: [lex.Tok], i0: int, par: bool, out: inout ast.Stmt) -> in
             _die(toks, _at(toks, i0 - 1), "`range()` was removed: write `for " + v + " := 0; " + v + " < N; " + v + " += 1:` to count, or `parallel for " + v + " in 0..<N:` to count in parallel")
         coll := ast.NullLit(0)
         j := _expr_into(toks, i, &coll)
-        # src/tychoc.c:4069 -- an array and a channel source are both scalar
+        # src/tychoc.c:4106 -- an array and a channel source are both scalar
         # handles, so the source must NAME one; a temp could alias a channel.
         if par and not (coll is ast.Name):
             _die(toks, _at(toks, i0 - 1), "parallel for over a collection or channel must name a variable (bind it first)")
@@ -1585,7 +1601,7 @@ fn _stmt_into(toks: [lex.Tok], i0: int, out: inout ast.Stmt) -> int:
         e := ast.NullLit(0)
         k := _expr_into(toks, i, &e)
         i = _expect(toks, k, lex.K_NEWLINE, "")
-        # src/tychoc.c:3797 folds a LOCAL const with refs off -- no sibling-const
+        # src/tychoc.c:3834 folds a LOCAL const with refs off -- no sibling-const
         # refs -- so `const D = K * 2` is refused here and accepted at top level.
         v := _const_fold(toks, e, []ast.ConstD, _at(toks, i0))
         if not _is_lit(v):
@@ -1607,7 +1623,7 @@ fn _stmt_into(toks: [lex.Tok], i0: int, out: inout ast.Stmt) -> int:
         if not (e is ast.Index):
             _die(toks, _at(toks, i0), "`delete` removes a map element: `delete m[k]`")
         match e:
-            # src/tychoc.c:3839 -- the map itself must be a place, not a call result.
+            # src/tychoc.c:3876 -- the map itself must be a place, not a call result.
             ast.Index(dl, dk):
                 mref := dk[0]
                 if not (mref is ast.Name) and not (mref is ast.Field) and
@@ -1671,7 +1687,7 @@ fn _stmt_into(toks: [lex.Tok], i0: int, out: inout ast.Stmt) -> int:
             j := _expr_into(toks, i + 1, &a)
             push(w, a)
             i = _op(toks, j, lex.OP_RPAREN)
-            # src/tychoc.c:3928 -- range-checked only when the width is a literal.
+            # src/tychoc.c:3965 -- range-checked only when the width is a literal.
             match a:
                 ast.IntLit(l, v):
                     if v < 1 or v > 64:
@@ -1799,7 +1815,7 @@ fn _wheres(toks: [lex.Tok], i0: int, tps: [string]) -> ([string], int):
             if nset > 16:
                 _die(toks, _at(toks, i0), "at most 16 types in a `where` type set")
             # The SET is kept, not just the parameter name: the checker needs it
-            # to refuse an instantiation outside it (src/tychoc.c:9139).
+            # to refuse an instantiation outside it (src/tychoc.c:9184).
             push(out, p + ":" + set)
         else:
             if not _is_where_pred(p):
@@ -1832,6 +1848,7 @@ fn _collect_typarams_ty(t: ast.Ty, acc: [string]) -> [string]:
         ast.TSoa(k): return _collect_typarams_ty(k[0], out)
         ast.TFix(s, k): return _collect_typarams_ty(k[0], out)
         ast.TBnd(s, k): return _collect_typarams_ty(k[0], out)
+        ast.TVec(s, k): return _collect_typarams_ty(k[0], out)
         ast.TMap(ks):
             for a in ks:
                 out = _collect_typarams_ty(a, out)
@@ -1864,6 +1881,7 @@ fn _collect_sizeparams_ty(t: ast.Ty, acc: [string]) -> [string]:
                 push(out, s[1:])
             return _collect_sizeparams_ty(k[0], out)
         ast.TBnd(s, k): return _collect_sizeparams_ty(k[0], out)
+        ast.TVec(s, k): return _collect_sizeparams_ty(k[0], out)
         ast.TMap(ks):
             for a in ks:
                 out = _collect_sizeparams_ty(a, out)
@@ -2246,7 +2264,7 @@ fn _const_fold(toks: [lex.Tok], e: ast.Expr, cs: [ast.ConstD], t: lex.Tok) -> as
             if o == "/" or o == "%":
                 if y == 0:
                     _die(toks, t, "const expression divides by zero")
-                # src/tychoc.c:5248: min/-1 is 2^63 and has no int value -- folding
+                # src/tychoc.c:5285: min/-1 is 2^63 and has no int value -- folding
                 # it TRAPS this compiler instead of diagnosing. The remainder is 0.
                 lo := -9223372036854775807 - 1
                 if o == "/":

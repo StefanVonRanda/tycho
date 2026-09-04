@@ -1,4 +1,4 @@
-# src/tychoc.c:6992 -- to_under unwraps a newtype and nothing else.
+# src/tychoc.c:7029 -- to_under unwraps a newtype and nothing else.
 # expect: to_under(x) takes a newtype value, got int
 fn main():
     x := to_under(1)

@@ -1,4 +1,4 @@
-# src/tychoc.c:6926 -- hash takes exactly one value.
+# src/tychoc.c:6963 -- hash takes exactly one value.
 # expect: hash(x) takes one argument
 fn main():
     println(str(hash(1, 2)))

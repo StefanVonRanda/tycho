@@ -1,4 +1,4 @@
-# src/tychoc.c:8622 -- an Option has exactly Some, None and `_`; anything else
+# src/tychoc.c:8667 -- an Option has exactly Some, None and `_`; anything else
 # names a variant it does not have.
 # expect: an Option's arms are Some(x), None, and _, not 'Nope'
 fn main():

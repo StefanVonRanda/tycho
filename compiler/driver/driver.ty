@@ -146,7 +146,7 @@ fn _links(p: types.Program) -> [string]:
                 push(out, fd.lib)
     return out
 
-# NEVER eat a .c this compiler did not write (src/tychoc.c:14656). A file WE left
+# NEVER eat a .c this compiler did not write (src/tychoc.c:14737). A file WE left
 # behind starts with the runtime banner and is fair game; anything else is the
 # user's and the intermediate would destroy it.
 fn _guard_c(c_path: string):
@@ -181,7 +181,7 @@ fn _pkgflags(p: types.Program) -> [string]:
                     # Everything after `_WIN32:` is RAW linker flags for the
                     # Windows build (-lws2_32, -lpcre2-posix). They are not
                     # pkg-config names, and a non-Windows compiler skips the
-                    # whole section (src/tychoc.c:5430). Reading them as package
+                    # whole section (src/tychoc.c:5467). Reading them as package
                     # names made pkg-config fail and net/tls/httpd/regex SKIP.
                     if t == "_WIN32:":
                         win = true
@@ -210,7 +210,7 @@ fn build(src_path: string, runtime_path: string, base: string, argv0: string,
     _guard_c(c_path)
     p := types.Program([]types.File, "", "", "", "")
     check_into(src_path, argv0, &p)
-    # -g: src/tychoc.c:14604 makes #line single-file only, and names the source
+    # -g: src/tychoc.c:14685 makes #line single-file only, and names the source
     # in every directive. A multi-file build has no single g_line_file to name.
     dbgf := ""
     if dbg and len(p.files) == 1:
@@ -540,7 +540,7 @@ fn _ty_src(t: ast.Ty, pk: string, own: [string: bool], imp: [string: string]) ->
                 # gates this on is_imported_pkg, which filters g_imports by
                 # g_srcname -- a global left pointing at whichever file the parser
                 # finished with (no assignment between parse and emit_symbols,
-                # src/tychoc.c:14649-14733). So the SAME type prints `graph.MakeErr`
+                # src/tychoc.c:14730-14814). So the SAME type prints `graph.MakeErr`
                 # and `build__BuildErr` in one run, and tools/tycho-make/main.ty
                 # imports build either way. Matching that means reproducing a load
                 # order, not a rule. Unconditional also scores better: tycho-make
@@ -576,6 +576,9 @@ fn _ty_src(t: ast.Ty, pk: string, own: [string: bool], imp: [string: string]) ->
         ast.TBnd(n, e):
             if len(e) == 1:
                 return "bounded[" + n + "]" + _ty_src(e[0], pk, own, imp)
+        ast.TVec(n, e):
+            if len(e) == 1:
+                return "vector[" + n + "]" + _ty_src(e[0], pk, own, imp)
         ast.TFn(hr, e):
             out3 := "fn("
             np := len(e)
