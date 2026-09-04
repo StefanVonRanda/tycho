@@ -1,7 +1,8 @@
 #!/bin/sh
 # tycho pre-push gate. (Local. No GitHub Actions, ever.) Cheap checks only: the
 # link + `path:line` citation gate, the script parse, the version bump, the
-# grammar-drift half of spec-check, and a quick fuzz smoke.
+# grammar-drift half of spec-check, the frozen-surface lock, and a quick fuzz
+# smoke.
 #
 # IT DOES NOT RUN THE SWEEP, since 2026-08-10. `make ci N=0` was here and was
 # removed on the owner's instruction: ~274s on every push, usually re-running
@@ -112,6 +113,10 @@ if printf '%s\n' "$REFS" | awk '$3 != "refs/heads/gh-pages" { found = 1 } END { 
     # out -- it builds and runs every runnable snippet in the spec, which is a
     # `make spec-check` job, and --fast says on every run that it skipped it.
     gate "make spec-fast (Appendix A vs the chapters, Appendix E citations)" spec-fast
+    # 0.17s. It lived ONLY in `make ci` step [1d], and the standing instruction
+    # here is not to run the sweep -- so the freeze was enforced by nobody: it was
+    # RED at HEAD across 7f207bcc and 9a4a5e5c, both of which pushed clean.
+    gate "make surface-check (keywords/builtins frozen, corelib additive)" surface-check
     gate "make fuzz-quick (soundness smoke)"     fuzz-quick
 fi
 
