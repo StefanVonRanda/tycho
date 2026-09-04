@@ -1,3 +1,4 @@
+# expect: send on Channel(int) needs a int value
 fn main():
     ch := channel(int, 4)
     send(ch, "nope")

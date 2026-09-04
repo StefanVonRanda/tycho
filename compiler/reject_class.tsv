@@ -196,6 +196,7 @@ tests/reject/from_bytes_not_packed.ty	SEMANTIC	6498	from_bytes$(Loose): only a p
 tests/reject/from_bytes_two_args.ty	SEMANTIC	6494	from_bytes$(T)(b) takes one value argument
 tests/reject/from_bytes_two_typeargs.ty	SEMANTIC	6495	from_bytes$(T)(b) takes exactly one type argument
 tests/reject/fstring_escape.ty	SYNTAX	0	unsupported escape \  (use \n \t \r \\ \")
+tests/reject/fstring_hole_name.ty	NAME	6264	unknown variable 'nosuchvar'
 tests/reject/genenum_bare_nullary.ty	SEMANTIC	6227	Empty is a variant of generic enum Box; supply the type explicitly, e.g. Empty$(int)
 tests/reject/generic_bounded_field_degraded.ty	TYPE	6851	field 'xs' of Box__int is bounded[4]int, got [4]int
 tests/reject/generic_chan_inout_param.ty	SEMANTIC	4399	'c' is inout, which an affine type cannot be -- it has one owner and is freed at that scope's exit, so there is nothing to consume or copy back. Pass it plainly: that is already a borrow

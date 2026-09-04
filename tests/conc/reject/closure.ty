@@ -1,3 +1,4 @@
+# expect: spawn requires a direct call to a named function (closures/constructors cannot be spawned yet)
 fn main():
     h := fn(x: int) -> int: x * 2
     t := spawn h(3)

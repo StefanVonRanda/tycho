@@ -1,0 +1,7 @@
+# expect: unknown variable 'nosuchvar'
+# The NAME rule reached only from INSIDE an f-string hole. tests/reject/unknown_var.ty
+# holds the same rule in ordinary expression position; until this fixture the
+# interpolated path was held by nothing, because an f-string's holes used to be
+# kept as raw text and never resolved at all.
+fn main():
+    print(f"{nosuchvar}")

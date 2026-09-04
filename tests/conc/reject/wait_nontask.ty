@@ -1,2 +1,3 @@
+# expect: wait(t) takes a task from spawn, got int
 fn main():
     print(str(wait(5)))

@@ -1,3 +1,4 @@
+# expect: spawn requires a user-defined function ('print' is not one)
 fn main():
     t := spawn print("x")
     wait(t)

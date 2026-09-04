@@ -97,14 +97,41 @@ for f in tests/conc/abort/*.ty; do
     fi
 done
 
+# Same OPT-IN `# expect:` mechanism the flat lane has (tests/run.sh:102): a
+# fixture may pin WHY it is refused, as a literal substring of the diagnostic.
+# Without it this loop scored the VERDICT alone -- refused for any reason at all,
+# including a rule other than the one the fixture was written for, and the lane
+# still printed ok. EVERY `# expect:` line is asserted, not just the first.
+# The count is pinned to a literal because the mechanism is opt-in: a fixture
+# that loses its line falls silently back to verdict-only scoring.
+conc_exp=0
 for f in tests/conc/reject/*.ty; do
     name=reject/$(basename "$f" .ty)
-    if $TYCHOC "$f" -o "$TMP/rej" >/dev/null 2>&1; then
-        note "$name" "compiled but must be rejected"; fail=$((fail+1))
-    else
-        pass=$((pass+1))
+    grep -q '^# expect: ' "$f" && conc_exp=$((conc_exp+1))
+    if $TYCHOC "$f" -o "$TMP/rej" >"$TMP/rej.log" 2>&1; then
+        note "$name" "compiled but must be rejected"; fail=$((fail+1)); continue
     fi
+    miss=''; sed -n 's/^# expect: //p' "$f" > "$TMP/rej.exp"
+    while IFS= read -r exp; do
+        if [ -n "$exp" ] && ! grep -qF -- "$exp" "$TMP/rej.log"; then miss="$exp"; break; fi
+    done < "$TMP/rej.exp"
+    if [ -n "$miss" ]; then
+        note "$name" "diagnostic does not contain the expected text: $miss"
+        head -3 "$TMP/rej.log" | sed 's/^/      /'
+        fail=$((fail+1)); continue
+    fi
+    pass=$((pass+1))
 done
+# The six R21c ported: chan_reassign, chan_sendmis, closure, builtin, inout,
+# wait_nontask -- each carrying tychoc1's whole message. Plus discard.ty, which
+# had carried an `# expect:` line since it was written: with no mechanism to read
+# it, it was a comment, and the rule it names was scored by verdict alone.
+if [ "$conc_exp" -eq 7 ]; then
+    pass=$((pass+1))
+else
+    note "reject/expect-count" "$conc_exp fixtures carry an '# expect:' line, expected 7"
+    fail=$((fail+1))
+fi
 
 # `parallel(W)` must reach CODEGEN, which no output can show. With no way to
 # observe a worker's identity from inside the loop (FRICTION open-list item 8b),

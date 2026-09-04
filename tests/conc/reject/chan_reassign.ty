@@ -1,3 +1,4 @@
+# expect: a channel variable cannot be reassigned
 fn main():
     ch := channel(int, 4)
     ch = channel(int, 4)

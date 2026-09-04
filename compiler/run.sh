@@ -4,15 +4,15 @@
 # Four legs. The first three are counts; the fourth is the one that carries the
 # wrong-tree class, and it is the reason this lane is not two `wc -l`s:
 #
-#   [1]  every tests/*.ty that ./tychoc accepts must parse       279/279
+#   [1]  every tests/*.ty that ./tychoc accepts must parse
 #   [0]  the classifier table's own citations: every src/tychoc.c line it names
 #        must still hold the diagnostic it was classified by.
-#   [1b] every corelib/**.ty must parse                           91/91
+#   [1b] every corelib/**.ty must parse
 #   [2]  tests/reject/, SPLIT by the committed classifier table:
 #        a SYNTAX rejection must be rejected, a SEMANTIC one must be ACCEPTED.
 #        "everything in tests/reject/ was rejected" is the failure this leg
-#        exists to catch -- 290 of the 337 are type errors a parser cannot see.
-#   [1c] every tools/ examples/ server/ bench/ .ty must parse            179/179
+#        exists to catch -- most of them are type errors a parser cannot see.
+#   [1c] every tools/ examples/ server/ bench/ .ty must parse
 #   [3]  the AST node-kind census, compared to a recorded golden. An accept/
 #        reject verdict is blind to a parse that SUCCEEDS with the wrong tree:
 #        dropping the ast.Named wrapper from a `name: value` call argument left
@@ -21,14 +21,14 @@
 #        written here as a whole program. Every refusal is paired with an
 #        accepting twin one token away -- a leg that only ever refuses is
 #        satisfied by a parser that refuses everything.
-#   [5]  every .ty in the tree, 1078 of them, scored against ./tychoc's own
+#   [5]  every .ty in the tree, scored against ./tychoc's own
 #        verdict -- the only leg that reaches tests/conc, tests/diag and
 #        tests/reject/pkg, where three of Phase 4's four defects were.
-#   [6]  the same 1078 files scored a SECOND time, against `--resolve`: the
+#   [6]  the same files scored a SECOND time, against `--resolve`: the
 #        SYNTAX and NAME files must be refused, everything else accepted, and a
 #        file ./tychoc accepts must resolve with no unused local and no unused
 #        import. Phase 5 split NAME out of SEMANTIC; Phase 5c added the three
-#        rules it had left behind (30 of the 337 fixtures now) -- printed by
+#        rules it had left behind -- the NAME count is printed by
 #        compiler/verdict_diff.py.
 #   [2b] the reject corpus again, under `--resolve` rather than `--parse`.
 #   [7]  the RESOLUTION census, the leg the two verdicts cannot carry: a name
@@ -88,6 +88,14 @@ n_new=$(find tools examples server bench -name '*.ty' | wc -l)
 [ "$n_lib" = 91 ]  || { echo "parse-check: corelib/**.ty is $n_lib, expected 91"; rc=1; }
 [ "$n_new" = 178 ] || { echo "parse-check: tools+examples+server+bench .ty is $n_new, expected 178"; rc=1; }   # -1: tools/tycho-rsa/ removed in 0888bf28, which left this literal at 179 and the lane red
 [ "$n_rej" = "$n_tsv" ] || { echo "parse-check: $n_rej reject fixtures but $n_tsv classified rows -- rerun scripts/classify_rejects.py"; rc=1; }
+
+# The same literals, read back out of this file and compared to the tree by
+# scripts/check_corpus_counts.py -- sub-second, so a commit that adds or deletes
+# a .ty can run it alone. It is here as well so the lane and its predictor cannot
+# drift apart: if it ever passes where the block above fails, one of them is
+# reading the wrong corpus. `make corpus-check`.
+python3 scripts/check_corpus_counts.py || rc=1
+python3 scripts/check_corpus_counts.py --selfcheck >/dev/null || { echo "parse-check: corpus-counts selfcheck failed -- run it directly"; rc=1; }
 
 # [0] -- the classifier table's own evidence. Column 3 is a src/tychoc.c line and
 # nothing gated it, so it rotted silently: 310 of 337 rows cited a line that had
@@ -174,7 +182,9 @@ echo "leg2c tests/reject/*.ty --typecheck: all=$((tr+tm)) rejected=$tr missed=$t
 # from_bytes$(T)/size_of$(T) plus to_bytes over a packed struct, all raised
 # after the parse region and so none of them the parser's.
 # SEMANTIC 267 -> 271: V3a -- slice and push refused on a [N]T and on a vector[N]T.
-[ "$nsyn" = 98 ] && [ "$nname" = 33 ] && [ "$ntype" = 164 ] && [ "$nsem" = 271 ] || { echo "parse-check: the split moved -- expected SYNTAX=98 NAME=33 TYPE=164 SEMANTIC=271"; rc=1; }
+# NAME 33 -> 34: tests/reject/fstring_hole_name.ty -- the NAME rule reached
+# only from inside an f-string interpolation hole.
+[ "$nsyn" = 98 ] && [ "$nname" = 34 ] && [ "$ntype" = 164 ] && [ "$nsem" = 271 ] || { echo "parse-check: the split moved -- expected SYNTAX=98 NAME=34 TYPE=164 SEMANTIC=271"; rc=1; }
 [ "$mr" = 0 ] || { echo "parse-check: a NAME or SEMANTIC fixture was rejected by --parse; a parser has no symbol table"; rc=1; }
 [ "$sa" = 0 ] || { echo "parse-check: a SYNTAX fixture was accepted; the parser must refuse it"; rc=1; }
 [ "$rm_" = 0 ] || { echo "parse-check: a NAME fixture resolved; the resolver must refuse it"; rc=1; }
@@ -184,7 +194,7 @@ echo "leg2c tests/reject/*.ty --typecheck: all=$((tr+tm)) rejected=$tr missed=$t
 got=$(echo $seen_miss | tr ' ' '\n' | LC_ALL=C sort | tr '\n' ' ')
 want=$(echo $KNOWN_TYPE_MISS | tr ' ' '\n' | LC_ALL=C sort | tr '\n' ' ')
 [ "$got" = "$want" ] || { echo "parse-check: the TYPE misses moved"; echo "    now:  $got"; echo "    was:  $want"; rc=1; }
-[ "$tr" = 565 ] || { echo "parse-check: --typecheck refused $tr of 566, expected 565"; rc=1; }
+[ "$tr" = 566 ] || { echo "parse-check: --typecheck refused $tr of 567, expected 566"; rc=1; }
 
 # [3] -- the census, against a recorded golden
 for f in $(ls tests/*.ty) $(find corelib -name '*.ty' | sort) $(find tools examples server bench -name '*.ty' | sort); do
