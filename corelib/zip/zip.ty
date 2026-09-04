@@ -13,12 +13,61 @@ struct Meta:                      # one central-directory entry (list())
     csize: int                    # compressed size
     crc: int
 
-# --- little-endian readers --------------------------------------------------
+# --- the three records, stated as layouts ------------------------------------
+#
+# PKWARE APPNOTE.TXT s4.4: every multi-byte field in a ZIP record is stored
+# LITTLE-ENDIAN, which is the order to_bytes/from_bytes use on every host
+# (spec s17.1b). So the layout below is the format's, not this machine's, and
+# the same source writes the same archive on a big-endian target.
+#
+# Sizes are asserted by the offsets the readers used before this file stated
+# them: 30, 46 and 22 bytes.
 
-fn le16(b: bytes, at: int) -> int:
-    return b[at] | (b[at + 1] << 8)
-fn le32(b: bytes, at: int) -> int:
-    return b[at] | (b[at + 1] << 8) | (b[at + 2] << 16) | (b[at + 3] << 24)
+packed struct Local:              # local file header, sig 0x04034b50
+    sig: u32
+    version: u16
+    flags: u16
+    method: u16
+    time: u16
+    date: u16
+    crc: u32
+    csize: u32
+    usize: u32
+    nlen: u16
+    elen: u16
+
+packed struct Central:            # central directory header, sig 0x02014b50
+    sig: u32
+    made_by: u16
+    version: u16
+    flags: u16
+    method: u16
+    time: u16
+    date: u16
+    crc: u32
+    csize: u32
+    usize: u32
+    nlen: u16
+    elen: u16
+    clen: u16
+    disk: u16
+    iattr: u16
+    eattr: u32
+    off: u32
+
+packed struct Eocd:               # end of central directory, sig 0x06054b50
+    sig: u32
+    disk: u16
+    cd_disk: u16
+    n_here: u16
+    n_total: u16
+    cd_size: u32
+    cd_off: u32
+    clen: u16
+
+const SIG_LOCAL = 67324752       # 0x04034b50
+const SIG_CENTRAL = 33639248     # 0x02014b50
+const SIG_EOCD = 101010256       # 0x06054b50
 
 # CRC-32 (IEEE 802.3), bit-by-bit, in u32 like core:hash's.
 fn crc32(b: bytes) -> int:
@@ -41,31 +90,33 @@ fn list(b: bytes) -> [Meta]:
     eocd := find_eocd(b)
     if eocd < 0:
         return out
-    n := le16(b, eocd + 10)
-    cd_off := le32(b, eocd + 16)
-    pos := cd_off
+    e := from_bytes$(Eocd)(b[eocd:eocd + size_of$(Eocd)])
+    n := to_int(e.n_total)
+    pos := to_int(e.cd_off)
     for i := 0; i < n; i += 1:
-        if pos + 46 > len(b) or le32(b, pos) != 33639248:   # 0x02014b50
+        # the exact-length window is taken only after the bound check:
+        # from_bytes refuses any other length, so a truncated archive must be
+        # rejected HERE rather than by the runtime.
+        if pos + size_of$(Central) > len(b):
             return out
-        method := le16(b, pos + 10)
-        crc := le32(b, pos + 16)
-        csize := le32(b, pos + 20)
-        usize := le32(b, pos + 24)
-        nlen := le16(b, pos + 28)
-        elen := le16(b, pos + 30)
-        clen := le16(b, pos + 32)
-        if pos + 46 + nlen + elen + clen > len(b):
+        c := from_bytes$(Central)(b[pos:pos + size_of$(Central)])
+        if to_int(c.sig) != SIG_CENTRAL:
             return out
-        name := to_str(b[pos + 46:pos + 46 + nlen])
-        push(out, Meta(name, method, usize, csize, crc))
-        pos = pos + 46 + nlen + elen + clen
+        nlen := to_int(c.nlen)
+        skip := size_of$(Central) + nlen + to_int(c.elen) + to_int(c.clen)
+        if pos + skip > len(b):
+            return out
+        name := to_str(b[pos + size_of$(Central):pos + size_of$(Central) + nlen])
+        push(out, Meta(name, to_int(c.method), to_int(c.usize), to_int(c.csize),
+                       to_int(c.crc)))
+        pos = pos + skip
     return out
 
 fn find_eocd(b: bytes) -> int:
     # the EOCD signature is at least 22 bytes from the end; scan back
-    i := len(b) - 22
+    i := len(b) - size_of$(Eocd)
     for i >= 0:
-        if le32(b, i) == 101010256:      # 0x06054b50
+        if to_int(from_bytes$(Eocd)(b[i:i + size_of$(Eocd)]).sig) == SIG_EOCD:
             return i
         i = i - 1
     return -1
@@ -83,28 +134,30 @@ fn entry_body(b: bytes, e: Meta) -> bytes:
     eocd := find_eocd(b)
     if eocd < 0:
         return to_bytes([]int)
-    n := le16(b, eocd + 10)
-    cd_off := le32(b, eocd + 16)
-    pos := cd_off
+    d := from_bytes$(Eocd)(b[eocd:eocd + size_of$(Eocd)])
+    n := to_int(d.n_total)
+    pos := to_int(d.cd_off)
     off := -1
     for i := 0; i < n; i += 1:
-        if pos + 46 > len(b) or le32(b, pos) != 33639248:
+        if pos + size_of$(Central) > len(b):
             return to_bytes([]int)
-        nlen := le16(b, pos + 28)
-        elen := le16(b, pos + 30)
-        clen := le16(b, pos + 32)
-        nm := to_str(b[pos + 46:pos + 46 + nlen])
+        c := from_bytes$(Central)(b[pos:pos + size_of$(Central)])
+        if to_int(c.sig) != SIG_CENTRAL:
+            return to_bytes([]int)
+        nlen := to_int(c.nlen)
+        nm := to_str(b[pos + size_of$(Central):pos + size_of$(Central) + nlen])
         if nm == e.name:
-            off = le32(b, pos + 42)
+            off = to_int(c.off)
             break
-        pos = pos + 46 + nlen + elen + clen
+        pos = pos + size_of$(Central) + nlen + to_int(c.elen) + to_int(c.clen)
     if off < 0:
         return to_bytes([]int)
-    if off + 30 > len(b) or le32(b, off) != 67324752:   # 0x04034b50
+    if off + size_of$(Local) > len(b):
         return to_bytes([]int)
-    nlen := le16(b, off + 26)
-    elen := le16(b, off + 28)
-    start := off + 30 + nlen + elen
+    lh := from_bytes$(Local)(b[off:off + size_of$(Local)])
+    if to_int(lh.sig) != SIG_LOCAL:
+        return to_bytes([]int)
+    start := off + size_of$(Local) + to_int(lh.nlen) + to_int(lh.elen)
     if start + e.csize > len(b):
         return to_bytes([]int)
     raw := b[start:start + e.csize]
@@ -139,18 +192,10 @@ fn create(entries: [Entry]) -> bytes:
         push(cdatas, to_str(cdata))
         push(methods, method)
         push(crcs, crc32(e.data))
-        # local file header
-        push32(&out, 67324752)              # 0x04034b50
-        push16(&out, 20)                    # version needed
-        push16(&out, 0)                     # flags
-        push16(&out, method)
-        push16(&out, 0)                     # dos time
-        push16(&out, 0)                     # dos date
-        push32(&out, crc32(e.data))
-        push32(&out, len(cdata))
-        push32(&out, len(e.data))
-        push16(&out, len(e.name))
-        push16(&out, 0)                     # extra len
+        push_bytes(&out, to_bytes(Local(to_u32(SIG_LOCAL), to_u16(20),
+            to_u16(0), to_u16(method), to_u16(0), to_u16(0),
+            to_u32(crc32(e.data)), to_u32(len(cdata)), to_u32(len(e.data)),
+            to_u16(len(e.name)), to_u16(0))))
         push_str(&out, e.name)
         push_bytes(&out, cdata)
     cd_start := len(out)
@@ -159,43 +204,18 @@ fn create(entries: [Entry]) -> bytes:
         cdata := cdatas[i]
         method := methods[i]
         c := crcs[i]
-        push32(&out, 33639248)              # 0x02014b50
-        push16(&out, 20)                    # version made by
-        push16(&out, 20)                    # version needed
-        push16(&out, 0)                     # flags
-        push16(&out, method)
-        push16(&out, 0)
-        push16(&out, 0)
-        push32(&out, c)
-        push32(&out, len(cdata))
-        push32(&out, len(e.data))
-        push16(&out, len(e.name))
-        push16(&out, 0)
-        push16(&out, 0)
-        push16(&out, 0)
-        push16(&out, 0)
-        push32(&out, 0)
-        push32(&out, offs[i])
+        push_bytes(&out, to_bytes(Central(to_u32(SIG_CENTRAL), to_u16(20),
+            to_u16(20), to_u16(0), to_u16(method), to_u16(0), to_u16(0),
+            to_u32(c), to_u32(len(cdata)), to_u32(len(e.data)),
+            to_u16(len(e.name)), to_u16(0), to_u16(0), to_u16(0), to_u16(0),
+            to_u32(0), to_u32(offs[i]))))
         push_str(&out, e.name)
     cd_size := len(out) - cd_start
-    push32(&out, 101010256)                 # 0x06054b50
-    push16(&out, 0)
-    push16(&out, 0)
-    push16(&out, len(entries))
-    push16(&out, len(entries))
-    push32(&out, cd_size)
-    push32(&out, cd_start)
-    push16(&out, 0)
+    push_bytes(&out, to_bytes(Eocd(to_u32(SIG_EOCD), to_u16(0), to_u16(0),
+        to_u16(len(entries)), to_u16(len(entries)), to_u32(cd_size),
+        to_u32(cd_start), to_u16(0))))
     return to_bytes(out)
 
-fn push16(b: inout [int], v: int):
-    push(b, v & 255)
-    push(b, (v >> 8) & 255)
-fn push32(b: inout [int], v: int):
-    push(b, v & 255)
-    push(b, (v >> 8) & 255)
-    push(b, (v >> 16) & 255)
-    push(b, (v >> 24) & 255)
 fn push_str(b: inout [int], s: string):
     for i := 0; i < len(s); i += 1:
         push(b, s[i])
