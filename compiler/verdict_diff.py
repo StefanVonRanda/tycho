@@ -38,7 +38,7 @@ sys.path.insert(0, "scripts")
 import classify_rejects as C
 
 ROOTS = ("tests", "corelib", "tools", "examples", "server", "bench")
-EXPECT = 1307          # a leg that scores 0 of 0 is green by accident
+EXPECT = 1308          # a leg that scores 0 of 0 is green by accident
 
 # NAME fixtures whose diagnostic carries no file:line in EITHER compiler, because
 # merge_pkg (src/tychoc.c:14230, :14234) names the offending FILE and exits. Both
@@ -62,8 +62,10 @@ SITES = C.load_sites()
 # compiler/run.sh compares its own, so a fixed fixture reddens the lane.
 KNOWN_TYPE_MISS = {
     "tests/reject/generic_recur_grow.ty",
-    "tests/reject/infer_use_before_ground.ty",
-    "tests/reject/void_grounds_pending_push.ty",
+    # THE PENDING-TYPE RULES left this list when src/tychoc.c's B-3 grounding
+    # walk (:5879, :6108, :8909) was ported to compiler/types/tcheck.ty as a
+    # `pend` LIST with a line, a done flag and a per-block mark -- the `pendarr`
+    # SET R21f-11 built could carry none of the three.
     # THE CONCURRENCY RULES left this list under R21c, which ported the five
     # spawn legs (src/tychoc.c:5971-5982) and wait's argument (:6776) into
     # compiler/types/tcheck.ty in the bootstrap's own order.

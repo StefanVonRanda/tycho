@@ -129,6 +129,14 @@ struct VBind:
     ty: string
     mutable: bool
 
+# src/tychoc.c@g_pend -- one entry per bare `xs := []` / `x := None` decl, kept
+# in DECLARATION order with a per-block mark so the audit at the end of a block
+# sees exactly the entries that block opened.
+struct Pend:
+    name: string
+    line: int
+    done: bool
+
 struct C:
     cwarns: [string]                   # non-fatal, drained by the driver
     errbase: int                       # errs at the current proc's entry; -1 outside one
@@ -203,11 +211,14 @@ struct C:
                                        # scrutinee's payload, so they own no arena
                                        # (src/tychoc.c:12321 pushes NULL) and can
                                        # never be adopted by a `sink`
-    pendarr: [string: bool]            # locals declared as a bare `[]`: PENDING,
+    pend: [Pend]                       # locals declared as a bare `[]`: PENDING,
                                        # grounded by their first typed use
                                        # (src/tychoc.c:5886). Kept beside the
                                        # binding rather than in its type, which
                                        # stays "?" so nothing else changes
+    npend: int                         # live length of `pend`; blocks mark/restore it
+    pendok: string                     # the one pending name a read may see ungrounded:
+                                       # `push`/`map_set`'s receiver, which GROUNDS it
 
 fn _cexcerpt(cs: inout C, file: string, line: int) -> string:
     if line <= 0:
@@ -901,8 +912,14 @@ fn _exs(cs: inout C, es: [ast.Expr]):
     for e in es:
         _ex(&cs, e)
 
+# "" is NO EXPECTED TYPE, "?" is AN EXPECTED TYPE THIS PASS COULD NOT COMPUTE.
+# src/tychoc.c separates the two by which entry point runs -- resolve_expr
+# (synthesis) vs resolve_exp (checking) -- and src/tychoc.c:6193 is the one rule
+# that can only be worded with the distinction: a bare `[]` is an error when
+# NOTHING can type it, and silent when this pass merely does not know yet.
+# Every _ex2 site that meant the second already passes "?" and is unaffected.
 fn _ex(cs: inout C, e: ast.Expr) -> string:
-    return _ex2(&cs, e, "?")
+    return _ex2(&cs, e, "")
 
 # src/tychoc.c@sized_lit -- an int LITERAL adapting to a fixed-width
 # destination. Only the eight exact spellings: a newtype over one is not
@@ -947,6 +964,62 @@ fn _no_concrete(t: string) -> bool:
     ts := _targs(t)
     return len(ts) == 2 and (ts[0] == "?" or ts[1] == "?")
 
+# --------------------------------------------- pending decls (src/tychoc.c B-3)
+# The three rules a `pendarr` SET could not carry: a pending decl has a LINE (the
+# :8909 audit reports at the declaration, not at the block end), a DONE flag (the
+# audit is per block, so an entry cannot just be deleted when it grounds), and an
+# ORDER (`pend_find` takes the newest, so an inner shadow grounds before an outer).
+
+fn _pend_find(cs: inout C, name: string) -> int:
+    for i := cs.npend - 1; i >= 0; i -= 1:
+        if not cs.pend[i].done and cs.pend[i].name == name:
+            return i
+    return -1
+
+fn _pend_add(cs: inout C, name: string, line: int):
+    e := Pend(name, line, false)
+    if cs.npend < len(cs.pend):
+        cs.pend[cs.npend] = e
+    else:
+        push(cs.pend, e)
+    cs.npend += 1
+
+# src/tychoc.c@pend_ground. `_no_concrete` is this pass's `uninferrable` minus
+# T_PENDING, which has no type head here -- a pending local reads back "?", and
+# "?" also means "this pass could not compute one", so it grounds SILENTLY
+# (done, type left "?") rather than refusing a program the bootstrap accepts.
+fn _pend_ground(cs: inout C, name: string, t: string, line: int):
+    pi := _pend_find(&cs, name)
+    if pi < 0:
+        return
+    keep := cs.line
+    cs.line = line
+    # The COMPOSITION, not only the head: `push(xs, nop())` composes arr(void).
+    bad := _no_concrete(t)
+    if _is_arr(t) and _no_concrete(_elem_of(&cs, t)):
+        bad = true
+    if _head(t) == "map":
+        ka := _targs(t)
+        if len(ka) == 2 and (_no_concrete(ka[0]) or _no_concrete(ka[1])):
+            bad = true
+    if bad:
+        _cerr(&cs, "cannot infer the type of '" + name + "' from this use")   # src/tychoc.c:5879
+        cs.pend[pi].done = true
+        cs.line = keep
+        return
+    cs.pend[pi].done = true
+    if not known(t):
+        cs.line = keep
+        return
+    if not (_is_arr(t) or _head(t) == "map" or _head(t) == "soa"):
+        _cerr(&cs, "'" + name + "' was declared with [] but its first use makes it " + _show(&cs, t))
+        cs.line = keep
+        return
+    vi := _vfind(&cs, name)
+    if vi >= 0:
+        cs.vars[vi].ty = t
+    cs.line = keep
+
 fn _bare_empty_arr(e: ast.Expr) -> bool:
     match e:
         ast.EmptyArr(l, t): return len(t) == 0
@@ -956,7 +1029,11 @@ fn _bare_empty_arr(e: ast.Expr) -> bool:
 # same three reasons: `None` and `Ok()`/`Err()` have no type of their own, an
 # empty `[]` takes the annotation's, and an untyped lambda parameter takes the
 # expected fn type's.
-fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
+fn _ex2(cs: inout C, e: ast.Expr, want0: string) -> string:
+    nowant := len(want0) == 0
+    want := want0
+    if nowant:
+        want = "?"
     chan_ok := cs.chan_decl
     cs.chan_decl = false
     callee_ok := cs.callee
@@ -972,6 +1049,15 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
             return want
         if (e is ast.FloatLit) and want == "f32":
             return want
+    # src/tychoc.c:7555 -- checking mode grounds a pending decl from the
+    # destination type, and must run BEFORE the ast.Name arm below refuses the
+    # read: `f(xs)` at a typed parameter is a grounding use, not an ungrounded one.
+    if known(want) and want != "void":
+        match e:
+            ast.Name(lp, np):
+                if _pend_find(&cs, np) >= 0:
+                    _pend_ground(&cs, np, want, lp)
+            _: pass
     match e:
         ast.IntLit(l, v): return "int"
         ast.FloatLit(l, v): return "float"
@@ -992,6 +1078,10 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
         ast.NullLit(l): return "ptr"
         ast.Name(l, n):
             t := _vtype(&cs, n)
+            if len(t) > 0 and n != cs.pendok and _pend_find(&cs, n) >= 0:
+                cs.line = l
+                _cerr(&cs, "'" + n + "' is used before its type can be inferred -- assign/push/pass it first, or annotate the declaration")   # src/tychoc.c:6108
+                return "?"
             if len(t) > 0:
                 if cs.nlambda > 0 and _vfind(&cs, n) < cs.lam_mark and _head(t) == "chan":
                     cs.line = l
@@ -1163,7 +1253,10 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
             keep := cs.in_arg
             cs.in_arg = true
             for i := 1; i < len(k); i += 1:
-                at_ := _ex(&cs, k[i])
+                aw := "?"
+                if _head(ct) == "fun" and i < len(ps):
+                    aw = ps[i]                                     # src/tychoc.c:6574 CHECKS the arg
+                at_ := _ex2(&cs, k[i], aw)
                 if _head(ct) == "fun" and i < len(ps) and known(at_) and known(ps[i]) and
                         not compat(at_, ps[i]):                    # src/tychoc.c:6576
                     cs.line = l
@@ -1172,7 +1265,7 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
             if _head(ct) == "fun":
                 return _targs(ct)[0]
             return "?"
-        ast.Named(l, nm, k): return _ex(&cs, k[0])
+        ast.Named(l, nm, k): return _ex2(&cs, k[0], want0)
         ast.Binop(l, o, k):
             bt := _binop(&cs, o, k)
             _tnote(&cs, "o:" + bt)
@@ -1248,7 +1341,10 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
                 return wb
             et := "?"
             for i := 0; i < len(k); i += 1:
-                t := _ex2(&cs, k[i], ew)
+                iw := ew
+                if iw == "?" and i > 0:
+                    iw = et                                        # src/tychoc.c:6202-6203
+                t := _ex2(&cs, k[i], iw)
                 if t == "void":
                     _cerr(&cs, "an array element cannot be void -- this element produces no value (a call to a procedure that returns nothing?)")
                 elif i == 0 and ew == "?" and (k[i] is ast.NoneE):
@@ -1300,6 +1396,9 @@ fn _ex2(cs: inout C, e: ast.Expr, want: string) -> string:
             if len(t) == 0:
                 if _is_arr(_base(&cs, want)):
                     return want
+                if nowant:
+                    cs.line = l
+                    _cerr(&cs, "cannot type a bare [] here -- no expected type (write []T, or use it where the element type is known)")   # src/tychoc.c:6193
                 return "?"
             at := "arr(" + _enc(&cs, t[0]) + ")"
             if _is_arr(_base(&cs, want)) and compat(_elem_of(&cs, want), _elem_of(&cs, at)):
@@ -1994,7 +2093,7 @@ fn _call(cs: inout C, l: int, q: string, n: string, ts: [ast.Ty], args: [ast.Exp
         fkeep := cs.in_arg
         cs.in_arg = true
         for i := 0; i < len(args); i += 1:
-            fat := _ex(&cs, args[i])
+            fat := _ex2(&cs, args[i], fps[i + 1])                  # src/tychoc.c:6587 CHECKS the arg
             if known(fat) and known(fps[i + 1]) and not compat(fat, fps[i + 1]):
                 cs.line = l                                        # src/tychoc.c:6589
                 _cerr(&cs, "argument " + str(i + 1) + " to '" + n + "' must be " +
@@ -2109,9 +2208,25 @@ fn _call_builtin(cs: inout C, l: int, n: string, args: [ast.Expr], want: string)
     ats := []string
     keep := cs.in_arg
     cs.in_arg = true
+    # src/tychoc.c:6988 and :6928 -- `push(xs, v)` and `map_set(m, k, v)` GROUND a
+    # pending receiver, so its read here is not the ungrounded one :6108 refuses.
+    # Both C sites ground before resolving args[0]; the composed type is only
+    # available after the arg walk here, so the read is EXEMPTED instead and the
+    # grounding runs below, off `ats` -- walking args[1] twice would double every
+    # `_tnote` it makes and move the type census.
+    pendn := ""
+    if (n == "push" and len(args) == 2) or (n == "map_set" and len(args) == 3):
+        match args[0]:
+            ast.Name(l0, n0):
+                if _pend_find(&cs, n0) >= 0:
+                    pendn = n0
+            _: pass
     a0 := "?"
     if len(args) > 0:
+        keepp := cs.pendok
+        cs.pendok = pendn
         a0 = _ex(&cs, args[0])
+        cs.pendok = keepp
         push(ats, a0)
     b0 := _base(&cs, a0)
     # push's VALUE is checked against the array's element type, so it is the one
@@ -2124,6 +2239,14 @@ fn _call_builtin(cs: inout C, l: int, n: string, args: [ast.Expr], want: string)
         push(ats, _ex2(&cs, args[i], w1))
     cs.in_arg = keep
     cs.line = l
+    if len(pendn) > 0:
+        gt := "arr(" + ats[1] + ")"
+        if n == "map_set":
+            gt = "map(" + ats[1] + "," + ats[2] + ")"
+        _pend_ground(&cs, pendn, gt, l)
+        a0 = _vtype(&cs, pendn)
+        ats[0] = a0
+        b0 = _base(&cs, a0)
     if n == "str":
         if not _arity(&cs, n, args, 1, "str(x) takes one argument"):
             return "string"
@@ -2637,6 +2760,7 @@ fn _const_int(cs: inout C, name: string) -> [int]:
 
 fn _tblock(cs: inout C, body: [ast.Stmt]):
     m := _vmark(&cs)
+    pm := cs.npend
     _ix9 := 0
     for s in body:
         # The recovery boundary is the STATEMENT (tests/diag/multi_error_one_fn):
@@ -2646,6 +2770,14 @@ fn _tblock(cs: inout C, body: [ast.Stmt]):
         _tstmt(&cs, s)
         _copylive_stmt(&cs, body, _ix9)
         _ix9 += 1
+    # src/tychoc.c:8907 -- a pending decl must ground in its OWN block.
+    for pi := pm; pi < cs.npend; pi += 1:
+        if not cs.pend[pi].done:
+            cs.line = cs.pend[pi].line
+            _cerr(&cs, "could not infer the type of '" + cs.pend[pi].name +
+                "' -- no grounding use in its block (annotate: " + cs.pend[pi].name +
+                " : [T] = [] / Option(T) = None)")
+    cs.npend = pm
     _vrestore(&cs, m)
 
 # The type an if/match VALUE block produces, and the rule that its branches must
@@ -2916,9 +3048,11 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
                 push(cs.symrows, cs.symfnm + "\nlocal\t" + name + "\t" + _show(&cs, t) + "\t" +
                     str(cs.symfn) + "\t" + str(l))
             _vpush(&cs, name, t, true)
-            delete cs.pendarr[name]
+            pold := _pend_find(&cs, name)
+            if pold >= 0:                              # a redeclaration retires the old entry
+                cs.pend[pold].done = true
             if len(ty) == 0 and len(rhs) == 1 and _bare_empty_arr(rhs[0]):
-                cs.pendarr[name] = true
+                _pend_add(&cs, name, l)
         ast.MDecl(l, isdecl, names, rhs):
             t := "?"
             if len(rhs) == 1:
@@ -3117,11 +3251,9 @@ fn _assign_check(cs: inout C, name: string, t: string):
     # only an Option the second. tcheck types the bare `[]` "?" and the bare
     # `None` "opt(?)", so without these two the family is accepted (`[]`) or
     # refused by the generic assign rule under other wording (`None`).
-    if name in cs.pendarr:
-        delete cs.pendarr[name]
-        if known(t) and not _is_arr(t) and _head(t) != "map" and _head(t) != "soa":
-            _cerr(&cs, "'" + name + "' was declared with [] but its first use makes it " + _show(&cs, t))
-            return
+    if _pend_find(&cs, name) >= 0:                 # src/tychoc.c:8477
+        _pend_ground(&cs, name, t, cs.line)
+        return
     if vt == "opt(?)" and known(t) and _head(t) != "opt":
         _cerr(&cs, "'" + name + "' was declared with None but its first use makes it " + _show(&cs, t))
         return
@@ -3319,7 +3451,7 @@ fn check(p: Program) -> C:
     return check_on(p, false)
 
 fn check_on(p: Program, syms: bool) -> C:
-    cs := C([]string, -1, []string: bool, []string: bool, 0, []string, []string, []TDecl, []string: int, []FSig, []string: int, []string: string, []string: string, []string: string, []string: int, []string: bool, []string: string, []string: bool, []VBind, 0, []string, []string, []string: int, "", 0, "", "?", false, false, []ast.ImportD, []ast.ImportD, false, 0, 0, false, 0, []string: int, []string: bool, []string: bool, 0, 0, false, []string, []string, false, 0, false, "", []string: bool, []string: bool, []string: bool)
+    cs := C([]string, -1, []string: bool, []string: bool, 0, []string, []string, []TDecl, []string: int, []FSig, []string: int, []string: string, []string: string, []string: string, []string: int, []string: bool, []string: string, []string: bool, []VBind, 0, []string, []string, []string: int, "", 0, "", "?", false, false, []ast.ImportD, []ast.ImportD, false, 0, 0, false, 0, []string: int, []string: bool, []string: bool, 0, 0, false, []string, []string, false, 0, false, "", []string: bool, []string: bool, []Pend, 0, "")
     cs.symon = syms
     for f in p.files:
         push(cs.srcp, f.path)
@@ -3364,7 +3496,8 @@ fn check_on(p: Program, syms: bool) -> C:
             cs.paramset = []string: bool
             for pnm in cs.sg[si].pnames:
                 cs.paramset[pnm] = true
-            cs.pendarr = []string: bool
+            cs.npend = 0
+            cs.pendok = ""
             cs.mbind = []string: bool
             cs.errbase = len(cs.errs)
             _tblock(&cs, fd.body)

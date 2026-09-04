@@ -39,6 +39,7 @@ tests/reject/array_arith_fixlen.ty	TYPE	7425	element-wise `*` on a fixed array r
 tests/reject/assign_to_literal.ty	SYNTAX	4180	cannot assign to this expression
 tests/reject/assign_unknown_plain.ty	NAME	8447	assignment to unknown variable 'zzqqww' (use ':=' to declare)
 tests/reject/assign_unknown_suggest.ty	NAME	8446	assignment to unknown variable 'counr' (use ':=' to declare); did you mean 'count'?
+tests/reject/bare_arr_no_context.ty	SEMANTIC	6193	cannot type a bare [] here -- no expected type (write []T, or use it where the element type is known)
 tests/reject/bare_expr_stmt.ty	SYNTAX	4235	a statement must be a declaration, assignment, or call -- a bare expression has no effect
 tests/reject/base_mismatch_arg.ty	TYPE	7198	argument 1 of 'f' is string, expected int
 tests/reject/base_mismatch_call_decl.ty	TYPE	8351	declared type int but value is string

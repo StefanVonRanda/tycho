@@ -1,0 +1,8 @@
+# src/tychoc.c:6193. A bare `[]` where NOTHING can type it: `len(x)` synthesizes
+# its argument, so no expected type reaches the literal. tychoc1 accepted this
+# until `_ex2` grew a spelling for NO expected type ("") distinct from one this
+# pass could not compute ("?") -- with a single "?" for both, exempting the
+# builtin walker cannot separate them (written, measured and reverted, R21f-12).
+# expect: cannot type a bare [] here -- no expected type (write []T, or use it where the element type is known)
+fn main():
+    print(str(len([])))

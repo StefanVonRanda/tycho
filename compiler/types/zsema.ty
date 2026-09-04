@@ -1027,8 +1027,14 @@ fn _inst_ctor(cs: inout C, l: int, ti: int, args: [ast.Expr], at0: int, npay: in
     ats := []string
     keep := cs.in_arg
     cs.in_arg = true
+    # A generic constructor INFERS its type arguments from the field values, so
+    # it has no expected type to hand down -- but it is not the "nothing can type
+    # this" case src/tychoc.c:6193 refuses either: the field's own pattern is the
+    # destination, and the pass computes it a line later by unifying against it.
+    # `Stack([])` at `a : Stack(int)` is that shape, and the pattern (`[$T]`) is
+    # passed as "?" -- an expected type not yet computed -- rather than as nothing.
     for a in args:
-        push(ats, _ex(&cs, a))
+        push(ats, _ex2(&cs, a, "?"))
     cs.in_arg = keep
     cs.line = l
     if len(args) != npay:
