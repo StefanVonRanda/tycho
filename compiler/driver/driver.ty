@@ -617,7 +617,7 @@ fn _sym_locals(b: [ast.Stmt], fnline: int, pk: string, own: [string: bool], imp:
             ast.For3(l, ip, c, bb):
                 _sym_locals(ip, fnline, pk, own, imp)
                 _sym_locals(bb, fnline, pk, own, imp)
-            ast.ForIn(l, n, c, bb): _sym_locals(bb, fnline, pk, own, imp)
+            ast.ForIn(l, n, c, bb, zpf): _sym_locals(bb, fnline, pk, own, imp)
             ast.ForRange(l, n, c, bb): _sym_locals(bb, fnline, pk, own, imp)
             ast.MatchS(l, sj, arms):
                 for a in arms:

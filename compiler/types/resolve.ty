@@ -967,7 +967,7 @@ fn _stmt(rs: inout R, bi: [string: bool], ctors: [string: bool], s: ast.Stmt):
             _exprs(&rs, bi, ctors, c)
             _block(&rs, bi, ctors, b)
             _restore(&rs, m)
-        ast.ForIn(l, v, coll, b):
+        ast.ForIn(l, v, coll, b, zpf):
             _exprs(&rs, bi, ctors, coll)
             m := _mark(&rs)
             rs.line = l

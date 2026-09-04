@@ -1526,7 +1526,7 @@ fn _forstmt_into(toks: [lex.Tok], i0: int, par: bool, out: inout ast.Stmt) -> in
         i = _blockcolon(toks, j)
         i = _expect(toks, i, lex.K_NEWLINE, "")
         b, k := block(toks, i)
-        out = ast.ForIn(toks[ti].line, v, [coll], b)
+        out = ast.ForIn(toks[ti].line, v, [coll], b, par)
         return k
     # condition form `for cond:`
     c := ast.NullLit(0)

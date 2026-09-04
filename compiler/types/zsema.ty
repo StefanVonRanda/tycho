@@ -1167,7 +1167,7 @@ fn _count_s(s: ast.Stmt, m: inout [string: int]):
             _count_b(i, &m)
             _count_es(c, &m)
             _count_b(b, &m)
-        ast.ForIn(l, v, c, b):
+        ast.ForIn(l, v, c, b, zpf):
             _count_es(c, &m)
             _count_b(b, &m)
         ast.ForRange(l, v, bd, b):
@@ -1433,7 +1433,7 @@ fn _pf_locals(b: [ast.Stmt], out: inout [string: bool]):
             ast.For3(l, ip, c, bb):
                 _pf_locals(ip, &out)
                 _pf_locals(bb, &out)
-            ast.ForIn(l, n, c, bb):
+            ast.ForIn(l, n, c, bb, zpf):
                 out[n] = true
                 _pf_locals(bb, &out)
             ast.ForRange(l, n, c, bb):
@@ -1542,7 +1542,7 @@ fn _pf_body(cs: inout C, b: [ast.Stmt], loc: [string: bool], depth: int,
                 _pf_body(&cs, e, loc, depth, &accop)
             ast.WhileS(l, c, bb): _pf_body(&cs, bb, loc, depth + 1, &accop)
             ast.For3(l, ip, c, bb): _pf_body(&cs, bb, loc, depth + 1, &accop)
-            ast.ForIn(l, n, c, bb): _pf_body(&cs, bb, loc, depth + 1, &accop)
+            ast.ForIn(l, n, c, bb, zpf): _pf_body(&cs, bb, loc, depth + 1, &accop)
             ast.ForRange(l, n, c, bb): _pf_body(&cs, bb, loc, depth + 1, &accop)
             ast.MatchS(l, sj, arms):
                 for a in arms:
@@ -1628,7 +1628,7 @@ fn _pf_accs(b: [ast.Stmt], loc: [string: bool], out: inout [string], bad: inout 
                 _pf_accs(e, loc, &out, &bad)
             ast.WhileS(l, c, bb): _pf_accs(bb, loc, &out, &bad)
             ast.For3(l, ip, c, bb): _pf_accs(bb, loc, &out, &bad)
-            ast.ForIn(l, n, c, bb): _pf_accs(bb, loc, &out, &bad)
+            ast.ForIn(l, n, c, bb, zpf): _pf_accs(bb, loc, &out, &bad)
             ast.MatchS(l, sj, arms):
                 for a in arms:
                     _pf_accs(a.body, loc, &out, &bad)
@@ -1680,7 +1680,7 @@ fn _pf_exprs(b: [ast.Stmt], out: inout [ast.Expr]):
                 for e in c:
                     push(out, e)
                 _pf_exprs(bb, &out)
-            ast.ForIn(l, n, c, bb):
+            ast.ForIn(l, n, c, bb, zpf):
                 for e in c:
                     push(out, e)
                 _pf_exprs(bb, &out)

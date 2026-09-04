@@ -3164,13 +3164,25 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
             _tblock(&cs, b)
             _vrestore(&cs, m)
             cs.loopd = cs.loopd - 1
-        ast.ForIn(l, v, coll, b):
+        ast.ForIn(l, v, coll, b, par):
             cs.loopd = cs.loopd + 1
             ct := _base(&cs, _ex(&cs, coll[0]))
             cs.line = l
             et := "?"
             h := _head(ct)
-            if h == "map":
+            if par:
+                # src/tychoc.c:8008 -- the parallel form lifts the body over the
+                # source, so its set is narrower than the sequential one: an
+                # array, a string or a channel, and NOT bytes, a map or a soa.
+                if h == "chan":
+                    et = _targs(ct)[0]
+                elif _is_arr(ct):
+                    et = _elem_of(&cs, ct)
+                elif ct == "string":
+                    et = "int"
+                elif known(ct):
+                    _cerr(&cs, "parallel for expects an array, string, or channel")
+            elif h == "map":
                 _cerr(&cs, "a map is not directly iterable -- `for k in m` indexes it by position. Loop over `keys(m)` instead: `for k in keys(m):` (the keys come back as " + _show(&cs, _targs(ct)[0]) + ", wrapped)")
             elif _is_arr(ct) or h == "soa":
                 et = _elem_of(&cs, ct)
@@ -3179,9 +3191,8 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
             elif h == "chan":
                 et = _targs(ct)[0]
             elif known(ct):
-                # src/tychoc.c:8008. `ast.ForIn` discards the `parallel` flag the
-                # parser saw, so the sequential wording is the one that can be
-                # emitted for both spellings.
+                # The sequential form desugars to `len(...)`, so that is the
+                # rule that owns the refusal (src/tychoc.c:6917).
                 _cerr(&cs, "len(...) takes an array, a string, bytes, a map, or a soa")
             m := _vmark(&cs)
             _tnote(&cs, "i:" + et)

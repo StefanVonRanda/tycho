@@ -242,7 +242,7 @@ fn _cs(s: Stmt, acc: [string]) -> [string]:
             out = _cb(ip, out)
             out = _ces(c, out)
             out = _cb(b, out)
-        ForIn(l, n, c, b):
+        ForIn(l, n, c, b, zpf):
             push(out, "s.ForIn")
             out = _ces(c, out)
             out = _cb(b, out)

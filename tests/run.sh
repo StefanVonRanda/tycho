@@ -82,12 +82,10 @@ corpus_census() {
     # says in its own header which tychoc1 rule words the refusal differently.
     # (`pass_as_value` was the fifth and carries one now: R21a-3 moved tychoc1 to
     # src/tychoc.c:6164's rule.)
-    # `parfor_not_collection` carries none on purpose: this lane scores the
-    # expectation against ./tychoc1, and on that rule the two compilers word it
-    # differently, so an `# expect:` here could only assert one of the two. Its
-    # header says so. Its three former siblings -- `for3_two_clauses`,
-    # `match_range_no_high` and `const_div_overflow` -- were closed by R21a-3 and
-    # are pinned on the whole message now.
+    # `parfor_not_collection` carries one now: giving `ast.ForIn` the parser's
+    # `parallel` flag let tychoc1 word the parallel refusal, so the two agree.
+    # Its three former siblings -- `for3_two_clauses`, `match_range_no_high` and
+    # `const_div_overflow` -- were closed by R21a-3 and are pinned the same way.
     # Plus all 5 flat ones R21f-11 added for the 5k const-fold and pending-decl
     # block and the two lambda ceilings; its 6th is a package fixture and is not
     # in this count, which walks the flat lane only.
@@ -102,7 +100,7 @@ corpus_census() {
         grep -q '^# expect: ' "$cc_e" && cc_exp=$((cc_exp + 1))
     done
     [ "$cc_show" = print ] && printf 'count %-10s %d\n' reject-expect "$cc_exp"
-    [ "$cc_exp" -eq 342 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=342"
+    [ "$cc_exp" -eq 343 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=343"
 
     cc_dirs=0
     for cc_d in $(git ls-files tests 2>/dev/null | grep '\.ty$' | sed 's|/[^/]*$||' | sort -u); do

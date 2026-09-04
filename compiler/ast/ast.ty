@@ -154,7 +154,7 @@ enum Stmt:
     IfS(int, [Expr], [Stmt], [Stmt])   # condition, body, else branch
     WhileS(int, [Expr], [Stmt])        # `for cond:` and bare `for:`
     For3(int, [Stmt], [Expr], [Stmt])  # exactly [init, post], condition, body
-    ForIn(int, string, [Expr], [Stmt]) # `for x in COLL:`
+    ForIn(int, string, [Expr], [Stmt], bool) # `for x in COLL:`; last field is the parallel flag
     ForRange(int, string, [Expr], [Stmt]) # `parallel for i in 0..<N:`
     ParallelS(int, [Expr], [Stmt])     # width (0 or 1), the single loop statement
     MatchS(int, [Expr], [Arm])
@@ -176,7 +176,7 @@ fn sline_of(s: Stmt) -> int:
         IfS(l, c, b, e): return l
         WhileS(l, c, b): return l
         For3(l, ip, c, b): return l
-        ForIn(l, n, c, b): return l
+        ForIn(l, n, c, b, zpf): return l
         ForRange(l, n, c, b): return l
         ParallelS(l, w, b): return l
         MatchS(l, c, a): return l

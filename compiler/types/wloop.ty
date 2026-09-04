@@ -99,7 +99,7 @@ fn _wl_body(b: [ast.Stmt], muts: inout [string], ex: inout bool):
                 _wl_body(ip, &muts, &ex)
                 _wl_exprs(c, &muts, &ex)
                 _wl_body(b2, &muts, &ex)
-            ast.ForIn(l, n, coll, b2):
+            ast.ForIn(l, n, coll, b2, zpf):
                 _wl_add(&muts, n)
                 _wl_exprs(coll, &muts, &ex)
                 _wl_body(b2, &muts, &ex)

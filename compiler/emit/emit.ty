@@ -1543,7 +1543,7 @@ fn _pushn_s(s: ast.Stmt, nm: string) -> int:
         ast.IfS(l, c2, b, e): return _pushn_l(c2, nm) + _pushn_b(b, nm) + _pushn_b(e, nm)
         ast.WhileS(l, c2, b): return _pushn_l(c2, nm) + _pushn_b(b, nm)
         ast.For3(l, ip, c2, b): return _pushn_b(ip, nm) + _pushn_l(c2, nm) + _pushn_b(b, nm)
-        ast.ForIn(l, n, c2, b): return _pushn_l(c2, nm) + _pushn_b(b, nm)
+        ast.ForIn(l, n, c2, b, zpf): return _pushn_l(c2, nm) + _pushn_b(b, nm)
         ast.ForRange(l, n, c2, b): return _pushn_l(c2, nm) + _pushn_b(b, nm)
         ast.ParallelS(l, w, b): return _pushn_l(w, nm) + _pushn_b(b, nm)
         ast.MatchS(l, c2, a): return _pushn_l(c2, nm) + _pushn_a(a, nm)
@@ -1571,7 +1571,7 @@ fn _defs_s(s: ast.Stmt, nm: string) -> bool:
         ast.IfS(l, c2, b, e): return _defs_b(b, nm) or _defs_b(e, nm)
         ast.WhileS(l, c2, b): return _defs_b(b, nm)
         ast.For3(l, ip, c2, b): return _defs_b(ip, nm) or _defs_b(b, nm)
-        ast.ForIn(l, n, c2, b): return n == nm or _defs_b(b, nm)
+        ast.ForIn(l, n, c2, b, zpf): return n == nm or _defs_b(b, nm)
         ast.ForRange(l, n, c2, b): return n == nm or _defs_b(b, nm)
         ast.ParallelS(l, w, b): return _defs_b(b, nm)
         ast.MatchS(l, c2, a): return _defs_a(a, nm)
@@ -1627,7 +1627,7 @@ fn _stmt_es(s: ast.Stmt) -> [ast.Expr]:
         ast.IfS(l, c2, b, e): return c2
         ast.WhileS(l, c2, b): return c2
         ast.For3(l, ip, c2, b): return c2
-        ast.ForIn(l, n, c2, b): return c2
+        ast.ForIn(l, n, c2, b, zpf): return c2
         ast.ForRange(l, n, c2, b): return c2
         ast.ParallelS(l, w, b): return w
         ast.MatchS(l, c2, a): return c2
@@ -1646,7 +1646,7 @@ fn _stmt_bs(s: ast.Stmt) -> [[ast.Stmt]]:
         ast.For3(l, ip, c2, b):
             push(out, ip)
             push(out, b)
-        ast.ForIn(l, n, c2, b): push(out, b)
+        ast.ForIn(l, n, c2, b, zpf): push(out, b)
         ast.ForRange(l, n, c2, b): push(out, b)
         ast.ParallelS(l, w, b): push(out, b)
         ast.MatchS(l, c2, a):
@@ -2648,7 +2648,7 @@ fn _fv_body(cs: inout C, body: [ast.Stmt], bs0: [string], out: inout [string], w
                 _fv_body(&cs, ip, bs, &out, &wr)
                 _fvs(&cs, c, bs, &out)
                 _fv_body(&cs, b2, bs, &out, &wr)
-            ast.ForIn(l, n, coll, b2):
+            ast.ForIn(l, n, coll, b2, zpf):
                 _fvs(&cs, coll, bs, &out)
                 push(bs, n)
                 _fv_body(&cs, b2, bs, &out, &wr)
@@ -4227,7 +4227,7 @@ fn _uns_s(s: ast.Stmt, iv: string, arr: string) -> bool:
         ast.WhileS(l, c, b): return _pass_l(c, arr) or _uns_b(b, iv, arr)
         ast.For3(l, ip, c, b):
             return _uns_b(ip, iv, arr) or _pass_l(c, arr) or _uns_b(b, iv, arr)
-        ast.ForIn(l, n, c, b):
+        ast.ForIn(l, n, c, b, zpf):
             return n == iv or n == arr or _pass_l(c, arr) or _uns_b(b, iv, arr)
         ast.ForRange(l, n, c, b):
             return n == iv or n == arr or _pass_l(c, arr) or _uns_b(b, iv, arr)
@@ -4379,7 +4379,7 @@ fn _creads_s(s: ast.Stmt, nm: string) -> int:
         ast.IfS(l, c2, b, e): return _creads_l(c2, nm) + _creads_b(b, nm) + _creads_b(e, nm)
         ast.WhileS(l, c2, b): return _creads_l(c2, nm) + _creads_b(b, nm)
         ast.For3(l, ip, c2, b): return _creads_b(ip, nm) + _creads_l(c2, nm) + _creads_b(b, nm)
-        ast.ForIn(l, n, c2, b): return _creads_l(c2, nm) + _creads_b(b, nm)
+        ast.ForIn(l, n, c2, b, zpf): return _creads_l(c2, nm) + _creads_b(b, nm)
         ast.ForRange(l, n, c2, b): return _creads_l(c2, nm) + _creads_b(b, nm)
         ast.ParallelS(l, w, b): return _creads_l(w, nm) + _creads_b(b, nm)
         ast.MatchS(l, c2, a): return _creads_l(c2, nm) + _creads_a(a, nm)
@@ -4825,7 +4825,7 @@ fn _parfor(cs: inout C, b: [ast.Stmt], ind: string, w: [ast.Expr]) -> string:
             else:
                 out = out + ind + "        (void)_pp;\n"
             return out + ind + "    }\n" + ind + "}\n"
-        ast.ForIn(l2, v, coll, body):
+        ast.ForIn(l2, v, coll, body, zpf):
             return _parchan(&cs, l2, v, coll, body, ind, pkw, pkg)
         _: _bad("parallel requires `for i in lo..<hi:` or `for x in ch:`")
     return ""
@@ -5697,7 +5697,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                 bd3 + lab3 + post + ind + "    }\n" + fc3 + clos3 + ind + "}\n"
             _restore(&cs, m)
             return out
-        ast.ForIn(l, n, c, b):
+        ast.ForIn(l, n, c, b, zpf):
             cc, ct := _ex(&cs, c[0])
             if ct == "string":
                 fs := _fresh(&cs, "_fs")
@@ -6000,7 +6000,7 @@ fn _mut_s(s: ast.Stmt, nm: string) -> bool:
         ast.IfS(l, c, b, e2): return _mut_es(c, nm) or _mut_b(b, nm) or _mut_b(e2, nm)
         ast.WhileS(l, c, b): return _mut_es(c, nm) or _mut_b(b, nm)
         ast.For3(l, i2, c, b): return _mut_b(i2, nm) or _mut_es(c, nm) or _mut_b(b, nm)
-        ast.ForIn(l, n, k, b): return _mut_es(k, nm) or _mut_b(b, nm)
+        ast.ForIn(l, n, k, b, zpf): return _mut_es(k, nm) or _mut_b(b, nm)
         ast.ForRange(l, n, k, b): return _mut_es(k, nm) or _mut_b(b, nm)
         ast.ParallelS(l, k, b): return _mut_es(k, nm) or _mut_b(b, nm)
         ast.MatchS(l, k, arms): return _mut_es(k, nm) or _mut_arms(arms, nm)
@@ -7090,7 +7090,7 @@ fn _escs_b(ss: [ast.Stmt], hv: [bool], out: inout [string]):
                 _escs_b(e, hv, &out)
             ast.WhileS(l, c, b): _escs_b(b, hv, &out)
             ast.For3(l, i2, c, b): _escs_b(b, hv, &out)
-            ast.ForIn(l, n, k, b): _escs_b(b, hv, &out)
+            ast.ForIn(l, n, k, b, zpf): _escs_b(b, hv, &out)
             ast.ForRange(l, n, k, b): _escs_b(b, hv, &out)
             ast.ParallelS(l, k, b): _escs_b(b, hv, &out)
             _: pass
@@ -7153,7 +7153,7 @@ fn _acc_scan(ss: [ast.Stmt], selfapp: inout [string], other: inout [string],
                 _acc_scan(t, &selfapp, &other, &decl)
                 _acc_scan(e, &selfapp, &other, &decl)
             ast.WhileS(l, c, b): _acc_scan(b, &selfapp, &other, &decl)
-            ast.ForIn(l, v, c, b): _acc_scan(b, &selfapp, &other, &decl)
+            ast.ForIn(l, v, c, b, zpf): _acc_scan(b, &selfapp, &other, &decl)
             ast.For3(l, ip, c, b):
                 _acc_scan(ip, &selfapp, &other, &decl)
                 _acc_scan(b, &selfapp, &other, &decl)
@@ -7250,7 +7250,7 @@ fn _ref_s(s: ast.Stmt, m: inout [string: bool]):
             _ref_b(i, &m)
             _ref_es(c, &m)
             _ref_b(b, &m)
-        ast.ForIn(l, v, c, b):
+        ast.ForIn(l, v, c, b, zpf):
             _ref_es(c, &m)
             _ref_b(b, &m)
         ast.ForRange(l, v, bd, b):

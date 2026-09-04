@@ -129,7 +129,7 @@ fn _cbody(fns: [ast.Fn], body: [ast.Stmt], nm: string, u: inout CU, seen: inout 
                 _cbody(fns, ip, nm, &u, &seen)
                 _cexprs(fns, c, nm, &u, &seen)
                 _cbody(fns, b, nm, &u, &seen)
-            ast.ForIn(l, n, coll, b):
+            ast.ForIn(l, n, coll, b, zpf):
                 # `for x in ch:` is a blocking drain, and the parallel form ends
                 # only on close -- which is the `closed:` arm src/tychoc.c
                 # desugars it into.
@@ -145,7 +145,7 @@ fn _cbody(fns: [ast.Fn], body: [ast.Stmt], nm: string, u: inout CU, seen: inout 
                 _cexprs(fns, w, nm, &u, &seen)
                 for st in b:
                     match st:
-                        ast.ForIn(l2, n2, coll, b2):
+                        ast.ForIn(l2, n2, coll, b2, zpf):
                             if len(coll) > 0 and _cis(coll[0], nm) and u.closed_line == 0:
                                 u.closed_line = l
                         _: pass
@@ -192,7 +192,7 @@ fn _cdecls(rs: inout R, fns: [ast.Fn], owner: int, body: [ast.Stmt], file: strin
                 _cdecls(&rs, fns, owner, e, file)
             ast.WhileS(l, c, b): _cdecls(&rs, fns, owner, b, file)
             ast.For3(l, ip, c, b): _cdecls(&rs, fns, owner, b, file)
-            ast.ForIn(l, n, coll, b): _cdecls(&rs, fns, owner, b, file)
+            ast.ForIn(l, n, coll, b, zpf): _cdecls(&rs, fns, owner, b, file)
             ast.ForRange(l, n, k, b): _cdecls(&rs, fns, owner, b, file)
             ast.ParallelS(l, w, b): _cdecls(&rs, fns, owner, b, file)
             ast.MatchS(l, c, arms):
@@ -223,7 +223,7 @@ fn _any_chan_decl(body: [ast.Stmt]) -> bool:
             ast.For3(l, ip, c, b):
                 if _any_chan_decl(ip) or _any_chan_decl(b):
                     return true
-            ast.ForIn(l, n, coll, b):
+            ast.ForIn(l, n, coll, b, zpf):
                 if _any_chan_decl(b):
                     return true
             ast.ForRange(l, n, k, b):
@@ -420,7 +420,7 @@ fn _reads_stmt(s: ast.Stmt, out: inout [string]):
             _reads_body(ip, &out)
             _reads_all(c, &out)
             _reads_body(b, &out)
-        ast.ForIn(l, n, coll, b):
+        ast.ForIn(l, n, coll, b, zpf):
             _reads_all(coll, &out)
             _reads_body(b, &out)
         ast.ForRange(l, n, k, b):
