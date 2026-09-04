@@ -41,10 +41,11 @@ sys.path.insert(0, "scripts")
 import classify_rejects as C
 
 ROOTS = ("tests", "corelib", "tools", "examples", "server", "bench")
-EXPECT = 1336          # a leg that scores 0 of 0 is green by accident
+EXPECT = 1338          # a leg that scores 0 of 0 is green by accident
                        # 1308 -> 1311: the three V2 `packed` fixtures (2026-09-04)
                        # 1311 -> 1319: the eight V2b bytes-bridge fixtures
                        # 1330 -> 1331: tests/reject/fstring_hole_name.ty
+                       # 1336 -> 1338: the two struct/enum `$Name` typaram fixtures
 
 # NAME fixtures whose diagnostic carries no file:line in EITHER compiler, because
 # merge_pkg (src/tychoc.c:14408, :14234) names the offending FILE and exits. Both

@@ -142,6 +142,7 @@ tests/reject/enum_named_none.ty	NAME	4341	'None' is already defined
 tests/reject/enum_payload_sizeparam.ty	SEMANTIC	9432	an enum payload cannot be a `[$N]T` size-parameterized array -- use a fixed `[N]T` or a dynamic `[T]`
 tests/reject/enum_payload_type.ty	SEMANTIC	6869	payload type mismatch: Circle payload 1 is float, got string
 tests/reject/enum_typaram_max.ty	SYNTAX	4828	too many enum type parameters (max 16)
+tests/reject/enum_typaram_not_dollar.ty	SYNTAX	4827	an enum type parameter must be written `$Name`
 tests/reject/err_empty.ty	SYNTAX	3020	Err() carries no value -- a Result's error type cannot be void
 tests/reject/err_needs_concrete.ty	SEMANTIC	6130	Err(...) needs a concrete value
 tests/reject/explicit_count.ty	TYPE	2698	unknown type 'str'
@@ -472,6 +473,7 @@ tests/reject/struct_named_ok.ty	NAME	4341	'Ok' is already defined
 tests/reject/struct_named_partial.ty	SEMANTIC	6787	P: named construction must give all 2 field(s), got 1
 tests/reject/struct_named_unknown_field.ty	SEMANTIC	6784	P has no field 'z'
 tests/reject/struct_typaram_max.ty	SYNTAX	4768	too many struct type parameters (max 16)
+tests/reject/struct_typaram_not_dollar.ty	SYNTAX	4767	a struct type parameter must be written `$Name`
 tests/reject/subscript_dangling.ty	SYNTAX	4530	a subscript must yield a place rooted in one of its parameters (else the projection would dangle)
 tests/reject/subscript_generic_recv.ty	SEMANTIC	4506	a subscript receiver may not be generic ('Pool($T)'): declare the subscript on a concrete instance
 tests/reject/subscript_no_yield.ty	SYNTAX	4517	a subscript body must be a single `yield &<place>`

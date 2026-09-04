@@ -46,8 +46,16 @@ echo "tychoc1-check: $($C --version 2>/dev/null || echo tychoc1)"
 # STANDALONE cases the runner adds on top of it -- clobber_refused_{bare,out,shim},
 # clobber_emit_c, bundle_clean, bundle_blames_right_file, dashname_after_ddash and
 # corpus_census -- which move when a CASE is added, never when a fixture is.
+# 2026-09-05: when $C is the default ./tychoc1 this leg was BYTE-FOR-BYTE the run
+# `make test` already does -- tests/run.sh:147 defaults TYCHOC to ./tychoc1 and
+# Makefile:133 sets nothing -- so a session running both paid ~150 s twice for one
+# fact. The pass-count assertion this leg uniquely held moved into tests/run.sh,
+# where `make test` holds it too. The leg stays live for the only case that is NOT
+# that run: TYCHOC1 naming another binary.
 STANDALONE=8
-if [ "$ONLY" = all ] || [ "$ONLY" = tests ]; then
+if { [ "$ONLY" = all ] || [ "$ONLY" = tests ]; } && [ "$C" = ./tychoc1 ]; then
+    printf '  %-22s skipped (identical to `make test`: tests/run.sh defaults TYCHOC=%s)\n' tests "$C"
+elif [ "$ONLY" = all ] || [ "$ONLY" = tests ]; then
     n=$((n + 1))
     census=$(sh tests/run.sh --count 2>&1); crc=$?
     corpus=$(printf '%s\n' "$census" | sed -n 's/^count total *\([0-9]*\).*/\1/p' | tail -1)

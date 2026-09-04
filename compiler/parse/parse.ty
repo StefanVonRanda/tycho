@@ -1836,6 +1836,13 @@ fn _wheres(toks: [lex.Tok], i0: int, tps: [string]) -> ([string], int):
         _die(toks, _at(toks, i0), "at most 8 `where` constraints per function")
     return (out, i)
 
+fn _is_typaram_ty(t: ast.Ty) -> bool:
+    # src/tychoc.c@IS_TYPARAM: a struct/enum type parameter must BE a `$Name`,
+    # not merely CONTAIN one -- `struct Box([$T])` is refused as well as `Box(int)`.
+    match t:
+        ast.TParam(n): return true
+        _: return false
+
 fn _collect_typarams_ty(t: ast.Ty, acc: [string]) -> [string]:
     out := acc
     match t:
@@ -1991,6 +1998,8 @@ fn structd(toks: [lex.Tok], i0: int) -> (ast.StructD, int):
         for not _isop(toks, i, lex.OP_RPAREN):
             a, k := ty(toks, i)
             i = k
+            if not _is_typaram_ty(a):
+                _die(toks, _at(toks, i0), "a struct type parameter must be written `$Name`")
             tps = _collect_typarams_ty(a, tps)
             if not _isop(toks, i, lex.OP_COMMA):
                 break
@@ -2037,6 +2046,8 @@ fn enumd(toks: [lex.Tok], i0: int) -> (ast.EnumD, int):
         for not _isop(toks, i, lex.OP_RPAREN):
             a, k := ty(toks, i)
             i = k
+            if not _is_typaram_ty(a):
+                _die(toks, _at(toks, i0), "an enum type parameter must be written `$Name`")
             tps = _collect_typarams_ty(a, tps)
             if not _isop(toks, i, lex.OP_COMMA):
                 break

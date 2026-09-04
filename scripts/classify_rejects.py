@@ -226,8 +226,6 @@ NEEDS_SYMBOLS = [
     "generic enum",
     "too many type parameters",
     "too many size parameters",
-    "a struct type parameter must be written",
-    "an enum type parameter must be written",
     "was instantiated at one",
     "is not a variant of",
     "a bounded capacity must be positive",

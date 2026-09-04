@@ -1,0 +1,10 @@
+# src/tychoc.c:4767 -- a struct type parameter must BE a `$Name`, not merely
+# contain one. A bare identifier dies earlier on `unknown type`, so a CONCRETE
+# type is the only spelling that reaches this rule.
+# expect: a struct type parameter must be written `$Name`
+struct Box(int):
+    v: int
+
+fn main():
+    b := Box(1)
+    print(str(b.v))

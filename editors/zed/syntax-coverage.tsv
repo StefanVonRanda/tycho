@@ -31,6 +31,7 @@ tests/reject/destructure_too_many.ty	ACCEPTED	a ceiling (8 destructuring targets
 tests/reject/dotlt_sequential.ty	ACCEPTED	`0..<N` is grammatical everywhere; restricting it to a `parallel for` head is a context rule
 tests/reject/dup_field.ty	ACCEPTED	two fields named `x` parse; duplicate detection needs a symbol table
 tests/reject/enum_typaram_max.ty	ACCEPTED	a ceiling (16 type parameters); the grammar repeats without counting
+tests/reject/enum_typaram_not_dollar.ty	ACCEPTED	the grammar takes any type in the parameter list; only `$Name` is legal
 tests/reject/err_empty.ty	ACCEPTED	`Err()` is a well-formed call; the refusal is about the Result's error type
 tests/reject/fixarr_qualified_const.ty	ACCEPTED	a qualified name is a legal array length in the grammar; "must be known at parse time" is a resolution rule
 tests/reject/fixed_array_zero_size.ty	ACCEPTED	a value-range check on a literal that lexes correctly
@@ -85,6 +86,7 @@ tests/reject/string_escape.ty	ACCEPTED	as fstring_escape -- the escape alphabet 
 tests/reject/string_raw_control.ty	ACCEPTED	the string rule takes any byte that is not a quote; refusing a raw control byte is tychoc's lexer
 tests/reject/string_unterminated.ty	REJECTED	the string rule needs a closing quote
 tests/reject/struct_typaram_max.ty	ACCEPTED	a ceiling (16 type parameters)
+tests/reject/struct_typaram_not_dollar.ty	ACCEPTED	the grammar takes any type in the parameter list; only `$Name` is legal
 tests/reject/subscript_dangling.ty	ACCEPTED	`yield &<expr>` parses; "rooted in a parameter" is a dataflow rule
 tests/reject/subscript_no_yield.ty	ACCEPTED	a `return` is a legal body; "a single `yield &<place>`" is a rule on what the body CONTAINS
 tests/reject/subscript_not_inout.ty	ACCEPTED	`-> int` is a well-formed return type; requiring `inout` there is tychoc's

@@ -114,7 +114,9 @@ corpus_census() {
     # a line number or a path. Plus R16c-6's last 21 (2026-09-04): 15 of them
     # needed the DIAGNOSTIC reworded first, since `argument 1 of 'f' is string,
     # expected int` has no fragment that is not an instance.
-    [ "$cc_exp" -eq 571 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=571"
+    # Plus the 2 struct/enum `$Name` typaram fixtures (2026-09-05), both ported
+    # into tychoc1 and word-for-word in both compilers.
+    [ "$cc_exp" -eq 573 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=573"
 
     cc_dirs=0
     for cc_d in $(git ls-files tests 2>/dev/null | grep '\.ty$' | sed 's|/[^/]*$||' | sort -u); do
@@ -143,7 +145,7 @@ if [ "${1:-}" = "--count" ]; then
 fi
 
 TYCHOC="${TYCHOC:-./tychoc1}"
-[ -x "$TYCHOC" ] || { echo "no ./tychoc — run 'make' first"; exit 2; }
+[ -x "$TYCHOC" ] || { echo "no $TYCHOC — run 'make' first"; exit 2; }
 
 CC="${CC:-cc}"
 RECORD="${RECORD:-0}"
@@ -638,6 +640,21 @@ if corpus_census quiet; then
 else
     note "corpus_census" "a tests/ directory is not claimed by any class glob"
     fail=$((fail + 1)); fails="$fails corpus_census"
+fi
+
+# The pass count against the corpus THIS run just walked. `passed: 0 failed: 0`
+# is also a zero-failure run, and nothing above reddens when a whole class stops
+# being globbed. Moved here from scripts/tychoc1_check.sh 2026-09-05: that leg
+# scored the same run this file does, because TYCHOC defaults to ./tychoc1 here.
+# 8 = the standalone cases this runner adds on top of the corpus --
+# clobber_refused_{bare,out,shim}, clobber_emit_c, bundle_clean,
+# bundle_blames_right_file, dashname_after_ddash, corpus_census. It moves when a
+# CASE is added, never when a fixture is.
+STANDALONE=8
+cc_want=$((cc_total + STANDALONE))
+if [ "$fail" -eq 0 ] && [ "$pass" -ne "$cc_want" ]; then
+    note "pass_count" "passed $pass, but the corpus is $cc_total + $STANDALONE standalone = $cc_want"
+    fail=$((fail + 1)); fails="$fails pass_count"
 fi
 
 echo "-----------------------------------------"
