@@ -47,7 +47,7 @@ fn _aff_msg(k: string) -> string:
 
 # `mode` is "cont" for a container/aggregate (all three affine kinds are
 # refused) or "fn" for a function TYPE's parameter or return, where
-# src/tychoc.c:1595-1597 refuses a task or a channel and ALLOWS a handle -- a
+# src/tychoc.c:1573-1575 refuses a task or a channel and ALLOWS a handle -- a
 # handle is what an `extern fn` opener returns, so an fn value may name one.
 fn _nest_aff(cs: inout C, t: string, mode: string):
     k := _aff_kind(&cs, t)
@@ -74,7 +74,7 @@ fn _nest_aff_e(cs: inout C, t: string):
 
 # ------------------------------------------------------------ newtype `under`
 #
-# src/tychoc.c:4921. A fixed or bounded array is still an array (IS_ARRC covers
+# src/tychoc.c:4899. A fixed or bounded array is still an array (IS_ARRC covers
 # both), so `fix`/`bnd` are in the list; a generic instance is `?` and passes.
 fn _newtype_under_ok(cs: inout C, u: string) -> bool:
     if not known(u):
@@ -97,7 +97,7 @@ fn _newtype_check(cs: inout C, u: string):
 
 # -------------------------------------------------------------- bounded[N]T
 #
-# src/tychoc.c:2438-2445. Three rules, and the capacity one needs the const's
+# src/tychoc.c:2416-2423. Three rules, and the capacity one needs the const's
 # VALUE, not just its existence -- `bounded[CAP]int` at `const CAP = 0` is the
 # fixture, and a checker that only asked "is CAP a const" would accept it.
 fn _bnd_size(cs: inout C, sz: string) -> string:
@@ -163,7 +163,7 @@ fn _vec_elem(cs: inout C, el: string):
 
 # ------------------------------------------------------------------- the FFI
 #
-# src/tychoc.c:4594-4613 and the two die sites at :4585 / :4611. The sized
+# src/tychoc.c:4572-4591 and the two die sites at :4585 / :4611. The sized
 # numerics are accepted because parse_type consumes the sized-type NAME in an
 # extern signature and hands back `int`; tychoc1 keeps the spelling, so the
 # names are listed.
@@ -174,7 +174,7 @@ fn _ffi_scalar(t: string) -> bool:
         return true
     return t == "u8" or t == "u16" or t == "u32" or t == "u64" or t == "i8" or t == "i16" or t == "i32" or t == "i64"
 
-# src/tychoc.c:4671. An out-param's address must be a clean T* the C side fills;
+# src/tychoc.c:4649. An out-param's address must be a clean T* the C side fills;
 # string is length-headered, so a char** out-param would hand tycho a raw pointer.
 fn _ffi_inout_ok(t: string) -> bool:
     if not known(t):
@@ -201,7 +201,7 @@ fn _ffi_ret_ok(cs: inout C, t: string) -> bool:
 
 # ------------------------------------------------- affine `inout` and `sink`
 #
-# src/tychoc.c:4399. Passing an affine value plainly is ALREADY a borrow, so
+# src/tychoc.c:4377. Passing an affine value plainly is ALREADY a borrow, so
 # neither modifier has anything to do; the fixtures are affine_inout_chan,
 # affine_sink_param and chan_inout_param.
 fn _aff_param_check(cs: inout C, name: string, t: string, flag: string):
@@ -219,7 +219,7 @@ fn _aff_param_check(cs: inout C, name: string, t: string, flag: string):
 # every body diagnostic in the build.
 
 # A `[$N]T` size parameter is meaningful only in a generic fn parameter, where
-# the argument fixes N. src/tychoc.c:9444 / :9219 / :9226.
+# the argument fixes N. src/tychoc.c:9422 / :9219 / :9226.
 fn _has_sizeparam(t: ast.Ty) -> bool:
     match t:
         ast.TFix(sz, k):
@@ -253,7 +253,7 @@ fn _has_sizeparam(t: ast.Ty) -> bool:
         _: return false
     return false
 
-# A struct FIELD may not be a channel (src/tychoc.c:9434) nor a handle
+# A struct FIELD may not be a channel (src/tychoc.c:9412) nor a handle
 # (:4697); a task has no type syntax and cannot be written in one.
 fn _field_aff(cs: inout C, dline: int, t: string):
     k := _aff_kind(&cs, t)
@@ -264,15 +264,15 @@ fn _field_aff(cs: inout C, dline: int, t: string):
     if k == "chan":
         _cperr(&cs, "a struct field cannot be a channel")
     else:
-        # The handle arm (src/tychoc.c:4826) blames the FIELD, not the struct
+        # The handle arm (src/tychoc.c:4804) blames the FIELD, not the struct
         # header the channel arm blames.
         cs.line = keep
         _cperr(&cs, _aff_msg(k))
     cs.line = keep
 
 # Is this written type an instance of a DECLARED generic -- `Pool($T)` rather
-# than a bare name? src/tychoc.c:4528 refuses one as a subscript receiver.
-# The receiver AS WRITTEN -- src/tychoc.c:4528 names it in the refusal.
+# than a bare name? src/tychoc.c:4506 refuses one as a subscript receiver.
+# The receiver AS WRITTEN -- src/tychoc.c:4506 names it in the refusal.
 fn _ty_inst_spell(t: ast.Ty) -> string:
     match t:
         ast.TParam(pn): return "$" + pn
@@ -304,7 +304,7 @@ fn _ty_generic_inst(cs: inout C, t: ast.Ty) -> bool:
         _: return false
     return false
 
-# src/tychoc.c:8539-8553. An affine value may be BOUND only by the expression
+# src/tychoc.c:8517-8531. An affine value may be BOUND only by the expression
 # that creates it: `spawn` for a task, a call for a handle (only an `extern fn`
 # opener produces one), `channel(...)` for a channel. `e := c` is the copy this
 # refuses, and it is the shape a golden cannot see -- the program still runs.
@@ -320,7 +320,7 @@ fn _aff_bind_check(cs: inout C, t: string, rhs: ast.Expr):
         if not (rhs is ast.ChanE):
             _cerr(&cs, "a channel cannot be copied -- it is freed once, when its creating scope exits, and a second name hides every send and receive from the compiler's analysis; bind the channel(...) directly, or pass this one as an argument")
 
-# src/tychoc.c:8609-8615 -- rebinding orphans the value the scope-exit free
+# src/tychoc.c:8587-8593 -- rebinding orphans the value the scope-exit free
 # targets. `want` is the VARIABLE's type, read before the rhs is scored.
 fn _aff_reassign_check(cs: inout C, name: string, vt: string):
     k := _aff_kind(&cs, vt)
@@ -443,10 +443,10 @@ fn _unify(cs: inout C, pat: ast.Ty, at: string, b: inout [string: string]) -> bo
     return true
 
 # src/tychoc.c@match_type's array arm against the exact compare that follows
-# instantiation (`src/tychoc.c:6851`, `:6763`, `:7198`) -- TWO stages, fused
+# instantiation (`src/tychoc.c:6829`, `:6763`, `:7198`) -- TWO stages, fused
 # here at the one place they disagree. match_type ignores the BOUNDED flag, so
 # `bounded[N]$T` unifies with a plain `[N]T`; subst_type keeps it
-# (`src/tychoc.c:2139`), so the instance's field/parameter is still
+# (`src/tychoc.c:2117`), so the instance's field/parameter is still
 # `bounded[N]T` and stage two refuses it by name. `_unify` above is left STRICT
 # on purpose: loosening it without a post-substitution check would make every
 # caller ACCEPT this. Answers the substituted `bounded[N]T` when the flag is
@@ -665,7 +665,7 @@ fn _generic_call2(cs: inout C, l: int, si: int, spelt: string, ts: [ast.Ty], arg
             return "?"
     # The instance's SUBSTITUTED parameter types, which is where the affine
     # rules bite: `inout $T` is legal until `$T` is bound at a channel
-    # (src/tychoc.c:9212, and the note beside check_inout_param_type).
+    # (src/tychoc.c:9190, and the note beside check_inout_param_type).
     for i := 0; i < len(cs.sg[si].pty) and i < len(cs.sg[si].pflags); i += 1:
         if cs.sg[si].pflags[i] == "inout" or cs.sg[si].pflags[i] == "sink":
             pt := _subst(&cs, cs.sg[si], cs.sg[si].pty[i], b)
@@ -771,9 +771,9 @@ fn _explicit_call(cs: inout C, l: int, q: string, n: string, ts: [ast.Ty], args:
     if n == "zero" and len(q) == 0:
         _walk_args(&cs, args)
         cs.line = l
-        if len(args) != 0:                                    # src/tychoc.c:6476
+        if len(args) != 0:                                    # src/tychoc.c:6454
             _cerr(&cs, "zero$(T) takes no value arguments")
-        if len(ts) != 1:                                      # src/tychoc.c:6477
+        if len(ts) != 1:                                      # src/tychoc.c:6455
             _cerr(&cs, "zero$(T) takes exactly one type argument")
             return "?"
         t := _enc(&cs, ts[0])
@@ -829,14 +829,14 @@ fn _explicit_call(cs: inout C, l: int, q: string, n: string, ts: [ast.Ty], args:
         for t in ts:
             _enc(&cs, t)
         _walk_args(&cs, args)
-        # src/tychoc.c:6867 -- `Leaf$(int, string)` on a one-parameter enum
+        # src/tychoc.c:6845 -- `Leaf$(int, string)` on a one-parameter enum
         if len(q) == 0 and n in cs.vowner:
             ti9 := _tdecl(&cs, cs.vowner[n])
             if ti9 >= 0 and cs.tds[ti9].generic and len(ts) != len(cs.tds[ti9].tps):
                 cs.line = l
                 _cerr(&cs, _short(cs.tds[ti9].name) + " expects " + str(len(cs.tds[ti9].tps)) +
                     " type argument(s), got " + str(len(ts)))
-            # src/tychoc.c:6872 -- the payload arity, which the explicit-type-arg
+            # src/tychoc.c:6850 -- the payload arity, which the explicit-type-arg
             # path reached without ever counting
             vi9 := -1
             if ti9 >= 0:
@@ -874,7 +874,7 @@ fn _tp_in_params(cs: inout C, s: FSig, tp: string) -> bool:
                 return true
     return false
 
-# src/tychoc.c:8605 -- `x := Ok(1)` has no Result type of its own: the error
+# src/tychoc.c:8583 -- `x := Ok(1)` has no Result type of its own: the error
 # side is unknowable from the value. A call that RETURNS a Result is fine, and
 # an annotation supplies both sides, so the rule is narrow on purpose.
 fn _bare_result(cs: inout C, t: string, rhs: ast.Expr):
@@ -892,7 +892,7 @@ fn _bare_result(cs: inout C, t: string, rhs: ast.Expr):
 
 # A nullary variant of a GENERIC enum, written bare, fixes nothing.
 fn _bare_variant(cs: inout C, l: int, n: string, mang: string, owner: string) -> string:
-    # src/tychoc.c:6225 runs FIRST: a payload-carrying variant written bare is
+    # src/tychoc.c:6203 runs FIRST: a payload-carrying variant written bare is
     # not a value at all, whatever its enum.
     if mang in cs.vpay and len(cs.vpay[mang]) > 0:
         cs.line = l
@@ -925,7 +925,7 @@ fn _alias_check(cs: inout C, name: string, s: FSig, args: [ast.Expr], line: int)
                 _cerr(&cs, "variable '" + r + "' passed to two inout parameters of '" + name + "' (overlapping mutable access)")
                 return
         # Scoped to a BARE by-value variable: `a[i]` and `a.f` are distinct
-        # extracted values and are left alone (src/tychoc.c:7355).
+        # extracted values and are left alone (src/tychoc.c:7333).
         for j := 0; j < len(args); j += 1:
             if j == i or (j < n and s.pflags[j] == "inout"):
                 continue
@@ -947,7 +947,7 @@ fn _alias_check(cs: inout C, name: string, s: FSig, args: [ast.Expr], line: int)
 
 # The variable an argument is ROOTED at: `&g.cells[i]` and `a[1:2]` are both
 # rooted at their bare name. `Addr` and `Slice` unwrap, then field and index
-# steps do, exactly as src/tychoc.c:7344 walks `E_FIELD`/`E_INDEX`.
+# steps do, exactly as src/tychoc.c:7322 walks `E_FIELD`/`E_INDEX`.
 fn _place_root(e: ast.Expr) -> string:
     match e:
         ast.Name(l, nm): return nm
@@ -976,7 +976,7 @@ fn _inst_key(m: string, enc: [string]) -> string:
         k = k + enc[i]
     return k
 
-# `Box(int)` written as a TYPE. src/tychoc.c:2675 / :2616: the arguments must be
+# `Box(int)` written as a TYPE. src/tychoc.c:2653 / :2616: the arguments must be
 # EITHER exactly the declaration's own parameters, in order (a recursive
 # reference from inside the template), OR all concrete. A list mixing the two --
 # `Box([$T])` -- is refused, and that is generic_partial_struct/_enum.
@@ -1137,7 +1137,7 @@ fn _inst_ctor(cs: inout C, l: int, ti: int, args: [ast.Expr], at0: int, npay: in
     cs.in_arg = true
     # A generic constructor INFERS its type arguments from the field values, so
     # it has no expected type to hand down -- but it is not the "nothing can type
-    # this" case src/tychoc.c:6291 refuses either: the field's own pattern is the
+    # this" case src/tychoc.c:6269 refuses either: the field's own pattern is the
     # destination, and the pass computes it a line later by unifying against it.
     # `Stack([])` at `a : Stack(int)` is that shape, and the pattern (`[$T]`) is
     # passed as "?" -- an expected type not yet computed -- rather than as nothing.
@@ -1146,7 +1146,7 @@ fn _inst_ctor(cs: inout C, l: int, ti: int, args: [ast.Expr], at0: int, npay: in
     cs.in_arg = keep
     cs.line = l
     if len(args) != npay:
-        # src/tychoc.c:6829 / :6744 -- the arity, which used to be passed as
+        # src/tychoc.c:6807 / :6744 -- the arity, which used to be passed as
         # len(args) by the struct caller and so could never disagree.
         if len(vn) > 0:
             _cerr(&cs, vn + " takes " + str(npay) + " payload value(s), got " + str(len(args)))
@@ -1174,7 +1174,7 @@ fn _inst_ctor(cs: inout C, l: int, ti: int, args: [ast.Expr], at0: int, npay: in
     cs.line = l
     if bad >= 0:
         if len(badb) > 0:
-            # src/tychoc.c:6851 / :6763 -- stage two, after instantiation. The
+            # src/tychoc.c:6829 / :6763 -- stage two, after instantiation. The
             # subject is the TEMPLATE's name here; the bootstrap names the
             # instance (`Box__int`), which tychoc1 does not materialise.
             if len(vn) > 0:
@@ -1183,14 +1183,14 @@ fn _inst_ctor(cs: inout C, l: int, ti: int, args: [ast.Expr], at0: int, npay: in
                 _cerr(&cs, "field '" + cs.tds[ti].fnames[bad] + "' of " + _short(cs.tds[ti].name) +
                     " is " + _show(&cs, badb) + ", got " + _show(&cs, ats[bad]))
             return "?"
-        # src/tychoc.c:6834 / :6748 -- name the argument that failed, not "1"
+        # src/tychoc.c:6812 / :6748 -- name the argument that failed, not "1"
         if len(vn) > 0:
             _cerr(&cs, vn + " payload " + str(bad + 1) + " does not fit a " + _show(&cs, ats[bad]) + " argument")
         else:
             _cerr(&cs, "field '" + cs.tds[ti].fnames[bad] + "' of " + _short(cs.tds[ti].name) +
                 " does not fit a " + _show(&cs, ats[bad]) + " argument")
         return "?"
-    # src/tychoc.c:6839 / :6752 -- a type parameter no value fixes. Guarded on
+    # src/tychoc.c:6817 / :6752 -- a type parameter no value fixes. Guarded on
     # every argument type being KNOWN: an unresolved argument leaves the same
     # binding empty, and refusing there would reject a program ./tychoc accepts.
     allk := true
@@ -1339,7 +1339,7 @@ fn _sink_check(cs: inout C, name: string, s: FSig, args: [ast.Expr], line: int):
                 elif cs.ment.get(v, 0) != 1:
                     _cerr(&cs, "'" + v + "' is consumed by a `sink` parameter but is mentioned " + str(cs.ment.get(v, 0)) + " times in this function: a sink argument must be the variable's ONLY mention. One textual mention is how the compiler proves the consume is the last use on every path, with no dataflow analysis -- so `len(" + v + ")`, `" + v + "[0]`, `" + v + "[0] = ...` and passing `" + v + "` anywhere else all disqualify it, even before this line. Copy it first (`y := " + v + "`) and consume `y`")
                 elif v in cs.mbind:
-                    # src/tychoc.c:10370, the arm this chain had no `else` for. A
+                    # src/tychoc.c:10348, the arm this chain had no `else` for. A
                     # match binding BORROWS the payload (cv_push with a NULL arena),
                     # so can_move_into_sink fails on it however few times it is
                     # mentioned. A binding the arm MUTATES is copied instead, and
@@ -1427,7 +1427,7 @@ fn _sp_in_params(s: FSig, sp: string) -> bool:
 
 # `p.yy` on a struct that has no such field. `_field_ty` answers `?` so nothing
 # downstream refuses; the diagnostic has to be raised here.
-# src/tychoc.c:6447 -- `.f` on something that is not a struct AT ALL. `_no_field`
+# src/tychoc.c:6425 -- `.f` on something that is not a struct AT ALL. `_no_field`
 # below answers only for a struct that is missing the field.
 fn _non_struct_field(cs: inout C, rt: string, f: string):
     if f in cs.subs or not known(rt):
@@ -1625,9 +1625,9 @@ fn _pf_body(cs: inout C, b: [ast.Stmt], loc: [string: bool], depth: int,
                             _cerr(&cs, "reduction accumulator '" + n + "' may only be updated, not read, inside parallel for")
                         # one accumulator, one op: the runtime seeds each chunk's
                         # private copy from the op's identity, so + and * on the
-                        # same name have no single seed (src/tychoc.c:8008).
+                        # same name have no single seed (src/tychoc.c:7986).
                         o := _pf_op(r[0])
-                        # src/tychoc.c:8003 -- one private partial per chunk per
+                        # src/tychoc.c:7981 -- one private partial per chunk per
                         # accumulator, and the frame holds four.
                         if not (n in accop) and len(accop) >= 4:
                             _cerr(&cs, "parallel for supports at most 4 reduction accumulators")
@@ -1826,7 +1826,7 @@ fn _pf_exprs(b: [ast.Stmt], out: inout [ast.Expr]):
             _: pass
     return
 
-# src/tychoc.c:7889 -- a chunk has no early exit, so `or_return` cannot cross the
+# src/tychoc.c:7867 -- a chunk has no early exit, so `or_return` cannot cross the
 # loop boundary. Descends into a lambda body, as pf_scan_expr does.
 fn _pf_orret(cs: inout C, e: ast.Expr) -> bool:
     match e:

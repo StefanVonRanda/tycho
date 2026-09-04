@@ -1,4 +1,4 @@
-# 05-generics.md:80-82 / src/tychoc.c:2262: a generic type argument MUST be either
+# 05-generics.md:80-82 / src/tychoc.c:2240: a generic type argument MUST be either
 # fully concrete or a WHOLE own-parameter reference -- `[$T]` mentions $T partially.
 # expect: its type arguments must be EITHER exactly its own parameters
 struct Box($T):

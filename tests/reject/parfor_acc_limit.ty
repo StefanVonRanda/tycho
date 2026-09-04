@@ -1,4 +1,4 @@
-# src/tychoc.c:8003 -- each chunk keeps a private partial per accumulator and the
+# src/tychoc.c:7981 -- each chunk keeps a private partial per accumulator and the
 # frame holds four. The fifth is what dies, not the loop.
 # expect: parallel for supports at most 4 reduction accumulators
 fn main():

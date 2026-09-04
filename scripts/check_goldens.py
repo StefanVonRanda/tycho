@@ -247,6 +247,12 @@ def main():
     runners = sorted(p for p in tracked if p == "run.sh" or p.endswith("/run.sh"))
 
     errors, gaps, rows = [], [], []
+    # The loop below only visits runners that EXIST, so an entry naming a
+    # deleted one is invisible to every other assertion here.
+    for r in sorted(set(NO_GOLDEN) - tracked):
+        errors.append("%s: is in NO_GOLDEN but git does not track it -- the "
+                      "runner was deleted or renamed; drop the entry" % r)
+
     goldens = {}          # resolved path -> first (run.sh, line) that names it
     lanes = 0
     for r in runners:

@@ -1,4 +1,4 @@
-# src/tychoc.c:6180 -- or_return on an Option propagates None, which only an
+# src/tychoc.c:6158 -- or_return on an Option propagates None, which only an
 # Option-returning function can do.
 # expect: or_return on an Option requires the enclosing function to return an Option, but it returns int
 fn g() -> Option(int):

@@ -1,4 +1,4 @@
-# src/tychoc.c:3012 -- the soa LITERAL spelling, a second site with its own
+# src/tychoc.c:2990 -- the soa LITERAL spelling, a second site with its own
 # message: the type is written `soa [T]` and the empty literal `soa []T`.
 # expect: soa requires a struct element type, e.g. soa []Point
 fn main():

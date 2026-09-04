@@ -1,4 +1,4 @@
-# src/tychoc.c:7031 -- to_bool only unwraps a bool newtype.
+# src/tychoc.c:7009 -- to_bool only unwraps a bool newtype.
 # expect: to_bool(x) takes a bool newtype
 fn main():
     b := to_bool(1)

@@ -1,4 +1,4 @@
-# src/tychoc.c:6936 -- close takes exactly one channel or handle.
+# src/tychoc.c:6914 -- close takes exactly one channel or handle.
 # tychoc1 ACCEPTED this under --typecheck until the arity check was ported
 # into compiler/types/tcheck.ty; both now word it identically.
 # expect: close takes one channel or handle

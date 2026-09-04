@@ -1,4 +1,4 @@
-# src/tychoc.c:7137 -- an array parameter is borrowed read-only, so push
+# src/tychoc.c:7115 -- an array parameter is borrowed read-only, so push
 # cannot regrow it in place.
 # tychoc1 ACCEPTED this under --typecheck until the check was ported into
 # compiler/types/tcheck.ty; both now word it identically.

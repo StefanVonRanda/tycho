@@ -1,4 +1,4 @@
-# src/tychoc.c:2427 -- the soa TYPE spelling. An SOA is a struct-of-arrays, so
+# src/tychoc.c:2405 -- the soa TYPE spelling. An SOA is a struct-of-arrays, so
 # there is nothing to split a scalar element into.
 # expect: soa requires a struct element type, e.g. soa [Point]
 struct P:

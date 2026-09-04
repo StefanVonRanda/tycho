@@ -1,4 +1,4 @@
-# src/tychoc.c:7191 -- the capacity is a count.
+# src/tychoc.c:7169 -- the capacity is a count.
 # tychoc1 ACCEPTED this under --typecheck until the check was ported into
 # compiler/types/tcheck.ty; both now word it identically.
 # expect: reserve's capacity must be int

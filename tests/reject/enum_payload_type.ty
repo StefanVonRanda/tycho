@@ -1,4 +1,4 @@
-# src/tychoc.c:6891 -- a payload value must have the declared payload type;
+# src/tychoc.c:6869 -- a payload value must have the declared payload type;
 # there is no widening from string.
 # expect: Circle payload 1 is float, got string
 enum Shape:

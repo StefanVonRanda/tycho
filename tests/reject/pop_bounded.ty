@@ -1,4 +1,4 @@
-# src/tychoc.c:7156 -- bounded[N]T supports push but not pop.
+# src/tychoc.c:7134 -- bounded[N]T supports push but not pop.
 # tychoc1 ACCEPTED this under --typecheck until the check was ported into
 # compiler/types/tcheck.ty; both now word it identically.
 # expect: pop is not supported on a bounded[...] yet; read the last element via len()-1 and rebuild

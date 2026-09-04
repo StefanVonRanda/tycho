@@ -1,4 +1,4 @@
-# src/tychoc.c:6902 -- wait(t) joins exactly one task.
+# src/tychoc.c:6880 -- wait(t) joins exactly one task.
 # tychoc1 ACCEPTED this under --typecheck and died only in codegen
 # (`unsupported call 'wait' with 2 argument(s)`) until the arity check was
 # ported into compiler/types/tcheck.ty; both now word it identically.

@@ -1,4 +1,4 @@
-# src/tychoc.c:6801 -- once one field is named, every field is: a half-named
+# src/tychoc.c:6779 -- once one field is named, every field is: a half-named
 # call has no unambiguous reading.
 # expect: P: cannot mix named and positional fields
 struct P:

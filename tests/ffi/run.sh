@@ -91,7 +91,7 @@ printf 'extern "x" fn f(s: inout int)\nfn main():\n    print("x")\n' > "$T/r4ok.
 if ! "$TYCHOC" "$T/r4ok.ty" --emit-c -o "$T/r4ok" >/dev/null 2>&1; then
     echo "FAIL: inout-int control rejected -- the R4 leg cannot distinguish string from int"; fail=1
 fi
-# Both front ends carry the ban now (src/tychoc.c:4671, compiler/types/tcheck.ty),
+# Both front ends carry the ban now (src/tychoc.c:4649, compiler/types/tcheck.ty),
 # so there is no exemption: an accept is a failure whichever compiler is under test.
 if "$TYCHOC" "$T/r4rej.ty" --emit-c -o "$T/r4rej" >/dev/null 2>&1; then
     echo "FAIL: inout-string out-param accepted by $TYCHOC"; fail=1

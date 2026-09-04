@@ -1,4 +1,4 @@
-# src/tychoc.c:7432 -- `and` and `or` take bools on both sides.
+# src/tychoc.c:7410 -- `and` and `or` take bools on both sides.
 # expect: `and` needs bool operands
 fn main():
     x := 1

@@ -36,7 +36,7 @@ def score(f):
 def group(sites):
     """{line: [(format, regex)]} -- a LIST, because one line can hold two rules.
     A ternary (`cond ? "a" : "b"`) is two formats at one line, and a dict keyed
-    on the line silently kept only the second: src/tychoc.c:619 reported the
+    on the line silently kept only the second: src/tychoc.c:597 reported the
     binary-literal rule as the site of the hex-literal fixture."""
     by = {}
     for l, f, rx in sites:

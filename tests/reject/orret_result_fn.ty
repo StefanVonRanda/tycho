@@ -1,4 +1,4 @@
-# src/tychoc.c:6187 -- or_return on a Result propagates Err, which only a
+# src/tychoc.c:6165 -- or_return on a Result propagates Err, which only a
 # Result-returning function can do. The Option twin is orret_option_fn.ty.
 # expect: or_return requires the enclosing function to return a Result, but it returns int
 fn g() -> Result(int, string):

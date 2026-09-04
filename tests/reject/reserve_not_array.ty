@@ -1,4 +1,4 @@
-# src/tychoc.c:7175 -- reserve applies to an array or a map.
+# src/tychoc.c:7153 -- reserve applies to an array or a map.
 # expect: reserve's first argument must be an array or a map
 fn main():
     x := 1

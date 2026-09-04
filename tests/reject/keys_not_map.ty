@@ -1,4 +1,4 @@
-# src/tychoc.c:7102 -- keys() walks a map, not an array.
+# src/tychoc.c:7080 -- keys() walks a map, not an array.
 # expect: keys's argument must be a map
 fn main():
     ks := keys(1)

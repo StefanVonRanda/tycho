@@ -1,4 +1,4 @@
-# src/tychoc.c:8443 -- two arms refine the SAME variant of the Ok payload, so the
+# src/tychoc.c:8421 -- two arms refine the SAME variant of the Ok payload, so the
 # second can never run.
 # expect: duplicate Ok(A) arm
 enum E:

@@ -1,4 +1,4 @@
-# src/tychoc.c:8630 -- `return EXPR` in a proc declared with no return type.
+# src/tychoc.c:8608 -- `return EXPR` in a proc declared with no return type.
 # expect: this proc returns nothing
 fn nop():
     return 1

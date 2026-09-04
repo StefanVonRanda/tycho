@@ -1,4 +1,4 @@
-# src/tychoc.c:6283 -- the first pair fixes the key type for the whole literal.
+# src/tychoc.c:6261 -- the first pair fixes the key type for the whole literal.
 # expect: map keys must all have the same type
 fn main():
     m := ["a": 1, 2: 3]

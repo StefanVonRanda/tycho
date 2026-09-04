@@ -1,4 +1,4 @@
-# src/tychoc.c:6806 -- a named argument must name a field that exists.
+# src/tychoc.c:6784 -- a named argument must name a field that exists.
 # expect: P has no field 'z'
 struct P:
     x: int

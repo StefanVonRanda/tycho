@@ -1,4 +1,4 @@
-# src/tychoc.c:6984. Both compilers word it identically.
+# src/tychoc.c:6962. Both compilers word it identically.
 # expect: to_float(n) takes one argument
 fn main():
     println(str(to_float(1, 2)))

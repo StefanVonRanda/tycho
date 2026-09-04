@@ -44,7 +44,7 @@ EXPECT = 1332          # a leg that scores 0 of 0 is green by accident
                        # 1330 -> 1331: tests/reject/fstring_hole_name.ty
 
 # NAME fixtures whose diagnostic carries no file:line in EITHER compiler, because
-# merge_pkg (src/tychoc.c:14430, :14234) names the offending FILE and exits. Both
+# merge_pkg (src/tychoc.c:14408, :14234) names the offending FILE and exits. Both
 # are scored as agreeing that there is no location; anything else unlocated is a
 # skip and reddens the lane.
 NO_LINE = {
@@ -70,7 +70,7 @@ KNOWN_TYPE_MISS = {
     # `pend` LIST with a line, a done flag and a per-block mark -- the `pendarr`
     # SET R21f-11 built could carry none of the three.
     # THE CONCURRENCY RULES left this list under R21c, which ported the five
-    # spawn legs (src/tychoc.c:6069-6080) and wait's argument (:6776) into
+    # spawn legs (src/tychoc.c:6047-6058) and wait's argument (:6776) into
     # compiler/types/tcheck.ty in the bootstrap's own order.
 }
 LIT = lambda f: len(re.sub(r"%[-0-9.*]*(?:ll)?[a-zA-Z]", "", f))

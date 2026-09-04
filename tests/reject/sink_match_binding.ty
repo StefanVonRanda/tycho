@@ -1,5 +1,5 @@
-# src/tychoc.c:10370, the last arm of the sink-consume chain. A match binding
-# BORROWS the scrutinee's payload -- src/tychoc.c:12500 pushes it with a NULL
+# src/tychoc.c:10348, the last arm of the sink-consume chain. A match binding
+# BORROWS the scrutinee's payload -- src/tychoc.c:12478 pushes it with a NULL
 # arena -- so it can never be adopted by a `sink`, however few times it is
 # mentioned. The three arms above it (a sink param, a loop, more than one
 # mention) all miss this one.

@@ -1,4 +1,4 @@
-# src/tychoc.c:7007
+# src/tychoc.c:6985
 # expect: to_str(x) takes one argument
 fn main():
     println(to_str("a", "b"))
