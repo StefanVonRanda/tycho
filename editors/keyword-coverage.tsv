@@ -1,0 +1,118 @@
+# Which of the language's 104 lexer words each editor integration actually knows.
+# One row per word in surface.lock's `keywords` (the lexer's own word set), with
+# the verdict MEASURED rather than read off the grammar source: the `zed` column
+# is the tree-sitter node kind the word lexes to, the `vscode` column is the
+# first tmLanguage pattern whose `match` spans the whole word. `identifier` /
+# `none` means the editors treat it as an ordinary name.
+#
+# It exists because `packed` shipped in V2 and both grammars read it as an
+# identifier for a day: the Zed corpus lane still parsed 1339 files green,
+# because a word the grammar does not know is not a parse error. Nothing in the
+# tree could redden. scripts/editors_check.sh checks every row against a real
+# parse, so a new keyword that misses an editor is now a red lane.
+#
+# word	zed	vscode	reason
+and	keyword	keyword.operator.word.tycho	word operator
+args	builtin	support.function.builtin.tycho	built-in function, listed by both grammars
+bool	type	storage.type.tycho	built-in type name
+bounded	identifier	none	lexed by src/tychoc.c but in neither editor grammar -- an editor-side gap, recorded not fixed (phase V2k)
+break	keyword	keyword.control.tycho	control-flow keyword
+bytes	identifier	none	lexed by src/tychoc.c but in neither editor grammar -- an editor-side gap, recorded not fixed (phase V2k)
+channel	identifier	none	lexed by src/tychoc.c but in neither editor grammar -- an editor-side gap, recorded not fixed (phase V2k)
+char_at	identifier	none	lexed by src/tychoc.c but in neither editor grammar -- an editor-side gap, recorded not fixed (phase V2k)
+chr	builtin	support.function.builtin.tycho	built-in function, listed by both grammars
+clock	identifier	none	lexed by src/tychoc.c but in neither editor grammar -- an editor-side gap, recorded not fixed (phase V2k)
+close	identifier	none	lexed by src/tychoc.c but in neither editor grammar -- an editor-side gap, recorded not fixed (phase V2k)
+const	identifier	none	lexed by src/tychoc.c but in neither editor grammar -- an editor-side gap, recorded not fixed (phase V2k)
+continue	keyword	keyword.control.tycho	control-flow keyword
+core	identifier	none	lexed by src/tychoc.c but in neither editor grammar -- an editor-side gap, recorded not fixed (phase V2k)
+delete	identifier	none	lexed by src/tychoc.c but in neither editor grammar -- an editor-side gap, recorded not fixed (phase V2k)
+deprecated	identifier	none	lexed by src/tychoc.c but in neither editor grammar -- an editor-side gap, recorded not fixed (phase V2k)
+die	builtin	support.function.builtin.tycho	built-in function, listed by both grammars
+elif	keyword	keyword.control.tycho	control-flow keyword
+else	keyword	keyword.control.tycho	control-flow keyword
+enum	keyword	keyword.other.tycho	declaration keyword
+eprint	identifier	none	lexed by src/tychoc.c but in neither editor grammar -- an editor-side gap, recorded not fixed (phase V2k)
+eprintln	identifier	none	lexed by src/tychoc.c but in neither editor grammar -- an editor-side gap, recorded not fixed (phase V2k)
+exit	identifier	none	lexed by src/tychoc.c but in neither editor grammar -- an editor-side gap, recorded not fixed (phase V2k)
+extern	keyword	keyword.other.tycho	declaration keyword
+fabs	builtin	support.function.builtin.tycho	built-in function, listed by both grammars
+false	constant	constant.language.tycho	literal constant
+find	builtin	support.function.builtin.tycho	built-in function, listed by both grammars
+float	type	storage.type.tycho	built-in type name
+floor	builtin	support.function.builtin.tycho	built-in function, listed by both grammars
+fn	keyword	keyword.other.tycho	declaration keyword
+for	keyword	keyword.control.tycho	control-flow keyword
+from_bytes	identifier	none	lexed by src/tychoc.c but in neither editor grammar -- an editor-side gap, recorded not fixed (phase V2k)
+get	identifier	none	lexed by src/tychoc.c but in neither editor grammar -- an editor-side gap, recorded not fixed (phase V2k)
+getenv	builtin	support.function.builtin.tycho	built-in function, listed by both grammars
+handle	identifier	none	lexed by src/tychoc.c but in neither editor grammar -- an editor-side gap, recorded not fixed (phase V2k)
+hash	identifier	none	lexed by src/tychoc.c but in neither editor grammar -- an editor-side gap, recorded not fixed (phase V2k)
+if	keyword	keyword.control.tycho	control-flow keyword
+import	keyword	keyword.other.tycho	declaration keyword
+in	keyword	keyword.control.tycho	control-flow keyword
+inout	keyword	keyword.other.tycho	declaration keyword
+input	builtin	support.function.builtin.tycho	built-in function, listed by both grammars
+int	type	storage.type.tycho	built-in type name
+is	keyword	keyword.operator.word.tycho	word operator
+is_null	builtin	support.function.builtin.tycho	built-in function, listed by both grammars
+keys	identifier	none	lexed by src/tychoc.c but in neither editor grammar -- an editor-side gap, recorded not fixed (phase V2k)
+len	builtin	support.function.builtin.tycho	built-in function, listed by both grammars
+list_dir	builtin	support.function.builtin.tycho	built-in function, listed by both grammars
+map_del	identifier	none	lexed by src/tychoc.c but in neither editor grammar -- an editor-side gap, recorded not fixed (phase V2k)
+map_get	builtin	support.function.builtin.tycho	built-in function, listed by both grammars
+map_has	identifier	none	lexed by src/tychoc.c but in neither editor grammar -- an editor-side gap, recorded not fixed (phase V2k)
+map_set	builtin	support.function.builtin.tycho	built-in function, listed by both grammars
+match	keyword	keyword.control.tycho	control-flow keyword
+ncpu	identifier	none	lexed by src/tychoc.c but in neither editor grammar -- an editor-side gap, recorded not fixed (phase V2k)
+not	keyword	keyword.operator.word.tycho	word operator
+now	identifier	none	lexed by src/tychoc.c but in neither editor grammar -- an editor-side gap, recorded not fixed (phase V2k)
+null	constant	constant.language.tycho	literal constant
+or	keyword	keyword.operator.word.tycho	word operator
+or_return	keyword	keyword.control.tycho	control-flow keyword
+package	keyword	keyword.other.tycho	declaration keyword
+packed	keyword	keyword.other.tycho	struct layout modifier (spec 17.1b); added to both grammars 2026-09-04, phase V2d
+parallel	keyword	keyword.control.tycho	control-flow keyword
+pass	keyword	keyword.control.tycho	control-flow keyword
+pop	builtin	support.function.builtin.tycho	built-in function, listed by both grammars
+pow	builtin	support.function.builtin.tycho	built-in function, listed by both grammars
+print	builtin	support.function.builtin.tycho	built-in function, listed by both grammars
+println	builtin	support.function.builtin.tycho	built-in function, listed by both grammars
+ptr	type	storage.type.tycho	built-in type name
+push	builtin	support.function.builtin.tycho	built-in function, listed by both grammars
+range	identifier	none	deleted from the language 2026-07-29; deliberately UNhighlighted (grammar.js says why, beside the builtin list)
+read_all	builtin	support.function.builtin.tycho	built-in function, listed by both grammars
+read_file	builtin	support.function.builtin.tycho	built-in function, listed by both grammars
+recv	identifier	none	lexed by src/tychoc.c but in neither editor grammar -- an editor-side gap, recorded not fixed (phase V2k)
+reserve	builtin	support.function.builtin.tycho	built-in function, listed by both grammars
+return	keyword	keyword.control.tycho	control-flow keyword
+select	keyword	keyword.control.tycho	control-flow keyword
+send	identifier	none	lexed by src/tychoc.c but in neither editor grammar -- an editor-side gap, recorded not fixed (phase V2k)
+sink	identifier	none	lexed by src/tychoc.c but in neither editor grammar -- an editor-side gap, recorded not fixed (phase V2k)
+size_of	identifier	none	lexed by src/tychoc.c but in neither editor grammar -- an editor-side gap, recorded not fixed (phase V2k)
+soa	keyword	keyword.other.tycho	declaration keyword
+spawn	keyword	keyword.control.tycho	control-flow keyword
+split	builtin	support.function.builtin.tycho	built-in function, listed by both grammars
+sqrt	builtin	support.function.builtin.tycho	built-in function, listed by both grammars
+str	builtin	support.function.builtin.tycho	built-in function, listed by both grammars
+string	type	storage.type.tycho	built-in type name
+struct	keyword	keyword.other.tycho	declaration keyword
+subscript	identifier	none	lexed by src/tychoc.c but in neither editor grammar -- an editor-side gap, recorded not fixed (phase V2k)
+substr	builtin	support.function.builtin.tycho	built-in function, listed by both grammars
+to_bool	identifier	none	lexed by src/tychoc.c but in neither editor grammar -- an editor-side gap, recorded not fixed (phase V2k)
+to_bytes	identifier	none	lexed by src/tychoc.c but in neither editor grammar -- an editor-side gap, recorded not fixed (phase V2k)
+to_char	identifier	none	lexed by src/tychoc.c but in neither editor grammar -- an editor-side gap, recorded not fixed (phase V2k)
+to_float	identifier	none	lexed by src/tychoc.c but in neither editor grammar -- an editor-side gap, recorded not fixed (phase V2k)
+to_int	identifier	none	lexed by src/tychoc.c but in neither editor grammar -- an editor-side gap, recorded not fixed (phase V2k)
+to_ptr	identifier	none	lexed by src/tychoc.c but in neither editor grammar -- an editor-side gap, recorded not fixed (phase V2k)
+to_str	identifier	none	lexed by src/tychoc.c but in neither editor grammar -- an editor-side gap, recorded not fixed (phase V2k)
+to_under	identifier	none	lexed by src/tychoc.c but in neither editor grammar -- an editor-side gap, recorded not fixed (phase V2k)
+true	constant	constant.language.tycho	literal constant
+type	keyword	keyword.other.tycho	declaration keyword
+void	type	storage.type.tycho	built-in type name
+wait	identifier	none	lexed by src/tychoc.c but in neither editor grammar -- an editor-side gap, recorded not fixed (phase V2k)
+where	identifier	none	lexed by src/tychoc.c but in neither editor grammar -- an editor-side gap, recorded not fixed (phase V2k)
+while	keyword	keyword.control.tycho	control-flow keyword
+write_file	builtin	support.function.builtin.tycho	built-in function, listed by both grammars
+yield	identifier	none	lexed by src/tychoc.c but in neither editor grammar -- an editor-side gap, recorded not fixed (phase V2k)
+zero	identifier	none	lexed by src/tychoc.c but in neither editor grammar -- an editor-side gap, recorded not fixed (phase V2k)

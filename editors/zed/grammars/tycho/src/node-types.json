@@ -403,6 +403,10 @@
     "named": false
   },
   {
+    "type": "packed",
+    "named": false
+  },
+  {
     "type": "parallel",
     "named": false
   },
@@ -476,11 +480,11 @@
   },
   {
     "type": "string",
-    "named": false
+    "named": true
   },
   {
     "type": "string",
-    "named": true
+    "named": false
   },
   {
     "type": "struct",

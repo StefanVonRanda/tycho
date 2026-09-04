@@ -114,5 +114,61 @@ else
     echo "    $nsyn classified, each with a reason: $nrej refused by the grammar, $((nsyn - nrej)) accepted (grammar.js has no external scanner and does no name resolution)"
 fi
 
+# ------------------------------------------- keyword coverage, BOTH integrations
+# Nothing above can see a keyword the grammars do not KNOW: an unknown word lexes
+# as an identifier and the file parses, so `packed` shipped in V2 with both
+# grammars reading it as a name and all 1339 corpus files stayed green. This leg
+# measures a verdict for every word in surface.lock's lexer set -- the tree-sitter
+# node kind it lexes to, and the first tmLanguage pattern that spans it -- and
+# requires the table to match. Measured, not read off the grammar source.
+KCOV=editors/keyword-coverage.tsv
+python3 -c 'import json;print("\n".join(sorted(json.load(open("surface.lock"))["keywords"])))' \
+    > "$TMP/kw" || exit 2
+nkw=$(wc -l < "$TMP/kw" | tr -d ' ')
+# LC_ALL=C: python's sorted() is byte order and this box's locale collation is
+# not -- `get` / `getenv` swap places under it, which is a false red.
+grep -v '^#' "$KCOV" | awk -F'\t' '{print $1}' | LC_ALL=C sort > "$TMP/kcov.words"
+echo ">>> editors: keyword coverage ($nkw lexer words x 2 integrations)"
+if ! diff "$TMP/kw" "$TMP/kcov.words" > "$TMP/kcov.diff" 2>&1; then
+    echo "    COVERAGE TABLE OUT OF STEP with surface.lock"
+    echo "    ('<' a lexer word nothing classified, '>' classified but no longer a lexer word):"
+    sed 's/^/      /' "$TMP/kcov.diff"
+    fail=1
+fi
+
+cp "$TMP/kw" "$TMP/kw.ty"
+(cd "$TMP" && $TS parse kw.ty) 2>/dev/null \
+    | sed -n 's/^ *(\([a-z_]*\) \[.*/\1/p' | tail -n +2 > "$TMP/kzed"
+python3 - "$TMP/kw" > "$TMP/kvsc" <<'PY' || exit 2
+import json,re,sys
+tm = json.load(open("editors/vscode/syntaxes/tycho.tmLanguage.json"))
+for w in open(sys.argv[1]).read().split():
+    hit = "none"
+    for p in tm["patterns"]:
+        if "match" not in p or "name" not in p: continue
+        m = re.search(p["match"], w)
+        if m and m.start() == 0 and m.end() == len(w):
+            hit = p["name"]; break
+    print(hit)
+PY
+if [ "$(wc -l < "$TMP/kzed")" -ne "$nkw" ] || [ "$(wc -l < "$TMP/kvsc")" -ne "$nkw" ]; then
+    echo "    MEASUREMENT FAILED: got $(wc -l < "$TMP/kzed") zed and $(wc -l < "$TMP/kvsc") vscode verdicts for $nkw words"
+    fail=1
+else
+    paste "$TMP/kw" "$TMP/kzed" "$TMP/kvsc" > "$TMP/kmeasured"
+    grep -v '^#' "$KCOV" | awk -F'\t' '{print $1"\t"$2"\t"$3}' | LC_ALL=C sort > "$TMP/krecorded"
+    if diff "$TMP/kmeasured" "$TMP/krecorded" > "$TMP/kverdict.diff" 2>&1; then
+        nhl=$(awk -F'\t' '$2!="identifier"' "$TMP/kmeasured" | wc -l | tr -d ' ')
+        echo "    $nkw words measured, all matching the table: $nhl highlighted, $((nkw - nhl)) lexing as ordinary identifiers"
+    else
+        echo "    VERDICT MOVED ('<' measured now, '>' recorded in $KCOV):"
+        sed 's/^/      /' "$TMP/kverdict.diff"
+        fail=1
+    fi
+fi
+if grep -v '^#' "$KCOV" | awk -F'\t' 'NF<4 || $4==""{print "    NO REASON GIVEN: "$1}' | grep .; then
+    fail=1
+fi
+
 if [ "$fail" -ne 0 ]; then echo "editors-check: FAIL"; exit 1; fi
 echo "editors-check: ok"

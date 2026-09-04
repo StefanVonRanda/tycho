@@ -36,7 +36,11 @@ module.exports = grammar({
       choice(
         "fn", "if", "elif", "else", "for", "while", "in", "match", "select",
         "parallel", "spawn", "return", "break", "continue", "or_return", "pass",
-        "struct", "enum", "type", "import", "package", "extern", "inout", "soa",
+        // `packed` is the struct layout modifier (spec §17.1b). It is a keyword
+        // in the lexer's word set (surface.lock), and without this line
+        // it lexed as an ordinary identifier — the corpus still parsed, so no lane
+        // could see it. editors/keyword-coverage.tsv is what sees it now.
+        "struct", "packed", "enum", "type", "import", "package", "extern", "inout", "soa",
         "and", "or", "not", "is",
       ),
 
