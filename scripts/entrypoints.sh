@@ -71,14 +71,28 @@ done
 echo "-----------------------------------------"
 [ "$fail" -eq 0 ] || { echo "entrypoints: FAILED ($fail of $n entry points do not compile)"; exit 1; }
 
+# The baseline's subject is WHICH warnings these programs emit, not where they
+# sit. A line number is not part of that, and pinning one made every insertion
+# above a warned function a re-record -- which trains the reader to re-record
+# without looking, and that is how a real regression gets blessed. So the
+# compared form drops `:NNN:`; the located lines are still what the diff prints.
 sort "$T/warn" > "$T/warn.s"
+sed 's/:[0-9][0-9]*: warning: /: warning: /' "$T/warn.s" | sort > "$T/warn.n"
+# A normaliser that silently matched nothing would pin the line numbers again
+# while looking fixed, so prove it fired on every line that carries one.
+raw_located=$(grep -c ':[0-9][0-9]*: warning: ' "$T/warn.s" || true)
+if [ "$raw_located" -gt 0 ] && [ "$(grep -c ':[0-9][0-9]*: warning: ' "$T/warn.n" || true)" -ne 0 ]; then
+    echo "entrypoints: FAILED (the line-number normaliser did not apply -- this lane would pin line numbers again)"; exit 1
+fi
 if [ "${RECORD:-0}" = 1 ]; then
-    cp "$T/warn.s" "$WARNBASE"; echo "rec     $WARNBASE ($(wc -l < "$WARNBASE") warning line(s))"
+    cp "$T/warn.n" "$WARNBASE"; echo "rec     $WARNBASE ($(wc -l < "$WARNBASE") warning line(s))"
 elif [ ! -f "$WARNBASE" ]; then
     echo "entrypoints: FAILED (no $WARNBASE -- record it with RECORD=1)"; exit 1
-elif ! cmp -s "$T/warn.s" "$WARNBASE"; then
+elif ! cmp -s "$T/warn.n" "$WARNBASE"; then
     echo "entrypoints: FAILED (the warnings these programs emit moved)"
-    diff -u "$WARNBASE" "$T/warn.s" | sed -n '3,20p'
+    diff -u "$WARNBASE" "$T/warn.n" | sed -n '3,20p'
+    echo "  warnings as emitted, with their locations:"
+    sed 's/^/    /' "$T/warn.s"
     echo "  If the change is intended: RECORD=1 sh scripts/entrypoints.sh"
     exit 1
 fi
