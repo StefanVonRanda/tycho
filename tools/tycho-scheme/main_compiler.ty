@@ -997,18 +997,28 @@ fn layout(fns: [FnCode], entry: [Ins], calls: [CallPatch]) -> [Ins]:
     return out
 
 
-fn put_u32(v: int) -> string:
-    return chr(v % 256) + chr((v / 256) % 256) + chr((v / 65536) % 256) + chr((v / 16777216) % 256)
+# The .tyc wire records, the same three tools/tycho-vm/main.ty reads back. All
+# LITTLE-ENDIAN, which is what to_bytes writes on every host (spec s17.1b) and
+# what the deleted put_u32/put_i32 wrote by hand -- put_u32 emitted `v % 256`
+# first and put_i32 added 2^32 to a negative, which is two's complement LSB
+# first, exactly to_i32's bytes.
+packed struct TycHdr:
+    nconsts: u32
+    ncode: u32
 
-fn put_i32(v: int) -> string:
-    if v < 0:
-        return put_u32(v + 4294967296)
-    return put_u32(v)
+packed struct ConstLen:
+    n: u32
+
+packed struct InsWire:
+    op: u8
+    a: i32
+    b: i32
 
 fn encode(p: Program) -> string:
-    out := "TYC1" + put_u32(len(p.consts)) + put_u32(len(p.code))
+    out := "TYC1" + to_str(to_bytes(TycHdr(to_u32(len(p.consts)), to_u32(len(p.code)))))
     for i := 0; i < len(p.consts); i += 1:
-        out = out + put_u32(len(p.consts[i])) + p.consts[i]
+        out = out + to_str(to_bytes(ConstLen(to_u32(len(p.consts[i]))))) + p.consts[i]
     for i := 0; i < len(p.code); i += 1:
-        out = out + chr(p.code[i].op) + put_i32(p.code[i].a) + put_i32(p.code[i].b)
+        out = out + to_str(to_bytes(InsWire(to_u8(p.code[i].op),
+            to_i32(p.code[i].a), to_i32(p.code[i].b))))
     return out

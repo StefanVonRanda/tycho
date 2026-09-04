@@ -45,20 +45,38 @@ fn too_big(w: int, h: int) -> bool:
         return true
     return h > MAX_PX / w
 
-# ---- little/big-endian readers over a string view of the input bytes ----------
+# ---- BMP's 54-byte header, stated as a layout --------------------------------
+#
+# BMP is defined LITTLE-ENDIAN (Microsoft BITMAPFILEHEADER / BITMAPINFOHEADER:
+# every multi-byte member is a little-endian DWORD/WORD), which is the order
+# to_bytes/from_bytes use on every host (spec s17.1b). The hand-rolled readers
+# this replaces agreed: rd_u32_le read `s[i] + s[i+1]*256 + ...` and wr_u32
+# pushed `n & 255` first, LSB-first on both sides.
+#
+# QOI is the opposite and is NOT converted -- see decode_qoi below.
 
-fn rd_u16_le(s: string, i: int) -> int:
-    return s[i] + s[i + 1] * 256
+packed struct BmpHeader:                    # 14 + 40 = 54 bytes
+    b: u8                                   # 'B'
+    m: u8                                   # 'M'
+    filesize: u32
+    reserved: u32
+    pixoff: u32                             # pixel data offset
+    hdrsize: u32                            # BITMAPINFOHEADER size, 40
+    width: i32
+    height: i32                             # positive -> bottom-up
+    planes: u16
+    bpp: u16
+    compression: u32                        # 0 BI_RGB, 3 BI_BITFIELDS
+    imgsize: u32
+    xppm: i32
+    yppm: i32
+    ncolors: u32
+    nimportant: u32
 
-fn rd_u32_le(s: string, i: int) -> int:
-    return s[i] + s[i + 1] * 256 + s[i + 2] * 65536 + s[i + 3] * 16777216
-
-fn rd_i32_le(s: string, i: int) -> int:
-    v := rd_u32_le(s, i)
-    if v >= 2147483648:
-        return v - 4294967296
-    return v
-
+# QOI stores width and height BIG-endian (qoiformat.org), the one big-endian
+# record in this package, so it stays hand-rolled: the bytes bridge is
+# little-endian by decision and reading this header through it would produce
+# plausible wrong dimensions on every host.
 fn rd_u32_be(s: string, i: int) -> int:
     return s[i] * 16777216 + s[i + 1] * 65536 + s[i + 2] * 256 + s[i + 3]
 
@@ -72,27 +90,10 @@ fn encode_bmp(img: Image) -> bytes:
     ps := to_str(img.pixels)
     imgsize := w * h * 4
     filesize := 54 + imgsize
+    hdr := to_bytes(BmpHeader(to_u8(66), to_u8(77), to_u32(filesize), to_u32(0),
+        to_u32(54), to_u32(40), to_i32(w), to_i32(h), to_u16(1), to_u16(32),
+        to_u32(0), to_u32(imgsize), to_i32(2835), to_i32(2835), to_u32(0), to_u32(0)))
     out := []int
-    # BITMAPFILEHEADER (14 bytes)
-    push(out, 66)                          # 'B'
-    push(out, 77)                          # 'M'
-    wr_u32(&out, filesize)
-    wr_u32(&out, 0)                         # reserved
-    wr_u32(&out, 54)                        # pixel data offset
-    # BITMAPINFOHEADER (40 bytes)
-    wr_u32(&out, 40)                        # header size
-    wr_u32(&out, w)                         # width
-    wr_u32(&out, h)                         # height (positive -> bottom-up)
-    push(out, 1)
-    push(out, 0)                           # planes = 1 (u16)
-    push(out, 32)
-    push(out, 0)                           # bpp = 32 (u16)
-    wr_u32(&out, 0)                         # BI_RGB
-    wr_u32(&out, imgsize)
-    wr_u32(&out, 2835)                      # x pixels-per-meter (~72 dpi)
-    wr_u32(&out, 2835)                      # y pixels-per-meter
-    wr_u32(&out, 0)                         # colors used
-    wr_u32(&out, 0)                         # colors important
     # pixel data, bottom row first, each pixel B,G,R,A
     y := h - 1
     for y >= 0:
@@ -104,29 +105,24 @@ fn encode_bmp(img: Image) -> bytes:
             push(out, ps[p])               # R
             push(out, ps[p + 3])           # A
         y = y - 1
-    return to_bytes(out)
-
-# append n as a 32-bit little-endian value (helper for a LOCAL accumulator only;
-# `out` is the caller's array, mutated in place via inout).
-fn wr_u32(out: inout [int], n: int):
-    push(out, n & 255)
-    push(out, (n / 256) & 255)
-    push(out, (n / 65536) & 255)
-    push(out, (n / 16777216) & 255)
+    return hdr + to_bytes(out)
 
 # Decode a BI_RGB BMP (24 or 32 bpp). Returns a 0x0 Image on anything unexpected.
 fn decode_bmp(data: bytes) -> Image:
     s := to_str(data)
     n := len(s)
-    if n < 54:
+    # from_bytes refuses any length but size_of$(BmpHeader), so the guard comes
+    # first and the slice is taken only after it
+    if n < size_of$(BmpHeader):
         return empty_image()
-    if s[0] != 66 or s[1] != 77:           # 'B' 'M'
+    hd := from_bytes$(BmpHeader)(data[0:size_of$(BmpHeader)])
+    if to_int(hd.b) != 66 or to_int(hd.m) != 77:   # 'B' 'M'
         return empty_image()
-    offset := rd_u32_le(s, 10)
-    w := rd_i32_le(s, 18)
-    hraw := rd_i32_le(s, 22)
-    bpp := rd_u16_le(s, 28)
-    comp := rd_u32_le(s, 30)
+    offset := to_int(hd.pixoff)
+    w := to_int(hd.width)
+    hraw := to_int(hd.height)
+    bpp := to_int(hd.bpp)
+    comp := to_int(hd.compression)
     if comp != 0 and comp != 3:            # only uncompressed
         return empty_image()
     if bpp != 24 and bpp != 32:

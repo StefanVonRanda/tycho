@@ -162,6 +162,16 @@ fn get_u64(b: bytes, off: int) -> int:
         v = v * 256 + b[off + i]
     return v
 
+# The store's fixed 12-byte header word, after MAGIC and the version u32. The
+# rest of this format is variable-length (a length-prefixed string, a tagged
+# Val) or a tagged union, neither of which a layout attribute reaches, so the
+# put_/get_ primitives below stay -- wal/ frames its records with them.
+# LITTLE-ENDIAN, which to_bytes writes on every host (spec s17.1b) and which is
+# what put_u64 wrote by hand: it pushed `m % 256` first, LSB first.
+packed struct StoreHdr:
+    applied_lsn: u64
+    ntables: u32
+
 fn put_str(s: string) -> bytes:
     return put_u32(len(s)) + to_bytes(s)
 
@@ -189,7 +199,7 @@ fn put_col(c: Col) -> bytes:
     return put_str(c.name) + to_bytes([tag])
 
 fn encode(db: Db) -> bytes:
-    out := to_bytes(MAGIC) + put_u32(VERSION) + put_u64(db.applied_lsn) + put_u32(len(db.tables))
+    out := to_bytes(MAGIC) + put_u32(VERSION) + to_bytes(StoreHdr(to_u64(db.applied_lsn), to_u32(len(db.tables))))
     for t in db.tables:
         out = out + put_str(t.name) + put_u32(len(t.cols))
         for c in t.cols:
@@ -254,10 +264,13 @@ fn decode(path: string, b: bytes) -> Result(Db, StoreErr):
     version := take_u32(b, &off) or_return
     if version != VERSION:
         return Err(Corrupt(path + " has version " + str(version)))
-    need(b, off, 8) or_return
-    applied := get_u64(b, off)
-    off += 8
-    ntables := take_u32(b, &off) or_return
+    # from_bytes refuses any length but size_of$(StoreHdr), so the guard comes
+    # first and the slice is taken only after it
+    need(b, off, size_of$(StoreHdr)) or_return
+    hd := from_bytes$(StoreHdr)(b[off: off + size_of$(StoreHdr)])
+    applied := to_int(hd.applied_lsn)
+    ntables := to_int(hd.ntables)
+    off += size_of$(StoreHdr)
     tables: [Table] = []
     for ti := 0; ti < ntables; ti += 1:
         tname := take_str(b, &off) or_return

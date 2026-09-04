@@ -424,33 +424,37 @@ packed struct InsWire:
     a: i32
     b: i32
 
-fn put_u32(v: int) -> string:
-    return chr(v % 256) + chr((v / 256) % 256) + chr((v / 65536) % 256) + chr((v / 16777216) % 256)
+# the two counts after the 4-byte magic, and the length prefix on each constant.
+# Same little-endian order the deleted put_u32/get_u32 wrote and read by hand.
+packed struct TycHdr:
+    nconsts: u32
+    ncode: u32
 
-fn get_u32(s: string, off: int) -> int:
-    return s[off] + s[off + 1] * 256 + s[off + 2] * 65536 + s[off + 3] * 16777216
+packed struct ConstLen:
+    n: u32
 
 fn encode(p: Program) -> string:
-    out := "TYC1" + put_u32(len(p.consts)) + put_u32(len(p.code))
+    out := "TYC1" + to_str(to_bytes(TycHdr(to_u32(len(p.consts)), to_u32(len(p.code)))))
     for i := 0; i < len(p.consts); i += 1:
-        out = out + put_u32(len(p.consts[i])) + p.consts[i]
+        out = out + to_str(to_bytes(ConstLen(to_u32(len(p.consts[i]))))) + p.consts[i]
     for i := 0; i < len(p.code); i += 1:
         out = out + to_str(to_bytes(InsWire(to_u8(p.code[i].op),
             to_i32(p.code[i].a), to_i32(p.code[i].b))))
     return out
 
 fn decode(blob: string, table: [$NT]Meta) -> Program:
-    if len(blob) < 12 or substr(blob, 0, 4) != "TYC1":
+    if len(blob) < 4 + size_of$(TycHdr) or substr(blob, 0, 4) != "TYC1":
         die("not a .tyc file (bad magic)")
-    nconsts := get_u32(blob, 4)
-    ncode := get_u32(blob, 8)
+    hd := from_bytes$(TycHdr)(to_bytes(substr(blob, 4, 4 + size_of$(TycHdr))))
+    nconsts := to_int(hd.nconsts)
+    ncode := to_int(hd.ncode)
     consts: [string] = []
-    off := 12
+    off := 4 + size_of$(TycHdr)
     for i := 0; i < nconsts; i += 1:
-        if off + 4 > len(blob):
+        if off + size_of$(ConstLen) > len(blob):
             die("truncated constant pool")
-        n := get_u32(blob, off)
-        off += 4
+        n := to_int(from_bytes$(ConstLen)(to_bytes(substr(blob, off, off + size_of$(ConstLen)))).n)
+        off += size_of$(ConstLen)
         if off + n > len(blob):
             die("truncated constant pool")
         push(consts, substr(blob, off, off + n))
