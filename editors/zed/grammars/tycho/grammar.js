@@ -42,11 +42,15 @@ module.exports = grammar({
         // could see it. editors/keyword-coverage.tsv is what sees it now.
         "struct", "packed", "enum", "type", "import", "package", "extern", "inout", "soa",
         "and", "or", "not", "is",
+        // Contextual declaration words, plus `handle` which is hard-reserved in
+        // src/tychoc.c@keyword. Each was measured to compile before being added.
+        "handle", "const", "delete", "bounded", "sink", "subscript", "where", "yield",
       ),
 
     constant: ($) => choice("true", "false", "null"),
 
-    type: ($) => choice("int", "float", "string", "bool", "char", "ptr", "void"),
+    // `bytes` is TK_KW_BYTES in src/tychoc.c@keyword -- a reserved type name.
+    type: ($) => choice("int", "float", "string", "bool", "char", "ptr", "void", "bytes"),
 
     builtin: ($) =>
       choice(
@@ -56,7 +60,14 @@ module.exports = grammar({
         "print", "println", "str", "len", "push", "pop", "split",
         "substr", "find", "read_file", "write_file", "read_all", "list_dir",
         "args", "getenv", "input", "chr", "die", "is_null", "sqrt", "pow",
-        "floor", "fabs", "map_get", "map_set", "reserve",
+        "floor", "fabs", "reserve",
+        // `map_get`/`map_set` were here and are NOT builtins: src/tychoc.c:3043-3046
+        // rejects a user-typed call outright, so this painted names the compiler
+        // refuses -- the same defect the `range` note above records.
+        "channel", "char_at", "clock", "close", "eprint", "exit", "from_bytes",
+        "get", "hash", "keys", "ncpu", "now", "recv", "send", "size_of",
+        "to_bool", "to_bytes", "to_char", "to_float", "to_int", "to_ptr",
+        "to_str", "to_under", "wait", "zero",
       ),
 
     // generic type parameter sigil: `$T`, `$K`, … (a lone `$`, e.g. the

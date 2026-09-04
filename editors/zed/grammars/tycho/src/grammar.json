@@ -197,6 +197,38 @@
         {
           "type": "STRING",
           "value": "is"
+        },
+        {
+          "type": "STRING",
+          "value": "handle"
+        },
+        {
+          "type": "STRING",
+          "value": "const"
+        },
+        {
+          "type": "STRING",
+          "value": "delete"
+        },
+        {
+          "type": "STRING",
+          "value": "bounded"
+        },
+        {
+          "type": "STRING",
+          "value": "sink"
+        },
+        {
+          "type": "STRING",
+          "value": "subscript"
+        },
+        {
+          "type": "STRING",
+          "value": "where"
+        },
+        {
+          "type": "STRING",
+          "value": "yield"
         }
       ]
     },
@@ -247,6 +279,10 @@
         {
           "type": "STRING",
           "value": "void"
+        },
+        {
+          "type": "STRING",
+          "value": "bytes"
         }
       ]
     },
@@ -347,15 +383,107 @@
         },
         {
           "type": "STRING",
-          "value": "map_get"
-        },
-        {
-          "type": "STRING",
-          "value": "map_set"
-        },
-        {
-          "type": "STRING",
           "value": "reserve"
+        },
+        {
+          "type": "STRING",
+          "value": "channel"
+        },
+        {
+          "type": "STRING",
+          "value": "char_at"
+        },
+        {
+          "type": "STRING",
+          "value": "clock"
+        },
+        {
+          "type": "STRING",
+          "value": "close"
+        },
+        {
+          "type": "STRING",
+          "value": "eprint"
+        },
+        {
+          "type": "STRING",
+          "value": "exit"
+        },
+        {
+          "type": "STRING",
+          "value": "from_bytes"
+        },
+        {
+          "type": "STRING",
+          "value": "get"
+        },
+        {
+          "type": "STRING",
+          "value": "hash"
+        },
+        {
+          "type": "STRING",
+          "value": "keys"
+        },
+        {
+          "type": "STRING",
+          "value": "ncpu"
+        },
+        {
+          "type": "STRING",
+          "value": "now"
+        },
+        {
+          "type": "STRING",
+          "value": "recv"
+        },
+        {
+          "type": "STRING",
+          "value": "send"
+        },
+        {
+          "type": "STRING",
+          "value": "size_of"
+        },
+        {
+          "type": "STRING",
+          "value": "to_bool"
+        },
+        {
+          "type": "STRING",
+          "value": "to_bytes"
+        },
+        {
+          "type": "STRING",
+          "value": "to_char"
+        },
+        {
+          "type": "STRING",
+          "value": "to_float"
+        },
+        {
+          "type": "STRING",
+          "value": "to_int"
+        },
+        {
+          "type": "STRING",
+          "value": "to_ptr"
+        },
+        {
+          "type": "STRING",
+          "value": "to_str"
+        },
+        {
+          "type": "STRING",
+          "value": "to_under"
+        },
+        {
+          "type": "STRING",
+          "value": "wait"
+        },
+        {
+          "type": "STRING",
+          "value": "zero"
         }
       ]
     },

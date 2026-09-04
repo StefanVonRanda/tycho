@@ -242,7 +242,19 @@
     "named": false
   },
   {
+    "type": "bounded",
+    "named": false
+  },
+  {
     "type": "break",
+    "named": false
+  },
+  {
+    "type": "bytes",
+    "named": false
+  },
+  {
+    "type": "channel",
     "named": false
   },
   {
@@ -254,7 +266,19 @@
     "named": false
   },
   {
+    "type": "char_at",
+    "named": false
+  },
+  {
     "type": "chr",
+    "named": false
+  },
+  {
+    "type": "clock",
+    "named": false
+  },
+  {
+    "type": "close",
     "named": false
   },
   {
@@ -263,7 +287,15 @@
     "extra": true
   },
   {
+    "type": "const",
+    "named": false
+  },
+  {
     "type": "continue",
+    "named": false
+  },
+  {
+    "type": "delete",
     "named": false
   },
   {
@@ -280,6 +312,14 @@
   },
   {
     "type": "enum",
+    "named": false
+  },
+  {
+    "type": "eprint",
+    "named": false
+  },
+  {
+    "type": "exit",
     "named": false
   },
   {
@@ -315,11 +355,27 @@
     "named": false
   },
   {
+    "type": "from_bytes",
+    "named": false
+  },
+  {
     "type": "fstring",
     "named": true
   },
   {
+    "type": "get",
+    "named": false
+  },
+  {
     "type": "getenv",
+    "named": false
+  },
+  {
+    "type": "handle",
+    "named": false
+  },
+  {
+    "type": "hash",
     "named": false
   },
   {
@@ -359,6 +415,10 @@
     "named": false
   },
   {
+    "type": "keys",
+    "named": false
+  },
+  {
     "type": "len",
     "named": false
   },
@@ -367,19 +427,19 @@
     "named": false
   },
   {
-    "type": "map_get",
-    "named": false
-  },
-  {
-    "type": "map_set",
-    "named": false
-  },
-  {
     "type": "match",
     "named": false
   },
   {
+    "type": "ncpu",
+    "named": false
+  },
+  {
     "type": "not",
+    "named": false
+  },
+  {
+    "type": "now",
     "named": false
   },
   {
@@ -447,6 +507,10 @@
     "named": false
   },
   {
+    "type": "recv",
+    "named": false
+  },
+  {
     "type": "reserve",
     "named": false
   },
@@ -456,6 +520,18 @@
   },
   {
     "type": "select",
+    "named": false
+  },
+  {
+    "type": "send",
+    "named": false
+  },
+  {
+    "type": "sink",
+    "named": false
+  },
+  {
+    "type": "size_of",
     "named": false
   },
   {
@@ -480,18 +556,54 @@
   },
   {
     "type": "string",
-    "named": true
+    "named": false
   },
   {
     "type": "string",
-    "named": false
+    "named": true
   },
   {
     "type": "struct",
     "named": false
   },
   {
+    "type": "subscript",
+    "named": false
+  },
+  {
     "type": "substr",
+    "named": false
+  },
+  {
+    "type": "to_bool",
+    "named": false
+  },
+  {
+    "type": "to_bytes",
+    "named": false
+  },
+  {
+    "type": "to_char",
+    "named": false
+  },
+  {
+    "type": "to_float",
+    "named": false
+  },
+  {
+    "type": "to_int",
+    "named": false
+  },
+  {
+    "type": "to_ptr",
+    "named": false
+  },
+  {
+    "type": "to_str",
+    "named": false
+  },
+  {
+    "type": "to_under",
     "named": false
   },
   {
@@ -511,11 +623,27 @@
     "named": false
   },
   {
+    "type": "wait",
+    "named": false
+  },
+  {
+    "type": "where",
+    "named": false
+  },
+  {
     "type": "while",
     "named": false
   },
   {
     "type": "write_file",
+    "named": false
+  },
+  {
+    "type": "yield",
+    "named": false
+  },
+  {
+    "type": "zero",
     "named": false
   },
   {
