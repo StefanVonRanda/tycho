@@ -1,8 +1,9 @@
 #!/bin/sh
 # tycho pre-push gate. (Local. No GitHub Actions, ever.) Cheap checks only: the
 # link + `path:line` citation gate, the script parse, the version bump, the
-# grammar-drift half of spec-check, the frozen-surface lock, and a quick fuzz
-# smoke.
+# grammar-drift half of spec-check, the frozen-surface lock, the runtime-surface
+# oracle, and a quick fuzz smoke. All of them score THE SHA BEING PUSHED, not the
+# working tree.
 #
 # IT DOES NOT RUN THE SWEEP, since 2026-08-10. `make ci N=0` was here and was
 # removed on the owner's instruction: ~274s on every push, usually re-running
@@ -37,6 +38,10 @@ REPO="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 REFS="$(cat)"
 cd "$REPO"
 
+# What every `make` gate below is scored against. Usually the checkout itself;
+# a detached worktree at the pushed sha when the two disagree (see below).
+GATEROOT="$REPO"
+
 # Private per-run log (mktemp, not a fixed world-shared /tmp path): no multi-user
 # collision/symlink risk. Each step APPENDS under a header; kept on failure (path
 # printed), removed on success.
@@ -46,7 +51,7 @@ gate() {   # gate "<label>" <make args...>
     label="$1"; shift
     printf 'pre-push: %s ... ' "$label"
     printf '\n===== %s =====\n' "$label" >>"$LOG"
-    if make -s "$@" >>"$LOG" 2>&1; then
+    if make -s -C "$GATEROOT" "$@" >>"$LOG" 2>&1; then
         printf 'ok\n'
     else
         printf 'FAILED\n\n'; tail -25 "$LOG"
@@ -95,6 +100,24 @@ fi
 # Everything else. Skipped on a gh-pages-only push: no .ty, .md or .c is moving,
 # so neither lane below can redden, and the site worktree has no Makefile anyway.
 if printf '%s\n' "$REFS" | awk '$3 != "refs/heads/gh-pages" { found = 1 } END { exit !found }'; then
+    # SCORE THE SHA BEING PUSHED, not the working tree -- the site half above has
+    # done this since 2026-08-17 and this half had not. `make <target>` reads the
+    # CHECKOUT, so a dirty tree passed gates the pushed commit fails (and the
+    # reverse: a broken commit pushed from a fixed tree went out green). Fast path
+    # when they agree, which is every ordinary push: no worktree, no cost. When
+    # they disagree, gate a detached worktree at that sha -- the same trick as
+    # `--rev`, spelled for lanes that need a tree rather than one file. Measured
+    # 2026-09-04: the fast path is free, the worktree path 87 s -- a fresh tree
+    # has no tychoc1, and rtparity and fuzz-quick both want one.
+    PUSH_SHA="$(printf '%s\n' "$REFS" | awk '$3 != "refs/heads/gh-pages" && $2 !~ /^0+$/ { print $2; exit }')"
+    if [ -n "$PUSH_SHA" ] && \
+       { [ "$PUSH_SHA" != "$(git rev-parse HEAD)" ] || ! git diff --quiet HEAD --; }; then
+        WT="$(mktemp -d "${TMPDIR:-/tmp}/tycho-prepush-wt.XXXXXX")"
+        trap 'git worktree remove --force "$WT" >/dev/null 2>&1 || rm -rf "$WT"' EXIT INT TERM
+        printf 'pre-push: tree != pushed commit -- gating a worktree at %s\n' "$(git rev-parse --short "$PUSH_SHA")"
+        git worktree add --detach --quiet "$WT" "$PUSH_SHA"
+        GATEROOT="$WT"
+    fi
     # Both sub-second-to-seconds. `make ci N=0` was here until 2026-08-10 and was
     # removed on the owner's instruction: at ~274s it made every push a coffee break,
     # and it re-ran what a `make ci` before the push had usually just run. The gate a
@@ -117,6 +140,10 @@ if printf '%s\n' "$REFS" | awk '$3 != "refs/heads/gh-pages" { found = 1 } END { 
     # here is not to run the sweep -- so the freeze was enforced by nobody: it was
     # RED at HEAD across 7f207bcc and 9a4a5e5c, both of which pushed clean.
     gate "make surface-check (keywords/builtins frozen, corelib additive)" surface-check
+    # 0.04s, and the same shape surface-check was in: its only home was `make ci`
+    # step [2d], which nobody runs, and it had been RED since 51dcb45b -- two
+    # packed-struct traps emitted with no oracle entry, across 9 clean pushes.
+    gate "make rtparity (emitted runtime surface vs the oracle)" rtparity
     gate "make fuzz-quick (soundness smoke)"     fuzz-quick
 fi
 
