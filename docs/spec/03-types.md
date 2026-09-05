@@ -334,7 +334,7 @@ as a top-level key type.
 Map operations (`m[k]` as a place, absent-key read yielding the value's zero,
 `k in m`, `delete m[k]`, `m.get`) are specified in §18.
 
-> Provenance: `map_of` `src/tychoc.c:1498-1527`; `key_hashable` `:1450-1464`.
+> Provenance: `src/tychoc.c@map_of`; `src/tychoc.c@key_hashable`.
 
 ### 5.3.6 Enums, `Option`, `Result`
 

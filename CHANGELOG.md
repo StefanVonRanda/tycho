@@ -7,7 +7,16 @@ The version constant lives in `src/tychoc.c` (`TYCHO_VERSION`, printed by
 
 ## [Unreleased]
 
-Nothing yet.
+### Compiler
+
+- **`--target <level>` raises the x86-64 ISA baseline, opt-in.** The levels are
+  `x86-64-v2`, `x86-64-v3`, `x86-64-v4`, and `baseline` for the default.
+  `baseline` and the absence of the flag add nothing to the `cc` line, so an
+  unflagged build is byte-identical to one made before the flag existed. Any
+  other level adds `-march=<level>`, and the binary must not be assumed to run
+  on a machine below that level. An unknown level, and a level the C compiler
+  rejects, are both hard errors. Both compilers accept it, both list it under
+  `--help`, and `docs/spec/15-program.md` is normative (commit 2260bbfd).
 
 ## [0.8.0] — 2026-09-02
 
