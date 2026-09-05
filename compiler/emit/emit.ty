@@ -53,6 +53,7 @@ struct C:
     eds: [ED]
     fds: [FD]
     akinds: [string]
+    vks: [string]                      # vector[N]T kinds, "<N>|<elem>"
     cnames: [string]
     ctypes: [string]
     ccode: [string]
@@ -130,7 +131,7 @@ struct C:
     dbgfile: string                    # -g: src/tychoc.c@g_line_file, empty when off
 
 fn _new() -> C:
-    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt, [], [], [], false, []string: bool, []string: bool, []int, [], [], [], "")
+    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt, [], [], [], false, []string: bool, []string: bool, []int, [], [], [], "")
 
 fn _bad(msg: string):
     die("tychoc1: " + msg)
@@ -407,6 +408,35 @@ fn _soafld(cs: inout C, bc: string, bt: string, ic: string, f: string) -> (strin
     _bad("no field '" + f + "' on " + _tname(st))
     return ("", "")
 
+# `vector[N]T` is spelled "V~<index>" into cs.vks, "<N>|<elem>". Unlike every
+# other fixed form here it does NOT lower to the dynamic array: the C body is a
+# GCC vector member, matching src/tychoc.c@emit_aggregate, so the arithmetic is
+# one machine instruction and the value never touches the arena.
+fn _is_vec(t: string) -> bool:
+    return strings.starts_with(t, "V~")
+
+fn _vkind(cs: inout C, key: string) -> int:
+    for i := 0; i < len(cs.vks); i += 1:
+        if cs.vks[i] == key:
+            return i
+    push(cs.vks, key)
+    return len(cs.vks) - 1
+
+fn _vec_of(cs: inout C, n: int, el: string) -> string:
+    return "V~" + str(_vkind(&cs, str(n) + "|" + el))
+
+fn _vparts(cs: inout C, t: string) -> [string]:
+    return split(cs.vks[strings.parse_int(_tname(t))], "|")
+
+fn _vn(cs: inout C, t: string) -> int:
+    return strings.parse_int(_vparts(&cs, t)[0])
+
+fn _velem(cs: inout C, t: string) -> string:
+    return _vparts(&cs, t)[1]
+
+fn _vecf(cs: inout C, t: string, op: string) -> string:
+    return "tycho_vec_V" + _tname(t) + op
+
 # How a key is REPRESENTED in the entry table: a fieldless enum is stored as its
 # tag, so `keys()` has to rebuild the singleton (src/tychoc.c:13418).
 fn _kclass(cs: inout C, k: string) -> string:
@@ -416,7 +446,7 @@ fn _kclass(cs: inout C, k: string) -> string:
         return "int"
     if _is_enum(k):
         return "enum"
-    if _is_struct(k) or _is_tup(k) or _is_arr(k):
+    if _is_struct(k) or _is_tup(k) or _is_arr(k) or _is_vec(k):
         return "comp"
     _bad("a map key of type '" + k + "' is not hashable")
     return ""
@@ -485,6 +515,8 @@ fn _hashable_d(cs: inout C, t: string, seen: [string: bool]) -> bool:
         return true
     if _is_arr(t):
         return _hashable_d(&cs, _elem(t), seen)
+    if _is_vec(t):
+        return _hashable_d(&cs, _velem(&cs, t), seen)
     if _is_struct(t):
         i2 := _sidx(&cs, _tname(t))
         if i2 < 0:
@@ -551,6 +583,8 @@ fn _hash_det(cs: inout C, t: string, v: string) -> string:
             v + ") })._l)"
     if _is_enum(t):
         return "tycho_ik_hash_det((tycho_int)((" + v + ")->tag))"
+    if _is_vec(t):
+        return _u(&cs, _vecf(&cs, t, "_dhash")) + "(" + v + ")"
     if _is_struct(t):
         dsn := _u(&cs, "tycho_dhash_S_" + _tname(t))
         return dsn + "(" + v + ")"
@@ -577,6 +611,8 @@ fn _hash(cs: inout C, t: string, v: string) -> string:
             v + ") })._l)"
     if _is_enum(t):
         return "tycho_ik_hash((tycho_int)((" + v + ")->tag))"
+    if _is_vec(t):
+        return _u(&cs, _vecf(&cs, t, "_hash")) + "(" + v + ")"
     if _is_struct(t):
         hsn := _u(&cs, "tycho_hash_S_" + _tname(t))
         return hsn + "(" + v + ")"
@@ -857,6 +893,11 @@ fn _tmang(cs: inout C, t: string) -> string:
         if len(e) == 0:
             return ""
         return "arr_" + e
+    if _is_vec(t):
+        ve := _tmang(&cs, _velem(&cs, t))
+        if len(ve) == 0:
+            return ""
+        return "vec" + str(_vn(&cs, t)) + "_" + ve
     if _is_map(t):
         k := _tmang(&cs, _mkey(&cs, t))
         v := _tmang(&cs, _mval(&cs, t))
@@ -1032,8 +1073,8 @@ fn _unify(cs: inout C, t: ast.Ty, a: string, tps: [string], bs: inout [string]):
                 _unify(&cs, es[0], _elem(a), tps, &bs)
             return
         ast.TVec(nn3, es):
-            if _is_arr(a):
-                _unify(&cs, es[0], _elem(a), tps, &bs)
+            if _is_vec(a):
+                _unify(&cs, es[0], _velem(&cs, a), tps, &bs)
             return
         ast.TFix(nn2, es):
             # `[$N]$T` -- the SIZE is not a type parameter (emit lowers every
@@ -1219,6 +1260,8 @@ fn _cty(cs: inout C, t: string) -> string:
         return "TychoMapM" + _tname(t)
     if _is_soa(t):
         return "Soa" + _tname(t)
+    if _is_vec(t):
+        return "TychoVecV" + _tname(t)
     if _is_arr(t):
         e := _elem(t)
         if e == "int":
@@ -1318,13 +1361,11 @@ fn _ty(cs: inout C, t: ast.Ty) -> string:
         ast.TSoa(e):
             return _soa_of(&cs, _ty(&cs, e[0]))
         ast.TVec(n, e):
-            # `vector[N]T` lowers to the dynamic array here, exactly as the two
-            # other fixed forms do. tychoc1's C is a second ANSWER, not a second
-            # copy of the emitted text -- the GCC vector member the shipped
-            # compiler writes is src/tychoc.c@emit_aggregate's alone, which is
-            # why scripts/vector_check.sh reads the vector legs from ./tychoc
-            # and the behaviour legs from both.
-            return "[" + _ty(&cs, e[0]) + "]"
+            # A GCC vector member, matching src/tychoc.c@emit_aggregate. The
+            # count is a literal by construction: the checker refuses a
+            # non-constant one (tests/reject/vector_nonconst_count.ty) and
+            # `_sizeparams_ty` never reads it as a size parameter.
+            return _vec_of(&cs, strings.parse_int(n), _ty(&cs, e[0]))
         ast.TBnd(n, e):
             # `bounded[N]T` lowers to the dynamic array too. NOT covered by this:
             # the capacity trap on an over-cap push, which needs N carried in the
@@ -1860,6 +1901,8 @@ fn _tostr(cs: inout C, code: string, t: string) -> string:
         return "tycho_str_mapM" + _tname(t) + "(" + cs.arena + ", " + code + ")"
     if _is_soa(t):
         return "tycho_str_from_c(" + cs.arena + ", \"<soa [" + _tname(_selem(&cs, t)) + "]>\")"
+    if _is_vec(t):
+        return _u(&cs, _vecf(&cs, t, "_str")) + "(" + cs.arena + ", " + code + ")"
     if _is_arr(t):
         e := _elem(t)
         if e == "int":
@@ -1917,6 +1960,8 @@ fn _eq(cs: inout C, a: string, b: string, t: string) -> string:
         return _mpfx(&cs, t) + "_eq(" + a + ", " + b + ")"
     if _is_soa(t):
         return _spfx(&cs, t) + "_eq(" + a + ", " + b + ")"
+    if _is_vec(t):
+        return _u(&cs, _vecf(&cs, t, "_eq")) + "(" + a + ", " + b + ")"
     if _is_arr(t):
         return _arrf(&cs, _elem(t), "_eq") + "(" + a + ", " + b + ")"
     return "(" + a + " == " + b + ")"
@@ -2132,6 +2177,9 @@ fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
                 g := _mpfx(&cs, rt) + "_get(" + rc + ", " +
                     _keyrt(&cs, _mkey(&cs, rt), ic) + ", " + _zero(&cs, vt) + ")"
                 return (_copy(&cs, g, vt, cs.arena), vt)
+            if _is_vec(rt):
+                return (_u(&cs, _vecf(&cs, rt, "_get")) + "(" + rc + ", " + ic + ")",
+                    _velem(&cs, rt))
             if not _is_arr(rt):
                 _bad("indexing a non-array")
             et := _elem(rt)
@@ -3066,9 +3114,30 @@ fn _orret(cs: inout C, e: ast.Expr) -> (string, string):
         "if (_scope.head) arena_free(&_scope); return _orr; } " +
         got + "; })", gt)
 
+# `v: vector[4]float = [1.0, 2.0, 3.0, 4.0]` -- lane by lane into the vector
+# member, no arena. src/tychoc.c emits the same statement expression.
+fn _veclit(cs: inout C, k: [ast.Expr], vt: string) -> (string, string):
+    n := _vn(&cs, vt)
+    if len(k) != n:
+        _bad("a vector[" + str(n) + "] literal needs " + str(n) + " elements")
+    et := _velem(&cs, vt)
+    sw := cs.want
+    cs.want = et
+    v := _fresh(&cs, "_l")
+    out := "({ " + _ctyz(&cs, vt) + "" + v + "; "
+    for i := 0; i < len(k); i += 1:
+        ac, at2 := _ex(&cs, k[i])
+        if at2 != et:
+            ac = "((" + _cty(&cs, et) + ")(" + ac + "))"
+        out = out + v + ".v[" + str(i) + "] = " + ac + "; "
+    cs.want = sw
+    return (out + v + "; })", vt)
+
 fn _arrlit(cs: inout C, k: [ast.Expr]) -> (string, string):
     if len(k) == 0:
         _bad("an empty array literal needs a type")
+    if _is_vec(cs.want):
+        return _veclit(&cs, k, cs.want)
     v := _fresh(&cs, "_l")
     sw := cs.want
     # `a: [u32] = [1, 2]` -- the elements adapt to the ANNOTATED element type,
@@ -3229,6 +3298,61 @@ fn _binop(cs: inout C, op: string, ea: ast.Expr, eb: ast.Expr) -> (string, strin
     # form. Placed before the scalar operators so `a * b` on arrays never falls
     # through to a C `*` on two structs.
     if op == "*" or op == "/" or op == "%" or op == "+" or op == "-":
+        # vector[N]T: ONE C expression on the vector members, which is what
+        # makes this a machine instruction rather than a loop gcc may or may not
+        # vectorise. int `/` and `%` fall back to a lane loop because the
+        # LONG_MIN/-1 and divide-by-zero traps are a CALL, which cannot be
+        # applied to a whole vector -- src/tychoc.c:11275 does the same.
+        # A broadcast scalar needs no splat and the operand order is preserved.
+        if _is_vec(at) or _is_vec(bt):
+            vt := at
+            if not _is_vec(at):
+                vt = bt
+            vet := _velem(&cs, vt)
+            vct := _ctyz(&cs, vt)
+            vce := _ctyz(&cs, vet)
+            wa := _fresh(&cs, "_ewa")
+            wb := _fresh(&cs, "_ewb")
+            wr := _fresh(&cs, "_ewr")
+            wi := _fresh(&cs, "_ewi")
+            lct := vce
+            rct := vce
+            wsrc := wb
+            if _is_vec(at):
+                lct = vct
+                wsrc = wa
+            if _is_vec(bt):
+                rct = vct
+            raw := op == "+" or op == "-" or op == "*"
+            if op == "/" and (vet == "float" or vet == "f32"):
+                raw = true
+            whd := "({ " + lct + wa + " = (" + a + "); " + rct + wb + " = (" + b + "); " +
+                vct + wr + " = " + wsrc + ";\n"
+            if raw:
+                wl := wa
+                wrr := wb
+                if _is_vec(at):
+                    wl = wa + ".v"
+                if _is_vec(bt):
+                    wrr = wb + ".v"
+                return (whd + "   " + wr + ".v = " + wl + " " + op + " " + wrr +
+                    ";\n   " + wr + "; })", vt)
+            wl2 := wa
+            wr2 := wb
+            if _is_vec(at):
+                wl2 = wa + ".v[" + wi + "]"
+            if _is_vec(bt):
+                wr2 = wb + ".v[" + wi + "]"
+            lane := "(" + wl2 + " " + op + " " + wr2 + ")"
+            if vet == "int" and op == "/":
+                lane = "tycho_idiv(" + wl2 + ", " + wr2 + ")"
+            elif vet == "int" and op == "%":
+                lane = "tycho_imod(" + wl2 + ", " + wr2 + ")"
+            elif _is_sized(vet):
+                lane = "(" + _cty(&cs, vet) + ")" + lane
+            return (whd + "   for (tycho_int " + wi + " = 0; " + wi + " < " +
+                str(_vn(&cs, vt)) + "; " + wi + "++) " + wr + ".v[" + wi + "] = " +
+                lane + ";\n   " + wr + "; })", vt)
         ewa := _is_arr(at)
         ewb := _is_arr(bt)
         if ewa or ewb:
@@ -3810,6 +3934,9 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
         c, t := _ex(&cs, args[0])
         if t == "string" or t == "bytes":
             return ("tycho_str_len(" + c + ")", "int")
+        if _is_vec(t):
+            # a constant: the count is in the TYPE, so no field is read
+            return ("((void)(" + c + "), (tycho_int)" + str(_vn(&cs, t)) + ")", "int")
         if _is_arr(t) or _is_map(t) or _is_soa(t):
             return ("((" + c + ").len)", "int")
         _bad("len() of unsupported type '" + t + "'")
@@ -4130,6 +4257,9 @@ fn _lvalue(cs: inout C, e: ast.Expr) -> (string, string):
                 vt := _mval(&cs, rt)
                 return ("(*" + _mpfx(&cs, rt) + "_slotptr(" + _ownerof(&cs, k[0]) + ", &(" + rc + "), " +
                     _keyrt(&cs, _mkey(&cs, rt), ic) + "))", vt)
+            if _is_vec(rt):
+                return ("(*" + _u(&cs, _vecf(&cs, rt, "_ptr")) + "(&(" + rc + "), " + ic + "))",
+                    _velem(&cs, rt))
             if not _is_arr(rt):
                 _bad("indexed assignment on a non-array")
             et := _elem(rt)
@@ -5774,9 +5904,13 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                     bds + ind + "    }\n" + fcs + closs + ind + "}\n"
                 _restore(&cs, ms)
                 return outs
-            if not _is_arr(ct):
+            if not (_is_arr(ct) or _is_vec(ct)):
                 _bad("for-in over '" + ct + "' -- only arrays here, maps are Phase 8")
-            et := _elem(ct)
+            et := ""
+            if _is_vec(ct):
+                et = _velem(&cs, ct)
+            else:
+                et = _elem(ct)
             fc := _fresh(&cs, "_fc")
             fi := _fresh(&cs, "_fi")
             m := _mark(&cs)
@@ -5817,11 +5951,19 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                 closa = ind + "    arena_free(&" + ida + ");\n"
             elif fida:
                 bda = _replace(bda, "arena_free(&" + ida + "); ", "")
-            out := ind + "{\n" + ind + "    " + _ctyz(&cs, "[" + et + "]") + "" + fc +
+            fct := _ctyz(&cs, "[" + et + "]")
+            fbound := fc + ".len"
+            fslot := fc + ".data[" + fi + "]"
+            if _is_vec(ct):
+                # a vector has its count in the TYPE and its lanes inline
+                fct = _ctyz(&cs, ct)
+                fbound = str(_vn(&cs, ct))
+                fslot = fc + ".v[" + fi + "]"
+            out := ind + "{\n" + ind + "    " + fct + "" + fc +
                 " = " + cc2 + ";\n" + opena + foa +
-                ind + "    for (tycho_int " + fi + " = 0; " + fi + " < " + fc +
-                ".len; " + fi + " += 1) {\n" + resa +
-                ind + "        " + _ctyz(&cs, et) + "" + fcn + " = " + fc + ".data[" + fi + "];\n" +
+                ind + "    for (tycho_int " + fi + " = 0; " + fi + " < " + fbound +
+                "; " + fi + " += 1) {\n" + resa +
+                ind + "        " + _ctyz(&cs, et) + "" + fcn + " = " + fslot + ";\n" +
                 bda + ind + "    }\n" + _fuse_close(&cs, fna, ind + "    ") + closa + ind + "}\n"
             _restore(&cs, m)
             return out
@@ -6508,6 +6650,61 @@ fn _arr_defs(cs: inout C) -> (string, string, string, string):
                     _hash_det(&cs, e, "x.data[i]") + ";\n    return h;\n}\n"
         i += 1
     return (td, sb, pr, fb)
+
+# One helper family per vector kind, shaped exactly like the one
+# src/tychoc.c@emit_aggregate writes for `bnd == 2`. Two attributes carry the
+# alignment answer: `vector_size` alone would demand 16- or 32-byte alignment
+# and runtime/tycho_rt.c@arena_alloc_slow rounds every arena block to 8, so
+# `packed, aligned(8)` pins the aggregate at what the arena already guarantees
+# and gcc uses unaligned moves -- the arithmetic stays one instruction.
+# The size is written `N * sizeof(T)` so a 32-bit rebuild computes its own.
+fn _vec_defs(cs: inout C) -> (string, string, string):
+    sb := ""
+    pr := ""
+    fb := ""
+    for i := 0; i < len(cs.vks); i += 1:
+        vt := "V~" + str(i)
+        n := _vn(&cs, vt)
+        et := _velem(&cs, vt)
+        ct := "TychoVecV" + str(i)
+        p := "tycho_vec_V" + str(i)
+        ce := _ctyz(&cs, et)
+        ns := str(n)
+        sb = sb + "typedef struct " + ct + "_ " + ct + ";\n" +
+            "struct " + ct + "_ { " + ce + "v __attribute__((vector_size(" + ns +
+            " * sizeof(" + ce + ")))); } __attribute__((packed, aligned(8)));\n"
+        pr = pr +
+            "static " + ce + p + "_get(" + ct + ", tycho_int);\n" +
+            "static " + ce + "*" + p + "_ptr(" + ct + " *, tycho_int);\n" +
+            "static int " + p + "_eq(" + ct + ", " + ct + ");\n" +
+            "static char *" + p + "_str(Arena *, " + ct + ");\n" +
+            "static uint64_t " + p + "_hash(" + ct + ");\n" +
+            "static uint64_t " + p + "_dhash(" + ct + ");\n"
+        oob := "{ fprintf(stderr, \"tycho: index %\" TY_PRId \" out of bounds (len " +
+            ns + ")\\n\", i); exit(1); }"
+        fb = fb +
+            "static " + ce + p + "_get(" + ct + " xs, tycho_int i) {\n" +
+            "    if (i < 0 || i >= " + ns + ") " + oob + "\n    return xs.v[i];\n}\n" +
+            "static " + ce + "*" + p + "_ptr(" + ct + " *xs, tycho_int i) {\n" +
+            "    if (i < 0 || i >= " + ns + ") " + oob + "\n    return &xs->v[i];\n}\n" +
+            "static int " + p + "_eq(" + ct + " x, " + ct + " y) {\n" +
+            "    for (tycho_int i = 0; i < " + ns + "; i++) if (!(" +
+            _eq(&cs, "x.v[i]", "y.v[i]", et) + ")) return 0;\n    return 1;\n}\n" +
+            "static char *" + p + "_str(Arena *a, " + ct + " xs) {\n" +
+            "    char *r = tycho_str_from_c(a, \"[\");\n" +
+            "    for (tycho_int i = 0; i < " + ns + "; i++) {\n" +
+            "        if (i) r = tycho_str_concat(a, r, tycho_str_from_c(a, \", \"));\n" +
+            "        r = tycho_str_concat(a, r, " + _tostr_a(&cs, "xs.v[i]", et) + ");\n    }\n" +
+            "    return tycho_str_concat(a, r, tycho_str_from_c(a, \"]\"));\n}\n" +
+            "static uint64_t " + p + "_hash(" + ct + " x) {\n" +
+            "    uint64_t h = tycho_hash_k0;\n" +
+            "    for (tycho_int i = 0; i < " + ns + "; i++) h = h * UINT64_C(1099511628211) ^ " +
+            _hash(&cs, et, "x.v[i]") + ";\n    return h;\n}\n" +
+            "static uint64_t " + p + "_dhash(" + ct + " x) {\n" +
+            "    uint64_t h = UINT64_C(0x9e3779b97f4a7c15);\n" +
+            "    for (tycho_int i = 0; i < " + ns + "; i++) h = h * UINT64_C(1099511628211) ^ " +
+            _hash_det(&cs, et, "x.v[i]") + ";\n    return h;\n}\n"
+    return (sb, pr, fb)
 
 fn _tup_plain(cs: inout C, i: int) -> bool:
     for e in split(cs.tks[i], "|"):
@@ -7818,7 +8015,10 @@ fn program(pfx: [string], us: [ast.Unit], dbgf: string) -> string:
             asb = asb + b2
             apr = apr + b3
             afb = afb + b4
-    htd := "\n/* ---- generated from Tycho source ---- */\n\n"
+    # Last, so every kind any body introduced is present. A vector element is a
+    # scalar by construction, so this registers nothing new and needs no fixpoint.
+    vsb, vpr, vfb := _vec_defs(&cs)
+    htd := "\n/* ---- generated from Tycho source ---- */\n\n" + vsb
     for sd in cs.sds:
         htd = htd + "typedef struct S_" + sd.name + "_ S_" + sd.name + ";\n"
     for ed in cs.eds:
@@ -7826,7 +8026,7 @@ fn program(pfx: [string], us: [ast.Unit], dbgf: string) -> string:
     htd = htd + "\n" + mtd
     head = atd + asb + msb + osb + "\n" + head
     head = htd + ttd + ftd + head + tsb + edefs + "\n" + apr + sproto + eproto +
-        tpr + mpr + hpr + "\n" + afb + sbody + ebody + tfb + hfb + mfb + ofb + "\n"
+        tpr + mpr + hpr + vpr + "\n" + afb + vfb + sbody + ebody + tfb + hfb + mfb + ofb + "\n"
 
     # `fn main() -> Result(void, string)`: an Err reaching the entry point is
     # PRINTED and exits 1 -- the error type is the message (src/tychoc.c:9732).

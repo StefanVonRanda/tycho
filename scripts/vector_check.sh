@@ -17,10 +17,14 @@
 # emits 4 -- which is the actual claim, that an explicit vector does not depend
 # on the optimiser noticing anything.
 #
-# The behaviour and refusal legs run BOTH compilers. The vector legs read
-# ./tychoc only, and deliberately: tychoc1 lowers every fixed form to the
-# dynamic array (compiler/emit/emit.ty@TVec), so it is a second ANSWER, not a
-# second copy of the emitted text.
+# EVERY leg runs BOTH compilers. Until 2026-09-05 the vector legs read ./tychoc
+# alone -- and that is exactly why nothing here could see that the SHIPPED
+# compiler lowered `vector[N]T` to the arena-backed dynamic array: zero
+# vector_size, zero packed instructions, one arena allocation per operation, and
+# a raytracer 3.6x SLOWER for being converted. The two compilers name the
+# aggregate differently (TychoArrC<n> vs TychoVecV<n>) and number their temps
+# differently, so the patterns below are written to span both rather than
+# pinning one compiler's spelling.
 set -e
 cd "$(dirname "$0")/.."
 D=$(mktemp -d)
@@ -31,27 +35,28 @@ fail() { echo "vector-check: FAILED -- $1"; exit 1; }
 [ -x ./tychoc ]  || fail "./tychoc is not built"
 [ -x ./tychoc1 ] || fail "./tychoc1 is not built"
 
-./tychoc "$FIX" --emit-c -o "$D/e" > /dev/null || fail "./tychoc cannot compile $FIX"
+for CC in ./tychoc ./tychoc1; do
+"$CC" "$FIX" --emit-c -o "$D/e" > /dev/null || fail "$CC cannot compile $FIX"
 
 # [1] the emitted C carries a GCC vector member, and the float arithmetic is a
 #     WHOLE-VECTOR assignment rather than a per-lane loop.
 grep -q 'v __attribute__((vector_size(' "$D/e.c" \
-    || fail "the emitted C carries no vector_size member"
+    || fail "$CC: the emitted C carries no vector_size member"
 grep -q '__attribute__((packed, aligned(8)))' "$D/e.c" \
-    || fail "the emitted vector aggregate is not pinned to the arena's 8-byte alignment"
-grep -q '_ewr\.v = _ewa\.v + _ewb\.v;' "$D/e.c" \
-    || fail 'vector + did not emit a whole-vector assignment'
-grep -q '_ewr\.v = _ewa\.v \* _ewb;' "$D/e.c" \
-    || fail 'a broadcast did not emit a whole-vector assignment'
-grep -q '_ewr\.v = _ewa\.v / _ewb\.v;' "$D/e.c" \
-    || fail 'float vector / did not emit a whole-vector assignment'
+    || fail "$CC: the emitted vector aggregate is not pinned to the arena's 8-byte alignment"
+grep -qE '_ewr[0-9]*\.v = _ewa[0-9]*\.v \+ _ewb[0-9]*\.v;' "$D/e.c" \
+    || fail "$CC: vector + did not emit a whole-vector assignment"
+grep -qE '_ewr[0-9]*\.v = _ewa[0-9]*\.v \* _ewb[0-9]*;' "$D/e.c" \
+    || fail "$CC: a broadcast did not emit a whole-vector assignment"
+grep -qE '_ewr[0-9]*\.v = _ewa[0-9]*\.v / _ewb[0-9]*\.v;' "$D/e.c" \
+    || fail "$CC: float vector / did not emit a whole-vector assignment"
 # int `/` and `%` must NOT be whole-vector: they route through tycho_idiv /
 # tycho_imod for the divide-by-zero and LONG_MIN/-1 traps, and a guard call
 # cannot be applied to a whole vector. Losing that would be a silent SIGFPE.
-grep -q 'tycho_idiv(_ewa\.v\[_ewi\], _ewb\.v\[_ewi\])' "$D/e.c" \
-    || fail 'int vector / no longer goes through the runtime guard'
-grep -q 'tycho_imod(_ewa\.v\[_ewi\], _ewb\.v\[_ewi\])' "$D/e.c" \
-    || fail 'int vector %% no longer goes through the runtime guard' 
+grep -qE 'tycho_idiv\(_ewa[0-9]*\.v\[_ewi[0-9]*\], _ewb[0-9]*\.v\[_ewi[0-9]*\]\)' "$D/e.c" \
+    || fail "$CC: int vector / no longer goes through the runtime guard"
+grep -qE 'tycho_imod\(_ewa[0-9]*\.v\[_ewi[0-9]*\], _ewb[0-9]*\.v\[_ewi[0-9]*\]\)' "$D/e.c" \
+    || fail "$CC: int vector % no longer goes through the runtime guard"
 
 # [2] ALIGNMENT, the question V0 put ahead of this whole phase.
 #     runtime/tycho_rt.c@arena_alloc_slow rounds every arena allocation to 8
@@ -60,11 +65,11 @@ grep -q 'tycho_imod(_ewa\.v\[_ewi\], _ewb\.v\[_ewi\])' "$D/e.c" \
 #     and strip the attribute as the control -- without the strip, an 8 could
 #     just as well mean the vector member never landed.
 aligns() {   # $1 = "strip" to remove the pinning attribute (the control)
-    awk '/^struct TychoArrC[0-9]+_ \{.*vector_size/' "$D/e.c" > "$D/defs.c"
-    [ -s "$D/defs.c" ] || fail "no vector aggregate found in the emitted C"
+    awk '/^struct Tycho(ArrC|VecV)[0-9]+_ \{.*vector_size/' "$D/e.c" > "$D/defs.c"
+    [ -s "$D/defs.c" ] || fail "$CC: no vector aggregate found in the emitted C"
     if [ "$1" = strip ]; then
         sed -i 's/ __attribute__((packed, aligned(8)))//' "$D/defs.c"
-        ! grep -q 'packed, aligned(8)' "$D/defs.c" || fail "control: the attribute survived the strip"
+        ! grep -q 'packed, aligned(8)' "$D/defs.c" || fail "$CC control: the attribute survived the strip"
     fi
     {   echo '#include <stdio.h>'
         echo 'typedef long long tycho_int;'
@@ -73,20 +78,21 @@ aligns() {   # $1 = "strip" to remove the pinning attribute (the control)
 int main(void){
     size_t mx = 0;
 MAIN
-        sed -n 's/^struct \(TychoArrC[0-9]*_\) .*/    if (_Alignof(struct \1) > mx) mx = _Alignof(struct \1);/p' "$D/defs.c"
+        sed -n 's/^struct \(Tycho[A-Za-z]*[0-9]*_\) .*/    if (_Alignof(struct \1) > mx) mx = _Alignof(struct \1);/p' "$D/defs.c"
         cat <<'MAIN'
     printf("%zu\n", mx); return 0; }
 MAIN
     } > "$D/m.c"
-    cc -O2 -std=c11 -o "$D/m" "$D/m.c" || fail "the extracted vector aggregates do not compile"
+    cc -O2 -std=c11 -o "$D/m" "$D/m.c" || fail "$CC: the extracted vector aggregates do not compile"
     "$D/m"
 }
 got=$(aligns)
-[ "$got" = 8 ] || fail "the widest vector aggregate wants $got-byte alignment; the arena gives 8"
+[ "$got" = 8 ] || fail "$CC: the widest vector aggregate wants $got-byte alignment; the arena gives 8"
 ctl=$(aligns strip)
-[ "$ctl" != 8 ] || fail "control: stripping the attribute left the alignment at 8 -- leg [2] cannot fail"
+[ "$ctl" != 8 ] || fail "$CC control: stripping the attribute left the alignment at 8 -- leg [2] cannot fail"
 
 # [3] the INSTRUCTION, at an -O level where gcc's auto-vectoriser is off.
+rm -rf "$D/pv" "$D/ps"
 mkdir -p "$D/pv" "$D/ps"   # each probe gets its OWN directory: tychoc compiles
                            # every .ty beside the entry file (tycho-syntax 9)
 cat > "$D/pv/v.ty" <<'TY'
@@ -107,25 +113,24 @@ TY
 sed 's/vector\[4\]float/[4]float/g' "$D/pv/v.ty" > "$D/ps/s.ty"
 grep -q 'vector\[' "$D/ps/s.ty" && fail "the scalar-array substitution did not apply" || true
 grep -q '\[4\]float' "$D/ps/s.ty" || fail "the scalar-array substitution produced no [4]float"
-./tychoc "$D/pv/v.ty" --emit-c -o "$D/v" > /dev/null || fail "the vector probe does not compile"
-./tychoc "$D/ps/s.ty" --emit-c -o "$D/s" > /dev/null || fail "the array control does not compile"
+"$CC" "$D/pv/v.ty" --emit-c -o "$D/v" > /dev/null || fail "$CC: the vector probe does not compile"
+"$CC" "$D/ps/s.ty" --emit-c -o "$D/s" > /dev/null || fail "$CC: the array control does not compile"
 packed_ops() { cc "$1" -fwrapv -std=c11 -S "$2" -o - 2>/dev/null | grep -cE '\b(addp[sd]|mulp[sd]|divp[sd]|subp[sd])\b' || true; }
 for O in -O0 -O1; do
     v=$(packed_ops "$O" "$D/v.c")
     s=$(packed_ops "$O" "$D/s.c")
-    [ "$v" -gt 0 ] || fail "at $O the vector program emits no packed instruction"
-    [ "$s" -eq 0 ] || fail "at $O the [4]float CONTROL emits $s packed instructions -- leg [3] is not discriminating"
+    [ "$v" -gt 0 ] || fail "$CC: at $O the vector program emits no packed instruction"
+    [ "$s" -eq 0 ] || fail "$CC: at $O the [4]float CONTROL emits $s packed instructions -- leg [3] is not discriminating"
 done
 # and the two programs must still agree on the answer
-./tychoc "$D/pv/v.ty" -o "$D/vb" > /dev/null || fail "the vector probe does not link"
-./tychoc "$D/ps/s.ty" -o "$D/sb" > /dev/null || fail "the array control does not link"
-[ "$("$D/vb")" = "$("$D/sb")" ] || fail "the vector program and its scalar control disagree"
+"$CC" "$D/pv/v.ty" -o "$D/vb" > /dev/null || fail "$CC: the vector probe does not link"
+"$CC" "$D/ps/s.ty" -o "$D/sb" > /dev/null || fail "$CC: the array control does not link"
+[ "$("$D/vb")" = "$("$D/sb")" ] || fail "$CC: the vector program and its scalar control disagree"
 
-# [4] behaviour, both compilers, against the fixture's own golden
-for CC in ./tychoc ./tychoc1; do
-    "$CC" "$FIX" -o "$D/b" > /dev/null || fail "$CC cannot build $FIX"
-    "$D/b" > "$D/b.out" || fail "$CC: $FIX died"
-    cmp -s "$D/b.out" tests/vector_type.out || fail "$CC: $FIX does not match tests/vector_type.out"
+# [4] behaviour, against the fixture's own golden
+"$CC" "$FIX" -o "$D/b" > /dev/null || fail "$CC cannot build $FIX"
+"$D/b" > "$D/b.out" || fail "$CC: $FIX died"
+cmp -s "$D/b.out" tests/vector_type.out || fail "$CC: $FIX does not match tests/vector_type.out"
 done
 
 # [5] every refusal, by its whole sentence, in both compilers
@@ -140,4 +145,4 @@ for f in vector_count_not_pow2 vector_count_one vector_no_count \
         echo "$out" | grep -qF "$want" || fail "$CC: $f refused by a different rule -- $(echo "$out" | head -1)"
     done
 done
-echo "vector-check: ok (emitted C carries a GCC vector; the aggregate wants 8-byte alignment and $ctl without the attribute; at -O0/-O1 the vector program emits packed instructions and the [4]float control emits none; both compilers agree on the golden and on all six refusals)"
+echo "vector-check: ok (BOTH compilers emit a GCC vector; the aggregate wants 8-byte alignment and $ctl without the attribute; at -O0/-O1 the vector program emits packed instructions and the [4]float control emits none; both agree on the golden and on all six refusals)"
