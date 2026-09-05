@@ -939,24 +939,39 @@ fi
 
 
 # ---- the command line -------------------------------------------------------
-# ---- idle connections must not starve a real request -------------------------
-# Each of --workers accept loops serves ONE connection at a time, so a socket
-# that connects and says nothing holds a worker for as long as the read deadline
-# allows. That deadline used to be --idle-ms, and 8 silent sockets against 8
-# workers delayed a legitimate GET by 4.93s -- measured, not supposed. --first-ms
-# is that deadline split out: a peer that has sent nothing gets first-ms, one
-# that has already been answered keeps idle-ms.
+# ---- silent peers must cost a pollfd slot, not a worker ----------------------
+# THE BOUND THESE TWO LEGS ASSERT, and why it is not the old one. Until the poll
+# rewrite each of --workers accept loops served ONE connection at a time, so the
+# delay a legitimate GET suffered was ceil(K / workers) x a deadline -- it grew
+# with K and it was set by --first-ms/--idle-ms/--conn-ms. accept_loop now holds
+# a SET of connections and reads one only when poll(2) calls it readable
+# (server/main.ty@accept_loop), so a peer that says nothing occupies a pollfd
+# slot and no worker at all. The new bound is a CONSTANT: a fresh peer waits at
+# most one poll pass, POLL_TICK_MS (server/main.ty@POLL_TICK_MS, 100ms), plus the
+# time to serve it. It does not scale with K and it does not depend on any dial.
 #
-# The server below is configured with idle-ms SIXTEEN TIMES first-ms, and that
-# ratio is what makes this leg able to redden. If the first read ever goes back
-# to the idle timeout the measured delay jumps from ~1s to ~8s and misses the
-# bound by a mile; run with the two timeouts equal, the leg would pass either way
-# and prove nothing.
-respawn "$T/starve.err" 8000 500
-python3 - "$(port_of "$T/starve.err")" 4 500 8000 <<'STARVE'
+# THRESHOLD, and how it was chosen. Measured on this box at --workers 4 with the
+# server below: silent K=8 -> 1/0/0/0/0 ms, K=64 -> 1/0/0/0/0 ms, K=256 -> 0 ms
+# five times; parked K=8 -> 0 ms x5, K=64 -> 1/0/0/0/0 ms, K=256 -> 0 ms x5 with
+# all 256 answered. POLL_BOUND is 500ms: 5x the mechanism's own POLL_TICK_MS
+# ceiling and ~500x the largest figure measured, which is the headroom that stops
+# a loaded box reddening this. It is also SIXTEEN TIMES BELOW the --first-ms and
+# --idle-ms this server runs at, and --conn-ms is 0, so a leg that passes has
+# proved the answer did not wait for a deadline to expire -- there is no deadline
+# under 8000ms for it to have waited for. Under the pre-rewrite model the very
+# first round alone costs --first-ms = 8000ms, so the old code cannot squeak
+# past this bound; the separation is 16x, not a few percent.
+#
+# The old legs asserted 2000ms and 3000ms against a server that now answers in
+# 0-1ms. They stayed green through the rewrite -- they would have stayed green
+# through its removal too, which is what makes an upper bound 2000x the truth a
+# decoration rather than a gate.
+respawn "$T/starve.err" 8000 8000 0
+python3 - "$(port_of "$T/starve.err")" 4 8000 8000 500 <<'STARVE'
 import socket, sys, time
-port, workers, first_ms, idle_ms = (int(x) for x in sys.argv[1:5])
+port, workers, first_ms, idle_ms, bound = (int(x) for x in sys.argv[1:6])
 bad = 0
+FLAT = 250          # how much the K=16x measurement may exceed the K=2x one
 
 def timed_get(timeout):
     t = time.time()
@@ -975,63 +990,95 @@ def timed_get(timeout):
 # [1] THE CONTROL, and it runs first: an unloaded server must answer promptly, or
 # the number measured under load says nothing about starvation at all.
 ms, st = timed_get(10.0)
-if st != "HTTP/1.1 200 OK" or ms > 500:
-    print("  FAIL idle-starvation control: unloaded GET %.0fms %s, want 200 under 500ms" % (ms, st))
+if st != "HTTP/1.1 200 OK" or ms > bound:
+    print("  FAIL silent-peer control: unloaded GET %.0fms %s, want 200 under %dms" % (ms, st, bound))
     bad = 1
 else:
-    print("  ok   idle-starvation control: unloaded GET answered in %.0fms" % ms)
+    print("  ok   silent-peer control: unloaded GET answered in %.0fms" % ms)
 
-# [2] Twice as many silent sockets as workers. The bound is the mechanism written
-# out -- ceil(K / workers) rounds, each ending when first-ms expires, plus a
-# second of slack for a loaded box. It is far under idle-ms, which is the real
-# assertion here.
-K = workers * 2
-bound = (((K + workers - 1) // workers) * first_ms) + 1000
 held = []
-for _ in range(K):
+def open_silent(n):
+    global bad
+    for _ in range(n):
+        try:
+            held.append(socket.create_connection(("127.0.0.1", port), 3.0))
+        except OSError as e:
+            print("  FAIL silent-peer: could not open silent socket %d: %s" % (len(held), e))
+            bad = 1
+            return False
+    time.sleep(0.2)
+    return True
+
+def loaded(label):
+    global bad
+    # 20s, not 60: under the pre-rewrite model this GET waits ceil(K/workers) x
+    # 8000ms, so the leg must give up and REPORT rather than sit there for two
+    # minutes per measurement.
     try:
-        held.append(socket.create_connection(("127.0.0.1", port), 3.0))
+        ms, st = timed_get(20.0)
     except OSError as e:
-        print("  FAIL idle-starvation: could not open silent socket %d: %s" % (len(held), e))
+        print("  FAIL silent-peer: legitimate GET failed outright under %d silent peers: %s"
+              % (len(held), e))
         bad = 1
-        break
-time.sleep(0.2)
-try:
-    ms, st = timed_get(30.0)
-except OSError as e:
-    print("  FAIL idle-starvation: legitimate GET failed outright under %d idle sockets: %s" % (K, e))
-    ms, st, bad = -1.0, "", 1
+        return -1.0
+    if st != "HTTP/1.1 200 OK" or ms > bound:
+        print("  FAIL silent-peer: %d silent peers delayed a GET %.0fms (%s), bound %dms"
+              % (len(held), ms, st or "no answer", bound))
+        bad = 1
+        return -1.0
+    print("  ok   silent-peer: %s -- %d silent peers vs %d workers -> 200 in %.0fms "
+          "(bound %dms; first-ms %d and idle-ms %d are both 16x that, conn-ms is 0)"
+          % (label, len(held), workers, ms, bound, first_ms, idle_ms))
+    return ms
+
+# [2] Twice the worker count, which is all the old leg ever reached.
+t_small = loaded("K = 2x workers") if open_silent(workers * 2) else -1.0
+# [3] SIXTEEN TIMES the worker count. This is the figure the rewrite exists for
+# and no leg exercised it: under one-connection-per-worker, 60 of these 64 peers
+# cannot be looked at at all until a deadline retires the four that can, so the
+# GET waits 16 rounds. 64 rather than 256 because 16x is already a total
+# separation and 256 sockets makes the lane depend on the runner's fd rlimit,
+# which would redden it for a reason that is not the server's.
+t_big = loaded("K = 16x workers") if open_silent(workers * 14) else -1.0
+
 for c in held:
     c.close()
-if ms >= 0 and st == "HTTP/1.1 200 OK" and ms <= bound:
-    print("  ok   idle-starvation: %d silent sockets vs %d workers -> 200 in %.0fms "
-          "(bound %dms = ceil(%d/%d) x first-ms %d + 1000; idle-ms is %d)"
-          % (K, workers, ms, bound, K, workers, first_ms, idle_ms))
-elif ms >= 0:
-    print("  FAIL idle-starvation: %d silent sockets delayed a GET %.0fms (%s), bound %dms"
-          % (K, ms, st or "no answer", bound))
-    bad = 1
+
+# [4] FLATNESS, which is the property an absolute bound cannot state: the delay
+# must not GROW with K. Under the old model t(16x) is eight times t(2x); here the
+# two are the same measurement twice.
+if t_small >= 0 and t_big >= 0:
+    if t_big - t_small <= FLAT:
+        print("  ok   silent-peer: delay is flat in K -- %.0fms at 2x workers, %.0fms at 16x "
+              "(growth %.0fms, allowed %dms)" % (t_small, t_big, t_big - t_small, FLAT))
+    else:
+        print("  FAIL silent-peer: delay GREW with K -- %.0fms at 2x workers, %.0fms at 16x "
+              "(growth %.0fms, allowed %dms)" % (t_small, t_big, t_big - t_small, FLAT))
+        bad = 1
 sys.exit(bad)
 STARVE
 rc=$?
 [ "$rc" -eq 0 ] || fail=1
 srv_kill; wait "$SRV" 2>/dev/null; SRV=""
 
-# ---- a PARKED keep-alive peer must not starve one either ---------------------
-# The sibling of the leg above, one request later, and --first-ms cannot see it:
-# a peer that COMPLETES a request has earned --idle-ms, and it holds one of
-# --workers accept loops for all of it. --conn-ms is the whole-connection budget
-# that bounds it without an event loop, so the delay is ceil(K / workers) x
-# min(--idle-ms, --conn-ms) instead of ceil(K / workers) x --idle-ms.
+# ---- a PARKED keep-alive peer must cost a pollfd slot either -----------------
+# The sibling of the leg above, one request later, and the sharper of the two:
+# a peer that COMPLETES a request has earned --idle-ms, and under the old model
+# it held one of --workers accept loops for all of it. --conn-ms was written to
+# bound that. It is 0 here ON PURPOSE -- the setting that used to be the
+# pathological one -- so nothing but the poll loop can be what answers.
 #
-# The server below runs at idle-ms EIGHT TIMES conn-ms, and that ratio is what
-# lets this redden: with --conn-ms 0 the same probe measured 8192ms against this
-# 3000ms bound -- one full idle timeout, which is the defect.
-respawn "$T/parkstarve.err" 8000 500 1000
-python3 - "$(port_of "$T/parkstarve.err")" 4 1000 8000 <<'PARKSTARVE'
-import socket, sys, time
-port, workers, conn_ms, idle_ms = (int(x) for x in sys.argv[1:5])
+# Leg [2] is the one that needs no clock at all, and it is the strongest thing
+# in this file: EVERY one of the 64 peers must be answered. Pre-rewrite, with 64
+# parked peers against 4 workers, exactly --workers of them could be answered --
+# 4 of 64, measured -- because the other 60 never reached a worker. A count of
+# 64 is not a threshold anybody has to calibrate and it cannot flake.
+respawn "$T/parkstarve.err" 8000 8000 0
+python3 - "$(port_of "$T/parkstarve.err")" 4 8000 8000 500 <<'PARKSTARVE'
+import select, socket, sys, time
+port, workers, first_ms, idle_ms, bound = (int(x) for x in sys.argv[1:6])
 bad = 0
+FLAT = 250
 GET = b"GET /index.html HTTP/1.1\r\nHost: t\r\n\r\n"
 
 def timed_get(timeout):
@@ -1051,55 +1098,98 @@ def timed_get(timeout):
 # [1] THE CONTROL, first: an unloaded server must answer promptly or the number
 # measured under load says nothing about starvation at all.
 ms, st = timed_get(10.0)
-if st != "HTTP/1.1 200 OK" or ms > 500:
-    print("  FAIL parked-starvation control: unloaded GET %.0fms %s, want 200 under 500ms" % (ms, st))
+if st != "HTTP/1.1 200 OK" or ms > bound:
+    print("  FAIL parked-peer control: unloaded GET %.0fms %s, want 200 under %dms" % (ms, st, bound))
     bad = 1
 else:
-    print("  ok   parked-starvation control: unloaded GET answered in %.0fms" % ms)
+    print("  ok   parked-peer control: unloaded GET answered in %.0fms" % ms)
 
-K = workers * 2
 held = []
-for _ in range(K):
+
+def park(n):
+    """Open n more peers, send each a GET, and return how many were answered.
+    Collected with select under ONE 5s budget rather than a recv per socket: on a
+    server that can only answer --workers of them, a blocking recv each would sit
+    out 60 timeouts and turn a red verdict into a ten-minute hang."""
+    global bad
+    fresh = []
+    for _ in range(n):
+        try:
+            s = socket.create_connection(("127.0.0.1", port), 3.0)
+        except OSError as e:
+            print("  FAIL parked-peer: could not open socket %d: %s" % (len(held) + len(fresh), e))
+            bad = 1
+            return 0
+        s.setblocking(False)
+        s.sendall(GET)
+        fresh.append(s)
+    got, waiting, deadline = 0, list(fresh), time.time() + 5.0
+    while waiting and time.time() < deadline:
+        r, _, _ = select.select(waiting, [], [], max(0.0, deadline - time.time()))
+        for s in r:
+            waiting.remove(s)
+            try:
+                if s.recv(65536).startswith(b"HTTP/1.1 200"):
+                    got += 1
+            except OSError:
+                pass
+    for s in fresh:
+        s.setblocking(True)
+    held.extend(fresh)
+    return got
+
+def loaded(label):
+    global bad
     try:
-        s = socket.create_connection(("127.0.0.1", port), 3.0)
+        ms, st = timed_get(20.0)
     except OSError as e:
-        print("  FAIL parked-starvation: could not open socket %d: %s" % (len(held), e))
+        print("  FAIL parked-peer: legitimate GET failed outright under %d parked peers: %s"
+              % (len(held), e))
         bad = 1
-        break
-    s.settimeout(10.0)
-    s.sendall(GET)
-    held.append(s)
-# [2] Every parked peer must have been ANSWERED. Without this these are merely
-# silent sockets and the leg is the first-ms one wearing a different name.
-answered = 0
-for s in held:
-    try:
-        if s.recv(65536).startswith(b"HTTP/1.1 200"):
-            answered += 1
-    except OSError:
-        pass
-if answered != K:
-    print("  FAIL parked-starvation: only %d of %d peers were answered before parking" % (answered, K))
+        return -1.0
+    if st != "HTTP/1.1 200 OK" or ms > bound:
+        print("  FAIL parked-peer: %d parked peers delayed a GET %.0fms (%s), bound %dms"
+              % (len(held), ms, st or "no answer", bound))
+        bad = 1
+        return -1.0
+    print("  ok   parked-peer: %s -- %d parked peers vs %d workers -> 200 in %.0fms "
+          "(bound %dms; idle-ms %d is 16x that, conn-ms is 0 so no lifetime cap saves it)"
+          % (label, len(held), workers, ms, bound, idle_ms))
+    return ms
+
+# [2] Every peer must have been ANSWERED, at both figures. This is a COUNT, not a
+# clock, and it is what the pre-rewrite server cannot produce at 16x workers.
+t_small, t_big = -1.0, -1.0
+n = park(workers * 2)
+if n != workers * 2:
+    print("  FAIL parked-peer: only %d of %d peers were answered before parking (K = 2x workers)"
+          % (n, workers * 2))
     bad = 1
 else:
-    print("  ok   parked-starvation: all %d peers were answered, then went silent" % K)
+    print("  ok   parked-peer: all %d peers answered, then went silent (K = 2x workers)" % n)
+    t_small = loaded("K = 2x workers")
 
-bound = (((K + workers - 1) // workers) * conn_ms) + 1000
-try:
-    ms, st = timed_get(60.0)
-except OSError as e:
-    print("  FAIL parked-starvation: legitimate GET failed outright under %d parked peers: %s" % (K, e))
-    ms, st, bad = -1.0, "", 1
+n = park(workers * 14)
+if n != workers * 14:
+    print("  FAIL parked-peer: only %d of %d further peers were answered before parking "
+          "(K = 16x workers in total)" % (n, workers * 14))
+    bad = 1
+else:
+    print("  ok   parked-peer: all %d peers answered, then went silent (K = 16x workers)" % len(held))
+    t_big = loaded("K = 16x workers")
+
 for c in held:
     c.close()
-if ms >= 0 and st == "HTTP/1.1 200 OK" and ms <= bound:
-    print("  ok   parked-starvation: %d parked peers vs %d workers -> 200 in %.0fms "
-          "(bound %dms = ceil(%d/%d) x conn-ms %d + 1000; idle-ms is %d)"
-          % (K, workers, ms, bound, K, workers, conn_ms, idle_ms))
-elif ms >= 0:
-    print("  FAIL parked-starvation: %d parked peers delayed a GET %.0fms (%s), bound %dms"
-          % (K, ms, st or "no answer", bound))
-    bad = 1
+
+# [3] FLATNESS, as above: the delay must not grow with K.
+if t_small >= 0 and t_big >= 0:
+    if t_big - t_small <= FLAT:
+        print("  ok   parked-peer: delay is flat in K -- %.0fms at 2x workers, %.0fms at 16x "
+              "(growth %.0fms, allowed %dms)" % (t_small, t_big, t_big - t_small, FLAT))
+    else:
+        print("  FAIL parked-peer: delay GREW with K -- %.0fms at 2x workers, %.0fms at 16x "
+              "(growth %.0fms, allowed %dms)" % (t_small, t_big, t_big - t_small, FLAT))
+        bad = 1
 sys.exit(bad)
 PARKSTARVE
 rc=$?

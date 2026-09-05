@@ -36,40 +36,51 @@ usage: tycho-httpd [options]
 Both `--port 8080` and `--port=8080` work. `--port 0` binds an ephemeral port
 and prints the one it got, which is what the test scripts use.
 
-`--first-ms` and `--idle-ms` are two deadlines on the same socket and the split
-is deliberate. A peer that has been answered once has earned `--idle-ms` between
-requests; a peer that has said **nothing** gets `--first-ms`, because each of
-`--workers` accept loops serves one connection at a time and a silent socket
-otherwise holds one for a whole idle timeout. With the two conflated, 8 silent
-sockets against 8 workers delayed a legitimate `GET` by **4.93 s**, and 25 of
-them exhausted the listen backlog so a later request failed outright. Split, the
-same 8 cost **0.72 s** and the same 25 cost **2.77 s** — the bound being
-`ceil(K / workers) x --first-ms` for K silent sockets.
+**The bound, stated plainly: a peer that is not talking costs a pollfd slot and
+no worker at all.** Each of `--workers` runs one `poll(2)` over the listening
+socket and every connection it is holding (`server/main.ty@accept_loop`), and
+reads a connection only when poll calls it readable. So a fresh request waits at
+most one poll pass — `POLL_TICK_MS`, 100 ms (`server/main.ty@POLL_TICK_MS`) —
+plus the time to serve it, **however many other peers are connected and whatever
+the three deadlines below are set to**. Measured at `--workers 4 --idle-ms 8000
+--first-ms 8000 --conn-ms 0`: a legitimate `GET` is answered in **0–1 ms**
+against 8, 64 and 256 silent peers, and in **0–1 ms** against 8, 64 and 256
+parked keep-alive peers, every one of which was itself answered first.
+`make server-check` gates that at 16 × `--workers` against a 500 ms bound, and
+also asserts the delay does not grow between 2 × and 16 × — a constant is the
+claim, so a leg that only checked one figure would not be checking it.
 
-`--conn-ms` is the third deadline and it covers what `--first-ms` cannot: a peer
-that **completes** a request and then parks has earned `--idle-ms`, and holds one
-of `--workers` accept loops for all of it; one that dribbles a request per idle
-window holds one for a thousand of them. `--first-ms` and `--idle-ms` each bound
-one *read*; `--conn-ms` bounds the *connection*, so no peer holds a worker longer
-than it and the parked bound becomes `ceil(K / workers) x min(--idle-ms,
---conn-ms)` instead of scaling with the keep-alive dial. Measured at
-`--workers 4 --idle-ms 8000 --first-ms 500`: 8 parked peers delayed a legitimate
-`GET` by **8192 ms** at `--conn-ms 0`, and by **1024 ms** at `--conn-ms 1000`. It
-is a bound, not a cure — a worker still cannot notice a second connection while
-it is blocked on one, and that needs an event loop, which is a rewrite of
-`server/main.ty@accept_loop` rather than a patch.
+That bound used to be `ceil(K / workers) x` a deadline, because each accept loop
+served one connection at a time. The old figures are kept here because they are
+what the three dials were written for: 8 silent sockets against 8 workers delayed
+a `GET` by **4.93 s** when `--first-ms` and `--idle-ms` were still one dial, and
+25 of them exhausted the listen backlog so a later request failed outright; 8
+parked peers against 4 workers delayed one by **8192 ms** at `--conn-ms 0`.
+Against the current server the same 64 silent peers cost **0 ms**, and 64 parked
+peers are all answered — where the one-connection-per-worker model could answer
+exactly `--workers` of them, 4 of 64.
 
-`--idle-ms` bounds two things rather than one, and the second is easy to miss.
-It is how long a silent keep-alive peer may pin a worker — and, because a worker
-can only notice a shutdown *between* requests, it is also the worst-case time a
-`SIGTERM` takes. Measured at `--workers 4 --idle-ms 5000`: with no connection
-held, or one, shutdown completes in **1 ms**; with all four workers parked on
-idle keep-alive connections it takes **5141 ms**, one full idle timeout. Exit
-status is 0 and the stopped line prints in every case, so a busy shutdown is
-slow, not hung — but a large `--idle-ms` is a proportionally slow `SIGTERM`.
-`signal.shutdown_requested()` (`corelib/signal/signal.ty:18@shutdown_requested`)
-exists to cut that to one in-flight request and has no caller in the tree yet;
-filed as phase 15 of the signals plan.
+What the three deadlines mean now:
+
+- `--first-ms` retires a peer that connects and then never speaks, and it is the
+  ceiling on one **stalled** head read. It is no longer a bound on how long a
+  worker is occupied.
+- `--idle-ms` is the longer patience a peer earns by completing a request, and it
+  now costs nothing: a parked keep-alive peer sits in a pollfd array, not on a
+  worker.
+- `--conn-ms` is a plain lifetime cap on one connection. It is **no longer what
+  stops starvation**, which is the reason it was written, so `0` (off) is a
+  supportable setting rather than the pathological one. What still wants it is a
+  peer that keeps a connection looking useful indefinitely.
+
+Shutdown is bounded by that same poll pass rather than by `--idle-ms`: a worker
+sees `signal.shutdown_requested()`
+(`corelib/signal/signal.ty:18@shutdown_requested`) within `POLL_TICK_MS` whether
+it is holding connections or not. Measured at `--workers 4 --idle-ms 8000`,
+`SIGTERM` completes in **1 ms** with 0, with 4 and with 64 parked keep-alive
+peers held. Before the poll loop, four parked peers cost one full idle timeout —
+**5141 ms** at `--idle-ms 5000`. Exit status is 0 and the `stopped after N
+requests` line prints in every case.
 
 ## What it does
 
@@ -82,8 +93,8 @@ filed as phase 15 of the signals plan.
 | **Conditional GET** | Every `200` for a file carries `Last-Modified` (`io.mtime`, formatted as an RFC 7231 IMF-fixdate). An `If-Modified-Since` that the file's mtime is **not newer** than gets `304` with no body. Absent, unparseable, one of the two obsolete date forms, or an mtime that could not be read: all `200`. The comparison never fails open, because a wrong `304` is a browser keeping a file that changed. |
 | **Byte ranges** | One range. `Range: bytes=A-B` (both ends inclusive, `B` clamped to the last byte), `bytes=A-` and the suffix `bytes=-N` get `206` with `Content-Range: bytes A-B/LEN` and a `Content-Length` of the **slice**. A range with no satisfiable byte is `416` with `Content-Range: bytes */LEN`. An invalid spec, an unknown unit or a multipart request is ignored: `200`, whole file. `Accept-Ranges: bytes` goes on exactly the `200` for a file and the `206`. A `304` outranks a `Range` (RFC 7232 §6). |
 | **Keep-alive** | HTTP/1.1 default-on, `Connection: close` honoured, HTTP/1.0 defaults to close. Up to 1024 requests per connection. |
-| **Idle timeout** | `SO_RCVTIMEO` on each accepted socket, so a silent peer cannot pin a worker. |
-| **Shutdown** | `SIGTERM` and `SIGINT` are caught (`core:signal`): every accept loop retires, every worker is joined, the process prints `tycho-httpd: stopped after N requests` (`server/main.ty:898@stopped`) and exits **0**. `SIGKILL` is uncatchable and still stops it where it stands, with no such line. Shutdown latency is bounded by `--idle-ms`, not by the signal — see Usage above. |
+| **Idle timeout** | Enforced by a reaper on every poll pass, so a silent peer costs a pollfd slot and cannot pin a worker. |
+| **Shutdown** | `SIGTERM` and `SIGINT` are caught (`core:signal`): every accept loop retires, every worker is joined, the process prints `tycho-httpd: stopped after N requests` (`server/main.ty:898@stopped`) and exits **0**. `SIGKILL` is uncatchable and still stops it where it stands, with no such line. Shutdown latency is bounded by one poll pass, not by `--idle-ms` and not by the signal — see Usage above. |
 | **Statuses** | 200, 206, 301, 304, 400, 403, 404, 405, 408, 416, 431. A peer that hangs up before a complete request arrives gets no response and no log line at all — the transport cause (`httpd.ReqErr`) is what separates that from the 400 a malformed head earns. |
 | **Logging** | One line per request on stderr: worker, **client address**, method, target, status, body bytes, duration — `w1 127.0.0.1 GET / 200 2659 0.081ms` (`server/main.ty:216-226`). A response the peer hung up on gains a ` write-failed` tail and reports 0 bytes rather than claiming a body nobody received. The target is control-byte-scrubbed and truncated, so a hostile URL cannot inject newlines into the log. |
 
@@ -117,12 +128,16 @@ accept-on-main-spawn-per-connection serialises completely because the compiler
 emits an implicit join at the handle's scope exit. Both are still open as
 `docs/internals/FRICTION.md` items 3 and 4.
 
-It is one connection per worker at a time, so N workers means N concurrent
-connections. **Recorded measurements, 2026-07-26**, on loopback, 8 workers,
-`--quiet`. These are history,
-not a gate: `make server-check` asserts the *structural* fact that all four
-workers take traffic, and deliberately asserts no wall-clock number, because
-timing on a shared machine is the one flake a CI lane must not have.
+Each worker polls over the listener and every connection it holds, up to
+`MAX_CONNS` of them (`server/main.ty@MAX_CONNS`), so N workers means far more
+than N concurrent connections — see the bound stated under Usage above.
+
+**Recorded measurements, 2026-07-26**, on loopback, 8 workers, `--quiet`. These
+are history, not a gate: no lane reproduces a throughput figure. The only
+wall-clock numbers `make server-check` does assert are the starvation bounds
+above, and they are set two orders of magnitude above what was measured and
+checked for flatness rather than for a value, because timing on a shared machine
+is the one flake a CI lane must not have.
 
 | clients | requests | wall | throughput |
 |---|---|---|---|
