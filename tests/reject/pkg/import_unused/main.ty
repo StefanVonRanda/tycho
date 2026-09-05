@@ -1,4 +1,4 @@
-# Go's rule: an import nothing in its file uses is an error. src/tychoc.c:5296.
+# Go's rule: an import nothing in its file uses is an error. src/tychoc.c:5383.
 # It needs a `package` header to import at all, so it lives here rather than flat.
 # expect: `core:strings` imported and not used in this file
 package main

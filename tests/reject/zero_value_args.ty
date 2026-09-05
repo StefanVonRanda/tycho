@@ -1,4 +1,4 @@
-# src/tychoc.c:6579 -- zero$(T) is a type-directed literal, not a call.
+# src/tychoc.c:6666 -- zero$(T) is a type-directed literal, not a call.
 # expect: zero$(T) takes no value arguments
 fn main():
     x := zero$(int)(1)

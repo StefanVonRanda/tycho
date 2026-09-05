@@ -1,4 +1,4 @@
-# src/tychoc.c:7269 -- reserve is the array and the capacity, both.
+# src/tychoc.c:7356 -- reserve is the array and the capacity, both.
 # expect: reserve(arr, n) takes two arguments
 fn main():
     xs := [1, 2]

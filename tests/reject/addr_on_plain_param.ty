@@ -1,4 +1,4 @@
-# src/tychoc.c:7401 -- the mirror of inout_arg_not_place.ty: an '&' on a
+# src/tychoc.c:7488 -- the mirror of inout_arg_not_place.ty: an '&' on a
 # parameter that is not inout. Both compilers word it identically.
 # expect: argument 1 of 'plain' is not inout; remove the '&'
 fn plain(x: int):

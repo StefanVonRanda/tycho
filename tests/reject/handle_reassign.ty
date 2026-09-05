@@ -1,4 +1,4 @@
-# src/tychoc.c:8718 -- a handle is freed once, at its declaring scope's exit, so
+# src/tychoc.c:8805 -- a handle is freed once, at its declaring scope's exit, so
 # rebinding it would orphan the first one.
 # expect: a handle variable cannot be reassigned
 handle R:

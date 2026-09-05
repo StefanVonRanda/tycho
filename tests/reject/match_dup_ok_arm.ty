@@ -1,4 +1,4 @@
-# src/tychoc.c:8508 -- an unrefined `Ok(a)` arm takes the whole Ok side, so a
+# src/tychoc.c:8595 -- an unrefined `Ok(a)` arm takes the whole Ok side, so a
 # second one is dead code, not a second case.
 # expect: duplicate Ok arm
 fn mk() -> Result(int, string):

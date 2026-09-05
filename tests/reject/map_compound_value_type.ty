@@ -1,4 +1,4 @@
-# src/tychoc.c:9054 -- the right side of a scalar `m[k] op= v` must be the map's
+# src/tychoc.c:9141 -- the right side of a scalar `m[k] op= v` must be the map's
 # own value type.
 # expect: cannot compound-assign float to a int map value
 fn main():

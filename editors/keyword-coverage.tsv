@@ -26,7 +26,7 @@ clock	builtin	support.function.builtin.tycho	built-in function; compiles under .
 close	builtin	support.function.builtin.tycho	built-in function; compiles under ./tychoc, measured 2026-09-04 -- added to both grammars by phase V2k
 const	keyword	keyword.other.tycho	contextual declaration keyword; compiles under ./tychoc, measured 2026-09-04 -- added to both grammars by phase V2k
 continue	keyword	keyword.control.tycho	control-flow keyword
-core	identifier	none	only ever the `core:` prefix inside an import-path STRING (src/tychoc.c:5158); the bare word is an ordinary name -- stays plain (phase V2k)
+core	identifier	none	only ever the `core:` prefix inside an import-path STRING (src/tychoc.c:5245); the bare word is an ordinary name -- stays plain (phase V2k)
 delete	keyword	keyword.other.tycho	contextual declaration keyword; compiles under ./tychoc, measured 2026-09-04 -- added to both grammars by phase V2k
 deprecated	identifier	none	only ever the `# deprecated:` comment marker (src/tychoc.c:147); the comment rule already colours it -- stays plain (phase V2k)
 die	builtin	support.function.builtin.tycho	built-in function, listed by both grammars
@@ -34,7 +34,7 @@ elif	keyword	keyword.control.tycho	control-flow keyword
 else	keyword	keyword.control.tycho	control-flow keyword
 enum	keyword	keyword.other.tycho	declaration keyword
 eprint	builtin	support.function.builtin.tycho	built-in function; compiles under ./tychoc, measured 2026-09-04 -- added to both grammars by phase V2k
-eprintln	identifier	none	NOT a procedure: src/tychoc.c:7371 refuses it and names `eprint(s + "\n")`; highlighting it would paint a name the compiler rejects -- stays plain (phase V2k)
+eprintln	identifier	none	NOT a procedure: src/tychoc.c:7458 refuses it and names `eprint(s + "\n")`; highlighting it would paint a name the compiler rejects -- stays plain (phase V2k)
 exit	builtin	support.function.builtin.tycho	built-in function; compiles under ./tychoc, measured 2026-09-04 -- added to both grammars by phase V2k
 extern	keyword	keyword.other.tycho	declaration keyword
 f32	type	storage.type.tycho	hard-reserved sized type (TK_KW_F32 in src/tychoc.c@keyword) -- added to both grammars by phase V2l

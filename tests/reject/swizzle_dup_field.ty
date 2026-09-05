@@ -1,0 +1,14 @@
+# A repeated component on the LEFT of a swizzle has no meaning: every right side
+# is evaluated first, so the two writes to `v.x` have no order to tell them
+# apart. Same call simultaneous assignment makes for a repeated plain name, and
+# Go and Odin make the other one. A repeat on the RIGHT is plain duplication and
+# is fine -- the accepting twin is tests/swizzle.ty, which reads `v.(x, x)`.
+# expect: duplicate target 'v.x' in a multi-assign -- every right side is evaluated before any write, so two writes to one place have no order
+struct V:
+    x: int
+    y: int
+
+fn main():
+    v := V(1, 2)
+    v.(x, x) = v.(y, x)
+    println(str(v.x))

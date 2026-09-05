@@ -1,4 +1,4 @@
-# src/tychoc.c:6550 -- `.f` on a value that is not a struct at all, which is a
+# src/tychoc.c:6637 -- `.f` on a value that is not a struct at all, which is a
 # different rule from a struct that merely lacks the field.
 # expect: '.foo' on a non-struct value
 fn main():

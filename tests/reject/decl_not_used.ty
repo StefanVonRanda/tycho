@@ -1,4 +1,4 @@
-# src/tychoc.c:5777 -- a local that is declared and never read. Both compilers
+# src/tychoc.c:5864 -- a local that is declared and never read. Both compilers
 # word it identically.
 # expect: 'x' declared and not used
 fn main():

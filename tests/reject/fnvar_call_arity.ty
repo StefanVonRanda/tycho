@@ -1,4 +1,4 @@
-# src/tychoc.c:6815 -- a call through a fn-typed LOCAL. It names the variable,
+# src/tychoc.c:6902 -- a call through a fn-typed LOCAL. It names the variable,
 # where the fn-value twin fnvalue_call_arity.ty cannot.
 # expect: 'f' expects 2 argument(s), got 1
 fn add(a: int, b: int) -> int:

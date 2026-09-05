@@ -1,4 +1,4 @@
-# src/tychoc.c:8690 -- destructuring assignment to a name that does not exist,
+# src/tychoc.c:8777 -- destructuring assignment to a name that does not exist,
 # close enough to an existing one for the suggester.
 # expect: assignment to unknown variable 'counr' (use ':=' to declare); did you mean 'count'?
 fn two() -> (int, int):

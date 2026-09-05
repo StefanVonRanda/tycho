@@ -1,0 +1,55 @@
+# Field swizzling `v.(x, y)`. A swizzle names two or more components of ONE
+# value: it is a tuple where a tuple is a value, and a target list where one is
+# a target list, so `v.(x, y) = v.(y, x)` IS `(v.x, v.y) = (v.y, v.x)` and
+# inherits simultaneous assignment's rule -- every right side evaluated before
+# any write -- rather than restating it.
+#
+# A SWAP CANNOT TELL THAT RULE FROM SEQUENTIAL ASSIGNMENT, so the fixture leads
+# with a three-component ROTATION. Simultaneously `v.(x, y, z) = v.(z, x, y)`
+# is 3 1 2; done in order it is 3 3 3, because each write is read back by the
+# next. The vector rotation below is the same discriminator on `vector[N]T`,
+# whose components are lanes rather than fields and are named by index.
+struct V:
+    x: int
+    y: int
+    z: int
+
+struct Body:
+    pos: V
+    tag: string
+
+fn main():
+    v := V(1, 2, 3)
+    v.(x, y, z) = v.(z, x, y)
+    println(str(v.x) + " " + str(v.y) + " " + str(v.z))
+
+    v.(x, y) = v.(y, x)
+    println(str(v.x) + " " + str(v.y) + " " + str(v.z))
+
+    # a swizzle READ is an ordinary tuple-valued expression
+    a, b := v.(z, x)
+    println(str(a) + " " + str(b))
+
+    t := v.(x, x)          # a repeated component on the RIGHT is plain duplication
+    println(str(t.0) + " " + str(t.1))
+
+    # the base may be a field of a variable, and the two sides need not be the
+    # same value: what must match is the arity and the element types.
+    o := Body(V(10, 20, 30), "b")
+    o.pos.(x, z) = v.(y, z)
+    println(str(o.pos.x) + " " + str(o.pos.y) + " " + str(o.pos.z))
+
+    w: vector[4]float = [1.0, 2.0, 3.0, 4.0]
+    w.(0, 1, 2) = w.(2, 0, 1)
+    println(str(w[0]) + " " + str(w[1]) + " " + str(w[2]) + " " + str(w[3]))
+
+    # a plain [N]T takes the same lane spelling
+    q: [3]int = [7, 8, 9]
+    q.(0, 2) = q.(2, 0)
+    println(str(q[0]) + " " + str(q[1]) + " " + str(q[2]))
+
+    # the right side need not be a swizzle: any tuple of the right arity and
+    # element types does, and it is still read in full before the first write.
+    s := V(1, 2, 3)
+    s.(x, y, z) = (s.y, s.z, s.x + s.y + s.z)
+    println(str(s.x) + " " + str(s.y) + " " + str(s.z))

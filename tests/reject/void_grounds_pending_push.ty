@@ -1,4 +1,4 @@
-# src/tychoc.c:6080 -- a grounding use whose type cannot stand as a value. The
+# src/tychoc.c:6167 -- a grounding use whose type cannot stand as a value. The
 # COMPOSITION is what fails: push composes arr(void), so a bare void test misses it.
 # tychoc1 ACCEPTED this until _pend_ground was ported.
 # expect: cannot infer the type of 'xs' from this use

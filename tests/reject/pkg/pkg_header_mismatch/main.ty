@@ -1,5 +1,5 @@
 # ...and the header it carries must name the directory it is in.
-# src/tychoc.c:14539, the sibling of pkg_header_missing.
+# src/tychoc.c:14626, the sibling of pkg_header_missing.
 # expect: declares `package elsewhere` but is in package `wrongname`
 package main
 import "wrongname"

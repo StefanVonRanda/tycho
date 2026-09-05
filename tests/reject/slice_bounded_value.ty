@@ -1,4 +1,4 @@
-# src/tychoc.c:6479 -- a bounded[N]T stores its elements inline, so a slice
+# src/tychoc.c:6566 -- a bounded[N]T stores its elements inline, so a slice
 # would need a view it has no room for. Copy it into a [T] first.
 # expect: cannot slice a bounded[...] value; copy it into a [int] first
 fn main():

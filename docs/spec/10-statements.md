@@ -5,8 +5,8 @@ The grammar of statements is in
 meaning. Declarations and assignments are covered in
 [§12](08-declarations.md); this chapter covers control flow.
 
-> Provenance: `parse_stmt` `src/tychoc.c:3576-4089` (`parse_if` `:3392@parse_if`,
-> `parse_match` `:3620@parse_match`, `for` `:3713-3918`, `select` `:3657-3693`). Loop and `match` behaviors marked
+> Provenance: `parse_stmt` `src/tychoc.c:3633-4173` (`parse_if` `:3449@parse_if`,
+> `parse_match` `:3677@parse_match`, `for` `:3770-4002`, `select` `:3714-3750`). Loop and `match` behaviors marked
 > "probed" were confirmed against the implementation (spec-plan.md §6a).
 
 ## 14.1 Blocks
@@ -184,16 +184,16 @@ the implementation **does not diagnose it**, at compile time or at run time.
 bought is a single loop form that says its own direction and amount in the
 source instead of inferring them from the sign of a step expression.
 
-> Provenance: bare `for:` `src/tychoc.c:3994@TK_COLON`; the three-clause header
-> scan and its five required-clause refusals `src/tychoc.c:3644-3689`; `init`
-> parsed by `parse_stmt` itself `src/tychoc.c:4028@parse_stmt`; loop scoping and
-> the post clause resolved outside the body block `src/tychoc.c:8315-8320`;
-> `continue` emitted as `goto _post<id>` `src/tychoc.c:11835-11838` with the
-> label at `src/tychoc.c:12704@_post%d`; the `range()` refusal
-> `src/tychoc.c:4101@was removed: write`. There is no step in the implementation
+> Provenance: bare `for:` `src/tychoc.c:4078@TK_COLON`; the three-clause header
+> scan and its five required-clause refusals `src/tychoc.c:3701-3746`; `init`
+> parsed by `parse_stmt` itself `src/tychoc.c:4112@parse_stmt`; loop scoping and
+> the post clause resolved outside the body block `src/tychoc.c:8402-8407`;
+> `continue` emitted as `goto _post<id>` `src/tychoc.c:11922-11925` with the
+> label at `src/tychoc.c:12791@_post%d`; the `range()` refusal
+> `src/tychoc.c:4185@was removed: write`. There is no step in the implementation
 > at all: `Stmt` carries `r_start` and `r_stop` only (`src/tychoc.c:1674-1680`)
 > and every `S_FORRANGE` emits `h_i < _stopN; h_i += 1`
-> (`src/tychoc.c:12000-12004`).
+> (`src/tychoc.c:12087-12091`).
 
 ## 14.5 `return`
 

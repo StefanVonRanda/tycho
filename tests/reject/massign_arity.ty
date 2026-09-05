@@ -1,4 +1,4 @@
-# src/tychoc.c:8682 -- the multi-assign twin of mdecl_arity, worded apart because
+# src/tychoc.c:8769 -- the multi-assign twin of mdecl_arity, worded apart because
 # the names already exist here.
 # expect: assigning 3 name(s) from a 2-element tuple
 fn f() -> (int, int):

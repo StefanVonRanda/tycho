@@ -159,7 +159,7 @@ drawn from:
 | §17.1 | struct construction & fields | `tests/named_fields`, `tests/recursive_structs` |
 | §17.3 | recursion only through a container | `tests/recursive_structs`, `tests/recursive_enum_array` |
 | §17.4 | tuples; index-assign/range rejected | `tests/tuples`, `tests/tuple_assign`, `reject/tuple_elem_index_assign`, `reject/tuple_index_range` |
-| §17.5 | destructuring; simultaneous assignment | `tests/multiassign_scope`, `tests/tuple_assign`, `tests/multi_assign`, `reject/massign_dup_target`, `reject/massign_not_a_place`, `reject/massign_for_clause` |
+| §17.5 | destructuring; simultaneous assignment; swizzling | `tests/multiassign_scope`, `tests/tuple_assign`, `tests/multi_assign`, `tests/swizzle`, `reject/massign_dup_target`, `reject/massign_not_a_place`, `reject/massign_for_clause`, `reject/swizzle_dup_field`, `reject/swizzle_one_component`, `reject/swizzle_base_not_place` |
 | §18.2–18.6 | `m[k]` place/rvalue, `delete`, `keys`, `m.get` | `tests/map_mutation`, `tests/map_delete`, `tests/map_get_method`, `tests/map_insorder`, `reject/map_del_removed`, `reject/map_key_wrong_read` |
 | §18.7 | user-defined subscripts | `tests/subscript` |
 | §19.1–19.3 | enums, `Option`, `Result`; construction | `tests/enums`, `tests/options`, `tests/results`, `reject/genenum_bare_nullary`, `reject/sum_ctor_payload_mismatch` |

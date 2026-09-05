@@ -103,6 +103,9 @@ tests/reject/subscript_no_yield.ty	ACCEPTED	a `return` is a legal body; "a singl
 tests/reject/subscript_not_inout.ty	ACCEPTED	`-> int` is a well-formed return type; requiring `inout` there is tychoc's
 tests/reject/subscript_not_place.ty	ACCEPTED	`yield <expr>` parses; place-ness is not a syntactic property here
 tests/reject/subscript_param_twice.ty	ACCEPTED	counting uses of a parameter inside the yielded place needs name resolution
+tests/reject/swizzle_base_not_place.ty	ACCEPTED	`.` is an operator token to this grammar, so `mk().(x, y)` is a well-formed token run; that a swizzle base is copied per component is tychoc's rule
+tests/reject/swizzle_dup_field.ty	ACCEPTED	the grammar sees a field run, not a target list; whether two components name one place is tychoc's rule
+tests/reject/swizzle_one_component.ty	ACCEPTED	one component is the same token shape as two; the minimum is tychoc's rule, not a shape
 tests/reject/tab_mix.ty	ACCEPTED	no external scanner, so tabs and spaces are both just whitespace
 tests/reject/tab_mix2.ty	ACCEPTED	as tab_mix
 tests/reject/tuple_arity_max.ty	ACCEPTED	a ceiling (8 elements)

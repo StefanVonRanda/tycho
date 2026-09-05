@@ -2,7 +2,7 @@
 # Option BEFORE B is entered and the cycle closes on that node, not on B.
 # tychoc1 three-colours the same graph now, so the whole message is pinned.
 # expect: infinite type: an Option contains itself by value — use Option([T]) for indirection
-# src/tychoc.c:13110
+# src/tychoc.c:13197
 struct A:
     b: Option(B)
 

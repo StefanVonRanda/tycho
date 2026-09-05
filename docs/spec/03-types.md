@@ -14,8 +14,8 @@ types differ (for example, a C backend MUST realize `int` as a 64-bit type even
 on a target where C `long` is 32 bits).
 
 > Provenance: scalar tags `src/tychoc.c:744-765`; C lowering `c_type`
-> `:1563-1603`; equality/ordering `:7252-7285`; newtype decl `parse_typedecl`
-> `:4605-4624`.
+> `:1563-1603`; equality/ordering `:7339-7372`; newtype decl `parse_typedecl`
+> `:4692-4711`.
 
 ## 5.1 The type-identity model
 
@@ -484,6 +484,9 @@ Integer `/` and `%` keep the runtime divide guard of §16.8 and are therefore
 evaluated lane by lane; every other admitted operator is a single vector
 operation.
 
+Lanes MAY be swizzled: `v.(0, 1) = v.(1, 0)` names two of them at once and
+assigns simultaneously ([§17.5](12-aggregates.md#175-destructuring)).
+
 ```tycho
 fn main():
     a: vector[4]float = [1.0, 2.0, 3.0, 4.0]
@@ -554,5 +557,5 @@ One asymmetry follows and is intentional: `bool` is comparable and `str`-able bu
 is not ordered. (`char` is comparable, ordered, and `str`-able — its `str` is the
 one-byte glyph.)
 
-> Provenance: `src/tychoc.c:6974-7007` (equality/ordering resolver); function-
-> value identity equality `:10549@identity equality`.
+> Provenance: `src/tychoc.c:7061-7094` (equality/ordering resolver); function-
+> value identity equality `:10636@identity equality`.

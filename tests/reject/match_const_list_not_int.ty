@@ -1,4 +1,4 @@
-# src/tychoc.c:8901 -- a const NAME inside a pattern list, as opposed to the bare
+# src/tychoc.c:8988 -- a const NAME inside a pattern list, as opposed to the bare
 # `C:` arm shape at :8635. tychoc1 reaches its own :8635-style wording, which
 # carries this message as a prefix, so the shared part is what is asserted.
 # expect: 'C' is not an int constant

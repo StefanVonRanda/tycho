@@ -1,0 +1,12 @@
+# A swizzle of one component is a field access with extra punctuation, and as a
+# target it would reach the destructuring rule and be reported as a tuple
+# problem. Name the real one. The accepting twin is tests/swizzle.ty.
+# expect: a swizzle names at least two components -- write `v.x` for one
+struct V:
+    x: int
+    y: int
+
+fn main():
+    v := V(1, 2)
+    v.(x) = v.(y)
+    println(str(v.x))

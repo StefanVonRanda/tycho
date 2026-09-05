@@ -1,4 +1,4 @@
-# src/tychoc.c:4943 -- an enum type parameter must BE a `$Name`, not merely
+# src/tychoc.c:5030 -- an enum type parameter must BE a `$Name`, not merely
 # contain one. A bare identifier dies earlier on `unknown type`, so a CONCRETE
 # type is the only spelling that reaches this rule.
 # expect: an enum type parameter must be written `$Name`

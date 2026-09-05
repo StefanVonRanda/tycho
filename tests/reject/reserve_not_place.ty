@@ -1,4 +1,4 @@
-# src/tychoc.c:7273 -- reserve's argument must be rooted at a variable.
+# src/tychoc.c:7360 -- reserve's argument must be rooted at a variable.
 # tychoc1 ACCEPTED this under --typecheck until the check was ported into
 # compiler/types/tcheck.ty; both now word it identically.
 # expect: reserve's first argument must be an array variable or field

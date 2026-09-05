@@ -173,10 +173,12 @@ PostfixOp ::= "[" Expr "]"                              /* index */
             | "[" Expr? ":" Expr? "]"                   /* slice (either bound optional) */
             | "." IDENT                                 /* field access */
             | "." INT                                   /* tuple index */
+            | "." "(" Component ( "," Component )* ")"  /* swizzle, 2-8 components (§17.5) */
             | "." IDENT CallTypeArgs? "(" ArgList? ")"  /* qualified pkg call (on a bare identifier) */
             | "." IDENT CallTypeArgs                    /* ... with no value arguments */
             | "(" ArgList? ")"                          /* call */
 ArgList   ::= Expr ( "," Expr )*
+Component ::= IDENT | INT                               /* a struct field, or a lane of an array / bounded / vector */
 Place ::= IDENT ( "[" Expr "]" | "." IDENT | "." INT | "(" ArgList? ")" )*
 Primary ::= INT | FLOAT | STR | CHAR
           | "true" | "false" | "null"

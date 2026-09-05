@@ -3113,6 +3113,33 @@ static Expr *parse_primary(Parser *ps) {
 }
 
 /* postfix: primary ( '[' expr ']' | '.' field )* */
+/* --- field swizzling `v.(x, y)` --------------------------------------------
+ * A swizzle names two or more components of ONE value and yields a tuple of
+ * them, so it is a value where a tuple is a value and a target list where one
+ * is a target list: `v.(x, y) = v.(y, x)` IS `(v.x, v.y) = (v.y, v.x)`, which
+ * the simultaneous assignment below already lowers right-side-first. No new
+ * statement kind, no new resolve, typecheck or emit code -- the swap with no
+ * temporary is L2's evaluation-order rule, inherited rather than re-stated.
+ * The base is repeated once per component, so it must be side-effect free and
+ * cheap: a variable or a field of one. Each component gets its OWN copy, never
+ * an alias, because tychoc1's AST is a value type and the two must agree. */
+static Expr *clone_swizzle_base(Expr *e) {
+    if (!e) return NULL;
+    if (e->kind == E_IDENT) {
+        Expr *c = new_expr(E_IDENT, e->line);
+        c->sval = e->sval; c->pkg = e->pkg; c->qual = e->qual;
+        return c;
+    }
+    if (e->kind == E_FIELD) {
+        Expr *b = clone_swizzle_base(e->lhs);
+        if (!b) return NULL;
+        Expr *c = new_expr(E_FIELD, e->line);
+        c->lhs = b; c->sval = e->sval;
+        return c;
+    }
+    return NULL;
+}
+
 static Expr *parse_postfix(Parser *ps) {
     Expr *e = parse_primary(ps);
     for (;;) {
@@ -3140,6 +3167,36 @@ static Expr *parse_postfix(Parser *ps) {
             }
         } else if (at(ps, TK_DOT)) {
             Tok *t = cur(ps); ps->p++;
+            if (at(ps, TK_LPAREN)) {           /* swizzle: v.(x, y) by field, v.(0, 1) by lane */
+                ps->p++;
+                if (!clone_swizzle_base(e))
+                    die_at(t->line, "a swizzle applies to a variable or a field of one, not to this expression");
+                Expr *sw = new_expr(E_TUPLE, t->line);
+                int cap = 8; sw->args = (Expr **)xrealloc(sw->args, (size_t)cap * sizeof(Expr *));
+                for (;;) {
+                    if (sw->nargs == cap) { cap *= 2; sw->args = (Expr **)xrealloc(sw->args, (size_t)cap * sizeof(Expr *)); }
+                    Expr *base = clone_swizzle_base(e);
+                    if (at(ps, TK_INT)) {      /* a lane of an array, a bounded or a vector[N]T */
+                        Tok *n = cur(ps); ps->p++;
+                        Expr *k = new_expr(E_INT, t->line); k->ival = n->ival;
+                        Expr *ix = new_expr(E_INDEX, t->line);
+                        ix->lhs = base; ix->rhs = k;
+                        sw->args[sw->nargs++] = ix;
+                    } else {
+                        Tok *f = eat(ps, TK_IDENT, "a field name or a lane index inside a swizzle");
+                        Expr *fe = new_expr(E_FIELD, t->line);
+                        fe->lhs = base; fe->sval = f->text;
+                        sw->args[sw->nargs++] = fe;
+                    }
+                    if (!accept(ps, TK_COMMA)) break;
+                }
+                eat(ps, TK_RPAREN, "')'");
+                if (sw->nargs < 2)
+                    die_at(t->line, "a swizzle names at least two components -- write `v.x` for one");
+                if (sw->nargs > 8) die_at(t->line, "a tuple has at most 8 elements");
+                e = sw;
+                continue;
+            }
             if (at(ps, TK_INT)) {              /* tuple index: t.0 / t.1 */
                 Tok *n = cur(ps); ps->p++;
                 Expr *ti = new_expr(E_TUPIDX, t->line);
@@ -3814,6 +3871,33 @@ static void hoist_place_indices(Expr *place, int line) {
     }
 }
 
+/* A canonical spelling of a target that is DECIDABLY one place, or NULL. Two
+ * targets with equal keys are the same slot, which is what the duplicate-target
+ * rule refuses; a non-literal index has no key, because whether xs[i] and xs[j]
+ * are one slot is not decidable in a parser. `v.(x, x)` reaches this as two
+ * E_FIELDs over one base and is refused BY NAME, the same call the plain
+ * spelling `(a, a) = ...` makes. */
+static const char *place_key(Expr *e) {
+    if (!e) return NULL;
+    if (e->kind == E_IDENT) return e->sval;
+    if (e->kind == E_FIELD) {
+        const char *b = place_key(e->lhs);
+        return b ? sfmt("%s.%s", b, e->sval) : NULL;
+    }
+    if (e->kind == E_TUPIDX) {
+        const char *b = place_key(e->lhs);
+        return b ? sfmt("%s.%lld", b, (long long)e->ival) : NULL;
+    }
+    if (e->kind == E_INDEX) {
+        const char *b = place_key(e->lhs);
+        if (!b || !e->rhs) return NULL;
+        if (e->rhs->kind == E_INT) return sfmt("%s[%lld]", b, (long long)e->rhs->ival);
+        if (e->rhs->kind == E_STR) return sfmt("%s[\"%s\"]", b, e->rhs->sval);
+        return NULL;
+    }
+    return NULL;
+}
+
 static Stmt *parse_stmt(Parser *ps) {
     Tok *t = cur(ps);
 
@@ -4246,10 +4330,13 @@ static Stmt *parse_stmt(Parser *ps) {
             Expr *tg = e->args[i];
             if (tg->kind != E_IDENT && tg->kind != E_INDEX && tg->kind != E_FIELD && tg->kind != E_TUPIDX)
                 die_at(t->line, "cannot assign to this expression -- every target of a multi-assign must be a variable, a field, or an array/map element");
-            if (tg->kind == E_IDENT)
-                for (int j = 0; j < i; j++)
-                    if (e->args[j]->kind == E_IDENT && !strcmp(e->args[j]->sval, tg->sval))
-                        die_at(t->line, "duplicate target '%s' in a multi-assign -- every right side is evaluated before any write, so two writes to one place have no order", tg->sval);
+            const char *k = place_key(tg);
+            if (k)
+                for (int j = 0; j < i; j++) {
+                    const char *kj = place_key(e->args[j]);
+                    if (kj && !strcmp(kj, k))
+                        die_at(t->line, "duplicate target '%s' in a multi-assign -- every right side is evaluated before any write, so two writes to one place have no order", k);
+                }
         }
         for (int i = 0; i < n; i++)
             if (e->args[i]->kind != E_IDENT) hoist_place_indices(e->args[i], t->line);
@@ -6024,7 +6111,7 @@ static void collect_idents(Expr *e, const char **out, int *n, int cap) {
     }
     if (e->kind == E_CALL) {   /* Neither name on a call is a child expr: the callee lives in
                                 * sval (`g(x)` where g is a closure) and a method call's RECEIVER
-                                * lives in qual (`m.get(k)`, src/tychoc.c:3306), because the parser
+                                * lives in qual (`m.get(k)`, src/tychoc.c:3363), because the parser
                                 * cannot tell it from a package call. Both are outer reads; missing
                                 * qual let `m` reach the lifted body uncaptured and the C compiler,
                                 * not tychoc, reported `h_m undeclared`. pf_scan_expr already does
@@ -7377,7 +7464,7 @@ static Type resolve_expr_inner(Expr *e) {
             if (e->nargs != s->nparams)
                 die_at(e->line, "'%s' takes %d argument(s), got %d",
                        nominal_name(e->sval), s->nparams, e->nargs);
-            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:6839 */
+            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:6926 */
             for (int i = 0; i < e->nargs; i++) {
                 g_in_arg++;
                 Type at_ = resolve_exp(e->args[i], s->params[i]);   /* fixes a None arg */
@@ -7975,7 +8062,7 @@ static void pf_capture(Expr *id) {
 /* capture an outer local named by a STRING rather than by an E_IDENT node -- the
  * callee of `f(x)` and the receiver of `o.f(x)` live in E_CALL's sval/qual, not
  * in a child expr. The synthesized read is resolved in the enclosing scope with
- * every other capture (src/tychoc.c:8587). Non-locals (global fns, builtins,
+ * every other capture (src/tychoc.c:8674). Non-locals (global fns, builtins,
  * enum constructors, package qualifiers) fail vars_find and are dropped. */
 static void pf_capture_name(const char *n, int line) {
     Type vt;
@@ -7998,10 +8085,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7935),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:8022),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:8209). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:8296). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
@@ -8022,7 +8109,7 @@ static void pf_scan_expr(Expr *e) {
     }
     /* A call's callee is NOT an E_IDENT child of the node: `f(x)` keeps the name
      * in sval, and `o.f(x)` keeps the receiver in qual because the parser cannot
-     * tell it from a package call (src/tychoc.c:3300). The generic descent below
+     * tell it from a package call (src/tychoc.c:3357). The generic descent below
      * visits lhs/rhs/args only, so a fn-typed local reached the lifted chunk proc
      * uncaptured and the C compiler -- not tychoc -- reported the undeclared name.
      * The lambda capture analysis already does the sval half (src/tychoc.c@collect_idents). */
@@ -9768,7 +9855,7 @@ static const char *for3_elidable_arr(Stmt *s) {
     if (!bound || bound->kind != E_CALL || !bound->sval || strcmp(bound->sval, "len") ||
         bound->nargs != 1 || !bound->args[0] || bound->args[0]->kind != E_IDENT) return NULL;
     if (IS_INLINE_ARR(bound->args[0]->type)) return NULL;   /* [N]T / bounded / vector store in .v, not .data — elision emits .data[i], so never elide it */
-    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:4096-4101) */
+    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:4180-4185) */
     if (!post || post->kind != S_ASSIGN || !post->name || strcmp(post->name, iv)) return NULL;
     Expr *inc = post->expr;
     if (!inc || inc->kind != E_BINOP || inc->op != TK_PLUS) return NULL;

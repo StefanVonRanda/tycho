@@ -1,4 +1,4 @@
-# src/tychoc.c:6900 -- `name: value` arguments exist for struct construction
+# src/tychoc.c:6987 -- `name: value` arguments exist for struct construction
 # only; a function call has no field names to match them against.
 # expect: named arguments are only valid for struct construction
 fn f(x: int) -> int:

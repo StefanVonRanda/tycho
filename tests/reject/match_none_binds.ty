@@ -1,4 +1,4 @@
-# src/tychoc.c:8780 -- None carries nothing, so a binding name has no value.
+# src/tychoc.c:8867 -- None carries nothing, so a binding name has no value.
 # expect: None binds nothing
 fn main():
     x : Option(int) = Some(1)

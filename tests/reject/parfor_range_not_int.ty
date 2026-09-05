@@ -1,4 +1,4 @@
-# src/tychoc.c:8256 -- the `0..<N` bounds of a parallel for are int; a string
+# src/tychoc.c:8343 -- the `0..<N` bounds of a parallel for are int; a string
 # bound has no count.
 # expect: parallel for needs an int range
 fn main():

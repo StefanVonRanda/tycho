@@ -1,4 +1,4 @@
-# src/tychoc.c:6259. The TYPE rule is tests/reject/tuple_arity_min.ty; this is
+# src/tychoc.c:6346. The TYPE rule is tests/reject/tuple_arity_min.ty; this is
 # the LITERAL, and a trailing comma is the only spelling that reaches it --
 # `(1)` is a grouping, not a one-element tuple (src/tychoc.c:2859-2862).
 # expect: a tuple needs at least two elements

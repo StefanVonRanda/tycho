@@ -1,4 +1,4 @@
-# src/tychoc.c:7566 -- void has no values, so two void calls cannot be compared.
+# src/tychoc.c:7653 -- void has no values, so two void calls cannot be compared.
 # tychoc1 ACCEPTED this until the rule was ported into compiler/types/tcheck.ty;
 # both now word it identically.
 # expect: cannot compare void

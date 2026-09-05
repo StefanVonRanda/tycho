@@ -1,0 +1,13 @@
+# A swizzle repeats its base once per component, so the base may not carry a
+# call: `mk().(x, y)` would run mk twice. A variable or a field of one is the
+# whole set. The accepting twin is tests/swizzle.ty, which swizzles `o.pos`.
+# expect: a swizzle applies to a variable or a field of one, not to this expression
+struct V:
+    x: int
+    y: int
+
+fn mk() -> V:
+    return V(1, 2)
+
+fn main():
+    println(str(mk().(x, y).0))
