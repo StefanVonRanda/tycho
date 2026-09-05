@@ -9867,6 +9867,22 @@ static const char *for3_elidable_arr(Stmt *s) {
     return arr;
 }
 
+/* A `vector[N]T` lane named by an integer LITERAL inside 0..N-1 cannot be out
+ * of range, so the bounds check is provably dead and the access lowers to
+ * `.v[k]` on the GCC vector member. Returns the lane, or -1 for anything else --
+ * a runtime index, a computed one, or a literal outside the count -- which keeps
+ * the check: an out-of-range vector access is a wrong answer or a misaligned
+ * load, not a crash, so an over-eager elision is worse than the check. It is
+ * deliberately NOT gated on elision_on(): a literal in range is a fact about the
+ * program text, not an inference from a loop's shape. `compiler/emit/emit.ty@_vlane`
+ * is the self-hosted twin. */
+static int vec_lane_const(Expr *base, Expr *idx) {
+    if (!IS_VEC(base->type) || idx->kind != E_INT) return -1;
+    int64_t n = g_arrtypes[ARRC_ID(base->type)].size;
+    if (idx->ival < 0 || idx->ival >= n) return -1;
+    return (int)idx->ival;
+}
+
 /* Is the access base[idx] a loop index proven in-range (so skip the check)? */
 static int index_in_range(Expr *base, Expr *idx) {
     if (!elision_on() || base->kind != E_IDENT || idx->kind != E_IDENT) return 0;
@@ -11464,6 +11480,8 @@ static char *gen_expr(Expr *e, const char *arena) {
             char *ix = gen_expr(e->rhs, arena);
             if (e->lhs->type == T_STRING || e->lhs->type == T_BYTES)
                 return sfmt("tycho_str_get(%s, %s)", a, ix);   /* O(1): length header, no strlen (bytes: same buffer) */
+            int vl = vec_lane_const(e->lhs, e->rhs);
+            if (vl >= 0) return sfmt("(%s).v[%d]", a, vl);     /* constant vector lane: the check is dead */
             if (index_in_range(e->lhs, e->rhs))               /* monotone loop index: skip the bounds check */
                 return sfmt("(%s).data[%s]", a, ix);
             return sfmt("tycho_arr_%s_get(%s, %s)", arr_fn(e->lhs->type), a, ix);
@@ -11833,6 +11851,9 @@ static char *gen_lvalue(Expr *e, const char *arena) {
                         map_rt(e->lhs->type, "slotptr"), owner,
                         gen_lvalue(e->lhs, arena), key_rt(e->lhs->type, gen_expr(e->rhs, arena)));
         }
+        int vl2 = vec_lane_const(e->lhs, e->rhs);
+        if (vl2 >= 0)                         /* constant vector lane: the check is dead */
+            return sfmt("((%s).v[%d])", gen_lvalue(e->lhs, arena), vl2);
         if (index_in_range(e->lhs, e->rhs))   /* monotone loop index: project without the bounds check */
             return sfmt("((%s).data[%s])", gen_lvalue(e->lhs, arena), gen_expr(e->rhs, arena));
         /* element-pointer projection: arr_fn dispatches to the built-in scalar
@@ -12344,6 +12365,8 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                  * whose gather is a by-value temp read before the call). */
                 const char *owner = (root->kind == E_IDENT) ? owner_arena_of(root->sval) : scope;
                 fprintf(o, "Soa%d_set(%s, &(%s), %s, %s);\n", SOA_ID(arrx->type), owner, arr, ix, v);
+            } else if (vec_lane_const(arrx, s->target->rhs) >= 0) {
+                fprintf(o, "(%s).v[%d] = %s;\n", arr, vec_lane_const(arrx, s->target->rhs), v);   /* constant vector lane */
             } else if (arrx->type == T_ARRAY_STRING || IS_ARRC(arrx->type)) {
                 /* string/struct/array element: the set deep-copies it into the
                  * array's owning arena — the carried _ina_ arena if the root is

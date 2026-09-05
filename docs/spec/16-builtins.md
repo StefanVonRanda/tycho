@@ -17,7 +17,7 @@ their own chapters and are out of scope here.
 > Provenance: `Sig` builtins `src/tychoc.c:5097-5221`; conversion magic
 > `:6910-6975`; `len` `:6977-6983`; `keys`/`push`/`pop`/`reserve` `:7035-7130`;
 > `m.get` sugar `:6422-6435`,`:6287-6302`; `zero$` `:6370-6396`; concurrency
-> magic `:6784-6867`; `map_*` removal `:2843-2844`; `die` codegen `:11346-11347`.
+> magic `:6784-6867`; `map_*` removal `:2843-2844`; `die` codegen `:11362-11363`.
 
 ## 29.1 Builtins are part of the language
 
@@ -82,8 +82,8 @@ numeric-polymorphic like `str`.
 `print`, `println`, and `eprint` accept a `string` only; they do not implicitly
 stringify. All nine are `Sig` builtins with fixed signatures.
 
-> Provenance: `src/tychoc.c:5228-5235`,`:5311-5312`,`:5321-5322`; `eprint` codegen `:10919@tycho_eprint`; `die` codegen
-> `:11346-11347`.
+> Provenance: `src/tychoc.c:5228-5235`,`:5311-5312`,`:5321-5322`; `eprint` codegen `:10935@tycho_eprint`; `die` codegen
+> `:11362-11363`.
 
 ## 29.4 Conversions
 
@@ -127,7 +127,7 @@ serves both), and `to_char` is not in the UFCS builtin set, so `to_char(n)` is t
 only spelling — `n.to_char()` is not.
 
 > Provenance: conversion magic `src/tychoc.c:6610-6666`; `chr` and `to_char` `Sig`
-> `:5745@.name="to_char"`, their shared codegen `:10672-10674`;
+> `:5745@.name="to_char"`, their shared codegen `:10688-10690`;
 > `is_null`/`to_ptr` `Sig` `:5323-5324`. `to_i32` (and the rest of
 > `to_u8`..`to_f32`) is **not** a `Sig`: it is `is_sized_conv` `:1259-1263` /
 > `sized_conv_target` `:1248-1258`, resolved inline at `:6935-6941`. The abort
@@ -274,7 +274,7 @@ likewise as `t.wait()`. `close` is overloaded across a channel and an FFI handle
 > task/channel method sugar `:6397-6411`. `ncpu()`'s value is
 > `runtime/tycho_rt.c:1108-1123` (`TYCHO_THREADS` first, else
 > `sysconf(_SC_NPROCESSORS_ONLN)`); the fan-out that does **not** follow it above
-> 64 is `src/tychoc.c:11945@_pk > 64`.
+> 64 is `src/tychoc.c:11966@_pk > 64`.
 
 ## 29.10 Filesystem and time
 
@@ -368,7 +368,7 @@ and a conforming program cannot invoke them directly. This is the language's
 **fail-closed** posture ([§1.3](00-conventions.md#13-conformance)) — abnormal
 conditions terminate rather than proceed into undefined behavior.
 
-> Provenance: `die` `Sig` `src/tychoc.c:5746@.name="die"`, codegen `:11346-11347`; `exit` `Sig`
+> Provenance: `die` `Sig` `src/tychoc.c:5746@.name="die"`, codegen `:11362-11363`; `exit` `Sig`
 > beside it and codegen beside `die`'s; divergence `expr_diverges`, with the tail
 > skips in `ctrl_rewrite_tails` / `ctrl_collect_tails` and the all-diverge
 > rejection in the `S_DECL` value-`ctrl` arm of `resolve_stmt`; no

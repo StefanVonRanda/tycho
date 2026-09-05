@@ -233,7 +233,7 @@ DEAD = ["reserve only supports arrays of scalars",
 # same `import "core:strings"` that compiles here -- so no .ty file can reach it.
 # It is an fprintf+exit like every other entry below, not a die_at.
 # One more, measured 2026-09-03: `internal: spread ... reached codegen`
-# (src/tychoc.c:11307) is a compiler-bug assertion, not a rule about a program.
+# (src/tychoc.c:11323) is a compiler-bug assertion, not a rule about a program.
 # E_SPREAD has exactly two dispositions -- the variadic call arm UNWRAPS it
 # (src/tychoc.c:7406 takes args[nfixed]->lhs, so no E_SPREAD node survives), and
 # every other position dies at src/tychoc.c:6251. Four spread positions probed

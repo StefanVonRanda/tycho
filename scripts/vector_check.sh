@@ -133,6 +133,51 @@ done
 cmp -s "$D/b.out" tests/vector_type.out || fail "$CC: $FIX does not match tests/vector_type.out"
 done
 
+# [6] a lane named by a LITERAL in 0..N-1 costs no bounds check; a lane named by
+#     a runtime value still pays one. The two halves are the whole leg: [6a]
+#     alone passes a compiler that deleted the check outright, and [6b] alone
+#     passes one that never elides. gcc folds the constant test at -O3 anyway --
+#     measured 2026-09-05, 8.06 ms vs 8.05 ms on the converted raytracer -- so
+#     this leg's subject is the EMITTED C, which is where the elision is visible
+#     and where an over-eager one would be a silent wrong lane.
+mkdir -p "$D/pl"
+cat > "$D/pl/l.ty" <<'TYEOF'
+package main
+
+fn main():
+    a: vector[4]float = [1.0, 2.0, 3.0, 4.0]
+    a[0] = 9.0
+    println(str(a[0]) + " " + str(a[3]))
+    i := 2
+    a[i] = 7.0
+    println(str(a[i]) + " " + str(a[2]))
+    j := 9
+    println(str(a[j]))
+TYEOF
+for CC in ./tychoc ./tychoc1; do
+    "$CC" "$D/pl/l.ty" --emit-c -o "$D/l" > /dev/null || fail "$CC cannot compile the lane probe"
+    body=$(awk '/^(int|void) h_main/,/^}/' "$D/l.c")
+    # [6ab] EXACTLY three helper calls survive, and the count is the whole leg
+    # in both directions: the probe has 4 literal lanes (a[0]=, a[0], a[3], a[2])
+    # and 3 runtime ones (a[i]=, a[i], a[j]), so 7 means nothing was elided and
+    # anything under 3 means a runtime lane lost its check. The two compilers
+    # spell the helper differently (tycho_arr_C<n>_ / tycho_vec_V<n>_), so the
+    # pattern spans both rather than pinning one.
+    # -o then wc -l, never `grep -c`: -c counts LINES and one emitted statement
+    # can carry three lane reads, which under-counts a compiler that elides none.
+    n=$(echo "$body" | grep -oE 'tycho_(arr_C|vec_V)[0-9]+_(get|ptr|set)\(' | wc -l)
+    [ "$n" -eq 3 ] || fail "$CC: $n bounds-checked lane helper calls in the probe, want 3 (7 = nothing elided, <3 = a runtime lane lost its check)"
+    # [6c] the answers, against literals here: an elision that projected the
+    # wrong lane reads perfectly plausibly and no golden in this tree sees it.
+    "$CC" "$D/pl/l.ty" -o "$D/lb" > /dev/null || fail "$CC: the lane probe does not link"
+    rc=0; "$D/lb" > "$D/l.out" 2> "$D/l.err" || rc=$?
+    [ "$rc" -ne 0 ] || fail "$CC: the out-of-range RUNTIME lane did not trap -- the check is gone"
+    grep -qF "index 9 out of bounds (len 4)" "$D/l.err" \
+        || fail "$CC: the runtime lane trapped by a different rule -- $(head -1 "$D/l.err")"
+    [ "$(sed -n 1p "$D/l.out")" = "9.0 4.0" ] || fail "$CC: constant lanes read wrong -- $(sed -n 1p "$D/l.out")"
+    [ "$(sed -n 2p "$D/l.out")" = "7.0 7.0" ] || fail "$CC: runtime lane write/read wrong -- $(sed -n 2p "$D/l.out")"
+done
+
 # [5] every refusal, by its whole sentence, in both compilers
 for f in vector_count_not_pow2 vector_count_one vector_no_count \
          vector_nonconst_count vector_elem_bool elementwise_vector_array; do
@@ -145,4 +190,4 @@ for f in vector_count_not_pow2 vector_count_one vector_no_count \
         echo "$out" | grep -qF "$want" || fail "$CC: $f refused by a different rule -- $(echo "$out" | head -1)"
     done
 done
-echo "vector-check: ok (BOTH compilers emit a GCC vector; the aggregate wants 8-byte alignment and $ctl without the attribute; at -O0/-O1 the vector program emits packed instructions and the [4]float control emits none; both agree on the golden and on all six refusals)"
+echo "vector-check: ok (BOTH compilers emit a GCC vector; the aggregate wants 8-byte alignment and $ctl without the attribute; at -O0/-O1 the vector program emits packed instructions and the [4]float control emits none; both agree on the golden and on all six refusals; a literal lane pays no bounds check and a runtime one still traps)"

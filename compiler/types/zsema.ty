@@ -1414,7 +1414,7 @@ fn _sink_check(cs: inout C, name: string, s: FSig, args: [ast.Expr], line: int):
                 elif cs.ment.get(v, 0) != 1:
                     _cerr(&cs, "'" + v + "' is consumed by a `sink` parameter but is mentioned " + str(cs.ment.get(v, 0)) + " times in this function: a sink argument must be the variable's ONLY mention. One textual mention is how the compiler proves the consume is the last use on every path, with no dataflow analysis -- so `len(" + v + ")`, `" + v + "[0]`, `" + v + "[0] = ...` and passing `" + v + "` anywhere else all disqualify it, even before this line. Copy it first (`y := " + v + "`) and consume `y`")
                 elif v in cs.mbind:
-                    # src/tychoc.c:10560, the arm this chain had no `else` for. A
+                    # src/tychoc.c:10576, the arm this chain had no `else` for. A
                     # match binding BORROWS the payload (cv_push with a NULL arena),
                     # so can_move_into_sink fails on it however few times it is
                     # mentioned. A binding the arm MUTATES is copied instead, and

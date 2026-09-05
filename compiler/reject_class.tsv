@@ -65,7 +65,7 @@ tests/reject/bounded_literal_too_many.ty	SEMANTIC	7929	a bounded[2] holds at mos
 tests/reject/bounded_no_capacity.ty	SYNTAX	2419	bounded needs a capacity: bounded[N]T
 tests/reject/bounded_nonconst_cap.ty	SEMANTIC	2417	a bounded capacity must be an integer literal or an int `const` -- 'NOPE' is not
 tests/reject/bounded_task_elem.ty	TYPE	2699	unknown type 'Task'
-tests/reject/break_outside_loop.ty	SEMANTIC	12721	'break' outside a loop
+tests/reject/break_outside_loop.ty	SEMANTIC	12744	'break' outside a loop
 tests/reject/builtin_arity_char_at.ty	TYPE	7465	'char_at' takes 2 argument(s), got 1
 tests/reject/builtin_arity_niladic.ty	TYPE	7465	'clock' takes 0 argument(s), got 1
 tests/reject/builtin_arity_too_few.ty	TYPE	7465	'substr' takes 3 argument(s), got 1
@@ -261,10 +261,10 @@ tests/reject/index_not_indexable.ty	SEMANTIC	6550	can only index an array, a str
 tests/reject/infer_bare_empty.ty	SEMANTIC	9240	could not infer the type of 'xs' -- no grounding use in its block (annotate: xs : [T] = [] / Option(T) = None)
 tests/reject/infer_lambda_param.ty	SEMANTIC	6284	lambda parameter 'x' needs a type here -- no expected fn type supplies it (annotate: fn(x: T))
 tests/reject/infer_use_before_ground.ty	SEMANTIC	6396	'xs' is used before its type can be inferred -- assign/push/pass it first, or annotate the declaration
-tests/reject/infinite_option_arm.ty	TYPE	13197	infinite type: an Option contains itself by value — use Option([T]) for indirection
-tests/reject/infinite_result_arm.ty	TYPE	13208	infinite type: a Result contains itself by value — use indirection (e.g. Result([T], E))
-tests/reject/infinite_tuple_arm.ty	TYPE	13224	infinite type: a tuple contains itself by value
-tests/reject/inline_arr_self_elem.ty	TYPE	13168	infinite type: Node contains itself by value — use an array ([Node]) or Option([Node]) for indirection
+tests/reject/infinite_option_arm.ty	TYPE	13220	infinite type: an Option contains itself by value — use Option([T]) for indirection
+tests/reject/infinite_result_arm.ty	TYPE	13231	infinite type: a Result contains itself by value — use indirection (e.g. Result([T], E))
+tests/reject/infinite_tuple_arm.ty	TYPE	13247	infinite type: a tuple contains itself by value
+tests/reject/inline_arr_self_elem.ty	TYPE	13191	infinite type: Node contains itself by value — use an array ([Node]) or Option([Node]) for indirection
 tests/reject/inout_alias.ty	SEMANTIC	7538	variable 'n' passed to two inout parameters of 'swap2' (overlapping mutable access)
 tests/reject/inout_arg_newtype.ty	TYPE	7521	argument type mismatch: argument 1 of 'f' is int, expected Id
 tests/reject/inout_arg_not_place.ty	TYPE	7484	inout argument 1 of 'bump' must name a variable
@@ -447,12 +447,12 @@ tests/reject/send_wrong_type.ty	SEMANTIC	7116	send on Channel(int) needs a int v
 tests/reject/shift_needs_int.ty	SEMANTIC	7706	shift operators require integer operands (got float, int)
 tests/reject/sink_arg_newtype.ty	TYPE	7521	argument type mismatch: argument 1 of 'f' is int, expected Id
 tests/reject/sink_arg_scalar.ty	TYPE	7521	argument type mismatch: argument 1 of 'f' is float, expected int
-tests/reject/sink_builder_two_mentions.ty	SEMANTIC	10552	'f' is consumed by a `sink` parameter but is mentioned 2 times in this function: a sink argument must be the variable's ONLY mention. One textual mention is how the compiler proves the consume is the last use on every path, with no dataflow analysis -- so `len(f)`, `f[0]`, `f[0] = ...` and passing `f` anywhere else all disqualify it, even before this line. Copy it first (`y := f`) and consume `y`
-tests/reject/sink_consume_in_loop.ty	SEMANTIC	10547	'w' is consumed by a `sink` parameter inside a loop, where the next iteration would consume it again; no named variable can be adopted in a loop, a copy made in the loop included. Lift the call out of the loop, or pass a fresh value (a literal, or a call's result)
-tests/reject/sink_consume_mentions.ty	SEMANTIC	10552	'w' is consumed by a `sink` parameter but is mentioned 2 times in this function: a sink argument must be the variable's ONLY mention. One textual mention is how the compiler proves the consume is the last use on every path, with no dataflow analysis -- so `len(w)`, `w[0]`, `w[0] = ...` and passing `w` anywhere else all disqualify it, even before this line. Copy it first (`y := w`) and consume `y`
-tests/reject/sink_consume_param.ty	SEMANTIC	10543	'ys' is a `sink` parameter and cannot be handed to another `sink` parameter: a parameter's buffer is never adopted, however it was declared. Copy it first (`y := ys`) and consume `y`
-tests/reject/sink_match_binding.ty	SEMANTIC	10560	'v' cannot be consumed by a `sink` parameter here; copy it first (`y := v`) and consume `y`
-tests/reject/sink_use_after.ty	SEMANTIC	10552	'b' is consumed by a `sink` parameter but is mentioned 2 times in this function: a sink argument must be the variable's ONLY mention. One textual mention is how the compiler proves the consume is the last use on every path, with no dataflow analysis -- so `len(b)`, `b[0]`, `b[0] = ...` and passing `b` anywhere else all disqualify it, even before this line. Copy it first (`y := b`) and consume `y`
+tests/reject/sink_builder_two_mentions.ty	SEMANTIC	10568	'f' is consumed by a `sink` parameter but is mentioned 2 times in this function: a sink argument must be the variable's ONLY mention. One textual mention is how the compiler proves the consume is the last use on every path, with no dataflow analysis -- so `len(f)`, `f[0]`, `f[0] = ...` and passing `f` anywhere else all disqualify it, even before this line. Copy it first (`y := f`) and consume `y`
+tests/reject/sink_consume_in_loop.ty	SEMANTIC	10563	'w' is consumed by a `sink` parameter inside a loop, where the next iteration would consume it again; no named variable can be adopted in a loop, a copy made in the loop included. Lift the call out of the loop, or pass a fresh value (a literal, or a call's result)
+tests/reject/sink_consume_mentions.ty	SEMANTIC	10568	'w' is consumed by a `sink` parameter but is mentioned 2 times in this function: a sink argument must be the variable's ONLY mention. One textual mention is how the compiler proves the consume is the last use on every path, with no dataflow analysis -- so `len(w)`, `w[0]`, `w[0] = ...` and passing `w` anywhere else all disqualify it, even before this line. Copy it first (`y := w`) and consume `y`
+tests/reject/sink_consume_param.ty	SEMANTIC	10559	'ys' is a `sink` parameter and cannot be handed to another `sink` parameter: a parameter's buffer is never adopted, however it was declared. Copy it first (`y := ys`) and consume `y`
+tests/reject/sink_match_binding.ty	SEMANTIC	10576	'v' cannot be consumed by a `sink` parameter here; copy it first (`y := v`) and consume `y`
+tests/reject/sink_use_after.ty	SEMANTIC	10568	'b' is consumed by a `sink` parameter but is mentioned 2 times in this function: a sink argument must be the variable's ONLY mention. One textual mention is how the compiler proves the consume is the last use on every path, with no dataflow analysis -- so `len(b)`, `b[0]`, `b[0] = ...` and passing `b` anywhere else all disqualify it, even before this line. Copy it first (`y := b`) and consume `y`
 tests/reject/size_of_not_packed.ty	SEMANTIC	6698	size_of$(int): only a packed struct has a stated byte size
 tests/reject/size_of_two_typeargs.ty	SEMANTIC	6695	size_of$(T) takes exactly one type argument
 tests/reject/size_of_value_args.ty	SEMANTIC	6694	size_of$(T) takes no value arguments
@@ -478,7 +478,7 @@ tests/reject/string_raw_control.ty	SYNTAX	718	raw control byte in string literal
 tests/reject/string_unterminated.ty	SYNTAX	666	unterminated string literal
 tests/reject/struct_field_unknown.ty	SEMANTIC	6644	struct S has no field 'zzzzzz'
 tests/reject/struct_mix_named_positional.ty	SEMANTIC	6991	P: cannot mix named and positional fields
-tests/reject/struct_mutual_by_value.ty	TYPE	13168	infinite type: A contains itself by value — use an array ([A]) or Option([A]) for indirection
+tests/reject/struct_mutual_by_value.ty	TYPE	13191	infinite type: A contains itself by value — use an array ([A]) or Option([A]) for indirection
 tests/reject/struct_named_dup_field.ty	SEMANTIC	7006	P: field 'x' given more than once
 tests/reject/struct_named_ok.ty	NAME	4503	'Ok' is already defined
 tests/reject/struct_named_partial.ty	SEMANTIC	6999	P: named construction must give all 2 field(s), got 1

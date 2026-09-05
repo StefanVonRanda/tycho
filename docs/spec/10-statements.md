@@ -188,12 +188,12 @@ source instead of inferring them from the sign of a step expression.
 > scan and its five required-clause refusals `src/tychoc.c:3701-3746`; `init`
 > parsed by `parse_stmt` itself `src/tychoc.c:4112@parse_stmt`; loop scoping and
 > the post clause resolved outside the body block `src/tychoc.c:8402-8407`;
-> `continue` emitted as `goto _post<id>` `src/tychoc.c:11922-11925` with the
-> label at `src/tychoc.c:12791@_post%d`; the `range()` refusal
+> `continue` emitted as `goto _post<id>` `src/tychoc.c:11943-11946` with the
+> label at `src/tychoc.c:12814@_post%d`; the `range()` refusal
 > `src/tychoc.c:4185@was removed: write`. There is no step in the implementation
 > at all: `Stmt` carries `r_start` and `r_stop` only (`src/tychoc.c:1674-1680`)
 > and every `S_FORRANGE` emits `h_i < _stopN; h_i += 1`
-> (`src/tychoc.c:12087-12091`).
+> (`src/tychoc.c:12108-12112`).
 
 ## 14.5 `return`
 

@@ -60,7 +60,7 @@ EXPECT = 1356          # a leg that scores 0 of 0 is green by accident
                        # 1336 -> 1338: the two struct/enum `$Name` typaram fixtures
 
 # NAME fixtures whose diagnostic carries no file:line in EITHER compiler, because
-# merge_pkg (src/tychoc.c:14622, :14234) names the offending FILE and exits. Both
+# merge_pkg (src/tychoc.c:14645, :14234) names the offending FILE and exits. Both
 # are scored as agreeing that there is no location; anything else unlocated is a
 # skip and reddens the lane.
 NO_LINE = {
