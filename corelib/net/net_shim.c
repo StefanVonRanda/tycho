@@ -353,3 +353,72 @@ done:
 #endif
     return rc;
 }
+
+/* ---- readiness over a SET of descriptors ---- */
+
+/* poll(2), not select(2): select's fd_set cannot represent a descriptor at or
+ * above FD_SETSIZE (1024), which is the ceiling netx_accept_wait above was
+ * rewritten to escape. A readiness call over a SET is exactly where that
+ * ceiling bites -- a server holding a thousand keep-alive peers is the case
+ * this exists for -- so reintroducing it here would undo that work. */
+#define TY_PL_READY 0
+#define TY_PL_TMO   1
+#define TY_PL_ERR   2
+#define TY_PL_MAX   1048576     /* refuse an absurd n rather than malloc it */
+
+#ifdef _WIN32
+typedef WSAPOLLFD ty_pollfd;
+#define TY_POLL_IN   POLLRDNORM
+static int ty_poll(ty_pollfd *p, tycho_int n, int ms) { return WSAPoll(p, (ULONG)n, ms); }
+#else
+typedef struct pollfd ty_pollfd;
+#define TY_POLL_IN   POLLIN
+static int ty_poll(ty_pollfd *p, tycho_int n, int ms) { return poll(p, (nfds_t)n, ms); }
+#endif
+
+/* Which of `fds` can be read without blocking, waiting at most `ms` for the
+ * first. Writes the READY SUBSET (a fresh malloc'd buffer the caller's runtime
+ * copies and frees) and one of TY_PL_*.
+ *
+ * A peer that closed counts as ready: POLLHUP/POLLERR mean the next recv
+ * returns 0 or fails at once, which is an answer the caller needs, not a wait.
+ * POLLNVAL is the opposite -- it means the caller handed over a descriptor that
+ * is not open, so the whole call fails closed rather than naming it ready and
+ * sending the caller into a recv on a stranger's fd.
+ *
+ * Fail closed on an empty set, a negative fd anywhere in it, or a negative
+ * timeout: each is a caller bug, and returning "timed out" for any of them
+ * turns it into a silent spin. */
+void netx_poll_readable(const tycho_int *fds, tycho_int nfds, tycho_int ms,
+                        tycho_int *status, tycho_int **out, tycho_int *outlen) {
+    *out = NULL;
+    *outlen = 0;
+    *status = TY_PL_ERR;
+    if (!fds || nfds <= 0 || nfds > TY_PL_MAX || ms < 0 || ms > INT_MAX) return;
+    for (tycho_int i = 0; i < nfds; i++) if (fds[i] < 0) return;
+
+    ty_pollfd *pf = (ty_pollfd *)calloc((size_t)nfds, sizeof *pf);
+    if (!pf) return;
+    for (tycho_int i = 0; i < nfds; i++) {
+        pf[i].fd = (int)fds[i];
+        pf[i].events = TY_POLL_IN;
+        pf[i].revents = 0;
+    }
+    int r;
+    do { r = ty_poll(pf, nfds, (int)ms); } while (r < 0 && errno == EINTR);
+    if (r < 0)  { free(pf); return; }
+    if (r == 0) { free(pf); *status = TY_PL_TMO; return; }
+
+    tycho_int *res = (tycho_int *)malloc((size_t)nfds * sizeof *res);
+    if (!res) { free(pf); return; }
+    tycho_int k = 0;
+    for (tycho_int i = 0; i < nfds; i++) {
+        if (pf[i].revents & POLLNVAL) { free(pf); free(res); return; }
+        if (pf[i].revents & (TY_POLL_IN | POLLHUP | POLLERR)) res[k++] = fds[i];
+    }
+    free(pf);
+    if (k == 0) { free(res); *status = TY_PL_TMO; return; }   /* woken by nothing we asked for */
+    *out = res;
+    *outlen = k;
+    *status = TY_PL_READY;
+}

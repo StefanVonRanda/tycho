@@ -1,0 +1,69 @@
+
+# The >1024-descriptor leg for net.wait_readable. It is the whole reason the shim
+# is poll(2) and not select(2): an fd_set cannot REPRESENT a descriptor at or
+# above FD_SETSIZE, so a test that never opens 1024 of them cannot see the
+# ceiling. This opens PAIRS until the highest connected fd is past it, then waits
+# on the whole set and asserts EXACTLY the one written to comes back.
+package main
+import "core:net"
+import "core:result"
+import "core:time"
+
+const PAIRS = 700          # 2 fds each -> the top conn fd lands near 1400
+
+fn fd_of(r: Result(int, net.NetErr)) -> int:
+    return result.unwrap_or(r, -1)
+
+fn main():
+    srv := fd_of(net.listen("127.0.0.1", 0))
+    port := fd_of(net.port_of(srv))
+    if srv < 0 or port <= 0:
+        println("setup=failed")
+        return
+    cli := []int
+    conn := []int
+    for i := 0; i < PAIRS; i += 1:
+        c := fd_of(net.connect("127.0.0.1", port))
+        s := fd_of(net.accept(srv))
+        if c < 0 or s < 0:
+            println("setup=failed at " + str(i))
+            return
+        push(cli, c)
+        push(conn, s)
+
+    # Which pair holds the highest connected descriptor -- that is the one the
+    # ceiling would hide, so it is the one made ready.
+    top := 0
+    for i := 0; i < len(conn); i += 1:
+        if conn[i] > conn[top]:
+            top = i
+    println("pairs=" + str(len(conn)))
+    println("above_1024=" + str(conn[top] >= 1024))
+
+    # Nothing written yet: the deadline must ELAPSE, not return at once.
+    w := time.start()
+    match net.wait_readable(conn, 150):
+        Ok(rd): println("idle=ready:" + str(len(rd)))
+        Err(net.Timeout): println("idle=Timeout")
+        Err(e): println("idle=Failed")
+    println("idle_waited=" + str(time.elapsed_ms(w) >= 120))
+
+    println("wrote=" + str(fd_of(net.write(cli[top], to_bytes("x")))))
+    nready := -1
+    is_top := false
+    for t := 0; t < 50; t += 1:
+        match net.wait_readable(conn, 200):
+            Ok(rd):
+                nready = len(rd)
+                is_top = nready == 1 and rd[0] == conn[top]
+            Err(e):
+                nready = -1
+        if is_top:
+            break
+    println("nready=" + str(nready))
+    println("ready_is_top=" + str(is_top))
+
+    for i := 0; i < len(conn); i += 1:
+        net.close_fd(conn[i])
+        net.close_fd(cli[i])
+    net.close_fd(srv)

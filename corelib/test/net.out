@@ -9,6 +9,16 @@ back=[ping]
 eof=Eof
 armed=true
 tmo=Timeout
+poll_pairs=3
+poll_idle=Timeout
+poll_idle_waited=true
+poll_one=[c1]
+poll_two=[c0,c1]
+poll_hup=[c0,c1,c2]
+poll_hup_read=Eof
+poll_empty=Failed
+poll_negfd=Failed
+poll_negms=Failed
 udp_ok=true
 udp_sent=9
 udp=[hello-udp] len=9

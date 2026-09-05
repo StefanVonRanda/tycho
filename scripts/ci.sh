@@ -161,6 +161,9 @@ make -s shim-warn
 step "[3d2/13] make source-bytes  (CRLF line endings and a NUL byte, both compilers, no fixture can carry them)"
 make -s source-bytes
 
+step "[3d4/13] make net-poll-check  (core:net readiness: exactly the ready fds named, the timeout elapses, and a descriptor above 1024 works)"
+make -s net-poll-check
+
 step "[3e0/13] make image-ceiling  (core:image: a 3.6 GB header from 69 bytes is refused, a real image still decodes)"
 make -s image-ceiling
 

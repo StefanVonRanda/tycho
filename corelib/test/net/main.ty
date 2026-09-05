@@ -2,6 +2,7 @@
 package main
 import "core:net"
 import "core:result"
+import "core:time"
 
 # The fd, or -1. Every call below is on loopback and must succeed, so collapsing
 # the Result keeps the test's output identical to the sentinel-era golden while
@@ -31,6 +32,40 @@ fn nerr(r: Result(int, net.NetErr)) -> string:
         Err(net.Timeout): return "Timeout"
         Err(net.Eof): return "Eof"
         _: return "Failed"
+
+
+# Render a ready-set as the LABELS of the sockets it names, in the order the set
+# came back, so the golden pins WHICH sockets were reported -- a count would pass
+# equally on "everything is ready" and on the right answer.
+fn names(ready: [int], fds: [int]) -> string:
+    s := ""
+    for r in ready:
+        for i := 0; i < len(fds); i += 1:
+            if fds[i] == r:
+                if s != "":
+                    s = s + ","
+                s = s + "c" + str(i)
+    return s
+
+fn poll_str(r: Result([int], net.NetErr), fds: [int]) -> string:
+    match r:
+        Ok(rd): return "[" + names(rd, fds) + "]"
+        Err(net.Timeout): return "Timeout"
+        Err(net.Eof): return "Eof"
+        Err(net.BadAddr): return "BadAddr"
+        _: return "Failed"
+
+# Poll until the answer is `want`, or give up and report what it really was. The
+# retry is for ARRIVAL, not for the verdict: a byte written on loopback has not
+# necessarily landed when the next statement runs, and a fixed single poll would
+# make this leg a coin toss rather than a check.
+fn poll_until(fds: [int], want: string) -> string:
+    got := ""
+    for t := 0; t < 50; t += 1:
+        got = poll_str(net.wait_readable(fds, 200), fds)
+        if got == want:
+            return got
+    return got
 
 fn main():
     # -- TCP: client <-> server round trip over loopback --
@@ -73,6 +108,47 @@ fn main():
     net.close_fd(cli2)
     net.close_fd(conn2)
     net.close_fd(srv)
+
+
+    # -- readiness over a SET of descriptors --
+    psrv := fd_of(net.listen("127.0.0.1", 0))
+    pport := fd_of(net.port_of(psrv))
+    pcli := []int
+    pconn := []int
+    for i := 0; i < 3; i += 1:
+        push(pcli, fd_of(net.connect("127.0.0.1", pport)))
+        push(pconn, fd_of(net.accept(psrv)))
+    println("poll_pairs=" + str(len(pconn)))
+
+    # Nobody has written. The deadline must actually ELAPSE -- a readiness call
+    # that returns "nothing" instantly passes every test that only asks whether
+    # the program still works.
+    pw := time.start()
+    println("poll_idle=" + poll_str(net.wait_readable(pconn, 120), pconn))
+    println("poll_idle_waited=" + str(time.elapsed_ms(pw) >= 100))
+
+    ignore := fd_of(net.write(pcli[1], to_bytes("b")))
+    println("poll_one=" + poll_until(pconn, "[c1]"))
+    ignore = fd_of(net.write(pcli[0], to_bytes("a")))
+    println("poll_two=" + poll_until(pconn, "[c0,c1]"))
+
+    # A peer that closed is READY, not absent: the read that follows answers Eof.
+    net.close_fd(pcli[2])
+    println("poll_hup=" + poll_until(pconn, "[c0,c1,c2]"))
+    match net.read(pconn[2], 8):
+        Ok(bb): println("poll_hup_read=unexpected-data")
+        Err(e): println("poll_hup_read=" + why(e))
+
+    # Caller bugs fail closed rather than reading as a timeout, which would spin.
+    println("poll_empty=" + poll_str(net.wait_readable([]int, 10), pconn))
+    println("poll_negfd=" + poll_str(net.wait_readable([pconn[0], 0 - 1], 10), pconn))
+    println("poll_negms=" + poll_str(net.wait_readable(pconn, 0 - 1), pconn))
+
+    for i := 0; i < 3; i += 1:
+        net.close_fd(pconn[i])
+    net.close_fd(pcli[0])
+    net.close_fd(pcli[1])
+    net.close_fd(psrv)
 
     u := net.udp_bind("127.0.0.1", 0)
     println("udp_ok=" + str(u >= 0))

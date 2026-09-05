@@ -392,6 +392,7 @@
   "net.udp_bind": "(host: string, port: int)-> int",
   "net.udp_read": "(fd: int, max: int)-> bytes",
   "net.udp_send": "(fd: int, host: string, port: int, data: bytes)-> int",
+  "net.wait_readable": "(fds: [int], ms: int)-> Result([int], NetErr)",
   "net.write": "(fd: int, data: bytes)-> Result(int, NetErr)",
   "os.argv_has_nul": "(argv: [string])-> bool",
   "os.exec": "(argv: [string])-> int",

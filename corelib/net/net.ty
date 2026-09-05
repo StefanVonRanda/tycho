@@ -129,3 +129,33 @@ fn accept_wait(fd: int, ms: int) -> Result(int, NetErr):
     if conn < 0:
         return Err(Failed)
     return Ok(conn)
+
+# ---- readiness over a set of descriptors ----
+# The shim's poll classification, named once the way RD_* above is.
+const PL_READY = 0
+const PL_TMO   = 1
+
+extern fn netx_poll_readable(fds: [int], ms: int, status: inout int) -> [int]
+
+# Which of `fds` can be read without blocking right now, waiting at most `ms`
+# milliseconds for the first one. Ok(ready) is the SUBSET of `fds` that are
+# readable, in the order they were given -- never the whole set, and never empty.
+# A peer that closed is READY, not absent: the following net.read answers Eof,
+# which is what a caller needs to retire the connection.
+#
+# Err(Timeout) means the deadline passed with none ready. That is an answer, not
+# a failure -- accept_wait draws the same line.
+# Err(Failed) covers a caller bug as well as a syscall failure: an empty set, a
+# negative fd anywhere in it, or a negative `ms`. Reporting those as Timeout
+# would turn each into a silent spin.
+#
+# poll(2) underneath, not select(2): select cannot represent a descriptor at or
+# above 1024 at all, and a set of descriptors is exactly where that bites.
+fn wait_readable(fds: [int], ms: int) -> Result([int], NetErr):
+    st := 0
+    ready := netx_poll_readable(fds, ms, &st)
+    if st == PL_READY:
+        return Ok(ready)
+    if st == PL_TMO:
+        return Err(Timeout)
+    return Err(Failed)
