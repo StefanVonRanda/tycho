@@ -146,7 +146,7 @@ fn _links(p: types.Program) -> [string]:
                 push(out, fd.lib)
     return out
 
-# NEVER eat a .c this compiler did not write (src/tychoc.c:14966). A file WE left
+# NEVER eat a .c this compiler did not write (src/tychoc.c:14991). A file WE left
 # behind starts with the runtime banner and is fair game; anything else is the
 # user's and the intermediate would destroy it.
 fn _guard_c(c_path: string):
@@ -200,17 +200,30 @@ fn _pkgflags(p: types.Program) -> [string]:
             Err(e): pass
     return out
 
+# --target: the x86-64 microarchitecture LEVELS, the vocabulary Go's GOAMD64,
+# Rust's -C target-cpu and RHEL9 all use. "" and "baseline" put NOTHING on the
+# cc line, so an unflagged build is byte-identical to one made before the flag.
+fn target_levels() -> [string]:
+    return ["baseline", "x86-64-v2", "x86-64-v3", "x86-64-v4"]
+
+fn target_known(t: string) -> bool:
+    for lv in target_levels():
+        if lv == t:
+            return true
+    return false
+
 # `cc9` is the C compiler to drive (--cc), `xtra` the -L/-I/-l/pkg-config flags
-# (--link, --pkg, -L, -I), `shim9` the extra shim sources (--shim), and `nat`
-# is --native. src/tychoc.c takes all five; tychoc1 took none, so an FFI build
-# could not name its library at all.
+# (--link, --pkg, -L, -I), `shim9` the extra shim sources (--shim), `nat`
+# is --native and `tgt` is --target. src/tychoc.c takes all six; tychoc1 took
+# none, so an FFI build could not name its library at all.
 fn build(src_path: string, runtime_path: string, base: string, argv0: string,
-         cc9: string, xtra: [string], shim9: [string], nat: bool, dbg: bool):
+         cc9: string, xtra: [string], shim9: [string], nat: bool, dbg: bool,
+         tgt: string):
     c_path := base + ".c"
     _guard_c(c_path)
     p := types.Program([]types.File, "", "", "", "")
     check_into(src_path, argv0, &p)
-    # -g: src/tychoc.c:14913 makes #line single-file only, and names the source
+    # -g: src/tychoc.c:14932 makes #line single-file only, and names the source
     # in every directive. A multi-file build has no single g_line_file to name.
     dbgf := ""
     if dbg and len(p.files) == 1:
@@ -232,6 +245,13 @@ fn build(src_path: string, runtime_path: string, base: string, argv0: string,
     argv := [cc9, "-O3", "-fwrapv", "-pthread"]
     if nat:
         push(argv, "-march=native")
+    # A --target the host cc cannot honour must FAIL, not vanish: a silently
+    # ignored level looks identical to a working one at the exit status.
+    if len(tgt) > 0 and tgt != "baseline":
+        pr := os.run(cc9 + " -march=" + tgt + " -E -x c /dev/null -o /dev/null 2>/dev/null")
+        if pr.code != 0:
+            die("tychoc1: --target: " + cc9 + " does not accept -march=" + tgt)
+        push(argv, "-march=" + tgt)
     if dbg:
         push(argv, "-g")
     for f in split(getenv("TYCHO_CFLAGS"), " "):
@@ -540,7 +560,7 @@ fn _ty_src(t: ast.Ty, pk: string, own: [string: bool], imp: [string: string]) ->
                 # gates this on is_imported_pkg, which filters g_imports by
                 # g_srcname -- a global left pointing at whichever file the parser
                 # finished with (no assignment between parse and emit_symbols,
-                # src/tychoc.c:14959-15043). So the SAME type prints `graph.MakeErr`
+                # src/tychoc.c:14984-15068). So the SAME type prints `graph.MakeErr`
                 # and `build__BuildErr` in one run, and tools/tycho-make/main.ty
                 # imports build either way. Matching that means reproducing a load
                 # order, not a rule. Unconditional also scores better: tycho-make

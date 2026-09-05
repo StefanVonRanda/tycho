@@ -190,4 +190,64 @@ for f in vector_count_not_pow2 vector_count_one vector_no_count \
         echo "$out" | grep -qF "$want" || fail "$CC: $f refused by a different rule -- $(echo "$out" | head -1)"
     done
 done
-echo "vector-check: ok (BOTH compilers emit a GCC vector; the aggregate wants 8-byte alignment and $ctl without the attribute; at -O0/-O1 the vector program emits packed instructions and the [4]float control emits none; both agree on the golden and on all six refusals; a literal lane pays no bounds check and a runtime one still traps)"
+# [7] --target: the SAME source, compiled twice, must emit SPLIT instructions at
+# the default and a PACKED one under the flag. A `vector[4]float` is 4 doubles =
+# 32 bytes; baseline x86-64 is SSE2 with a 16-byte xmm, so one multiply becomes
+# two `mulpd`, while x86-64-v3's 32-byte ymm does it in one `vmulpd`. A flag that
+# is accepted and does nothing looks identical to a working one from the exit
+# status, which is why this counts instructions rather than trusting rc=0.
+if ! command -v objdump > /dev/null 2>&1; then
+    echo "vector-check: SKIPPED leg [7] -- objdump not on PATH"
+else
+mkdir -p "$D/t"
+cat > "$D/t/t.ty" <<'TY'
+fn v_dot(a: vector[4]float, b: vector[4]float) -> float:
+    c := a * b
+    return c[0] + c[1] + c[2] + c[3]
+
+fn main():
+    a: vector[4]float = [1.0, 2.0, 3.0, 4.0]
+    b: vector[4]float = [5.0, 6.0, 7.0, 8.0]
+    println(str(v_dot(a, b)))
+TY
+n_op() { objdump -d "$1" | grep -cE "\\b$2\\b" || true; }
+for CC in ./tychoc ./tychoc1; do
+    ABS="$PWD/${CC#./}"
+    "$CC" "$D/t/t.ty" -o "$D/t/base" > /dev/null || fail "$CC: the --target probe does not build at the default"
+    "$CC" "$D/t/t.ty" --target x86-64-v3 -o "$D/t/v3" > /dev/null || fail "$CC: the --target probe does not build under --target x86-64-v3"
+    # [7a] the default is SPLIT: two 16-byte SSE multiplies, no AVX form at all
+    sp=$(n_op "$D/t/base" mulpd); av=$(n_op "$D/t/base" vmulpd)
+    [ "$sp" -ge 2 ] || fail "$CC: at the default the probe emits $sp mulpd -- expected the 32-byte multiply SPLIT into at least 2"
+    [ "$av" -eq 0 ] || fail "$CC: at the default the probe emits $av vmulpd -- the DEFAULT cc line has picked up AVX"
+    # [7b] under the flag it is PACKED: one 32-byte ymm multiply, no SSE form
+    sp3=$(n_op "$D/t/v3" mulpd); av3=$(n_op "$D/t/v3" vmulpd)
+    [ "$av3" -ge 1 ] || fail "$CC: under --target x86-64-v3 the probe emits no vmulpd -- the flag was ACCEPTED AND IGNORED"
+    [ "$sp3" -eq 0 ] || fail "$CC: under --target x86-64-v3 the probe still emits $sp3 mulpd"
+    # [7c] and the two must still agree on the answer
+    [ "$("$D/t/base")" = "$("$D/t/v3")" ] || fail "$CC: the default and --target x86-64-v3 builds disagree on the answer"
+    # [7d] `baseline` is the DEFAULT spelled out: the binary must be BYTE-IDENTICAL.
+    # Both builds run from their own directory under the same relative names, because
+    # the -o path is baked into the binary and comparing $D/base against $D/bl would
+    # differ for that reason alone and prove nothing.
+    rm -rf "$D/t/d0" "$D/t/d1"; mkdir -p "$D/t/d0" "$D/t/d1"
+    cp "$D/t/t.ty" "$D/t/d0/t.ty"; cp "$D/t/t.ty" "$D/t/d1/t.ty"
+    ( cd "$D/t/d0" && "$ABS" t.ty -o t ) > /dev/null || fail "$CC: the byte-identity probe does not build at the default"
+    ( cd "$D/t/d1" && "$ABS" t.ty --target baseline -o t ) > /dev/null || fail "$CC: --target baseline does not build"
+    cmp -s "$D/t/d0/t" "$D/t/d1/t" || fail "$CC: --target baseline is not byte-identical to no flag -- the DEFAULT cc line moved"
+    # [7e] fail closed: an unknown or missing level must be REFUSED by name
+    for bad in bogus x86-64-v9 EMPTY; do
+        [ "$bad" = EMPTY ] && bad=""
+        rc=0
+        out=$("$CC" "$D/t/t.ty" --target "$bad" --emit-c -o "$D/t/x" 2>&1) || rc=$?
+        [ "$rc" -ne 0 ] || fail "$CC: --target '$bad' was ACCEPTED"
+        echo "$out" | grep -qF -- "--target" || fail "$CC: --target '$bad' refused without naming the flag -- $(echo "$out" | head -1)"
+    done
+    # and --target as the LAST argument, with no level at all
+    rc=0
+    out=$("$CC" --target 2>&1) || rc=$?
+    [ "$rc" -ne 0 ] || fail "$CC: a bare --target with no level was ACCEPTED"
+    echo "$out" | grep -qF -- "--target" || fail "$CC: a bare --target refused without naming the flag -- $(echo "$out" | head -1)"
+done
+fi
+
+echo "vector-check: ok (BOTH compilers emit a GCC vector; the aggregate wants 8-byte alignment and $ctl without the attribute; at -O0/-O1 the vector program emits packed instructions and the [4]float control emits none; both agree on the golden and on all six refusals; a literal lane pays no bounds check and a runtime one still traps; --target x86-64-v3 turns 2 split mulpd into 1 packed vmulpd from one source while the default and --target baseline stay byte-identical)"

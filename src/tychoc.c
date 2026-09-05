@@ -14855,6 +14855,23 @@ static char *c_escape_path(const char *p) {
     return b;
 }
 
+/* --target: the x86-64 microarchitecture LEVELS, the vocabulary Go's GOAMD64,
+ * Rust's -C target-cpu and RHEL9 all use. `baseline` is the DEFAULT and puts
+ * NOTHING on the cc line, so an unflagged build stays byte-identical to one
+ * made before this flag existed. Nobody raises a baseline silently. */
+static const char *TARGET_LEVELS = "baseline x86-64-v2 x86-64-v3 x86-64-v4";
+static int target_known(const char *t) {
+    size_t n = strlen(t);
+    for (const char *p = TARGET_LEVELS; *p; ) {
+        const char *e = strchr(p, ' ');
+        size_t len = e ? (size_t)(e - p) : strlen(p);
+        if (len == n && !strncmp(p, t, n)) return 1;
+        if (!e) break;
+        p = e + 1;
+    }
+    return 0;
+}
+
 static void tychoc_usage(FILE *f)
 {
     fprintf(f,
@@ -14872,6 +14889,8 @@ static void tychoc_usage(FILE *f)
 "  --emit-c           stop at the C; to stdout unless -o names a file\n"
 "  -g                 build with debug information\n"
 "  --native           tune the build for this machine\n"
+"  --target <level>   raise the baseline for this build: x86-64-v2, x86-64-v3,\n"
+"                     x86-64-v4, or baseline (the default -- adds nothing)\n"
 "\n"
 "Linking and the FFI\n"
 "  --cc <compiler>    use <compiler> instead of the default cc\n"
@@ -14912,6 +14931,7 @@ int main(int argc, char **argv) {
     int bundle = 0;
     int debug = 0;    /* -g: emit #line directives + build with -O0 -g (single-file only) */
     int native = 0;   /* --native: add -march=native (non-portable: SIGILL on a different CPU) */
+    const char *target = NULL;   /* --target <level>: opt-in x86-64 microarch level; NULL/baseline == the shipped cc line */
     char *extra = sfmt("%s", "");   /* FFI: extra cc link/include flags (-L/-I/--link/--pkg) */
     char *shims = sfmt("%s", "");   /* FFI: companion C shim sources (--shim) compiled+linked alongside */
 
@@ -14930,6 +14950,11 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--print-deps")) { print_deps = 1; g_pkgdeps_names_only = 1; }
         else if (!strcmp(argv[i], "--bundle")) bundle = 1;
         else if (!strcmp(argv[i], "--native")) native = 1;
+        else if (!strcmp(argv[i], "--target")) {
+            if (i + 1 >= argc) { fprintf(stderr, "tychoc: --target: missing level (want one of: %s)\n", TARGET_LEVELS); return 1; }
+            target = argv[++i];
+            if (!target_known(target)) { fprintf(stderr, "tychoc: --target: unknown level '%s' (want one of: %s)\n", target, TARGET_LEVELS); return 1; }
+        }
         else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) { tychoc_usage(stdout); return 0; }
         else if (!strcmp(argv[i], "--version")) { printf("tychoc %s\n", TYCHO_VERSION); return 0; }
         else if (!strcmp(argv[i], "-g")) debug = 1;
@@ -15055,6 +15080,13 @@ int main(int argc, char **argv) {
     char *links = sfmt("%s", "");                  /* FFI: -lLib for each `extern "Lib"` */
     for (int i = 0; i < g_nlinks; i++) links = sfmt("%s -l%s", links, cc_safe_name(g_links[i], "extern library"));
     const char *march = native ? " -march=native" : "";
+    /* A --target the host cc cannot honour must FAIL, not vanish: a silently
+     * ignored level is indistinguishable from a working one at the exit status. */
+    if (target && strcmp(target, "baseline")) {
+        char *probe = sfmt("%s -march=%s -E -x c /dev/null -o /dev/null 2>/dev/null", cc, target);
+        if (system(probe) != 0) { fprintf(stderr, "tychoc: --target: %s does not accept -march=%s\n", cc, target); return 1; }
+        march = sfmt(" -march=%s", target);
+    }
     const char *optdbg = debug ? "-O0 -g" : "-O3";   /* -g: unoptimized + DWARF so gdb/lldb step the .ty source */
     for (int i = 0; i < g_nshims; i++) shims = sfmt("%s %s", shims, shq(g_shims[i]));   /* auto-discovered <pkg>_shim.c */
     const char *pkgdeps = g_pkgdeps ? g_pkgdeps : "";   /* pkg-config flags from <pkg>/deps (cflags + libs, trailing) */

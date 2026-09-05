@@ -239,7 +239,12 @@ DEAD = ["reserve only supports arrays of scalars",
 # every other position dies at src/tychoc.c:6251. Four spread positions probed
 # (a decl rhs, an array literal, a len() argument, and a second variadic
 # argument beside a spread); all four were refused before codegen.
+# `--target: ` is three more of the same family, added 2026-09-05: they are about
+# the INVOCATION, not about a program, so no .ty fixture can reach them. They are
+# gated instead by scripts/vector_check.sh leg [7e], which requires each refusal
+# to exit non-zero and to name the flag, in BOTH compilers.
 INTERNAL = ["oom", "cannot open", "cannot write", "read error", "unknown flag",
+            "--target: ",
             "cannot find the corelib for import",
             "internal: spread",
             "pkg-config", "C compilation failed", "already exists and was not written",
