@@ -1196,6 +1196,491 @@ rc=$?
 [ "$rc" -eq 0 ] || fail=1
 srv_kill; wait "$SRV" 2>/dev/null; SRV=""
 
+# ---- a STALLED PARTIAL head must cost a pollfd slot either -------------------
+# The third sibling of the two legs above, and the one they could not reach. A
+# SILENT peer is never read at all and a PARKED one is read once and answered;
+# a peer that sends `GET / HTTP` and then stops is read and cannot be finished,
+# and until this commit the read blocked for the whole head budget and then threw
+# the partial buffer away, so it had to start again from nothing next time.
+# Measured at 378d2941 with --workers 4 --first-ms 2000: 8 such peers delayed a
+# legitimate GET by 7754ms and 64 by 15732ms. The fix is httpd.read_request_resume
+# -- the partial comes back in Conn.pending and a visit costs HEAD_SLICE_MS
+# (server/main.ty@HEAD_SLICE_MS), 5ms, not the head budget.
+#
+# Same POLL_BOUND (500ms) and the same reasoning as the silent-peer leg: it is 5x
+# the mechanism's own POLL_TICK_MS ceiling, and --first-ms/--idle-ms are 8000 here
+# with --conn-ms 0, so a leg that passes has proved the answer did not wait for a
+# deadline -- there is no deadline under 8000ms to have waited for. On this box
+# after the fix the same measurement is 1ms at K=8 and 1ms at K=64.
+respawn "$T/dripstarve.err" 8000 8000 0
+python3 - "$(port_of "$T/dripstarve.err")" 4 8000 8000 500 <<'DRIPSTARVE'
+import socket, sys, time
+port, workers, first_ms, idle_ms, bound = (int(x) for x in sys.argv[1:6])
+bad = 0
+FLAT = 250
+
+def timed_get(timeout):
+    t = time.time()
+    s = socket.create_connection(("127.0.0.1", port), timeout)
+    s.settimeout(timeout)
+    s.sendall(b"GET /index.html HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n")
+    buf = b""
+    while True:
+        c = s.recv(65536)
+        if not c:
+            break
+        buf += c
+    s.close()
+    return (time.time() - t) * 1000.0, buf.split(b"\r\n")[0].decode("latin1")
+
+# [1] THE CONTROL, first: an unloaded server must answer promptly, or the number
+# measured under load says nothing about starvation at all.
+ms, st = timed_get(10.0)
+if st != "HTTP/1.1 200 OK" or ms > bound:
+    print("  FAIL stalled-partial control: unloaded GET %.0fms %s, want 200 under %dms" % (ms, st, bound))
+    bad = 1
+else:
+    print("  ok   stalled-partial control: unloaded GET answered in %.0fms" % ms)
+
+held = []
+def open_partial(n):
+    global bad
+    for _ in range(n):
+        try:
+            c = socket.create_connection(("127.0.0.1", port), 3.0)
+            # HALF A HEAD and then nothing. No terminator, so the read can never
+            # finish; the peer is INSIDE the parser, which is what separates this
+            # from the silent and parked cases.
+            c.sendall(b"GET / HTTP")
+            held.append(c)
+        except OSError as e:
+            print("  FAIL stalled-partial: could not open socket %d: %s" % (len(held), e))
+            bad = 1
+            return False
+    time.sleep(0.3)
+    return True
+
+def loaded(label):
+    global bad
+    try:
+        ms, st = timed_get(20.0)
+    except OSError as e:
+        print("  FAIL stalled-partial: legitimate GET failed outright under %d peers: %s"
+              % (len(held), e))
+        bad = 1
+        return -1.0
+    if st != "HTTP/1.1 200 OK" or ms > bound:
+        print("  FAIL stalled-partial: %d stalled-partial peers delayed a GET %.0fms (%s), bound %dms"
+              % (len(held), ms, st or "no answer", bound))
+        bad = 1
+        return -1.0
+    print("  ok   stalled-partial: %s -- %d peers stalled MID-HEAD vs %d workers -> 200 in "
+          "%.0fms (bound %dms; first-ms %d and idle-ms %d are both 16x that, conn-ms is 0)"
+          % (label, len(held), workers, ms, bound, first_ms, idle_ms))
+    return ms
+
+t_small = loaded("K = 2x workers") if open_partial(workers * 2) else -1.0
+t_big = loaded("K = 16x workers") if open_partial(workers * 14) else -1.0
+for c in held:
+    c.close()
+
+# [4] FLATNESS. Under the pre-resume reader t(16x) is eight rounds of the head
+# budget; here the two are the same measurement twice.
+if t_small >= 0 and t_big >= 0:
+    if t_big - t_small <= FLAT:
+        print("  ok   stalled-partial: delay is flat in K -- %.0fms at 2x workers, %.0fms at 16x "
+              "(growth %.0fms, allowed %dms)" % (t_small, t_big, t_big - t_small, FLAT))
+    else:
+        print("  FAIL stalled-partial: delay GREW with K -- %.0fms at 2x workers, %.0fms at 16x "
+              "(growth %.0fms, allowed %dms)" % (t_small, t_big, t_big - t_small, FLAT))
+        bad = 1
+sys.exit(bad)
+DRIPSTARVE
+rc=$?
+[ "$rc" -eq 0 ] || fail=1
+srv_kill; wait "$SRV" 2>/dev/null; SRV=""
+
+# ---- a RESUMED head must parse as the head it would have been whole ----------
+# The security half of the resume, and NONE of it has a clock in it. A reader
+# that hands its partial buffer back is exactly where a length, an offset or a
+# terminator search goes wrong, and everything this server refuses -- ambiguous
+# framing, a path that escapes the root -- is decided DOWNSTREAM of it. So the
+# question these legs answer is one question: can a head be assembled across a
+# resume boundary that could not have been assembled whole? Every case is sent
+# twice, once entire and once split, and the two answers must AGREE.
+#
+# The splits are chosen where a splice would hide: inside the request line,
+# between the two headers that make framing ambiguous, and INSIDE the CRLFCRLF
+# terminator itself -- the one place a search for a 4-byte string can straddle a
+# boundary and miss.
+respawn "$T/resume.err" 2000 1000 0
+python3 - "$(port_of "$T/resume.err")" <<'RESUME'
+import os, re, socket, sys, threading, time
+port = int(sys.argv[1])
+bad = 0
+# Its own watchdog. Every socket here has a timeout, but a driver that wedges
+# anyway must REPORT rather than hang the gate -- and it can wedge: with the
+# no-carry-over invariant deliberately broken, the server replays an answer the
+# client never asked for and a naive reader waits for one that is not coming.
+def _wd():
+    time.sleep(90)
+    print("  FAIL resume: watchdog -- driver exceeded 90s")
+    os._exit(1)
+threading.Thread(target=_wd, daemon=True).start()
+def check(name, got, want):
+    global bad
+    if got == want:
+        print("  ok   resume: %s -> %s" % (name, got))
+    else:
+        print("  FAIL resume: %s\n         got:  %s\n         want: %s" % (name, got, want))
+        bad = 1
+
+def send(pieces, gap=0.12, timeout=8.0):
+    s = socket.create_connection(("127.0.0.1", port), timeout)
+    s.settimeout(timeout)
+    for i, pc in enumerate(pieces):
+        s.sendall(pc)
+        if i != len(pieces) - 1:
+            time.sleep(gap)          # long enough that the worker HAS come back
+    buf = b""                        # round the poll loop between the two pieces
+    try:
+        while True:
+            c = s.recv(65536)
+            if not c:
+                break
+            buf += c
+    except OSError:
+        pass
+    s.close()
+    return buf
+
+def status(b):
+    return b.split(b"\r\n")[0].decode("latin1") if b else "(closed, no answer)"
+
+# [1] A LEGITIMATE head must survive every split, including one byte at a time.
+#     Without this the three refusal legs below would pass on a server that had
+#     stopped accepting split heads at all.
+W = b"GET /index.html HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n"
+check("whole head", status(send([W])), "HTTP/1.1 200 OK")
+for cut in (4, 10, 24, 26, len(W) - 3, len(W) - 2, len(W) - 1):
+    check("head split at byte %d" % cut, status(send([W[:cut], W[cut:]])), "HTTP/1.1 200 OK")
+check("head dribbled one byte per write",
+      status(send([W[i:i + 1] for i in range(len(W))], gap=0.01)), "HTTP/1.1 200 OK")
+# The same again FASTER THAN THE SLICE, and the gap matters. At 2ms several bytes
+# land inside one HEAD_SLICE_MS visit, so the read loop keeps succeeding until the
+# slice expires -- which is the only arrangement that reaches the deadline check
+# with a buffer that is already a COMPLETE request. That check used to run FIRST
+# and answered 408 for a request the peer had finished sending
+# (corelib/httpd/httpd.ty@read_request_resume). At 10ms above, one byte per visit,
+# the case never arises and the leg cannot see it.
+check("head dribbled one byte per write, faster than the read slice",
+      status(send([W[i:i + 1] for i in range(len(W))], gap=0.002)), "HTTP/1.1 200 OK")
+
+# [2] SMUGGLING. Content-Length with Transfer-Encoding, and two disagreeing
+#     Content-Lengths, are what corelib refuses so that bytes this reader did not
+#     count as a body cannot become the next request. Split so the two headers
+#     land on OPPOSITE sides of a resume, and once so the split falls inside the
+#     terminator.
+SM = (b"POST /index.html HTTP/1.1\r\nHost: t\r\nContent-Length: 5\r\n"
+      b"Transfer-Encoding: chunked\r\n\r\n0\r\n\r\nGET /outside HTTP/1.1\r\nHost: t\r\n\r\n")
+check("TE+CL whole", status(send([SM])), "HTTP/1.1 400 Bad Request")
+c = SM.index(b"Transfer")
+check("TE+CL split between the two headers", status(send([SM[:c], SM[c:]])), "HTTP/1.1 400 Bad Request")
+c = SM.index(b"\r\n\r\n") + 2
+check("TE+CL split INSIDE the CRLFCRLF terminator", status(send([SM[:c], SM[c:]])),
+      "HTTP/1.1 400 Bad Request")
+CL = b"POST /index.html HTTP/1.1\r\nHost: t\r\nContent-Length: 5\r\nContent-Length: 6\r\n\r\nhello"
+c = CL.rindex(b"Content-Length")
+check("two differing Content-Lengths, split between them", status(send([CL[:c], CL[c:]])),
+      "HTTP/1.1 400 Bad Request")
+
+# [3] TRAVERSAL. The escape must still be refused when the path itself straddles
+#     the boundary -- resolve() and path.safe_join see one string either way, and
+#     this is what proves the reader still hands them one string.
+TR = b"GET /../../../etc/passwd HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n"
+check("traversal whole", status(send([TR])), "HTTP/1.1 403 Forbidden")
+for cut in (6, 8, 12, 16):
+    check("traversal split at byte %d" % cut, status(send([TR[:cut], TR[cut:]])), "HTTP/1.1 403 Forbidden")
+
+# [4] NO CARRY-OVER, which is the invariant the resume buffer could break and
+#     nothing else in this file can see: a COMPLETED request must leave nothing
+#     behind for the next head. Request 2 goes out split, so a surviving byte of
+#     request 1 would be prepended to it and the head would be garbage.
+# TWO DIFFERENT FILES, and that is the whole discrimination. A carried-over
+# buffer does not corrupt request 2 -- it re-parses request 1 out of the leftover
+# and REPLAYS its answer, which is a perfectly well-formed 200 that a leg
+# comparing status lines cannot tell from the right one. Asking for a second
+# file makes the replay visible as the wrong body. (Observed: with the carry-over
+# deliberately reintroduced, an earlier version of this leg passed.)
+K1 = b"GET /index.html HTTP/1.1\r\nHost: t\r\n\r\n"
+K2 = b"GET /robots.txt HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n"
+def read_one(sock):
+    """Exactly ONE response: head, then Content-Length body bytes and no more.
+    A single recv() is not a response -- it returned a prefix on 2 of 3 runs
+    while this leg was being written, and the tail of response 1 then led
+    `rest`, which reads exactly like the carry-over defect this leg exists to
+    catch. Framing it here is what makes the leg's verdict about the server."""
+    buf = b""
+    try:
+        while b"\r\n\r\n" not in buf:
+            c = sock.recv(65536)
+            if not c:
+                return buf
+            buf += c
+    except OSError:
+        return buf
+    head, body = buf.split(b"\r\n\r\n", 1)
+    m = re.search(rb"(?im)^Content-Length:\s*(\d+)\s*$", head)
+    want = int(m.group(1)) if m else 0
+    try:
+        while len(body) < want:
+            c = sock.recv(65536)
+            if not c:
+                break
+            body += c
+    except OSError:
+        pass
+    return head + b"\r\n\r\n" + body
+
+first, rest = b"", b""
+try:
+    s = socket.create_connection(("127.0.0.1", port), 8.0)
+    s.settimeout(8.0)
+    s.sendall(K1)
+    first = read_one(s)
+    time.sleep(0.15)
+    s.sendall(K2[:12])
+    time.sleep(0.15)
+    s.sendall(K2[12:])
+    rest = read_one(s)
+    s.close()
+except OSError as e:
+    # A reset here is a verdict, not a crash: with the resume buffer carried past
+    # a completed request the server replays that request until MAX_REQS and then
+    # hangs up on us. Report it by name rather than dying with a traceback.
+    print("  FAIL resume: keep-alive conversation died on the transport: %s" % e)
+    bad = 1
+check("keep-alive request 1", status(first), "HTTP/1.1 200 OK")
+check("request 2 split across a resume, on a connection that already served one",
+      status(rest), "HTTP/1.1 200 OK")
+check("and exactly one status line came back for it", rest.count(b"HTTP/1.1 200 OK"), 1)
+def body(r):
+    return r.split(b"\r\n\r\n", 1)[1] if b"\r\n\r\n" in r else b""
+check("and it is the SECOND file's body, not a replay of the first",
+      body(rest) != body(first) and len(body(rest)) > 0, True)
+
+# [5] The stall is still REFUSED, and by the reaper now rather than by the read.
+#     A resume that never expired would be the way to hold a connection for ever.
+check("a head that stops and never resumes", status(send([b"GET /index.html HTTP"])),
+      "HTTP/1.1 408 Request Timeout")
+
+# [6] SLOWLORIS, and it is the leg the resume buffer most easily breaks: if the
+#     deadline restarted on every byte, one byte per 300ms would hold a
+#     connection open for ever. --first-ms is 1000 here, so a peer still dripping
+#     after 8 of these writes has been given more than one deadline.
+s = socket.create_connection(("127.0.0.1", port), 12.0)
+s.settimeout(12.0)
+got = b""
+writes = 0
+try:
+    for _ in range(40):
+        s.sendall(b"X")
+        writes += 1
+        time.sleep(0.3)
+        s.settimeout(0.05)
+        try:
+            c = s.recv(65536)
+            if not c:
+                break
+            got += c
+        except OSError:
+            pass
+except OSError:
+    pass
+s.close()
+check("a peer dripping one byte per 300ms is refused", status(got), "HTTP/1.1 408 Request Timeout")
+if writes <= 8:
+    print("  ok   resume: refused after %d one-byte writes -- the deadline runs from the "
+          "FIRST byte, it does not restart per byte" % writes)
+else:
+    print("  FAIL resume: %d one-byte writes went through before the refusal -- the deadline "
+          "is restarting on every byte" % writes)
+    bad = 1
+sys.exit(bad)
+RESUME
+rc=$?
+[ "$rc" -eq 0 ] || fail=1
+srv_kill; wait "$SRV" 2>/dev/null; SRV=""
+
+# ---- MAX_CONNS: the per-worker ceiling, in BOTH directions -------------------
+# Nothing exercised it. MAX_CONNS (server/main.ty@MAX_CONNS) drops the listener
+# out of a full worker's poll set, and a ceiling nobody tests can be wrong, or
+# stop being enforced, in silence -- every other leg in this file passes either
+# way, because 512 is never reached.
+#
+# WHAT SHOULD HAPPEN, decided before it is asserted: a peer that arrives at a
+# full worker is NOT refused and NOT reset. Nothing tells it anything -- the
+# listener is simply not in that worker's poll set, so the connection waits in
+# the kernel backlog until another worker takes it or this one frees a slot.
+# And a full worker is not a broken one: it must not retire.
+#
+# THE MEASUREMENT IS A COUNT, not a time. One worker, deadlines set so far out
+# that NOTHING is reaped during the run (--first-ms/--idle-ms 60s, --conn-ms 0),
+# and K = ceiling + 4 keep-alive peers each asking for one file. Exactly
+# `ceiling` of them can be answered; the other 4 cannot be looked at at all.
+# Then the held ones are closed and the same 4 must be answered after all --
+# which is the "waits, not refused" half, and it is a count too.
+#
+# THE CONTROL IS THE SAME RUN WITH THE CEILING RAISED. Both binaries come from a
+# COPY of server/main.ty with one constant substituted, and the substitution is
+# asserted to have applied (sed cannot report a pattern that did not match, and a
+# control that silently changed nothing would accuse working code). The two runs
+# must DISAGREE -- 8 answered against 12 -- or the leg is reading something other
+# than the ceiling.
+mkdir -p "$T/capsrc" "$T/capctl"
+cap_src() {   # cap_src <destdir> <ceiling>
+    sed "s/^const MAX_CONNS = 512$/const MAX_CONNS = $2/" server/main.ty > "$1/main.ty"
+    n=$(grep -c "^const MAX_CONNS = $2\$" "$1/main.ty")
+    if [ "$n" -ne 1 ]; then
+        echo "  FAIL MAX_CONNS: substitution to $2 did not apply ($n matches)"; fail=1; return 1
+    fi
+    grep -q '^const MAX_CONNS = 512$' "$1/main.ty" && {
+        echo "  FAIL MAX_CONNS: the original 512 survived the substitution"; fail=1; return 1; }
+    "$TYCHOC" "$1/main.ty" -o "$1/httpd" >"$1/build.log" 2>&1 || {
+        echo "  FAIL MAX_CONNS: could not build the ceiling-$2 copy"
+        sed 's/^/      /' "$1/build.log"; fail=1; return 1; }
+    return 0
+}
+CAP_OK=0
+cap_src "$T/capsrc" 8  && cap_src "$T/capctl" 64 && CAP_OK=1
+if [ "$CAP_OK" -eq 1 ]; then
+    CAPH="$T/capsrc/httpd"; [ -f "$CAPH.exe" ] && CAPH="$CAPH.exe"
+    CTLH="$T/capctl/httpd"; [ -f "$CTLH.exe" ] && CTLH="$CTLH.exe"
+    python3 - "$CAPH" "$CTLH" "$T/www" 8 64 4 <<'CAPS'
+import os, re, socket, subprocess, sys, tempfile, time
+subj, ctl, root, cap, ctlcap, extra = sys.argv[1], sys.argv[2], sys.argv[3], \
+    int(sys.argv[4]), int(sys.argv[5]), int(sys.argv[6])
+bad = 0
+
+def run(binary, errpath):
+    f = open(errpath, "wb")
+    # ONE worker, and deadlines far enough out that nothing is reaped while the
+    # count is being taken -- otherwise a freed slot, not the ceiling, decides it.
+    p = subprocess.Popen([binary, "--root", root, "--host", "127.0.0.1", "--port", "0",
+                          "--workers", "1", "--idle-ms", "60000", "--first-ms", "60000",
+                          "--conn-ms", "0"], stdout=subprocess.DEVNULL, stderr=f)
+    port, t0 = None, time.time()
+    while time.time() - t0 < 10.0:
+        m = re.search(r"on http://\S+:(\d+)/", open(errpath, "rb").read().decode("utf8", "replace"))
+        if m:
+            port = int(m.group(1))
+            break
+        time.sleep(0.02)
+    return p, port
+
+GET = b"GET /index.html HTTP/1.1\r\nHost: t\r\n\r\n"
+
+def answered(socks):
+    """How many of these peers got a response. Each has its own short timeout:
+    a peer the worker cannot see does not answer, and waiting for it is the
+    measurement, not a delay to be endured."""
+    n = 0
+    for s in socks:
+        s.settimeout(1.5)
+        try:
+            if s.recv(65536).startswith(b"HTTP/1.1 200 OK"):
+                n += 1
+        except OSError:
+            pass
+    return n
+
+def census(binary, npeers, label):
+    global bad
+    err = tempfile.NamedTemporaryFile(delete=False, suffix=".err")
+    err.close()
+    p, port = run(binary, err.name)
+    if port is None:
+        print("  FAIL MAX_CONNS %s: server printed no banner" % label)
+        p.kill(); p.wait()
+        return -1, -1
+    socks = []
+    for _ in range(npeers):
+        try:
+            s = socket.create_connection(("127.0.0.1", port), 5.0)
+            s.sendall(GET)                    # keep-alive: the peer is HELD after
+            socks.append(s)                   # it is answered, so slots do not free
+        except OSError as e:
+            print("  FAIL MAX_CONNS %s: could not open socket %d: %s" % (label, len(socks), e))
+            bad = 1
+            break
+        time.sleep(0.01)
+    held = answered(socks)
+    # Now free every answered peer. The worker compacts, the listener rejoins its
+    # poll set, and the ones it could not reach must be answered after all.
+    for s in socks:
+        s.close()
+    late = []
+    for _ in range(extra):
+        try:
+            s = socket.create_connection(("127.0.0.1", port), 5.0)
+            s.sendall(GET)
+            late.append(s)
+        except OSError:
+            pass
+    after = answered(late)
+    for s in late:
+        s.close()
+    p.terminate()
+    p.wait()
+    log = open(err.name).read()
+    os.unlink(err.name)
+    retired = "retiring this loop" in log
+    if retired:
+        print("  FAIL MAX_CONNS %s: a worker RETIRED -- a full worker is not a broken one" % label)
+        bad = 1
+    else:
+        print("  ok   MAX_CONNS %s: no worker retired while the ceiling was held" % label)
+    return held, after
+
+# [1] THE SUBJECT: exactly `cap` of cap+extra concurrent peers are answered.
+held, after = census(subj, cap + extra, "ceiling %d" % cap)
+if held == cap:
+    print("  ok   MAX_CONNS: %d of %d concurrent peers answered by one worker at ceiling %d"
+          % (held, cap + extra, cap))
+else:
+    print("  FAIL MAX_CONNS: %d of %d concurrent peers answered at ceiling %d, want exactly %d"
+          % (held, cap + extra, cap, cap))
+    bad = 1
+# [2] AND THE OTHER DIRECTION: a peer that arrived at a full worker was queued,
+#     not refused -- once the slots free, every one of them is answered.
+if after == extra:
+    print("  ok   MAX_CONNS: all %d peers that met a FULL worker were answered once slots "
+          "freed -- queued in the backlog, not refused" % extra)
+else:
+    print("  FAIL MAX_CONNS: %d of %d peers that met a full worker were answered after the "
+          "slots freed, want %d" % (after, extra, extra))
+    bad = 1
+# [3] THE CONTROL: the identical run against a copy whose only difference is the
+#     ceiling must answer ALL of them. If it does not, [1] is measuring something
+#     that is not MAX_CONNS.
+cheld, cafter = census(ctl, cap + extra, "control ceiling %d" % ctlcap)
+if cheld == cap + extra:
+    print("  ok   MAX_CONNS control: ceiling %d answers all %d of the same peers -- %d vs %d, "
+          "so [1] is reading the ceiling" % (ctlcap, cap + extra, held, cheld))
+else:
+    print("  FAIL MAX_CONNS control: ceiling %d answered %d of %d, want all -- [1]'s count "
+          "cannot be attributed to the ceiling" % (ctlcap, cheld, cap + extra))
+    bad = 1
+if cheld == held:
+    print("  FAIL MAX_CONNS: the two ceilings answered the SAME number (%d) -- the "
+          "substitution compiled but changed no behaviour" % held)
+    bad = 1
+sys.exit(bad)
+CAPS
+    rc=$?
+    [ "$rc" -eq 0 ] || fail=1
+fi
+
 "$HTTPD" --help >"$T/help.out" 2>&1
 rc=$?
 if [ "$rc" -eq 0 ] && grep -q '^  --port N ' "$T/help.out"; then

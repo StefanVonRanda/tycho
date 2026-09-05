@@ -517,6 +517,12 @@ element type instead of a family of per-type siblings.
   name a request that would not parse; `read_request` is this with `cap = MAX_REQUEST`) /
   `read_request_deadline(fd, cap, deadline_ms)` (the same again, with a deadline on the
   **whole** head-and-body rather than on one `read`) /
+  `read_request_resume(fd, cap, deadline_ms, have)` (the same again, RESUMED: `have` is the
+  buffer a previous call returned beside `Err(Timeout)` on **this same fd**, so an event
+  loop can give a slow head a short slice per visit instead of blocking for the whole
+  budget and discarding what arrived. Hand the buffer back only after `Err(Timeout)` and
+  drop it on every other outcome — carrying it past a completed request would splice two
+  heads together; `cap` bounds `have` plus everything read after it, never one call) /
   `write_response(fd, r) -> Result(int, net.NetErr)` (Ok = total bytes written;
   it returns the same error type `net.write` does, so `or_return` propagates a failed
   send with no sentinel check). **Binary-safe bodies** — `Request.body` and

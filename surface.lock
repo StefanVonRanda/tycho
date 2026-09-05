@@ -254,6 +254,7 @@
   "httpd.read_request": "(fd: int)-> Result(Request, ReqErr)",
   "httpd.read_request_capped": "(fd: int, cap: int)-> (Result(Request, ReqErr), string)",
   "httpd.read_request_deadline": "(fd: int, cap: int, deadline_ms: int)-> (Result(Request, ReqErr), string)",
+  "httpd.read_request_resume": "(fd: int, cap: int, deadline_ms: int, have: string)-> (Result(Request, ReqErr), string)",
   "httpd.reason_phrase": "(status: int)-> string",
   "httpd.render": "(r: Response)-> bytes",
   "httpd.render_head": "(r: Response)-> string",

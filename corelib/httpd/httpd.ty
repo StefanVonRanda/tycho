@@ -260,16 +260,42 @@ fn read_request(fd: int) -> Result(Request, ReqErr):
 # Handing the leftover back needs a per-connection buffer this signature has not
 # got; gluing it onto the body is the smuggling bug and does not happen.
 fn read_request_deadline(fd: int, cap: int, deadline_ms: int) -> (Result(Request, ReqErr), string):
+    return read_request_resume(fd, cap, deadline_ms, "")
+
+# The same read, RESUMED. `have` is the bytes an earlier call on THIS SAME fd
+# returned beside an Err(Timeout) -- nothing else may ever be passed here. It is
+# a prefix of one request, not a request, so this function does exactly what
+# read_request_deadline does with those bytes already in the buffer: the whole
+# accumulation is parsed once, framed once, and sliced to `need` once, at the end.
+#
+# NO NEW SPLICE. The blocking reader already assembles a head from however many
+# net.read chunks the transport delivered (`buf = buf + to_str(chunk)` below); a
+# resume adds no concatenation site, it only lets the caller go away between two
+# of the appends that were happening anyway. So no head can be assembled across a
+# resume that could not have been assembled inside one call, which is what keeps
+# the smuggling and traversal defences downstream of it unchanged.
+#
+# THE CALLER OWES ONE INVARIANT, and it is the whole security of the thing: the
+# returned buffer belongs to ONE request on ONE connection. Feed it back only
+# after an Err(Timeout) on that fd, and DROP it on every other outcome. Carrying
+# a buffer past a completed request would prepend this request's leftovers to the
+# next one's head, which IS the smuggling bug -- and it cannot happen by accident
+# here, because a completed read returns Ok and the caller has nothing to keep.
+# `cap` is applied to `have` + everything read after it, never per call, so
+# resuming cannot walk past the byte budget one call at a time.
+fn read_request_resume(fd: int, cap: int, deadline_ms: int, have: string) -> (Result(Request, ReqErr), string):
     sw := time.start()
-    buf := ""
+    buf := have
+    if len(buf) > cap:
+        return (Err(TooLarge), buf)             # a caller that resumed with more
+                                                # than the budget: refuse, do not
+                                                # quietly raise the ceiling
     need := -1                                  # total expected bytes once known
     reading := true
     why := Failed                               # the transport cause, if one ends the read
     cut := false                                # a read failed before the head was complete
     term := crlf() + crlf()                     # hoisted: two allocations + a concat per
     for reading:
-        if deadline_ms > 0 and time.elapsed_ms(sw) > deadline_ms:
-            return (Err(Timeout), buf)          # the WHOLE head, not one read, ran out
         he := find(buf, term)
         if he >= 0 and need < 0:
             probe := result.unwrap_or(parse_request(buf), bad_request())
@@ -282,6 +308,20 @@ fn read_request_deadline(fd: int, cap: int, deadline_ms: int) -> (Result(Request
                 return (Err(TooLarge), buf)     # the body does not fit the budget;
                                                 # refuse rather than read a prefix
         if (need >= 0 and len(buf) >= need) or len(buf) >= cap:
+            reading = false
+        # THE DEADLINE IS CHECKED SECOND, and the order is load-bearing. It used
+        # to be the first thing in the loop, which returned Err(Timeout) for a
+        # request that was ALREADY COMPLETE in `buf` -- the deadline expired on
+        # the pass that would have delivered it, and the caller got a timeout for
+        # a request the peer had finished sending. Rare with a whole-head budget,
+        # certain with a per-visit slice: a head that lands one byte at a time is
+        # complete on some pass whose read blocked for the slice, and every one of
+        # those was a 408 for a request that had arrived. Falling through to the
+        # tail instead means a complete buffer is parsed and an incomplete one is
+        # still Err(Timeout), which is the only difference.
+        elif deadline_ms > 0 and time.elapsed_ms(sw) > deadline_ms:
+            why = Timeout
+            cut = true
             reading = false
         else:
             want := 4096

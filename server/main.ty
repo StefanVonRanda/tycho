@@ -21,9 +21,10 @@ const DEF_HEAD_MS = 15000
 # THE FIRST-BYTE DEADLINE: how long a peer that has said NOTHING may keep its
 # connection. It is no longer a bound on worker occupancy -- accept_loop polls,
 # so a silent peer costs a pollfd slot -- but it is still the only thing that
-# retires a connection nobody will ever use, and it is still the ceiling on ONE
-# stalled head read (head_budget). --idle-ms is the different, longer patience a
-# peer earns by completing a request.
+# retires a connection nobody will ever use, and it is now also the ceiling on a
+# head that has STARTED and stalled -- the reaper enforces both (due_in), where a
+# blocking read used to enforce the second. --idle-ms is the different, longer
+# patience a peer earns by completing a request.
 const DEF_FIRST_MS = 1000
 # THE WHOLE-CONNECTION BUDGET. Written when a parked keep-alive peer held one of
 # --workers accept loops for a whole --idle-ms and this was the only bound
@@ -39,6 +40,15 @@ const POLL_TICK_MS = 100
 # worker's poll set: the peer waits in the kernel backlog or goes to another
 # worker, which is honest backpressure rather than an unbounded fd table.
 const MAX_CONNS = 512
+# How long ONE visit to a readable connection may block inside the head read.
+# Not the head's budget: a head that arrives in pieces RESUMES from Conn.pending
+# (httpd.read_request_resume), so the whole-head deadline is due_in's and the
+# reaper enforces it. This is only the slice a peer that goes quiet MID-HEAD can
+# cost a worker, once, before the poll loop moves on. Measured at commit 378d2941 with
+# --workers 4 --first-ms 2000: 8 stalled-partial peers delayed a legitimate GET
+# by 7754ms and 64 by 15732ms, because the read blocked for the whole head
+# budget and threw the partial buffer away.
+const HEAD_SLICE_MS = 5
 const MAX_HEAD    = 16384      # per-request byte budget; past this -> 431, connection closed
 const MAX_REQS    = 1024       # requests served on one connection before we close it
 const LOG_FIELD   = 160        # longest request target we will echo into a log line
@@ -67,6 +77,11 @@ struct Conn:
     opened: int
     last: int
     armed: int
+    # The partial head this peer has produced so far, "" when it is between
+    # requests. It is handed straight back to httpd.read_request_resume and
+    # CLEARED the moment a read returns anything but Err(Timeout) -- carrying it
+    # past a completed request is what would splice two heads together.
+    pending: string
 
 # What a request target resolved to. `status` 200 means serve `file`; 301 means
 # redirect to `location`; anything else is an error to render.
@@ -442,14 +457,16 @@ fn refuse(cfg: Config, wid: int, peer: string, conn: int, raw: string, st: int, 
     n := result.unwrap_or(emit(conn, r, false, false), -1)
     log_req(cfg, wid, peer, "-", first_line(raw), st, len(r.body), n, time.elapsed_us(sw))
 
-# How long ONE ready connection's head read may block this worker, and the only
-# blocking read left in the server. A connection is read only when poll(2) has
-# said it is readable, so this budget is spent solely by a peer that starts a
-# head and stalls inside it -- the slowloris case --first-ms exists for.
+# How long ONE ready connection's read may block this worker, and the only
+# blocking read left in the server. It used to be the whole head's budget --
+# --first-ms, or DEF_HEAD_MS once the peer had been answered -- and a peer that
+# sent half a head and stopped spent all of it, because the read had no way to
+# put its buffer down and come back. It has one now (Conn.pending), so a visit
+# takes what is there and returns, and the WHOLE-head deadline is due_in's.
+# Still clamped by --conn-ms: a connection past its lifetime must not be given
+# another slice, however small.
 fn head_budget(cfg: Config, c: Conn) -> int:
-    hm := cfg.first_ms
-    if c.served > 0:
-        hm = DEF_HEAD_MS
+    hm := HEAD_SLICE_MS
     if cfg.conn_ms > 0:
         left := cfg.conn_ms - time.elapsed_ms(c.opened)
         if left < 1:
@@ -475,38 +492,48 @@ fn due_in(cfg: Config, c: Conn) -> int:
     return d
 
 # Serve exactly ONE request on a connection poll(2) has just called readable.
-# Returns (keep the connection, requests to count). This is the old serve_conn's
-# loop body with the loop taken off it: the loop moved into accept_loop, where it
-# is now a loop over READY descriptors rather than over one socket's lifetime.
-fn serve_once(cfg: Config, conn: int, wid: int, peer: string, head_ms: int) -> (bool, int):
+# Returns (keep the connection, requests to count, the partial head to RESUME
+# from). This is the old serve_conn's loop body with the loop taken off it: the
+# loop moved into accept_loop, where it is now a loop over READY descriptors
+# rather than over one socket's lifetime.
+#
+# The third element is "" on every outcome but one. A non-empty string means
+# THIS request is unfinished and its bytes must come back to the next visit;
+# every path that finished a request, or is closing, returns "" -- which is what
+# stops one request's bytes ever reaching the next request's head.
+fn serve_once(cfg: Config, conn: int, wid: int, peer: string, head_ms: int, have: string) -> (bool, int, string):
     # ONE corelib call does the read, the cap and the parse. `raw` is the second
-    # tuple element, for the two jobs the Result cannot do: name a request that
-    # would not parse in the access log, and answer "did this peer even start
-    # talking" below.
-    got, raw := httpd.read_request_deadline(conn, MAX_HEAD, head_ms)
+    # tuple element, for the three jobs the Result cannot do: name a request that
+    # would not parse in the access log, answer "did this peer even start
+    # talking" below, and BE the resume buffer when the head is unfinished.
+    got, raw := httpd.read_request_resume(conn, MAX_HEAD, head_ms, have)
     sw := time.start()
     match got:
         Err(httpd.Closed):
-            return (false, 0)
+            return (false, 0, "")
         Err(httpd.Failed):
-            return (false, 0)
-        #   Timeout   the head read deadline expired. With bytes in `raw` a
-        #             request was under way and stalled -- 408 is the honest
-        #             answer. With `raw` empty the peer became readable and then
-        #             said nothing, which no client is waiting on, so close
-        #             quietly (nginx does the same).
+            return (false, 0, "")
+        #   Timeout   this VISIT's slice expired, which since HEAD_SLICE_MS is
+        #             the ordinary answer for a head still in flight, not a
+        #             verdict on the peer. With bytes in `raw` the request is
+        #             under way: keep the connection AND the bytes, and let
+        #             due_in decide when the peer has had long enough (the 408
+        #             is the reaper's now, close_expired). With `raw` empty the
+        #             peer became readable and then said nothing, which no
+        #             client is waiting on, so close quietly (nginx does the
+        #             same) -- and it cannot loop, because a socket with no
+        #             bytes does not come back readable.
         Err(httpd.Timeout):
             if len(raw) > 0:
-                refuse(cfg, wid, peer, conn, raw, 408, error_response(408), sw)
-                return (false, 1)
-            return (false, 0)
+                return (true, 0, raw)
+            return (false, 0, "")
         Err(httpd.TooLarge):
             refuse(cfg, wid, peer, conn, raw, 431, error_response(431), sw)
-            return (false, 1)
+            return (false, 1, "")
         #   Malformed a complete head that is not HTTP -> 400.
         Err(httpd.Malformed):
             refuse(cfg, wid, peer, conn, raw, 400, error_response(400), sw)
-            return (false, 1)
+            return (false, 1, "")
         Ok(req):
             keep := not httpd.connection_close(req)
             clh := httpd.header(req, "content-length")
@@ -530,12 +557,12 @@ fn serve_once(cfg: Config, conn: int, wid: int, peer: string, head_ms: int) -> (
                 r := error_response(400)
                 n := result.unwrap_or(emit(conn, r, false, false), -1)
                 log_req(cfg, wid, peer, "-", first_line(raw), 400, len(r.body), n, time.elapsed_us(sw))
-                return (false, 1)
+                return (false, 1, "")
             if req.method != "GET" and req.method != "HEAD":
                 r := error_response(405)
                 n := result.unwrap_or(emit(conn, r, false, keep), -1)
                 log_req(cfg, wid, peer, req.method, target, 405, len(r.body), n, time.elapsed_us(sw))
-                return (keep and n >= 0, 1)
+                return (keep and n >= 0, 1, "")
             rt := resolve(cfg.root, req.path)
             st := rt.status
             r := error_response(st)
@@ -645,7 +672,7 @@ fn serve_once(cfg: Config, conn: int, wid: int, peer: string, head_ms: int) -> (
                 nb = 0
             n := result.unwrap_or(emit(conn, r, head_only, keep), -1)
             log_req(cfg, wid, peer, req.method, target, st, nb, n, time.elapsed_us(sw))
-            return (keep and n >= 0, 1)          # n < 0: peer hung up mid-write
+            return (keep and n >= 0, 1, "")      # n < 0: peer hung up mid-write
 
 # ---- the worker pool -------------------------------------------------------
 
@@ -717,7 +744,7 @@ fn accept_loop(cfg: Config, srv: int, wid: int) -> int:
                                 # accepted fd cannot change.
                                 p := result.unwrap_or(net.peer_addr(cfd), "-")
                                 at := time.start()
-                                push(conns, Conn(cfd, p, 0, at, at, -1))
+                                push(conns, Conn(cfd, p, 0, at, at, -1, ""))
                             Err(Timeout):
                                 accepting = false   # backlog drained, or another worker won the race
                             Err(e):
@@ -760,20 +787,41 @@ fn accept_loop(cfg: Config, srv: int, wid: int) -> int:
                         slot := wid - 1
                         if not signal.register_conn(slot, conns[cur].fd) and not cfg.quiet:
                             eprint("w" + str(wid) + " warn: connection not registered for shutdown\n")
-                        alive, n := serve_once(cfg, conns[cur].fd, wid, conns[cur].peer, hm)
+                        was_partial := len(conns[cur].pending) > 0
+                        alive, n, rest := serve_once(cfg, conns[cur].fd, wid,
+                                                     conns[cur].peer, hm, conns[cur].pending)
                         signal.retire_conn(slot)
                         served += n
                         conns[cur].served = conns[cur].served + n
-                        conns[cur].last = time.start()
+                        conns[cur].pending = rest
+                        # WHEN THE CLOCK RESTARTS, and this is the slowloris rule.
+                        # `last` is reset when this peer finished a request, and
+                        # when it STARTED one -- never on a later dribble into a
+                        # head already under way. So half a head buys the peer one
+                        # deadline to finish it, not a fresh deadline per byte,
+                        # which is what a plain "reset on any progress" would have
+                        # handed a slow-drip attacker.
+                        if n > 0 or (not was_partial and len(rest) > 0):
+                            conns[cur].last = time.start()
                         if not alive or conns[cur].served >= MAX_REQS:
                             net.close_fd(conns[cur].fd)
                             conns[cur].fd = -1     # tombstone; compacted below
                         cur += 1
             # Reap whatever ran out of time, then compact. Both deadlines are
             # enforced HERE now rather than by a blocking read, which is why an
-            # expired peer no longer has to be holding a worker to be noticed.
+            # expired peer no longer has to be holding a worker to be noticed --
+            # and, since the head read resumes, an UNFINISHED head expires here
+            # too. That is where the 408 moved to: a peer holding a half-written
+            # request past its deadline is told so, exactly as the blocking read
+            # used to tell it, while a peer that said nothing is still dropped in
+            # silence.
             for i := 0; i < len(conns); i += 1:
                 if conns[i].fd >= 0 and due_in(cfg, conns[i]) <= 0:
+                    if len(conns[i].pending) > 0:
+                        sw := time.start()
+                        refuse(cfg, wid, conns[i].peer, conns[i].fd, conns[i].pending,
+                               408, error_response(408), sw)
+                        served += 1
                     net.close_fd(conns[i].fd)
                     conns[i].fd = -1
             k := 0
@@ -810,8 +858,8 @@ fn usage() -> string:
             "  --idle-ms N      keep-alive idle timeout, ms   (default: " + str(DEF_IDLE_MS) + ")\n"
             "  --first-ms N     deadline for a peer that has\n"
             "                   sent nothing yet, ms          (default: " + str(DEF_FIRST_MS) + ")\n"
-            "  --conn-ms N      total time one connection may\n"
-            "                   hold a worker, ms, 0 = off    (default: " + str(DEF_CONN_MS) + ")\n"
+            "  --conn-ms N      total lifetime of one\n"
+            "                   connection, ms, 0 = off      (default: " + str(DEF_CONN_MS) + ")\n"
             "  --quiet, -q      do not log requests\n"
             "  --help, -h       this text\n\n"
             "Both spellings work: --port 8080 and --port=8080.\n")
