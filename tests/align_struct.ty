@@ -1,0 +1,36 @@
+# `align(N) struct` (L1): the second declaration attribute, and the opposite
+# direction from `packed`. Packing only ever REDUCES alignment, so it is free
+# under the arena's 8-byte rounding; `align` RAISES it, and the arena guarantees
+# 8 and nothing above it (runtime/tycho_rt.c@arena_alloc_slow), so N above 8 is
+# REFUSED rather than promised and not delivered -- tests/reject/align_too_big.ty.
+# Nothing here can observe an address; that is scripts/align_probe.sh's job.
+align(8) struct Pair:
+    a: u8
+    b: u8
+
+struct Loose:            # the same fields, natural alignment -- the control
+    a: u8
+    b: u8
+
+align(4) struct Quad:
+    lo: u16
+    hi: u16
+
+align(8) struct Box($T):     # the attribute must survive $T substitution
+    v: $T
+
+fn main():
+    p := Pair(to_u8(1), to_u8(2))
+    l := Loose(to_u8(1), to_u8(2))
+    println(str(p.a) + " " + str(p.b))
+    println(str(l.a) + " " + str(l.b))
+    q := Quad(to_u16(7), to_u16(9))
+    println(str(q.lo) + " " + str(q.hi))
+    r := p                               # copies and compares like any struct
+    println(str(r == p))
+    bx := Box(p)
+    println(str(bx.v.b))
+    xs := []Pair
+    for k := 0; k < 4; k += 1:
+        push(xs, Pair(to_u8(k), to_u8(k * 2)))
+    println(str(len(xs)) + " " + str(xs[3].b))

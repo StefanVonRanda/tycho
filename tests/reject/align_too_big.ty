@@ -1,0 +1,11 @@
+# expect: align(16): the arena guarantees 8-byte alignment and nothing above it, so this cannot be honoured
+# The one unacceptable outcome for this attribute is a declared alignment the
+# ALLOCATOR does not honour -- the program says 16 and gets 8 with nothing to
+# notice. runtime/tycho_rt.c@arena_alloc_slow rounds to 8, so 16 is refused.
+# Raising that rounding globally was measured and costs +30% arena bytes.
+align(16) struct Wide:
+    a: u8
+    b: u8
+
+fn main():
+    print("hi")

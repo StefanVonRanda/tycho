@@ -1,4 +1,4 @@
-# The Err half of src/tychoc.c:6130: E_OK always resolves to a PARTIAL Result,
+# The Err half of src/tychoc.c:6181: E_OK always resolves to a PARTIAL Result,
 # so nesting one inside Err leaves the error type unfixed. Written beside the Ok
 # fixture because the two spellings are separate arms.
 # expect: Err(...) needs a concrete value

@@ -1,5 +1,5 @@
 # Every file in an imported package directory must carry a `package` header.
-# src/tychoc.c:14408. It is an fprintf+exit in the package loader, so it needs a
+# src/tychoc.c:14461. It is an fprintf+exit in the package loader, so it needs a
 # real subdirectory rather than a flat file.
 # expect: but has no `package` declaration
 package main

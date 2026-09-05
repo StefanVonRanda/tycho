@@ -47,7 +47,7 @@ echo "tychoc1-check: $($C --version 2>/dev/null || echo tychoc1)"
 # clobber_emit_c, bundle_clean, bundle_blames_right_file, dashname_after_ddash and
 # corpus_census -- which move when a CASE is added, never when a fixture is.
 # 2026-09-05: when $C is the default ./tychoc1 this leg was BYTE-FOR-BYTE the run
-# `make test` already does -- tests/run.sh:147 defaults TYCHOC to ./tychoc1 and
+# `make test` already does -- tests/run.sh:150 defaults TYCHOC to ./tychoc1 and
 # Makefile:133 sets nothing -- so a session running both paid ~150 s twice for one
 # fact. The pass-count assertion this leg uniquely held moved into tests/run.sh,
 # where `make test` holds it too. The leg stays live for the only case that is NOT

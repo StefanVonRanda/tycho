@@ -1,0 +1,9 @@
+# expect: 'align' may be written only once
+# Two alignments state two layouts. Silently taking the last would make the
+# first one a comment.
+align(4) align(8) struct Twice:
+    a: u8
+    b: u8
+
+fn main():
+    print("hi")

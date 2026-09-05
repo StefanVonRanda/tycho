@@ -603,6 +603,7 @@
   "zip.push_str": "(b: inout [int], s: string)"
  },
  "keywords": [
+  "align",
   "and",
   "args",
   "bool",

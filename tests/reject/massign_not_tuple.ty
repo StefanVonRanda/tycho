@@ -1,4 +1,4 @@
-# src/tychoc.c:8555 -- the multi-assign twin of mdecl_not_tuple: an existing pair
+# src/tychoc.c:8606 -- the multi-assign twin of mdecl_not_tuple: an existing pair
 # of variables still needs a tuple to take apart.
 # expect: the right side of a multi-assign must be a tuple, got int
 fn f() -> int:

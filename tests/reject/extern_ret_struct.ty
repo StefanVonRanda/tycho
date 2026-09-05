@@ -1,4 +1,4 @@
-# 14-ffi.md:21-22,:38-39 / src/tychoc.c:4213: a struct RETURN is rejected too.
+# 14-ffi.md:21-22,:38-39 / src/tychoc.c:4214: a struct RETURN is rejected too.
 # expect: return type must be int/char/float/bool/string/ptr/bytes
 struct P:
     x: int

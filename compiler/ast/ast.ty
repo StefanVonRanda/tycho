@@ -210,6 +210,7 @@ struct StructD:
     fields: [FieldD]
     line: int
     packed: bool                       # `packed struct`: byte-exact C layout
+    aln: int                           # `align(N) struct`: 0 = unstated, else 1/2/4/8
 
 struct Variant:
     name: string

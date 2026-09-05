@@ -233,6 +233,10 @@
         {
           "type": "STRING",
           "value": "yield"
+        },
+        {
+          "type": "STRING",
+          "value": "align"
         }
       ]
     },

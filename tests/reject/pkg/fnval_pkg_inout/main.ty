@@ -1,4 +1,4 @@
-# src/tychoc.c:6393 -- the qualified twin of the bare-name rule at :6141. A fn
+# src/tychoc.c:6444 -- the qualified twin of the bare-name rule at :6141. A fn
 # value is called through a pointer, so an inout parameter has no place to bind.
 # expect: 'lib.bump' has an inout parameter, so it can't be a function value
 package main

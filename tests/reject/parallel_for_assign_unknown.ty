@@ -1,4 +1,4 @@
-# src/tychoc.c:7969 -- the parallel-for scan's own unknown-variable check, which
+# src/tychoc.c:8020 -- the parallel-for scan's own unknown-variable check, which
 # runs before the ordinary one. Both compilers word it identically.
 # expect: assignment to unknown variable 'zzqq'
 fn main():

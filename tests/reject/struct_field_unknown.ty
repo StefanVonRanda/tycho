@@ -1,4 +1,4 @@
-# src/tychoc.c:6432 -- the no-suggestion arm: 'zzzzzz' is far enough from
+# src/tychoc.c:6483 -- the no-suggestion arm: 'zzzzzz' is far enough from
 # 'alpha' that suggest_field offers nothing.
 # expect: struct S has no field 'zzzzzz'
 struct S:

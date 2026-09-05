@@ -1,4 +1,4 @@
-# src/tychoc.c:8416 -- the refined variant A carries one value and the pattern
+# src/tychoc.c:8467 -- the refined variant A carries one value and the pattern
 # names two, so the second binding would read past the payload.
 # expect: A binds 1 value(s), got 2
 enum E:

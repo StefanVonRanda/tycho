@@ -1,4 +1,4 @@
-# src/tychoc.c:6406 -- the qualified twin of :6127.
+# src/tychoc.c:6457 -- the qualified twin of :6127.
 # expect: lib.Tick carries a payload — write lib.Tick(...)
 package main
 import "lib"

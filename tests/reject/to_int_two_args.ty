@@ -1,4 +1,4 @@
-# src/tychoc.c:6969. Both compilers word it identically.
+# src/tychoc.c:7020. Both compilers word it identically.
 # expect: to_int(x) takes one argument
 fn main():
     println(str(to_int(1.0, 2.0)))

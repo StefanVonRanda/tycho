@@ -1,0 +1,10 @@
+# expect: a struct cannot be both 'packed' and 'align(N)'
+# The two attributes ask for opposite things: `packed` removes padding and
+# LOWERS alignment to 1, `align(N)` RAISES it. A declaration asking for both
+# states no layout at all.
+packed align(8) struct Both:
+    a: u8
+    b: u8
+
+fn main():
+    print("hi")

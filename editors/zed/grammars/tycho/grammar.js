@@ -45,6 +45,9 @@ module.exports = grammar({
         // Contextual declaration words, plus `handle` which is hard-reserved in
         // src/tychoc.c@keyword. Each was measured to compile before being added.
         "handle", "const", "delete", "bounded", "vector", "sink", "subscript", "where", "yield",
+        // `align` is the second declaration attribute (spec 17.1a-2), the
+        // sibling of `packed` above. Contextual: only ever `align(N) struct`.
+        "align",
       ),
 
     constant: ($) => choice("true", "false", "null"),
@@ -69,7 +72,7 @@ module.exports = grammar({
         "substr", "find", "read_file", "write_file", "read_all", "list_dir",
         "args", "getenv", "input", "chr", "die", "is_null", "sqrt", "pow",
         "floor", "fabs", "reserve",
-        // `map_get`/`map_set` were here and are NOT builtins: src/tychoc.c:3064-3067
+        // `map_get`/`map_set` were here and are NOT builtins: src/tychoc.c:3065-3068
         // rejects a user-typed call outright, so this painted names the compiler
         // refuses -- the same defect the `range` note above records.
         "channel", "char_at", "clock", "close", "eprint", "exit", "from_bytes",

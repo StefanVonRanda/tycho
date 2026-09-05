@@ -1,0 +1,9 @@
+# expect: 'packed' may be written only once
+# The sibling of tests/reject/align_twice.ty. Repeating an attribute is a
+# typo, not a stronger request.
+packed packed struct Twice:
+    a: u8
+    b: u8
+
+fn main():
+    print("hi")

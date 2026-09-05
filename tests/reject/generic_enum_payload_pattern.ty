@@ -1,4 +1,4 @@
-# src/tychoc.c:6854 -- the payload pattern is [$T]; an int unifies with no
+# src/tychoc.c:6905 -- the payload pattern is [$T]; an int unifies with no
 # array, so there is nothing to bind $T to.
 # expect: Wrap payload 1 does not fit a int argument
 enum Box($T):

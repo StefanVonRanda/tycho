@@ -989,7 +989,8 @@ typedef struct { char *name; Type type; } Field;
 typedef struct { char *name; Field *fields; int nfields; int fields_cap; int line;
                  int generic; Type typarams[TYCHO_MAX_TYPARAMS]; int ntyparams;
                  int from_tmpl; Type from_args[TYCHO_MAX_TYPARAMS]; int nfrom_args;
-                 int packed; /* `packed struct`: byte-exact C layout, no padding */ } StructDef;   /* generics: `struct Box($T)` template; instances are concrete copies with $T substituted. from_tmpl>=0 records the template+args this instance came from (for matching a recursive self-reference). */
+                 int packed; /* `packed struct`: byte-exact C layout, no padding */
+                 int aln;    /* `align(N) struct`: 0 = unstated, else 1/2/4/8 (the arena's ceiling) */ } StructDef;   /* generics: `struct Box($T)` template; instances are concrete copies with $T substituted. from_tmpl>=0 records the template+args this instance came from (for matching a recursive self-reference). */
 static StructDef *g_structs;
 static int g_nstructs = 0, g_structs_cap = 0;
 static int struct_find(const char *name) {
@@ -2270,7 +2271,7 @@ static int struct_instantiate(int tmpl, Type *binds) {
     TBL_ENSURE(g_structs, g_nstructs, g_structs_cap);
     int id = g_nstructs++;
     { StructDef *s = &g_structs[id]; memset(s, 0, sizeof *s); s->name = nm; s->line = g_structs[tmpl].line;
-      s->packed = g_structs[tmpl].packed;
+      s->packed = g_structs[tmpl].packed; s->aln = g_structs[tmpl].aln;
       s->from_tmpl = tmpl; s->nfrom_args = g_structs[tmpl].ntyparams;   /* provenance: lets match_type recover $T from a recursive-self argument */
       for (int i = 0; i < g_structs[tmpl].ntyparams; i++)
           s->from_args[i] = binds[(int)(g_structs[tmpl].typarams[i] - T_TYPARAM_BASE)]; }
@@ -2573,7 +2574,7 @@ static Type parse_type_inner(Parser *ps) {
             return mt;
         }
         eat(ps, TK_RBRACKET, "']'");
-        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2516) sits after a die_at */
+        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2517) sits after a die_at */
             die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
         return arr_of(elem);   /* fixed [int]/[float]/[string] or a composite */
     }
@@ -2936,7 +2937,7 @@ static Expr *parse_primary(Parser *ps) {
                 e->ival = mt; e->op = TK_COLON;
                 return e;
             }
-            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2300): parse_type never yields T_VOID */
+            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2301): parse_type never yields T_VOID */
                 die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
             e->ival = arr_of(elem);   /* type carried to the resolver */
             return e;
@@ -4751,12 +4752,52 @@ static int packed_nfields(Type t) {
     return n;
 }
 
-static void parse_struct(Parser *ps) {
-    int packed = at(ps, TK_IDENT) && !strcmp(cur(ps)->text, "packed");
-    if (packed) {          /* contextual: `packed` stays an ordinary identifier everywhere else */
-        if (peek(ps, 1)->kind != TK_STRUCT) die_at(cur(ps)->line, "'packed' may only be applied to a struct");
-        ps->p++;
+/* Token index just past a run of `packed` / `align(N)` declaration attributes
+ * starting at `i` -- `i` itself when there is none. The pre-scan needs this to
+ * find the struct NAME behind the attributes without parsing them. */
+static int attr_prefix_end(Tok *toks, int i) {
+    for (;;) {
+        if (toks[i].kind == TK_IDENT && !strcmp(toks[i].text, "packed")) { i++; continue; }
+        if (toks[i].kind == TK_IDENT && !strcmp(toks[i].text, "align") && toks[i + 1].kind == TK_LPAREN) {
+            int j = i + 2;
+            while (toks[j].kind != TK_EOF && toks[j].kind != TK_RPAREN && toks[j].kind != TK_NEWLINE) j++;
+            if (toks[j].kind != TK_RPAREN) return i;   /* malformed: let parse_struct report it */
+            i = j + 1; continue;
+        }
+        return i;
     }
+}
+
+static void parse_struct(Parser *ps) {
+    /* Both declaration attributes are contextual: `packed` and `align` stay
+     * ordinary identifiers everywhere else. `align(N)` is capped at 8 because
+     * runtime/tycho_rt.c@arena_alloc_slow rounds every arena allocation to 8 and
+     * guarantees nothing above it -- a declared alignment the allocator does not
+     * honour is worse than a refusal, so this refuses. */
+    int packed = 0, aln = 0, pk_line = 0, aln_line = 0;
+    for (;;) {
+        if (at(ps, TK_IDENT) && !strcmp(cur(ps)->text, "packed")) {
+            if (packed) die_at(cur(ps)->line, "'packed' may be written only once");
+            packed = 1; pk_line = cur(ps)->line; ps->p++; continue;
+        }
+        if (at(ps, TK_IDENT) && !strcmp(cur(ps)->text, "align") && peek(ps, 1)->kind == TK_LPAREN) {
+            if (aln) die_at(cur(ps)->line, "'align' may be written only once");
+            aln_line = cur(ps)->line; ps->p += 2;
+            if (!at(ps, TK_INT)) die_at(aln_line, "align needs an alignment: align(N) struct");
+            long long n = (long long)cur(ps)->ival; ps->p++;
+            eat(ps, TK_RPAREN, "')' after the alignment");
+            if (n < 1 || (n & (n - 1)) != 0)
+                die_at(aln_line, "an alignment must be a power of two -- %lld is not", n);
+            if (n > 8)
+                die_at(aln_line, "align(%lld): the arena guarantees 8-byte alignment and nothing above it, so this cannot be honoured", n);
+            aln = (int)n; continue;
+        }
+        break;
+    }
+    if (packed && aln)
+        die_at(pk_line < aln_line ? pk_line : aln_line, "a struct cannot be both 'packed' and 'align(N)'");
+    if (packed && !at(ps, TK_STRUCT)) die_at(pk_line, "'packed' may only be applied to a struct");
+    if (aln && !at(ps, TK_STRUCT))    die_at(aln_line, "'align' may only be applied to a struct");
     eat(ps, TK_STRUCT, "'struct'");
     Tok *nameT = eat(ps, TK_IDENT, "a struct name");
     g_ncur_typarams = 0;                         /* generics: fresh `$T` scope for this struct */
@@ -4789,6 +4830,7 @@ static void parse_struct(Parser *ps) {
     for (int i = 0; i < _ntp; i++) sd->typarams[i] = _tp[i];
     sd->from_tmpl = -1; sd->nfrom_args = 0;            /* not an instance */
     sd->packed = packed;
+    sd->aln = aln;
     g_nstructs++;   /* register the name BEFORE parsing fields, so a field type
                      * may reference this struct — e.g. a recursive `[Node]`
                      * child list. (Parsing is single-pass and sequential, so a
@@ -4913,18 +4955,24 @@ static void parse_typedecl(Parser *ps) {
  * file's own package. */
 static void scan_type_decls(Tok *toks) {
     g_ntdecl = 0; g_tdecl_toks = toks;
-    int depth = 0;
+    int depth = 0, skip_struct = -1;
     for (int i = 0; toks[i].kind != TK_EOF; i++) {
         if (toks[i].kind == TK_INDENT) { depth++; continue; }
         if (toks[i].kind == TK_DEDENT) { depth--; continue; }
         int k = toks[i].kind;
-        /* `packed struct Name` is recorded at the `packed` token by the arm below;
-         * without this the `struct` token records the SAME name a second time and
-         * the declaration is parsed twice ('X' is already defined). */
-        if (k == TK_STRUCT && i > 0 && toks[i - 1].kind == TK_IDENT && !strcmp(toks[i - 1].text, "packed")) continue;
-        int nm = i + 1;   /* `packed struct Name`: the name is one token further on */
-        if (depth == 0 && k == TK_IDENT && !strcmp(toks[i].text, "packed")
-            && toks[i + 1].kind == TK_STRUCT && toks[i + 2].kind == TK_IDENT) { k = TK_STRUCT; nm = i + 2; }
+        /* `packed struct Name` / `align(N) struct Name` are recorded at the first
+         * ATTRIBUTE token by the arm below; without this the `struct` token records
+         * the SAME name a second time and the declaration is parsed twice ('X' is
+         * already defined). */
+        if (k == TK_STRUCT && i == skip_struct) continue;
+        int nm = i + 1;   /* behind an attribute prefix the name is further on */
+        if (depth == 0 && k == TK_IDENT
+            && (!strcmp(toks[i].text, "packed")
+                || (!strcmp(toks[i].text, "align") && toks[i + 1].kind == TK_LPAREN))) {
+            int a = attr_prefix_end(toks, i);
+            if (a == i || toks[a].kind != TK_STRUCT || toks[a + 1].kind != TK_IDENT) continue;
+            k = TK_STRUCT; nm = a + 1; skip_struct = a;
+        }
         else if (depth != 0 || toks[i + 1].kind != TK_IDENT) continue;
         if (k != TK_STRUCT && k != TK_ENUM && k != TK_TYPE && k != TK_HANDLE) continue;
         TBL_ENSURE(g_tdecl, g_ntdecl, g_tdecl_cap);
@@ -4940,7 +4988,8 @@ static void parse_pend_decl(int i) {
     char *save[TYCHO_MAX_TYPARAMS]; int nsave = g_ncur_typarams;
     for (int k = 0; k < nsave; k++) save[k] = g_cur_typarams[k];
     g_tdecl[i].state = 1;
-    if (sub.t[sub.p].kind == TK_IDENT && !strcmp(sub.t[sub.p].text, "packed")) parse_struct(&sub);
+    if (sub.t[sub.p].kind == TK_IDENT
+        && (!strcmp(sub.t[sub.p].text, "packed") || !strcmp(sub.t[sub.p].text, "align"))) parse_struct(&sub);
     else switch (sub.t[sub.p].kind) {
         case TK_STRUCT: parse_struct(&sub);   break;
         case TK_ENUM:   parse_enum(&sub);     break;
@@ -4977,7 +5026,8 @@ static void parse_type_decl_at(Parser *ps) {
     }
     /* Not in the pre-scan, which requires a name token: parse in place so the
      * malformed declaration gets its own "a struct name" diagnostic. */
-    if (at(ps, TK_IDENT) && !strcmp(cur(ps)->text, "packed")) { parse_struct(ps); return; }
+    if (at(ps, TK_IDENT)
+        && (!strcmp(cur(ps)->text, "packed") || !strcmp(cur(ps)->text, "align"))) { parse_struct(ps); return; }
     switch (cur(ps)->kind) {
         case TK_STRUCT: parse_struct(ps);   break;
         case TK_ENUM:   parse_enum(ps);     break;
@@ -5355,7 +5405,8 @@ static ProcVec parse_program(Tok *toks) {
         if (at(&ps, TK_IDENT) && !strcmp(cur(&ps)->text, "const")) { parse_const(&ps); continue; }
         if (at(&ps, TK_IDENT) && !strcmp(cur(&ps)->text, "subscript")) { parse_subscript(&ps); continue; }
         if (at(&ps, TK_STRUCT) || at(&ps, TK_ENUM) || at(&ps, TK_HANDLE) || at(&ps, TK_TYPE)
-            || (at(&ps, TK_IDENT) && !strcmp(cur(&ps)->text, "packed"))) {   /* parse_struct owns the non-struct refusal */
+            || (at(&ps, TK_IDENT) && !strcmp(cur(&ps)->text, "packed"))
+            || (at(&ps, TK_IDENT) && !strcmp(cur(&ps)->text, "align") && peek(&ps, 1)->kind == TK_LPAREN)) {   /* parse_struct owns the non-struct refusal */
             parse_type_decl_at(&ps); continue;   /* may already have been forced by an earlier field */
         }
         Proc *pr = parse_fn(&ps);
@@ -5899,7 +5950,7 @@ static void collect_idents(Expr *e, const char **out, int *n, int cap) {
     }
     if (e->kind == E_CALL) {   /* Neither name on a call is a child expr: the callee lives in
                                 * sval (`g(x)` where g is a closure) and a method call's RECEIVER
-                                * lives in qual (`m.get(k)`, src/tychoc.c:3305), because the parser
+                                * lives in qual (`m.get(k)`, src/tychoc.c:3306), because the parser
                                 * cannot tell it from a package call. Both are outer reads; missing
                                 * qual let `m` reach the lifted body uncaptured and the C compiler,
                                 * not tychoc, reported `h_m undeclared`. pf_scan_expr already does
@@ -7252,7 +7303,7 @@ static Type resolve_expr_inner(Expr *e) {
             if (e->nargs != s->nparams)
                 die_at(e->line, "'%s' takes %d argument(s), got %d",
                        nominal_name(e->sval), s->nparams, e->nargs);
-            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:6714 */
+            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:6765 */
             for (int i = 0; i < e->nargs; i++) {
                 g_in_arg++;
                 Type at_ = resolve_exp(e->args[i], s->params[i]);   /* fixes a None arg */
@@ -7850,7 +7901,7 @@ static void pf_capture(Expr *id) {
 /* capture an outer local named by a STRING rather than by an E_IDENT node -- the
  * callee of `f(x)` and the receiver of `o.f(x)` live in E_CALL's sval/qual, not
  * in a child expr. The synthesized read is resolved in the enclosing scope with
- * every other capture (src/tychoc.c:8462). Non-locals (global fns, builtins,
+ * every other capture (src/tychoc.c:8513). Non-locals (global fns, builtins,
  * enum constructors, package qualifiers) fail vars_find and are dropped. */
 static void pf_capture_name(const char *n, int line) {
     Type vt;
@@ -7873,10 +7924,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7810),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7861),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:8084). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:8135). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
@@ -7897,7 +7948,7 @@ static void pf_scan_expr(Expr *e) {
     }
     /* A call's callee is NOT an E_IDENT child of the node: `f(x)` keeps the name
      * in sval, and `o.f(x)` keeps the receiver in qual because the parser cannot
-     * tell it from a package call (src/tychoc.c:3299). The generic descent below
+     * tell it from a package call (src/tychoc.c:3300). The generic descent below
      * visits lhs/rhs/args only, so a fn-typed local reached the lifted chunk proc
      * uncaptured and the C compiler -- not tychoc -- reported the undeclared name.
      * The lambda capture analysis already does the sval half (src/tychoc.c@collect_idents). */
@@ -9643,7 +9694,7 @@ static const char *for3_elidable_arr(Stmt *s) {
     if (!bound || bound->kind != E_CALL || !bound->sval || strcmp(bound->sval, "len") ||
         bound->nargs != 1 || !bound->args[0] || bound->args[0]->kind != E_IDENT) return NULL;
     if (IS_INLINE_ARR(bound->args[0]->type)) return NULL;   /* [N]T / bounded / vector store in .v, not .data — elision emits .data[i], so never elide it */
-    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:4064-4069) */
+    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:4065-4070) */
     if (!post || post->kind != S_ASSIGN || !post->name || strcmp(post->name, iv)) return NULL;
     Expr *inc = post->expr;
     if (!inc || inc->kind != E_BINOP || inc->op != TK_PLUS) return NULL;
@@ -12969,7 +13020,9 @@ static void emit_aggregate(FILE *o, Type t) {
             fprintf(o, "struct S_%s_ {\n", sd->name);
             for (int j = 0; j < sd->nfields; j++)
                 fprintf(o, "    %sf_%s;\n", c_type(sd->fields[j].type), sd->fields[j].name);
-            fprintf(o, "}%s;\n", sd->packed ? " __attribute__((packed))" : "");
+            if (sd->packed)   fprintf(o, "} __attribute__((packed));\n");
+            else if (sd->aln) fprintf(o, "} __attribute__((aligned(%d)));\n", sd->aln);
+            else              fprintf(o, "};\n");
             if (sd->packed) {   /* the width table to_bytes/from_bytes walk (see packed_widths) */
                 char *acc = sfmt("%s", ""); int nw = 0;
                 packed_widths(t, &acc, &nw);

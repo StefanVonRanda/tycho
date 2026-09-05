@@ -230,6 +230,10 @@
     "named": false
   },
   {
+    "type": "align",
+    "named": false
+  },
+  {
     "type": "and",
     "named": false
   },
@@ -576,11 +580,11 @@
   },
   {
     "type": "string",
-    "named": false
+    "named": true
   },
   {
     "type": "string",
-    "named": true
+    "named": false
   },
   {
     "type": "struct",

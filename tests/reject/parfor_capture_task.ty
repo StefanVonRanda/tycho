@@ -1,4 +1,4 @@
-# src/tychoc.c:7858 -- a task has one owner and is waited in its own scope, so a
+# src/tychoc.c:7909 -- a task has one owner and is waited in its own scope, so a
 # chunk cannot hold it. The read is what captures it (src/tychoc.c@pf_scan_expr).
 # expect: a parallel for cannot capture a task handle -- wait it first
 fn work(n: int) -> int:

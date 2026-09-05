@@ -1,0 +1,8 @@
+# expect: 'align' may only be applied to a struct
+# Same rule as tests/reject/packed_on_enum.ty: alignment is a property of an
+# aggregate with fields. An enum value is a pointer to a tagged cell.
+align(8) enum E:
+    A
+
+fn main():
+    print("hi")

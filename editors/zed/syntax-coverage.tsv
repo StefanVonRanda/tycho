@@ -10,6 +10,12 @@
 # no external scanner, so it is whitespace-insensitive, and it does no name
 # resolution, no arity counting and no value-range checking.  Each row says
 # which of those the fixture needs.
+tests/reject/align_and_packed.ty	ACCEPTED	the packed/align contradiction is a rule of parse_struct; the flat grammar reads both attribute words as tokens and has no notion of them excluding each other
+tests/reject/align_no_count.ty	ACCEPTED	the malformed attribute is refused by parse_struct; the flat grammar reads `align` and the empty parens as an ordinary call
+tests/reject/align_not_pow2.ty	ACCEPTED	the power-of-two rule reads the INT literal's value, which a token-level grammar does not evaluate
+tests/reject/align_on_enum.ty	ACCEPTED	`align(N)` before a non-struct declaration is refused by parse_struct; the flat grammar has no declaration structure to check it against
+tests/reject/align_too_big.ty	ACCEPTED	the 8-byte ceiling is the ARENA's and is checked against the literal's value, which a token-level grammar does not evaluate
+tests/reject/align_twice.ty	ACCEPTED	a repeated attribute is a rule of parse_struct; the flat grammar has no declaration structure to count them against
 tests/reject/assign_to_literal.ty	ACCEPTED	`1 = 2` is an assignment whose left side is an expression; which expressions are PLACES is a rule the flat grammar does not carry
 tests/reject/bare_expr_stmt.ty	ACCEPTED	an expression is a legal statement in grammar.js; "has no effect" is a check on the expression's KIND, not on its shape
 tests/reject/bounded_no_capacity.ty	ACCEPTED	`bounded["x"]int` is grammatical -- the capacity slot takes any expression, and "an integer literal or an int const" is a value check
@@ -45,12 +51,12 @@ tests/reject/for3_four_clauses.ty	ACCEPTED	`;` is an ordinary operator token her
 tests/reject/for3_init_not_decl.ty	ACCEPTED	a call is a legal statement, so the init clause parses; "a declaration or an assignment" counts kinds
 tests/reject/for3_post_not_assign.ty	ACCEPTED	as above for the post clause
 tests/reject/for3_two_clauses.ty	ACCEPTED	a three-clause `for` with only two clauses; counting the ';' separators is tychoc's
+tests/reject/for_missing_colon.ty	ACCEPTED	`:=` and `:` are both ordinary operator tokens; which one may end a `for` head is a rule with no head to apply to
+tests/reject/for_two_binders.ty	ACCEPTED	`for k, v in xs:` parses; "a for binds one name" is an arity rule on the binder list
 tests/reject/fstr_empty_hole.ty	ACCEPTED	the grammar lexes an f-string as one token and never splits its holes
 tests/reject/fstr_hole_unterminated_string.ty	ACCEPTED	same: the escaped quote inside the hole is a string byte to the grammar
 tests/reject/fstr_unmatched_brace.ty	ACCEPTED	same: a bare '}' is a string byte to the grammar
 tests/reject/fstr_unterminated_brace.ty	ACCEPTED	same: the grammar's string rule ends at the first unescaped quote and counts no braces
-tests/reject/for_missing_colon.ty	ACCEPTED	`:=` and `:` are both ordinary operator tokens; which one may end a `for` head is a rule with no head to apply to
-tests/reject/for_two_binders.ty	ACCEPTED	`for k, v in xs:` parses; "a for binds one name" is an arity rule on the binder list
 tests/reject/fstring_escape.ty	ACCEPTED	the string rule takes any backslash byte; the escape ALPHABET is checked in tychoc's lexer
 tests/reject/handle_body_not_free.ty	ACCEPTED	`close: h_free` is a well-formed body line; that the keyword must be `free` is a spelling rule inside the handle body
 tests/reject/hex_escape_in_string.ty	ACCEPTED	same string rule as fstring_escape -- \x is consumed, not validated
@@ -76,6 +82,7 @@ tests/reject/match_scalar_mixed_range.ty	ACCEPTED	`a..b` parses whatever the two
 tests/reject/over_indent.ty	ACCEPTED	grammar.js has no external scanner and emits no INDENT/DEDENT, so indentation cannot be wrong
 tests/reject/packed_heap_field.ty	ACCEPTED	`packed struct` has no rule in grammar.js -- `packed` parses as an ordinary identifier and the field-type rule needs the symbol table anyway
 tests/reject/packed_on_enum.ty	ACCEPTED	`packed` before a non-struct declaration is refused by parse_struct; the flat grammar has no `packed` rule and reads the word as an identifier
+tests/reject/packed_twice.ty	ACCEPTED	the sibling of align_twice.ty, and refused in the same place for the same reason
 tests/reject/parallel_for_not_zero.ty	ACCEPTED	`1..<4` is grammatical everywhere; requiring a literal `0` in a `parallel for` head is a value check
 tests/reject/parallel_not_for.ty	ACCEPTED	`parallel` then a declaration parses as two statements; that `parallel` must be followed by `for` is a context rule
 tests/reject/range_removed.ty	ACCEPTED	`range(N)` is an ordinary call; the removal is enforced by name resolution

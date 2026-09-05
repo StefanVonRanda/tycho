@@ -1,0 +1,9 @@
+# expect: align needs an alignment: align(N) struct
+# `align` is contextual and only ever an attribute when a '(' follows it, so an
+# empty parenthesis is a malformed attribute rather than an ordinary name.
+align() struct Empty:
+    a: u8
+    b: u8
+
+fn main():
+    print("hi")

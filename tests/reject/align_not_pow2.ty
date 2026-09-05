@@ -1,0 +1,8 @@
+# expect: an alignment must be a power of two -- 3 is not
+# `aligned(3)` is not a layout a C compiler can state either.
+align(3) struct Odd:
+    a: u8
+    b: u8
+
+fn main():
+    print("hi")

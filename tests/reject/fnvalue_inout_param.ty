@@ -1,4 +1,4 @@
-# src/tychoc.c:6219 -- taking a fn with an inout parameter AS A VALUE. The
+# src/tychoc.c:6270 -- taking a fn with an inout parameter AS A VALUE. The
 # sibling tests/reject/inout_fnvalue.ty is the other direction: a fn value
 # passed AS an inout parameter.
 # expect: 'bump' has an inout parameter, so it can't be a function value

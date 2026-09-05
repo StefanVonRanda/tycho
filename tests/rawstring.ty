@@ -22,7 +22,7 @@ three`
     println(str(c == "one\ntwo\nthree"))
 
     # 4. adjacent-literal join, both orders. `"a" "b"` is one literal "ab"
-    #    (src/tychoc.c:2715-2727) and a raw piece takes part.
+    #    (src/tychoc.c:2716-2728) and a raw piece takes part.
     d := `raw ` "and normal"
     println(d)
     e := "normal and " `raw`

@@ -12,6 +12,7 @@
 # parse, so a new keyword that misses an editor is now a red lane.
 #
 # word	zed	vscode	reason
+align	keyword	keyword.other.tycho	second struct layout attribute (spec 17.1a-2), the sibling of `packed`; added to both grammars 2026-09-05, phase L1
 and	keyword	keyword.operator.word.tycho	word operator
 args	builtin	support.function.builtin.tycho	built-in function, listed by both grammars
 bool	type	storage.type.tycho	built-in type name
@@ -25,7 +26,7 @@ clock	builtin	support.function.builtin.tycho	built-in function; compiles under .
 close	builtin	support.function.builtin.tycho	built-in function; compiles under ./tychoc, measured 2026-09-04 -- added to both grammars by phase V2k
 const	keyword	keyword.other.tycho	contextual declaration keyword; compiles under ./tychoc, measured 2026-09-04 -- added to both grammars by phase V2k
 continue	keyword	keyword.control.tycho	control-flow keyword
-core	identifier	none	only ever the `core:` prefix inside an import-path STRING (src/tychoc.c:5034); the bare word is an ordinary name -- stays plain (phase V2k)
+core	identifier	none	only ever the `core:` prefix inside an import-path STRING (src/tychoc.c:5084); the bare word is an ordinary name -- stays plain (phase V2k)
 delete	keyword	keyword.other.tycho	contextual declaration keyword; compiles under ./tychoc, measured 2026-09-04 -- added to both grammars by phase V2k
 deprecated	identifier	none	only ever the `# deprecated:` comment marker (src/tychoc.c:147); the comment rule already colours it -- stays plain (phase V2k)
 die	builtin	support.function.builtin.tycho	built-in function, listed by both grammars
@@ -33,7 +34,7 @@ elif	keyword	keyword.control.tycho	control-flow keyword
 else	keyword	keyword.control.tycho	control-flow keyword
 enum	keyword	keyword.other.tycho	declaration keyword
 eprint	builtin	support.function.builtin.tycho	built-in function; compiles under ./tychoc, measured 2026-09-04 -- added to both grammars by phase V2k
-eprintln	identifier	none	NOT a procedure: src/tychoc.c:7246 refuses it and names `eprint(s + "\n")`; highlighting it would paint a name the compiler rejects -- stays plain (phase V2k)
+eprintln	identifier	none	NOT a procedure: src/tychoc.c:7297 refuses it and names `eprint(s + "\n")`; highlighting it would paint a name the compiler rejects -- stays plain (phase V2k)
 exit	builtin	support.function.builtin.tycho	built-in function; compiles under ./tychoc, measured 2026-09-04 -- added to both grammars by phase V2k
 extern	keyword	keyword.other.tycho	declaration keyword
 f32	type	storage.type.tycho	hard-reserved sized type (TK_KW_F32 in src/tychoc.c@keyword) -- added to both grammars by phase V2l
@@ -64,10 +65,10 @@ is_null	builtin	support.function.builtin.tycho	built-in function, listed by both
 keys	builtin	support.function.builtin.tycho	built-in function; compiles under ./tychoc, measured 2026-09-04 -- added to both grammars by phase V2k
 len	builtin	support.function.builtin.tycho	built-in function, listed by both grammars
 list_dir	builtin	support.function.builtin.tycho	built-in function, listed by both grammars
-map_del	identifier	none	removed from the language: src/tychoc.c:3066 refuses a user-typed call; use `delete m[k]` -- stays plain (phase V2k)
-map_get	identifier	none	removed from the language: src/tychoc.c:3067 refuses a user-typed call; use `m.get(k, default)`. It WAS painted as a builtin by both grammars until phase V2k
-map_has	identifier	none	removed from the language: src/tychoc.c:3065 refuses a user-typed call; use `k in m` -- stays plain (phase V2k)
-map_set	identifier	none	removed from the language: src/tychoc.c:3064 refuses a user-typed call. It WAS painted as a builtin by both grammars until phase V2k -- the same defect the `range` row records
+map_del	identifier	none	removed from the language: src/tychoc.c:3067 refuses a user-typed call; use `delete m[k]` -- stays plain (phase V2k)
+map_get	identifier	none	removed from the language: src/tychoc.c:3068 refuses a user-typed call; use `m.get(k, default)`. It WAS painted as a builtin by both grammars until phase V2k
+map_has	identifier	none	removed from the language: src/tychoc.c:3066 refuses a user-typed call; use `k in m` -- stays plain (phase V2k)
+map_set	identifier	none	removed from the language: src/tychoc.c:3065 refuses a user-typed call. It WAS painted as a builtin by both grammars until phase V2k -- the same defect the `range` row records
 match	keyword	keyword.control.tycho	control-flow keyword
 ncpu	builtin	support.function.builtin.tycho	built-in function; compiles under ./tychoc, measured 2026-09-04 -- added to both grammars by phase V2k
 not	keyword	keyword.operator.word.tycho	word operator
