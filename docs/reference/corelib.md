@@ -614,6 +614,33 @@ POSIX regex is in libc). Opaque handles cross as `ptr` (carried by value, never
 dereferenced or arena-managed — `null` / `is_null`). `tychoc` links a module's shim
 automatically — no `--shim` needed for a corelib package.
 
+### Freeing a shim handle
+
+A `ptr` handle is not affine, so nothing in the type system stops a caller freeing one
+twice or reading one after free. `core:crypto`, `core:tls`, `core:http` and `core:image`
+guard that at run time instead: the payload is released on free — cleansed first, for a
+crypto key — while the handle's own header is kept and a DEAD sentinel written into it, so
+a second free or a later use has something to read and dies by name (`tycho: double free
+of crypto key handle`, `tycho: image handle used after free`) rather than reading freed
+memory. `make handle-guard` is the lane that holds it.
+
+The kept header is never reused for a new handle, so a stale handle can never come back as
+somebody else's; it is also never freed. The cost is therefore a few dozen bytes per handle
+the process has **ever** opened, not per handle live at once. Measured on Linux x86-64 with
+glibc — one open-and-free per iteration, peak RSS against iteration count — it is 32 bytes
+per `crypto` key, 48 per `image` handle, 55 per `tls` connection and 61 per `http` response.
+The last two sit above the bare header because the retained headers interleave with
+OpenSSL's and libcurl's own allocation churn. Below roughly 40,000 handles it does not show
+up in peak RSS at all, being absorbed under a high-water mark those libraries set anyway.
+
+At the `http` rate that is one megabyte per 17,000 responses and one gigabyte per 17
+million, so a one-shot program pays nothing measurable and a daemon making 100 requests a
+second grows by about 22 MB an hour. That is the figure to check a long-lived program
+against. The alternative — quarantining a bounded ring of freed headers and really releasing
+the oldest — would cap the cost but give up the diagnosis for a handle freed long ago, and
+has not been taken: nothing shipped here opens handles in a loop that runs long enough to
+need it.
+
 ### External dependencies (C-shim `deps`)
 
 A shim that needs a system library beyond libc — one with headers to find and a link
