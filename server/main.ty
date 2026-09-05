@@ -18,29 +18,27 @@ const DEF_PORT    = 8080
 const DEF_WORKERS = 8
 const DEF_IDLE_MS = 5000
 const DEF_HEAD_MS = 15000
-# THE FIRST-BYTE DEADLINE, and it is a different thing from --idle-ms even though
-# both are a read timeout on the same fd. --idle-ms is how long an ESTABLISHED
-# keep-alive peer may pause between requests: a client that has already been
-# answered has earned that patience. This is how long a peer that has said
-# NOTHING may hold a worker, and it must be short, because that is the whole
-# attack: each of --workers accept loops serves one connection at a time, so K
-# silent sockets delayed a legitimate GET by 4.93s at K=8 (measured against the
-# 5000ms idle timeout, which is what governed the first read before this split).
-# The bound is now ceil(K / workers) * --first-ms, and it no longer moves when an
-# operator lengthens the keep-alive window.
+# THE FIRST-BYTE DEADLINE: how long a peer that has said NOTHING may keep its
+# connection. It is no longer a bound on worker occupancy -- accept_loop polls,
+# so a silent peer costs a pollfd slot -- but it is still the only thing that
+# retires a connection nobody will ever use, and it is still the ceiling on ONE
+# stalled head read (head_budget). --idle-ms is the different, longer patience a
+# peer earns by completing a request.
 const DEF_FIRST_MS = 1000
-# THE WHOLE-CONNECTION BUDGET, and it is the third deadline on the same fd. The
-# other two bound ONE read; this bounds the connection. It exists because
-# --first-ms fixed only half the starvation: a peer that COMPLETES one request
-# and then parks has earned --idle-ms and holds one of --workers accept loops for
-# all of it, and a peer that dribbles one request per idle window holds one for
-# MAX_REQS rounds. The real cure is an event loop -- a worker cannot notice a
-# second connection while it is blocked on this one -- and that is a rewrite of
-# accept_loop, not a patch. This is the bound that can be had without one: no
-# connection holds a worker longer than --conn-ms, so the starvation bound for K
-# parked peers becomes ceil(K / workers) * min(--idle-ms, --conn-ms) and stops
-# scaling with the keep-alive dial. 0 disables it.
+# THE WHOLE-CONNECTION BUDGET. Written when a parked keep-alive peer held one of
+# --workers accept loops for a whole --idle-ms and this was the only bound
+# available without an event loop. That loop now exists, so this is NO LONGER
+# what stops starvation -- it is a plain lifetime cap on one connection, and 0
+# (off) is a supportable setting again rather than the pathological one. What
+# still needs it: a peer that keeps a connection useful-looking indefinitely.
 const DEF_CONN_MS = 30000
+# The ceiling on one pass of the poll loop, so shutdown and the reaper are never
+# more than this late. A pass with a nearer deadline waits only that long.
+const POLL_TICK_MS = 100
+# Connections one worker may hold. Past it the listener is dropped from that
+# worker's poll set: the peer waits in the kernel backlog or goes to another
+# worker, which is honest backpressure rather than an unbounded fd table.
+const MAX_CONNS = 512
 const MAX_HEAD    = 16384      # per-request byte budget; past this -> 431, connection closed
 const MAX_REQS    = 1024       # requests served on one connection before we close it
 const LOG_FIELD   = 160        # longest request target we will echo into a log line
@@ -56,6 +54,19 @@ struct Config:
     first_ms: int
     conn_ms: int
     quiet: bool
+
+# One live connection a worker is holding. The two stopwatches are the model:
+# `opened` bounds the connection, `last` bounds the silence since this peer last
+# did anything. Neither is a blocking read now -- the reaper reads them on every
+# pass, which is what stops an idle peer costing a worker. `armed` is what
+# SO_RCVTIMEO currently holds, so re-arming is one syscall per CHANGE.
+struct Conn:
+    fd: int
+    peer: string
+    served: int
+    opened: int
+    last: int
+    armed: int
 
 # What a request target resolved to. `status` 200 means serve `file`; 301 means
 # redirect to `location`; anything else is an error to render.
@@ -431,261 +442,354 @@ fn refuse(cfg: Config, wid: int, peer: string, conn: int, raw: string, st: int, 
     n := result.unwrap_or(emit(conn, r, false, false), -1)
     log_req(cfg, wid, peer, "-", first_line(raw), st, len(r.body), n, time.elapsed_us(sw))
 
-fn serve_conn(cfg: Config, conn: int, wid: int) -> int:
-    served := 0
-    alive := true
-    # Asked ONCE per connection, not once per request: the peer of an accepted fd
-    # cannot change, and keep-alive would otherwise repeat the syscall per request.
-    peer := result.unwrap_or(net.peer_addr(conn), "-")
-    # The read deadline is NOT one number for the life of the connection.
-    # accept_loop armed the short first-byte deadline; the moment this peer has
-    # been answered once it stops being a suspect and gets the keep-alive idle
-    # window it asked for -- but never more of it than --conn-ms has left, which
-    # is what stops a parked peer holding this worker for a whole idle timeout
-    # and a dribbling one holding it for MAX_REQS of them. `armed` tracks what is
-    # on the socket so the re-arm is still one syscall per CHANGE, not per request.
-    cw := time.start()
-    armed := cfg.first_ms
-    for alive and served < MAX_REQS and not signal.shutdown_requested():
-        left := cfg.conn_ms - time.elapsed_ms(cw)
-        if cfg.conn_ms > 0 and left <= 0:
-            break                       # the connection's total budget is spent
-        head_ms := cfg.first_ms
-        want := cfg.first_ms
-        if served > 0:
-            head_ms = DEF_HEAD_MS
-            want = cfg.idle_ms
-        if cfg.conn_ms > 0:
-            if want > left:
-                want = left
-            if head_ms > left:
-                head_ms = left
-        if want != armed:
-            if not net.set_read_timeout_ms(conn, want) and not cfg.quiet:
-                eprint("w" + str(wid) + " warn: read timeout not re-armed\n")
-            armed = want
-        # ONE corelib call does the read, the cap and the parse. `raw` is the second
-        # tuple element, for the two jobs the Result cannot do: name a request that
-        # would not parse in the access log, and answer "did this peer even start
-        # talking" below. This one line replaced a 19-line local read loop and its
-        # `Head` struct.
-        got, raw := httpd.read_request_deadline(conn, MAX_HEAD, head_ms)
-        sw := time.start()
-        match got:
-            Err(httpd.Closed):
-                alive = false
-            Err(httpd.Failed):
-                alive = false
-            #   Timeout   the SO_RCVTIMEO deadline expired. With bytes in `raw` a
-            #             request was under way and stalled -- 408 is the honest
-            #             answer. With `raw` empty this is only keep-alive idle
-            #             expiry, which no client is waiting on (nginx closes
-            #             quietly here too), so close quietly.
-            Err(httpd.Timeout):
-                alive = false
-                if len(raw) > 0:
-                    served += 1
-                    refuse(cfg, wid, peer, conn, raw, 408, error_response(408), sw)
-            Err(httpd.TooLarge):
-                alive = false
-                served += 1
-                refuse(cfg, wid, peer, conn, raw, 431, error_response(431), sw)
-            #   Malformed a complete head that is not HTTP -> 400.
-            Err(httpd.Malformed):
-                alive = false
-                served += 1
-                refuse(cfg, wid, peer, conn, raw, 400, error_response(400), sw)
-            Ok(req):
-                served += 1
-                keep := not httpd.connection_close(req)
-                clh := httpd.header(req, "content-length")
-                if clh != "" or httpd.header(req, "transfer-encoding") != "":
-                    keep = false
-                teh := httpd.header(req, "transfer-encoding")
-                # A SECOND LINE, deliberately kept though it is currently
-                # unreachable: since the framing rewrite, corelib refuses all
-                # three of these (`corelib/httpd/httpd.ty@framing`) and the read
-                # comes back Err(Malformed), so the Ok(req) arm never sees one.
-                # It stays because request smuggling is what it prevents and the
-                # cost is three string tests on a path that already parsed a
-                # head; if the corelib check is ever loosened this answers 400
-                # rather than serving an ambiguously-framed request.
-                bad_len := (clh != "" and not is_digits(clh)) or
-                        httpd.content_length_conflict(req) or
-                        (clh != "" and teh != "")
-                head_only := req.method == "HEAD"
-                target := log_safe(req.path)
-                if bad_len:
-                    r := error_response(400)
-                    n := result.unwrap_or(emit(conn, r, false, false), -1)
-                    log_req(cfg, wid, peer, "-", first_line(raw), 400, len(r.body), n, time.elapsed_us(sw))
-                    alive = false
-                elif req.method != "GET" and req.method != "HEAD":
-                    r := error_response(405)
-                    n := result.unwrap_or(emit(conn, r, false, keep), -1)
-                    log_req(cfg, wid, peer, req.method, target, 405, len(r.body), n, time.elapsed_us(sw))
-                    if n < 0:
-                        alive = false
+# How long ONE ready connection's head read may block this worker, and the only
+# blocking read left in the server. A connection is read only when poll(2) has
+# said it is readable, so this budget is spent solely by a peer that starts a
+# head and stalls inside it -- the slowloris case --first-ms exists for.
+fn head_budget(cfg: Config, c: Conn) -> int:
+    hm := cfg.first_ms
+    if c.served > 0:
+        hm = DEF_HEAD_MS
+    if cfg.conn_ms > 0:
+        left := cfg.conn_ms - time.elapsed_ms(c.opened)
+        if left < 1:
+            left = 1
+        if hm > left:
+            hm = left
+    return hm
+
+# Milliseconds until this connection must be retired, <= 0 meaning now. This is
+# the deadline enforcement that used to be a blocking read: --first-ms for a peer
+# that has said nothing, --idle-ms for one that has been answered, and --conn-ms
+# over the whole connection, whichever falls first. The reaper reads it on every
+# pass of the poll loop, so an expiring peer costs a comparison, not a worker.
+fn due_in(cfg: Config, c: Conn) -> int:
+    want := cfg.first_ms
+    if c.served > 0:
+        want = cfg.idle_ms
+    d := want - time.elapsed_ms(c.last)
+    if cfg.conn_ms > 0:
+        e := cfg.conn_ms - time.elapsed_ms(c.opened)
+        if e < d:
+            d = e
+    return d
+
+# Serve exactly ONE request on a connection poll(2) has just called readable.
+# Returns (keep the connection, requests to count). This is the old serve_conn's
+# loop body with the loop taken off it: the loop moved into accept_loop, where it
+# is now a loop over READY descriptors rather than over one socket's lifetime.
+fn serve_once(cfg: Config, conn: int, wid: int, peer: string, head_ms: int) -> (bool, int):
+    # ONE corelib call does the read, the cap and the parse. `raw` is the second
+    # tuple element, for the two jobs the Result cannot do: name a request that
+    # would not parse in the access log, and answer "did this peer even start
+    # talking" below.
+    got, raw := httpd.read_request_deadline(conn, MAX_HEAD, head_ms)
+    sw := time.start()
+    match got:
+        Err(httpd.Closed):
+            return (false, 0)
+        Err(httpd.Failed):
+            return (false, 0)
+        #   Timeout   the head read deadline expired. With bytes in `raw` a
+        #             request was under way and stalled -- 408 is the honest
+        #             answer. With `raw` empty the peer became readable and then
+        #             said nothing, which no client is waiting on, so close
+        #             quietly (nginx does the same).
+        Err(httpd.Timeout):
+            if len(raw) > 0:
+                refuse(cfg, wid, peer, conn, raw, 408, error_response(408), sw)
+                return (false, 1)
+            return (false, 0)
+        Err(httpd.TooLarge):
+            refuse(cfg, wid, peer, conn, raw, 431, error_response(431), sw)
+            return (false, 1)
+        #   Malformed a complete head that is not HTTP -> 400.
+        Err(httpd.Malformed):
+            refuse(cfg, wid, peer, conn, raw, 400, error_response(400), sw)
+            return (false, 1)
+        Ok(req):
+            keep := not httpd.connection_close(req)
+            clh := httpd.header(req, "content-length")
+            if clh != "" or httpd.header(req, "transfer-encoding") != "":
+                keep = false
+            teh := httpd.header(req, "transfer-encoding")
+            # A SECOND LINE, deliberately kept though it is currently
+            # unreachable: since the framing rewrite, corelib refuses all
+            # three of these (`corelib/httpd/httpd.ty@framing`) and the read
+            # comes back Err(Malformed), so the Ok(req) arm never sees one.
+            # It stays because request smuggling is what it prevents and the
+            # cost is three string tests on a path that already parsed a
+            # head; if the corelib check is ever loosened this answers 400
+            # rather than serving an ambiguously-framed request.
+            bad_len := (clh != "" and not is_digits(clh)) or
+                    httpd.content_length_conflict(req) or
+                    (clh != "" and teh != "")
+            head_only := req.method == "HEAD"
+            target := log_safe(req.path)
+            if bad_len:
+                r := error_response(400)
+                n := result.unwrap_or(emit(conn, r, false, false), -1)
+                log_req(cfg, wid, peer, "-", first_line(raw), 400, len(r.body), n, time.elapsed_us(sw))
+                return (false, 1)
+            if req.method != "GET" and req.method != "HEAD":
+                r := error_response(405)
+                n := result.unwrap_or(emit(conn, r, false, keep), -1)
+                log_req(cfg, wid, peer, req.method, target, 405, len(r.body), n, time.elapsed_us(sw))
+                return (keep and n >= 0, 1)
+            rt := resolve(cfg.root, req.path)
+            st := rt.status
+            r := error_response(st)
+            if st == 200:
+                lm := -1
+                match io.mtime(rt.file):
+                    Ok(secs):
+                        lm = secs
+                    Err(e):
+                        lm = -1
+                ims := -1
+                if httpd.header(req, "if-modified-since") != "":
+                    ims = parse_http_date(httpd.header(req, "if-modified-since"))
+                if lm >= 0 and ims >= 0 and lm <= ims:
+                    # The file is never opened on this path -- one stat(2)
+                    # and no read -- so the hot 304 is CHEAPER than the
+                    # serve it replaces, not an extra cost on top of it.
+                    st = 304
+                    r = httpd.response(304, to_bytes(""))
+                    r = httpd.with_header(r, "Last-Modified", http_date_at(lm))
+                    r = httpd.with_header(r, "Cache-Control", "no-cache")
                 else:
-                    rt := resolve(cfg.root, req.path)
-                    st := rt.status
-                    r := error_response(st)
-                    if st == 200:
-                        lm := -1
-                        match io.mtime(rt.file):
-                            Ok(secs):
-                                lm = secs
-                            Err(e):
-                                lm = -1
-                        ims := -1
-                        if httpd.header(req, "if-modified-since") != "":
-                            ims = parse_http_date(httpd.header(req, "if-modified-since"))
-                        if lm >= 0 and ims >= 0 and lm <= ims:
-                            # The file is never opened on this path -- one stat(2)
-                            # and no read -- so the hot 304 is CHEAPER than the
-                            # serve it replaces, not an extra cost on top of it.
-                            st = 304
-                            r = httpd.response(304, to_bytes(""))
+                    flen := -1
+                    match io.size(rt.file):
+                        Ok(sz):
+                            flen = sz
+                        Err(e):
+                            flen = -1
+                    rg := parse_range(httpd.header(req, "range"), flen)
+                    if rg.kind == RANGE_UNSAT:
+                        # No byte of the requested range exists. The
+                        # unsatisfied-range form of Content-Range names
+                        # the length and nothing else, which is how the
+                        # client learns what it should have asked for.
+                        st = 416
+                        r = error_response(416)
+                        r = httpd.with_header(r, "Content-Range", "bytes */" + str(flen))
+                        if lm >= 0:
                             r = httpd.with_header(r, "Last-Modified", http_date_at(lm))
-                            r = httpd.with_header(r, "Cache-Control", "no-cache")
-                        else:
-                            flen := -1
-                            match io.size(rt.file):
-                                Ok(sz):
-                                    flen = sz
-                                Err(e):
-                                    flen = -1
-                            rg := parse_range(httpd.header(req, "range"), flen)
-                            if rg.kind == RANGE_UNSAT:
-                                # No byte of the requested range exists. The
-                                # unsatisfied-range form of Content-Range names
-                                # the length and nothing else, which is how the
-                                # client learns what it should have asked for.
-                                st = 416
-                                r = error_response(416)
-                                r = httpd.with_header(r, "Content-Range", "bytes */" + str(flen))
+                    elif rg.kind == RANGE_OK:
+                        # end is INCLUSIVE, so the count is +1. Reading
+                        # end - start is the off-by-one this comment
+                        # exists to prevent, and it is one byte short of
+                        # the Content-Range this same arm advertises.
+                        match io.read_at(rt.file, rg.start, rg.end - rg.start + 1):
+                            Ok(part):
+                                if len(part) == 0:
+                                    # The file shrank between io.size and
+                                    # the pread. Not reachable from a
+                                    # correct client, but the honest
+                                    # answer is the one for "no such
+                                    # bytes", not a 206 describing an
+                                    # empty slice.
+                                    st = 416
+                                    r = error_response(416)
+                                    r = httpd.with_header(r, "Content-Range", "bytes */" + str(flen))
+                                else:
+                                    # Content-Range reports what was
+                                    # ACTUALLY read, not what was asked
+                                    # for: a short read (the same shrink
+                                    # race, partway) must not be
+                                    # described as the full slice, or the
+                                    # client stitches a hole into the file
+                                    # it is reassembling.
+                                    st = 206
+                                    last := rg.start + len(part) - 1
+                                    r = httpd.response(206, part)
+                                    r = httpd.with_header(r, "Content-Type", ctype_for(rt.file))
+                                    r = httpd.with_header(r, "Cache-Control", "no-cache")
+                                    r = httpd.with_header(r, "Accept-Ranges", "bytes")
+                                    r = httpd.with_header(r, "Content-Range",
+                                                          "bytes " + str(rg.start) + "-" + str(last)
+                                                          + "/" + str(flen))
+                                    if lm >= 0:
+                                        r = httpd.with_header(r, "Last-Modified", http_date_at(lm))
+                            Err(e):
+                                st = 404
+                                r = error_response(404)
+                    else:
+                        match io.read_bytes(rt.file):
+                            Ok(body):
+                                r = httpd.response(200, body)
+                                r = httpd.with_header(r, "Content-Type", ctype_for(rt.file))
+                                r = httpd.with_header(r, "Cache-Control", "no-cache")
+                                # ADVERTISED, and only on the two responses
+                                # that describe this file's bytes. RFC 7233
+                                # 2.3 says a server that supports ranges
+                                # SHOULD send it, and the point is that a
+                                # resuming client can see it WITHOUT
+                                # spending a probe request to find out --
+                                # which is the only way to learn otherwise.
+                                # Not on 304: RFC 7232 4.1 lists what a 304
+                                # should carry and this is not on it, and a
+                                # 304 describes no representation. Not on an
+                                # error page either -- the ranges of a
+                                # generated 404 body are of no use to anyone.
+                                r = httpd.with_header(r, "Accept-Ranges", "bytes")
                                 if lm >= 0:
                                     r = httpd.with_header(r, "Last-Modified", http_date_at(lm))
-                            elif rg.kind == RANGE_OK:
-                                # end is INCLUSIVE, so the count is +1. Reading
-                                # end - start is the off-by-one this comment
-                                # exists to prevent, and it is one byte short of
-                                # the Content-Range this same arm advertises.
-                                match io.read_at(rt.file, rg.start, rg.end - rg.start + 1):
-                                    Ok(part):
-                                        if len(part) == 0:
-                                            # The file shrank between io.size and
-                                            # the pread. Not reachable from a
-                                            # correct client, but the honest
-                                            # answer is the one for "no such
-                                            # bytes", not a 206 describing an
-                                            # empty slice.
-                                            st = 416
-                                            r = error_response(416)
-                                            r = httpd.with_header(r, "Content-Range", "bytes */" + str(flen))
-                                        else:
-                                            # Content-Range reports what was
-                                            # ACTUALLY read, not what was asked
-                                            # for: a short read (the same shrink
-                                            # race, partway) must not be
-                                            # described as the full slice, or the
-                                            # client stitches a hole into the file
-                                            # it is reassembling.
-                                            st = 206
-                                            last := rg.start + len(part) - 1
-                                            r = httpd.response(206, part)
-                                            r = httpd.with_header(r, "Content-Type", ctype_for(rt.file))
-                                            r = httpd.with_header(r, "Cache-Control", "no-cache")
-                                            r = httpd.with_header(r, "Accept-Ranges", "bytes")
-                                            r = httpd.with_header(r, "Content-Range",
-                                                                  "bytes " + str(rg.start) + "-" + str(last)
-                                                                  + "/" + str(flen))
-                                            if lm >= 0:
-                                                r = httpd.with_header(r, "Last-Modified", http_date_at(lm))
-                                    Err(e):
-                                        st = 404
-                                        r = error_response(404)
-                            else:
-                                match io.read_bytes(rt.file):
-                                    Ok(body):
-                                        r = httpd.response(200, body)
-                                        r = httpd.with_header(r, "Content-Type", ctype_for(rt.file))
-                                        r = httpd.with_header(r, "Cache-Control", "no-cache")
-                                        # ADVERTISED, and only on the two responses
-                                        # that describe this file's bytes. RFC 7233
-                                        # 2.3 says a server that supports ranges
-                                        # SHOULD send it, and the point is that a
-                                        # resuming client can see it WITHOUT
-                                        # spending a probe request to find out --
-                                        # which is the only way to learn otherwise.
-                                        # Not on 304: RFC 7232 4.1 lists what a 304
-                                        # should carry and this is not on it, and a
-                                        # 304 describes no representation. Not on an
-                                        # error page either -- the ranges of a
-                                        # generated 404 body are of no use to anyone.
-                                        r = httpd.with_header(r, "Accept-Ranges", "bytes")
-                                        if lm >= 0:
-                                            r = httpd.with_header(r, "Last-Modified", http_date_at(lm))
-                                    Err(e):
-                                        st = 404
-                                        r = error_response(404)
-                    elif st == 301:
-                        r = redirect_response(rt.location)
-                    nb := len(r.body)
-                    if head_only:
-                        nb = 0
-                    n := result.unwrap_or(emit(conn, r, head_only, keep), -1)
-                    log_req(cfg, wid, peer, req.method, target, st, nb, n, time.elapsed_us(sw))
-                    if n < 0:
-                        alive = false               # peer hung up mid-write
-                if not keep:
-                    alive = false
-    return served
+                            Err(e):
+                                st = 404
+                                r = error_response(404)
+            elif st == 301:
+                r = redirect_response(rt.location)
+            nb := len(r.body)
+            if head_only:
+                nb = 0
+            n := result.unwrap_or(emit(conn, r, head_only, keep), -1)
+            log_req(cfg, wid, peer, req.method, target, st, nb, n, time.elapsed_us(sw))
+            return (keep and n >= 0, 1)          # n < 0: peer hung up mid-write
 
 # ---- the worker pool -------------------------------------------------------
 
+# ONE poll(2) over the listener AND every connection this worker holds, then work
+# on whatever came back ready. That is the whole change, and the bound it buys is
+# the point: a connection this worker is not reading costs a slot in a pollfd
+# array, not a worker. Before this, each of --workers loops served exactly one
+# connection at a time and K peers cost ceil(K / workers) rounds of whatever
+# deadline applied -- measured at commit d48dc822 with K=64 against 4 workers: 64 silent
+# sockets delayed a legitimate GET by 2080ms, and of 64 keep-alive peers only 4,
+# exactly --workers, could be answered at all before the probe gave up.
 fn accept_loop(cfg: Config, srv: int, wid: int) -> int:
     served := 0
     running := true
-    fails := 0                             # CONSECUTIVE failures; any Ok clears it
+    fails := 0                             # CONSECUTIVE accept failures; any Ok clears it
+    conns := []Conn
     for running:
-        # `if conn < 0` became `Err(e)`. accept_loop returns the served count, not
-        # a Result, so `or_return` is NOT available here (the compiler rejects it:
-        # "or_return requires the enclosing function to return a Result, but it
-        # returns int"). A match is the only tool, and it costs the same two
-        # branches the sentinel test cost -- with the fd unreachable on failure.
-        match net.accept_wait(srv, 100):
-            Ok(conn):
-                fails = 0
-                slot := wid - 1
-                reg := signal.register_conn(slot, conn)
-                if not reg and not cfg.quiet:
-                    eprint("w" + str(wid) + " warn: connection not registered for shutdown\n")
-                # THE FIRST-BYTE DEADLINE, not the idle one. A connection that
-                # has sent nothing is not a keep-alive peer waiting between
-                # requests, it is an unknown holding one of --workers loops.
-                armed := net.set_read_timeout_ms(conn, cfg.first_ms)
-                if not armed and not cfg.quiet:
-                    eprint("w" + str(wid) + " warn: first-byte timeout not armed\n")
-                served += serve_conn(cfg, conn, wid)
-                # BEFORE close_fd, not after. A slot still naming a closed fd is a
-                # number the kernel can hand back out to the next accept, and the
-                # handler would then shutdown() a stranger's connection.
-                signal.retire_conn(slot)
-                net.close_fd(conn)
-            Err(Timeout):
-                running = not signal.shutdown_requested()
-            Err(e):
-                if signal.shutdown_requested():
-                    running = false                # the listener was shut down
-                else:
-                    fails += 1
-                    if fails >= MAX_ACCEPT_FAILS:
-                        running = false            # not transient: give this one up
-                        if not cfg.quiet:
-                            eprint("w" + str(wid) + " warn: accept failed " + str(fails) + " times, retiring this loop\n")
+        if signal.shutdown_requested():
+            running = false
+        else:
+            # The poll set: the listener, then every live connection. The listener
+            # is left OUT once this worker is full, which is the backpressure --
+            # another worker, or the kernel backlog, holds the new peer instead.
+            fds := []int
+            if len(conns) < MAX_CONNS:
+                push(fds, srv)
+            # The tick is capped by the NEAREST deadline, so a reap is never late
+            # by more than the loop's own resolution.
+            tick := POLL_TICK_MS
+            for i := 0; i < len(conns); i += 1:
+                push(fds, conns[i].fd)
+                d := due_in(cfg, conns[i])
+                if d < tick:
+                    tick = d
+            if tick < 1:
+                tick = 1
+            ready := []int
+            match net.wait_readable(fds, tick):
+                Ok(r):
+                    ready = r
+                Err(Timeout):
+                    ready = []int          # nothing to do; the reaper still runs
+                Err(e):
+                    if signal.shutdown_requested():
+                        running = false
                     else:
-                        time.sleep_ms(ACCEPT_BACKOFF_MS)
+                        fails += 1
+                        if fails >= MAX_ACCEPT_FAILS:
+                            running = false
+                            if not cfg.quiet:
+                                eprint("w" + str(wid) + " warn: poll failed " + str(fails) + " times, retiring this loop\n")
+                        else:
+                            time.sleep_ms(ACCEPT_BACKOFF_MS)
+            # Only descriptors that were in `fds` can come back ready, so the walk
+            # is bounded by the length conns had BEFORE any accept below appends
+            # to it. `ready` is the subset of `fds` IN THE ORDER GIVEN, which is
+            # what lets one forward cursor find each connection instead of a scan
+            # per ready descriptor.
+            nlive := len(conns)
+            cur := 0
+            for i := 0; i < len(ready); i += 1:
+                if ready[i] == srv:
+                    accepting := true
+                    for accepting and len(conns) < MAX_CONNS:
+                        match net.accept_wait(srv, 0):
+                            Ok(cfd):
+                                fails = 0
+                                # Asked ONCE per connection: the peer of an
+                                # accepted fd cannot change.
+                                p := result.unwrap_or(net.peer_addr(cfd), "-")
+                                at := time.start()
+                                push(conns, Conn(cfd, p, 0, at, at, -1))
+                            Err(Timeout):
+                                accepting = false   # backlog drained, or another worker won the race
+                            Err(e):
+                                accepting = false
+                                if signal.shutdown_requested():
+                                    running = false
+                                elif len(conns) > 0:
+                                    # NOT counted, and this is new with the poll
+                                    # loop. A worker holding connections is FULL
+                                    # (EMFILE), not broken, and the old rule --
+                                    # retire after MAX_ACCEPT_FAILS consecutive
+                                    # failures -- would have retired every worker
+                                    # in turn once the fd table filled. It still
+                                    # applies to a worker holding nothing, which
+                                    # is the case the EMFILE leg exercises.
+                                    time.sleep_ms(ACCEPT_BACKOFF_MS)
+                                else:
+                                    fails += 1
+                                    if fails >= MAX_ACCEPT_FAILS:
+                                        running = false
+                                        if not cfg.quiet:
+                                            eprint("w" + str(wid) + " warn: accept failed " + str(fails) + " times, retiring this loop\n")
+                                    else:
+                                        time.sleep_ms(ACCEPT_BACKOFF_MS)
+                else:
+                    for cur < nlive and conns[cur].fd != ready[i]:
+                        cur += 1
+                    if cur < nlive:
+                        hm := head_budget(cfg, conns[cur])
+                        if hm != conns[cur].armed:
+                            if not net.set_read_timeout_ms(conns[cur].fd, hm) and not cfg.quiet:
+                                eprint("w" + str(wid) + " warn: read timeout not re-armed\n")
+                            conns[cur].armed = hm
+                        # Registered for the duration of the READ AND THE WRITE and
+                        # no longer, because that is the only stretch a SIGTERM
+                        # cannot otherwise interrupt: an idle connection is left in
+                        # the poll set, and poll returns within `tick` on its own.
+                        # One slot per worker, which is what keeps 256 slots enough
+                        # for a worker holding hundreds of connections.
+                        slot := wid - 1
+                        if not signal.register_conn(slot, conns[cur].fd) and not cfg.quiet:
+                            eprint("w" + str(wid) + " warn: connection not registered for shutdown\n")
+                        alive, n := serve_once(cfg, conns[cur].fd, wid, conns[cur].peer, hm)
+                        signal.retire_conn(slot)
+                        served += n
+                        conns[cur].served = conns[cur].served + n
+                        conns[cur].last = time.start()
+                        if not alive or conns[cur].served >= MAX_REQS:
+                            net.close_fd(conns[cur].fd)
+                            conns[cur].fd = -1     # tombstone; compacted below
+                        cur += 1
+            # Reap whatever ran out of time, then compact. Both deadlines are
+            # enforced HERE now rather than by a blocking read, which is why an
+            # expired peer no longer has to be holding a worker to be noticed.
+            for i := 0; i < len(conns); i += 1:
+                if conns[i].fd >= 0 and due_in(cfg, conns[i]) <= 0:
+                    net.close_fd(conns[i].fd)
+                    conns[i].fd = -1
+            k := 0
+            for k < len(conns):
+                if conns[k].fd < 0:
+                    last := len(conns) - 1
+                    if k != last:
+                        conns[k] = conns[last]
+                    pop(conns)
+                else:
+                    k += 1
+    # A retiring worker owes its peers a close; the fd would otherwise outlive
+    # the loop that was answering on it.
+    for i := 0; i < len(conns); i += 1:
+        if conns[i].fd >= 0:
+            net.close_fd(conns[i].fd)
     return served
 
 fn workers(cfg: Config, srv: int, n: int) -> int:
