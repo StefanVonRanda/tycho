@@ -1,6 +1,6 @@
 # What is INSIDE the release archive -- not whether the script that built it
 # exited 0. `make release-check` rebuilds both archives and asserts only that two
-# builds are byte-identical (Makefile@release-check), which is green for an
+# builds are byte-identical (`Makefile@release-check`), which is green for an
 # archive containing the wrong compiler, four .exe files that cannot start, and
 # no runtime/ directory. All three shipped; commit 7534812f found them by hand.
 #
