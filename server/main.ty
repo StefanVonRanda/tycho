@@ -17,7 +17,6 @@ const DEF_HOST    = "127.0.0.1"
 const DEF_PORT    = 8080
 const DEF_WORKERS = 8
 const DEF_IDLE_MS = 5000
-const DEF_HEAD_MS = 15000
 # THE FIRST-BYTE DEADLINE: how long a peer that has said NOTHING may keep its
 # connection. It is no longer a bound on worker occupancy -- accept_loop polls,
 # so a silent peer costs a pollfd slot -- but it is still the only thing that
@@ -459,7 +458,7 @@ fn refuse(cfg: Config, wid: int, peer: string, conn: int, raw: string, st: int, 
 
 # How long ONE ready connection's read may block this worker, and the only
 # blocking read left in the server. It used to be the whole head's budget --
-# --first-ms, or DEF_HEAD_MS once the peer had been answered -- and a peer that
+# --first-ms, or a 15 s default once the peer had been answered -- and a peer that
 # sent half a head and stopped spent all of it, because the read had no way to
 # put its buffer down and come back. It has one now (Conn.pending), so a visit
 # takes what is there and returns, and the WHOLE-head deadline is due_in's.
