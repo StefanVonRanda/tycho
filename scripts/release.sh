@@ -34,6 +34,14 @@ if [ "v$ver" != "$version" ]; then
     echo "   bump TYCHO_VERSION in src/tychoc.c and CHANGELOG.md together" >&2
     exit 2
 fi
+# BOTH archives now ship tychoc1, whose version is its own constant, so the
+# check above no longer covers what is actually packaged.
+ver1="$(./tychoc1 --version | awk '{print $2}')"
+if [ "v$ver1" != "$version" ]; then
+    echo "!! version mismatch: compiler/main.ty says $ver1, release.sh was given $version" >&2
+    echo "   bump version() in compiler/main.ty alongside src/tychoc.c" >&2
+    exit 2
+fi
 
 if [ "$mingw" -eq 1 ]; then
     MINGWCC="$(command -v x86_64-w64-mingw32-gcc || true)"
@@ -46,13 +54,13 @@ if [ "$mingw" -eq 1 ]; then
     echo ">> staging $stage"
     rm -rf "$stage"
     mkdir -p "$stage"
-    echo ">> building the compiler with the mingw cross compiler"
-    make -s build/tycho_rt_embed.h
-    "$MINGWCC" -O2 -fwrapv -std=c11 -Ibuild src/tychoc.c -o "$stage/tychoc.exe" 2>"$root/dist-mingw-build.log" \
-        || { echo "!! mingw build failed (see dist-mingw-build.log)" >&2; rm -f "$root/dist-mingw-build.log"; exit 1; }
-    rm -f "$root/dist-mingw-build.log"
-    echo ">> cross-building the tools"
-    for spec in "tychofmt tools/tychofmt.ty -" \
+    # The Windows archive ships the SELF-HOSTED compiler, as the native leg does.
+    # It used to cross-build src/tychoc.c, leaving Windows the only platform on
+    # the bootstrap's codegen -- 3.00x slower on bench/treewalk.ty. compiler/main.ty
+    # cross-builds unchanged, so it is one more entry in the tools loop.
+    echo ">> cross-building the compiler and the tools"
+    for spec in "tychoc compiler/main.ty -" \
+                "tychofmt tools/tychofmt.ty -" \
                 "tycho-lsp tools/lsp.ty tools/lsp_shim.c" \
                 "tycho-debug tools/tycho-debug/main.ty tools/tycho-debug/debug_shim.c"; do
         # shellcheck disable=SC2086
@@ -64,8 +72,10 @@ if [ "$mingw" -eq 1 ]; then
         # shellcheck disable=SC2086
         tshims="$(./tychoc "$tentry" $shimarg --print-shims | tr '\n' ' ')"
         [ "$tshim" != "-" ] && tshims="$tshims $tshim"
+        # -static: -pthread alone imports libwinpthread-1.dll, which this archive
+        # does not carry -- every .exe shipped before 2026-09-05 fails to start.
         # shellcheck disable=SC2086
-        "$MINGWCC" -O2 -fwrapv -pthread -o "$stage/$tname.exe" "$stage/$tname.c" $tshims -lm \
+        "$MINGWCC" -O2 -fwrapv -static -pthread -o "$stage/$tname.exe" "$stage/$tname.c" $tshims -lm \
             2>"$root/dist-mingw-build.log" \
             || { echo "!! $tname failed to link under mingw (see dist-mingw-build.log)" >&2; exit 1; }
         rm -f "$stage/$tname.c" "$root/dist-mingw-build.log"
@@ -75,6 +85,10 @@ if [ "$mingw" -eq 1 ]; then
     # a Windows-side mingw gcc (--cc), which is why the tarball is MSYS2's job to
     # complete -- see the Windows section of README.md.
     cp -r corelib "$stage"/
+    # Same reason as the native leg below: tychoc1 COPIES the runtime in at emit
+    # time instead of embedding it, so the file travels with the binary.
+    mkdir -p "$stage"/runtime
+    cp runtime/tycho_rt.c "$stage"/runtime/
     cp README.md LICENSE "$stage"/
     mkdir -p "$stage"/examples
     cp examples/hello.ty "$stage"/examples/ 2>/dev/null || true
@@ -119,8 +133,8 @@ else
     # embedding it the way src/tychoc.c does, so the file has to travel with the
     # binary. driver.ty@write_runtime already falls back to <dir-of-argv0>/runtime,
     # as corelib_root does; without this the packaged compiler dies on the first
-    # program a user compiles. The mingw archive ships the bootstrap, which has
-    # the runtime embedded, and does not need it.
+    # program a user compiles. The mingw archive ships tychoc1 too, and stages
+    # the runtime for the same reason.
     mkdir -p "$stage"/runtime
     cp runtime/tycho_rt.c "$stage"/runtime/
     cp README.md LICENSE "$stage"/
