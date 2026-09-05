@@ -126,6 +126,9 @@ make -s rtparity
 
 step "[2e/13] make locale-check  (both locale fixtures compiled AND run under a comma-decimal LC_ALL forced by an LD_PRELOAD constructor)"
 make -s locale-check
+
+step "[2f/13] make release-content  (what is INSIDE both release archives, not whether release.sh exited 0. make release-check compares two builds byte for byte and asserts nothing about their contents, which is why an archive shipping the BOOTSTRAP compiler, four .exe files that could not start -- -pthread with no -static, importing a libwinpthread-1.dll nothing carried, wine exit 53 -- and no runtime/ directory was invisible to every lane here. Each archive is extracted and read: layout, runtime/tycho_rt.c cmp-identical to the repo's, the version the packaged compiler reports, every imported DLL either a Windows system one or a file in the archive, every .exe actually starting under wine, the emitted C byte-identical to ./tychoc1's for a program the two compilers DISAGREE on -- the disagreement asserted first, or the identity leg is decoration -- and a core:strings program emitted, linked and RUN with corelib found beside the binary and no TYCHO_CORELIB. Its selfcheck rebuilds all three historical defects for real and requires each to redden the leg that names it)"
+make -s release-content
 fi
 
 if [ "$LANE" = corelib ]; then

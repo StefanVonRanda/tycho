@@ -11,7 +11,7 @@ TYCHOC  ?= ./tychoc
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: corpus-check packed-check vector-check align-probe status status-net status-check parse-check tychoc1-check script-check friction-check surface-check net-poll-check version-check all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check shim-warn source-bytes goldens-check tls-verify http-verify handle-guard format-diff math-diff traversal-check ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check flow-check ed-check sheet-check sim-check make-check snap-check tally-check agg-check tmpl-check stat-check ledger-check fh-check grid-check chess-check kvsrv-check sat-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check spec-fast docs-fences check-links server server-check wiki ci release-check hooks ilp32 asan-self editors-check clean
+.PHONY: corpus-check packed-check vector-check align-probe status status-net status-check parse-check tychoc1-check script-check friction-check surface-check net-poll-check version-check all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check shim-warn source-bytes goldens-check tls-verify http-verify handle-guard format-diff math-diff traversal-check ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check flow-check ed-check sheet-check sim-check make-check snap-check tally-check agg-check tmpl-check stat-check ledger-check fh-check grid-check chess-check kvsrv-check sat-check locale-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check spec-fast docs-fences check-links server server-check wiki ci release-check release-content hooks ilp32 asan-self editors-check clean
 
 # tychoc1, the self-hosted compiler, is what `make` produces and what ships.
 # It still depends on tychoc: src/tychoc.c is the bootstrap stage that builds it.
@@ -426,6 +426,13 @@ release-check: tychoc1
 	    sh scripts/release.sh "v$$version" --mingw >/dev/null; \
 	    echo "release-check: rebuilt $$win"; \
 	  fi
+
+# release-check proves two builds agree byte for byte; it asserts nothing about
+# what is IN the archive, which is how a wrong compiler, four .exe files that
+# could not start and a missing runtime/ all shipped (commit 7534812f).
+release-content:
+	@sh scripts/release_content.sh --selfcheck
+	@sh scripts/release_content.sh
 
 # ABSOLUTE, not `.githooks`: a relative hooksPath resolves inside whichever
 # worktree pushes, and a worktree without a .githooks directory gets no hook

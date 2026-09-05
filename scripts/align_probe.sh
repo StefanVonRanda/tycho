@@ -19,6 +19,38 @@ T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 rc=0
 bad() { echo "align-probe: FAIL -- $*"; rc=1; }
 
+# Leg [6]'s subject: the CEILING, over every user type a program can put on the
+# arena -- a vector nested in a struct, in an enum payload, in an array, as a map
+# value and captured by a closure. `align(N)` is refused above 8 at the parser
+# (tests/reject/align_too_big.ty), which covers the one construct that STATES an
+# alignment; this covers the one that IMPLIES one.
+mkdir -p "$T/q"
+cat > "$T/q/q.ty" <<'TY'
+align(8) struct Pair:
+    a: u8
+    b: u8
+
+struct Holder:
+    v: vector[4]float
+    p: Pair
+    tag: int
+
+enum Box:
+    Full(Holder)
+    Empty
+
+fn main():
+    h := Holder([1.0, 2.0, 3.0, 4.0], Pair(to_u8(1), to_u8(2)), 7)
+    hs := [h, h]
+    m := []int: Holder
+    m[1] = h
+    b := Full(h)
+    f := fn() -> int: len(hs) + h.tag
+    match b:
+        Full(x): println(str(x.tag) + str(len(m)) + str(f()))
+        Empty: println("no")
+TY
+
 cat > "$T/p.ty" <<'TY'
 align(8) struct Pair:
     a: u8
@@ -116,7 +148,57 @@ for TYCHOC in ./tychoc ./tychoc1; do
         echo "      [5] control: attribute stripped -> exit $p5"
         grep -E '^(sizeof|\[2\]|FAIL)' "$T/probe5.out" | sed 's/^/          /'
     fi
+
+    # [6] THE CEILING, and the answer to "must every arena_alloc site be audited?"
+    #     No: alignment cannot exceed 8 because it cannot ENTER the type system
+    #     above 8. Exactly two constructs emit an alignment attribute in either
+    #     compiler -- `align(N) struct`, refused above 8 by the parser
+    #     (src/tychoc.c@parse_struct, compiler/parse/parse.ty@structd), and
+    #     `vector[N]T`, pinned at `packed, aligned(8)` (src/tychoc.c:13178,
+    #     compiler/emit/emit.ty:6695). So the invariant is checked where it is
+    #     established, over every user type the emitted TU defines, rather than
+    #     at the arena_alloc sites -- which the two emitters have 61 of between
+    #     them, all of them templates instantiated per monomorphisation.
+    "$TYCHOC" "$T/q/q.ty" --emit-c -o "$T/q/q" >"$T/q6.log" 2>&1 \
+        || { bad "$TYCHOC: [6] could not emit the nesting probe"; sed 's/^/      /' "$T/q6.log"; continue; }
+    # Both spellings: the two emitters name these types differently (TychoArrC0
+    # against TychoArrK0, a typedef here and a bare tag there), so the sweep reads
+    # typedef names AND struct tags rather than one compiler's convention.
+    { sed -n 's/^typedef struct .*[ *]\([A-Za-z0-9_]*\);$/\1/p' "$T/q/q.c"
+      sed -n 's/^struct \([A-Za-z0-9_]*\) {.*/struct \1/p' "$T/q/q.c"
+    } | grep -E '^(struct )?(S_|E_|Env_|TychoArr|TychoMap|TychoVec)' | sort -u > "$T/q/names"
+    n6="$(wc -l < "$T/q/names" | tr -d ' ')"
+    if [ "$n6" -lt 6 ]; then
+        bad "$TYCHOC: [6] found only $n6 user types in the emitted C -- the assertions below would be vacuous"
+        continue
+    fi
+    { echo '#define main tycho_program_main'; echo '#include "q.c"'; echo '#undef main'
+      while read -r n; do printf '_Static_assert(_Alignof(%s) <= 8, "%s over-aligns the arena");\n' "$n" "$n"; done < "$T/q/names"
+    } > "$T/q/assert.c"
+    if "$CC" -O0 -fwrapv -c -o /dev/null "$T/q/assert.c" -I"$T/q" >"$T/q/cc6.log" 2>&1; then
+        echo "      [6] all $n6 user types in the emitted TU are <= 8-aligned ($(tr '\n' ' ' < "$T/q/names"))"
+    else
+        bad "$TYCHOC: [6] a user type over-aligns the arena"
+        grep -m4 'static assertion failed' "$T/q/cc6.log" | sed 's/^/          /'
+    fi
+
+    # [6b] CONTROL: remove the cap `vector[N]T` carries and the alignment must
+    #      CLIMB -- through the struct, the enum payload, the array, the map and
+    #      the closure env. Without this, [6] passes on a probe whose types were
+    #      never capable of over-aligning, and it is what shows the propagation
+    #      is transitive rather than per-declaration.
+    sed 's/__attribute__((packed, aligned(8)))/ /' "$T/q/q.c" > "$T/q/qc.c"
+    if cmp -s "$T/q/q.c" "$T/q/qc.c"; then
+        bad "$TYCHOC: [6b] the substitution did not apply -- no vector cap to remove"
+        continue
+    fi
+    sed 's|#include "q.c"|#include "qc.c"|' "$T/q/assert.c" > "$T/q/assertc.c"
+    if "$CC" -O0 -fwrapv -c -o /dev/null "$T/q/assertc.c" -I"$T/q" >"$T/q/cc6b.log" 2>&1; then
+        bad "$TYCHOC: [6b] the assertions stayed GREEN with the vector cap removed -- leg [6] proves nothing"
+    else
+        echo "      [6b] control: vector cap removed -> $(grep -c 'static assertion failed' "$T/q/cc6b.log") of $n6 types over-align"
+    fi
 done
 
-[ "$rc" = 0 ] && echo "align-probe: ok (both compilers, 4 legs + the stripped control)"
+[ "$rc" = 0 ] && echo "align-probe: ok (both compilers, 6 legs + the stripped and uncapped controls)"
 exit "$rc"
