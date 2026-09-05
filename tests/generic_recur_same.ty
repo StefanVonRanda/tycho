@@ -1,0 +1,12 @@
+# The accepting twin of tests/reject/generic_recur_grow.ty. Recursion inside a
+# generic body is legal; what is refused there is recursion at a type that GROWS
+# at every step. Here `$T` is bound once per call site and never changes, so one
+# body is instantiated per type and the walk terminates.
+fn depth(x: $T, n: int) -> int:
+    if n <= 0:
+        return 0
+    return 1 + depth(x, n - 1)
+
+fn main():
+    println(str(depth(1, 3)))
+    println(str(depth("a", 2)))

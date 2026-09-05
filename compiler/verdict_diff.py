@@ -41,7 +41,7 @@ sys.path.insert(0, "scripts")
 import classify_rejects as C
 
 ROOTS = ("tests", "corelib", "tools", "examples", "server", "bench")
-EXPECT = 1339          # a leg that scores 0 of 0 is green by accident
+EXPECT = 1340          # a leg that scores 0 of 0 is green by accident
                        # 1308 -> 1311: the three V2 `packed` fixtures (2026-09-04)
                        # 1311 -> 1319: the eight V2b bytes-bridge fixtures
                        # 1330 -> 1331: tests/reject/fstring_hole_name.ty
@@ -67,16 +67,17 @@ SITES = C.load_sites()
 # were rejecting and were deleted. leg10b below is what stops that recurring:
 # the set is compared against the entries that ACTUALLY missed this run, the way
 # compiler/run.sh compares its own, so a fixed fixture reddens the lane.
-KNOWN_TYPE_MISS = {
-    "tests/reject/generic_recur_grow.ty",
-    # THE PENDING-TYPE RULES left this list when src/tychoc.c's B-3 grounding
-    # walk (:5879, :6108, :8909) was ported to compiler/types/tcheck.ty as a
-    # `pend` LIST with a line, a done flag and a per-block mark -- the `pendarr`
-    # SET R21f-11 built could carry none of the three.
-    # THE CONCURRENCY RULES left this list under R21c, which ported the five
-    # spawn legs (src/tychoc.c:6047-6058) and wait's argument (:6776) into
-    # compiler/types/tcheck.ty in the bootstrap's own order.
-}
+KNOWN_TYPE_MISS = set()
+# EMPTY since 2026-09-05, and it is a set() rather than {} so it stays one.
+# GENERIC_RECUR_GROW left this list on 2026-09-05: `_inst_body`'s depth guard
+# bailed silently, so a recursion at a growing type was never reported.
+# THE PENDING-TYPE RULES left this list when src/tychoc.c's B-3 grounding
+# walk (:5879, :6108, :8909) was ported to compiler/types/tcheck.ty as a
+# `pend` LIST with a line, a done flag and a per-block mark -- the `pendarr`
+# SET R21f-11 built could carry none of the three.
+# THE CONCURRENCY RULES left this list under R21c, which ported the five
+# spawn legs (src/tychoc.c:6047-6058) and wait's argument (:6776) into
+# compiler/types/tcheck.ty in the bootstrap's own order.
 LIT = lambda f: len(re.sub(r"%[-0-9.*]*(?:ll)?[a-zA-Z]", "", f))
 
 # leg6b -- compiler/run.sh sets no TYCHO_CORELIB, so every other leg here runs

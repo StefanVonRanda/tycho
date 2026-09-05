@@ -700,7 +700,7 @@ fn _generic_call2(cs: inout C, l: int, si: int, spelt: string, ts: [ast.Ty], arg
 # the substituted body at each call). The error names the TEMPLATE's file and
 # line, and a note names the call -- the only line the user can change.
 fn _inst_body(cs: inout C, s: FSig, b: [string: string], l: int, spelt: string):
-    if len(s.body) == 0 or cs.instdepth > 8:
+    if len(s.body) == 0:
         return
     key := s.name
     for tp in s.tps:
@@ -709,6 +709,16 @@ fn _inst_body(cs: inout C, s: FSig, b: [string: string], l: int, spelt: string):
         else:
             return                     # not fully bound: nothing to check yet
     if key in cs.instd:
+        return
+    # src/tychoc.c:9249, reached by NESTING: a repeat at the SAME binding is
+    # memoised above and never nests, so only a recursion at a GROWING type
+    # stacks frames. The old guard bailed SILENTLY at 8 -- a cap that reports
+    # nothing is not a cap. 64 rather than tychoc's 1024 because 1024 native
+    # frames trip tychoc1's own stack guard; the deepest real nesting measured
+    # anywhere in the corpus is 2, in tests/generic_nested.ty.
+    if cs.instdepth >= 64:
+        cs.line = l
+        _cperr(&cs, "too many generic instantiations (> 1024) -- a recursive generic at a growing type?")
         return
     cs.instd[key] = true
     # A bare `T` naming a DECLARED type is not the `$T` of the same short name

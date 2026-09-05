@@ -86,7 +86,7 @@ n_lib=$(find corelib -name '*.ty' | wc -l)
 n_rej=$(ls tests/reject/*.ty | wc -l)
 n_tsv=$(wc -l < "$TSV")
 n_new=$(find tools examples server bench -name '*.ty' | wc -l)
-[ "$n_acc" = 281 ] || { echo "parse-check: tests/*.ty is $n_acc, expected 280"; rc=1; }   # +1 each: tests/packed_struct.ty (V2), tests/vector_type.ty (V3), tests/fixarr_iter.ty (V3a)
+[ "$n_acc" = 282 ] || { echo "parse-check: tests/*.ty is $n_acc, expected 282"; rc=1; }   # +1 each: tests/packed_struct.ty (V2), tests/vector_type.ty (V3), tests/fixarr_iter.ty (V3a), tests/generic_recur_same.ty
 [ "$n_lib" = 91 ]  || { echo "parse-check: corelib/**.ty is $n_lib, expected 91"; rc=1; }
 [ "$n_new" = 178 ] || { echo "parse-check: tools+examples+server+bench .ty is $n_new, expected 178"; rc=1; }   # -1: tools/tycho-rsa/ removed in 0888bf28, which left this literal at 179 and the lane red
 [ "$n_rej" = "$n_tsv" ] || { echo "parse-check: $n_rej reject fixtures but $n_tsv classified rows -- rerun scripts/classify_rejects.py"; rc=1; }
@@ -119,7 +119,7 @@ leg_accept() {
     echo "$1: files=$((ok+bad)) parse-ok=$ok fail=$bad"
     [ "$ok" = "$3" ] && [ "$bad" = 0 ] || { echo "parse-check: $1 expected $3 ok, 0 fail"; rc=1; }
 }
-leg_accept "leg1  tests/*.ty" "$(ls tests/*.ty)" 281
+leg_accept "leg1  tests/*.ty" "$(ls tests/*.ty)" 282
 leg_accept "leg1b corelib/**.ty" "$(find corelib -name '*.ty' | sort)" 91
 leg_accept "leg1c tools+examples+server+bench" "$(find tools examples server bench -name '*.ty' | sort)" 178
 
@@ -146,7 +146,7 @@ tr=0; tm=0; ta=0; tw=0
 # by THAT rule, not by grounding; it is the :8909 audit that refuses it today.
 # len_scalar LEFT it too, when the f-string interpolation holes became real
 # expressions: the `len` rule was always here, the hole was simply never walked.
-KNOWN_TYPE_MISS="tests/reject/generic_recur_grow.ty"
+KNOWN_TYPE_MISS=""
 # (the whole-tree list in compiler/verdict_diff.py carries five more, all under
 # tests/diag and tests/reject/pkg, which this leg does not reach)
 seen_miss=""
@@ -202,7 +202,7 @@ echo "leg2c tests/reject/*.ty --typecheck: all=$((tr+tm)) rejected=$tr missed=$t
 got=$(echo $seen_miss | tr ' ' '\n' | LC_ALL=C sort | tr '\n' ' ')
 want=$(echo $KNOWN_TYPE_MISS | tr ' ' '\n' | LC_ALL=C sort | tr '\n' ' ')
 [ "$got" = "$want" ] || { echo "parse-check: the TYPE misses moved"; echo "    now:  $got"; echo "    was:  $want"; rc=1; }
-[ "$tr" = 573 ] || { echo "parse-check: --typecheck refused $tr of 574, expected 573"; rc=1; }
+[ "$tr" = 574 ] || { echo "parse-check: --typecheck refused $tr of 574, expected 574"; rc=1; }
 
 # [3] -- the census, against a recorded golden
 for f in $(ls tests/*.ty) $(find corelib -name '*.ty' | sort) $(find tools examples server bench -name '*.ty' | sort); do
