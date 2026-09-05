@@ -1,0 +1,16 @@
+# expect: map keys must be string, int
+# A FIELDLESS ENUM is a legal top-level key (hashed by its tag) but is NOT a
+# hashable LEAF of a composite -- src/tychoc.c@key_hashable has no enum arm.
+# The accepting twin one token away is `tests/vector_map_key.ty`, whose struct
+# leaves are float/bool/bytes.
+enum Colour:
+    Red
+    Blue
+
+struct Tag:
+    n: int
+    c: Colour
+
+fn main():
+    m := []Tag: int
+    println(str(len(keys(m))))

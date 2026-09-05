@@ -1,0 +1,16 @@
+# expect: a swizzle applies to a variable or a field of one, not to this expression
+# The INDEX half of the base rule; tests/reject/swizzle_base_not_place.ty is the
+# call half. Measured 2026-09-05: `place_key` (src/tychoc.c@place_key) has no key
+# for a non-literal index, so `(vs[i].x, vs[i].x) = (7, 8)` is already accepted
+# while `(vs[0].x, vs[0].x) = (7, 8)` is refused by name. Admitting an indexed
+# base would carry that hole into `vs[i].(x, x)`, which is the spelling the
+# feature exists for. The accepting twin is tests/swizzle.ty.
+struct V:
+    x: int
+    y: int
+
+fn main():
+    vs := [V(1, 2)]
+    i := 0
+    vs[i].(x, y) = vs[i].(y, x)
+    println(str(vs[i].x))

@@ -296,6 +296,8 @@ tests/reject/map_for_in.ty	TYPE	6511	a map is not directly iterable -- `for k in
 tests/reject/map_get_arity.ty	SEMANTIC	6728	m.get(key) or m.get(key, default) takes one or two arguments (got 3)
 tests/reject/map_get_removed.ty	SYNTAX	3068	map_get was removed; use `m.get(k, default)`
 tests/reject/map_has_removed.ty	SYNTAX	3066	map_has was removed; use `k in m`
+tests/reject/map_key_bytes_top.ty	TYPE	2573	map keys must be string, int (directly or through a newtype), a fieldless enum, or a hashable struct/tuple/array
+tests/reject/map_key_enum_leaf.ty	TYPE	2573	map keys must be string, int (directly or through a newtype), a fieldless enum, or a hashable struct/tuple/array
 tests/reject/map_key_wrong_read.ty	TYPE	6512	map key must be Slot, got int
 tests/reject/map_lit_key_types.ty	SEMANTIC	6473	map keys must all have the same type
 tests/reject/map_lit_value_types.ty	SEMANTIC	6475	map values must all have the same type
@@ -307,6 +309,7 @@ tests/reject/massign_dup_target.ty	SYNTAX	4338	duplicate target 'a' in a multi-a
 tests/reject/massign_for_clause.ty	SYNTAX	4126	a multi-assign is not a `for` clause -- write it as its own statement
 tests/reject/massign_not_a_place.ty	SYNTAX	4332	cannot assign to this expression -- every target of a multi-assign must be a variable, a field, or an array/map element
 tests/reject/massign_not_tuple.ty	SEMANTIC	8767	the right side of a multi-assign must be a tuple, got int
+tests/reject/massign_subscript_target.ty	SYNTAX	4332	cannot assign to this expression -- every target of a multi-assign must be a variable, a field, or an array/map element
 tests/reject/match_arm_neg_not_int.ty	SYNTAX	3580	'-' is only valid before an int literal in a match arm
 tests/reject/match_arm_set_not_scalar.ty	SYNTAX	3579	a match arm must be a variant name, a scalar literal, a range, or `_`
 tests/reject/match_bad_subject.ty	SEMANTIC	9047	match expects an Option, Result, or enum value, or an int/char/bool, got S
@@ -499,6 +502,7 @@ tests/reject/sum_annot_int_payload_nonnumeric.ty	TYPE	7967	declared type Option(
 tests/reject/sum_annot_place_payload.ty	TYPE	7967	declared type Option(string) but value is Some(int)
 tests/reject/sum_annot_return_payload.ty	TYPE	7967	declared type Option(string) but value is Some(int)
 tests/reject/sum_ctor_payload_mismatch.ty	TYPE	7967	declared type Option(int) but value is Some(string)
+tests/reject/swizzle_base_indexed.ty	SYNTAX	3173	a swizzle applies to a variable or a field of one, not to this expression
 tests/reject/swizzle_base_not_place.ty	SYNTAX	3173	a swizzle applies to a variable or a field of one, not to this expression
 tests/reject/swizzle_dup_field.ty	SYNTAX	4338	duplicate target 'v.x' in a multi-assign -- every right side is evaluated before any write, so two writes to one place have no order
 tests/reject/swizzle_one_component.ty	SYNTAX	3195	a swizzle names at least two components -- write `v.x` for one

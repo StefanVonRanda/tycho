@@ -4119,9 +4119,9 @@ static Stmt *parse_stmt(Parser *ps) {
                 Stmt *init = parse_stmt(ps);
                 if (init->kind != S_DECL && init->kind != S_ASSIGN)
                     die_at(init->line, "the init clause of a three-clause `for` is a declaration or an assignment");
-                /* Only a multi-assign queues a prelude here, and parse_block would flush it
-                 * BEFORE the loop -- right for init by accident, wrong for post. Refuse both
-                 * rather than lower half of the statement. */
+                /* Only a multi-assign queues a prelude here, and no block flushes it: lifting
+                 * the init half alone dies with "unknown variable '_ms1'" (measured 2026-09-05).
+                 * Both clauses are refused rather than lower half of the statement. */
                 if (g_npending != np0)
                     die_at(init->line, "a multi-assign is not a `for` clause -- write it as its own statement");
                 Expr *cond = parse_expr(ps);

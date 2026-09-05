@@ -1,0 +1,18 @@
+# expect: cannot assign to this expression -- every target of a multi-assign must be a variable, a field, or an array/map element
+# A user `subscript` call IS a place for the single-target form -- the same
+# `g.edge(0) = Node(9)` compiles in both compilers, and tests/compound_subscript_eval.ty
+# is the accepting twin. It is refused only inside the parenthesised list.
+struct Node:
+    weight: int
+
+struct Graph:
+    nodes: [Node]
+
+subscript edge(g: Graph, i: int) -> inout Node:
+    yield &g.nodes[i]
+
+fn main():
+    g := Graph([Node(1), Node(2)])
+    a := 0
+    (a, g.edge(0)) = (5, Node(9))
+    println(str(a) + " " + str(g.nodes[0].weight))

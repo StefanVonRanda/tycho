@@ -49,7 +49,7 @@ ROOTS = ("tests", "corelib", "tools", "examples", "server", "bench")
 # function of fully known type. The 7 left are template BODIES walked with `$T`
 # genuinely unbound, which no amount of work grounds.
 SIXB = 7
-EXPECT = 1356          # a leg that scores 0 of 0 is green by accident
+EXPECT = 1361          # a leg that scores 0 of 0 is green by accident
                        # 1348 -> 1352: tests/multi_assign.ty and the three
                        # multi-assign reject fixtures (L2, 2026-09-05)
                        # 1340 -> 1348: tests/align_struct.ty and the seven

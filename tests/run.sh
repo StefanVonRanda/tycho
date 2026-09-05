@@ -131,7 +131,10 @@ corpus_census() {
     # Plus the 3 swizzle fixtures (L3, 2026-09-05): the repeated component on the
     # left, the one-component swizzle and the base that is not a place -- all
     # three SYNTAX and word-for-word in both compilers.
-    [ "$cc_exp" -eq 587 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=587"
+    # Plus the 4 map-key/ceiling fixtures (2026-09-05): the two map-key leaf rules
+    # tychoc1's `_mapkey_ok` had wrong (an enum leaf, a top-level `bytes`), the
+    # subscript-call multi-assign target and the indexed swizzle base.
+    [ "$cc_exp" -eq 591 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=591"
 
     cc_dirs=0
     for cc_d in $(git ls-files tests 2>/dev/null | grep '\.ty$' | sed 's|/[^/]*$||' | sort -u); do

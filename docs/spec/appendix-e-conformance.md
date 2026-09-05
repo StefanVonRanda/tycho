@@ -54,7 +54,7 @@ drawn from:
 | §5.2.6 | `bytes` operators: `b[i]` yields `int` (not a 1-length `bytes`) and is not a place; `b[i:j]` yields `bytes` and clamps; `a + b` and `b + 'c'` concatenate; no implicit `string` mixing; every one byte-safe across an interior `0x00` | `corelib/test/io` (`byte_index`, `byte_slice`, `byte_cat`, `byte_rebuild`), the §5.2.6 example (`scripts/spec_check.sh`), `server/main.ty` (`log_safe`) — no `tests/` fixture, see the note below |
 | §5.2.7 | fixed-width `u32`/`u64`/`f32` | `tests/sized_ints`, `tests/sized_family`, `corelib/test/sha256` |
 | §5.3.2 | fixed-size arrays `[N]T` | `tests/fixed_array`, `reject/fixed_array_bad_length`, `reject/fixed_array_zero_size`, `reject/fixed_array_nonconst_size` |
-| §5.3.5 | maps; composite keys | `tests/maps`, `tests/map_literal_composite_key`, `tests/mapstructkey` |
+| §5.3.5 | maps; composite keys | `tests/maps`, `tests/map_literal_composite_key`, `tests/mapstructkey`, `tests/vector_map_key`, `reject/map_as_key`, `reject/map_key_enum_leaf`, `reject/map_key_bytes_top` |
 | §5.3.9 | typed handles (affine, RAII free) | `tests/ffi` (`use_res_close`), `reject/close_handle_nonvar` |
 | §5.3.10 | `bounded[N]T` inline fixed capacity; runtime count; push traps when full | `tests/bounded`, `tests/bounded_const_cap`, `reject/fixarr_into_bounded_arg`, `reject/bounded_nonconst_cap`, `reject/bounded_const_cap_zero`, `reject/bounded_chan_elem`, `reject/bounded_task_elem` |
 | §5.4 | newtypes; unwrap; key/agg mixing rejected | `tests/newtypes`, `tests/newtype_key`, `reject/newtype_key_mix` |
@@ -159,7 +159,7 @@ drawn from:
 | §17.1 | struct construction & fields | `tests/named_fields`, `tests/recursive_structs` |
 | §17.3 | recursion only through a container | `tests/recursive_structs`, `tests/recursive_enum_array` |
 | §17.4 | tuples; index-assign/range rejected | `tests/tuples`, `tests/tuple_assign`, `reject/tuple_elem_index_assign`, `reject/tuple_index_range` |
-| §17.5 | destructuring; simultaneous assignment; swizzling | `tests/multiassign_scope`, `tests/tuple_assign`, `tests/multi_assign`, `tests/swizzle`, `reject/massign_dup_target`, `reject/massign_not_a_place`, `reject/massign_for_clause`, `reject/swizzle_dup_field`, `reject/swizzle_one_component`, `reject/swizzle_base_not_place` |
+| §17.5 | destructuring; simultaneous assignment; swizzling | `tests/multiassign_scope`, `tests/tuple_assign`, `tests/multi_assign`, `tests/swizzle`, `reject/massign_dup_target`, `reject/massign_not_a_place`, `reject/massign_for_clause`, `reject/swizzle_dup_field`, `reject/swizzle_one_component`, `reject/swizzle_base_not_place`, `reject/swizzle_base_indexed`, `reject/massign_subscript_target` |
 | §18.2–18.6 | `m[k]` place/rvalue, `delete`, `keys`, `m.get` | `tests/map_mutation`, `tests/map_delete`, `tests/map_get_method`, `tests/map_insorder`, `reject/map_del_removed`, `reject/map_key_wrong_read` |
 | §18.7 | user-defined subscripts | `tests/subscript` |
 | §19.1–19.3 | enums, `Option`, `Result`; construction | `tests/enums`, `tests/options`, `tests/results`, `reject/genenum_bare_nullary`, `reject/sum_ctor_payload_mismatch` |

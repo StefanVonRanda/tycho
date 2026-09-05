@@ -1,0 +1,7 @@
+# expect: map keys must be string, int
+# `bytes` is a hashable LEAF but not a top-level key type -- spec 5.3.5. The
+# accepting twin is the `(int, bool)` and `[float]` maps in
+# tests/vector_map_key.ty, whose leaves are equally non-int.
+fn main():
+    m := []bytes: int
+    println(str(len(keys(m))))

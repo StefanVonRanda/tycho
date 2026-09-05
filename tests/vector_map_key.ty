@@ -1,0 +1,26 @@
+# The map-key ANNOTATION for a composite whose leaves are hashable but not int
+# or string. `m := [a: 1]` inferred the key type and always worked in both
+# compilers; the written type is the form that diverged (tychoc accepted it,
+# tychoc1 refused it) until 2026-09-05, because no fixture wrote one.
+fn main():
+    a: vector[4]float = [1.0, 2.0, 3.0, 4.0]
+    b: vector[4]float = [5.0, 6.0, 7.0, 8.0]
+    vm := []vector[4]float: int
+    vm[a] = 1
+    vm[b] = 2
+    vm[a] = vm[a] + 10
+    println("vec " + str(len(vm)) + " " + str(vm[a]) + " " + str(vm[b]))
+    println("vec-in " + str(a in vm) + " " + str(len(keys(vm))))
+
+    fm := [][float]: string
+    fm[[1.5, 2.5]] = "x"
+    println("arr " + str(len(fm)) + " " + fm[[1.5, 2.5]])
+
+    tm := [](int, bool): int
+    tm[(1, true)] = 7
+    println("tup " + str(tm[(1, true)]) + " " + str(tm[(1, false)]))
+
+    k: [2]int = [3, 4]
+    xm := [][2]int: int
+    xm[k] = 9
+    println("fix " + str(xm[k]))

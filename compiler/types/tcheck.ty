@@ -582,11 +582,8 @@ fn _mapkey_ok(cs: inout C, k: string) -> bool:
     if k == "string" or _is_int(k):
         return true
     h := _head(k)
-    if h == "tup" or h == "arr" or h == "fix" or h == "vec":
-        for a in _targs(k):
-            if not _mapkey_ok(&cs, a):
-                return false
-        return true
+    if h == "tup" or h == "arr" or h == "fix" or h == "vec" or h == "bnd":
+        return _key_hashable(&cs, k)
     if len(k) > 1 and k[0] == 64:
         m := k[1:]
         if m in cs.tindex:
@@ -599,11 +596,39 @@ fn _mapkey_ok(cs: inout C, k: string) -> bool:
                         return false
                 return true
             if d.kind == "struct":
+                return _key_hashable(&cs, k)
+        return false
+    return false
+
+# A hashable LEAF of a composite key -- `src/tychoc.c@key_hashable`, spec
+# 03-types.md 5.3.5. Wider than _mapkey_ok in two directions and narrower in
+# one: float/bool/bytes are legal leaves though illegal top-level keys, and an
+# enum is NOT a leaf though a fieldless enum IS a top-level key.
+fn _key_hashable(cs: inout C, k: string) -> bool:
+    if k == "?":
+        return true
+    if k == "string" or k == "bytes" or k == "bool" or k == "float" or k == "f32" or _is_int(k):
+        return true
+    h := _head(k)
+    if h == "tup" or h == "arr":
+        for a in _targs(k):
+            if not _key_hashable(&cs, a):
+                return false
+        return true
+    if h == "fix" or h == "vec" or h == "bnd":
+        a := _targs(k)                    # leading arg is the SIZE, not a type
+        return _key_hashable(&cs, a[len(a) - 1])
+    if len(k) > 1 and k[0] == 64:
+        m := k[1:]
+        if m in cs.tindex:
+            d := cs.tds[cs.tindex[m]]
+            if d.kind == "newtype":
+                return _key_hashable(&cs, d.ftypes[0])
+            if d.kind == "struct":
                 for ft in d.ftypes:
-                    if not _mapkey_ok(&cs, ft):
+                    if not _key_hashable(&cs, ft):
                         return false
                 return true
-        return false
     return false
 
 # ---------------------------------------------------------------- the context

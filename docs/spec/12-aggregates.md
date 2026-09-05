@@ -599,8 +599,16 @@ same way down to a name, a field, a tuple index and a **literal** index: `a` and
 way are not compared: whether `xs[i]` and `xs[j]` denote one slot is not
 decidable when the program is compiled.
 
+A user `subscript` call is a place for the single-target form `p = e`, and it
+MUST NOT stand in this list. The restriction is a limit of the present
+implementations, not a property of the form.
+
 The form is a statement of its own and MUST NOT appear as the init or post
-clause of a three-clause `for` (§13).
+clause of a three-clause `for` (§13). It lowers to a prelude that binds every
+right-hand side ahead of the writes, and a `for` clause has nowhere to put one:
+the prelude lands outside the loop, where the post clause's bindings would be
+evaluated once instead of once per iteration, and where the init clause's are
+not in scope at all.
 
 ```tycho
 fn main():
@@ -631,8 +639,13 @@ a swizzled swap needs no temporary and a three-component rotation
 written in order.
 
 The base is repeated once per component, so it MUST be a variable or a field of
-one; a base that could be evaluated twice, such as a call result, is rejected. A
-component MUST NOT be repeated on the LEFT, by the rule above. On the right a
+one; a base that could be evaluated twice, such as a call result, is rejected,
+and so is one that carries an index (`vs[i].(x, y)`). An indexed base is
+rejected even though the spelled-out `(vs[i].x, vs[i].y) = (vs[i].y, vs[i].x)`
+is accepted: two targets are the same place only when their indices are
+literals, so under a non-literal index the repeated-component rule below could
+not be enforced. A component MUST NOT be repeated on the LEFT, by the rule
+above. On the right a
 repeat is ordinary duplication and is permitted: `v.(x, x)` is the pair
 `(v.x, v.x)`.
 

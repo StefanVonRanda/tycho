@@ -78,6 +78,7 @@ tests/reject/map_type_as_value.ty	ACCEPTED	`[string: int]` parses as an index ex
 tests/reject/massign_dup_target.ty	ACCEPTED	the grammar sees a parenthesised target list; whether two targets name one place is tychoc's rule, not a shape
 tests/reject/massign_for_clause.ty	ACCEPTED	the clause parses as an assignment; that it queues a prelude a `for` clause cannot hold is tychoc's rule
 tests/reject/massign_not_a_place.ty	ACCEPTED	a literal inside the target list is a well-formed expression to the grammar; place-ness is tychoc's rule
+tests/reject/massign_subscript_target.ty	ACCEPTED	a subscript call inside the target list is an ordinary call to the grammar; that a call is a place only for the single-target form is tychoc's rule
 tests/reject/match_arm_neg_not_int.ty	ACCEPTED	which scalars may follow '-' in an arm is a value rule, not a shape
 tests/reject/match_arm_set_not_scalar.ty	ACCEPTED	a string in a `|` set parses as a literal; which literals a scalar arm takes is tychoc's
 tests/reject/match_range_no_high.ty	ACCEPTED	`2.."z"` parses -- the range rule takes expressions on both sides, and which literals may be a match arm is tychoc's
@@ -103,6 +104,7 @@ tests/reject/subscript_no_yield.ty	ACCEPTED	a `return` is a legal body; "a singl
 tests/reject/subscript_not_inout.ty	ACCEPTED	`-> int` is a well-formed return type; requiring `inout` there is tychoc's
 tests/reject/subscript_not_place.ty	ACCEPTED	`yield <expr>` parses; place-ness is not a syntactic property here
 tests/reject/subscript_param_twice.ty	ACCEPTED	counting uses of a parameter inside the yielded place needs name resolution
+tests/reject/swizzle_base_indexed.ty	ACCEPTED	`vs[i].(x, y)` is an index followed by a well-formed token run; that a swizzle base may not carry an index is tychoc's rule
 tests/reject/swizzle_base_not_place.ty	ACCEPTED	`.` is an operator token to this grammar, so `mk().(x, y)` is a well-formed token run; that a swizzle base is copied per component is tychoc's rule
 tests/reject/swizzle_dup_field.ty	ACCEPTED	the grammar sees a field run, not a target list; whether two components name one place is tychoc's rule
 tests/reject/swizzle_one_component.ty	ACCEPTED	one component is the same token shape as two; the minimum is tychoc's rule, not a shape
