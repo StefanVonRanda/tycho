@@ -37,6 +37,16 @@ sysdll=" kernel32.dll msvcrt.dll advapi32.dll user32.dll ws2_32.dll shell32.dll 
 
 # ---------------------------------------------------------------- shared legs
 
+# --print-shims from the packaged compiler answers with the paths the COMPILER
+# resolved. Since the argv0 fix those are absolute WINDOWS paths (`Z:\dir\...`)
+# whenever wine hands the exe its full path, which a real Windows cc takes and
+# this Linux cross-gcc cannot; Z: is wine's root, so dropping the drive and
+# flipping the separators gives the same file back as a POSIX path.
+winshims() {
+    ( cd "$1" && env -u TYCHO_CORELIB $W "$2" "$3" --print-shims 2>/dev/null ) \
+        | tr -d '\r' | tr '\\\\' '/' | sed 's/^[A-Za-z]://' | tr '\n' ' '
+}
+
 # Every .exe's imports, against the allowlist plus whatever the archive carries.
 check_imports() {
     st="$1"; tag="$2"
@@ -142,7 +152,7 @@ check_mingw() {
     # the shims the packaged compiler itself named, and RUN the result.
     rm -f "$T/win_t.c" "$T/win_t.exe"
     ( cd "$st" && env -u TYCHO_CORELIB $W ./tychoc.exe "$T/src/t.ty" --emit-c -o "$T/win_t" ) >/dev/null 2>&1
-    shims="$( cd "$st" && env -u TYCHO_CORELIB $W ./tychoc.exe "$T/src/t.ty" --print-shims 2>/dev/null | tr -d '\r' | tr '\n' ' ' )"
+    shims="$(winshims "$st" ./tychoc.exe "$T/src/t.ty")"
     out=""
     if [ -s "$T/win_t.c" ] && [ -n "$shims" ]; then
         # shellcheck disable=SC2086
@@ -151,6 +161,30 @@ check_mingw() {
     fi
     [ "$out" = "RELEASE OK" ] && ok "mingw: emitted, linked and RAN a core:strings program under wine with no TYCHO_CORELIB" \
                               || bad "mingw: the packaged compiler did not build+run a core:strings program under wine (got '$out')"
+
+    # The same route from a FOREIGN cwd, naming the .exe by an absolute path --
+    # tychoc.exe on PATH, which is the only shape a Windows user who installed
+    # tycho actually types. Every leg above cd's into the archive first, which is
+    # why `compiler/types/load.ty@dir_of` cutting on '/' alone was invisible: wine
+    # hands the program `Z:\...\tychoc.exe` as argv[0], that returned ".", and the
+    # corelib and runtime fallbacks beside the binary were both dead.
+    rm -f "$T/far_t.c" "$T/far_t.exe"
+    ( cd "$T/src" && env -u TYCHO_CORELIB $W "$st/tychoc.exe" t.ty --emit-c -o "$T/far_t" ) >/dev/null 2>&1
+    out=""
+    if [ ! -s "$T/far_t.c" ]; then
+        out="(nothing emitted)"
+    elif ! grep -q arena_alloc_slow "$T/far_t.c"; then
+        # A separate assertion on purpose: corelib_root and write_runtime are two
+        # independent argv0-relative fallbacks and either can die on its own.
+        out="(emitted, but the runtime was not copied in)"
+    else
+        shims="$(winshims "$T/src" "$st/tychoc.exe" t.ty)"
+        # shellcheck disable=SC2086
+        [ -n "$shims" ] && "$MINGWCC" -O1 -fwrapv -static -pthread -o "$T/far_t.exe" "$T/far_t.c" $shims -lm 2>/dev/null
+        out="$($W "$T/far_t.exe" 2>/dev/null | tr -d '\r' || true)"
+    fi
+    [ "$out" = "RELEASE OK" ] && ok "mingw: tychoc.exe named by absolute path from a foreign cwd built and RAN the same program" \
+                              || bad "mingw: tychoc.exe from a foreign cwd could not build a core:strings program (got '$out') -- argv0-relative lookup is dead"
 }
 
 # ------------------------------------------------------------------ selfcheck
@@ -170,7 +204,7 @@ ctl() {
 
 selfcheck() {
     ver="$1"; base="$2"
-    echo ">> selfcheck: the three defects commit 7534812f found by hand"
+    echo ">> selfcheck: the three defects commit 7534812f found by hand, plus the argv0 one"
 
     # [C1] the archive ships the BOOTSTRAP compiler, which is what it did until
     # 7534812f. Built from src/tychoc.c, exactly as the old release.sh did.
@@ -207,6 +241,27 @@ selfcheck() {
         ( fail=0; legs=0; check_mingw "$c" "$ver" ) > "$T/c3.log" 2>&1
         ctl "runtime/ removed from the archive" "runtime/tycho_rt.c MISSING" "$T/c3.log"
         ctl "runtime/ removed from the archive (the compiler dies on the first program)" "emitted nothing" "$T/c3.log"
+    fi
+
+    # [C4] dir_of cutting on '/' alone, which is what compiler/types/load.ty did
+    # until 2026-09-05. Rebuilt for real from a mutated copy of the compiler, so
+    # the leg is scored against the actual defect rather than a simulation.
+    c="$T/c4"; rm -rf "$c"; cp -r "$base" "$c"
+    rm -rf "$T/c4src"; mkdir -p "$T/c4src"; cp -r compiler corelib "$T/c4src/"
+    sed -i 's/if p\[i\] == 47 or p\[i\] == 92:/if p[i] == 47:/' "$T/c4src/compiler/types/load.ty"
+    if grep -q 'p\[i\] == 47 or p\[i\] == 92' "$T/c4src/compiler/types/load.ty"; then
+        echo "FAIL control: the exe_dir_of mutation did not apply"; ctl_fail=$((ctl_fail + 1))
+    else
+        echo "   substitution applied: exe_dir_of in $T/c4src cuts on 47 only ($(grep -c 'p\[i\] == 92' "$T/c4src/compiler/types/load.ty") backslash tests left)"
+        ./tychoc "$T/c4src/compiler/main.ty" --emit-c -o "$T/c4c" >/dev/null 2>&1
+        # shellcheck disable=SC2086
+        "$MINGWCC" -O1 -fwrapv -static -pthread -o "$c/tychoc.exe" "$T/c4c.c" \
+            $(./tychoc "$T/c4src/compiler/main.ty" --print-shims 2>/dev/null | tr '\n' ' ') -lm 2>/dev/null
+        ( fail=0; legs=0; check_mingw "$c" "$ver" ) > "$T/c4.log" 2>&1
+        ctl "dir_of cutting on '/' alone" "argv0-relative lookup is dead" "$T/c4.log"
+        grep -q "^   ok  mingw: emitted, linked and RAN a core:strings program" "$T/c4.log" \
+            && { ctl_pass=$((ctl_pass + 1)); echo "   ok  control: the mutated compiler still works with cwd = the archive, so the leg above is about the CWD"; } \
+            || { ctl_fail=$((ctl_fail + 1)); echo "FAIL control: the mutated compiler fails from the archive cwd too -- C4 is not isolating the argv0 path"; }
     fi
 
     # And the revert: the untouched archive must still be clean, or every control

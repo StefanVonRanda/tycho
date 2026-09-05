@@ -51,6 +51,25 @@ fn dir_of(p: string) -> string:
         return "/"
     return p[0:cut]
 
+# argv[0] on Windows is backslash-separated (`Z:\dir\tychoc.exe`), dir_of cut on
+# 47 alone and answered ".", so both argv0-relative fallbacks -- corelib_root
+# below and driver.ty@write_runtime -- were dead there and tychoc.exe on PATH
+# could not compile from another directory. src/tychoc.c@exe_dir takes the later
+# of the two separators unguarded for the same reason it is safe here: a
+# backslash in an argv0 is a Windows path, never a POSIX filename. Source paths
+# keep dir_of -- src/tychoc.c@path_dir guards THAT behind _WIN32 because a
+# backslash IS a legal POSIX filename byte, and tychoc1 cannot spell _WIN32.
+fn exe_dir_of(p: string) -> string:
+    cut := -1
+    for i := 0; i < len(p); i += 1:
+        if p[i] == 47 or p[i] == 92:
+            cut = i
+    if cut < 0:
+        return "."
+    if cut == 0:
+        return "/"
+    return p[0:cut]
+
 # Lexical canonicalisation. src/tychoc.c@canon_dir goes through the filesystem;
 # every path in this tree is relative to one cwd, so collapsing `.` and `..`
 # textually gives the same key for the same directory. It is the KEY for the
@@ -92,7 +111,7 @@ fn corelib_root(argv0: string) -> string:
     e := getenv("TYCHO_CORELIB")
     if len(e) > 0:
         return e
-    d := dir_of(argv0)
+    d := exe_dir_of(argv0)
     if _dir_has_files(d + "/corelib"):
         return d + "/corelib"
     if _dir_has_files(d + "/../share/tycho/corelib"):

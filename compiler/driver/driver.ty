@@ -29,7 +29,7 @@ fn write_runtime(path: string, argv0: string, dst: string):
     # The default path is relative to the CWD, which is only right when tychoc1
     # is run from the repo root -- `cd tmp && tychoc1 x.ty` could not build at
     # all. Fall back beside the binary, as corelib_root does.
-    d := types.dir_of(argv0)
+    d := types.exe_dir_of(argv0)
     for c in [d + "/runtime/tycho_rt.c", d + "/../runtime/tycho_rt.c",
               d + "/../share/tycho/runtime/tycho_rt.c"]:
         match io.copy(c, dst):
