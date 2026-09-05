@@ -1,0 +1,9 @@
+# Go and Odin both ACCEPT `a, a = 1, 2` and let
+# the last write win; Tycho refuses, because the ordering the two writes would
+# need to be told apart is exactly the ordering this form removes. The accepting
+# twin is tests/multi_assign.ty.
+# expect: duplicate target 'a' in a multi-assign -- every right side is evaluated before any write, so two writes to one place have no order
+fn main():
+    a := 1
+    (a, a) = (1, 2)
+    println(str(a))

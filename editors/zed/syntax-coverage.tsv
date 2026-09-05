@@ -75,6 +75,9 @@ tests/reject/map_get_removed.ty	ACCEPTED	as map_del_removed
 tests/reject/map_has_removed.ty	ACCEPTED	as map_del_removed
 tests/reject/map_set_removed.ty	ACCEPTED	as map_del_removed
 tests/reject/map_type_as_value.ty	ACCEPTED	`[string: int]` parses as an index expression; telling type from value needs the context
+tests/reject/massign_dup_target.ty	ACCEPTED	the grammar sees a parenthesised target list; whether two targets name one place is tychoc's rule, not a shape
+tests/reject/massign_for_clause.ty	ACCEPTED	the clause parses as an assignment; that it queues a prelude a `for` clause cannot hold is tychoc's rule
+tests/reject/massign_not_a_place.ty	ACCEPTED	a literal inside the target list is a well-formed expression to the grammar; place-ness is tychoc's rule
 tests/reject/match_arm_neg_not_int.ty	ACCEPTED	which scalars may follow '-' in an arm is a value rule, not a shape
 tests/reject/match_arm_set_not_scalar.ty	ACCEPTED	a string in a `|` set parses as a literal; which literals a scalar arm takes is tychoc's
 tests/reject/match_range_no_high.ty	ACCEPTED	`2.."z"` parses -- the range rule takes expressions on both sides, and which literals may be a match arm is tychoc's

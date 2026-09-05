@@ -1,0 +1,54 @@
+# Simultaneous assignment `(t1, ..., tn) = rhs`. The whole feature is the
+# ORDER: every right side is evaluated before any target is written.
+#
+# A SWAP CANNOT TELL THE TWO RULES APART -- `(a, b) = (b, a)` is correct under
+# simultaneous and under right-to-left sequential assignment alike. The fib step
+# below is the case that separates them: sequential (a first, then b) would read
+# the NEW a and print 2 4; simultaneous prints 2 3. Same for `(i, xs[i])`, where
+# the index is part of the left side's ADDRESS and must be the old i.
+struct P:
+    x: int
+    y: int
+
+fn pair() -> (int, int):
+    return 7, 8
+
+fn main():
+    a := 1
+    b := 2
+    (a, b) = (b, a + b)
+    println(str(a) + " " + str(b))
+
+    p := P(3, 4)
+    (p.x, p.y) = (p.y, p.x)
+    println(str(p.x) + " " + str(p.y))
+
+    xs := [10, 20, 30]
+    (xs[0], xs[2]) = (xs[2], xs[0])
+    println(str(xs[0]) + " " + str(xs[2]))
+
+    i := 0
+    (i, xs[i]) = (2, 99)
+    println(str(i) + " " + str(xs[0]) + " " + str(xs[2]))
+
+    c := 0
+    d := 0
+    (c, d) = pair()
+    println(str(c) + " " + str(d))
+
+    s := "left"
+    u := "right"
+    (s, u) = (u, s)
+    println(s + " " + u)
+
+    m := []string: [int]
+    m["a"] = [1]
+    m["b"] = [2, 3]
+    (m["a"], m["b"]) = (m["b"], m["a"])
+    println(str(len(m["a"])) + " " + str(len(m["b"])))
+
+    f0 := 0
+    f1 := 1
+    for k := 0; k < 8; k += 1:
+        (f0, f1) = (f1, f0 + f1)
+    println(str(f0) + " " + str(f1))

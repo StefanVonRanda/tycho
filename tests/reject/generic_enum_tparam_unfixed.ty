@@ -1,4 +1,4 @@
-# src/tychoc.c:6909 -- a nullary variant carries no value, so $T can only be
+# src/tychoc.c:6983 -- a nullary variant carries no value, so $T can only be
 # supplied explicitly.
 # expect: type parameter $T of Tree is not fixed by any payload value
 enum Tree($T):

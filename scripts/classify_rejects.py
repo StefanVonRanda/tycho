@@ -71,7 +71,7 @@ NAME_SITES = [
     "unknown variable '%s'",
     "assignment to unknown variable",
     "unknown procedure '%s'",
-    # The hard-coded sibling of the line above (src/tychoc.c:7298). It reached
+    # The hard-coded sibling of the line above (src/tychoc.c:7372). It reached
     # NAME only once load_sites() stopped mangling the `\n` inside its message;
     # before that it matched no site at all and fell through to SEMANTIC.
     "unknown procedure 'eprintln'",
@@ -242,7 +242,7 @@ FALLBACK = [
     ("no 'main' procedure", "NAME"),                   # whole-program, but the Sig table alone decides it
     ("unclosed '(' or '['", "SYNTAX"),                 # the lexer, message built by snprintf
     ("must declare its own package first", "NAME"),    # the package header, an fprintf after parsing
-    # report_unused_locals (src/tychoc.c:5703) is an fprintf loop, not a die_at, so
+    # report_unused_locals (src/tychoc.c:5777) is an fprintf loop, not a die_at, so
     # load_sites cannot see it. SEMANTIC, not NAME: it is a whole-program pass run
     # AFTER name resolution in both compilers, and the NAME class means "the
     # resolver refuses it" (compiler/verdict_diff.py:180).
@@ -253,7 +253,7 @@ FALLBACK = [
     # tests/reject/pkg/import_unused/main.ty -- ./tychoc1 --parse rc=0,
     # --resolve rc=0, --typecheck rc=1, which is exactly the SEMANTIC contract.
     ("imported and not used in this file", "SEMANTIC"),
-    # merge_pkg's two package-header checks (src/tychoc.c:14461, :14234) are
+    # merge_pkg's two package-header checks (src/tychoc.c:14535, :14234) are
     # fprintf+exit in the package LOADER, so load_sites cannot see them either.
     # NAME, on the same measurement as "must declare its own package first"
     # above: ./tychoc1 --parse rc=0, --resolve rc=1, which is the NAME contract

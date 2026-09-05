@@ -1,5 +1,5 @@
-# src/tychoc.c:8592 -- three names, two elements: the third would bind nothing.
-# expect: destructuring 3 name(s) from a 2-element tuple
+# src/tychoc.c:8666 -- three names, two elements: the third would bind nothing.
+# expect: destructuring 3 target(s) from a 2-element tuple
 fn f() -> (int, int):
     return (1, 2)
 

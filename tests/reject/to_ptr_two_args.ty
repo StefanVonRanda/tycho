@@ -1,4 +1,4 @@
-# src/tychoc.c:7043
+# src/tychoc.c:7117
 # expect: to_ptr(n) takes one argument
 fn main():
     p := to_ptr(1, 2)

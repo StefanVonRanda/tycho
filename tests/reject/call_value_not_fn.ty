@@ -1,4 +1,4 @@
-# src/tychoc.c:6726 -- calling something that is not a function.
+# src/tychoc.c:6800 -- calling something that is not a function.
 # expect: calling a value that isn't a function (int)
 fn main():
     xs := [1, 2]

@@ -1,4 +1,4 @@
-# src/tychoc.c:7178 -- pop's argument must be rooted at a variable; a call
+# src/tychoc.c:7252 -- pop's argument must be rooted at a variable; a call
 # result is not a place.
 # tychoc1 ACCEPTED this under --typecheck until the check was ported into
 # compiler/types/tcheck.ty; both now word it identically.

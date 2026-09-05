@@ -1,4 +1,4 @@
-# src/tychoc.c:7924 -- &v hands a chunk a pointer into the shared frame, which is
+# src/tychoc.c:7998 -- &v hands a chunk a pointer into the shared frame, which is
 # the mutation the reduction form exists to replace.
 # expect: parallel for cannot pass a captured variable as inout (no shared mutation across chunks)
 fn bump(p: inout int):

@@ -1,0 +1,10 @@
+# A multi-assign queues its right-side temp as a prelude, and
+# a `for` clause has nowhere to put one: the block would run it before the loop,
+# which is wrong for the post clause and splits the init one in half. Refused
+# rather than half-lowered.
+# expect: a multi-assign is not a `for` clause -- write it as its own statement
+fn main():
+    a := 1
+    b := 2
+    for i := 0; i < 3; (a, b) = (b, a):
+        println(str(i))

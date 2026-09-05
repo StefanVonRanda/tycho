@@ -1,4 +1,4 @@
-# src/tychoc.c:6728 -- an indirect call on a fn VALUE read out of an array. The
+# src/tychoc.c:6802 -- an indirect call on a fn VALUE read out of an array. The
 # fn-typed LOCAL twin is fnvar_call_arity.ty, and it is a different code path
 # with a different message.
 # expect: this function value expects 2 argument(s), got 1

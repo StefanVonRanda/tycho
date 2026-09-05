@@ -1,4 +1,4 @@
-# src/tychoc.c:7323 -- `&<call>` is an address of a temporary, so there is
+# src/tychoc.c:7397 -- `&<call>` is an address of a temporary, so there is
 # nothing for the callee to write back. tychoc1 ACCEPTED this until the rule was
 # ported into compiler/types/tcheck.ty; both now word it identically.
 # expect: inout argument 1 of 'bump' must name a variable

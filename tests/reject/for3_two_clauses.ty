@@ -1,7 +1,7 @@
 # expect: a three-clause `for` is `for init; cond; post:` -- two ';' separating three clauses
 # Both compilers name this rule since the `s2 < 0` arm was added to
 # compiler/parse/parse.ty@_forstmt_into; tychoc1 used to fall through to the
-# generic `expected ';', found op ':'`. src/tychoc.c:3995.
+# generic `expected ';', found op ':'`. src/tychoc.c:4018.
 fn main():
     for i := 0; i < 3:
         println("x")

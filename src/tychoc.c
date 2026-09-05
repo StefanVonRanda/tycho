@@ -3791,6 +3791,29 @@ static void hoist_index_calls(Expr *place, int line) {
     }
 }
 
+/* Multi-assign hardening. `(i, xs[i]) = (0, 5)` must store into xs at the OLD
+ * i: every right side is evaluated before any write, and an index is part of
+ * the left side's address, not of the value. hoist_index_calls only binds a
+ * leg that CONTAINS A CALL, which leaves a bare `xs[i]` reading the sibling
+ * target's new value. Bind every non-literal leg instead; the temps are queued
+ * ahead of the right-side temp, so the whole left side is addressed first. */
+static void hoist_place_indices(Expr *place, int line) {
+    Expr *chain[32]; int nc = 0;
+    for (Expr *cur = place; cur; ) {
+        if (cur->kind == E_INDEX) {
+            if (nc >= 32) die_at(line, "assignment place too deeply nested (max 32 indices)");
+            chain[nc++] = cur;
+        }
+        if (cur->kind == E_INDEX || cur->kind == E_FIELD || cur->kind == E_TUPIDX) cur = cur->lhs;
+        else break;
+    }
+    for (int i = nc - 1; i >= 0; i--) {   /* innermost leg (evaluated first) hoisted first */
+        Expr *ix = chain[i];
+        if (ix->rhs && ix->rhs->kind != E_INT && ix->rhs->kind != E_STR)
+            ix->rhs = hoist_place_leg(ix->rhs, line);
+    }
+}
+
 static Stmt *parse_stmt(Parser *ps) {
     Tok *t = cur(ps);
 
@@ -4008,12 +4031,20 @@ static Stmt *parse_stmt(Parser *ps) {
                  * the assignment grammar that could drift from the first. */
                 peek(ps, i_semi1)->kind = TK_NEWLINE;
                 peek(ps, i_colon)->kind = TK_NEWLINE;
+                int np0 = g_npending;
                 Stmt *init = parse_stmt(ps);
                 if (init->kind != S_DECL && init->kind != S_ASSIGN)
                     die_at(init->line, "the init clause of a three-clause `for` is a declaration or an assignment");
+                /* Only a multi-assign queues a prelude here, and parse_block would flush it
+                 * BEFORE the loop -- right for init by accident, wrong for post. Refuse both
+                 * rather than lower half of the statement. */
+                if (g_npending != np0)
+                    die_at(init->line, "a multi-assign is not a `for` clause -- write it as its own statement");
                 Expr *cond = parse_expr(ps);
                 eat(ps, TK_SEMI, "';' after the condition");
                 Stmt *post = parse_stmt(ps);
+                if (g_npending != np0)
+                    die_at(post->line, "a multi-assign is not a `for` clause -- write it as its own statement");
                 if (post->kind != S_ASSIGN)
                     die_at(post->line, "the post clause of a three-clause `for` is an assignment to a variable (`i += 1`)");
                 eat(ps, TK_NEWLINE, "newline");
@@ -4197,6 +4228,49 @@ static Stmt *parse_stmt(Parser *ps) {
      * bare expression statement (a call). parse_postfix stops before any binary
      * operator, so `a[i] += v` leaves the `+` for the compound check below. */
     Expr *e = parse_postfix(ps);
+    if (e->kind == E_TUPLE && at(ps, TK_EQ)) {
+        /* SIMULTANEOUS ASSIGNMENT `(t1, ..., tn) = rhs`. The rule is the whole
+         * feature: the right side is evaluated ONCE, in full, before any target
+         * is written, so `(a, b) = (b, a + b)` means what it reads as and a swap
+         * needs no temporary. That is why this desugars to a right-side temp
+         * queued ahead of n ordinary stores rather than to n statements -- the
+         * ordering is structural, not a convention codegen has to remember.
+         * Following Go and Odin: the right side is one tuple-valued expression
+         * (a literal `(b, a)` or a call), arity must match, and element types
+         * must match pairwise. Unlike both, a repeated plain-name target is
+         * REFUSED -- with every right side evaluated first, the two writes have
+         * no order to distinguish them, and `a, b := f()` already refuses it. */
+        ps->p++;
+        int n = e->nargs;
+        for (int i = 0; i < n; i++) {
+            Expr *tg = e->args[i];
+            if (tg->kind != E_IDENT && tg->kind != E_INDEX && tg->kind != E_FIELD && tg->kind != E_TUPIDX)
+                die_at(t->line, "cannot assign to this expression -- every target of a multi-assign must be a variable, a field, or an array/map element");
+            if (tg->kind == E_IDENT)
+                for (int j = 0; j < i; j++)
+                    if (e->args[j]->kind == E_IDENT && !strcmp(e->args[j]->sval, tg->sval))
+                        die_at(t->line, "duplicate target '%s' in a multi-assign -- every right side is evaluated before any write, so two writes to one place have no order", tg->sval);
+        }
+        for (int i = 0; i < n; i++)
+            if (e->args[i]->kind != E_IDENT) hoist_place_indices(e->args[i], t->line);
+        Stmt *td = new_stmt(S_MDECL, t->line);   /* _ms1, ..., _msn := rhs -- the entire right side, before any write */
+        td->nnames = n;
+        for (int i = 0; i < n; i++) td->names[i] = sfmt("_ms%d", g_forin_uid++);
+        td->expr = parse_expr(ps);
+        eat(ps, TK_NEWLINE, "newline");
+        if (g_npending + n + 1 > 64) die_at(t->line, "too many queued statements in one block (max 64)");
+        g_pending[g_npending++] = td;
+        Stmt *last = NULL;
+        for (int i = 0; i < n; i++) {
+            Expr *el = new_expr(E_IDENT, t->line); el->sval = td->names[i]; el->pkg = g_cur_pkg_prefix;
+            Expr *tg = e->args[i];
+            Stmt *as;
+            if (tg->kind == E_IDENT) { as = new_stmt(S_ASSIGN, t->line); as->name = tg->sval; as->expr = el; }
+            else { as = new_stmt(tg->kind == E_INDEX ? S_INDEXSET : S_FIELDSET, t->line); as->target = tg; as->expr = el; }
+            if (i < n - 1) g_pending[g_npending++] = as; else last = as;
+        }
+        return last;
+    }
     if (accept(ps, TK_EQ)) {
         /* E_CALL is allowed as a target only if it resolves to a user subscript's place
          * (checked in resolve_stmt, which corrects the kind); a plain call is rejected there. */
@@ -7303,7 +7377,7 @@ static Type resolve_expr_inner(Expr *e) {
             if (e->nargs != s->nparams)
                 die_at(e->line, "'%s' takes %d argument(s), got %d",
                        nominal_name(e->sval), s->nparams, e->nargs);
-            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:6765 */
+            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:6839 */
             for (int i = 0; i < e->nargs; i++) {
                 g_in_arg++;
                 Type at_ = resolve_exp(e->args[i], s->params[i]);   /* fixes a None arg */
@@ -7901,7 +7975,7 @@ static void pf_capture(Expr *id) {
 /* capture an outer local named by a STRING rather than by an E_IDENT node -- the
  * callee of `f(x)` and the receiver of `o.f(x)` live in E_CALL's sval/qual, not
  * in a child expr. The synthesized read is resolved in the enclosing scope with
- * every other capture (src/tychoc.c:8513). Non-locals (global fns, builtins,
+ * every other capture (src/tychoc.c:8587). Non-locals (global fns, builtins,
  * enum constructors, package qualifiers) fail vars_find and are dropped. */
 static void pf_capture_name(const char *n, int line) {
     Type vt;
@@ -7924,10 +7998,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7861),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:7935),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:8135). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:8209). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
@@ -8586,10 +8660,10 @@ static void resolve_stmt(Stmt *s, Type ret) {
         case S_MDECL: {   /* a, b := f() — destructure a tuple into fresh locals */
             Type rt = resolve_expr(s->expr);
             if (!IS_TUP(rt))
-                die_at(s->line, "the right side of a destructuring `:=` must be a tuple, got %s",
+                die_at(s->line, "the right side of a destructuring must be a tuple, got %s",
                        type_name(rt));
             if (tup_n(rt) != s->nnames)
-                die_at(s->line, "destructuring %d name(s) from a %d-element tuple",
+                die_at(s->line, "destructuring %d target(s) from a %d-element tuple",
                        s->nnames, tup_n(rt));
             for (int i = 0; i < s->nnames; i++) {
                 for (int j = 0; j < i; j++)
@@ -9694,7 +9768,7 @@ static const char *for3_elidable_arr(Stmt *s) {
     if (!bound || bound->kind != E_CALL || !bound->sval || strcmp(bound->sval, "len") ||
         bound->nargs != 1 || !bound->args[0] || bound->args[0]->kind != E_IDENT) return NULL;
     if (IS_INLINE_ARR(bound->args[0]->type)) return NULL;   /* [N]T / bounded / vector store in .v, not .data — elision emits .data[i], so never elide it */
-    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:4065-4070) */
+    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:4096-4101) */
     if (!post || post->kind != S_ASSIGN || !post->name || strcmp(post->name, iv)) return NULL;
     Expr *inc = post->expr;
     if (!inc || inc->kind != E_BINOP || inc->op != TK_PLUS) return NULL;

@@ -8,7 +8,7 @@ import "../lex"
 # node rather than living in a mutable parser struct, because a Tycho struct is
 # a value and a `p.i += 1` inside a callee would not be seen by its caller.
 #
-# The grammar is src/tychoc.c's parser (src/tychoc.c:2053-5039), read rather
+# The grammar is src/tychoc.c's parser (src/tychoc.c:2053-5113), read rather
 # than inferred from fixtures. Precedence, tightest first:
 #   postfix > unary(- & ~) > * / % << >> & > + - | ^ > is > == != < > <= >= in
 #          > not > and > or
@@ -1010,7 +1010,9 @@ fn value_block(toks: [lex.Tok], i0: int) -> ([ast.Stmt], int):
             push(out, ast.ExprStmt(ast.line_of(e), [e]))
             continue
         push(out, ast.PassS(0))
-        i = _stmt_into(toks, i, &out[len(out) - 1])
+        spend := []ast.Stmt
+        i = _stmt_into(toks, i, &out[len(out) - 1], &spend)
+        _splice(&out, &spend)
     i = _expect(toks, i, lex.K_DEDENT, "")
     if len(out) == 0:
         _die(toks, _at(toks, i0), "a value branch must end in a value expression")
@@ -1172,7 +1174,9 @@ fn _arm_body(toks: [lex.Tok], i0: int, value: bool) -> ([ast.Stmt], int):
         return ([ast.ExprStmt(ast.line_of(e), [e])], j)
     body := []ast.Stmt
     push(body, ast.PassS(0))
-    j := _stmt_into(toks, i0, &body[0])
+    spend := []ast.Stmt
+    j := _stmt_into(toks, i0, &body[0], &spend)
+    _splice(&body, &spend)
     return (body, j)
 
 fn _matchs_into(toks: [lex.Tok], i0: int, value: bool, out: inout ast.Stmt) -> int:
@@ -1298,10 +1302,63 @@ fn _is_compound(toks: [lex.Tok], i: int) -> bool:
         return true
     return v == lex.OP_AMP or v == lex.OP_PIPE or v == lex.OP_CARET or v == lex.OP_SHL or v == lex.OP_SHR
 
+# --- simultaneous assignment `(t1, ..., tn) = rhs` ---------------------------
+# The name of a plain-variable target, "" for any other place. Only a plain name
+# can be compared for the duplicate-target rule; two index or field places may
+# or may not be the same slot and no parser can tell.
+fn _mtname(e: ast.Expr) -> string:
+    match e:
+        ast.Name(l, n): return n
+        _: pass
+    return ""
+
+# One target's store: an ordinary Assign for a variable, a PlaceSet otherwise.
+fn _mstore(g: ast.Expr, nm: string, ln: int) -> ast.Stmt:
+    v := ast.Name(ln, nm)
+    match g:
+        ast.Name(l, n): return ast.Assign(ln, n, [v])
+        _: pass
+    return ast.PlaceSet(ln, [g, v])
+
+# Bind every non-literal index in a target to a temp queued ahead of the right
+# side, so `(i, xs[i]) = (2, 99)` stores into xs at the OLD i: an index is part
+# of the left side's address, and the rule is that no write lands until the
+# whole right side is in hand. src/tychoc.c@hoist_place_indices.
+fn _mhoist(g: ast.Expr, i0: int, tag: int, nx: inout int, pend: inout [ast.Stmt]) -> ast.Expr:
+    match g:
+        ast.Index(l, k):
+            recv := _mhoist(k[0], i0, tag, &nx, &pend)
+            ix := k[1]
+            if (ix is ast.IntLit) or (ix is ast.StrLit):
+                return ast.Index(l, [recv, ix])
+            nm := "_mx" + str(i0) + "_" + str(tag) + "_" + str(nx)
+            nx = nx + 1
+            push(pend, ast.Decl(l, nm, []ast.Ty, [ix], []ast.Stmt))
+            return ast.Index(l, [recv, ast.Name(l, nm)])
+        ast.Field(l, k, f):
+            return ast.Field(l, [_mhoist(k[0], i0, tag, &nx, &pend)], f)
+        ast.TupIdx(l, k, n2):
+            return ast.TupIdx(l, [_mhoist(k[0], i0, tag, &nx, &pend)], n2)
+        _: pass
+    return g
+
+# Move a statement's queued prelude in front of it. The statement is already the
+# last element of `out` (the caller pushed a placeholder for _stmt_into to fill),
+# so the prelude has to slide in underneath it. Mirrors the g_pending drain in
+# src/tychoc.c@parse_block.
+fn _splice(out: inout [ast.Stmt], pend: inout [ast.Stmt]):
+    if len(pend) == 0:
+        return
+    last := out[len(out) - 1]
+    pop(out)
+    for p in pend:
+        push(out, p)
+    push(out, last)
+
 # A declaration, assignment, place-set or bare-call statement, WITHOUT its
 # terminating newline -- the three-clause `for` reuses it for its init and post
 # clauses, which is what keeps one copy of the assignment grammar.
-fn _simple_into(toks: [lex.Tok], i0: int, out: inout ast.Stmt) -> (int, bool):
+fn _simple_into(toks: [lex.Tok], i0: int, out: inout ast.Stmt, pend: inout [ast.Stmt]) -> (int, bool):
     ti := _cl(toks, i0)
     i := i0
 
@@ -1365,9 +1422,51 @@ fn _simple_into(toks: [lex.Tok], i0: int, out: inout ast.Stmt) -> (int, bool):
     e := ast.NullLit(0)
     i2 := _postfix_into(toks, i0, &e)
     i = i2
+    if (e is ast.Tuple) and _isop(toks, i, lex.OP_EQ):
+        # SIMULTANEOUS ASSIGNMENT `(t1, ..., tn) = rhs`. The rule is the whole
+        # feature: the right side is evaluated ONCE, in full, before any target
+        # is written, so `(a, b) = (b, a + b)` means what it reads as and a swap
+        # needs no temporary. It lowers to n fresh names destructured from the
+        # right side, then n ordinary stores -- the ordering is structural, and
+        # the tuple and arity rules are the ones `a, b := f()` already carries.
+        # Following Go and Odin, the right side is one tuple-valued expression
+        # and the element types must match pairwise. Unlike both, a repeated
+        # plain-name target is REFUSED: with every right side evaluated first
+        # the two writes have no order to tell them apart.
+        # src/tychoc.c@hoist_place_indices is the matching left-side hardening.
+        tgs := []ast.Expr
+        match e:
+            ast.Tuple(l, ks): tgs = ks
+            _: pass
+        i += 1
+        ln := toks[ti].line
+        n := len(tgs)
+        for a := 0; a < n; a += 1:
+            g := tgs[a]
+            if not (g is ast.Name) and not (g is ast.Index) and not (g is ast.Field) and not (g is ast.TupIdx):
+                _die(toks, _at(toks, i0), "cannot assign to this expression -- every target of a multi-assign must be a variable, a field, or an array/map element")
+            nm := _mtname(g)
+            if nm != "":
+                for b := 0; b < a; b += 1:
+                    if _mtname(tgs[b]) == nm:
+                        _die(toks, _at(toks, i0), "duplicate target '" + nm + "' in a multi-assign -- every right side is evaluated before any write, so two writes to one place have no order")
+        places := []ast.Expr
+        nx := 0
+        for a := 0; a < n; a += 1:
+            push(places, _mhoist(tgs[a], i0, a, &nx, &pend))
+        names := []string
+        for a := 0; a < n; a += 1:
+            push(names, "_ms" + str(i0) + "_" + str(a))
+        rhs := ast.NullLit(0)
+        k2 := _expr_into(toks, i, &rhs)
+        push(pend, ast.MDecl(ln, true, names, [rhs]))
+        for a := 0; a < n - 1; a += 1:
+            push(pend, _mstore(places[a], names[a], ln))
+        out = _mstore(places[n - 1], names[n - 1], ln)
+        return (k2, true)
     if _isop(toks, i, lex.OP_EQ):
         i += 1
-        # src/tychoc.c:4203 allows E_CALL as a target; its E_CALL covers BOTH the
+        # src/tychoc.c:4277 allows E_CALL as a target; its E_CALL covers BOTH the
         # named form and the indirect one, which split here into Call/CallVal.
         if not (e is ast.Index) and not (e is ast.Field) and not (e is ast.TupIdx) and
            not (e is ast.Call) and not (e is ast.CallVal):
@@ -1390,7 +1489,7 @@ fn _simple_into(toks: [lex.Tok], i0: int, out: inout ast.Stmt) -> (int, bool):
                 out = ast.Assign(toks[ti].line, n, [b])
                 return (j, true)
             _:
-                # src/tychoc.c:4237 takes only an index, a field or a tuple index here;
+                # src/tychoc.c:4311 takes only an index, a field or a tuple index here;
                 # everything else falls through to the refusal below.
                 if not (e is ast.Index) and not (e is ast.Field) and not (e is ast.TupIdx):
                     _die(toks, _at(toks, i0), "cannot compound-assign to this expression")
@@ -1416,7 +1515,7 @@ fn _simple_into(toks: [lex.Tok], i0: int, out: inout ast.Stmt) -> (int, bool):
     out = ast.ExprStmt(toks[ti].line, [e])
     return (i, true)
 
-# The three-clause scan src/tychoc.c:3981-3991 does: the first two top-level
+# The three-clause scan src/tychoc.c:4004-4014 does: the first two top-level
 # ';' and the LAST top-level ':' before the newline. A third ';' is the rule.
 fn _for3_scan(toks: [lex.Tok], i0: int, ft: lex.Tok) -> (int, int, int):
     s1 := -1
@@ -1480,8 +1579,8 @@ fn _forstmt_into(toks: [lex.Tok], i0: int, par: bool, out: inout ast.Stmt) -> in
     if s1 >= 0:
         # Each empty clause reaches _simple_into or _expr_into as a bare ';'
         # and reports `expected an expression`, which names no rule.
-        # src/tychoc.c:3996-4003, in that order.
-        # src/tychoc.c:3994 -- with only ONE ';' the generic `_op` reports the
+        # src/tychoc.c:4019-4026, in that order.
+        # src/tychoc.c:4017 -- with only ONE ';' the generic `_op` reports the
         # token it found, which names no rule.
         if s2 < 0:
             _die(toks, _at(toks, i0 - 1), "a three-clause `for` is `for init; cond; post:` -- two ';' separating three clauses")
@@ -1494,13 +1593,20 @@ fn _forstmt_into(toks: [lex.Tok], i0: int, par: bool, out: inout ast.Stmt) -> in
         if cl == s2 + 1:
             _die(toks, _at(toks, i0 - 1), "the post clause is required -- write `for cond:` for a loop that advances in its body")
         init := ast.PassS(0)
-        j, nl1 := _simple_into(toks, i, &init)
+        # Only a multi-assign queues a prelude, and a `for` clause has nowhere to
+        # put one -- the block would run it before the loop. src/tychoc.c@np0.
+        cpend := []ast.Stmt
+        j, nl1 := _simple_into(toks, i, &init, &cpend)
+        if len(cpend) > 0:
+            _die(toks, _at(toks, i0 - 1), "a multi-assign is not a `for` clause -- write it as its own statement")
         i = _op(toks, j, lex.OP_SEMI)
         cond := ast.NullLit(0)
         k := _expr_into(toks, i, &cond)
         i = _op(toks, k, lex.OP_SEMI)
         post := ast.PassS(0)
-        m, nl2 := _simple_into(toks, i, &post)
+        m, nl2 := _simple_into(toks, i, &post, &cpend)
+        if len(cpend) > 0:
+            _die(toks, _at(toks, i0 - 1), "a multi-assign is not a `for` clause -- write it as its own statement")
         i = _op(toks, m, lex.OP_COLON)
         i = _expect(toks, i, lex.K_NEWLINE, "")
         if not (init is ast.Decl) and not (init is ast.Assign) and not (init is ast.MDecl):
@@ -1511,7 +1617,7 @@ fn _forstmt_into(toks: [lex.Tok], i0: int, par: bool, out: inout ast.Stmt) -> in
         out = ast.For3(toks[ti].line, [init, post], [cond], b)
         return n
     # `for k, q in xs:` -- without this the comma reaches the condition form and
-    # reports `expected ':', found op ','`. src/tychoc.c:4036.
+    # reports `expected ':', found op ','`. src/tychoc.c:4067.
     if _kis(toks, i, lex.K_IDENT) and _isop(toks, i + 1, lex.OP_COMMA):
         k := 0
         for _kis(toks, i + k, lex.K_IDENT) and _isop(toks, i + k + 1, lex.OP_COMMA):
@@ -1537,7 +1643,7 @@ fn _forstmt_into(toks: [lex.Tok], i0: int, par: bool, out: inout ast.Stmt) -> in
             _die(toks, _at(toks, i0 - 1), "`range()` was removed: write `for " + v + " := 0; " + v + " < N; " + v + " += 1:` to count, or `parallel for " + v + " in 0..<N:` to count in parallel")
         coll := ast.NullLit(0)
         j := _expr_into(toks, i, &coll)
-        # src/tychoc.c:4091 -- an array and a channel source are both scalar
+        # src/tychoc.c:4122 -- an array and a channel source are both scalar
         # handles, so the source must NAME one; a temp could alias a channel.
         if par and not (coll is ast.Name):
             _die(toks, _at(toks, i0 - 1), "parallel for over a collection or channel must name a variable (bind it first)")
@@ -1577,7 +1683,7 @@ fn _ifstmt_into(toks: [lex.Tok], i0: int, out: inout ast.Stmt) -> int:
 
 # The statement tree is written into the CALLER's slot. Returning it copied the
 # whole subtree into the destination array at every `push` -- 12.9% of the parse.
-fn _stmt_into(toks: [lex.Tok], i0: int, out: inout ast.Stmt) -> int:
+fn _stmt_into(toks: [lex.Tok], i0: int, out: inout ast.Stmt, pend: inout [ast.Stmt]) -> int:
     ti := _cl(toks, i0)
     i := i0
 
@@ -1603,7 +1709,7 @@ fn _stmt_into(toks: [lex.Tok], i0: int, out: inout ast.Stmt) -> int:
         e := ast.NullLit(0)
         k := _expr_into(toks, i, &e)
         i = _expect(toks, k, lex.K_NEWLINE, "")
-        # src/tychoc.c:3819 folds a LOCAL const with refs off -- no sibling-const
+        # src/tychoc.c:3842 folds a LOCAL const with refs off -- no sibling-const
         # refs -- so `const D = K * 2` is refused here and accepted at top level.
         v := _const_fold(toks, e, []ast.ConstD, _at(toks, i0))
         if not _is_lit(v):
@@ -1625,7 +1731,7 @@ fn _stmt_into(toks: [lex.Tok], i0: int, out: inout ast.Stmt) -> int:
         if not (e is ast.Index):
             _die(toks, _at(toks, i0), "`delete` removes a map element: `delete m[k]`")
         match e:
-            # src/tychoc.c:3861 -- the map itself must be a place, not a call result.
+            # src/tychoc.c:3884 -- the map itself must be a place, not a call result.
             ast.Index(dl, dk):
                 mref := dk[0]
                 if not (mref is ast.Name) and not (mref is ast.Field) and
@@ -1689,7 +1795,7 @@ fn _stmt_into(toks: [lex.Tok], i0: int, out: inout ast.Stmt) -> int:
             j := _expr_into(toks, i + 1, &a)
             push(w, a)
             i = _op(toks, j, lex.OP_RPAREN)
-            # src/tychoc.c:3950 -- range-checked only when the width is a literal.
+            # src/tychoc.c:3973 -- range-checked only when the width is a literal.
             match a:
                 ast.IntLit(l, v):
                     if v < 1 or v > 64:
@@ -1708,7 +1814,7 @@ fn _stmt_into(toks: [lex.Tok], i0: int, out: inout ast.Stmt) -> int:
     if toks[ti].k == lex.K_KW and toks[ti].text == "for":
         return _forstmt_into(toks, i + 1, false, &out)
 
-    j, need_nl := _simple_into(toks, i, &out)
+    j, need_nl := _simple_into(toks, i, &out, &pend)
     if need_nl:
         j = _expect(toks, j, lex.K_NEWLINE, "")
     return j
@@ -1728,7 +1834,9 @@ fn block_into(toks: [lex.Tok], i0: int, out: inout [ast.Stmt]) -> int:
             i += 1
             continue
         push(out, ast.PassS(0))
-        i = _stmt_into(toks, i, &out[len(out) - 1])
+        spend := []ast.Stmt
+        i = _stmt_into(toks, i, &out[len(out) - 1], &spend)
+        _splice(&out, &spend)
     return _expect(toks, i, lex.K_DEDENT, "")
 
 # --- declarations -----------------------------------------------------------
@@ -1817,7 +1925,7 @@ fn _wheres(toks: [lex.Tok], i0: int, tps: [string]) -> ([string], int):
             if nset > 16:
                 _die(toks, _at(toks, i0), "at most 16 types in a `where` type set")
             # The SET is kept, not just the parameter name: the checker needs it
-            # to refuse an instantiation outside it (src/tychoc.c:9226).
+            # to refuse an instantiation outside it (src/tychoc.c:9300).
             push(out, p + ":" + set)
         else:
             if not _is_where_pred(p):
@@ -2315,7 +2423,7 @@ fn _const_fold(toks: [lex.Tok], e: ast.Expr, cs: [ast.ConstD], t: lex.Tok) -> as
             if o == "/" or o == "%":
                 if y == 0:
                     _die(toks, t, "const expression divides by zero")
-                # src/tychoc.c:5319: min/-1 is 2^63 and has no int value -- folding
+                # src/tychoc.c:5393: min/-1 is 2^63 and has no int value -- folding
                 # it TRAPS this compiler instead of diagnosing. The remainder is 0.
                 lo := -9223372036854775807 - 1
                 if o == "/":

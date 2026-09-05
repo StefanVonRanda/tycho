@@ -1,4 +1,4 @@
-# src/tychoc.c:6920 -- a payload value must have the declared payload type;
+# src/tychoc.c:6994 -- a payload value must have the declared payload type;
 # there is no widening from string.
 # expect: payload type mismatch
 enum Shape:

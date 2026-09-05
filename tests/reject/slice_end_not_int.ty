@@ -1,4 +1,4 @@
-# src/tychoc.c:6401 -- the twin of slice_start_not_int.ty, scored separately
+# src/tychoc.c:6475 -- the twin of slice_start_not_int.ty, scored separately
 # because the two bounds are two checks.
 # expect: slice end must be int
 fn main():

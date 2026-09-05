@@ -112,7 +112,7 @@ PrimType  ::= "int" | "float" | "bool" | "string" | "ptr" | "bytes"
 Block ::= INDENT Stmt+ DEDENT
 Stmt  ::= ConstStmt | DeleteStmt | Return | Break | Continue | PassStmt
         | Select | Match | If | ParallelFor | For
-        | MultiDecl | MultiAssign
+        | MultiDecl | MultiAssign | SimulAssign
         | Decl | TypedDecl | Assign | PlaceAssign | CompoundAssign
         | ExprStmt
 ConstStmt      ::= "const" IDENT "=" ConstExpr NEWLINE
@@ -127,6 +127,7 @@ TypedDecl      ::= IDENT ":" Type "=" ( Expr | ValueCtrl ) NEWLINE
 Assign         ::= IDENT "=" ( Expr | ValueCtrl ) NEWLINE
 MultiDecl      ::= IDENT ( "," IDENT )+ ":=" Expr NEWLINE
 MultiAssign    ::= IDENT ( "," IDENT )+ "=" Expr NEWLINE
+SimulAssign    ::= "(" Place ( "," Place )+ ")" "=" Expr NEWLINE
 PlaceAssign    ::= Place "=" ( Expr | ValueCtrl ) NEWLINE
 CompoundAssign ::= Place CompoundOp "=" Expr NEWLINE
 CompoundOp     ::= "+" | "-" | "*" | "/" | "%" | "&" | "|" | "^" | "<<" | ">>"

@@ -1,4 +1,4 @@
-# src/tychoc.c:8967 -- the base being indexed must itself be a place, and
+# src/tychoc.c:9041 -- the base being indexed must itself be a place, and
 # `rows[0]` is a string element of a SCALAR array, which is not. Pinned since
 # compiler/types/tcheck.ty@_is_lvalue made tychoc1's place test type-aware too.
 # expect: cannot index-assign through this expression (only a variable, field, composite-array element, or map value is a place)

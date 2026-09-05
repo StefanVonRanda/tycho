@@ -1,4 +1,4 @@
-# src/tychoc.c:6314 -- and the first pair fixes the value type too.
+# src/tychoc.c:6388 -- and the first pair fixes the value type too.
 # expect: map values must all have the same type
 fn main():
     m := ["a": 1, "b": "x"]

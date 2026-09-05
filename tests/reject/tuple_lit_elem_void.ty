@@ -1,4 +1,4 @@
-# src/tychoc.c:6191 -- a tuple element must be a value.
+# src/tychoc.c:6265 -- a tuple element must be a value.
 # expect: tuple element 2 needs a concrete value
 fn nop():
     println("x")

@@ -1,4 +1,4 @@
-# src/tychoc.c:6946 -- a channel's capacity is exactly int.
+# src/tychoc.c:7020 -- a channel's capacity is exactly int.
 # tychoc1 ACCEPTED this until the rule was ported into compiler/types/tcheck.ty's
 # ast.ChanE arm; both now word it identically.
 # expect: channel(T, cap) needs an int capacity

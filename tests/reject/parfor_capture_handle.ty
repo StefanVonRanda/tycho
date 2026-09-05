@@ -1,4 +1,4 @@
-# src/tychoc.c:7910 -- the handle sibling of parfor_capture_task.ty. A captured
+# src/tychoc.c:7984 -- the handle sibling of parfor_capture_task.ty. A captured
 # CHANNEL stays legal on purpose and is not this rule.
 # expect: a parallel for cannot capture a handle -- it is freed at the end of its scope
 handle R:

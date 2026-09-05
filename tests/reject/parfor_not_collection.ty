@@ -1,4 +1,4 @@
-# src/tychoc.c:8178 -- `parallel for x in EXPR` lifts the body over a collection,
+# src/tychoc.c:8252 -- `parallel for x in EXPR` lifts the body over a collection,
 # so an int is not a source. The parallel form's set is NARROWER than the
 # sequential one: an array, a string or a channel, and not bytes, a map or a soa.
 # expect: parallel for expects an array, string, or channel

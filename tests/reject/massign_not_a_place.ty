@@ -1,0 +1,7 @@
+# A literal is not a place; nor is
+# a call, which the single-target form does accept for a user `subscript`.
+# expect: cannot assign to this expression -- every target of a multi-assign must be a variable, a field, or an array/map element
+fn main():
+    a := 1
+    (a, 2) = (1, 2)
+    println(str(a))

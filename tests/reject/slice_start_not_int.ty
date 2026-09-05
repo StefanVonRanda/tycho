@@ -1,4 +1,4 @@
-# src/tychoc.c:6399 -- both slice bounds are int.
+# src/tychoc.c:6473 -- both slice bounds are int.
 # expect: slice start must be int
 fn main():
     xs := [1, 2, 3]

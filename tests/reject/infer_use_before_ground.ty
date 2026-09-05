@@ -1,4 +1,4 @@
-# src/tychoc.c:6235 -- reading a pending `xs := []` in a position that needs its
+# src/tychoc.c:6309 -- reading a pending `xs := []` in a position that needs its
 # type. tychoc1 ACCEPTED this until the pending set grew a per-block audit.
 # expect: 'xs' is used before its type can be inferred -- assign/push/pass it first, or annotate the declaration
 fn main():

@@ -4,8 +4,8 @@ This chapter defines how names are introduced, assigned, resolved, and scoped
 within function bodies. The grammar of each form is in
 [§4.3.1](02-grammar.md#431-simple-statements); this chapter gives their meaning.
 
-> Provenance: `parse_stmt` `src/tychoc.c:3467-3955`; const folding
-> `:4828-4877`,`:4886-4905`; package mangling `pkg_mangle` `:1904-1907`.
+> Provenance: `parse_stmt` `src/tychoc.c:3467-3978`; const folding
+> `:4902-4951`,`:4960-4979`; package mangling `pkg_mangle` `:1904-1907`.
 
 ## 12.1 Binding forms
 
@@ -18,6 +18,7 @@ within function bodies. The grammar of each form is in
 | `p op= e` | Compound assignment (§12.4). |
 | `a, b := f()` | Declare `a`, `b` from a tuple-valued RHS (2–8 targets). |
 | `a, b = f()` | Assign to existing `a`, `b` from a tuple-valued RHS. |
+| `(p, q) = e` | Assign a tuple-valued RHS into 2–8 places, all right-hand sides first (§17.5). |
 
 A `:=` or `x : T =` **declares** a new variable; a program MUST NOT declare a
 name already visible in the same block (a nested block may shadow it, §12.3). An

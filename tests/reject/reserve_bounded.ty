@@ -1,4 +1,4 @@
-# src/tychoc.c:7206 -- a bounded[N]T's capacity is fixed at the type.
+# src/tychoc.c:7280 -- a bounded[N]T's capacity is fixed at the type.
 # tychoc1 ACCEPTED this under --typecheck until the check was ported into
 # compiler/types/tcheck.ty; both now word it identically.
 # expect: reserve does not apply to a bounded[...] — its capacity is fixed
