@@ -289,7 +289,7 @@ pick-up order is written out in full under "What moved this pass" below.
      `corelib/net/net_shim.c:57` invalid use of undefined `struct addrinfo`,
      `corelib/net/net_shim.c:58` implicit `freeaddrinfo`).
    - `corelib/tls/tls_shim.c` — **9 errors** of the same kind from
-     `corelib/tls/tls_shim.c:136`.
+     `corelib/tls/tls_shim.c:149`.
    - **NEW at this pass — `corelib/signal/signal_shim.c`, 3 errors**: storage size of
      `sa` (`corelib/signal/signal_shim.c`), implicit `sigemptyset`
      (`corelib/signal/signal_shim.c`), implicit `sigaction`

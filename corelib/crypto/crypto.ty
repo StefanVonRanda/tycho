@@ -44,6 +44,9 @@ fn key_len(k: ptr) -> int:
     return cx_key_len(k)
 
 # Wipe and free a key handle. Call exactly once per handle.
+# A second free, or any use of the handle afterwards, DIES at RUN time --
+# "tycho: double free of crypto key handle" / "... used after free". A `ptr` is
+# not affine, so this is a run-time diagnostic and never a compile error.
 fn key_free(k: ptr):
     cx_key_free(k)
 

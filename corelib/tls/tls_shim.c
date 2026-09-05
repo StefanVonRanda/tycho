@@ -28,7 +28,20 @@
 #include <stdint.h>
 #include "../tycho.h"
 
-typedef struct { SSL_CTX *ctx; SSL *ssl; int fd; } Tls;
+/* A RUN-TIME guard, not a compile-time rule: a `ptr` handle is not affine, so
+   nothing stops a caller freeing one twice or using it afterwards. The header is
+   deliberately NOT released on free -- the sentinel in it is what the next call
+   reads. */
+#define TLSX_LIVE 0x546c73784c495645ull
+#define TLSX_DEAD 0x546c737844454144ull
+typedef struct { uint64_t magic; SSL_CTX *ctx; SSL *ssl; int fd; } Tls;
+
+static void tlsx_live(const Tls *t, int freeing) {
+    if (!t || t->magic == TLSX_LIVE) return;
+    fputs(freeing ? "tycho: double free of tls connection handle\n"
+                  : "tycho: tls connection handle used after free\n", stderr);
+    exit(1);
+}
 
 /* ---- SIGPIPE, suppressed for THIS write only ------------------------------
  * Writing to a peer that has gone away raises SIGPIPE, whose default action
@@ -185,7 +198,7 @@ void *tlsx_connect_timeout(const char *host, tycho_int port, tycho_int ms) {
     if (ms > 0) (void)tls_set_sock_timeout(fd, 0);              /* handshake done: unbound again */
     Tls *t = (Tls *)malloc(sizeof *t);
     if (!t) { SSL_free(ssl); SSL_CTX_free(ctx); close(fd); return NULL; }
-    t->ctx = ctx; t->ssl = ssl; t->fd = fd;
+    t->magic = TLSX_LIVE; t->ctx = ctx; t->ssl = ssl; t->fd = fd;
     return t;
 }
 
@@ -196,12 +209,14 @@ void *tlsx_connect(const char *host, tycho_int port) {
 /* Bound every later read/write on an established connection. 0 clears it.
  * Returns 1 on success, 0 on failure -- the net.set_read_timeout_ms shape. */
 tycho_int tlsx_set_timeout(void *p, tycho_int ms) {
+    tlsx_live((const Tls *)p, 0);
     if (!p || ms < 0) return 0;
     return tls_set_sock_timeout(((Tls *)p)->fd, ms) ? 1 : 0;
 }
 
 /* Write the whole buffer over the encrypted stream; bytes sent (== len) or -1. */
 tycho_int tlsx_write(void *p, const unsigned char *data, tycho_int len) {
+    tlsx_live((const Tls *)p, 0);
     if (!p || len < 0) return -1;
     Tls *t = (Tls *)p;
     tycho_int off = 0;
@@ -223,6 +238,7 @@ tycho_int tlsx_write(void *p, const unsigned char *data, tycho_int len) {
 void tlsx_read(void *p, tycho_int max, unsigned char **out, tycho_int *outlen) {
     *out = NULL;
     *outlen = 0;
+    tlsx_live((const Tls *)p, 0);
     if (!p || max <= 0) return;
     /* SSL_read takes an int. tycho_int is 64-bit, so a caller asking for more
      * than INT_MAX would hand SSL_read a TRUNCATED or negative length while the
@@ -242,9 +258,11 @@ void tlsx_read(void *p, tycho_int max, unsigned char **out, tycho_int *outlen) {
 void tlsx_close(void *p) {
     if (!p) return;
     Tls *t = (Tls *)p;
+    tlsx_live(t, 1);
     SSL_shutdown(t->ssl);
     SSL_free(t->ssl);
     SSL_CTX_free(t->ctx);
     close(t->fd);
-    free(t);
+    t->ssl = NULL; t->ctx = NULL; t->fd = -1;
+    t->magic = TLSX_DEAD;
 }

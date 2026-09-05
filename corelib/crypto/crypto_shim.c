@@ -4,6 +4,7 @@
 #include <openssl/crypto.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <stdint.h>
 #include <limits.h>    /* INT_MAX -- the pbkdf2 iteration/salt bounds */
 #include "../tycho.h"
@@ -72,7 +73,20 @@ static unsigned char *hexdec(const char *s, size_t *outlen) {
 /* =====================================================================
  * Opaque secret key handle
  * ===================================================================== */
-typedef struct { unsigned char *buf; size_t len; } CxKey;
+/* A RUN-TIME guard, not a compile-time rule: a `ptr` handle is not affine, so
+   nothing stops a caller freeing one twice or using it afterwards. The header is
+   deliberately NOT released on free -- the sentinel in it is what the next call
+   reads. It holds no key material; the key bytes are cleansed and freed. */
+#define CXK_LIVE 0x43784b45594c4956ull
+#define CXK_DEAD 0x43784b4559444544ull
+typedef struct { uint64_t magic; unsigned char *buf; size_t len; } CxKey;
+
+static void cxk_live(const CxKey *k, int freeing) {
+    if (!k || k->magic == CXK_LIVE) return;
+    fputs(freeing ? "tycho: double free of crypto key handle\n"
+                  : "tycho: crypto key handle used after free\n", stderr);
+    exit(1);
+}
 
 void cx_key_free(void *kp);   /* fwd: used by constructors on the error path */
 
@@ -81,6 +95,7 @@ static CxKey *key_new(size_t n) {
     if (!k) return NULL;
     k->buf = malloc(n ? n : 1);
     if (!k->buf) { free(k); return NULL; }
+    k->magic = CXK_LIVE;
     k->len = n;
     return k;
 }
@@ -88,8 +103,11 @@ static CxKey *key_new(size_t n) {
 void cx_key_free(void *kp) {
     CxKey *k = kp;
     if (!k) return;
+    cxk_live(k, 1);
     if (k->buf) { OPENSSL_cleanse(k->buf, k->len); free(k->buf); }
-    free(k);
+    k->buf = NULL;
+    k->len = 0;
+    k->magic = CXK_DEAD;
 }
 
 /* n cryptographically secure random bytes -> a new secret key handle (NULL on failure) */
@@ -116,11 +134,12 @@ void *cx_key_from_hex(const char *hex) {
 /* explicit re-materialization: the one place a secret leaves the handle */
 const char *cx_key_export_hex(void *kp) {
     CxKey *k = kp;
+    cxk_live(k, 0);
     if (!k) return ERRTAG;
     return out_hex(k->buf, k->len);
 }
 
-tycho_int cx_key_len(void *kp) { CxKey *k = kp; return k ? (tycho_int)k->len : -1; }
+tycho_int cx_key_len(void *kp) { CxKey *k = kp; cxk_live(k, 0); return k ? (tycho_int)k->len : -1; }
 
 /* =====================================================================
  * CSPRNG (public bytes: nonces, salts) -> hex
@@ -156,6 +175,7 @@ const char *cx_sha512_hex(const char *msg_hex) { return digest_hex(EVP_sha512(),
  * ===================================================================== */
 const char *cx_hmac_sha256_hex(void *kp, const char *msg_hex) {
     CxKey *k = kp;
+    cxk_live(k, 0);
     if (!k) return ERRTAG;
     size_t mlen;
     unsigned char *m = hexdec(msg_hex, &mlen);
@@ -207,6 +227,7 @@ tycho_int cx_ct_equal(const char *a_hex, tycho_int alen, const char *b_hex, tych
 const char *cx_aead_encrypt(void *kp, const char *nonce_hex,
                             const char *pt_hex, const char *aad_hex) {
     CxKey *k = kp;
+    cxk_live(k, 0);
     size_t nlen = 0, plen = 0, alen = 0;
     unsigned char *nonce = hexdec(nonce_hex, &nlen);
     unsigned char *pt = hexdec(pt_hex, &plen);
@@ -240,6 +261,7 @@ done:
 const char *cx_aead_decrypt(void *kp, const char *nonce_hex,
                             const char *ct_hex, const char *aad_hex) {
     CxKey *k = kp;
+    cxk_live(k, 0);
     size_t nlen = 0, clen = 0, alen = 0;
     unsigned char *nonce = hexdec(nonce_hex, &nlen);
     unsigned char *ctt = hexdec(ct_hex, &clen);
@@ -280,6 +302,7 @@ void *cx_ed25519_key_from_seed(const char *seed_hex) {
 
 const char *cx_ed25519_pubkey_hex(void *kp) {
     CxKey *k = kp;
+    cxk_live(k, 0);
     const char *res = ERRTAG;
     EVP_PKEY *pk = NULL;
     unsigned char pub[32];
@@ -294,6 +317,7 @@ const char *cx_ed25519_pubkey_hex(void *kp) {
 
 const char *cx_ed25519_sign_hex(void *kp, const char *msg_hex) {
     CxKey *k = kp;
+    cxk_live(k, 0);
     size_t ml = 0;
     unsigned char *msg = hexdec(msg_hex, &ml);
     const char *res = ERRTAG;
@@ -350,6 +374,7 @@ void *cx_x25519_key_from_secret(const char *sec_hex) {
 
 const char *cx_x25519_pubkey_hex(void *kp) {
     CxKey *k = kp;
+    cxk_live(k, 0);
     const char *res = ERRTAG;
     EVP_PKEY *pk = NULL;
     unsigned char pub[32];
@@ -365,6 +390,7 @@ const char *cx_x25519_pubkey_hex(void *kp) {
 /* combine my secret (handle) with their public key (hex) -> shared-secret KEY handle */
 void *cx_x25519_shared(void *kp, const char *their_pub_hex) {
     CxKey *k = kp;
+    cxk_live(k, 0);
     size_t pl = 0;
     unsigned char *tp = hexdec(their_pub_hex, &pl);
     EVP_PKEY *me = NULL, *peer = NULL;

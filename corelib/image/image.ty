@@ -20,6 +20,9 @@ enum ImgErr:
                    # 512 MiB ceiling. The FILE is small; the declared size is not
 
 # ---- shim externs (libpng; defined in image_shim.c) ----
+# decode() below is the only holder of one of these handles. Freeing one twice,
+# or reading it after, DIES at RUN time by name -- a run-time diagnostic, since a
+# `ptr` is not affine and the compiler cannot see it.
 # The fallible pair take `status: inout int`, the FFI shape core:compress's
 # zx_decompress uses: a handle or a `bytes` return cannot also carry a code.
 extern fn imgx_decode(data: bytes, status: inout int) -> ptr   # decoded-image handle; null on failure

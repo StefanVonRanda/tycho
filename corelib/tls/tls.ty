@@ -18,6 +18,9 @@
 #   tls.write(conn, data)   -> int    Send over the encrypted stream; bytes sent or -1.
 #   tls.read(conn, max)     -> bytes  Read up to `max` decrypted bytes; empty on close/error.
 #   tls.close_conn(conn)              Shut down and free (safe on a null handle).
+#                                     Closing twice, or using the handle after,
+#                                     DIES at RUN time by name -- a `ptr` is not
+#                                     affine, so it is never a compile error.
 #   tls.ok(conn)            -> bool   Whether connect succeeded (not null).
 package tls
 

@@ -8,7 +8,20 @@
 /* `status` stays a genuine C `long`: curl_easy_getinfo(CURLINFO_RESPONSE_CODE,
  * &status) writes a libc `long` here, so the field must match curl's ABI. Only
  * http_status()'s Tycho-facing RETURN is tycho_int. */
-typedef struct { long status; char *body; size_t len; } Resp;
+/* A RUN-TIME guard, not a compile-time rule: a `ptr` handle is not affine, so
+   nothing stops a caller freeing one twice or using it afterwards. The header is
+   deliberately NOT released on free -- the sentinel in it is what the next call
+   reads. */
+#define RESPX_LIVE 0x526573704c495645ull
+#define RESPX_DEAD 0x5265737044454144ull
+typedef struct { uint64_t magic; long status; char *body; size_t len; } Resp;
+
+static void respx_live(const Resp *r, int freeing) {
+    if (!r || r->magic == RESPX_LIVE) return;
+    fputs(freeing ? "tycho: double free of http response handle\n"
+                  : "tycho: http response handle used after free\n", stderr);
+    exit(1);
+}
 
 /* Hard cap on a response body. curl's own CURLOPT_MAXFILESIZE only acts on a
  * Content-Length it was GIVEN, so a chunked or lying response walks past it --
@@ -42,6 +55,7 @@ static Resp *perform(const char *url, const char *post_body, size_t post_len, co
     if (!c) return NULL;
     Resp *r = (Resp *)calloc(1, sizeof(Resp));
     if (!r) { curl_easy_cleanup(c); return NULL; }
+    r->magic = RESPX_LIVE;
     r->body = (char *)malloc(1); r->body[0] = 0; r->len = 0;
 
     curl_easy_setopt(c, CURLOPT_URL, url);
@@ -117,6 +131,7 @@ static Resp *perform(const char *url, const char *post_body, size_t post_len, co
  * http_free also frees. */
 void http_body_bytes(void *resp, const unsigned char **out, tycho_int *outlen) {
     Resp *r = (Resp *)resp;
+    respx_live(r, 0);
     *out = NULL; *outlen = 0;
     if (!r || r->len <= 0) return;
     unsigned char *copy = (unsigned char *)malloc((size_t)r->len);
@@ -134,6 +149,14 @@ void *http_post_bytes(const char *url, const unsigned char *body, tycho_int len,
     if (len < 0) return NULL;
     return perform(url, body ? (const char *)body : "", (size_t)len, ctype);
 }
-tycho_int http_status(void *resp) { return resp ? (tycho_int)((Resp *)resp)->status : 0; }
-const char *http_body(void *resp) { return resp ? ((Resp *)resp)->body : ""; }
-void http_free(void *resp) { if (resp) { free(((Resp *)resp)->body); free(resp); } }
+tycho_int http_status(void *resp) { respx_live((const Resp *)resp, 0); return resp ? (tycho_int)((Resp *)resp)->status : 0; }
+const char *http_body(void *resp) { respx_live((const Resp *)resp, 0); return resp ? ((Resp *)resp)->body : ""; }
+void http_free(void *resp) {
+    Resp *r = (Resp *)resp;
+    if (!r) return;
+    respx_live(r, 1);
+    free(r->body);
+    r->body = NULL;
+    r->len = 0;
+    r->magic = RESPX_DEAD;
+}

@@ -4,7 +4,22 @@
 #include <stdint.h>
 #include "../tycho.h"
 
-typedef struct { tycho_int w, h; unsigned char *rgba; size_t nbytes; } Img;
+#include <stdio.h>
+
+/* A RUN-TIME guard, not a compile-time rule: a `ptr` handle is not affine, so
+   nothing stops a caller freeing one twice or using it afterwards. The header is
+   deliberately NOT released on free -- the sentinel in it is what the next call
+   reads. */
+#define IMGX_LIVE 0x496d67784c495645ull
+#define IMGX_DEAD 0x496d677844454144ull
+typedef struct { uint64_t magic; tycho_int w, h; unsigned char *rgba; size_t nbytes; } Img;
+
+static void imgx_live(const Img *im, int freeing) {
+    if (!im || im->magic == IMGX_LIVE) return;
+    fputs(freeing ? "tycho: double free of image handle\n"
+                  : "tycho: image handle used after free\n", stderr);
+    exit(1);
+}
 
 /* Status codes, mirrored by the constants in image.ty. */
 #define IMG_OK       0
@@ -52,18 +67,20 @@ void *imgx_decode(const unsigned char *data, tycho_int len, tycho_int *status) {
     *status = IMG_OK;
     im->w = (tycho_int)image.width;
     im->h = (tycho_int)image.height;
+    im->magic = IMGX_LIVE;
     im->rgba = buf;
     im->nbytes = nbytes;
     return im;                                       /* png_image_free not needed after finish_read */
 }
 
-tycho_int imgx_width(void *p)  { return p ? ((Img *)p)->w : 0; }
-tycho_int imgx_height(void *p) { return p ? ((Img *)p)->h : 0; }
+tycho_int imgx_width(void *p)  { imgx_live((const Img *)p, 0); return p ? ((Img *)p)->w : 0; }
+tycho_int imgx_height(void *p) { imgx_live((const Img *)p, 0); return p ? ((Img *)p)->h : 0; }
 
 /* Copy the decoded RGBA out as `bytes` (out-param convention). */
 void imgx_pixels(void *p, unsigned char **out, tycho_int *outlen) {
     *out = NULL;
     *outlen = 0;
+    imgx_live((const Img *)p, 0);
     if (!p) return;
     Img *im = (Img *)p;
     unsigned char *cp = (unsigned char *)malloc(im->nbytes ? im->nbytes : 1);
@@ -74,7 +91,13 @@ void imgx_pixels(void *p, unsigned char **out, tycho_int *outlen) {
 }
 
 void imgx_free(void *p) {
-    if (p) { Img *im = (Img *)p; free(im->rgba); free(im); }
+    if (!p) return;
+    Img *im = (Img *)p;
+    imgx_live(im, 1);
+    free(im->rgba);
+    im->rgba = NULL;
+    im->nbytes = 0;
+    im->magic = IMGX_DEAD;
 }
 
 /* Encode w*h RGBA pixels (plen must be >= w*h*4) to a PNG in memory. */
