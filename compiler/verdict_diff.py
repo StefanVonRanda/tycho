@@ -41,6 +41,14 @@ sys.path.insert(0, "scripts")
 import classify_rejects as C
 
 ROOTS = ("tests", "corelib", "tools", "examples", "server", "bench")
+# leg12's residue, pinned in BOTH directions -- a rise is a regression and a
+# fall must be recorded rather than absorbed. 25 -> 14 -> 7 (2026-09-05): the
+# TName arm of `_unify` bound nothing for a user generic aggregate, and its TFn
+# arm bound nothing for a function-typed parameter, so `$U` in
+# `fn(xs: [$T], f: fn($T) -> $U) -> [$U]` was unrecoverable even from a NAMED
+# function of fully known type. The 7 left are template BODIES walked with `$T`
+# genuinely unbound, which no amount of work grounds.
+SIXB = 7
 EXPECT = 1340          # a leg that scores 0 of 0 is green by accident
                        # 1308 -> 1311: the three V2 `packed` fixtures (2026-09-04)
                        # 1311 -> 1319: the eight V2b bytes-bridge fixtures
@@ -300,6 +308,12 @@ def main():
         return 1
     if len(files) != EXPECT:
         print("parse-check: the tree is %d .ty files, expected %d" % (len(files), EXPECT))
+        return 1
+    if sixb != SIXB:
+        print("parse-check: leg12 is %d, pinned at %d -- %s"
+              % (sixb, SIXB,
+                 "a grounding regression" if sixb > SIXB
+                 else "grounding IMPROVED; lower SIXB and say which files left the list"))
         return 1
     return 1 if (bad or rbad or lbad or lbad2 or lskip or mbad or tbad or tbad2
                   or tskip or abad or pabad or tabad) else 0

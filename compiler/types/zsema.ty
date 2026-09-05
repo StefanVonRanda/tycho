@@ -407,7 +407,26 @@ fn _unify(cs: inout C, pat: ast.Ty, at: string, b: inout [string: string]) -> bo
                 return false
             return _unify(&cs, k[0], _targs(ab)[0], &b)
         ast.TFn(hr, k):
-            return true                # a lambda's inferred type is partly `?`
+            # A lambda's inferred type is partly `?`, so this arm must not
+            # refuse on it -- `_unify` answers true for an unknown actual at its
+            # head. But the parts that ARE ground carry bindings, and dropping
+            # them left `$U` in `fn(xs: [$T], f: fn($T) -> $U) -> [$U]` unbound
+            # even when `f` was a NAMED function of fully known type.
+            if _head(ab) != "fun":
+                return true
+            gf := _targs(ab)
+            np := len(k)
+            if hr:
+                np = len(k) - 1
+            if len(gf) != np + 1:
+                return true
+            if hr:
+                if not _unify(&cs, k[len(k) - 1], gf[0], &b):
+                    return false
+            for fi := 0; fi < np; fi += 1:
+                if not _unify(&cs, k[fi], gf[fi + 1], &b):
+                    return false
+            return true
         ast.TName(q, n, targs):
             if len(q) == 0 and (n in cs.typarams) and len(_lookup_type(&cs, q, n)) == 0:
                 # A bare `T` refers to the `$T` introduced earlier in the same
@@ -434,7 +453,22 @@ fn _unify(cs: inout C, pat: ast.Ty, at: string, b: inout [string: string]) -> bo
                     return false
                 return _unify(&cs, targs[1], g2[1], &b)
             if len(targs) > 0:
-                return true            # a generic instance is not ground here
+                # A USER generic aggregate: `Box($T)` against the stamped
+                # instance `@Box$int`. Option/Channel/Result above are this same
+                # job written out three times; without a general arm the type
+                # parameter a user's own generic carries is never recovered.
+                # Anything that is not recognisably an instance of THIS template
+                # still answers true -- the direction the header states.
+                mt := _tmpl_mangled(&cs, q, n)
+                if len(mt) == 0 or len(ab) < 2 or ab[0] != 64:
+                    return true
+                ga := _key_args(ab[1:], mt)
+                if len(ga) != len(targs):
+                    return true
+                for gi := 0; gi < len(targs); gi += 1:
+                    if not _unify(&cs, targs[gi], ga[gi], &b):
+                        return false
+                return true
             r := _lookup_type(&cs, q, n)
             if len(r) == 0 or not known(r):
                 return true
@@ -990,7 +1024,11 @@ fn _inst_key(m: string, enc: [string]) -> string:
 # EITHER exactly the declaration's own parameters, in order (a recursive
 # reference from inside the template), OR all concrete. A list mixing the two --
 # `Box([$T])` -- is refused, and that is generic_partial_struct/_enum.
-fn _inst_named(cs: inout C, q: string, n: string, targs: [ast.Ty], enc: [string]) -> string:
+# The declaration `q.n` names, mangled, or "" if no such type is declared. This
+# is the resolution that STAMPED an instance key, so it is also the one that
+# reads one back -- `_unify`'s generic arm and `_inst_named` must agree or the
+# arm would unify against the wrong template.
+fn _tmpl_mangled(cs: inout C, q: string, n: string) -> string:
     m := ""
     if len(q) > 0:
         m = _prefix_of(&cs, q) + n
@@ -999,6 +1037,33 @@ fn _inst_named(cs: inout C, q: string, n: string, targs: [ast.Ty], enc: [string]
     elif n in cs.tindex:
         m = n
     if len(m) == 0 or not (m in cs.tindex):
+        return ""
+    return m
+
+# `Name$e1,e2` -> the argument encodings, or [] when the key is not an instance
+# of `m`. A comma inside parens (`map(string,int)`) is not a separator.
+fn _key_args(k: string, m: string) -> [string]:
+    out := []string
+    if len(k) <= len(m) + 1 or k[0:len(m)] != m or k[len(m)] != 36:
+        return out
+    r := k[len(m) + 1:]
+    depth := 0
+    start := 0
+    for j := 0; j < len(r); j += 1:
+        c := r[j]
+        if c == 40:
+            depth += 1
+        elif c == 41:
+            depth -= 1
+        elif c == 44 and depth == 0:
+            push(out, r[start:j])
+            start = j + 1
+    push(out, r[start:])
+    return out
+
+fn _inst_named(cs: inout C, q: string, n: string, targs: [ast.Ty], enc: [string]) -> string:
+    m := _tmpl_mangled(&cs, q, n)
+    if len(m) == 0:
         return "?"
     ti := cs.tindex[m]
     # read in place: this is a whole declaration, and only fields are wanted
