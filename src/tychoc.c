@@ -14681,7 +14681,13 @@ static void merge_pkg(const char *dir, const char *pkgname, const char *prefix, 
     /* FFI: a co-located `<pkg>_shim.c` is auto-compiled+linked (turnkey C-backed
      * modules, e.g. core:regex over <regex.h>). One per package; deduped. */
     char *shimc = sfmt("%s/%s_shim.c", dir, pkgname);
-    if (file_exists(shimc)) { add_shim(shimc); add_pkg_deps(dir); }
+    if (file_exists(shimc)) add_shim(shimc);
+    /* A `deps` file stands on its own: core:sqlite has no shim -- it binds
+     * libsqlite3 with `extern "sqlite3"` -- so gating this on the shim made
+     * --print-deps report nothing for it, and the corelib harness FAILED
+     * instead of skipping wherever libsqlite3-dev is absent. tychoc1 reads
+     * deps unconditionally already (compiler/driver/driver.ty@print_deps). */
+    add_pkg_deps(dir);
 
     char *files[512];
     int nf = scan_pkg_files(dir, files, "too many files in package");

@@ -55,10 +55,44 @@ if [ -f "$QC" ]; then
     esac
 fi
 
+# [extern] A package's native dependency does not have to arrive through a shim:
+# core:sqlite binds libsqlite3 with `extern "sqlite3"` and has no shim at all, so
+# the loop above cannot see it. Every `extern "<lib>"` name in corelib must be
+# declared in its package's `deps`, or `--print-deps` reports nothing for it and
+# the corelib harness FAILS instead of SKIPPING where the library is absent.
+nextern=0
+for pkgdir in corelib/*/; do
+    libs="$(cat "$pkgdir"*.ty 2>/dev/null | sed -n 's/.*extern "\([A-Za-z0-9_.+-]*\)".*/\1/p' | sort -u)"
+    [ -n "$libs" ] || continue
+    declared=""
+    [ -f "$pkgdir/deps" ] && declared="$(pkgs_of "$pkgdir/deps")"
+    for lib in $libs; do
+        nextern=$((nextern + 1))
+        found=0
+        for d in $declared; do [ "$d" = "$lib" ] && found=1; done
+        if [ "$found" -eq 1 ]; then
+            echo "ok   ${pkgdir}deps declares extern \"$lib\""
+            ok=$((ok + 1))
+        else
+            echo "FAIL ${pkgdir}deps does not declare extern \"$lib\""
+            fail=$((fail + 1))
+        fi
+    done
+done
+# The scan is only as good as its pattern: a sed that silently stops matching is
+# indistinguishable from a tree with no externs left.
+if [ "$nextern" -eq 0 ]; then
+    echo "FAIL extern scan found 0 `extern \"lib\"` declarations in corelib -- the pattern stopped matching"
+    fail=$((fail + 1))
+fi
+
 echo "shim-check: $ok ok, $skipped skipped, $fail failed"
 [ "$fail" -eq 0 ] || {
-    echo "shim-check: a shim does not compile standalone under -std=c11." >&2
-    echo "  Fix it in the shim, not here: declare the feature-test macro it needs" >&2
-    echo "  before its first #include, the way corelib/io/io_shim.c does." >&2
+    echo "shim-check: a shim does not compile standalone under -std=c11, or a" >&2
+    echo "  package's extern library is in no deps file. Read the FAIL lines above." >&2
+    echo "  A shim: declare the feature-test macro it needs before its first" >&2
+    echo "  #include, the way corelib/io/io_shim.c does." >&2
+    echo "  An extern: add the pkg-config name to corelib/<pkg>/deps, or the" >&2
+    echo "  corelib harness fails instead of skipping where the library is absent." >&2
     exit 1
 }

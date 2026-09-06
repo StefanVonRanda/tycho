@@ -1,0 +1,8 @@
+# External dependencies for core:sqlite, one pkg-config package per line.
+# pkg-config resolves the per-platform cflags + libs; the corelib harness skips
+# this module test when the dependency is absent (so `make ci` stays green).
+# core:sqlite has no shim -- it binds libsqlite3 directly with `extern "sqlite3"`,
+# which puts -lsqlite3 on the link line but tells `--print-deps` nothing. Without
+# this file the harness saw a package with no dependencies and FAILED rather than
+# skipped wherever libsqlite3-dev is absent.
+sqlite3
