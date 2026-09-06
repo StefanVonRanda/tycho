@@ -5,7 +5,7 @@ The version constant lives in `src/tychoc.c` (`TYCHO_VERSION`, printed by
 `tychoc --version`); bump both together. Per-release publishing notes stay in
 `RELEASE_NOTES.md`; this file is the accumulating record.
 
-## [0.9.0] — 2026-09-06
+## [0.8.5] — 2026-09-06
 
 ### Language
 
@@ -163,7 +163,7 @@ The version constant lives in `src/tychoc.c` (`TYCHO_VERSION`, printed by
   them. Both are fixed on `main` (`7534812f`); the archive is now read and its
   contents asserted, rather than only rebuilt (`e185caa2`).
   - **The published v0.8.0 Windows archive is still affected.** Nothing in it
-    runs. Until 0.9.0 is tagged, build from source on Windows or use the Linux
+    runs. Until 0.8.5 is tagged, build from source on Windows or use the Linux
     archive.
 - **`tychoc.exe` could not compile from any other directory.** On Windows the
   compiler's own directory is where it looks for corelib and the runtime, and
@@ -220,7 +220,7 @@ refused all four too.
     all.** All four executables in it are linked `-pthread` with no `-static`
     and import a `libwinpthread-1.dll` the archive does not carry, so none of
     them starts. Fixed on `main`, unfixed in the published 0.8.0 — see
-    "Fixed" under `[Unreleased]`. Build from source on Windows until 0.9.0.
+    "Fixed" under `[Unreleased]`. Build from source on Windows until 0.8.5.
 - **Compile speed is at or past parity.** On its own source the self-hosted
   compiler is faster than the bootstrap — 73 ms against 105 ms, min of 10 via
   `bench/transpile/run.sh` — and level on three other inputs. It began this

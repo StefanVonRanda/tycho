@@ -8,11 +8,11 @@ Draft release notes. Edit this before publishing, then:
 Build one tarball per platform (there is no hosted CI); attach them all to the release.
 -->
 
-Tycho 0.9 — pre-1.0, no stability guarantees (see the [README](README.md) for
+Tycho 0.8.5 — pre-1.0, no stability guarantees (see the [README](README.md) for
 what that means in practice). Prebuilt binaries are attached, so you can try the
 language without building from source.
 
-**This release refuses programs 0.8 accepted.** Not a change of intent — those
+**This release refuses programs 0.8.0 accepted.** Not a change of intent — those
 programs were always invalid, and the shipped compiler failed to say so. A
 survey of the C bootstrap found 495 user-facing rules, 262 of which no test in
 the tree reached; the self-hosted compiler was missing a share of the rules it
@@ -37,8 +37,8 @@ compiler outright; it is a diagnostic now.
 linked `-pthread` without `-static` and import a `libwinpthread-1.dll` the
 archive does not carry. That archive is unusable and always was; this release is
 the fix. The Windows tarball also now contains the **self-hosted** compiler
-rather than the C bootstrap, which it shipped through 0.8 — worth about 3x on a
-tree-walking benchmark. And `tychoc.exe` can be run from any directory: the
+rather than the C bootstrap, which it shipped through 0.8.0 — worth about 3x
+on a tree-walking benchmark. And `tychoc.exe` can be run from any directory: the
 lookup for its own corelib split paths on `/` only, so with tycho on `PATH`
 every build outside the archive directory failed.
 
@@ -70,7 +70,7 @@ transpiles to C. Each tarball's SHA-256 is published alongside it.
 ## New in the language
 
 - **`vector[N]T`** — a fixed array whose arithmetic is one machine instruction.
-  A power-of-two count from 2 to 64, `int`/`float`/`f32` elements. In 0.8 this
+  A power-of-two count from 2 to 64, `int`/`float`/`f32` elements. In 0.8.0 this
   type existed in the documentation and not in the compiler that shipped: the
   self-hosted compiler lowered it to a dynamic array and emitted no vector
   instructions at all. It emits real ones now.
@@ -124,8 +124,8 @@ transpiles to C. Each tarball's SHA-256 is published alongside it.
 
 ## The surface moved, deliberately
 
-0.8 froze the keyword set, the builtin set and every corelib signature, and said
-no new language features before 1.0. This release breaks that: the layout and
+0.8.0 froze the keyword set, the builtin set and every corelib signature, and
+said no new language features before 1.0. This release breaks that: the layout and
 SIMD work above needed surface, and it was judged worth taking now rather than
 after 1.0, when it could not be taken at all. The lock still exists and still
 gates — 115 keywords, 41 builtins, 559 corelib functions — but it records what
@@ -154,7 +154,7 @@ One thing is unverified rather than known, because you may hit it:
 
 ## Status
 
-0.9 is pre-1.0 and there are **no stability guarantees**: anything here may
+0.8.5 is pre-1.0 and there are **no stability guarantees**: anything here may
 change. [ROADMAP.md](ROADMAP.md#what-10-requires) lists what 1.0 requires, and
 the blocking item is not engineering — it is that nobody outside this repo has
 written a real program in Tycho yet. If you write one, the friction you hit is

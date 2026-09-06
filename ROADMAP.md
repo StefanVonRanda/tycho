@@ -1,6 +1,6 @@
 # Roadmap
 
-Tycho is **0.9 — pre-1.0**, and this file is a direction, not a promise of
+Tycho is **0.8.5 — pre-1.0**, and this file is a direction, not a promise of
 dates. Day-to-day work is tracked in [GitHub
 issues](https://github.com/StefanVonRanda/tycho/issues); this file is the
 high-level shape. What 1.0 now requires is [below](#what-10-requires).
@@ -33,7 +33,7 @@ matching the wrong rows), and the money type's only text constructor returning
 
 From 2026-08-22 the keyword set, the builtin set and every corelib signature were
 locked by `surface.lock` and gated by `make surface-check`, with **no new language
-features before 1.0**. That held until 0.9, which broke it on purpose: the layout
+features before 1.0**. That held until 0.8.5, which broke it on purpose: the layout
 and SIMD work (`packed`, `align(N)`, `vector[N]T`, simultaneous assignment,
 swizzling) needed surface, and taking it before 1.0 was judged better than not
 being able to take it after. The lock still gates — it records what was added
