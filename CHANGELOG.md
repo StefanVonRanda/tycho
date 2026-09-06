@@ -220,7 +220,7 @@ refused all four too.
     all.** All four executables in it are linked `-pthread` with no `-static`
     and import a `libwinpthread-1.dll` the archive does not carry, so none of
     them starts. Fixed on `main`, unfixed in the published 0.8.0 — see
-    "Fixed" under `[Unreleased]`. Build from source on Windows until 0.8.5.
+    "Fixed" under `[0.8.5]`. Build from source on Windows until 0.8.5.
 - **Compile speed is at or past parity.** On its own source the self-hosted
   compiler is faster than the bootstrap — 73 ms against 105 ms, min of 10 via
   `bench/transpile/run.sh` — and level on three other inputs. It began this
