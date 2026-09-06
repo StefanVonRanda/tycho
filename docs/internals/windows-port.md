@@ -46,7 +46,7 @@
   `clock_gettime`/`nanosleep`/`sched_yield`/`sysconf`
   (`runtime/tycho_rt.c:60@sysconf` — mingw shims, a few lines), and **the one
   hard piece**: the deep-recursion stack-overflow guard built on
-  `sigaltstack`/`sigaction`/`ucontext` (`runtime/tycho_rt.c:44-45`,
+  `sigaltstack`/`sigaction`/`ucontext` (`runtime/tycho_rt.c:52-57`,
   `:212@sigaltstack`). The per-platform pattern already exists
   (`runtime/tycho_rt.c:173@__APPLE__`); Windows gets a third branch via
   `GetCurrentThreadStackLimits` + `AddVectoredExceptionHandler` catching

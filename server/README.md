@@ -337,8 +337,8 @@ third `core:net` addition this program forced, and `io.is_dir`, `io.mtime`,
 `io.read_at` and `io.size` are four more in `core:io`; all five are above, under
 the rough edges they closed.)
 
-- **`MSG_NOSIGNAL` / `SO_NOSIGPIPE`** (`corelib/net/net_shim.c:41-53` and
-  `corelib/net/net_shim.c:151-152`). Before this, one client that sent a partial request and closed
+- **`MSG_NOSIGNAL` / `SO_NOSIGPIPE`** (`corelib/net/net_shim.c:166-172` and
+  `corelib/net/net_shim.c:94-95`). Before this, one client that sent a partial request and closed
   without reading killed the entire server — `SIGPIPE`, signal 13, every worker
   and every in-flight connection gone. The server now survives 100 consecutive
   hostile disconnects and logs them as `write-failed` (`server/main.ty:445@write-failed`);

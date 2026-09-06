@@ -18,8 +18,8 @@ in" column and the verified reference locations below show each is closed.
 | H4 | `reference/types.md`: `char ± int` "stays within a byte." | **Correct**: `char` arithmetic wraps to a byte (`0..255`, like `u8`), so the reference matches the language. | `reference/types.md` (§ char) | tightening campaign; `tests/char_byte` |
 | H5 | `docs/reference/generics.md`: appeared to discuss `empty$` as though it were a builtin. | `empty$` is **not** a builtin; `empty$(int)` is the *explicit call-site type-argument* form (`name$(…)`) applied to the generic `empty()`. Only `zero$(T)` is special-cased. | `docs/reference/generics.md:13`, `:204-207` (framed as explicit type args) | already correct |
 | H6 | `reference/builtins.md` — the builtin catalog was incomplete. | Now lists `eprint`, `is_null`, `to_ptr`, `to_i32`, `to_u32`, `to_u64`, `to_f32` (`to_under` and `keys` are cross-referenced on the newtypes/maps pages). | `reference/builtins.md` | `cf51e09` |
-| H7 | `docs/reference/corelib.md` — six packages were absent from the list. | `bignum`, `decimal`, `net`, `compress`, `image`, `tls` are now documented. | `docs/reference/corelib.md:225-231` (bignum, decimal), `docs/reference/corelib.md:305-324` (net), `docs/reference/corelib.md:435-472` (compress, image, tls) | `cf51e09` |
-| H8 | `docs/reference/corelib.md` datetime entry. | The `datetime` timezone offset functions (`local_offset`, `offset_at`, `now_local`; fixed-offset `from_unix_at`/`to_unix_at`/`format_iso_tz`) are now documented. | `docs/reference/corelib.md:124-139` | `cf51e09` |
+| H7 | `docs/reference/corelib.md` — six packages were absent from the list. | `bignum`, `decimal`, `net`, `compress`, `image`, `tls` are now documented. | `docs/reference/corelib.md:311-320` (bignum, decimal), `docs/reference/corelib.md:471-496` (net), `docs/reference/corelib.md:654-745` (compress, image, tls) | `cf51e09` |
+| H8 | `docs/reference/corelib.md` datetime entry. | The `datetime` timezone offset functions (`local_offset`, `offset_at`, `now_local`; fixed-offset `from_unix_at`/`to_unix_at`/`format_iso_tz`) are now documented. | `docs/reference/corelib.md:183-198` | `cf51e09` |
 
 ## Notes
 

@@ -1050,10 +1050,10 @@ On a **`Result`**, `v := expr or_return`:
 - binds `v` to the payload when `expr` is `Ok(v)`; and
 - otherwise returns that `Err` from the **enclosing function**, which MUST itself
   return `Result(_, E)` with the **same** error type `E` — a differing `E` is a
-  compile error (`src/tychoc.c:5778-5786`).
+  compile error (`src/tychoc.c:6380@propagates`).
 
 On an **`Option`**, `v := opt or_return` binds `v` on `Some(v)` and returns
-`None`; the enclosing function MUST return an `Option` (`src/tychoc.c:5869-5873`).
+`None`; the enclosing function MUST return an `Option` (`src/tychoc.c:6370@or_return`).
 
 The short-circuited payload (`Err`'s error, or `None`) is promoted into the
 caller's storage, so it outlives the return
