@@ -12,25 +12,43 @@ Tycho 0.9 — pre-1.0, no stability guarantees (see the [README](README.md) for
 what that means in practice). Prebuilt binaries are attached, so you can try the
 language without building from source.
 
-**This release does not break source compatibility with 0.7.** That is measured,
-not assumed: the 0.7.0 compiler was rebuilt and run beside this one over the
-whole accept corpus — 300 programs, 297 of which 0.7.0 compiled, all 297 still
-compile, and three that 0.7.0 refused now work.
+**This release refuses programs 0.8 accepted.** Not a change of intent — those
+programs were always invalid, and the shipped compiler failed to say so. A
+survey of the C bootstrap found 495 user-facing rules, 262 of which no test in
+the tree reached; the self-hosted compiler was missing a share of the rules it
+had never been asked about. Around 270 rejection fixtures were written and the
+gaps behind them closed. If your program stops compiling, the diagnostic names
+the rule it broke. The two compilers now agree on every accept/reject verdict
+across the whole corpus, and on which rule fired; the exact message text still
+differs on 14 of 593 rejection fixtures.
 
-## The compiler is now written in Tycho
+Measured, not assumed: the 0.8.0 compiler was rebuilt and run beside this one
+over the whole accept corpus — 420 programs, all 420 of which 0.8.0 compiled,
+and all 420 still compile. Outside that corpus, three patterns 0.8.0 accepted
+are now refused, and 0.8.0 did not merely accept them — it built and ran them:
+`push` on a fixed-size array wrote past its storage, a slice of one read
+storage that has no backing pointer, and an out-of-range `u32` literal was
+truncated to `0` in silence. A constant division overflow crashed the 0.8.0
+compiler outright; it is a diagnostic now.
 
-`tychoc` in the Linux tarball is `tychoc1`, the self-hosted compiler. It is built
-in two stages: the C bootstrap in `src/tychoc.c` builds stage 1, and stage 1
-builds the compiler you get, so it carries its own optimisations. The bootstrap
-is not going away — it is how a clean checkout gets started.
+## Windows finally works
 
-**On Windows the tarball still contains the C bootstrap.** The mingw64 build
-cross-compiles `src/tychoc.c` and does not cross-build the self-hosted compiler.
-Same language, same version, different implementation.
+**Every executable in the 0.8.0 Windows archive fails to start.** All four were
+linked `-pthread` without `-static` and import a `libwinpthread-1.dll` the
+archive does not carry. That archive is unusable and always was; this release is
+the fix. The Windows tarball also now contains the **self-hosted** compiler
+rather than the C bootstrap, which it shipped through 0.8 — worth about 3x on a
+tree-walking benchmark. And `tychoc.exe` can be run from any directory: the
+lookup for its own corelib split paths on `/` only, so with tycho on `PATH`
+every build outside the archive directory failed.
 
-On its own source the self-hosted compiler now compiles faster than the
-bootstrap — 73 ms against 105 ms, minimum of ten runs — and is level on the other
-inputs measured. It started this cycle five times slower.
+The archive's contents are now gated, not just its bytes: it is extracted and
+read on every check — the right compiler, the runtime present, no missing DLL
+imports, every `.exe` starting, and a real program compiled and run from a
+foreign directory.
+
+**All of that ran under Wine on Linux, not on Windows.** No binary in this
+release has been started on a real Windows kernel by anyone here.
 
 ## Install
 
@@ -49,34 +67,70 @@ The core library ships inside the tarball, beside the compiler, so there is
 nothing to configure. You still need a C compiler (`cc`) on your `PATH` — Tycho
 transpiles to C. Each tarball's SHA-256 is published alongside it.
 
-## What's new
+## New in the language
 
-- **Three generic shapes that 0.7 refused now compile**: a generic function
-  returning an array under a `where` clause, a generic constructor taking a bare
-  `[]`, and a lambda argument at a generic call site.
-- **`io.make_dir_all`** — `mkdir -p`, which `tycho-ar` had hand-rolled — plus
-  `io.append_text`, `io.copy` and `strings.format_g17`.
-- **Array-literal codegen was quadratic.** 30,000 elements went from over a
-  minute to 20 ms.
-- **Three new tools**: `tycho-diff`, `tycho-fold`, `tycho-hash`.
-- **Diagnostics**: several messages named the compiler's internals rather than
-  the mistake, and two offered confident suggestions built on a wrong
-  assumption. Those are rewritten.
+- **`vector[N]T`** — a fixed array whose arithmetic is one machine instruction.
+  A power-of-two count from 2 to 64, `int`/`float`/`f32` elements. In 0.8 this
+  type existed in the documentation and not in the compiler that shipped: the
+  self-hosted compiler lowered it to a dynamic array and emitted no vector
+  instructions at all. It emits real ones now.
+- **`--target <level>`** — raise the x86-64 baseline: `x86-64-v2`, `-v3`, `-v4`.
+  Worth knowing, because plain x86-64 is SSE2 and a register is 16 bytes, so a
+  32-byte `vector[4]float` is split in half in every operation and can be slower
+  than the plain array it replaced. The compiler warns when that happens and
+  says which flag fixes it. Without the flag nothing changes: an unflagged build
+  is byte-identical to one made before the flag existed.
+- **`align(N)` and `packed`** — state a struct's layout. `packed` is byte-exact
+  with no padding; `align(N)` raises alignment, capped at 8 because that is what
+  the arena guarantees. A request the allocator cannot honour is refused at
+  compile time rather than rounded down in silence.
+- **Simultaneous assignment** — `(x, y) = (y, x)`. Targets are places, so a
+  field, an array element or a map value may stand on the left, and every
+  right-hand side is evaluated before any target is written. `(a, b) = (b, a+b)`
+  is one Fibonacci step.
+- **Swizzling** — `v.(x, y)` is a tuple of two components of one value, and it
+  reads, binds and assigns. Fixed arrays and vectors of four lanes or fewer name
+  them `.x .y .z .w`, or `.r .g .b .a` for the same four, wherever a field
+  access is accepted.
+- **A byte bridge** — `to_bytes`, `from_bytes$(T)` and `size_of$(T)` over a
+  packed struct, little-endian on every host.
 
-## Deprecated
+## Fixed
 
-- **`decimal.from_str` fails open** — it returned `0.15` for `"1.5x"` — and is
-  deprecated. Use `decimal.parse` for a checked read, or
-  `decimal.parse_unchecked` if you really want the old behaviour. It still
-  works in 0.8 and warns.
+- **The example server starved under load.** A worker served one connection
+  start to finish, so 64 idle peers delayed a request by 2080 ms, and 64 parked
+  keep-alive peers meant only four requests — the worker count — could be
+  answered at all. Rewritten around one `poll(2)` per worker: 21–33 ms with all
+  64 answered, unchanged at 256.
+- **A double free of a `core:crypto`, `core:tls`, `core:http` or `core:image`
+  handle** segfaulted, and using one after free returned a garbage number and
+  exited 0. Both die by name now.
+- **Float-to-integer conversions were undefined** for a NaN, an infinity or an
+  out-of-range value. They are checked at run time.
+- **The format parsers stopped failing open** — `core:csv`, `core:json`,
+  `core:toml`, `core:cli` and `core:markdown`.
 
-## The language surface is frozen
+## Security
 
-Since 2026-08-22 the keyword set, the builtin set and every corelib signature are
-locked and gated: 101 keywords, 41 builtins, no additions or removals. Corelib
-may gain a function; it may not lose one or change a signature. **No new
-language features before 1.0.** The point is that the surface stops moving long
-enough to be learned and depended on.
+- `core:http` refuses `file://` URLs — a URL from anywhere untrusted could read
+  a local file through the HTTP client.
+- `tycho-httpd` refuses ambiguous request framing (request smuggling), and the
+  example server refuses a symlink escape out of its document root.
+- Three sites interpolated attacker-shaped text into a shell command line; all
+  are quoted now.
+- **`tycho-rsa` is gone.** A pure-Tycho RSA cannot be constant-time — the
+  modular exponentiation leaks the key through timing — and padding it did not
+  change that. Use `core:crypto`, which is OpenSSL.
+
+## The surface moved, deliberately
+
+0.8 froze the keyword set, the builtin set and every corelib signature, and said
+no new language features before 1.0. This release breaks that: the layout and
+SIMD work above needed surface, and it was judged worth taking now rather than
+after 1.0, when it could not be taken at all. The lock still exists and still
+gates — 115 keywords, 41 builtins, 559 corelib functions — but it records what
+was added instead of forbidding additions. Corelib may still gain a function and
+may not lose one or change a signature.
 
 ## What this release does not have
 
@@ -85,11 +139,18 @@ unsafe by design — see [SECURITY.md](SECURITY.md), and
 [docs/internals/audit-brief.md](docs/internals/audit-brief.md) if you are
 willing to be one.
 
-One limit is stated rather than fixed, because you may hit it:
+One thing is unverified rather than known, because you may hit it:
 
-- **On Windows, a server winds down within its idle timeout** rather than
-  within a millisecond: a thread parked in `recv` is not released by the
-  shutdown handler as it is on Linux. Nothing is lost or corrupted.
+- **Server shutdown on Windows has never been observed on Windows.** The code
+  reads sound in both halves: a worker parks in `net.wait_readable` with a tick
+  of at most 100 ms (`server/main.ty@POLL_TICK_MS`), so it re-reads the
+  shutdown flag ten times a second whether or not anything wakes it, and the
+  console handler shuts down the listener and every registered connection
+  (`corelib/signal/signal_shim.c@sigx_ctrl_handler`). What is untested is
+  whether `WSAPoll` returns early on a socket that has been shut down, and
+  whether a blocked `accept` is released; both are Windows-version dependent
+  and no lane here can reach a real Windows kernel. Expect wind-down within the
+  poll tick; treat anything faster as unproven.
 
 ## Status
 
