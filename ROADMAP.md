@@ -29,11 +29,15 @@ matching the wrong rows), and the money type's only text constructor returning
 `0.15` for `"1.5x"`. All three are fixed and gated; the pattern and the
 `_checked` convention are written up at FRICTION #4 and #56.
 
-## The language surface is frozen
+## The language surface moved once, deliberately
 
-As of 2026-08-22 the keyword set, the builtin set and every corelib signature are
-locked by `surface.lock` and gated by `make surface-check`. **No new language
-features before 1.0.**
+From 2026-08-22 the keyword set, the builtin set and every corelib signature were
+locked by `surface.lock` and gated by `make surface-check`, with **no new language
+features before 1.0**. That held until 0.9, which broke it on purpose: the layout
+and SIMD work (`packed`, `align(N)`, `vector[N]T`, simultaneous assignment,
+swizzling) needed surface, and taking it before 1.0 was judged better than not
+being able to take it after. The lock still gates — it records what was added
+rather than forbidding additions.
 
 The reason is measured, not stylistic: in the ten days to 2026-08-22, 91 commits
 touched `docs/spec/` and 69 touched `src/tychoc.c`, 11 of them adding compiler
@@ -47,13 +51,13 @@ function must be RECORDED in the same commit: an addition the lock has not seen
 fails the gate, because until then it printed a note attached to no verdict and
 22 of them accumulated under a permanently green lane.
 
-Lifting the freeze is deliberate: `python3 scripts/surface_lock.py --record`, and
+Taking new surface is deliberate: `python3 scripts/surface_lock.py --record`, and
 the diff says exactly what grew.
 
-### Queued behind the freeze
+### Queued behind the lock
 
-Two of the three features below have shipped; the third is recorded here so the
-freeze does not quietly become a decision never to revisit it:
+Two of the three features below have shipped; the third is recorded here so it
+does not quietly become a decision never to revisit it:
 
 - **Alignment and packed layout.** The `packed` half SHIPPED on 2026-09-04 and
   is the freeze's first deliberate exception: `packed struct` is a declaration
