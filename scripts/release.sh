@@ -74,8 +74,11 @@ if [ "$mingw" -eq 1 ]; then
         [ "$tshim" != "-" ] && tshims="$tshims $tshim"
         # -static: -pthread alone imports libwinpthread-1.dll, which this archive
         # does not carry -- every .exe shipped before 2026-09-05 fails to start.
+        # --no-insert-timestamp: mingw stamps the link time into the PE header,
+        # so two builds of identical source differ by two bytes per .exe and the
+        # archive cannot be reproduced from the tag. The Linux one already can.
         # shellcheck disable=SC2086
-        "$MINGWCC" -O2 -fwrapv -static -pthread -o "$stage/$tname.exe" "$stage/$tname.c" $tshims -lm \
+        "$MINGWCC" -O2 -fwrapv -static -pthread -Wl,--no-insert-timestamp -o "$stage/$tname.exe" "$stage/$tname.c" $tshims -lm \
             2>"$root/dist-mingw-build.log" \
             || { echo "!! $tname failed to link under mingw (see dist-mingw-build.log)" >&2; exit 1; }
         rm -f "$stage/$tname.c" "$root/dist-mingw-build.log"
