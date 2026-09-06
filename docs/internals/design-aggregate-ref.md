@@ -16,8 +16,9 @@ it."* The three symptoms:
    1024-slot stack twice per instruction", so push/pop were inlined
    (`tools/tycho-vm/main.ty:475-478`).
 2. `tools/tycho-ar/main.ty` — a streaming digest cannot thread state through
-   calls, so `core:sha256` is one-shot and the archiver wrote its own
-   (`tools/tycho-ar/main.ty:140-162`).
+   calls, so `core:sha256` was one-shot and the archiver wrote its own.
+   **Closed since this was written:** the trio exists and tycho-ar calls it
+   (`tools/tycho-ar/main.ty@final_hex`).
 3. `corelib/decimal/decimal.ty` and the corelib generally — return-new
    signature shapes.
 
@@ -56,11 +57,12 @@ Re-examining the three symptoms against the codegen:
   not copies: extracting CALL/RET regressed the call-heavy fib program ~4.5%
   in two sessions, so they stay inline. The stale premise was wrong in
   mechanism but the one-function shape had a real reason after all.
-- **tycho-ar**: the file's own comment says `inout` "is the answer, it works on
-  `[u32]` and on `bytes`, and it forwards" (`tools/tycho-ar/main.ty:154-156`).
-  Streaming state threading is supported; what is missing is `core:sha256`'s
-  **API** (an `init`/`update`/`final` trio), which is library work, not
-  language work — and it is writable today with in-place `inout`.
+- **tycho-ar**: `inout` was the answer — it works on `[u32]` and on `bytes`,
+  and it forwards. Streaming state threading was never the gap; what was
+  missing was `core:sha256`'s **API**, which was library work rather than
+  language work. **Resolved since this was written:** the
+  `init`/`update`/`final_hex` trio exists and tycho-ar calls it
+  (`tools/tycho-ar/main.ty@final_hex`).
 - **decimal**: the operations pass operands by value (a borrow — no copy), and
   the fresh results are allocated in the caller's arena (a move, not a copy)
   with move-on-last-use eliding assignment copies. The signatures are shaped
