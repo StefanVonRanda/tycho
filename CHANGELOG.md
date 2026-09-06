@@ -19,8 +19,10 @@ The version constant lives in `src/tychoc.c` (`TYCHO_VERSION`, printed by
     register is 16 bytes, so a `vector[4]float` is 32 and every operation is
     split in half. Measured on one dot product: 15 instructions at the default
     `cc` line, 6 with `-mavx` (`599259ce`). At a width the target lacks, a
-    vector is slower than the scalar code it replaced, and nothing warns you —
-    use `--target` if you know what you are running on.
+    vector is slower than the scalar code it replaced, and the compiler now says
+    so at the declaration — one line naming the type's size, the target's
+    register width and the `--target` level that fixes it (`948627db`,
+    `004312e5`). Passing `--target` silences it.
 - **`packed struct Name:` — a byte-exact C layout**, no padding between fields
   and none trailing (`5fff6d5c`). A field must be a fixed-width value type; the
   attribute is refused on anything that is not a struct.
@@ -48,8 +50,16 @@ The version constant lives in `src/tychoc.c` (`TYCHO_VERSION`, printed by
   stands on the left of an assignment, where it inherits the rule above:
   `v.(x, y, z) = v.(z, x, y)` rotates rather than smearing. A component is a
   struct field name, or an integer lane index for an array, a `bounded` or a
-  `vector[N]T`. Vector lanes are named by index (`v.(0, 1)`); the shader-style
-  `v.x` spelling is a separate question and is not in this release.
+  `vector[N]T`, or one of the lane names below.
+- **Lane names: `.x .y .z .w` and `.r .g .b .a`** on a value that stores its
+  elements inline — `vector[N]T`, `[N]T` and `bounded[N]T` (`0c5ff854`). They
+  are two spellings of the same four lanes, capped at four because four names
+  cannot address a wider set, and `v.x` **is** `v[0]`: the resolver rewrites the
+  node to an index, so reading, writing, swizzling and destructuring are
+  inherited rather than restated, and `v.(x, y)` and `v.(0, 1)` are the same
+  program. A struct wins the collision — a struct with a field named `x` never
+  reaches the lane rule — and mixing the two spellings in one swizzle is
+  allowed, which is where this diverges from Odin.
 
 ### Compiler
 
