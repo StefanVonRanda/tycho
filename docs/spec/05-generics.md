@@ -9,7 +9,7 @@ non-goal ([§1.1](00-conventions.md)); generics grow only by widening the
 built-in predicate set.
 
 > Provenance: `instantiate_generic` `src/tychoc.c@instantiate_generic`; constraints
-> `constraint_ok` `src/tychoc.c@constraint_ok`, enforcement `src/tychoc.c:8988-9006`; the `where` clause
+> `constraint_ok` `src/tychoc.c@constraint_ok`, enforcement `src/tychoc.c:9024-9042`; the `where` clause
 > `src/tychoc.c:4611@where`; type grammar for `$T`/`[$N]T`
 > `src/tychoc.c:2138-2147`,`src/tychoc.c:2236-2260`.
 

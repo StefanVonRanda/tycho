@@ -49,7 +49,9 @@ ROOTS = ("tests", "corelib", "tools", "examples", "server", "bench")
 # function of fully known type. The 7 left are template BODIES walked with `$T`
 # genuinely unbound, which no amount of work grounds.
 SIXB = 7
-EXPECT = 1362          # a leg that scores 0 of 0 is green by accident
+EXPECT = 1365          # a leg that scores 0 of 0 is green by accident
+                       # 1362 -> 1365: L4 -- tests/lane_names.ty and the two
+                       # reject/lane_* fixtures.
                        # 1361 -> 1362: tests/warn/vector_over_wide.ty, the
                        # over-wide-vector lint's fire leg (2026-09-06)
                        # 1348 -> 1352: tests/multi_assign.ty and the three
@@ -62,7 +64,7 @@ EXPECT = 1362          # a leg that scores 0 of 0 is green by accident
                        # 1336 -> 1338: the two struct/enum `$Name` typaram fixtures
 
 # NAME fixtures whose diagnostic carries no file:line in EITHER compiler, because
-# merge_pkg (src/tychoc.c:14688, :14234) names the offending FILE and exits. Both
+# merge_pkg (src/tychoc.c:14724, :14234) names the offending FILE and exits. Both
 # are scored as agreeing that there is no location; anything else unlocated is a
 # skip and reddens the lane.
 NO_LINE = {
@@ -90,7 +92,7 @@ KNOWN_TYPE_MISS = set()
 # `pend` LIST with a line, a done flag and a per-block mark -- the `pendarr`
 # SET R21f-11 built could carry none of the three.
 # THE CONCURRENCY RULES left this list under R21c, which ported the five
-# spawn legs (src/tychoc.c:6302-6313) and wait's argument (:6776) into
+# spawn legs (src/tychoc.c:6317-6328) and wait's argument (:6776) into
 # compiler/types/tcheck.ty in the bootstrap's own order.
 LIT = lambda f: len(re.sub(r"%[-0-9.*]*(?:ll)?[a-zA-Z]", "", f))
 

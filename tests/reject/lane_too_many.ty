@@ -1,0 +1,9 @@
+# Four names cannot address eight lanes, so a value wider than four lanes is
+# index-only. `.x` here names a lane that EXISTS -- lane 0 of eight -- and is
+# still refused, because half a naming scheme is worse than none.
+# The accepting twin is tests/lane_names.ty, whose `big: [8]int` is read by
+# index at both ends.
+# expect: '.x' is a lane name, and lane names stop at 4 lanes -- this value has 8, so index it: [0]
+fn main():
+    big: [8]int = [1, 2, 3, 4, 5, 6, 7, 8]
+    println(str(big.x))

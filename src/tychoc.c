@@ -6277,6 +6277,21 @@ static int neg_lit_fold(Expr *e) {
     if (e->lhs->kind == E_FLOAT) { double  v = e->lhs->fval; e->kind = E_FLOAT; e->op = 0; e->lhs = NULL; e->fval = -v; return 1; }
     return 0;
 }
+/* LANE NAMES. `.x .y .z .w` and `.r .g .b .a` are two spellings of the SAME
+ * four lanes, 0..3 -- Odin's rule, read from its source rather than remembered
+ * (`src/types.cpp`, `_ARRAY_FIELD_CASE(4,"w","a")` down through `(1,"x","r")`,
+ * guarded by `Array.count <= 4`). One character only: `v.xy` is not a spelling
+ * here, because a swizzle is written `v.(x, y)` and desugars in the parser. */
+static int lane_index(const char *s) {
+    if (!s || !s[0] || s[1]) return -1;
+    switch (s[0]) {
+        case 'x': case 'r': return 0;
+        case 'y': case 'g': return 1;
+        case 'z': case 'b': return 2;
+        case 'w': case 'a': return 3;
+    }
+    return -1;
+}
 static Type resolve_expr_inner(Expr *e);
 static Type resolve_expr(Expr *e) {
     if (++g_resolve_depth > TYCHO_MAX_TREE_DEPTH) die_at(e->line, "expression too deeply nested to type-check (max %d)", TYCHO_MAX_TREE_DEPTH);
@@ -6676,8 +6691,29 @@ static Type resolve_expr_inner(Expr *e) {
             }
             g_place = _place;                  /* s.field is a place iff s is (spine) */
             Type bt = resolve_expr(e->lhs);
-            if (!IS_STRUCT(bt))
+            /* A lane name on an inline array IS the index, so rewrite the node to
+             * one and let E_INDEX's own rules -- place, bounds, codegen, the
+             * swizzle's desugar -- carry it. Nothing below the rewrite is new.
+             * THE STRUCT ALWAYS WINS: this arm is guarded on !IS_STRUCT, so a
+             * struct with a field named `x` never reaches the lane path at all,
+             * and the two rules cannot both fire on one access. */
+            if (!IS_STRUCT(bt)) {
+                int lane = lane_index(e->sval);
+                Type ab = base_of(bt);
+                if (lane >= 0 && (IS_FIXARR(ab) || IS_BOUNDED(ab))) {
+                    int64_t n = fixarr_size(ab);
+                    if (n > 4)
+                        die_at(e->line, "'.%s' is a lane name, and lane names stop at 4 lanes -- this value has %lld, so index it: [%d]",
+                               e->sval, (long long)n, lane);
+                    if (lane >= n)
+                        die_at(e->line, "'.%s' names lane %d, and this value has only %lld lanes",
+                               e->sval, lane, (long long)n);
+                    Expr *k = new_expr(E_INT, e->line); k->ival = lane; k->type = T_INT;
+                    e->kind = E_INDEX; e->rhs = k; e->lhs->type = ab;
+                    return e->type = arr_elem(ab);
+                }
                 die_at(e->line, "'.%s' on a non-struct value", nominal_name(e->sval));
+            }
             StructDef *sd = &g_structs[STRUCT_ID(bt)];
             for (int i = 0; i < sd->nfields; i++)
                 if (!strcmp(sd->fields[i].name, e->sval))
@@ -7507,7 +7543,7 @@ static Type resolve_expr_inner(Expr *e) {
             if (e->nargs != s->nparams)
                 die_at(e->line, "'%s' takes %d argument(s), got %d",
                        nominal_name(e->sval), s->nparams, e->nargs);
-            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:6969 */
+            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:7005 */
             for (int i = 0; i < e->nargs; i++) {
                 g_in_arg++;
                 Type at_ = resolve_exp(e->args[i], s->params[i]);   /* fixes a None arg */
@@ -8105,7 +8141,7 @@ static void pf_capture(Expr *id) {
 /* capture an outer local named by a STRING rather than by an E_IDENT node -- the
  * callee of `f(x)` and the receiver of `o.f(x)` live in E_CALL's sval/qual, not
  * in a child expr. The synthesized read is resolved in the enclosing scope with
- * every other capture (src/tychoc.c:8717). Non-locals (global fns, builtins,
+ * every other capture (src/tychoc.c:8753). Non-locals (global fns, builtins,
  * enum constructors, package qualifiers) fail vars_find and are dropped. */
 static void pf_capture_name(const char *n, int line) {
     Type vt;
@@ -8128,10 +8164,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:8065),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:8101),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:8339). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:8375). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed

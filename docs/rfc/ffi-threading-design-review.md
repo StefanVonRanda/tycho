@@ -92,12 +92,12 @@ rejects anything outside the scalar/string/`ptr` table, failing closed:
   (rejects composite params), `:2967` (rejects composite return).
 - Type table: `docs/reference/ffi.md:62-71`. `int/char/float/bool` → scalar long/double;
   `string` → `char *`; `ptr` → `void *`; void return allowed.
-- Link line assembled in one `cc` call: `src/tychoc.c:9840-9867`. Each
+- Link line assembled in one `cc` call: `src/tychoc.c:9876-9903`. Each
   `extern "Lib"` adds `-lLib` (`:6182` `add_link`). `--link/--shim/--pkg`
-  passthrough at `:10181-10185`. Auto-discovered `<pkg>_shim.c` + `deps`
-  pkg-config at `:9938-9941`, `:3433-3458`, `:10822-10824`.
+  passthrough at `:10217-10221`. Auto-discovered `<pkg>_shim.c` + `deps`
+  pkg-config at `:9974-9977`, `:3433-3458`, `:10858-10860`.
 - String return is arena-copied so Tycho never holds a foreign pointer
-  (`src/tychoc.c:7062-7069`, `tycho_str_from_c`, NULL→`""`).
+  (`src/tychoc.c:7098-7105`, `tycho_str_from_c`, NULL→`""`).
 
 ### Pain point 1 — no composite types cross
 
@@ -146,7 +146,7 @@ The rule (`docs/reference/ffi.md:89-106`): a returned `string` is copied into th
 caller's arena; `NULL` becomes `""`. An optimization — the **read-once
 borrow** — skips the copy when the result is the *direct* argument of
 `len()`/`print()`/`println()` (`src/tychoc.c@is_extern_str_call`, applied at
-`src/tychoc.c:11162` for `len`, `:11289` and `:11296` for print/println). Footguns:
+`src/tychoc.c:11198` for `len`, `:11325` and `:11332` for print/println). Footguns:
 
 - `NULL → ""` silently erases the C/Tycho distinction between "no value" and
   "empty string". A caller that needs to detect absence cannot (the crypto
@@ -189,7 +189,7 @@ Ranked by value / effort.
   parameter, and an extern returning `bytes` uses an out-param-len shim
   convention (or a small compiler-known `{ptr,len}` return struct emitted by
   Tycho, copied into the arena like the current string return at
-  `src/tychoc.c:7062-7069`).
+  `src/tychoc.c:7098-7105`).
 - *Why.* Eliminates the hex-marshaling tax that dominates the crypto package
   and would hit any binary-data library (compression, image, network, hashing).
   Halves memory and removes the encode/decode CPU and code.
@@ -207,7 +207,7 @@ Ranked by value / effort.
   compiler treats `Db` as distinct from `ptr` and from other handles (fixes the
   wrong-handle hazard, pain point 3a), and emits the named free at scope exit
   for an *owned* handle (fixes the leak, pain point 3b) — reusing the existing
-  task/channel finalizer mechanism (`src/tychoc.c:7428-7439`) that already runs
+  task/channel finalizer mechanism (`src/tychoc.c:7464-7475`) that already runs
   destructor calls at scope end.
 - *Why.* Turns the most dangerous FFI primitive into something the compiler can
   reason about. Most handle-based libs (SQLite, SDL, curl) become safe-by-default.
@@ -239,7 +239,7 @@ opt-out.**
   cannot express.
 - *Why.* Removes the most common reason a binding needs hand-written C.
 - *Incremental or fundamental.* Incremental, medium effort (codegen of a small
-  C wrapper, alongside the existing shim plumbing at `src/tychoc.c:9619-9622`).
+  C wrapper, alongside the existing shim plumbing at `src/tychoc.c:9655-9658`).
 - *Risk.* Low — generated C is mechanical; fail closed to `--shim` if the shape
   is anything non-trivial.
 

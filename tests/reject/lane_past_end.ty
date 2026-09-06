@@ -1,0 +1,10 @@
+# `.z` is lane 2 and a `vector[2]int` has lanes 0 and 1. The name is spelled
+# right and refers to nothing, which is a different rule from `[2]` being out
+# of range: it must say WHICH lane the name means and how many there are, not
+# report an index error the programmer never wrote.
+# The accepting twin is tests/lane_names.ty, whose `s: vector[2]int` reads
+# `s.x` and `s.g` -- the two lanes that do exist.
+# expect: '.z' names lane 2, and this value has only 2 lanes
+fn main():
+    s: vector[2]int = [5, 6]
+    println(str(s.z))

@@ -1,4 +1,4 @@
-# src/tychoc.c:7268
+# src/tychoc.c:7304
 # expect: to_under(x) takes one argument
 type N = int
 fn main():

@@ -1,0 +1,69 @@
+# Lane names. `.x .y .z .w` and `.r .g .b .a` are two spellings of the SAME four
+# lanes, 0..3, on a value that stores its elements inline: `vector[N]T`, `[N]T`
+# and `bounded[N]T`, capped at four lanes because four names cannot address a
+# wider set. `v.x` IS `v[0]` -- src/tychoc.c rewrites the node to an index in
+# the resolver, so read, write, swizzle and destructuring are inherited rather
+# than restated, and `v.(x, y)` and `v.(0, 1)` are the same program.
+#
+# THE COLLISION IS THE POINT OF THIS FIXTURE. `v.x` on a vector and `p.x` on a
+# struct are one syntax reaching two rules, and the struct rule wins: the lane
+# arm is guarded on the base NOT being a struct, so `P` below -- whose fields
+# are named `x`, `y` and `r`, all three of them lane names -- never enters the
+# lane path at all. If it ever does, `p.r` stops being "red" and starts being
+# lane 0, and the last two lines of this fixture move.
+struct P:
+    x: int
+    y: int
+    r: string
+
+fn main():
+    v: vector[4]float = [1.0, 2.0, 3.0, 4.0]
+    println(str(v.x) + " " + str(v.y) + " " + str(v.z) + " " + str(v.w))
+    println(str(v.r) + " " + str(v.g) + " " + str(v.b) + " " + str(v.a))
+    println(str(v.x == v[0]) + " " + str(v.w == v[3]))
+
+    # a write through a name lands in the lane the index names
+    v.x = 9.0
+    v.b = 7.0
+    println(str(v[0]) + " " + str(v[2]))
+
+    # the swizzle already took lane INDICES; the names are an alias set, not a
+    # replacement, so both spellings must rotate identically.
+    v = [1.0, 2.0, 3.0, 4.0]
+    v.(x, y, z) = v.(z, x, y)
+    println(str(v[0]) + " " + str(v[1]) + " " + str(v[2]))
+    v = [1.0, 2.0, 3.0, 4.0]
+    v.(0, 1, 2) = v.(2, 0, 1)
+    println(str(v[0]) + " " + str(v[1]) + " " + str(v[2]))
+
+    # a swizzle reads as a tuple, so a name destructures like an index does
+    q, w := v.(z, x)
+    println(str(q) + " " + str(w))
+
+    # a plain fixed array is not a vector and gets the same names
+    a: [3]int = [10, 20, 30]
+    println(str(a.x) + " " + str(a.y) + " " + str(a.z))
+    a.y = 99
+    println(str(a[1]))
+
+    # a two-lane vector has x/y and r/g and nothing above them
+    s: vector[2]int = [5, 6]
+    println(str(s.x) + " " + str(s.g))
+
+    # `bounded[N]T` gets names too, because the swizzle already took indices on
+    # one and `v.(x, y)` may not mean something different from `v.(0, 1)`.
+    b: bounded[4]int = [1, 2, 3, 4]
+    println(str(b.x) + " " + str(b.w))
+    b.a = 8
+    println(str(b[3]))
+
+    # wider than four lanes stays index-only -- the accepting twin of
+    # tests/reject/lane_too_many.ty
+    big: [8]int = [1, 2, 3, 4, 5, 6, 7, 8]
+    println(str(big[0]) + " " + str(big[7]))
+
+    # the struct keeps its own fields, all three of which are lane names
+    p := P(1, 2, "red")
+    println(str(p.x) + " " + str(p.y) + " " + p.r)
+    p.r = "blue"
+    println(p.r)
