@@ -57,7 +57,7 @@ fn emit_to(p: types.Program, runtime_path: string, argv0: string, out_c: string,
 # Refuse what the front end refuses, before emitting anything. Until Phase 7d
 # this ran lex -> parse -> emit and never called resolve or check, so 120 of the
 # 337 reject fixtures compiled to C in silence while `--typecheck` refused them.
-fn check_into(src_path: string, argv0: string, p: inout types.Program):
+fn check_into(src_path: string, argv0: string, p: inout types.Program, tgt: string):
     types.load_into(src_path, argv0, &p)
     rs := types.resolve(p)
     # Warnings come FIRST, even on a build that dies: ./tychoc writes each one
@@ -73,7 +73,7 @@ fn check_into(src_path: string, argv0: string, p: inout types.Program):
             out = out + e + "\n"
         eprint(out)
         exit(1)
-    cs := types.check(p)
+    cs := types.check_tgt(p, tgt)
     cwl := ""
     for w in types.check_warns(cs):
         cwl = cwl + w + "\n"
@@ -146,7 +146,7 @@ fn _links(p: types.Program) -> [string]:
                 push(out, fd.lib)
     return out
 
-# NEVER eat a .c this compiler did not write (src/tychoc.c:14991). A file WE left
+# NEVER eat a .c this compiler did not write (src/tychoc.c:15035). A file WE left
 # behind starts with the runtime banner and is fair game; anything else is the
 # user's and the intermediate would destroy it.
 fn _guard_c(c_path: string):
@@ -181,7 +181,7 @@ fn _pkgflags(p: types.Program) -> [string]:
                     # Everything after `_WIN32:` is RAW linker flags for the
                     # Windows build (-lws2_32, -lpcre2-posix). They are not
                     # pkg-config names, and a non-Windows compiler skips the
-                    # whole section (src/tychoc.c:5663). Reading them as package
+                    # whole section (src/tychoc.c:5706). Reading them as package
                     # names made pkg-config fail and net/tls/httpd/regex SKIP.
                     if t == "_WIN32:":
                         win = true
@@ -206,6 +206,13 @@ fn _pkgflags(p: types.Program) -> [string]:
 fn target_levels() -> [string]:
     return ["baseline", "x86-64-v2", "x86-64-v3", "x86-64-v4"]
 
+# What the over-wide-vector lint is told: the level, or "native" for a --native
+# build, whose register width is the HOST's and not knowable at compile time.
+fn _vec_tgt(tgt: string, nat: bool) -> string:
+    if nat:
+        return "native"
+    return tgt
+
 fn target_known(t: string) -> bool:
     for lv in target_levels():
         if lv == t:
@@ -222,8 +229,8 @@ fn build(src_path: string, runtime_path: string, base: string, argv0: string,
     c_path := base + ".c"
     _guard_c(c_path)
     p := types.Program([]types.File, "", "", "", "")
-    check_into(src_path, argv0, &p)
-    # -g: src/tychoc.c:14932 makes #line single-file only, and names the source
+    check_into(src_path, argv0, &p, _vec_tgt(tgt, nat))
+    # -g: src/tychoc.c:14975 makes #line single-file only, and names the source
     # in every directive. A multi-file build has no single g_line_file to name.
     dbgf := ""
     if dbg and len(p.files) == 1:
@@ -351,9 +358,9 @@ fn print_deps(src_path: string, argv0: string):
             Err(e): pass
     print(out)
 
-fn compile(src_path: string, runtime_path: string, out_c: string, argv0: string, dbg: bool):
+fn compile(src_path: string, runtime_path: string, out_c: string, argv0: string, dbg: bool, tgt: string, nat: bool):
     p := types.Program([]types.File, "", "", "", "")
-    check_into(src_path, argv0, &p)
+    check_into(src_path, argv0, &p, _vec_tgt(tgt, nat))
     dbgf := ""
     if dbg and len(p.files) == 1:
         dbgf = p.files[0].path
@@ -560,7 +567,7 @@ fn _ty_src(t: ast.Ty, pk: string, own: [string: bool], imp: [string: string]) ->
                 # gates this on is_imported_pkg, which filters g_imports by
                 # g_srcname -- a global left pointing at whichever file the parser
                 # finished with (no assignment between parse and emit_symbols,
-                # src/tychoc.c:14984-15068). So the SAME type prints `graph.MakeErr`
+                # src/tychoc.c:15028-15112). So the SAME type prints `graph.MakeErr`
                 # and `build__BuildErr` in one run, and tools/tycho-make/main.ty
                 # imports build either way. Matching that means reproducing a load
                 # order, not a rule. Unconditional also scores better: tycho-make

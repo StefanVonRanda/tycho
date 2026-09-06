@@ -191,5 +191,5 @@ fn main():
         return
     if len(out) == 0:
         usage()
-    driver.compile(src, rt, out + ".c", av[0], dbg)
+    driver.compile(src, rt, out + ".c", av[0], dbg, tgt, nat)
     print("wrote " + out + ".c")

@@ -250,4 +250,58 @@ for CC in ./tychoc ./tychoc1; do
 done
 fi
 
-echo "vector-check: ok (BOTH compilers emit a GCC vector; the aggregate wants 8-byte alignment and $ctl without the attribute; at -O0/-O1 the vector program emits packed instructions and the [4]float control emits none; both agree on the golden and on all six refusals; a literal lane pays no bounds check and a runtime one still traps; --target x86-64-v3 turns 2 split mulpd into 1 packed vmulpd from one source while the default and --target baseline stay byte-identical)"
+# [8] the over-wide warning, and its INVERSE. A vector wider than the target's
+# register is split in every operation, which is how a vector gets SLOWER than
+# the [N]T it replaced (599259ce). The warning is a compile-time stderr line no
+# golden in this tree can carry, and the leg that makes it worth having is the
+# one that must NOT fire: a lint still firing after the reader has used
+# `--target` correctly gets silenced rather than heeded. Both directions, both
+# compilers, and a 16-byte vector as the control -- without it a warning wired
+# to the WORD `vector` rather than to the width would score full marks here.
+mkdir -p "$D/w"
+cat > "$D/w/w.ty" <<'TY'
+fn dot(a: vector[4]float, b: vector[4]float) -> float:
+    c := a * b
+    return c[0] + c[1] + c[2] + c[3]
+
+fn main():
+    x: vector[4]float = [1.0, 2.0, 3.0, 4.0]
+    n: vector[2]int = [1, 2]
+    println(str(dot(x, x)) + " " + str(n[0]))
+TY
+mkdir -p "$D/w2"
+cat > "$D/w2/w.ty" <<'TY'
+fn main():
+    n: vector[2]int = [1, 2]
+    w: vector[4]f32 = [1.0, 2.0, 3.0, 4.0]
+    println(str(n[0]) + " " + str(w[0]))
+TY
+SENT='widest vector register'
+nwarn() { "$1" "$2" $3 --emit-c -o "$D/w/e" 2>&1 >/dev/null | grep -c "$SENT" || true; }
+for CC in ./tychoc ./tychoc1; do
+    # [8a] it FIRES at the default, ONCE for the six spellings of one type
+    w0=$(nwarn "$CC" "$D/w/w.ty" "")
+    [ "$w0" -eq 1 ] || fail "$CC: at the default a 32-byte vector[4]float warned $w0 times, want exactly 1"
+    "$CC" "$D/w/w.ty" --emit-c -o "$D/w/e" 2>&1 >/dev/null | grep -q 'vector\[4\]float. is 32 bytes' \
+        || fail "$CC: the warning does not name the type and its width"
+    "$CC" "$D/w/w.ty" --emit-c -o "$D/w/e" 2>&1 >/dev/null | grep -q -- '--target x86-64-v3' \
+        || fail "$CC: the warning does not name the --target level that fixes it"
+    # [8b] the INVERSE: silent once --target holds it, and silent under --native,
+    # whose register width is the host's and not knowable at compile time
+    for f in "--target x86-64-v3" "--target x86-64-v4" "--native"; do
+        wn=$(nwarn "$CC" "$D/w/w.ty" "$f")
+        [ "$wn" -eq 0 ] || fail "$CC: $f still warns about vector[4]float ($wn lines) -- the lint is wired to the TYPE, not to the target"
+    done
+    # [8c] and it must still fire under a level that does NOT hold it: x86-64-v2
+    # is SSE, 16 bytes, so passing a flag is not itself the silencer
+    w2=$(nwarn "$CC" "$D/w/w.ty" "--target x86-64-v2")
+    [ "$w2" -eq 1 ] || fail "$CC: --target x86-64-v2 is still a 16-byte register but warned $w2 times, want 1"
+    # [8d] the control: vectors that FIT say nothing at any level. vector[2]int
+    # and vector[4]f32 are both 16 bytes.
+    for f in "" "--target x86-64-v3"; do
+        wf=$(nwarn "$CC" "$D/w2/w.ty" "$f")
+        [ "$wf" -eq 0 ] || fail "$CC: a 16-byte vector warned $wf times under '${f:-the default}' -- the lint fires on the WORD vector, not on the width"
+    done
+done
+
+echo "vector-check: ok (BOTH compilers emit a GCC vector; the aggregate wants 8-byte alignment and $ctl without the attribute; at -O0/-O1 the vector program emits packed instructions and the [4]float control emits none; both agree on the golden and on all six refusals; a literal lane pays no bounds check and a runtime one still traps; --target x86-64-v3 turns 2 split mulpd into 1 packed vmulpd from one source while the default and --target baseline stay byte-identical; an over-wide vector warns ONCE at the default and under x86-64-v2, is SILENT under x86-64-v3/v4/--native, and a 16-byte one is silent everywhere)"

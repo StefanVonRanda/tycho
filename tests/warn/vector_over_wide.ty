@@ -1,0 +1,12 @@
+# 32 bytes against baseline x86-64's 16-byte SSE register, so every operation on
+# it is split. Six spellings, ONE warning. The silent-under-`--target` half
+# cannot live here -- this lane passes no flags -- and is scripts/vector_check.sh
+# leg [8].
+fn dot(a: vector[4]float, b: vector[4]float) -> float:
+    c := a * b
+    return c[0] + c[1] + c[2] + c[3]
+
+fn main():
+    x: vector[4]float = [1.0, 2.0, 3.0, 4.0]
+    y: vector[4]float = [0.5, 0.5, 0.5, 0.5]
+    println(str(dot(x, y)))

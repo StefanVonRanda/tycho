@@ -1,0 +1,2 @@
+tests/warn/vector_over_wide.ty:5: warning: `vector[4]float` is 32 bytes and x86-64 baseline's widest vector register is 16 bytes, so every operation on it is SPLIT across registers and can be slower than the plain [4]float it replaced -- build with `--target x86-64-v3` (or wider) to give it a register that holds it
+     5 | fn dot(a: vector[4]float, b: vector[4]float) -> float:
