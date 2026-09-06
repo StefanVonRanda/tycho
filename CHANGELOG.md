@@ -7,6 +7,50 @@ The version constant lives in `src/tychoc.c` (`TYCHO_VERSION`, printed by
 
 ## [Unreleased]
 
+### Language
+
+- **`vector[N]T` — a fixed array whose arithmetic is one machine instruction**
+  rather than a loop the optimiser may or may not vectorise. Generic over the
+  count, a power of two from 2 to 64, with `int`, `float` and `f32` elements
+  (`0dbac5ca`). Indexing, `len`, `==`, `str` and the array literal are inherited
+  from the fixed-array rules, so nothing about the surface is new except the
+  type. `vector` stays an ordinary identifier everywhere else.
+  - **Know your baseline before you reach for it.** Plain x86-64 is SSE2 and a
+    register is 16 bytes, so a `vector[4]float` is 32 and every operation is
+    split in half. Measured on one dot product: 15 instructions at the default
+    `cc` line, 6 with `-mavx` (`599259ce`). At a width the target lacks, a
+    vector is slower than the scalar code it replaced, and nothing warns you —
+    use `--target` if you know what you are running on.
+- **`packed struct Name:` — a byte-exact C layout**, no padding between fields
+  and none trailing (`5fff6d5c`). A field must be a fixed-width value type; the
+  attribute is refused on anything that is not a struct.
+- **A bridge between a packed struct and its bytes** (`51dcb45b`): `to_bytes(v)`
+  gives exactly `size_of$(T)` bytes, `from_bytes$(T)(b)` reads them back, and
+  `size_of$(T)` is the size so a caller can slice its own window. The wire order
+  is **little-endian on every host**, not the host's own, because every binary
+  record worth writing this way already specifies one. The length check is exact
+  — a short buffer is refused by name, not padded.
+- **`align(N)` as a declaration attribute** — the opposite direction to
+  `packed`. `N` is a literal power of two from 1 to 8 (`ef566988`). **8 is the
+  ceiling and it is deliberate**: the arena guarantees 8, and raising it to 16
+  cost 20–30% more arena bytes across the benchmarks for no measurable time. A
+  request the allocator cannot honour is refused at compile time rather than
+  silently rounded down.
+- **Simultaneous assignment: `(x, y) = (y, x)`** (`04d7d9bc`). The targets are
+  places, so a field, an array element or a map value may stand on the left, and
+  the evaluation order is specified: every right-hand side, and every index
+  appearing in a target, is evaluated before any target is written. So
+  `(a, b) = (b, a + b)` is a Fibonacci step, not two statements in sequence, and
+  `(i, xs[i]) = (2, 99)` stores at the old `i`. Arity and element types must
+  match exactly, as in Go and Odin.
+- **Field swizzling: `v.(x, y)`** (`d9d818f5`). Two to eight components of one
+  value, and it *is* a tuple of them — so it reads, binds, destructures and
+  stands on the left of an assignment, where it inherits the rule above:
+  `v.(x, y, z) = v.(z, x, y)` rotates rather than smearing. A component is a
+  struct field name, or an integer lane index for an array, a `bounded` or a
+  `vector[N]T`. Vector lanes are named by index (`v.(0, 1)`); the shader-style
+  `v.x` spelling is a separate question and is not in this release.
+
 ### Compiler
 
 - **`--target <level>` raises the x86-64 ISA baseline, opt-in.** The levels are
@@ -17,6 +61,131 @@ The version constant lives in `src/tychoc.c` (`TYCHO_VERSION`, printed by
   on a machine below that level. An unknown level, and a level the C compiler
   rejects, are both hard errors. Both compilers accept it, both list it under
   `--help`, and `docs/spec/15-program.md` is normative (commit 2260bbfd).
+- **`vector[N]T` now lowers to a machine vector in the compiler that ships.**
+  The self-hosted compiler routed every vector to the arena-backed dynamic
+  array, so it emitted no vector instructions at all and paid an allocation per
+  operation — the feature was documented and effectively absent from every
+  shipped binary (`07ee7be0`). A constant lane index also costs no bounds check
+  now, in both compilers (`599259ce`).
+- **The shipped compiler stopped accepting programs the language does not
+  allow.** The C bootstrap enforces 495 user-facing rules; a survey found 262 of
+  them reached by no test anywhere in the tree, and the self-hosted compiler was
+  missing a share of those it had never been asked about. Roughly 270 new
+  rejection fixtures were written and the gaps behind them closed — parse rules,
+  `for`-statement rules, operand typing for `and`/`or`/`not`/`~`/`-`,
+  parallel-`for` rules, f-string interpolation typing, malformed f-string
+  bodies, array operations that used to be left to the C compiler to complain
+  about, and a non-`$Name` type parameter. The list of divergences the tree
+  tolerated by name is now **empty**; it held 25 entries at 0.8.0.
+- **The map-key rule diverged from the spec in five directions** and is fixed
+  (`9d66462a`). A written `vector[N]T`, `[N]int`, `bounded[N]int`, `[float]` or
+  a tuple key was wrongly refused; a struct with a fieldless-enum field was
+  wrongly accepted. Only an explicitly *annotated* composite key reached the
+  rule, which is why nothing noticed — `m := [a: 5]` infers and always worked.
+- **Float-to-integer conversions are total, as the spec says** (`15f0df78`).
+  `to_u8`..`to_i64` emitted a bare C cast, undefined for a NaN, an infinity or
+  an out-of-range value; they are checked at run time now (non-finite is 0,
+  otherwise truncate toward zero and wrap). An out-of-range sized-integer
+  literal is no longer truncated in silence.
+- Diagnostics name the rule that was broken rather than the types involved, and
+  name the file the reader named rather than guessing.
+
+### Core library
+
+- **A double free of a `core:crypto`, `core:tls`, `core:http` or `core:image`
+  handle dies by name** instead of segfaulting (`fc8120c2`). These four hand out
+  a bare `ptr`, which is not affine, so the compiler cannot see the second free:
+  freeing a key twice was `SIGSEGV`, and using one after free printed a garbage
+  number and exited 0. Each handle now carries a magic word and a dead sentinel,
+  and every entry point that takes one exits 1 with
+  `tycho: double free of <handle>` or `tycho: <handle> used after free`. A
+  run-time diagnostic, not a compile error.
+- `net.wait_readable(fds, ms)` — poll a **set** of descriptors and get back the
+  readable subset, in the order given (`d48dc822`). Built on `poll(2)`, so a
+  descriptor at or above `FD_SETSIZE` works. A closed peer counts as readable; an
+  empty set, a negative descriptor or a negative timeout is an error rather than
+  a silent timeout.
+- `path.real`, `path.under`, `path.resolve_under`; `io.list_checked`;
+  `http.post_bytes`; `tls.connect_timeout`, `tls.set_timeout_ms`;
+  `sqlite.query_null`, `sqlite.query_null_params`; `httpd.read_request_resume`.
+- **The format parsers stopped failing open.** `core:csv`, `core:json`,
+  `core:toml`, `core:cli` and `core:markdown` refused to answer a different
+  question than they were asked; TOML gained date and time validation, and
+  percent-decoding was corrected.
+- **The numeric edges are refused rather than answered wrongly** in
+  `core:bignum`, `core:decimal`, `core:pool` and `core:raster`.
+- A handful of undocumented byte-poking helpers in `core:zip` and `core:raster`
+  (`zip.le16`, `raster.rd_u32_le` and their siblings) were removed when those
+  records moved to packed structs.
+
+### Security
+
+- **`core:http` refuses `file://` URLs.** A URL taken from anywhere untrusted
+  could previously read a local file through the HTTP client (`9124527b`). The
+  same commit adds a decompression-bomb ceiling to `core:zip` and closes
+  backslash traversal in `core:path`. `tycho-fetch` grew `--local` for the
+  deliberate case, and refuses a `file://` URL by name.
+- **`tycho-httpd` refuses ambiguous request framing** — a request carrying both
+  `Content-Length` and `Transfer-Encoding`, or two disagreeing lengths, is a
+  request-smuggling primitive and is now rejected rather than guessed at
+  (`41cb3581`).
+- **The example server refuses a symlink escape and bounds idle connections**
+  (`c59c311f`). A symlink under the document root could point outside it; an
+  idle peer could hold a connection indefinitely.
+- **Paths reaching `system()` are shell-quoted** (`d08ac74e`). Three sites
+  interpolated attacker-shaped text into a command line: the `cc` link line in
+  the compiler, every `tycho_run()` in the `tycho` driver, and the URI-derived
+  path in the LSP server on `didOpen`/`didChange`. A directory named
+  `x;touch pwned;y` executed, and a path with a space simply failed to build.
+- **`tycho-rsa` has been removed** (`0888bf28`). A pure-Tycho RSA cannot be
+  constant-time — the modular exponentiation leaks the key through timing — and
+  padding it and seeding it from the OS CSPRNG did not change that. Use
+  `core:crypto`, which is OpenSSL. `SECURITY.md` says so.
+
+### Fixed
+
+- **The Windows archive shipped the wrong compiler, and four executables in it
+  could not start at all.** It cross-built the C bootstrap rather than the
+  self-hosted compiler — 3x slower codegen on `bench/treewalk.ty` — and every
+  `.exe` it has ever shipped (`tychoc.exe`, `tychofmt`, `tycho-lsp`,
+  `tycho-debug`) was linked `-pthread` with no `-static`, leaving an import of a
+  `libwinpthread-1.dll` the archive does not carry. Windows refuses to start
+  them. Both are fixed on `main` (`7534812f`); the archive is now read and its
+  contents asserted, rather than only rebuilt (`e185caa2`).
+  - **The published v0.8.0 Windows archive is still affected.** Nothing in it
+    runs. Until 0.9.0 is tagged, build from source on Windows or use the Linux
+    archive.
+- **`tychoc.exe` could not compile from any other directory.** On Windows the
+  compiler's own directory is where it looks for corelib and the runtime, and
+  the lookup split the path on `/` only — so with tycho on `PATH`, every build
+  outside the archive directory failed. Invisible because every gate happened to
+  `cd` into the archive first (`b8cbabc3`).
+- **The example server starved under load and locked out entirely.** A worker
+  served one connection start to finish, so 64 silent peers delayed a legitimate
+  request by 2080 ms and 64 *parked* peers meant only four requests — exactly the
+  worker count — could be answered at all in five seconds. Rewritten around one
+  `poll(2)` per worker over the listener and every connection it holds: 21–33 ms
+  and all 64 answered, unchanged at 256 peers (`a6cab50f`). A peer that sends
+  half a request head and stops now resumes instead of holding a worker for the
+  whole head budget — 8 such peers cost a legitimate request 7754 ms before and
+  1 ms after (`66120b82`).
+- Keep-alive framing leftovers in the server, and round-trip symmetry in
+  `core:bignum`.
+- Building from source bootstraps stage 1 with the C compiler rather than with
+  the binary it is trying to produce (`9a458e8c`).
+
+### Verification
+
+- The fixture corpus is 1092 `.ty` files, from 814; 636 of them are rejection
+  fixtures, from 367.
+- Most of the commits in this range are gate and test work no user observes.
+  New lanes, each with its own negative controls: `make release-content` (both
+  archives extracted and read — layout, imported DLLs, the version the packaged
+  compiler reports, every `.exe` starting, and a real program emitted, linked and
+  run from a foreign directory), `make handle-guard`, `make packed-check`,
+  `make align-probe`, `make vector-check` scoring both compilers, and
+  `make status`, which measures this tree rather than repeating what a document
+  claims about it.
 
 ## [0.8.0] — 2026-09-02
 
@@ -37,6 +206,11 @@ refused all four too.
 - **On Windows the archive still ships the C bootstrap.** The mingw64 build
   cross-compiles `src/tychoc.c`; it does not cross-build the self-hosted
   compiler. Same language, same version, different implementation.
+  - **Correction, 2026-09-06: the published Windows archive does not work at
+    all.** All four executables in it are linked `-pthread` with no `-static`
+    and import a `libwinpthread-1.dll` the archive does not carry, so none of
+    them starts. Fixed on `main`, unfixed in the published 0.8.0 — see
+    "Fixed" under `[Unreleased]`. Build from source on Windows until 0.9.0.
 - **Compile speed is at or past parity.** On its own source the self-hosted
   compiler is faster than the bootstrap — 73 ms against 105 ms, min of 10 via
   `bench/transpile/run.sh` — and level on three other inputs. It began this
