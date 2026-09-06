@@ -601,10 +601,10 @@ __attribute__((constructor)) static void stats_init(void) {
     const char *e = getenv("TYCHO_ARENA_STATS");
     /* 1 = summary + the top TYCHO_LBL_SHOW functions; "full"/"all" = every function. */
     if (e && *e && *e != '0') { st_t0_ns = st_now_ns(); g_arena_stats = (*e == 'f' || *e == 'a') ? 2 : 1; atexit(stats_dump); }
-    /* TYCHO_BLOCK: override the default block size (bytes). A measurement knob so
-     * the block-size question is a sweep, not a rebuild; 0/absent = default. */
+    /* TYCHO_BLOCK: override the default block size (bytes); 0/absent = default.
+     * Digits by hand: glibc redirects strtol to __isoc23_strtol@GLIBC_2.38. */
     const char *bs = getenv("TYCHO_BLOCK");
-    if (bs && *bs) { char *end; long v = strtol(bs, &end, 10); if (end != bs && v > 0) g_block_override = (size_t)v; }
+    if (bs && *bs) { long v = 0; const char *q = bs; while (*q >= '0' && *q <= '9' && v < (1L << 40)) v = v * 10 + (*q++ - '0'); if (q != bs && v > 0) g_block_override = (size_t)v; }
 }
 
 static __thread HBlock *g_block_pool = NULL;
