@@ -6,7 +6,7 @@ meaning. Declarations and assignments are covered in
 [§12](08-declarations.md); this chapter covers control flow.
 
 > Provenance: `parse_stmt` `src/tychoc.c:3633-4173` (`parse_if` `:3449@parse_if`,
-> `parse_match` `:3677@parse_match`, `for` `:3770-4002`, `select` `:3714-3750`). Loop and `match` behaviors marked
+> `parse_match` `:3677@parse_match`, `for` `:3770-4002`, `select` `src/tychoc.c:4004@TK_SELECT`). Loop and `match` behaviors marked
 > "probed" were confirmed against the implementation (spec-plan.md §6a).
 
 ## 14.1 Blocks

@@ -171,8 +171,8 @@ rejected — so they may grow or shrink the value in the owning arena.
 | `pop(a)` | `[T] -> T` | magic | Remove and return the last element; aborts at run time if empty. `a` MUST be mutable. |
 | `reserve(a, n)` | `([T], int) -> void` | magic | Capacity hint: preallocate room for `n` elements. `len` is unchanged and pushing past `n` still grows; an unallocatable capacity aborts. Restricted to arrays of scalars, structs, tuples, or nested arrays (not `soa`), and to **maps** — `reserve(m, n)` pre-sizes a map's entry + index arrays, so a known-size workload skips the retained growth intermediates (the lru bench's one-line fix; entries survive a later re-size). |
 
-> Provenance: `len` `src/tychoc.c:6977-6983`; `push` `:7042-7082`; `pop`
-> `:7083-7103`; `reserve` `:7104-7130`.
+> Provenance: `len` `src/tychoc.c:7232@"len"`; `push` `src/tychoc.c:7295@"push"`;
+> `pop` `src/tychoc.c:7334@"pop"`; `reserve` `src/tychoc.c:7355@"reserve"`.
 
 ## 29.7 Maps
 
@@ -269,8 +269,9 @@ builtins below are their only consumers.
 likewise as `t.wait()`. `close` is overloaded across a channel and an FFI handle;
 `ncpu` is the sole `Sig` builtin here.
 
-> Provenance: `wait` `src/tychoc.c:6809-6816`; `channel` `:6817-6832`; `send`
-> `:6833-6841`; `recv` `:6842-6847`; `close` `:6823-6867`; `ncpu` `Sig` `:5744@.name="ncpu"`;
+> Provenance: `wait` `src/tychoc.c:7091@"wait"`; `channel` `src/tychoc.c:7102@"channel"`;
+> `send` `src/tychoc.c:7110@"send"`; `recv` `src/tychoc.c:7119@"recv"`;
+> `close` `src/tychoc.c:7125@"close"`; `ncpu` `Sig` `:5744@.name="ncpu"`;
 > task/channel method sugar `:6397-6411`. `ncpu()`'s value is
 > `runtime/tycho_rt.c:1108-1123` (`TYCHO_THREADS` first, else
 > `sysconf(_SC_NPROCESSORS_ONLN)`); the fan-out that does **not** follow it above
@@ -290,8 +291,9 @@ aborting.
 | `clock()` | `-> int` | Sig | Monotonic nanoseconds — differences are meaningful; the absolute value is not. |
 | `now()` | `-> int` | Sig | Wall-clock seconds since the UNIX epoch. |
 
-> Provenance: `clock`/`now` `src/tychoc.c:5198-5199`;
-> `read_file`/`write_file`/`list_dir` `:5318-5320`.
+> Provenance: `clock` `src/tychoc.c:5742@.name="clock"`, `now` `src/tychoc.c:5743@.name="now"`;
+> `read_file` `src/tychoc.c:5753@.name="read_file"`, `write_file` `src/tychoc.c:5754@.name="write_file"`,
+> `list_dir` `src/tychoc.c:5755@.name="list_dir"`.
 
 ## 29.11 Float math (libm)
 

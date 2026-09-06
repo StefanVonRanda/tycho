@@ -1,6 +1,7 @@
 package types
 
 import "core:sort"
+import "core:os"
 import "../ast"
 import "../lex"
 import "../parse"
@@ -40,10 +41,18 @@ struct Loader:
     root: string
     entry_in_corelib: bool
 
+# The SOURCE path's directory. A backslash is a legal byte in a POSIX filename,
+# so cutting on it unconditionally would halve a legitimate name; on Windows an
+# entry path is `C:\proj\main.ty` and cutting on '/' alone answered "." and died
+# "package directory . has no .ty files". src/tychoc.c@path_dir spells that
+# condition with #ifdef _WIN32; tychoc1 gets the same answer from the same
+# preprocessor through core:os, whose shim is compiled for the host the compiler
+# binary runs on. Whichever separator comes LATER wins, as the bootstrap does it.
 fn dir_of(p: string) -> string:
+    win := os.is_windows()
     cut := -1
     for i := 0; i < len(p); i += 1:
-        if p[i] == 47:
+        if p[i] == 47 or (win and p[i] == 92):
             cut = i
     if cut < 0:
         return "."
@@ -58,7 +67,8 @@ fn dir_of(p: string) -> string:
 # of the two separators unguarded for the same reason it is safe here: a
 # backslash in an argv0 is a Windows path, never a POSIX filename. Source paths
 # keep dir_of -- src/tychoc.c@path_dir guards THAT behind _WIN32 because a
-# backslash IS a legal POSIX filename byte, and tychoc1 cannot spell _WIN32.
+# backslash IS a legal POSIX filename byte, and dir_of above takes the same
+# condition from core:os rather than cutting unconditionally.
 fn exe_dir_of(p: string) -> string:
     cut := -1
     for i := 0; i < len(p); i += 1:

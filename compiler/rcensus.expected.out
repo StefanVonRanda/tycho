@@ -2138,6 +2138,7 @@ call:os__has_nul=24
 call:ostep=1
 call:osx_exec=9
 call:osx_exec_out=9
+call:osx_is_windows=9
 call:osx_run=9
 call:osx_run_code=18
 call:osx_run_free=18

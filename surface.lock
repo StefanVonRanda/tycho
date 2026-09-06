@@ -399,6 +399,7 @@
   "os.exec": "(argv: [string])-> int",
   "os.exec_out": "(argv: [string])-> Output",
   "os.has_nul": "(s: string)-> bool",
+  "os.is_windows": "()-> bool",
   "os.run": "(cmd: string)-> Output",
   "os.system": "(cmd: string)-> int",
   "path.base": "(p: string)-> string",

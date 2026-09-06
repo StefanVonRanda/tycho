@@ -394,3 +394,14 @@ void *osx_exec_out(const char *const *v, tycho_int n) {
 }
 
 #endif
+
+/* Host predicate. The preprocessor's answer, exported as a runtime one: a Tycho
+ * program cannot spell _WIN32, and `compiler/types/load.ty@dir_of` needs exactly
+ * the condition `src/tychoc.c@path_dir` gets from it. */
+tycho_int osx_is_windows(void) {
+#ifdef _WIN32
+    return 1;
+#else
+    return 0;
+#endif
+}

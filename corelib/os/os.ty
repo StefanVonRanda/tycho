@@ -24,6 +24,7 @@ extern fn osx_run_out(r: ptr) -> string
 extern fn osx_run_free(r: ptr)
 extern fn osx_exec(argv: [string]) -> int      # [string] crosses as (const char *const *, len), borrowed
 extern fn osx_exec_out(argv: [string]) -> ptr  # same OsRun handle shape osx_run returns
+extern fn osx_is_windows() -> int              # the build's _WIN32, as a runtime answer
 
 # Run cmd, inheriting stdout/stderr; return its exit code.
 fn system(cmd: string) -> int:
@@ -65,3 +66,8 @@ fn exec_out(argv: [string]) -> Output:
     res := Output(osx_run_code(r), osx_run_out(r))
     osx_run_free(r)
     return res
+
+# True when this binary was built for Windows. Fixed at compile time (the shim
+# answers from _WIN32), reported at run time because Tycho has no comptime.
+fn is_windows() -> bool:
+    return osx_is_windows() != 0

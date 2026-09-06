@@ -111,6 +111,18 @@ check_native() {
     out="$("$T/nat_t" 2>/dev/null || true)"
     [ "$out" = "RELEASE OK" ] && ok "native: compiled and RAN a core:strings program with no TYCHO_CORELIB" \
                               || bad "native: the packaged compiler did not build+run a core:strings program (got '$out')"
+
+    # A backslash is a legal byte in a POSIX filename, so `dir_of` may not cut on
+    # it here -- `back\slash.ty` importing `./p` resolves only while the whole
+    # name is ONE component. This is the half the mingw leg below cannot see, and
+    # the reason the Windows fix is guarded rather than unconditional.
+    rm -rf "$T/bs"; mkdir -p "$T/bs/p"
+    printf 'package p\nfn hi() -> string:\n    return "POSIX OK"\n' > "$T/bs/p/p.ty"
+    printf 'package main\nimport "./p"\nfn main():\n    println(p.hi())\n' > "$T/bs/back\\slash.ty"
+    ( cd "$st" && env -u TYCHO_CORELIB ./tychoc "$T/bs/back\\slash.ty" -o "$T/bs/out" ) >/dev/null 2>&1
+    out="$("$T/bs/out" 2>/dev/null || true)"
+    [ "$out" = "POSIX OK" ] && ok "native: a source path with a literal backslash did compile (one filename, not two components)" \
+                            || bad "native: a source path with a literal backslash did not compile (got '$out') -- dir_of is cutting on a POSIX filename byte"
 }
 
 # ------------------------------------------------------------- mingw archive
@@ -185,6 +197,25 @@ check_mingw() {
     fi
     [ "$out" = "RELEASE OK" ] && ok "mingw: tychoc.exe named by absolute path from a foreign cwd built and RAN the same program" \
                               || bad "mingw: tychoc.exe from a foreign cwd could not build a core:strings program (got '$out') -- argv0-relative lookup is dead"
+
+    # The SOURCE path spelled the way a Windows shell hands it over --
+    # `tychoc.exe C:\proj\main.ty`. Every leg above names the source POSIX-style,
+    # so none of them can see this: `compiler/types/load.ty@dir_of` cut on '/'
+    # alone, answered ".", and the compile died before reading a byte.
+    rm -f "$T/bsrc.c" "$T/bsrc.exe"
+    wsrc="Z:$(printf '%s' "$T/src/t.ty" | tr '/' '\\')"
+    ( cd "$st" && env -u TYCHO_CORELIB $W ./tychoc.exe "$wsrc" --emit-c -o "$T/bsrc" ) >/dev/null 2>&1
+    out=""
+    if [ ! -s "$T/bsrc.c" ]; then
+        out="(nothing emitted)"
+    else
+        shims="$(winshims "$st" ./tychoc.exe "$wsrc")"
+        # shellcheck disable=SC2086
+        [ -n "$shims" ] && "$MINGWCC" -O1 -fwrapv -static -pthread -o "$T/bsrc.exe" "$T/bsrc.c" $shims -lm 2>/dev/null
+        out="$($W "$T/bsrc.exe" 2>/dev/null | tr -d '\r' || true)"
+    fi
+    [ "$out" = "RELEASE OK" ] && ok "mingw: a BACKSLASH source path (Windows-spelled, drive and all) built and RAN the same program" \
+                              || bad "mingw: a backslash source path could not build a core:strings program (got '$out') -- dir_of does not cut on '\\' on Windows"
 }
 
 # ------------------------------------------------------------------ selfcheck
@@ -264,6 +295,44 @@ selfcheck() {
             || { ctl_fail=$((ctl_fail + 1)); echo "FAIL control: the mutated compiler fails from the archive cwd too -- C4 is not isolating the argv0 path"; }
     fi
 
+    # [C5] dir_of ignoring '\' on Windows, which is what it did until 2026-09-06.
+    # The mingw twin of C4: same function, the SOURCE path rather than argv0.
+    c="$T/c5"; rm -rf "$c"; cp -r "$base" "$c"
+    rm -rf "$T/c5src"; mkdir -p "$T/c5src"; cp -r compiler corelib "$T/c5src/"
+    sed -i 's/win := os.is_windows()/win := false/' "$T/c5src/compiler/types/load.ty"
+    rm -f "$c/tychoc.exe"
+    if grep -q 'win := os.is_windows()' "$T/c5src/compiler/types/load.ty"; then
+        echo "FAIL control: the dir_of mutation did not apply"; ctl_fail=$((ctl_fail + 1))
+    else
+        echo "   substitution applied: dir_of in $T/c5src answers the host predicate false ($(grep -c 'win := false' "$T/c5src/compiler/types/load.ty") site)"
+        ./tychoc "$T/c5src/compiler/main.ty" --emit-c -o "$T/c5c" >/dev/null 2>&1
+        # shellcheck disable=SC2046
+        "$MINGWCC" -O1 -fwrapv -static -pthread -o "$c/tychoc.exe" "$T/c5c.c" \
+            $(./tychoc "$T/c5src/compiler/main.ty" --print-shims 2>/dev/null | tr '\n' ' ') -lm 2>/dev/null
+        [ -s "$c/tychoc.exe" ] || { echo "FAIL control: the C5 mutant did not BUILD -- the control is dead"; ctl_fail=$((ctl_fail + 1)); }
+        ( fail=0; legs=0; check_mingw "$c" "$ver" ) > "$T/c5.log" 2>&1
+        ctl "dir_of ignoring a backslash SOURCE path" "backslash source path could not build" "$T/c5.log"
+        grep -q "^   ok  mingw: tychoc.exe named by absolute path from a foreign cwd" "$T/c5.log" \
+            && { ctl_pass=$((ctl_pass + 1)); echo "   ok  control: the same mutant still builds a POSIX-spelled source path, so C5 is isolating the SOURCE path"; } \
+            || { ctl_fail=$((ctl_fail + 1)); echo "FAIL control: the C5 mutant fails the POSIX-spelled legs too -- C5 is not isolating the source path"; }
+    fi
+
+    # [C6] the fix OVERSHOOTING: dir_of cutting on '\' with no host guard. No
+    # Windows leg can see this one -- what breaks is the POSIX filename.
+    c="$T/c6"; rm -rf "$c"; cp -r "$nats" "$c"
+    rm -rf "$T/c6src"; mkdir -p "$T/c6src"; cp -r compiler corelib "$T/c6src/"
+    sed -i 's/win := os.is_windows()/win := true/' "$T/c6src/compiler/types/load.ty"
+    rm -f "$c/tychoc"
+    if grep -q 'win := os.is_windows()' "$T/c6src/compiler/types/load.ty"; then
+        echo "FAIL control: the unconditional-cut mutation did not apply"; ctl_fail=$((ctl_fail + 1))
+    else
+        echo "   substitution applied: dir_of in $T/c6src answers the host predicate true ($(grep -c 'win := true' "$T/c6src/compiler/types/load.ty") site), so it cuts on 92 everywhere"
+        ./tychoc "$T/c6src/compiler/main.ty" -o "$c/tychoc" >/dev/null 2>&1
+        [ -x "$c/tychoc" ] || { echo "FAIL control: the C6 mutant did not BUILD -- the control is dead"; ctl_fail=$((ctl_fail + 1)); }
+        ( fail=0; legs=0; check_native "$c" "$ver" ) > "$T/c6.log" 2>&1
+        ctl "dir_of cutting on a POSIX filename's backslash" "literal backslash did not compile" "$T/c6.log"
+    fi
+
     # And the revert: the untouched archive must still be clean, or every control
     # above is measuring a lane that reddens for everything.
     ( fail=0; legs=0; check_mingw "$base" "$ver" ) > "$T/c0.log" 2>&1
@@ -273,6 +342,15 @@ selfcheck() {
         ctl_fail=$((ctl_fail + 1))
     else
         ctl_pass=$((ctl_pass + 1)); echo "   ok  control: the unmutated archive stays clean"
+    fi
+
+    ( fail=0; legs=0; check_native "$nats" "$ver" ) > "$T/c0n.log" 2>&1
+    if grep -q '^FAIL' "$T/c0n.log"; then
+        echo "FAIL control: the UNMUTATED native archive reddens -- C6 proves nothing"
+        sed -n 's/^FAIL/     FAIL/p' "$T/c0n.log"
+        ctl_fail=$((ctl_fail + 1))
+    else
+        ctl_pass=$((ctl_pass + 1)); echo "   ok  control: the unmutated native archive stays clean"
     fi
 
     echo "release-content selfcheck: $ctl_pass ok, $ctl_fail failed"

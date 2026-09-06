@@ -164,6 +164,78 @@ def commit_hashes(files, fails):
     return len(seen)
 
 
+# ---------------------------------------------------------------------------
+# PROVENANCE RANGE DRIFT.
+#
+# A bare `path:N-M` is bounds-checked and nothing else, deliberately: a range
+# has no single subject token and forcing an anchor produces a false one. That
+# exemption is also a blind spot -- a range whose code MOVED still lies inside
+# the file, so the gate stays green while the citation points at unrelated
+# code. Measured 2026-09-06: 23 of 29 such refs in `> Provenance:` blocks named
+# a symbol that was nowhere in the range they cited.
+#
+# What makes it decidable is the SHAPE, not the prose. Only a range whose
+# immediately preceding token is a backticked identifier (`sym` `path:N-M`, or
+# `a`/`b` for a pair) is scored, and only inside a `> Provenance:` block, where
+# that adjacency IS the convention. Loosening it to "the nearest backticked
+# identifier anywhere on the line" was tried and rejected: over the whole tree
+# it flags 35, and reading them showed most are prose -- a list tail (`tls`
+# before three per-package ranges), a joint pair (`MSG_NOSIGNAL`/`SO_NOSIGPIPE`
+# cited by one range), a type named in passing. That version would be a gate
+# nobody could keep green, which is how an exemption list starts.
+#
+# A symbol the target file does not contain AT ALL is skipped: it is prose, not
+# a claim about that file.
+PROV_RANGE = re.compile(r'((?:`[A-Za-z_][A-Za-z0-9_]*`/?)+)[,;:]?\s*\(?'
+                        r'`([^`\s]*?):(\d+)-(\d+)`')
+PROV_PATH = re.compile(r'`([^`\s]*?):\d')
+PROV_IDENT = re.compile(r'`([A-Za-z_][A-Za-z0-9_]*)`')
+
+
+def provenance_drift(mds, fails, opener=None):
+    """-> how many adjacent-symbol Provenance ranges were scored."""
+    if opener is None:
+        opener = lambda f: open(os.path.join(ROOT, f), errors="replace")
+    n = 0
+    for f in mds:
+        inblk = False
+        last = None
+        for ln, line in enumerate(opener(f), 1):
+            t = line.lstrip()
+            if t.startswith("> Provenance:"):
+                inblk, last = True, None
+            elif not t.startswith(">"):
+                inblk = False
+            if not inblk or "docs-archive" in line:
+                continue
+            for m in PROV_RANGE.finditer(line):
+                for pm in PROV_PATH.finditer(line[:m.end()]):
+                    last = pm.group(1) or last
+                path = m.group(2) or last
+                if not path:
+                    continue
+                last = path
+                src = lines_of(path)
+                a, b = int(m.group(3)), int(m.group(4))
+                if src is None or b > len(src):
+                    continue           # bounds are the bare-range check's job
+                syms = [x for x in PROV_IDENT.findall(m.group(1))
+                        if any(x in l for l in src)]
+                if not syms:
+                    continue
+                n += 1
+                if any(any(x in l for l in src[a - 1:b]) for x in syms):
+                    continue
+                fails.append("%s:%d -> `%s` `%s:%d-%d`: the range does NOT "
+                             "contain the symbol named beside it, though the "
+                             "file still does. The code moved and the range "
+                             "did not. Re-anchor it -- `%s@%s` for a "
+                             "definition, `%s:N@token` for a line."
+                             % (f, ln, "/".join(syms), path, a, b,
+                                path, syms[0], path))
+    return n
+
+
 def lines_of(path):
     """-> list of lines, or None if the file does not exist"""
     if path not in _cache:
@@ -292,8 +364,33 @@ def selfcheck():
     if bad:
         print("citation selfcheck: FAILED (%d of %d)" % (bad, len(cases)))
         return 1
-    print("citation selfcheck: ok (%d shapes, %d of them must be flagged)"
-          % (len(cases), sum(1 for c in cases if c[1])))
+    # The Provenance-range drift pass, both ways. A leg that only ever sees a
+    # clean tree is indistinguishable from one that stopped matching, so the
+    # correct citation must NOT be flagged and the moved one MUST be. Both cite
+    # a real file: `tycho_idiv` is defined at one line of runtime/tycho_rt.c and
+    # is nowhere near line 149.
+    prov = [
+        ("> Provenance: `tycho_idiv` `runtime/tycho_rt.c:288-296`.", False,
+         "range that holds its symbol"),
+        ("> Provenance: `tycho_idiv` `runtime/tycho_rt.c:149-161`.", True,
+         "range the symbol has moved out of"),
+        ("Prose: `tycho_idiv` `runtime/tycho_rt.c:149-161`.", False,
+         "same shape OUTSIDE a Provenance block"),
+    ]
+    for text, want, why in prov:
+        f2 = []
+        provenance_drift(["x.md"], f2, opener=lambda _f, t=text: [t])
+        if bool(f2) != want:
+            print("  FAIL  provenance-drift %-32s want=%s got=%s"
+                  % (why, want, bool(f2)))
+            bad += 1
+    if bad:
+        print("citation selfcheck: FAILED (%d)" % bad)
+        return 1
+    print("citation selfcheck: ok (%d shapes, %d of them must be flagged; "
+          "%d provenance-drift cases, %d of them must be flagged)"
+          % (len(cases), sum(1 for c in cases if c[1]),
+             len(prov), sum(1 for c in prov if c[1])))
     return 0
 
 
@@ -632,6 +729,8 @@ def main():
                              "if it was deleted, say so and cite the archive."
                              % (f, ln, ref, base or "."))
 
+    n_prov_rng = provenance_drift(mds, fails)
+
     if "--stats" in sys.argv:
         print("citation check: %d anchored (content-checked, %d of them the "
               "mandatory `> Provenance:` single-line refs), %d bare (bounds "
@@ -650,9 +749,10 @@ def main():
           "names one line, %d bare in bounds, %d source->doc citations resolve, "
           "%d source->source in bounds, %d source->source anchored, "
           "%d `path@SYMBOL` definition refs name a symbol still in their file, "
-          "%d commit hashes resolve)"
+          "%d `> Provenance:` ranges still contain the symbol written beside "
+          "them, %d commit hashes resolve)"
           % (n_anchored, n_bare, n_doc, n_src, n_src_anch, n_sym + n_sym_src,
-             max(n_hash, 0)))
+             n_prov_rng, max(n_hash, 0)))
     return 0
 
 

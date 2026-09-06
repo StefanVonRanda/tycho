@@ -78,8 +78,8 @@ predicate is rejected) — this is the deliberate anti-traits stance (§7). The 
 set (up to 16 types). A `where` clause requires a generic function; at most 8
 constraints are allowed.
 
-> Provenance: `parse_fn`, `src/tychoc.c:4206-4298` (params `:4589-4628`,
-> variadic-last `:4615-4617`, `where` `:4261-4290`).
+> Provenance: `parse_fn`, `src/tychoc.c@parse_fn` (params `src/tychoc.c:4589-4628`,
+> variadic-last `src/tychoc.c:4615-4617`, `where` `src/tychoc.c:4568@where`).
 
 ### 4.1.2 Structs, enums, newtypes, handles
 
@@ -124,8 +124,8 @@ rooted in one of its parameters. Its rules — the place must be rooted in a
 parameter, each parameter used at most once — are given in §18.
 `Place` is defined in §4.4.
 
-> Provenance: `parse_extern_fn` (`src/tychoc.c:4376-4447`), `parse_subscript`
-> (`:4363-4415`).
+> Provenance: `parse_extern_fn` (`src/tychoc.c@parse_extern_fn`), `parse_subscript`
+> (`src/tychoc.c:4363-4415`).
 
 ## 4.2 Types
 
@@ -181,7 +181,7 @@ Notes (constrained further in §5–§7):
   is a recursive self-reference.
 - There is no `char` or `void` type spelling (§3.6).
 
-> Provenance: `parse_type_inner`, `src/tychoc.c:2010-2337`.
+> Provenance: `parse_type_inner`, `src/tychoc.c@parse_type_inner`.
 
 ## 4.3 Blocks and statements
 
@@ -311,7 +311,7 @@ ValueCtrl   ::= If | Match              /* value form: block branches ending in 
 > (`src/tychoc.c:3546@parse_match`, value form `src/tychoc.c:3677@parse_match`),
 > `for`/`parallel` (`src/tychoc.c:3657-3849`; the three-clause header
 > `src/tychoc.c:3701-3746`, `0..<N` `src/tychoc.c:4091-4116`, the `range`
-> refusal `src/tychoc.c:4184@"range"`), `select` (`src/tychoc.c:3611-3647`),
+> refusal `src/tychoc.c:4184@"range"`), `select` (`src/tychoc.c:4004@TK_SELECT`),
 > value-control routing (`src/tychoc.c:3974@parse_value_ctrl`,
 > `src/tychoc.c:4277@parse_value_ctrl`, `src/tychoc.c:4291@parse_value_ctrl`,
 > `src/tychoc.c:4277@parse_value_ctrl`, `src/tychoc.c:4368@parse_value_ctrl`).
