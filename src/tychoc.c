@@ -13944,10 +13944,19 @@ static void gen_program(FILE *o, ProcVec *prog) {
                 "static %stycho_arr_C%d_get(TychoArrC%d xs, tycho_int i) {\n"
                 "    if (i < 0 || i >= %lld) { fprintf(stderr, \"tycho: index %%\" TY_PRId \" out of bounds (len %lld)\\n\", i); exit(1); }\n"
                 "    return xs.v[i];\n}\n", ct, i, i, (long long)n, (long long)n);
+            /* clang REFUSES `&v[i]` on a GCC vector -- "address of vector element
+             * requested" -- in EVERY version, while gcc permits it. A lane read
+             * needs no address, so only this helper is affected: cast the vector
+             * member's own address to the element type and index that. Both
+             * compilers lay a vector out as N contiguous elements and the
+             * aggregate is `packed`, so there is no padding to step over. */
+            const char *ptr_ret = g_arrtypes[i].bnd == 2
+                ? sfmt("    return &((%s*)&xs->v)[i];\n}\n", ct)
+                : "    return &xs->v[i];\n}\n";
             fprintf(o,
                 "static %s*tycho_arr_C%d_ptr(TychoArrC%d *xs, tycho_int i) {\n"
                 "    if (i < 0 || i >= %lld) { fprintf(stderr, \"tycho: index %%\" TY_PRId \" out of bounds (len %lld)\\n\", i); exit(1); }\n"
-                "    return &xs->v[i];\n}\n", ct, i, i, (long long)n, (long long)n);
+                "%s", ct, i, i, (long long)n, (long long)n, ptr_ret);
             fprintf(o,
                 "static void tycho_arr_C%d_set(Arena *a, TychoArrC%d *xs, tycho_int i, %sv) {\n"
                 "    if (i < 0 || i >= %lld) { fprintf(stderr, \"tycho: index %%\" TY_PRId \" out of bounds (len %lld)\\n\", i); exit(1); }\n"

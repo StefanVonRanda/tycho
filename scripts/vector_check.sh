@@ -58,6 +58,22 @@ grep -qE 'tycho_idiv\(_ewa[0-9]*\.v\[_ewi[0-9]*\], _ewb[0-9]*\.v\[_ewi[0-9]*\]\)
 grep -qE 'tycho_imod\(_ewa[0-9]*\.v\[_ewi[0-9]*\], _ewb[0-9]*\.v\[_ewi[0-9]*\]\)' "$D/e.c" \
     || fail "$CC: int vector % no longer goes through the runtime guard"
 
+# [1c] clang REFUSES the address of a vector ELEMENT -- "address of vector
+#      element requested" -- in EVERY version, while gcc permits it, so
+#      `&xs->v[i]` compiled fine here and broke every clang user. A lane READ
+#      needs no address; only the _ptr helper did, and it must take the vector
+#      MEMBER's address and index that instead. Two halves, and both are needed:
+#      the grep pins the form on a host with no clang, and the compile is the
+#      only thing that proves the form is actually accepted.
+grep -qE 'return &\(\([a-z_ ]+\*\)&xs->v\)\[i\];' "$D/e.c" \
+    || fail "$CC: the vector _ptr helper no longer casts the member's address -- clang refuses &v[i]"
+if command -v clang > /dev/null 2>&1; then
+    clang -fsyntax-only "$D/e.c" 2> "$D/clang.err" \
+        || { sed 's/^/       /' "$D/clang.err"; fail "$CC: the emitted C does not compile under $(clang --version | head -1)"; }
+else
+    echo "vector-check: SKIPPED the clang half of leg [1c] -- clang not on PATH"
+fi
+
 # [2] ALIGNMENT, the question V0 put ahead of this whole phase.
 #     runtime/tycho_rt.c@arena_alloc_slow rounds every arena allocation to 8
 #     bytes. A bare vector_size(32) aggregate would demand 32 and be

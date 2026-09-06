@@ -6745,11 +6745,15 @@ fn _vec_defs(cs: inout C) -> (string, string, string):
             "static uint64_t " + p + "_dhash(" + ct + ");\n"
         oob := "{ fprintf(stderr, \"tycho: index %\" TY_PRId \" out of bounds (len " +
             ns + ")\\n\", i); exit(1); }"
+        # _ptr casts the vector member's address instead of writing `&xs->v[i]`:
+        # clang refuses the address of a vector ELEMENT in every version, gcc
+        # allows it. A lane READ needs no address, so only _ptr is affected.
         fb = fb +
             "static " + ce + p + "_get(" + ct + " xs, tycho_int i) {\n" +
             "    if (i < 0 || i >= " + ns + ") " + oob + "\n    return xs.v[i];\n}\n" +
             "static " + ce + "*" + p + "_ptr(" + ct + " *xs, tycho_int i) {\n" +
-            "    if (i < 0 || i >= " + ns + ") " + oob + "\n    return &xs->v[i];\n}\n" +
+            "    if (i < 0 || i >= " + ns + ") " + oob + "\n    return &((" + ce +
+            "*)&xs->v)[i];\n}\n" +
             "static int " + p + "_eq(" + ct + " x, " + ct + " y) {\n" +
             "    for (tycho_int i = 0; i < " + ns + "; i++) if (!(" +
             _eq(&cs, "x.v[i]", "y.v[i]", et) + ")) return 0;\n    return 1;\n}\n" +
@@ -7926,7 +7930,7 @@ fn program(pfx: [string], us: [ast.Unit], dbgf: string) -> string:
     # `extern double strx_parse_double(char *, tycho_int *);` -- the foreign
     # symbol's prototype, matching ./tychoc. An inout parameter is a pointer.
     # ./tychoc emits these INTERLEAVED with the ordinary prototypes (one loop
-    # over the whole proc list, src/tychoc.c:14397), so the block lands directly
+    # over the whole proc list, src/tychoc.c:14406), so the block lands directly
     # in front of them -- not up in the type header.
     xpro := ""
     for xi := 0; xi < len(cs.fds); xi += 1:
