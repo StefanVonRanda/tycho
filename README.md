@@ -71,6 +71,12 @@ fn main():
 
 A C compiler (`cc`) and `make` — that's the whole toolchain.
 
+Any C11 compiler will do: gcc, or **clang 15 or newer**. clang 14 builds the
+compiler and then miscompiles what it emits — measured on Ubuntu 22.04, eight
+fixtures come back with empty strings where a string literal was expected — so
+it is not supported. clang 19 was measured against gcc over the whole fixture
+corpus and agrees on every one.
+
 ```
 $ git clone https://github.com/StefanVonRanda/tycho
 $ cd tycho

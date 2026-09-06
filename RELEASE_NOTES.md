@@ -109,6 +109,20 @@ transpiles to C. Each tarball's SHA-256 is published alongside it.
   out-of-range value. They are checked at run time.
 - **The format parsers stopped failing open** — `core:csv`, `core:json`,
   `core:toml`, `core:cli` and `core:markdown`.
+- **`make` failed on a fresh clone under Debian and Ubuntu.** The runtime is
+  escaped into a C string literal by an `awk` rule, and mawk — the default `awk`
+  on both — halves a backslash where every other awk doubles it, so all 89
+  backslashes in the runtime reached `cc` unescaped and the build died at
+  `\x used with no following hex digits`. The rule no longer depends on which
+  awk is installed. Present since 0.5.0.
+- **`vector[N]T` and swizzling did not compile under any clang.** The lowering
+  took the address of a vector lane, which gcc permits and clang refuses in
+  every version. Five fixtures failed; the whole corpus now agrees between gcc
+  and clang 19. **clang 15 or newer** — clang 14 miscompiles the emitted C and
+  is not supported.
+- **`--print-deps` reported nothing for `core:sqlite`**, so `make corelib`
+  failed rather than skipped where libsqlite3 is absent. A package's `deps` file
+  is now read whether or not it also ships a C shim.
 
 ## Security
 
