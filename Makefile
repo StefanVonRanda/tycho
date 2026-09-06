@@ -55,17 +55,34 @@ tychoc1: tychoc $(TYCHOC1_SRC)
 	TYCHO_CFLAGS="$(TYCHOC1_CFLAGS)" ./tychoc1-stage1 compiler/main.ty -o tychoc1
 	@rm -f tychoc1-stage1
 
+# The three tools SHIP in the release archive beside tychoc, and until 2026-09-06
+# they were the only shipped binaries linked dynamically -- so they carried this
+# host cc's glibc floor into the tarball. `cc (Debian 16.1.0)` defaults to
+# __STDC_VERSION__ 202311L, glibc redirects strtol to __isoc23_strtol@GLIBC_2.38,
+# and all three failed to start on Debian 12 / Ubuntu 22.04 / Rocky 9.
+# -std=gnu17 does NOT fix it here and the measurement is the reason: the emitted C
+# opens with runtime/tycho_rt.c's `#define _GNU_SOURCE` (runtime/tycho_rt.c:30-31),
+# and glibc's features.h makes _GNU_SOURCE imply _ISOC23_SOURCE, so the C23
+# redirect survives the language level. Measured on a bare strtol program:
+# no flag 2.38, -std=gnu17 2.34, -D_GNU_SOURCE 2.38, both 2.38.
+# -static-pie is what tychoc1 itself already uses (TYCHOC1_CFLAGS above) and it
+# removes the floor outright: max GLIBC symbol version becomes NONE, ldd reports
+# "statically linked". Cost is ~0.93 MB per binary uncompressed.
+TOOL_CFLAGS ?= -static-pie
+
+# `tycho` is NOT in either archive (scripts/release.sh:130 copies three tools), so
+# no lane can redden for it and it is left alone deliberately -- reported, not fixed.
 tycho: tychoc1 tools/tycho.ty tools/tycho_shim.c
 	./tychoc1 tools/tycho.ty --shim tools/tycho_shim.c -o tycho
 
-tychofmt: tychoc1 tools/tychofmt.ty
-	./tychoc1 tools/tychofmt.ty -o tychofmt
+tychofmt: tychoc1 Makefile tools/tychofmt.ty
+	TYCHO_CFLAGS="$(TOOL_CFLAGS)" ./tychoc1 tools/tychofmt.ty -o tychofmt
 
-tycho-lsp: tychoc1 tools/lsp.ty tools/lsp_shim.c
-	./tychoc1 tools/lsp.ty --shim tools/lsp_shim.c -o tycho-lsp
+tycho-lsp: tychoc1 Makefile tools/lsp.ty tools/lsp_shim.c
+	TYCHO_CFLAGS="$(TOOL_CFLAGS)" ./tychoc1 tools/lsp.ty --shim tools/lsp_shim.c -o tycho-lsp
 
-tycho-debug: tychoc1 tools/tycho-debug/main.ty tools/tycho-debug/debug_shim.c
-	./tychoc1 tools/tycho-debug/main.ty --shim tools/tycho-debug/debug_shim.c -o tycho-debug
+tycho-debug: tychoc1 Makefile tools/tycho-debug/main.ty tools/tycho-debug/debug_shim.c
+	TYCHO_CFLAGS="$(TOOL_CFLAGS)" ./tychoc1 tools/tycho-debug/main.ty --shim tools/tycho-debug/debug_shim.c -o tycho-debug
 
 tools: tycho tychofmt tycho-lsp tycho-debug
 

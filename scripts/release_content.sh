@@ -82,11 +82,73 @@ check_layout() {
     fi
 }
 
+# ---------------------------------------------------- native portability legs
+#
+# The mingw leg has STARTED every .exe under wine since 2026-09-05; nothing ever
+# started the native binaries, and that asymmetry is why a glibc floor shipped
+# unseen. This host's `cc` defaults to __STDC_VERSION__ 202311L, glibc redirects
+# strtol to __isoc23_strtol@GLIBC_2.38, and tychofmt/tycho-lsp/tycho-debug then
+# refuse to start on Debian 12 (2.36), Ubuntu 22.04 (2.35) and Rocky 9 (2.34).
+# The gate's assertion is the SYMBOL TABLE, not a container: `objdump -T` and the
+# maximum GLIBC_ version in it, which is exactly what the dynamic loader compares.
+# 2.17 is the ceiling because it predates every distro still receiving updates;
+# a -static-pie binary has no versioned GLIBC symbol at all and reads as "none".
+maxglibc="2.17"
+
+# Every regular executable directly in the archive root. corelib/ carries .ty and
+# .c sources only, so the root is the whole shipped executable set.
+archive_exes() {
+    for f in "$1"/*; do
+        [ -f "$f" ] && [ -x "$f" ] && printf '%s\n' "$f"
+    done
+}
+
+glibc_floor() {
+    v="$("$OBJDUMP" -T "$1" 2>/dev/null | grep -o 'GLIBC_[0-9.]*' | sed 's/GLIBC_//' | sort -V | tail -1)"
+    [ -n "$v" ] && printf '%s' "$v" || printf 'none'
+}
+
+check_native_start() {
+    st="$1"; tag="$2"
+    n=0
+    for exe in $(archive_exes "$st"); do
+        n=$((n + 1))
+        err="$(timeout 20 "$exe" --version </dev/null 2>&1 >/dev/null)"; rc=$?
+        # A loader failure is the whole subject: rc 127 plus ld.so's own words.
+        case "$err" in
+            *"not found"*GLIBC*|*GLIBC*"not found"*|*"error while loading shared libraries"*)
+                bad "$tag: $(basename "$exe") does not START on this host -- $(printf '%s' "$err" | head -1)" ;;
+            *)
+                [ "$rc" -eq 127 ] \
+                    && bad "$tag: $(basename "$exe") exited 127 (not executed)" \
+                    || ok "$tag: $(basename "$exe") starts (exit $rc)" ;;
+        esac
+    done
+    [ "$n" -ge 4 ] && ok "$tag: $n executables in the archive were started" \
+                   || bad "$tag: only $n executables found in the archive -- the start legs cover almost nothing"
+}
+
+check_native_glibc() {
+    st="$1"; tag="$2"
+    for exe in $(archive_exes "$st"); do
+        f="$(glibc_floor "$exe")"
+        if [ "$f" = "none" ]; then
+            ok "$tag: $(basename "$exe") needs no versioned glibc symbol (statically linked)"
+        elif [ "$(printf '%s\n%s\n' "$f" "$maxglibc" | sort -V | tail -1)" = "$maxglibc" ]; then
+            ok "$tag: $(basename "$exe") glibc floor $f (<= $maxglibc)"
+        else
+            bad "$tag: $(basename "$exe") requires GLIBC_$f, above the $maxglibc ceiling -- it cannot start on an older distro"
+        fi
+    done
+}
+
 # ------------------------------------------------------------- native archive
 
 check_native() {
     st="$1"; ver="$2"
     check_layout "$st" native tychoc tychofmt tycho-lsp tycho-debug corelib runtime/tycho_rt.c README.md LICENSE
+    check_native_start "$st" native
+    check_native_glibc "$st" native
 
     v="$("$st/tychoc" --version 2>/dev/null | awk '{print $2}')"
     [ "$v" = "$ver" ] && ok "native: the packaged tychoc reports $ver" \
@@ -331,6 +393,27 @@ selfcheck() {
         [ -x "$c/tychoc" ] || { echo "FAIL control: the C6 mutant did not BUILD -- the control is dead"; ctl_fail=$((ctl_fail + 1)); }
         ( fail=0; legs=0; check_native "$c" "$ver" ) > "$T/c6.log" 2>&1
         ctl "dir_of cutting on a POSIX filename's backslash" "literal backslash did not compile" "$T/c6.log"
+    fi
+
+    # [C7] the glibc floor: one tool rebuilt WITHOUT Makefile:TOOL_CFLAGS, which is
+    # exactly how tychofmt/tycho-lsp/tycho-debug were built until 2026-09-06. Not a
+    # simulation -- the same tychoc1 on the same source, one flag removed.
+    c="$T/c7"; rm -rf "$c"; cp -r "$nats" "$c"
+    rm -f "$c/tychofmt"
+    env -u TYCHO_CFLAGS ./tychoc1 tools/tychofmt.ty -o "$c/tychofmt" >/dev/null 2>&1
+    f7="$(glibc_floor "$c/tychofmt")"
+    if [ ! -x "$c/tychofmt" ]; then
+        echo "FAIL control: the C7 rebuild did not produce a binary -- the control is dead"; ctl_fail=$((ctl_fail + 1))
+    elif [ "$f7" = "none" ] || [ "$(printf '%s\n%s\n' "$f7" "$maxglibc" | sort -V | tail -1)" = "$maxglibc" ]; then
+        echo "FAIL control: tychofmt rebuilt without -static-pie has floor '$f7', at or under the $maxglibc ceiling -- this host's cc does not reproduce the defect, so C7 proves nothing"
+        ctl_fail=$((ctl_fail + 1))
+    else
+        echo "   substitution applied: $c/tychofmt rebuilt with no TOOL_CFLAGS requires GLIBC_$f7 ($("$OBJDUMP" -T "$c/tychofmt" | grep -o '__isoc23_[a-z]*' | sort -u | tr '\n' ' ')), against $(glibc_floor "$nats/tychofmt") in the archive"
+        ( fail=0; legs=0; check_native "$c" "$ver" ) > "$T/c7.log" 2>&1
+        ctl "one tool built without -static-pie" "tychofmt requires GLIBC_$f7, above the $maxglibc ceiling" "$T/c7.log"
+        grep -q "^   ok  native: tychoc needs no versioned glibc symbol" "$T/c7.log" \
+            && { ctl_pass=$((ctl_pass + 1)); echo "   ok  control: the other three binaries in the same archive stay green, so the leg names the ONE that regressed"; } \
+            || { ctl_fail=$((ctl_fail + 1)); echo "FAIL control: C7 reddens binaries it did not touch -- the leg is not per-binary"; }
     fi
 
     # And the revert: the untouched archive must still be clean, or every control
