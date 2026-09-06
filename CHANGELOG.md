@@ -5,7 +5,7 @@ The version constant lives in `src/tychoc.c` (`TYCHO_VERSION`, printed by
 `tychoc --version`); bump both together. Per-release publishing notes stay in
 `RELEASE_NOTES.md`; this file is the accumulating record.
 
-## [Unreleased]
+## [0.9.0] — 2026-09-06
 
 ### Language
 

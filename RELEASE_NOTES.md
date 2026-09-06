@@ -8,7 +8,7 @@ Draft release notes. Edit this before publishing, then:
 Build one tarball per platform (there is no hosted CI); attach them all to the release.
 -->
 
-Tycho 0.8 — pre-1.0, no stability guarantees (see the [README](README.md) for
+Tycho 0.9 — pre-1.0, no stability guarantees (see the [README](README.md) for
 what that means in practice). Prebuilt binaries are attached, so you can try the
 language without building from source.
 
@@ -93,7 +93,7 @@ One limit is stated rather than fixed, because you may hit it:
 
 ## Status
 
-0.8 is pre-1.0 and there are **no stability guarantees**: anything here may
+0.9 is pre-1.0 and there are **no stability guarantees**: anything here may
 change. [ROADMAP.md](ROADMAP.md#what-10-requires) lists what 1.0 requires, and
 the blocking item is not engineering — it is that nobody outside this repo has
 written a real program in Tycho yet. If you write one, the friction you hit is
