@@ -11,7 +11,7 @@ TYCHOC  ?= ./tychoc
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: corpus-check packed-check vector-check align-probe status status-net status-check parse-check tychoc1-check script-check friction-check surface-check net-poll-check version-check all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check shim-warn mingw-warn source-bytes goldens-check tls-verify http-verify handle-guard format-diff math-diff traversal-check ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check flow-check ed-check sheet-check sim-check make-check snap-check tally-check agg-check tmpl-check stat-check ledger-check fh-check grid-check chess-check kvsrv-check sat-check locale-check glibc-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check spec-fast docs-fences check-links server server-check wiki ci release-check release-content hooks ilp32 asan-self editors-check clean
+.PHONY: corpus-check packed-check vector-check align-probe status status-net status-check parse-check tychoc1-check script-check friction-check surface-check net-poll-check version-check all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check shim-warn mingw-warn source-bytes goldens-check embed-check tls-verify http-verify handle-guard format-diff math-diff traversal-check ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check flow-check ed-check sheet-check sim-check make-check snap-check tally-check agg-check tmpl-check stat-check ledger-check fh-check grid-check chess-check kvsrv-check sat-check locale-check glibc-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check spec-fast docs-fences check-links server server-check wiki ci release-check release-content hooks ilp32 asan-self editors-check clean
 
 # tychoc1, the self-hosted compiler, is what `make` produces and what ships.
 # It still depends on tychoc: src/tychoc.c is the bootstrap stage that builds it.
@@ -21,8 +21,9 @@ all: tychoc1
 # embeds into every generated file. Each line is escaped and suffixed
 # with \n so the emitted C is byte-for-byte the runtime source.
 $(EMBED): $(RUNTIME) | build
-	@awk 'BEGIN{print "static const char *TYCHO_RUNTIME ="} \
-	     {gsub(/\\/,"\\\\"); gsub(/"/,"\\\""); printf "\"%s\\n\"\n",$$0} \
+	@awk 'BEGIN{print "static const char *TYCHO_RUNTIME ="; bs=sprintf("%c",92); q=sprintf("%c",34)} \
+	     {out=""; n=length($$0); for(i=1;i<=n;i++){c=substr($$0,i,1); out = (c==bs||c==q) ? out bs c : out c} \
+	      printf "%s%s%sn%s\n", q, out, bs, q} \
 	     END{print ";"}' $(RUNTIME) > $(EMBED)
 
 build:
@@ -239,6 +240,11 @@ source-bytes: tychoc tychoc1
 
 goldens-check:
 	@python3 scripts/check_goldens.py
+
+# The embed rule is load-bearing and awk-dependent: Debian/Ubuntu mawk halved
+# a backslash in a gsub replacement, so every fresh clone there failed to build.
+embed-check:
+	@python3 scripts/embed_check.py
 
 # The sub-second predictor of parse-check's opening counts. No compiler, so a
 # commit that adds or deletes a .ty can afford it; parse-check runs it too.

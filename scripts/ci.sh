@@ -58,6 +58,9 @@ make -s check-links
 step "[1b/13] make goldens-check  (every golden a run.sh names is tracked by git -- the fresh-clone check)"
 make -s goldens-check
 
+step "[1b2/13] make embed-check  (the runtime embed is awk-independent and lossless. Debian and Ubuntu ship mawk 1.3.4 20200120, which halves a backslash in a gsub replacement, so the old rule under-escaped all 89 backslashes in the runtime and every fresh clone on those two distros died at cc. Nothing here could see it: every lane runs against a header this host awk had already written correctly)"
+make -s embed-check
+
 step "[1c/13] make version-check  (every STATUS claim in a tracked doc names the version src/tychoc.c ships. The 0.6->0.7 bump grepped for \"Tycho 0.6\", missed \"Tycho is 0.6\", and left five files announcing the old release -- no lane here could see it, because the doc gates read links and citations and never a claim in a sentence. Scoped to status claims, not to the ~1080 version tokens in tracked Markdown, most of which are legitimate history)"
 make -s version-check
 
