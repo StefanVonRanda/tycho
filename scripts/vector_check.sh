@@ -276,7 +276,7 @@ fn main():
     w: vector[4]f32 = [1.0, 2.0, 3.0, 4.0]
     println(str(n[0]) + " " + str(w[0]))
 TY
-SENT='widest vector register'
+SENT='every operation on it splits'
 nwarn() { "$1" "$2" $3 --emit-c -o "$D/w/e" 2>&1 >/dev/null | grep -c "$SENT" || true; }
 for CC in ./tychoc ./tychoc1; do
     # [8a] it FIRES at the default, ONCE for the six spellings of one type

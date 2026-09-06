@@ -1,4 +1,4 @@
-# src/tychoc.c:7297
+# src/tychoc.c:7296
 # expect: to_bool(x) takes one argument
 fn main():
     b := to_bool(true, 1)

@@ -154,7 +154,7 @@ for TYCHOC in ./tychoc ./tychoc1; do
     #     above 8. Exactly two constructs emit an alignment attribute in either
     #     compiler -- `align(N) struct`, refused above 8 by the parser
     #     (src/tychoc.c@parse_struct, compiler/parse/parse.ty@structd), and
-    #     `vector[N]T`, pinned at `packed, aligned(8)` (src/tychoc.c:13257,
+    #     `vector[N]T`, pinned at `packed, aligned(8)` (src/tychoc.c:13256,
     #     compiler/emit/emit.ty:6738). So the invariant is checked where it is
     #     established, over every user type the emitted TU defines, rather than
     #     at the arena_alloc sites -- which the two emitters have 61 of between
