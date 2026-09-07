@@ -7,7 +7,7 @@ high-level shape. What 1.0 now requires is [below](#what-10-requires).
 
 ## Where it is
 
-The language and the 46-package core library are
+The language and the 45-package core library are
 feature-complete for the thesis they exist to prove. The current strength is the
 correctness harness — an adversarial fuzzer, sanitizer lanes over both the compiler and
 the programs it emits, and a golden-locked test suite, all green in a local gate
@@ -54,10 +54,10 @@ fails the gate, because until then it printed a note attached to no verdict and
 Taking new surface is deliberate: `python3 scripts/surface_lock.py --record`, and
 the diff says exactly what grew.
 
-### Queued behind the lock
+### Taken since the lock
 
-Two of the three features below have shipped; the third is recorded here so it
-does not quietly become a decision never to revisit it:
+All three have now shipped. They are kept here as the record of what the freeze
+was broken for, and what each cost:
 
 - **Alignment and packed layout.** The `packed` half SHIPPED on 2026-09-04 and
   is the freeze's first deliberate exception: `packed struct` is a declaration
@@ -65,8 +65,12 @@ does not quietly become a decision never to revisit it:
   ([spec 17.1a](docs/spec/12-aggregates.md#171a-packed-layout)), recorded in
   `surface.lock` in the same commit. It was measured first: 141 sites across 7
   files hand-assemble a binary record one byte at a time today. The `align` half
-  is NOT shipped and no longer has a claimed caller -- see the vectors entry
-  below, which was that caller and turned out not to need it.
+  SHIPPED on 2026-09-05: `align(N) struct` raises an aggregate's alignment
+  without ever lowering it below what the fields require
+  ([spec 17.1a-2](docs/spec/12-aggregates.md#171a-2-stated-alignment)). It
+  shipped without the caller it was once claimed to have -- vectors turned out
+  not to need it -- and the ceiling is proved where alignment ENTERS the type
+  system rather than at the 61 arena_alloc emit sites (commit e185caa2).
 - **Vectors.** SHIPPED on 2026-09-04, the freeze's second deliberate exception.
   `vector[N]T` is a fixed array whose arithmetic lowers to one machine vector
   operation ([spec 5.3.11](docs/spec/03-types.md#5311-vectornt)); the count is
@@ -77,13 +81,15 @@ does not quietly become a decision never to revisit it:
   it is what settled it: the emitted aggregate is pinned to the 8-byte alignment
   the arena already guarantees, and the arithmetic is still a single instruction
   there. No allocator change was made.
-- **Groups.** Simultaneous assignment, and the field form that permutes several
-  fields at once. It pairs with vectors, and it replaces the temporaries that a
-  swap needs today.
+- **Groups.** SHIPPED, the freeze's third deliberate exception. Simultaneous
+  assignment writes 2-8 places at once, and the swizzle form permutes 2-8
+  components of one value
+  ([spec 17.5](docs/spec/12-aggregates.md#175-destructuring)); vector lanes carry
+  `.x .y .z .w` / `.r .g .b .a` names on top of it (commit 0c5ff854). It replaces
+  the temporaries a swap needed.
 
-`packed` and vectors are done. `align` is no longer on the path to anything --
-its one claimed caller was vectors, and vectors did not need it -- so it is now
-a feature waiting for a caller rather than a prerequisite. Groups are next.
+`packed`, vectors, `align` and groups are all done, and the queue behind the
+lock is empty. Nothing further is planned before 1.0.
 
 Not queued: compile-time execution, and field promotion (`using`). The first is
 deferred, the second refused -- a bare field name should say where it came from.
@@ -325,14 +331,17 @@ reached from the reference index; `tests/pkg/vendor_deps/` gates both shapes.
 
 ### 3. The promise, written down
 
-The deprecation machinery is real and exercised end to end — `sort.by_key` carries
-a `# deprecated:` marker, every call site draws a warning naming its replacement
-and its removal version, and `CHANGELOG.md` records it.
+The deprecation machinery is real and exercised end to end — `sort.by_key`
+(`corelib/sort/sort.ty:109`) and `decimal.from_str`
+(`corelib/decimal/decimal.ty:32`) each carry a `# deprecated:` marker, every call
+site draws a warning naming its replacement and its removal version, and
+`CHANGELOG.md` records it.
 
-What does not exist is the policy that machinery serves: what stability means,
-what may change in a minor release, how long a deprecation survives before
-removal, and which platforms are supported tiers rather than best-effort. A
-version number is a promise; SUPPORT.md states it.
+The policy that machinery serves is written: [SUPPORT.md](SUPPORT.md) states what
+may break in which release, that a deprecation survives until the next major,
+that Linux x86_64 is the one supported platform and everything else is
+best-effort, and that there is no support window for old versions. It also says
+plainly that the 1.0-onward promises are not yet ones you can rely on at 0.x.
 
 ### 4. Trust that did not come from here
 
