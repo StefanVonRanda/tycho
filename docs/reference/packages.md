@@ -174,8 +174,10 @@ resolved against **its own** directory — so the vendor tree stays flat (one
 package per top-level entry) and moves as a unit. Vendored packages mix
 freely with `core:` imports. `tycho-fetch <url> <name>` downloads a package
 tarball (the single-top-directory shape) into `vendor/<name>` and prints the
-sha256 of the downloaded bytes; `git clone` / `cp` into `vendor/` work just
-as well — the compiler never cares how the files got there.
+sha256 of the downloaded bytes; a tarball already on disk is `tycho-fetch
+--local <path> <name>`, since `file://` is refused rather than fetched over
+HTTP. `git clone` / `cp` into `vendor/` work just as well — the compiler never
+cares how the files got there.
 
 A named `vendor:` collection root (Odin's `collection:` spelling) is
 deliberately not added: importer-relative paths already implement the model,

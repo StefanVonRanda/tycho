@@ -319,8 +319,9 @@ transitive-dependency management by hand and no mechanical way to learn that a
 vendored copy has a security fix upstream — the same trade Odin makes, taken
 deliberately rather than by omission.
 
-**Still to write:** the convention belongs in `docs/` where a user will find it.
-The mechanism is gated; the documentation is not written.
+**Written and gated.** The convention is in
+[docs/reference/packages.md](docs/reference/packages.md#vendoring-goodin-style),
+reached from the reference index; `tests/pkg/vendor_deps/` gates both shapes.
 
 ### 3. The promise, written down
 
