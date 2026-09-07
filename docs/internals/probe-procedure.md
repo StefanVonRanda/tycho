@@ -10,17 +10,36 @@ returns something the author could not have found.
 ```
 git clone --depth=1 https://github.com/StefanVonRanda/tycho.git tycho-probe
 cd tycho-probe
-rm -rf src runtime docs/internals docs/rfc .git tests fuzz scripts bench
+rm -rf src runtime compiler docs/internals docs/rfc .git tests fuzz scripts bench
 rm -f plan.md $(find . -iname '*FRICTION*')
 ```
 
 The deletions are the point: the agent then **cannot** read the compiler source,
 the friction log, or a previous probe's findings, so "do not read the compiler"
-stops being an honour rule. Verify with `find . -name 'tychoc.c' | wc -l` — zero.
+stops being an honour rule. Verify with
+`find . -name 'tychoc.c' -o -path './compiler/*' | wc -l` — zero.
+
+**`compiler/` is the second one and was missing from this list until 2026-09-07**,
+so every round before that ran with `compiler/parse/parse.ty` and the typechecker
+readable — a syntax oracle for whatever feature was under test. Checking only for
+`tychoc.c` is what let it through, which is why the verification names both.
 
 **Build the compiler from `main`, not the release tarball.** The 2026-08-19 run
 used v0.7.0 and part of its report described diagnostics already improved since;
 that half was archaeology.
+
+The strip removes `src/` and `scripts/`, so the probe tree cannot build anything
+— build in your real checkout and copy the binary in:
+
+```
+make -C /path/to/tycho tychoc && cp /path/to/tycho/tychoc tycho-probe/tychoc
+```
+
+`corelib/` survives the strip and `tychoc` resolves `core:` from beside itself,
+so no `TYCHO_CORELIB` is needed. Check it with a program that imports one —
+`./tychoc` on a bare `fn main()` exercises neither the corelib path nor the
+package rules, and a probe that fails on its first `import "core:…"` reports your
+setup as a language defect.
 
 ## Aim it at something untouched
 
