@@ -42,6 +42,7 @@ outside this repo has driven it.
 | numerics, floats | R1 `num`, R6 `float` |
 | sockets, files, argv | R6 `net`, R4 `io2` |
 | unicode | R8 `uni` |
+| layout and SIMD — `packed`, `align(N)`, `vector[N]T`, swizzling | [simd](probe-simd-2026-09-07.md) |
 | **the compiler itself** | R8 `cli`, `huge`, `msgs` |
 
 **The last row paid best.** Rounds one to seven asked for programs and mostly
