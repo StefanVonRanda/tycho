@@ -390,7 +390,7 @@ pick-up order is written out in full under "What moved this pass" below.
      the reference bounds it at **64**, so above 64 the fan-out is narrower than `ncpu()`
      reports". The old text's "uses `ncpu()` chunks" — false on both counts, the `min`
      and the cap — is gone. The compiler side is cited anchored from the spec's own
-     provenance block, `src/tychoc.c:12083@_pk > 64`, so the gate now polices it.
+     provenance block, `src/tychoc.c:12085@_pk > 64`, so the gate now polices it.
    - **`ncpu()`'s false definition is corrected**, which was the other half:
      `docs/spec/16-builtins.md:248` states outright that it is "the *requested* worker
      count, **not** the width a `parallel for` will actually use" and that "a program that
@@ -414,7 +414,7 @@ pick-up order is written out in full under "What moved this pass" below.
      on 2026-07-30; `docs/spec/13-concurrency.md:81-83` is the corrected text and no
      longer says this.)*
    - The width is now **readable from Tycho**: `ncpu()` is a registered builtin
-     (`src/tychoc.c:5825@ncpu`, lowering at `src/tychoc.c:11067@tycho_ncpu`), so a program can at least
+     (`src/tychoc.c:5825@ncpu`, lowering at `src/tychoc.c:11069@tycho_ncpu`), so a program can at least
      ask. Measured on this box: `ncpu()` → 16.
    - There was an **undocumented hard ceiling of 64 chunks** — `if (_pk < 1) _pk = 1; if
      (_pk > 64) _pk = 64;` (`src/tychoc.c:11275`, inside `src/tychoc.c@gen_parfor`) —
@@ -3922,8 +3922,8 @@ that there is no element-wise `+` for `string` elements. The message was built
 from the element type at two sites, where `arr_elem(lt)` was spelled into a
 sentence that reads as a claim about the language.
 
-**FIXED 2026-08-13, both sites** (`src/tychoc.c:7876@element-wise` and
-`src/tychoc.c:7931@element-wise`, anchored per this file's header rule). The
+**FIXED 2026-08-13, both sites** (`src/tychoc.c:7878@element-wise` and
+`src/tychoc.c:7933@element-wise`, anchored per this file's header rule). The
 false clause is gone and `+` now names the operation the caller actually wanted:
 
 ```

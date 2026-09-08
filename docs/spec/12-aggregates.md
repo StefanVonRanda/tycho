@@ -12,10 +12,10 @@ produces a **place** (an lvalue); the general place, borrow, and `inout` rules
 are in [§11](07-memory-model.md#11-inout).
 
 > Provenance: array element restriction `src/tychoc.c:2300-2301`,`:2317-2318`;
-> `pop`-empty abort `:14259@pop from an empty array`,`:14259@pop from an empty array`; `reserve` `:7182-7208`,`:10635-10641`; tuple
+> `pop`-empty abort `:14261@pop from an empty array`,`:14261@pop from an empty array`; `reserve` `:7182-7208`,`:10635-10641`; tuple
 > arity `:2521@a tuple has at most 8 elements`,`:2526@a tuple type needs at least two elements`, index `:5822-5830`; destructuring `:3849-3863`,`:8693-8709`;
 > map read (pure `map_get`, no insert) `:6344-6359`; map place insert+zero
-> `:11487-11496`; `keys()` insertion order — the walk `:14421@m.elive[e]` over the append-only entries array `:14173@m->ecount++`; `delete` → `map_del`
+> `:11487-11496`; `keys()` insertion order — the walk `:14423@m.elive[e]` over the append-only entries array `:14175@m->ecount++`; `delete` → `map_del`
 > `:3697-3721`,`:7105-7111`; subscript parse + rules `:4405-4457`, dispatch
 > `:4480-4488`; `or_return` `:6182-6199`.
 
@@ -330,18 +330,18 @@ Its fixtures are in `tests/` and `tests/abort/` (Appendix E.2.1).
 > Provenance: two-array arm `src/tychoc.c:7217-7247`, broadcast arm
 > `src/tychoc.c:7276-7303`; per-element-type operator set
 > `src/tychoc.c:1440@elem_arith_ok`; fixed-length mismatch
-> `src/tychoc.c:7873@on a fixed array requires the same static length`; mixed
-> kinds `src/tychoc.c:7865@cannot mix a fixed array and a growable array`;
-> `bounded`/`[$N]T` `src/tychoc.c:7847@IS_BOUNDED`; element-type mismatch
-> `src/tychoc.c:7858@arr_elem(lt) != arr_elem(rt)`; scalar must land at the
-> element type `src/tychoc.c:7927@requires the scalar to have the array's element type`,
+> `src/tychoc.c:7875@on a fixed array requires the same static length`; mixed
+> kinds `src/tychoc.c:7867@cannot mix a fixed array and a growable array`;
+> `bounded`/`[$N]T` `src/tychoc.c:7849@IS_BOUNDED`; element-type mismatch
+> `src/tychoc.c:7860@arr_elem(lt) != arr_elem(rt)`; scalar must land at the
+> element type `src/tychoc.c:7929@requires the scalar to have the array's element type`,
 > its literal adaptation `src/tychoc.c:7287-7293`; the fresh spine
-> `src/tychoc.c:11429@arena_alloc`, the per-element emit shared with the scalar
-> case `src/tychoc.c:11393@gen_arith_op`, operands never reordered
-> `src/tychoc.c:11390@int la = is_array`; the runtime length check, emitted only
-> when both sides are arrays `src/tychoc.c:11433@tycho_ew_len`, and the abort
+> `src/tychoc.c:11431@arena_alloc`, the per-element emit shared with the scalar
+> case `src/tychoc.c:11395@gen_arith_op`, operands never reordered
+> `src/tychoc.c:11392@int la = is_array`; the runtime length check, emitted only
+> when both sides are arrays `src/tychoc.c:11435@tycho_ew_len`, and the abort
 > itself `runtime/tycho_rt.c:3190@arithmetic on arrays of different lengths`;
-> literal-zero divisor `src/tychoc.c:7815@division by zero`.
+> literal-zero divisor `src/tychoc.c:7817@division by zero`.
 
 ---
 
@@ -1084,16 +1084,16 @@ On a **`Result`**, `v := expr or_return`:
 - binds `v` to the payload when `expr` is `Ok(v)`; and
 - otherwise returns that `Err` from the **enclosing function**, which MUST itself
   return `Result(_, E)` with the **same** error type `E` — a differing `E` is a
-  compile error (`src/tychoc.c:6476@propagates`).
+  compile error (`src/tychoc.c:6478@propagates`).
 
 On an **`Option`**, `v := opt or_return` binds `v` on `Some(v)` and returns
-`None`; the enclosing function MUST return an `Option` (`src/tychoc.c:6466@or_return`).
+`None`; the enclosing function MUST return an `Option` (`src/tychoc.c:6468@or_return`).
 
 The short-circuited payload (`Err`'s error, or `None`) is promoted into the
 caller's storage, so it outlives the return
 ([§10](07-memory-model.md#10-object-lifetimes-and-storage)). `or_return` MUST NOT
 appear inside a `parallel for` body — a chunk has no early exit
-(`src/tychoc.c:8196@or_return`).
+(`src/tychoc.c:8198@or_return`).
 
 ```tycho
 fn parse_digit(s: string) -> Result(int, string):

@@ -61,6 +61,9 @@ make -s goldens-check
 step "[1b3/27] make fstr-hole-file-check  (a lex error INSIDE an f-string hole names its file and the f-string's own line. A hole is re-tokenized as a FRAGMENT, which carries no name and numbers its lines from 0, so `f\"{1 @ 2}\"` died as `tychoc1: line 1:` -- no path, wrong line. Three sites re-tokenize hole text and the grep-based gate this replaces watched only two of them, missing the one that actually raised it)"
 make -s fstr-hole-file-check
 
+step "[1b4/27] sh scripts/spelling_gate_corelib.sh  (src_in_corelib answers about LOCATION, not spelling. The discriminating input is a path CONTAINING 'corelib/' that sits outside every corelib root -- the old gate compiled in a bare mktemp -d, where a strstr regression and the filesystem test give the same answer, so it passed under the bug it named. Leg [2] patches the regression into a copy of src/tychoc.c and requires leg [1] to redden under it)"
+sh scripts/spelling_gate_corelib.sh
+
 step "[1b2/13] make embed-check  (the runtime embed is awk-independent and lossless. Debian and Ubuntu ship mawk 1.3.4 20200120, which halves a backslash in a gsub replacement, so the old rule under-escaped all 89 backslashes in the runtime and every fresh clone on those two distros died at cc. Nothing here could see it: every lane runs against a header this host awk had already written correctly)"
 make -s embed-check
 

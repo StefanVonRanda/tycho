@@ -5888,8 +5888,10 @@ static int under_corelib(const char *dir);   /* defined beside the package walke
  * Memoised on the file NAME (not its pointer, which a per-file allocation could
  * reuse): under_corelib canonicalises through the filesystem and this is asked
  * once per declared variable.
- * Gate: scripts/spelling_gate_corelib.sh compiles a file outside corelib with
- * an unused local and asserts the error fires. */
+ * Gate: scripts/spelling_gate_corelib.sh. Its subject is a path that CONTAINS
+ * "corelib/" while sitting outside every corelib root -- the only input the two
+ * implementations answer differently. Its control patches the strstr form back
+ * in and requires that leg to redden. */
 static int src_in_corelib(void) {
     static char *seen = NULL;
     static int ans = 0;
