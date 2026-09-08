@@ -121,9 +121,16 @@ fn parse(text: string) -> Result(Graph, MakeErr):
             return Err(Phony(ln))
         # Variable assignments (VAR = ..., VAR += ..., VAR ?= ..., VAR := ...) are
         # not rules and not recipes. Refuse before looking for a ':'.
+        # The test is POSITIONAL, not "is there a ':' anywhere": a value may
+        # contain one (`PATH = /usr/bin:/bin`), and asking `find(body, ":") < 0`
+        # let those through to be misreported as a multi-target rule. An
+        # assignment is an '=' with no ':' BEFORE it -- except `:=`, whose own
+        # ':' sits immediately to its left.
         eq := find(body, "=")
-        if eq >= 0 and (find(body, ":") < 0 or (eq > 0 and body[eq - 1] == 58)):
-            return Err(VariableAssign(ln, body))
+        if eq >= 0:
+            ci0 := find(body, ":")
+            if ci0 < 0 or ci0 > eq or (eq > 0 and body[eq - 1] == 58 and ci0 == eq - 1):
+                return Err(VariableAssign(ln, body))
         # include directives are not rules.
         if (len(body) == 7 or (len(body) > 7 and body[7] == 32)) and substr(body, 0, 7) == "include":
             return Err(Include(ln, body))

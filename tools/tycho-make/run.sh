@@ -213,6 +213,16 @@ errcase VariableAssign 'CC = gcc
 '   'line 1: variable assignment is not supported -- [CC = gcc]'
 errcase VariableAssign 'CC := gcc
 '   'line 1: variable assignment is not supported -- [CC := gcc]'
+# The value may contain a ':'. The test is POSITIONAL -- an '=' with no ':'
+# before it -- not "is there a ':' anywhere", which let these three through to
+# be misreported as a multi-target rule ("[PATH = /usr/bin] declares more than
+# one target"). GNU make reads all three as assignments too.
+errcase VariableAssign 'PATH = /usr/bin:/bin
+'   'line 1: variable assignment is not supported -- [PATH = /usr/bin:/bin]'
+errcase VariableAssign 'FLAGS += -I/a:/b
+'   'line 1: variable assignment is not supported -- [FLAGS += -I/a:/b]'
+errcase VariableAssign 'X ?= a:b
+'   'line 1: variable assignment is not supported -- [X ?= a:b]'
 errcase PatternRule  '%.o: %.c
 '   'line 1: pattern rule is not supported -- [%.o]'
 errcase Phony        '.PHONY: app
