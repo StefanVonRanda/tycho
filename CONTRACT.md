@@ -71,6 +71,16 @@ Re-ran 4.1 checks after G1, G2, G3 fixes:
 - `sh scripts/check_links.sh`: ok (84 docs, 257 anchors, 135 files, 0 dead links)
 - `python3 scripts/check_citations.py`: 149 stale citations (pre-existing — docs reference line numbers in a 15000-line file; any code insertion shifts them; not a 4.1 regression)
 
+### 5.2 — os-shim critic: PASS
+
+Re-ran 5.1 checks after G11 and G12 fixes:
+- `make shim-check`: 15 ok, 1 skipped (os_argv_quotecheck.c — Windows-only), 0 failed
+- `make corelib`: all green (46 ok, tychoc matches goldens)
+- G11 (batch files refused): `osx_is_batch()` checks `.bat`/`.cmd` suffix case-insensitively; called at entry to `osx_spawn_win` returning -1. Gap comment updated: extension-based check catches explicit `.bat`/`.cmd`, PATH-resolved bare names like `cmd` are a documented limitation.
+- G12 (Windows path untested): loud-skip comment updated; `os_argv_quotecheck.c` is the only Windows gate (skipped on Linux hosts as expected). No revert needed — both are additive guards with no effect on the Linux path.
+- `sh scripts/check_links.sh`: ok (0 dead links)
+- `python3 scripts/check_citations.py`: 149 stale (pre-existing, not a 5.1 regression)
+
 ## Done-when check
 
 ```sh
