@@ -66,7 +66,7 @@
   - Verify: revert-each reddens; iterate up to 3 times, unticked on failure
   - Gates: `make parse-check`, `make test`
   - Not: `make ci`
-- [ ] 9.2 ceiling refusal gate — files: corelib/httpd/httpd.ty — done when: 16+ digit Content-Length refused naming the 15-digit limit, pinned by a probe
+- [x] 9.2 ceiling refusal gate — files: corelib/httpd/httpd.ty — done when: 16+ digit Content-Length refused naming the 15-digit limit, pinned by a probe
   - Scope: `corelib/httpd/httpd.ty:145`
   - Verify: probe asserting refusal message; revert-each reddens; iterate up to 3 times, unticked on failure
   - Gates: `make corelib`, `sh scripts/entrypoints.sh`

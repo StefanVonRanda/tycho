@@ -218,6 +218,21 @@ fn main():
 
     net.close_fd(srv)
 
+    # ---- Content-Length ceiling: 15 significant digits enforced ----------
+    # parse_len is the gatekeeper for framing(); a 16+ digit run is refused as
+    # malformed rather than wrapped by int64 arithmetic.  This probe calls it
+    # directly so the ceiling is visible independently of the read_request path.
+    v15, ok15 := httpd.parse_len("999999999999999")          # 15 digits: accepted
+    v16, ok16 := httpd.parse_len("1000000000000000")         # 16 digits: refused
+    v19, ok19 := httpd.parse_len("9999999999999999999")      # 19 digits: refused
+    v10z, ok10z := httpd.parse_len("000000000012345")        # 10 zeros + 5 digits = 15 sig: accepted
+    v11z, ok11z := httpd.parse_len("0000000000012345")       # 11 zeros + 5 digits = 16 chars: refused
+    println("clen_15    = " + str(v15) + " " + str(b(ok15)))       # 999999999999999 true
+    println("clen_16    = " + str(b(not ok16)))                    # true (refused)
+    println("clen_19    = " + str(b(not ok19)))                    # true (refused)
+    println("clen_10z5  = " + str(v10z) + " " + str(b(ok10z)))      # 12345 true
+    println("clen_11z5  = " + str(b(not ok11z)))                   # true (refused)
+
     evil := "en" + nl + "X-Injected: yes" + nl + nl + "<html>owned</html>"
     head := httpd.render_head(httpd.with_header(httpd.text_response(200, "hi"),
                                                 "Content-Language", evil))

@@ -61,4 +61,9 @@ frame te_and_clen = Malformed body=[]
 frame clen_agrees = Ok body=[hello]
 frame exact_body = Ok body=[hello]
 frame pipelined = Ok body=[hello]
+clen_15    = 999999999999999 1
+clen_16    = 1
+clen_19    = 1
+clen_10z5  = 12345 1
+clen_11z5  = 0
 hdr_injection  = clean
