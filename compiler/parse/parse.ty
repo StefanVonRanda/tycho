@@ -121,7 +121,9 @@ fn _isid(toks: [lex.Tok], i: int, s: string) -> bool:
 # gap: a token lexed through tokenize()/tokenize_ex() carries no file, so those
 # paths still print the bare `tychoc1: line N:` form. The compile path
 # (tokenize_file) and the parse-only path (driver.ty) are covered; emit's
-# f-string hole calls remain uncovered because the file is not in scope.
+# f-string hole calls remain uncovered because the file is not in scope:
+#   compiler/emit/emit.ty:2568 in _fstr -- re-tokenizes hole text for C emission
+#   compiler/emit/emit.ty:2728 in _fv   -- re-tokenizes hole text for free variable collection
 fn _where(toks: [lex.Tok], t: lex.Tok, msg: string, caret: bool) -> string:
     fl := lex.file_of(toks)
     if len(fl) == 0:

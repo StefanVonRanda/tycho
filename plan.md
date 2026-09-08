@@ -61,7 +61,7 @@
 
 ## Fix phases (from 8.2 verdict: G6, G11, G13, G15 need demonstrated gates; G12, G14 accepted as platform-limited below)
 
-- [ ] 9.1 emit f-string hole file scope — files: compiler/parse/parse.ty — done when: emit f-string hole diagnostics carry the file, or the PARTIAL marker names the exact uncovered call sites with a failing gate each
+- [x] 9.1 emit f-string hole file scope — files: compiler/parse/parse.ty — done when: emit f-string hole diagnostics carry the file, or the PARTIAL marker names the exact uncovered call sites with a failing gate each
   - Scope: `compiler/parse/parse.ty:122`
   - Verify: revert-each reddens; iterate up to 3 times, unticked on failure
   - Gates: `make parse-check`, `make test`
