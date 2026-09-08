@@ -209,9 +209,19 @@ errcase Continuation 'app: a \
 errcase Cycle        'a: b
 b: a
 '   'dependency cycle: a -> b -> a'
+errcase VariableAssign 'CC = gcc
+'   'line 1: variable assignment is not supported -- [CC = gcc]'
+errcase PatternRule  '%.o: %.c
+'   'line 1: pattern rule is not supported -- [%.o]'
+errcase Phony        '.PHONY: app
+'   'line 1: .PHONY is not supported'
+errcase Include      'include other.mk
+'   'line 1: include directive is not supported -- [include other.mk]'
+errcase OrderOnly    'app: a | b
+'   "line 1: order-only prerequisites are not supported (use '|')"
 
 # The coverage floor: the enum is READ, not remembered.
-COVERED='NoColon EmptyTarget MultiTarget DupTarget OrphanRecipe ColonInDep Continuation Cycle'
+COVERED='NoColon EmptyTarget MultiTarget DupTarget OrphanRecipe ColonInDep Continuation Cycle VariableAssign PatternRule Phony Include OrderOnly'
 found=0
 for v in $(awk '
         $0 == "enum MakeErr:" { on = 1; next }
@@ -224,7 +234,7 @@ for v in $(awk '
     for c in $COVERED; do [ "$v" = "$c" ] && hit=1; done
     [ "$hit" -eq 1 ] || bad "MakeErr variant $v has no leg in this runner -- it is UNGATED"
 done
-[ "$found" -eq 8 ] || bad "found $found MakeErr variant(s) in graph.ty, expected 8 -- the scan is broken and [7]'s floor asserts nothing"
+[ "$found" -eq 13 ] || bad "found $found MakeErr variant(s) in graph.ty, expected 13 -- the scan is broken and [7]'s floor asserts nothing"
 
 # The floor under [12]: the scheduler must actually BE concurrent. A `parallel
 # for` that was quietly turned into a `for` would make every determinism leg

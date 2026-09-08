@@ -48,6 +48,16 @@ line 1: dependency 'b:c' contains a ':'
 line 1: a trailing backslash -- line continuations are not supported
 === err Cycle
 dependency cycle: a -> b -> a
+=== err VariableAssign
+line 1: variable assignment is not supported -- [CC = gcc]
+=== err PatternRule
+line 1: pattern rule is not supported -- [%.o]
+=== err Phony
+line 1: .PHONY is not supported
+=== err Include
+line 1: include directive is not supported -- [include other.mk]
+=== err OrderOnly
+line 1: order-only prerequisites are not supported (use '|')
 === build cold
 src zeta.c new
 src common.h new

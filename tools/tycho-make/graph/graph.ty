@@ -25,6 +25,11 @@ enum MakeErr:
     ColonInDep(int, string)
     Continuation(int)
     Cycle([string])
+    VariableAssign(int, string)
+    PatternRule(int, string)
+    Phony(int)
+    Include(int, string)
+    OrderOnly(int)
 
 # Every message names the line and what was actually got. No message contains a
 # path: the driver is handed one rulefile and a path in the text would put the
@@ -39,6 +44,11 @@ fn err_str(e: MakeErr) -> string:
         ColonInDep(l, t): return "line " + str(l) + ": dependency '" + t + "' contains a ':'"
         Continuation(l): return "line " + str(l) + ": a trailing backslash -- line continuations are not supported"
         Cycle(c): return "dependency cycle: " + arrays.join(c, " -> ")
+        VariableAssign(l, t): return "line " + str(l) + ": variable assignment is not supported -- [" + t + "]"
+        PatternRule(l, t): return "line " + str(l) + ": pattern rule is not supported -- [" + t + "]"
+        Phony(l): return "line " + str(l) + ": .PHONY is not supported"
+        Include(l, t): return "line " + str(l) + ": include directive is not supported -- [" + t + "]"
+        OrderOnly(l): return "line " + str(l) + ": order-only prerequisites are not supported (use '|')"
 
 fn is_ws(c: int) -> bool:
     return c == 32 or c == 9 or c == 13
@@ -106,6 +116,17 @@ fn parse(text: string) -> Result(Graph, MakeErr):
             push(g.nodes[cur].recipe, body)
             g.recipes = g.recipes + 1
             continue
+        # .PHONY is a declaration, not a rule: refuse it by name.
+        if body[0] == 46 and len(body) > 6 and substr(body, 0, 7) == ".PHONY:":
+            return Err(Phony(ln))
+        # Variable assignments (VAR = ..., VAR += ..., VAR ?= ..., VAR := ...) are
+        # not rules and not recipes. Refuse before looking for a ':'.
+        eq := find(body, "=")
+        if eq >= 0 and find(body, ":") < 0:
+            return Err(VariableAssign(ln, body))
+        # include directives are not rules.
+        if (len(body) == 7 or (len(body) > 7 and body[7] == 32)) and substr(body, 0, 7) == "include":
+            return Err(Include(ln, body))
         ci := find(raw, ":")
         if ci < 0:
             return Err(NoColon(ln, body))
@@ -114,6 +135,9 @@ fn parse(text: string) -> Result(Graph, MakeErr):
             return Err(EmptyTarget(ln))
         if len(tf) > 1:
             return Err(MultiTarget(ln, arrays.join(tf, " ")))
+        # Pattern rules (e.g. %.o: %.c) are not supported.
+        if find(tf[0], "%") >= 0:
+            return Err(PatternRule(ln, tf[0]))
         if tf[0] in g.index and g.nodes[g.index[tf[0]]].line > 0:
             return Err(DupTarget(ln, tf[0], g.nodes[g.index[tf[0]]].line))
         ti := node_of(&g, tf[0])
@@ -123,6 +147,8 @@ fn parse(text: string) -> Result(Graph, MakeErr):
         for d in fields(substr(raw, ci + 1, len(raw))):
             if find(d, ":") >= 0:
                 return Err(ColonInDep(ln, d))
+            if find(d, "|") >= 0:
+                return Err(OrderOnly(ln))
             di := node_of(&g, d)
             # `a: b b` is one edge. A repeated prerequisite is a duplicate, not
             # a second constraint, and deduplicating here is what lets the

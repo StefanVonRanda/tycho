@@ -45,7 +45,7 @@
   - Gates: `make corelib`, `make debug-check`, `sh scripts/entrypoints.sh`
   - Not: `make test`, `make ci`
 - [x] 6.2 critic httpd-debug — files: CONTRACT.md — done when: re-ran 6.1 checks; PASS or numbered failures with file:line
-- [ ] 7.1 tycho-make subset — files: tools/tycho-make/graph/graph.ty, tools/tycho-make/build/build.ty — done when: each subset refusal named; non-text target refused by name or supported
+- [x] 7.1 tycho-make subset — files: tools/tycho-make/graph/graph.ty, tools/tycho-make/build/build.ty — done when: each subset refusal named; non-text target refused by name or supported
   - Scope: `tools/tycho-make/graph/graph.ty:82`, `tools/tycho-make/graph/graph.ty:84`, `tools/tycho-make/graph/graph.ty:87`, `tools/tycho-make/build/build.ty:11`
   - Verify: fixture per refusal; re-record cannot bless a dropped edge; iterate up to 3 times, unticked on failure
   - Gates: `make make-check`, `sh scripts/entrypoints.sh`

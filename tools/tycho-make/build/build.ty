@@ -9,9 +9,9 @@ import "../graph"
 
 
 # gap: a file is hashed via io.read_text, so a target holding bytes that are not
-#   valid text is out of scope. gap: no parallelism inside one node's recipe
-#   list; the lines of one rule run in order, and the first non-zero exit stops
-#   the build.
+#   valid text is out of scope -- the build treats it as Unreadable. gap: no
+#   parallelism inside one node's recipe list; the lines of one rule run in order,
+#   and the first non-zero exit stops the build.
 
 struct Stamp:
     mtime: int
