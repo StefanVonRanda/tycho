@@ -58,3 +58,32 @@
   - Verify: `python3 scripts/check_citations.py`, `sh scripts/check_links.sh`, each phase gate in order
   - Not: `make ci`
 - [x] 8.2 final critic — files: CONTRACT.md — done when: verdict against outcome (all 18 gaps closed, each with a failing gate); PASS or failures
+
+## Fix phases (from 8.2 verdict: G6, G11, G13, G15 need demonstrated gates; G12, G14 accepted as platform-limited below)
+
+- [ ] 9.1 emit f-string hole file scope — files: compiler/parse/parse.ty — done when: emit f-string hole diagnostics carry the file, or the PARTIAL marker names the exact uncovered call sites with a failing gate each
+  - Scope: `compiler/parse/parse.ty:122`
+  - Verify: revert-each reddens; iterate up to 3 times, unticked on failure
+  - Gates: `make parse-check`, `make test`
+  - Not: `make ci`
+- [ ] 9.2 ceiling refusal gate — files: corelib/httpd/httpd.ty — done when: 16+ digit Content-Length refused naming the 15-digit limit, pinned by a probe
+  - Scope: `corelib/httpd/httpd.ty:145`
+  - Verify: probe asserting refusal message; revert-each reddens; iterate up to 3 times, unticked on failure
+  - Gates: `make corelib`, `sh scripts/entrypoints.sh`
+  - Not: `make test`, `make ci`
+- [ ] 9.3 VariableAssign message gate — files: tools/tycho-make/graph/graph.ty — done when: `tools/tycho-make/graph/graph.ty:126` detection surfaces its own message, pinned by a fixture the NoColon path cannot satisfy
+  - Scope: `tools/tycho-make/graph/graph.ty:28`
+  - Verify: fixture refused with the VariableAssign message; revert-each reddens; iterate up to 3 times, unticked on failure
+  - Gates: `make make-check`, `sh scripts/entrypoints.sh`
+  - Not: `make test`, `make ci`
+- [ ] 9.4 batch-refusal host gate — files: corelib/os/os_shim.c — done when: `corelib/os/os_shim.c:302` suffix logic scored natively (pure C, no Win32 API) with revert-each reddening
+  - Scope: `corelib/os/os_shim.c:302`
+  - Verify: host-side unit gate over the helper; revert-each reddens; iterate up to 3 times, unticked on failure
+  - Gates: `make shim-check`, `make corelib`
+  - Not: `make test`, `make ci`
+- [ ] 9.5 critic fix-phases — files: CONTRACT.md — done when: re-ran 9.1-9.4 checks; PASS or numbered failures with file:line
+
+## Accepted limitations (no failing gate possible on this host)
+
+- G12 (`corelib/os/os_shim.c:380`): Windows spawn path untested; no Windows CI. Loud-skipped by design.
+- G14 (`tools/tycho-debug/main.ty:208`): drive-letter case untestable on Linux paths. Documented.
