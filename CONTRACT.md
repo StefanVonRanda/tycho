@@ -81,6 +81,15 @@ Re-ran 5.1 checks after G11 and G12 fixes:
 - `sh scripts/check_links.sh`: ok (0 dead links)
 - `python3 scripts/check_citations.py`: 149 stale (pre-existing, not a 5.1 regression)
 
+### 6.2 — httpd-debug critic: PASS
+
+Re-ran 6.1 checks after G13 and G14 fixes:
+- `make corelib`: all green (46 ok, tychoc matches goldens)
+- `make debug-check`: all green (7 legs)
+- `sh scripts/entrypoints.sh`: ok (91 entry points compile, 3 warning lines matching scripts/entrypoints.warn)
+- G13 (httpd ceiling named): comment-only change in `corelib/httpd/httpd.ty:145`; no revert needed — the ceiling naming is a documentation fix, not a behavioral change
+- G14 (debug drive-letter case): `norm_sep` uppercases the drive letter in `tools/tycho-debug/main.ty:213`; revert-each cannot be demonstrated on Linux — `s[1] == 58` is never true for Linux paths starting with `/`, so the gate stays green with or without the fix (same constraint as G12 in phase 5.2)
+
 ## Done-when check
 
 ```sh
