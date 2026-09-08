@@ -1,35 +1,27 @@
-/* Host-side unit gate for osx_is_batch (corelib/os/os_shim.c:302).
+/* Host-side unit gate for osx_is_batch (`corelib/os/os_shim.c@osx_is_batch`).
  *
- * The suffix logic is pure C (no Win32 API) but lives inside #ifdef _WIN32
- * in the shim, so it cannot be compiled standalone on a POSIX host.  This
- * file reimplements the EXACT logic from os_shim.c:302-318 and scores it
- * with revert-each controls: each condition has a corresponding test that
- * reddens when that condition is removed.
+ * It INCLUDES the shim and scores the shipped function. The first version of
+ * this file hand-copied the logic -- "reimplements the EXACT logic" -- and so
+ * scored the copy: editing the real function could not redden it, and the two
+ * would drift with nothing to notice. The function was moved outside the
+ * _WIN32 split so this is possible at all; only the Windows spawn calls it.
  *
  * Compiled and run by scripts/shim_check.sh on non-Windows hosts.
  * Exit 0 = all pass, exit 1 = at least one FAIL.
  */
+/* The shim's own feature-test macros -- the real build supplies these on the
+ * cc line (pipe2, posix_spawn). Without them the include fails here while the
+ * shipped build is fine, which is a gate breaking on its own terms. */
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE 1
+#endif
+
 #include <stdio.h>
 #include <string.h>
 
-/* ---- Copy of osx_is_batch from corelib/os/os_shim.c:302-318 ---- */
-static int osx_is_batch(const char *name) {
-    size_t len = strlen(name);
-    if (len < 4) return 0;
-    const char *ext = name + len - 4;
-    if (ext[0] != '.') return 0;
-    /* .bat */
-    if ((ext[1] == 'b' || ext[1] == 'B') &&
-        (ext[2] == 'a' || ext[2] == 'A') &&
-        (ext[3] == 't' || ext[3] == 'T'))
-        return 1;
-    /* .cmd */
-    if ((ext[1] == 'c' || ext[1] == 'C') &&
-        (ext[2] == 'm' || ext[2] == 'M') &&
-        (ext[3] == 'd' || ext[3] == 'D'))
-        return 1;
-    return 0;
-}
+/* The shim itself. On a POSIX host this is the posix_spawnp half plus the
+ * shared helpers; osx_is_batch is compiled either way. */
+#include "os_shim.c"
 
 /* ---- Test harness ---- */
 static int nfail = 0;

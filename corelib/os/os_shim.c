@@ -102,6 +102,39 @@ static int osx_argv_ok(const char *const *v, tycho_int n) {
     return 1;
 }
 
+/* Case-insensitive suffix check: does `name` end with `.bat` or `.cmd`?
+ * Used to refuse batch files before CreateProcess, since cmd.exe re-parses
+ * the command line and defeats the quoting we built.
+ *
+ * Deliberately OUTSIDE the _WIN32 split, though only the Windows spawn calls
+ * it. The logic is pure C, and while it sat inside the #ifdef no POSIX host
+ * could compile it -- so its gate scored a hand-copy instead, which passes
+ * whatever the shipped function does and drifts from it silently. Here,
+ * scripts/shim_check.sh compiles THIS function. `TYCHO_OSX_BATCH_UNIT` is
+ * defined only by that gate, which supplies its own main(). */
+static int osx_is_batch(const char *name) {
+    size_t len = strlen(name);
+    if (len < 4) return 0;
+    const char *ext = name + len - 4;
+    if (ext[0] != '.') return 0;
+    /* .bat */
+    if ((ext[1] == 'b' || ext[1] == 'B') &&
+        (ext[2] == 'a' || ext[2] == 'A') &&
+        (ext[3] == 't' || ext[3] == 'T'))
+        return 1;
+    /* .cmd */
+    if ((ext[1] == 'c' || ext[1] == 'C') &&
+        (ext[2] == 'm' || ext[2] == 'M') &&
+        (ext[3] == 'd' || ext[3] == 'D'))
+        return 1;
+    return 0;
+}
+
+#ifndef _WIN32
+/* Nothing on a POSIX build calls it; say so rather than let -Wunused fire. */
+static int (*osx_is_batch_ref)(const char *) = osx_is_batch;
+#endif
+
 #ifndef _WIN32
 
 /* execv shape from (ptr,len): a NULL-terminated vector this function owns. Only
@@ -294,27 +327,6 @@ static char *osx_win_cmdline(const char *const *v, tycho_int n) {
         buf = calloc(1, 1);
     }
     return buf;
-}
-
-/* Case-insensitive suffix check: does `name` end with `.bat` or `.cmd`?
- * Used to refuse batch files before CreateProcess, since cmd.exe re-parses
- * the command line and defeats the quoting we built. */
-static int osx_is_batch(const char *name) {
-    size_t len = strlen(name);
-    if (len < 4) return 0;
-    const char *ext = name + len - 4;
-    if (ext[0] != '.') return 0;
-    /* .bat */
-    if ((ext[1] == 'b' || ext[1] == 'B') &&
-        (ext[2] == 'a' || ext[2] == 'A') &&
-        (ext[3] == 't' || ext[3] == 'T'))
-        return 1;
-    /* .cmd */
-    if ((ext[1] == 'c' || ext[1] == 'C') &&
-        (ext[2] == 'm' || ext[2] == 'M') &&
-        (ext[3] == 'd' || ext[3] == 'D'))
-        return 1;
-    return 0;
 }
 
 /* lpApplicationName is NULL so the PATH is searched, matching execvp/
