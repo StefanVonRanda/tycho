@@ -2113,6 +2113,7 @@ static char *pkg_prefix_for(const char *qualifier);   /* defined after the impor
 static int is_imported_pkg(const char *name);         /* per-file visibility */
 static int is_imported_pkg_anywhere(const char *name);
 static void note_sibling_import(const char *name);   /* points the per-file import error at the sibling that did import it */
+static void defer_sibling_check(const char *qual, int line);   /* deferred: drained after all files in a package are parsed */
 static void check_pkg_private(const char *qualifier, const char *name, int line);   /* B3: reject cross-package access to a leading-underscore name */
 
 static char *type_mangle_ident(Type t);   /* fwd: defined with the Stage-1 generics helpers */
@@ -2659,12 +2660,13 @@ static Type parse_type_inner(Parser *ps) {
         const char *nm;
         if (peek(ps, 1)->kind == TK_DOT && peek(ps, 2)->kind == TK_IDENT) {
             /* qualified type `pkg.Type` -> the imported package's mangled name */
-            /* gap: parse-time, so this only sees imports from files parsed BEFORE this
-             * one -- a leak in the first-parsed file is still missed here. */
-            if (is_imported_pkg_anywhere(t->text) && !is_imported_pkg(t->text)) {
-                note_sibling_import(t->text);
-                die_at(t->line, "package '%s' is used here but this file does not `import` it "
-                       "(another file in the build does; imports are per-file)", t->text);
+            /* Deferred: cannot check here because this file's imports may not yet
+             * include a sibling's import.  The check runs after all files in the
+             * package are parsed (drain_deferred_sibling_checks in merge_pkg). */
+            if (is_imported_pkg(t->text)) {
+                /* this file imports the package -- no free-ride */
+            } else {
+                defer_sibling_check(t->text, t->line);
             }
             check_pkg_private(t->text, peek(ps, 2)->text, t->line);
             nm = sfmt("%s%s", pkg_prefix_for(t->text), peek(ps, 2)->text);
@@ -5364,18 +5366,18 @@ static char *pkg_prefix_for(const char *qualifier) {
     int aliased = 0;
     /* Every qualifier resolution funnels through here, which is what makes this
      * the one place that can mark an import USED without missing a call site.
-     * gap: marking is NOT file-scoped. g_srcname is only repointed at a proc's
-     * own file when that proc carries a srcfile, so an entry file's use would be
-     * attributed to the wrong file and reported as unused -- a false ERROR, the
-     * one outcome worth avoiding. Cost: if two files import the same package and
-     * only one uses it, the other's dead import is missed. The per-file gate
-     * above still forces every file to import what it names. */
+     * The used flag is scoped to g_srcname (the current file during parse, the
+     * proc's file during resolve) so that sibling files importing the same
+     * package are not cross-marked -- a dead import in file A is still reported
+     * even though file B uses the package. */
     for (int i = 0; i < g_nimports; i++) {
         if (g_imports[i].alias && !strcmp(g_imports[i].alias, qualifier)) {
             if (!aliased) { pkgname = pkg_basename(g_imports[i].path); aliased = 1; }
-            g_imports[i].used = 1;
+            if (!g_imports[i].file || !g_srcname || !strcmp(g_imports[i].file, g_srcname))
+                g_imports[i].used = 1;
         } else if (!strcmp(pkg_basename(g_imports[i].path), qualifier)) {
-            g_imports[i].used = 1;
+            if (!g_imports[i].file || !g_srcname || !strcmp(g_imports[i].file, g_srcname))
+                g_imports[i].used = 1;
         }
     }
     return sfmt("%s__", pkgname);
@@ -5413,6 +5415,43 @@ static void note_sibling_import(const char *name) {
                     "`%s` is imported here, in another file of the build", g_imports[i].path);
             return;
         }
+}
+
+/* Deferred sibling-import checks.  The parse-time check in parse_type cannot see
+ * imports from files parsed AFTER the current one (gap at parse_type), so we
+ * record violations here and drain them after ALL files in a package are parsed.
+ * At that point is_imported_pkg_anywhere covers every file's imports. */
+typedef struct { const char *file; int line; const char *qual; } DeferredSiblingCheck;
+static DeferredSiblingCheck *g_deferred_sibling;
+static int g_n_deferred_sibling = 0;
+static int g_deferred_sibling_cap = 0;
+
+static void defer_sibling_check(const char *qual, int line) {
+    if (!g_srcname) return;   /* single-file build: no sibling to free-ride on */
+    if (g_n_deferred_sibling >= g_deferred_sibling_cap) {
+        g_deferred_sibling_cap = g_deferred_sibling_cap ? g_deferred_sibling_cap * 2 : 16;
+        g_deferred_sibling = xrealloc(g_deferred_sibling, (size_t)g_deferred_sibling_cap * sizeof(DeferredSiblingCheck));
+    }
+    g_deferred_sibling[g_n_deferred_sibling++] = (DeferredSiblingCheck){ g_srcname, line, qual };
+}
+
+/* Drain deferred sibling checks.  Called after all files in a package are parsed
+ * but before resolve; at this point every file's imports are registered. */
+static void drain_deferred_sibling_checks(void) {
+    for (int i = 0; i < g_n_deferred_sibling; i++) {
+        const DeferredSiblingCheck *d = &g_deferred_sibling[i];
+        /* Temporarily point g_srcname at the file that made the use so
+         * is_imported_pkg / note_sibling_import scope correctly. */
+        const char *saved = g_srcname;
+        g_srcname = d->file;
+        if (is_imported_pkg_anywhere(d->qual) && !is_imported_pkg(d->qual)) {
+            note_sibling_import(d->qual);
+            die_at(d->line, "package '%s' is used here but this file does not `import` it "
+                   "(another file in the build does; imports are per-file)", d->qual);
+        }
+        g_srcname = saved;
+    }
+    g_n_deferred_sibling = 0;
 }
 
 /* Go's rule: an import nothing in its file uses is an error. Run after the whole
@@ -5849,8 +5888,8 @@ static int under_corelib(const char *dir);   /* defined beside the package walke
  * Memoised on the file NAME (not its pointer, which a per-file allocation could
  * reuse): under_corelib canonicalises through the filesystem and this is asked
  * once per declared variable.
- * gap: nothing in the tree reddens if this regresses to a spelling test. The
- * proof is two compiles of ONE program at two paths, which no lane here does. */
+ * Gate: scripts/spelling_gate_corelib.sh compiles a file outside corelib with
+ * an unused local and asserts the error fires. */
 static int src_in_corelib(void) {
     static char *seen = NULL;
     static int ans = 0;
@@ -14754,6 +14793,11 @@ static void merge_pkg(const char *dir, const char *pkgname, const char *prefix, 
     }
     g_mute_warn = mute0;
     g_cur_pkg_prefix = "";
+
+    /* All files in this package are now parsed: every file's imports are in
+     * g_imports.  Drain the deferred sibling-import checks that parse_type
+     * could not evaluate at parse time. */
+    drain_deferred_sibling_checks();
 
     pkg_walk_done(key);
 }

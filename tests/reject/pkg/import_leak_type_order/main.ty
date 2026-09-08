@@ -1,0 +1,8 @@
+# Same as import_leak_type but with the NON-importing file sorting FIRST (a.ty).
+# The deferred check catches this regardless of parse order.
+# expect: this file does not `import` it
+package main
+import "pkg"
+
+fn main():
+    println(str(pkg.take(pkg.mk())))

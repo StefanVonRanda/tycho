@@ -1,0 +1,4 @@
+package pkg
+
+fn take(t: other.T) -> int:
+    return t.v

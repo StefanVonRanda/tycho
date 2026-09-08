@@ -1,0 +1,4 @@
+package other
+
+struct T:
+    v: int
