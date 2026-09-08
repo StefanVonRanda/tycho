@@ -9,7 +9,7 @@
 
 ## Components
 
-
+- [x] 1.1 emit bounded-local cap + multi-reduction — files: compiler/emit/emit.ty — done when: local bounded push traps; two-reduction case refused by name or supported
   - Scope: `compiler/emit/emit.ty:279`, `compiler/emit/emit.ty:4869`
   - Verify: new accept/reject fixture pair; revert-each reddens; iterate up to 3 times, unticked on failure
   - Gates: `make parse-check`, `make tychoc1-check`, `make test`
