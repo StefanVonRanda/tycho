@@ -57,4 +57,4 @@
 - [x] 8.1 assemble + re-run all component checks — files: CONTRACT.md — done when: every builder check re-run green plus doc gates green
   - Verify: `python3 scripts/check_citations.py`, `sh scripts/check_links.sh`, each phase gate in order
   - Not: `make ci`
-- [ ] 8.2 final critic — files: CONTRACT.md — done when: verdict against outcome (all 18 gaps closed, each with a failing gate); PASS or failures
+- [x] 8.2 final critic — files: CONTRACT.md — done when: verdict against outcome (all 18 gaps closed, each with a failing gate); PASS or failures

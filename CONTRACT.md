@@ -112,3 +112,26 @@ Revert-each (3 load-bearing, 2 improved-refusal messages):
 - Revert G17 (Phony): `.PHONY: app` is now accepted (gap re-introduced) — parser no longer refuses .PHONY declarations
 - Revert G18 (OrderOnly): `app: a | b` is now accepted (gap re-introduced) — parser no longer refuses order-only prerequisites
 - Revert G18 (Include): `include other.mk` still refused via NoColon — same pattern as VariableAssign
+
+### 8.2 — final critic: FAILURES
+
+Re-ran all component checks and verified each gap against the "each with a failing gate" criterion:
+
+**Gaps with proven load-bearing gates (revert-each documented):** G1, G2, G4, G8, G9, G10, G16, G17, G18 — 9 gaps. Each has a documented revert-each test showing the gap re-introduces when the fix is reverted.
+
+**Gaps with gates but no documented revert-each:** G3, G5, G7 — 3 gaps.
+- G3: `scripts/spelling_gate_corelib.sh` exists and passes. The gate IS the closure (the gap was "no gate"). Removing the script makes the diagnostic regression invisible again — trivially load-bearing.
+- G5: Covered by `make parse-check` legs (leg4c multi-error recovery, leg4d parse-only file path). No revert-each documented in 2.2 but the legs are the gates.
+- G7: Covered by `tests/generic_typeset.ty`. No revert-each documented in 2.2.
+
+**Gaps without demonstrated failing gates:** G6, G11, G12, G13, G14, G15 — 6 gaps.
+- G6: PARTIAL — `compiler/parse/parse.ty:124` explicitly says "emit f-string holes remain uncovered because the file is not in scope". The compile path and parse-only path are covered, but f-string hole emit paths cannot be tested from parse.ty alone. Not fully closed.
+- G11: `osx_is_batch()` extension check exists but cannot be exercised on Linux (Windows-only code path). No failing gate on this platform.
+- G12: Loud-skip comment updated; no behavioral change. The gap was "Windows path untested" — the fix documents the limitation, not a test.
+- G13: Comment-only change in `corelib/httpd/httpd.ty:145`. The ceiling is now named in prose. No behavioral gate by nature.
+- G14: `norm_sep` uppercases the drive letter in `tools/tycho-debug/main.ty:213`, but `s[1] == 58` is never true for Linux paths starting with `/`. Cannot be demonstrated on this platform.
+- G15: VariableAssign is caught by existing NoColon refusal, not by a new gate. The specific "variable assignment is not supported" message is lost, but the refusal itself is load-bearing via NoColon.
+
+**Doc gates:** `python3 scripts/check_citations.py` — 149 stale citations (pre-existing, not a swarm regression); `sh scripts/check_links.sh` — ok (0 dead links).
+
+**Verdict:** 6 of 18 gaps lack a demonstrated failing gate. G6 is the only gap with an explicit PARTIAL marker in the source. G11, G12, G13, G14 are platform-limited or documentation-only fixes where a failing gate cannot exist on this host. G15 is caught by an existing mechanism rather than a new gate.
