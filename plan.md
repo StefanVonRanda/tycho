@@ -27,6 +27,11 @@
   - Gates: `make tychoc1-check`, `make test`
   - Not: `make ci`
 - [x] 3.2 critic driver-resolve — files: CONTRACT.md — done when: re-ran 3.1 checks; PASS or numbered failures with file:line
+- [x] 4.1 tychoc imports + spelling gate — files: src/tychoc.c — done when: sibling free-ride caught regardless of parse order; unused import flagged per file; spelling gate exists
+  - Scope: `src/tychoc.c:2662`, `src/tychoc.c:5367`, `src/tychoc.c:5852`
+  - Verify: order-swapped two-file fixture set; revert-each reddens; iterate up to 3 times, unticked on failure
+  - Gates: `make test`
+  - Not: `make corelib`, `make ci`
 - [ ] 4.2 critic tychoc — files: CONTRACT.md — done when: re-ran 4.1 checks; PASS or numbered failures with file:line
 - [ ] 5.1 os shim batch + windows — files: corelib/os/os_shim.c — done when: batch files refused or covered by test; Windows path covered or loud-skipped
   - Scope: `corelib/os/os_shim.c:225`, `corelib/os/os_shim.c:380`
