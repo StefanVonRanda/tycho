@@ -59,6 +59,18 @@ Re-ran 3.1 checks after G4 and G8 fixes:
 - Revert G4 (replace `os.run(cmd)` with `os.exec(argv)` in build): spaced-path fixture fails at cc (shell tokenisation lost the space)
 - Revert G8 (remove `corelib_hint` call from `_call_bare`): hint fixture prints bare `unknown procedure 'sort'` without the core:arrays suggestion
 
+### 4.2 — tychoc critic: PASS
+
+Re-ran 4.1 checks after G1, G2, G3 fixes:
+- `make test`: 1036 passed, 0 failed (all green)
+- `sh scripts/spelling_gate_corelib.sh`: PASS
+- G1 order-swapped fixture (`tests/reject/pkg/import_leak_type_order/main.ty`): refuses rc=1 naming `pkg/a.ty:3` with sibling note
+- G2 dead import probe: `other/other.ty:3` errors `../pkg imported and not used in this file` (dead import caught per-file)
+- Revert G1 (restore inline parse-time check): order-swapped fixture passes (exit 0) — gap reintroduced
+- Revert G2 (restore unscoped `g_imports[i].used = 1`): `other.ty` dead import silent — gap reintroduced
+- `sh scripts/check_links.sh`: ok (84 docs, 257 anchors, 135 files, 0 dead links)
+- `python3 scripts/check_citations.py`: 149 stale citations (pre-existing — docs reference line numbers in a 15000-line file; any code insertion shifts them; not a 4.1 regression)
+
 ## Done-when check
 
 ```sh

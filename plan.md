@@ -32,7 +32,7 @@
   - Verify: order-swapped two-file fixture set; revert-each reddens; iterate up to 3 times, unticked on failure
   - Gates: `make test`
   - Not: `make corelib`, `make ci`
-- [ ] 4.2 critic tychoc — files: CONTRACT.md — done when: re-ran 4.1 checks; PASS or numbered failures with file:line
+- [x] 4.2 critic tychoc — files: CONTRACT.md — done when: re-ran 4.1 checks; PASS or numbered failures with file:line
 - [ ] 5.1 os shim batch + windows — files: corelib/os/os_shim.c — done when: batch files refused or covered by test; Windows path covered or loud-skipped
   - Scope: `corelib/os/os_shim.c:225`, `corelib/os/os_shim.c:380`
   - Verify: `make shim-check`; skip line loud on hosts without target; iterate up to 3 times, unticked on failure
