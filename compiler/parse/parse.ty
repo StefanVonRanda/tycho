@@ -493,11 +493,16 @@ fn _lambda(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
 # emit's copies print `tychoc1: <msg>` with no location and are reached only
 # through `--emit-c`, so `--typecheck` ACCEPTED what ./tychoc refuses.
 fn _hole(toks: [lex.Tok], src: string, line: int) -> ast.Expr:
-    ht := lex.tokenize(src)
+    # The stamping below repairs the TOKENS, which is too late for an error the
+    # lexer itself raises: `f"{1 @ 2}"` died as `tychoc1: line 1: unexpected
+    # character '@'` -- no path, and line 1 of the FRAGMENT rather than the line
+    # the f-string is on. tokenize_hole carries the owner's file, text and line
+    # so that error is reported like any other.
+    fl := lex.file_of(toks)
+    ht := lex.tokenize_hole(src, fl, "", line)
     # lex restarts its line counter at 1 and a hole's columns are body-relative,
     # so stamp the f-string's own line on every sub-token and drop the caret.
     # The path rides on the K_EOF token (lex/lex.ty:46), which _where reads.
-    fl := lex.file_of(toks)
     for k := 0; k < len(ht); k += 1:
         ht[k].line = line
         ht[k].col = 0

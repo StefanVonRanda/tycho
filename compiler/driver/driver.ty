@@ -46,10 +46,14 @@ fn emit_to(p: types.Program, runtime_path: string, argv0: string, out_c: string,
     write_runtime(runtime_path, argv0, out_c)
     pfx := []string
     us := []ast.Unit
+    fpath := []string
+    fsrc := []string
     for f in p.files:
         push(pfx, f.prefix)
         push(us, f.unit)
-    match io.append_text(out_c, emit.program(pfx, us, dbgf)):
+        push(fpath, f.path)            # so an f-string HOLE's lex error can name its file
+        push(fsrc, f.src)              # ...and show the enclosing source line
+    match io.append_text(out_c, emit.program_in(pfx, us, dbgf, fpath, fsrc)):
         Ok: return
         Err(e): die("tychoc1: cannot write '" + out_c + "'")
     return

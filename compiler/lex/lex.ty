@@ -413,7 +413,21 @@ fn postfixable(kind: int, tag: int) -> bool:
 # 1`, which names no file at all and sent the reader to the entry file.
 # `file:line: error: msg`, with the source line under it -- the shape parse.ty's
 # `_where` produces, so a lexer error reads like every other diagnostic.
-fn _at_line(file: string, src: string, line: int, msg: string) -> string:
+# `osrc`/`oline` are the OWNER override, used when the text being lexed is a
+# FRAGMENT rather than a file -- an f-string hole, re-tokenized during emit.
+# A fragment's own line numbering starts at 0 and it carries no name, so a lex
+# error in one reported `tychoc1: line 1: ...`. With the override the enclosing
+# file's line is named and its source line is what gets shown. An empty `osrc`
+# means "not a fragment" and restores the old behaviour exactly.
+fn _at_line_in(file: string, src: string, line: int, msg: string, osrc: string, oline: int) -> string:
+    # oline > 0 alone is enough to name the right line; osrc is what lets the
+    # excerpt be the OWNER's source line rather than the fragment's. A caller
+    # holding only tokens (parse/parse.ty@_hole) supplies the line and no text,
+    # and gets `file:line: error: ...` with the excerpt suppressed -- which is
+    # correct, since the fragment's own line would be a lie.
+    if oline > 0:
+        line = oline
+        src = osrc
     if len(file) == 0:
         return "tychoc1: line " + str(line) + ": " + msg
     out := file + ":" + str(line) + ": error: " + msg
@@ -426,8 +440,11 @@ fn _at_line(file: string, src: string, line: int, msg: string) -> string:
         out = out + "\n" + pad + num + " | " + ls[line - 1]
     return out
 
+fn _die_in(file: string, src: string, line: int, msg: string, osrc: string, oline: int):
+    die(_at_line_in(file, src, line, msg, osrc, oline))
+
 fn _die(file: string, src: string, line: int, msg: string):
-    die(_at_line(file, src, line, msg))
+    _die_in(file, src, line, msg, "", 0)
 
 # --- `# deprecated:` doc notes ----------------------------------------------
 # src/tychoc.c@dnote_scan runs during lexing and only on a comment-ONLY line, so
@@ -652,6 +669,14 @@ fn tokenize_ex(src: string, keep_trivia: bool) -> [Tok]:
 fn tokenize_file(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNote]):
     return tokenize_named(src, keep_trivia, file)
 
+# An f-string HOLE, re-tokenized during emit (compiler/emit/emit.ty@_fstr and
+# @_fv). The hole text is a FRAGMENT: its line numbering starts at 0 and it has
+# no name, so a lex error inside one printed `tychoc1: line 1: unexpected
+# character '@'` -- no path, and the wrong line. `owner_src` and `owner_line`
+# are the enclosing file's text and the line the f-string sits on.
+fn tokenize_hole(src: string, file: string, owner_src: string, owner_line: int) -> [Tok]:
+    return tokenize_named_in(src, false, file, owner_src, owner_line).0
+
 # The `# deprecated:` notes this file's comments carry, in source order. They are
 # a SIDE TABLE rather than tokens for the same reason src/tychoc.c keeps them in
 # one: a note is not a syntactic element, and putting it in the stream would make
@@ -674,6 +699,9 @@ fn _at_eol(src: string, p: int, n: int) -> bool:
     return src[p] == 13 and (p + 1 >= n or src[p + 1] == 10)
 
 fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNote]):
+    return tokenize_named_in(src, keep_trivia, file, "", 0)
+
+fn tokenize_named_in(src: string, keep_trivia: bool, file: string, osrc: string, oline: int) -> ([Tok], [DNote]):
     toks := []Tok
     notes := []DNote
     errs := []string
@@ -716,7 +744,7 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
                 cont = true
             pend = false
         if ws_sp and ws_tab and bracket_depth == 0 and not cont:
-            _die(file, src, line, "mixed tabs and spaces in indentation; use one consistently")
+            _die_in(file, src, line, "mixed tabs and spaces in indentation; use one consistently", osrc, oline)
 
         # A blank or comment-only line carries no indentation information;
         # measuring it would emit a DEDENT the source never asked for.
@@ -762,7 +790,7 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
                     pop(stack)
                     push(toks, _tk(keep_trivia, K_DEDENT, "", line, col + 1, ""))
                 if col != stack[len(stack) - 1]:
-                    _die(file, src, line, "inconsistent indentation")
+                    _die_in(file, src, line, "inconsistent indentation", osrc, oline)
 
         for p < n and src[p] != 10 and src[p] != 35:
             c := src[p]
@@ -795,8 +823,8 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
                         p += 1
                     if p == digits:
                         if hexed:
-                            _die(file, src, line, "a hex literal needs at least one digit after `0x`")
-                        _die(file, src, line, "a binary literal needs digits 0 or 1 after `0b`")
+                            _die_in(file, src, line, "a hex literal needs at least one digit after `0x`", osrc, oline)
+                        _die_in(file, src, line, "a binary literal needs digits 0 or 1 after `0b`", osrc, oline)
                 is_float := false
                 if not prefixed and p + 1 < n and src[p] == 46 and is_digit(src[p + 1]):
                     is_float = true
@@ -820,8 +848,8 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
                     # dying here would be a divergence rather than a fix.
                     match strings.parse_float(raw):
                         Ok(v): fv = v
-                        Err(strings.Overflow): _die(file, src, line, "float literal out of range: `" + raw +
-                            "` exceeds the largest float (IEEE-754 binary64); write 1.0/0.0 for an infinity")
+                        Err(strings.Overflow): _die_in(file, src, line, "float literal out of range: `" + raw +
+                            "` exceeds the largest float (IEEE-754 binary64); write 1.0/0.0 for an infinity", osrc, oline)
                         Err(strings.Underflow): fv = 0.0
                         Err(strings.Empty): fv = 0.0
                         Err(strings.Syntax): fv = 0.0
@@ -833,7 +861,7 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
                     for q := digits; q < p; q += 1:
                         d := hex_val(src[q])
                         if v > (imax - d) / litbase:
-                            _die(file, src, line, "integer literal out of range")
+                            _die_in(file, src, line, "integer literal out of range", osrc, oline)
                         v = v * litbase + d
                     push(toks, Tok(K_INT, raw, line, tcol, v, 0.0, raw))
                     last_ix = len(toks) - 1
@@ -886,12 +914,12 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
                 continue
 
             if c == 47 and p + 1 < n and src[p + 1] == 47:
-                _die(file, src, line, "'//' is not valid in Tycho -- use '#' for comments, or '/' for division")
+                _die_in(file, src, line, "'//' is not valid in Tycho -- use '#' for comments, or '/' for division", osrc, oline)
             l := op_len(src, p)
             # `!` exists only as `!=`; a lone one is an unexpected character,
             # exactly as in src/tychoc.c's operator chain.
             if not is_op_start(c) and not (c == 33 and l == 2):
-                _die(file, src, line, "unexpected character '" + src[p:p + 1] + "'")
+                _die_in(file, src, line, "unexpected character '" + src[p:p + 1] + "'", osrc, oline)
             # The tag is the bytes packed low-first -- no comparison at all, and
             # it is what `_isop` reads instead of comparing `text`.
             oid := src[p]
@@ -948,7 +976,7 @@ fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNot
         for i := 0; i < len(errs); i += 1:
             if i > 0:
                 msg = msg + "\n"
-            msg = msg + _at_line(file, src, errl[i], errs[i])
+            msg = msg + _at_line_in(file, src, errl[i], errs[i], osrc, oline)
         die(msg)
     for len(stack) > 1:
         pop(stack)

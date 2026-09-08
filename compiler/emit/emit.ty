@@ -130,9 +130,11 @@ struct C:
     fuid: [string]                     # each one's hoisted cursor suffix
     fuel: [string]                     # each one's element type
     dbgfile: string                    # -g: src/tychoc.c@g_line_file, empty when off
+    fpath: [string]                    # unit i's path, for an f-string HOLE's lex error
+    fsrc: [string]                     # unit i's text, so that error shows the real line
 
 fn _new() -> C:
-    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt, [], [], [], false, []string: bool, []string: bool, []int, [], [], [], "")
+    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt, [], [], [], false, []string: bool, []string: bool, []int, [], [], [], "", [], [])
 
 fn _bad(msg: string):
     die("tychoc1: " + msg)
@@ -1471,6 +1473,19 @@ fn _tyo(cs: inout C, ts: [ast.Ty]) -> string:
 
 # --- local scope ------------------------------------------------------------
 
+# The file and text of the unit being emitted, for an f-string hole's lexer.
+# Empty when the caller did not supply them (emit.program's old entry), which
+# restores the bare `tychoc1: line N:` form rather than naming a wrong file.
+fn _ufile(cs: inout C) -> string:
+    if cs.cf >= 0 and cs.cf < len(cs.fpath):
+        return cs.fpath[cs.cf]
+    return ""
+
+fn _usrc(cs: inout C) -> string:
+    if cs.cf >= 0 and cs.cf < len(cs.fsrc):
+        return cs.fsrc[cs.cf]
+    return ""
+
 fn _vcap(cs: inout C, n: string) -> int:
     for i := len(cs.vnames) - 1; i >= 0; i -= 1:
         if cs.vnames[i] == n:
@@ -2427,7 +2442,7 @@ fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
             return _variant(&cs, _eidx(&cs, _tname(cs.want)), "Err", k)
         ast.OrRet(l, k):
             return _orret(&cs, k[0])
-        ast.FStrLit(l, v, hs): return _fstr(&cs, v)
+        ast.FStrLit(l, v, hs): return _fstr(&cs, v, l)
         ast.NullLit(l):
             # `null` is the ptr literal; ptr is void* in the ABI.
             return ("((void *)0)", "ptr")
@@ -2549,7 +2564,7 @@ fn _fsplit(body: string) -> ([string], [int]):
         push(kind, 0)
     return (txt, kind)
 
-fn _fstr(cs: inout C, body: string) -> (string, string):
+fn _fstr(cs: inout C, body: string, l: int) -> (string, string):
     txt, kind := _fsplit(body)
     if len(txt) == 0:
         return ("TYCHO_LIT(\"\")", "string")
@@ -2565,7 +2580,7 @@ fn _fstr(cs: inout C, body: string) -> (string, string):
     for i := 0; i < len(txt); i += 1:
         piece := "TYCHO_LIT(\"" + txt[i] + "\")"
         if kind[i] == 1:
-            toks := lex.tokenize(txt[i])
+            toks := lex.tokenize_hole(txt[i], _ufile(&cs), _usrc(&cs), l)
             he, _hp := parse.expr(toks, 0)
             hc, ht := _ex(&cs, he)
             piece = _tostr(&cs, hc, ht)
@@ -2725,7 +2740,7 @@ fn _fv(cs: inout C, e: ast.Expr, bs: [string], out: inout [string]):
             txt, kind := _fsplit(v)
             for i := 0; i < len(txt); i += 1:
                 if kind[i] == 1:
-                    toks := lex.tokenize(txt[i])
+                    toks := lex.tokenize_hole(txt[i], _ufile(&cs), _usrc(&cs), l)
                     he, _hp := parse.expr(toks, 0)
                     _fv(&cs, he, bs, &out)
         ast.Index(l, k): _fvs(&cs, k, bs, &out)
@@ -7821,9 +7836,17 @@ fn _ends_ret(b: [ast.Stmt]) -> bool:
 # for every other, exactly as src/tychoc.c@pkg_prefix_for spells it. The files
 # arrive in the loader's post-order, so a package's dependencies are collected
 # before it is.
-fn program(pfx: [string], us: [ast.Unit], dbgf: string) -> string:
+# `fpath[i]`/`fsrc[i]` are unit i's path and text. They exist for ONE reason: an
+# f-string hole is re-tokenized here (@_fstr, @_fv), and a fragment carries no
+# name and numbers its own lines from 0, so a lex error inside one printed
+# `tychoc1: line 1: ...`. Empty arrays keep the old behaviour.
+fn program_in(pfx: [string], us: [ast.Unit], dbgf: string, fpath: [string], fsrc: [string]) -> string:
     cs := _new()
     cs.dbgfile = dbgf
+    for fp in fpath:
+        push(cs.fpath, fp)
+    for fsc in fsrc:
+        push(cs.fsrc, fsc)
     for x in pfx:
         push(cs.fpfx, x)
     for u0 in us:
