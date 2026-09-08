@@ -744,8 +744,8 @@ for f in tests/conc/*.ty tests/pkg/*/main.ty; do
     if "$TYCHOC1" "$f" --typecheck >/dev/null 2>&1; then n15a=$((n15a+1))
     else echo "  CONC-WRONGLY-REFUSED $f :: $("$TYCHOC1" "$f" --typecheck 2>&1 | head -1)"; l15=1; fi
 done
-echo "leg15 conc + pkg rules by MESSAGE: refused=$n15r/50 disagree=$n15d accepted=$n15a/40"
-[ "$n15r" = 50 ] && [ "$n15a" = 40 ] || { echo "parse-check: leg15 corpus moved -- update the literals"; l15=1; }
+echo "leg15 conc + pkg rules by MESSAGE: refused=$n15r/51 disagree=$n15d accepted=$n15a/40"
+[ "$n15r" = 51 ] && [ "$n15a" = 40 ] || { echo "parse-check: leg15 corpus moved -- update the literals"; l15=1; }
 [ "$l15" = 0 ] || { echo "parse-check: a concurrency or match-arm rule moved"; rc=1; }
 
 # [5] -- the whole tree, both verdicts, split by the same site table. See the
