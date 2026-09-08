@@ -1,0 +1,21 @@
+# An import whose ONLY use is inside a GENERIC proc must not be reported unused.
+# A generic body is resolved at instantiation, inside gen_program, so the `used`
+# flag is set after codegen -- report_unused_imports must run after it too.
+package main
+import "core:strings"
+
+const NOPS = 2
+
+struct Meta:
+    n: int
+
+fn optable() -> [NOPS]Meta:
+    t: [NOPS]Meta = [Meta(0), Meta(0)]
+    return t
+
+fn show(t: [$NT]Meta) -> string:
+    return strings.pad_left(str(len(t)), 4, " ")
+
+fn main():
+    table := optable()
+    println(show(table))

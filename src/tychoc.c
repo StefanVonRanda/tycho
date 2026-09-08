@@ -15198,7 +15198,6 @@ int main(int argc, char **argv) {
     check_finite_types();   /* reject by-value-recursive types before the resolver */
     resolve_program(&prog);
     if (g_ndiags) { diag_flush(); exit(1); }   /* every proc's error, then stop -- never emit C after one */
-    report_unused_imports();   /* after resolve: every qualifier has been through pkg_prefix_for */
     if (g_unused_local) { report_unused_locals(); exit(1); }   /* drained only if resolve did not die first */
 
     if (want_symbols) { emit_symbols(&prog); return 0; }   /* LSP index; no codegen */
@@ -15208,6 +15207,10 @@ int main(int argc, char **argv) {
     gen_program(o, &prog);
     report_dead_procs(&prog);  /* AFTER codegen: a generic body is only resolved at instantiation, so a
                                 * callee reached solely from one is not marked until gen_program runs */
+    report_unused_imports();   /* AFTER codegen too, and for the same reason: `used` is set by
+                                * pkg_prefix_for during resolve, and a generic body is resolved only
+                                * at instantiation inside gen_program. Reporting before it made an
+                                * import used ONLY from a generic proc look unused (tools/tycho-vm). */
     if (c_to_stdout) fflush(o); else fclose(o);
 
     if (emit_c_only) {
