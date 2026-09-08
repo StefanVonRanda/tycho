@@ -50,6 +50,8 @@ line 1: a trailing backslash -- line continuations are not supported
 dependency cycle: a -> b -> a
 === err VariableAssign
 line 1: variable assignment is not supported -- [CC = gcc]
+=== err VariableAssign
+line 1: variable assignment is not supported -- [CC := gcc]
 === err PatternRule
 line 1: pattern rule is not supported -- [%.o]
 === err Phony

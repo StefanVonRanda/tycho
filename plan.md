@@ -71,7 +71,7 @@
   - Verify: probe asserting refusal message; revert-each reddens; iterate up to 3 times, unticked on failure
   - Gates: `make corelib`, `sh scripts/entrypoints.sh`
   - Not: `make test`, `make ci`
-- [ ] 9.3 VariableAssign message gate — files: tools/tycho-make/graph/graph.ty — done when: `tools/tycho-make/graph/graph.ty:126` detection surfaces its own message, pinned by a fixture the NoColon path cannot satisfy
+- [x] 9.3 VariableAssign message gate — files: tools/tycho-make/graph/graph.ty — done when: `tools/tycho-make/graph/graph.ty:126` detection surfaces its own message, pinned by a fixture the NoColon path cannot satisfy
   - Scope: `tools/tycho-make/graph/graph.ty:28`
   - Verify: fixture refused with the VariableAssign message; revert-each reddens; iterate up to 3 times, unticked on failure
   - Gates: `make make-check`, `sh scripts/entrypoints.sh`

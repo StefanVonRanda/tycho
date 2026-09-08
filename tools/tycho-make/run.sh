@@ -211,6 +211,8 @@ b: a
 '   'dependency cycle: a -> b -> a'
 errcase VariableAssign 'CC = gcc
 '   'line 1: variable assignment is not supported -- [CC = gcc]'
+errcase VariableAssign 'CC := gcc
+'   'line 1: variable assignment is not supported -- [CC := gcc]'
 errcase PatternRule  '%.o: %.c
 '   'line 1: pattern rule is not supported -- [%.o]'
 errcase Phony        '.PHONY: app

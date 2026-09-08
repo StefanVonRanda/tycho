@@ -122,7 +122,7 @@ fn parse(text: string) -> Result(Graph, MakeErr):
         # Variable assignments (VAR = ..., VAR += ..., VAR ?= ..., VAR := ...) are
         # not rules and not recipes. Refuse before looking for a ':'.
         eq := find(body, "=")
-        if eq >= 0 and find(body, ":") < 0:
+        if eq >= 0 and (find(body, ":") < 0 or (eq > 0 and body[eq - 1] == 58)):
             return Err(VariableAssign(ln, body))
         # include directives are not rules.
         if (len(body) == 7 or (len(body) > 7 and body[7] == 32)) and substr(body, 0, 7) == "include":
