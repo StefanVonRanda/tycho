@@ -26,6 +26,21 @@ own changes — it must not edit them.
 4. The critic phase (x.2) re-runs the builder phase's checks and reports
    PASS or numbered failures with file:line.
 
+## Critic verdicts
+
+### 1.2 — emit critic: PASS
+
+Re-ran 1.1 checks after both G9 and G10 fixes:
+- `make parse-check`: all green (0 disagreements)
+- `make test`: 1035 passed, 0 failed
+- abort fixture (`tests/conc/abort/bounded_local_cap.ty`): traps `push to a full bounded[2]` exit 1
+- multi fixture (`tests/conc/parfor_chan_multi.ty`): prints `156` exit 0
+- non-trap fixture (`tests/bounded_local_cap.ty`): prints `len 2` exit 0
+
+Revert-each (both confirmed load-bearing):
+- Revert G9 (remove `ast.Name` case in `_cap_of_target`, remove vcaps population in `_stmt`): abort fixture silently grows, prints `unreachable` exit 0 — gap re-introduced
+- Revert G10 (replace `_parchan` with pre-fix): multi fixture refused by name (`a parallel for with more than one reduction variable -- Phase 8`) exit 1 — gap re-introduced
+
 ## Done-when check
 
 ```sh
