@@ -81,7 +81,7 @@
   - Verify: host-side unit gate over the helper; revert-each reddens; iterate up to 3 times, unticked on failure
   - Gates: `make shim-check`, `make corelib`
   - Not: `make test`, `make ci`
-- [ ] 9.5 critic fix-phases — files: CONTRACT.md — done when: re-ran 9.1-9.4 checks; PASS or numbered failures with file:line
+- [x] 9.5 critic fix-phases — files: CONTRACT.md — done when: re-ran 9.1-9.4 checks; PASS or numbered failures with file:line
 
 ## Accepted limitations (no failing gate possible on this host)
 

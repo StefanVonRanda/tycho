@@ -135,3 +135,17 @@ Re-ran all component checks and verified each gap against the "each with a faili
 **Doc gates:** `python3 scripts/check_citations.py` — 149 stale citations (pre-existing, not a swarm regression); `sh scripts/check_links.sh` — ok (0 dead links).
 
 **Verdict:** 6 of 18 gaps lack a demonstrated failing gate. G6 is the only gap with an explicit PARTIAL marker in the source. G11, G12, G13, G14 are platform-limited or documentation-only fixes where a failing gate cannot exist on this host. G15 is caught by an existing mechanism rather than a new gate.
+
+### 9.5 — fix-phases critic: PASS
+
+Re-ran all gates from phases 9.1–9.4:
+- `make parse-check`: leg10 shows 1 disagreement (TYPE-DISAGREE: `tools/tycho-vm/main.ty` tychoc=SEMANTIC vs tychoc1=accept for unused import) — pre-existing, not touched by any swarm phase. All other legs green.
+- `make test`: 1036 passed, 0 failed
+- `make corelib`: all green (46 ok, tychoc matches goldens)
+- `make make-check`: green (demo golden byte-identical, 13 MakeErr + 6 BuildErr variants)
+- `make shim-check`: 16 ok, 1 skipped (Windows-only `os_argv_quotecheck.c`), 0 failed; `os_batch_check.c` passes with 32 ok
+- `sh scripts/entrypoints.sh`: 91 entry points compile, 3 warning lines matching scripts/entrypoints.warn
+- `python3 scripts/check_citations.py`: 149 stale citations (pre-existing — `src/tychoc.c` line drift from code insertions, not a swarm regression)
+- `sh scripts/check_links.sh`: ok (0 dead links)
+
+No new regressions from phases 9.1–9.4.
