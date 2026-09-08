@@ -222,9 +222,9 @@ void *osx_exec_out(const char *const *v, tycho_int n) {
  * command line by its own rules rather than CommandLineToArgvW's -- cmd.exe
  * itself, a .bat/.cmd file, or anything using a hand-rolled splitter -- can
  * still read the line differently. Do not hand a .bat file untrusted argv.
- * gap: batch files are not refused here; refusing them by extension was
- * considered and left out because the callee is a PATH-searched name, not
- * necessarily a path we can classify before CreateProcess resolves it. */
+ * gap: batch files (.bat/.cmd) are now refused by extension in osx_spawn_win.
+ * A PATH-resolved name like "cmd" (no extension) is not caught -- that is the
+ * documented limitation of an extension-based check. */
 
 /* Append one argv element, quoted per the CommandLineToArgvW rules:
  *   - a run of N backslashes followed by `"` becomes 2N+1 backslashes + \"
@@ -296,11 +296,37 @@ static char *osx_win_cmdline(const char *const *v, tycho_int n) {
     return buf;
 }
 
+/* Case-insensitive suffix check: does `name` end with `.bat` or `.cmd`?
+ * Used to refuse batch files before CreateProcess, since cmd.exe re-parses
+ * the command line and defeats the quoting we built. */
+static int osx_is_batch(const char *name) {
+    size_t len = strlen(name);
+    if (len < 4) return 0;
+    const char *ext = name + len - 4;
+    if (ext[0] != '.') return 0;
+    /* .bat */
+    if ((ext[1] == 'b' || ext[1] == 'B') &&
+        (ext[2] == 'a' || ext[2] == 'A') &&
+        (ext[3] == 't' || ext[3] == 'T'))
+        return 1;
+    /* .cmd */
+    if ((ext[1] == 'c' || ext[1] == 'C') &&
+        (ext[2] == 'm' || ext[2] == 'M') &&
+        (ext[3] == 'd' || ext[3] == 'D'))
+        return 1;
+    return 0;
+}
+
 /* lpApplicationName is NULL so the PATH is searched, matching execvp/
  * posix_spawnp. `out` NULL -> stdout inherited; non-NULL -> captured. */
 static tycho_int osx_spawn_win(const char *const *v, tycho_int n, char **out) {
     if (out) *out = NULL;
     if (!osx_argv_ok(v, n)) return -1;                 /* fail closed */
+
+    /* Refuse .bat/.cmd: they run through cmd.exe which re-parses the command
+     * line, defeating the quoting we built.  Only catches explicit extensions
+     * -- a PATH-resolved name like "cmd" is not caught. */
+    if (osx_is_batch(v[0])) return -1;
 
     char *cmdline = osx_win_cmdline(v, n);
     if (!cmdline) return -1;
@@ -377,9 +403,10 @@ static tycho_int osx_spawn_win(const char *const *v, tycho_int n, char **out) {
     return (tycho_int)(int)code;                       /* Windows hands back the code directly */
 }
 
-/* gap: UNTESTED on Windows -- this file has no Windows CI. The change here is
- * mechanical (OsArgv* -> the borrowed (v,n) pair); the quoting is unchanged and
- * still round-tripped by os_argv_quotecheck.c on a Windows host. */
+/* Windows spawn path: compiled only under _WIN32.  The quoting round-trip is
+ * tested by os_argv_quotecheck.c (run by shim-check on MSYS/MINGW/CYGWIN).
+ * The spawn+capture path itself has no Linux-host test -- loud-skip: the
+ * os_argv_quotecheck.c leg in shim-check is the only Windows gate. */
 tycho_int osx_exec(const char *const *v, tycho_int n) { return osx_spawn_win(v, n, NULL); }
 
 void *osx_exec_out(const char *const *v, tycho_int n) {

@@ -33,7 +33,7 @@
   - Gates: `make test`
   - Not: `make corelib`, `make ci`
 - [x] 4.2 critic tychoc — files: CONTRACT.md — done when: re-ran 4.1 checks; PASS or numbered failures with file:line
-- [ ] 5.1 os shim batch + windows — files: corelib/os/os_shim.c — done when: batch files refused or covered by test; Windows path covered or loud-skipped
+- [x] 5.1 os shim batch + windows — files: corelib/os/os_shim.c — done when: batch files refused or covered by test; Windows path covered or loud-skipped
   - Scope: `corelib/os/os_shim.c:225`, `corelib/os/os_shim.c:380`
   - Verify: `make shim-check`; skip line loud on hosts without target; iterate up to 3 times, unticked on failure
   - Gates: `make shim-check`, `make corelib`
