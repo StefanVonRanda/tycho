@@ -205,11 +205,14 @@ fn blob_fields(blob: string) -> [string]:
 # every stop took the "runtime glue" branch below: gdb's whole path instead of
 # the basename, the raw C name (h_main) instead of the .ty name, and s.cur left
 # at 0 so `l` listed the wrong region.
-# gap: this normalizes separators, not case -- a drive letter in a different
-# case on the two sides would still miss, which degrades to the glue branch
-# (a longer location line), not to wrong line numbers.
+# On Windows the drive letter is case-insensitive (C: == c:), so both sides
+# are uppercased: gdb and _fullpath may disagree on case, and a mismatch
+# degrades to the glue branch (a longer location line), not to wrong line numbers.
 fn norm_sep(p: string) -> string:
-    return strings.replace(p, "\\", "/")
+    s := strings.replace(p, "\\", "/")
+    if len(s) >= 2 and s[1] == 58:       # ':' -- a drive letter like C:
+        return strings.to_upper(s[0:1]) + s[1:len(s)]
+    return s
 
 fn base_name(p: string) -> string:
     parts := split(norm_sep(p), "/")

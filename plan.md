@@ -39,7 +39,7 @@
   - Gates: `make shim-check`, `make corelib`
   - Not: `make test`, `make ci`
 - [x] 5.2 critic os-shim — files: CONTRACT.md — done when: re-ran 5.1 checks; PASS or numbered failures with file:line
-- [ ] 6.1 httpd ceiling + debug drive case — files: corelib/httpd/httpd.ty, tools/tycho-debug/main.ty — done when: ceiling named in diagnostic; drive-letter case handled or refused
+- [x] 6.1 httpd ceiling + debug drive case — files: corelib/httpd/httpd.ty, tools/tycho-debug/main.ty — done when: ceiling named in diagnostic; drive-letter case handled or refused
   - Scope: `corelib/httpd/httpd.ty:145`, `tools/tycho-debug/main.ty:208`
   - Verify: over-ceiling input names limit; mixed-case drive input test; iterate up to 3 times, unticked on failure
   - Gates: `make corelib`, `make debug-check`, `sh scripts/entrypoints.sh`
