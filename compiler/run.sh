@@ -86,7 +86,7 @@ n_lib=$(find corelib -name '*.ty' | wc -l)
 n_rej=$(ls tests/reject/*.ty | wc -l)
 n_tsv=$(wc -l < "$TSV")
 n_new=$(find tools examples server bench -name '*.ty' | wc -l)
-[ "$n_acc" = 287 ] || { echo "parse-check: tests/*.ty is $n_acc, expected 287"; rc=1; }   # +1 each: tests/packed_struct.ty (V2), tests/vector_type.ty (V3), tests/fixarr_iter.ty (V3a), tests/generic_recur_same.ty, tests/align_struct.ty (L1), tests/multi_assign.ty (L2), tests/swizzle.ty (L3), tests/vector_map_key.ty (composite map keys), tests/lane_names.ty (L4)
+[ "$n_acc" = 288 ] || { echo "parse-check: tests/*.ty is $n_acc, expected 288"; rc=1; }   # +1 each: tests/packed_struct.ty (V2), tests/vector_type.ty (V3), tests/fixarr_iter.ty (V3a), tests/generic_recur_same.ty, tests/align_struct.ty (L1), tests/multi_assign.ty (L2), tests/swizzle.ty (L3), tests/vector_map_key.ty (composite map keys), tests/lane_names.ty (L4)
 [ "$n_lib" = 91 ]  || { echo "parse-check: corelib/**.ty is $n_lib, expected 91"; rc=1; }
 [ "$n_new" = 178 ] || { echo "parse-check: tools+examples+server+bench .ty is $n_new, expected 178"; rc=1; }   # -1: tools/tycho-rsa/ removed in 0888bf28, which left this literal at 179 and the lane red
 [ "$n_rej" = "$n_tsv" ] || { echo "parse-check: $n_rej reject fixtures but $n_tsv classified rows -- rerun scripts/classify_rejects.py"; rc=1; }
@@ -119,7 +119,7 @@ leg_accept() {
     echo "$1: files=$((ok+bad)) parse-ok=$ok fail=$bad"
     [ "$ok" = "$3" ] && [ "$bad" = 0 ] || { echo "parse-check: $1 expected $3 ok, 0 fail"; rc=1; }
 }
-leg_accept "leg1  tests/*.ty" "$(ls tests/*.ty)" 287
+leg_accept "leg1  tests/*.ty" "$(ls tests/*.ty)" 288
 leg_accept "leg1b corelib/**.ty" "$(find corelib -name '*.ty' | sort)" 91
 leg_accept "leg1c tools+examples+server+bench" "$(find tools examples server bench -name '*.ty' | sort)" 178
 
@@ -702,8 +702,8 @@ for f in tests/conc/*.ty tests/pkg/*/main.ty; do
     if "$TYCHOC1" "$f" --typecheck >/dev/null 2>&1; then n15a=$((n15a+1))
     else echo "  CONC-WRONGLY-REFUSED $f :: $("$TYCHOC1" "$f" --typecheck 2>&1 | head -1)"; l15=1; fi
 done
-echo "leg15 conc + pkg rules by MESSAGE: refused=$n15r/50 disagree=$n15d accepted=$n15a/39"
-[ "$n15r" = 50 ] && [ "$n15a" = 39 ] || { echo "parse-check: leg15 corpus moved -- update the literals"; l15=1; }
+echo "leg15 conc + pkg rules by MESSAGE: refused=$n15r/50 disagree=$n15d accepted=$n15a/40"
+[ "$n15r" = 50 ] && [ "$n15a" = 40 ] || { echo "parse-check: leg15 corpus moved -- update the literals"; l15=1; }
 [ "$l15" = 0 ] || { echo "parse-check: a concurrency or match-arm rule moved"; rc=1; }
 
 # [5] -- the whole tree, both verdicts, split by the same site table. See the

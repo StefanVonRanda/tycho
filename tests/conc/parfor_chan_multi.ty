@@ -1,0 +1,22 @@
+# parallel for over a channel with TWO reduction variables.
+# Each worker drains the channel, accumulating a sum AND a product.
+# This exercises the multi-reduction path in _parchan: the worker returns
+# a tuple and the join loop reduces each field with its own operator.
+
+fn main():
+    ch := channel(int, 8)
+    send(ch, 1)
+    send(ch, 2)
+    send(ch, 3)
+    send(ch, 4)
+    send(ch, 5)
+    close(ch)
+
+    s := 0
+    p := 1
+    parallel for x in ch:
+        s = s + x
+        if x < 4:
+            p = p * x
+    print(str(s))
+    print(str(p))

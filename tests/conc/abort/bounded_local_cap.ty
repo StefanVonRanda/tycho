@@ -1,0 +1,6 @@
+# A push past a local's bounded capacity must trap, not silently grow.
+fn main():
+    tiny: bounded[2]int = [1]
+    push(tiny, 2)
+    push(tiny, 3)
+    println("unreachable")

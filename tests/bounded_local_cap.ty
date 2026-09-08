@@ -1,0 +1,14 @@
+# bounded[N]T as a LOCAL variable: push must trap when the capacity is exceeded.
+# This is the G9 gap: before the fix, locals with a bounded annotation silently
+# grew past their declared capacity.
+# This fixture only exercises the NON-trap path (within capacity) so it passes
+# normally; the trap path is checked by tests/conc/abort/bounded_local_cap.ty.
+
+fn main():
+    tiny: bounded[2]int = [1]
+    push(tiny, 2)
+    println("len " + str(len(tiny)))
+
+    same: bounded[4]int = [1, 2, 3]
+    push(same, 4)
+    println("same " + str(same) + " len " + str(len(same)))

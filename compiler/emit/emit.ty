@@ -60,6 +60,7 @@ struct C:
     vnames: [string]
     vtypes: [string]
     vcn: [string]
+    vcaps: [int]                       # bounded capacity per local, 0 = unbounded
     vown: [string]
     ntn: [string]
     ntu: [string]
@@ -131,7 +132,7 @@ struct C:
     dbgfile: string                    # -g: src/tychoc.c@g_line_file, empty when off
 
 fn _new() -> C:
-    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt, [], [], [], false, []string: bool, []string: bool, []int, [], [], [], "")
+    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt, [], [], [], false, []string: bool, []string: bool, []int, [], [], [], "")
 
 fn _bad(msg: string):
     die("tychoc1: " + msg)
@@ -276,7 +277,6 @@ fn _sizep_of(t: [ast.Ty]) -> string:
 # The bounded capacity of a push TARGET, when it is a field of a struct whose
 # declaration named one. A local's own `bounded[N]` annotation is not tracked
 # here.
-# gap: `xs: bounded[2]int` as a LOCAL still grows past its capacity.
 fn _cap_of_target(cs: inout C, e: ast.Expr) -> int:
     match e:
         ast.Field(l, r, f):
@@ -288,6 +288,8 @@ fn _cap_of_target(cs: inout C, e: ast.Expr) -> int:
                         if cs.sds[si].fnames[j] == f:
                             return cs.sds[si].fcaps[j]
             return 0
+        ast.Name(l, n):
+            return _vcap(&cs, n)
         _: return 0
     return 0
 
@@ -1469,6 +1471,12 @@ fn _tyo(cs: inout C, ts: [ast.Ty]) -> string:
 
 # --- local scope ------------------------------------------------------------
 
+fn _vcap(cs: inout C, n: string) -> int:
+    for i := len(cs.vnames) - 1; i >= 0; i -= 1:
+        if cs.vnames[i] == n:
+            return cs.vcaps[i]
+    return 0
+
 fn _mark(cs: inout C) -> int:
     return len(cs.vnames)
 
@@ -1477,6 +1485,7 @@ fn _restore(cs: inout C, m: int):
         pop(cs.vnames)
         pop(cs.vtypes)
         pop(cs.vcn)
+        pop(cs.vcaps)
         pop(cs.vown)
         pop(cs.vacc)
 
@@ -1488,6 +1497,7 @@ fn _push(cs: inout C, n: string, t: string) -> string:
     push(cs.vnames, n)
     push(cs.vtypes, t)
     push(cs.vcn, cn)
+    push(cs.vcaps, 0)
     push(cs.vown, _curown(&cs))
     push(cs.vacc, "")
     return cn
@@ -2848,12 +2858,14 @@ fn _lambda(cs: inout C, ps: [ast.Param], ret: [ast.Ty], body: ast.Expr) -> (stri
     sv := cs.vnames
     svt := cs.vtypes
     svc := cs.vcn
+    svcaps := cs.vcaps
     svo := cs.vown
     scr := cs.cur_ret
     sar := cs.arena
     cs.vnames = []string
     cs.vtypes = []string
     cs.vcn = []string
+    cs.vcaps = []int
     cs.vown = []string
     sas := cs.ascope
     cs.ascope = []string
@@ -2881,6 +2893,7 @@ fn _lambda(cs: inout C, ps: [ast.Param], ret: [ast.Ty], body: ast.Expr) -> (stri
     cs.vnames = sv
     cs.vtypes = svt
     cs.vcn = svc
+    cs.vcaps = svcaps
     cs.vown = svo
     cs.cur_ret = scr
     cs.arena = sar
@@ -4953,6 +4966,7 @@ fn _parfor(cs: inout C, b: [ast.Stmt], ind: string, w: [ast.Expr]) -> string:
             sv := cs.vnames
             svt := cs.vtypes
             svc := cs.vcn
+            svcaps := cs.vcaps
             svo := cs.vown
             sva := cs.vacc
             sar := cs.arena
@@ -4960,6 +4974,7 @@ fn _parfor(cs: inout C, b: [ast.Stmt], ind: string, w: [ast.Expr]) -> string:
             cs.vnames = []string
             cs.vtypes = []string
             cs.vcn = []string
+            cs.vcaps = []int
             cs.vown = []string
             cs.vacc = []string
             sas := cs.ascope
@@ -4994,6 +5009,7 @@ fn _parfor(cs: inout C, b: [ast.Stmt], ind: string, w: [ast.Expr]) -> string:
             cs.vnames = sv
             cs.vtypes = svt
             cs.vcn = svc
+            cs.vcaps = svcaps
             cs.vown = svo
             cs.vacc = sva
             cs.arena = sar
@@ -5098,6 +5114,7 @@ fn _pararr(cs: inout C, cc: string, ct: string, v: string, body: [ast.Stmt], ind
     sv := cs.vnames
     svt := cs.vtypes
     svc := cs.vcn
+    svcaps := cs.vcaps
     svo := cs.vown
     sva := cs.vacc
     sar := cs.arena
@@ -5105,6 +5122,7 @@ fn _pararr(cs: inout C, cc: string, ct: string, v: string, body: [ast.Stmt], ind
     cs.vnames = []string
     cs.vtypes = []string
     cs.vcn = []string
+    cs.vcaps = []int
     cs.vown = []string
     cs.vacc = []string
     sas := cs.ascope
@@ -5137,6 +5155,7 @@ fn _pararr(cs: inout C, cc: string, ct: string, v: string, body: [ast.Stmt], ind
     cs.vnames = sv
     cs.vtypes = svt
     cs.vcn = svc
+    cs.vcaps = svcaps
     cs.vown = svo
     cs.vacc = sva
     cs.arena = sar
@@ -5205,16 +5224,20 @@ fn _parchan(cs: inout C, l: int, v: string, coll: [ast.Expr], body: [ast.Stmt], 
     for f in free:
         if not _has(wr, f) and len(_vtype(&cs, f)) > 0:
             push(caps, f)
-    if len(wr) > 1:
-        _bad("a parallel for with more than one reduction variable -- Phase 8")
     capt := []string
     for c in caps:
         push(capt, _vtype(&cs, c))
+    rts := []string
+    for r9 in wr:
+        push(rts, _vtype(&cs, r9))
     rn := ""
     rt := "int"
     if len(wr) == 1:
         rn = wr[0]
-        rt = _vtype(&cs, rn)
+        rt = rts[0]
+    elif len(wr) > 1:
+        rn = wr[0]
+        rt = _tup_of(&cs, rts)
     id := str(len(cs.lamd))
     wnm := "h___par" + id
     sig := _ctyz(&cs, rt) + "" + wnm + "(Arena *_parent, HChan *_pch"
@@ -5224,6 +5247,7 @@ fn _parchan(cs: inout C, l: int, v: string, coll: [ast.Expr], body: [ast.Stmt], 
     sv := cs.vnames
     svt := cs.vtypes
     svc := cs.vcn
+    svcaps := cs.vcaps
     svo := cs.vown
     sva := cs.vacc
     sar := cs.arena
@@ -5231,6 +5255,7 @@ fn _parchan(cs: inout C, l: int, v: string, coll: [ast.Expr], body: [ast.Stmt], 
     cs.vnames = []string
     cs.vtypes = []string
     cs.vcn = []string
+    cs.vcaps = []int
     cs.vown = []string
     cs.vacc = []string
     sas := cs.ascope
@@ -5242,9 +5267,13 @@ fn _parchan(cs: inout C, l: int, v: string, coll: [ast.Expr], body: [ast.Stmt], 
     for i := 0; i < len(caps); i += 1:
         _push(&cs, caps[i], capt[i])
     decl := ""
-    if len(rn) > 0:
-        _push(&cs, rn, rt)
-        decl = "    " + _ctyz(&cs, rt) + "h_" + rn + " = " + _zero(&cs, rt) + ";\n"
+    for j := 0; j < len(wr); j += 1:
+        cnr := _push(&cs, wr[j], rts[j])
+        seed := _zero(&cs, rts[j])
+        if _red_op(body, wr[j]) == "*":
+            seed = "1"
+        decl = decl + "    " + _ctyz(&cs, rts[j]) + "" + cnr + " = " +
+            seed + ";\n"
     ecn := _push(&cs, v, et)
     loop := "    for (;;) {\n" +
         "        " + _ctyz(&cs, et) + "" + ecn + "; int _ssp = 0, _got = 0;\n" +
@@ -5258,13 +5287,20 @@ fn _parchan(cs: inout C, l: int, v: string, coll: [ast.Expr], body: [ast.Stmt], 
         _block(&cs, body, "        ") +
         "    }\n"
     ret := "    arena_free(&_scope); return 0;\n"
-    if len(rn) > 0:
-        ret = "    { " + _ctyz(&cs, rt) + "_r = h_" + rn + "; arena_free(&_scope); return _r; }\n"
+    if len(wr) == 1:
+        ret = "    { " + _ctyz(&cs, rt) + "_r = " + _vcname(&cs, wr[0]) +
+            "; arena_free(&_scope); return _r; }\n"
+    elif len(wr) > 1:
+        mk := "    { " + _ctyz(&cs, rt) + "_r;"
+        for j := 0; j < len(wr); j += 1:
+            mk = mk + " _r.f" + str(j) + " = " + _vcname(&cs, wr[j]) + ";"
+        ret = mk + " arena_free(&_scope); return _r; }\n"
     push(cs.lamp, sig + ";\n")
     push(cs.lamd, sig + " {\n    Arena _scope = arena_child(_parent);\n" + decl + loop + ret + "}\n")
     cs.vnames = sv
     cs.vtypes = svt
     cs.vcn = svc
+    cs.vcaps = svcaps
     cs.vown = svo
     cs.vacc = sva
     cs.arena = sar
@@ -5303,8 +5339,18 @@ fn _parchan(cs: inout C, l: int, v: string, coll: [ast.Expr], body: [ast.Stmt], 
         ind + "        tycho_task_join(_pts[_pc]);\n" +
         ind + "        " + ctt + " _pp = *(" + ctt + " *)_pts[_pc]->ret;\n" +
         ind + "        tycho_task_free(_pts[_pc]);\n"
-    if len(rn) > 0:
-        out = out + ind + "        " + _vcname(&cs, rn) + " = " + _vcname(&cs, rn) + " + _pp;\n"
+    if len(wr) == 1:
+        jo := _red_op(body, wr[0])
+        if jo != "*":
+            jo = "+"
+        out = out + ind + "        " + _vcname(&cs, rn) + " = " + _vcname(&cs, rn) + " " + jo + " _pp;\n"
+    elif len(wr) > 1:
+        for j := 0; j < len(wr); j += 1:
+            jo := _red_op(body, wr[j])
+            if jo != "*":
+                jo = "+"
+            out = out + ind + "        " + _vcname(&cs, wr[j]) + " = " +
+                _vcname(&cs, wr[j]) + " " + jo + " _pp.f" + str(j) + ";\n"
     else:
         out = out + ind + "        (void)_pp;\n"
     return out + ind + "    }\n" + ind + "}\n"
@@ -5478,6 +5524,8 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                 if len(t0) == 0:
                     t0 = "?"
                 cn0 := _push(&cs, n, t0)
+                if len(ann) > 0:
+                    cs.vcaps[len(cs.vcaps) - 1] = _capof(&cs, ann[0])
                 slot := len(cs.vnames) - 1
                 body := _stmt(&cs, parse.rewrite_tails(vv[0], "assign", n, []ast.Expr), ind)
                 if cs.vtypes[slot] == "?":
@@ -5553,6 +5601,8 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                 c = _copy(&cs, c, t, own5)
             sh := len(_vtype(&cs, n)) > 0 and _refslocal(rhs[0], n)
             cn := _push(&cs, n, t)
+            if len(ann) > 0:
+                cs.vcaps[len(cs.vcaps) - 1] = _capof(&cs, ann[0])
             if own5 == "_parent" and _heap(&cs, t):
                 cs.vown[len(cs.vown) - 1] = "_parent"
             elif _place(rhs[0]) and _heap(&cs, t):
