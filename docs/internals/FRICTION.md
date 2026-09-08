@@ -390,7 +390,7 @@ pick-up order is written out in full under "What moved this pass" below.
      the reference bounds it at **64**, so above 64 the fan-out is narrower than `ncpu()`
      reports". The old text's "uses `ncpu()` chunks" — false on both counts, the `min`
      and the cap — is gone. The compiler side is cited anchored from the spec's own
-     provenance block, `src/tychoc.c:12044@_pk > 64`, so the gate now polices it.
+     provenance block, `src/tychoc.c:12083@_pk > 64`, so the gate now polices it.
    - **`ncpu()`'s false definition is corrected**, which was the other half:
      `docs/spec/16-builtins.md:248` states outright that it is "the *requested* worker
      count, **not** the width a `parallel for` will actually use" and that "a program that
@@ -414,7 +414,7 @@ pick-up order is written out in full under "What moved this pass" below.
      on 2026-07-30; `docs/spec/13-concurrency.md:81-83` is the corrected text and no
      longer says this.)*
    - The width is now **readable from Tycho**: `ncpu()` is a registered builtin
-     (`src/tychoc.c:5786@ncpu`, lowering at `src/tychoc.c:11028@tycho_ncpu`), so a program can at least
+     (`src/tychoc.c:5825@ncpu`, lowering at `src/tychoc.c:11067@tycho_ncpu`), so a program can at least
      ask. Measured on this box: `ncpu()` → 16.
    - There was an **undocumented hard ceiling of 64 chunks** — `if (_pk < 1) _pk = 1; if
      (_pk > 64) _pk = 64;` (`src/tychoc.c:11275`, inside `src/tychoc.c@gen_parfor`) —
@@ -1469,7 +1469,7 @@ an array slice that ABORTS, the MUST NOT infer-from-return rule, and
 The entry's load-bearing sentence — "the builtins are `println`, `die` (stderr,
 then exit 1) and `exit(n)`", so "**a non-fatal warning is inexpressible**" — is
 **false, and was false when it was written**. `eprint(s)` is a builtin: registered
-at `src/tychoc.c:5781@eprint`, emitted as `tycho_eprint`, and defined as
+at `src/tychoc.c:5820@eprint`, emitted as `tycho_eprint`, and defined as
 `fputs(s, stderr)` in `runtime/tycho_rt.c@tycho_eprint`. It is specified —
 `docs/spec/16-builtins.md:74@eprint` says "Write `s`'s bytes to stderr; no
 newline, **no exit**" — and it was added on 2026-06-14 in `61fa0dc`
@@ -2845,7 +2845,7 @@ records the toll, which is one copied block per shim and is paid once.
   `grep -E '^fn .*-> \[string\]' corelib/strings/strings.ty` returned only
   `lines`. That grep cannot find it: `split(s, sep) -> [string]` is a **language
   builtin**, specified at `docs/spec/16-builtins.md:150` and registered at
-  `src/tychoc.c:5794@.name="split"`, so it is in no package at all.
+  `src/tychoc.c:5833@.name="split"`, so it is in no package at all.
   `corelib/strings/strings.ty:170` says so in a comment one line above `lines`
   — "(split(s, sep) and find(s, sub) are language builtins -- not duplicated
   here.)" — and `corelib/test/wordfreq/main.ty:22` is a word-frequency program
@@ -3922,8 +3922,8 @@ that there is no element-wise `+` for `string` elements. The message was built
 from the element type at two sites, where `arr_elem(lt)` was spelled into a
 sentence that reads as a claim about the language.
 
-**FIXED 2026-08-13, both sites** (`src/tychoc.c:7837@element-wise` and
-`src/tychoc.c:7892@element-wise`, anchored per this file's header rule). The
+**FIXED 2026-08-13, both sites** (`src/tychoc.c:7876@element-wise` and
+`src/tychoc.c:7931@element-wise`, anchored per this file's header rule). The
 false clause is gone and `+` now names the operation the caller actually wanted:
 
 ```

@@ -103,7 +103,7 @@ fn _builtins() -> [string: bool]:
 # `fn pow` is unprefixed there) and the same file compiled as a dependency is
 # not (`bignum__pow` collides with nothing). The shape-directed builtins above
 # are not in that table and do not collide.
-# src/tychoc.c:4516@shadows_builtin, copied name for name. A user fn by one of
+# src/tychoc.c:4518@shadows_builtin, copied name for name. A user fn by one of
 # these names does NOT win an unqualified call -- the builtin does -- so the
 # declaration warns and the procedure is unreachable by that name. The two
 # exclusions are deliberate there and kept here: no `eprintln` (not a builtin,

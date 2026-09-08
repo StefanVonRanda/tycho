@@ -30,7 +30,7 @@ file containing a `NUL` byte MUST be rejected — silently truncating at it woul
 compile a program the file does not contain.
 
 > Provenance: `src/tychoc.c@AT_EOL`, and the reader's refusal at
-> `src/tychoc.c:14530@memchr`; the same rule in the self-hosted
+> `src/tychoc.c:14569@memchr`; the same rule in the self-hosted
 > lexer is `compiler/lex/lex.ty@_at_eol`. Gated by `scripts/source_bytes.sh`.
 
 ## 3.2 Logical lines and `NEWLINE`
@@ -267,8 +267,8 @@ bars an uppercase spelling from every run-time binding position. They are
   > normative part.
 
 > Provenance: contextual dispatch at `src/tychoc.c:5485-5494` (top level),
-> `:3964@"const"`/`:3987@"delete"` (`const`/`delete`),
-> `:4610@"where"` (`where`), `:4581@"sink"` (`sink`), `:4226@"range"` (`range`, refusal only).
+> `:3966@"const"`/`:3989@"delete"` (`const`/`delete`),
+> `:4612@"where"` (`where`), `:4583@"sink"` (`sink`), `:4228@"range"` (`range`, refusal only).
 
 ## 3.8 Operators and punctuation
 
@@ -493,7 +493,7 @@ is a single four-byte literal and not a run-time concatenation.
 > rejection `:541-542`, its per-piece bound `:787@rn + 2 >= (int)sizeof rbuf`,`:790@rn + 1 >= (int)sizeof rbuf`,
 > its unterminated diagnostic `:794@unterminated raw string literal`; adjacent join `:2672-2695`; `const` string fold
 > `:5053-5057`; codegen pastes the escaped text into a C string literal
-> `:11440@TYCHO_LIT`; that literal's decoded length `runtime/tycho_rt.c:1466@sizeof s - 1`.
+> `:11479@TYCHO_LIT`; that literal's decoded length `runtime/tycho_rt.c:1466@sizeof s - 1`.
 > Fixtures: `tests/rawstring.ty`,
 > `tests/reject/rawstring_unterminated.ty`.
 

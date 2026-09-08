@@ -43,7 +43,7 @@ arithmetic, bitwise, unary, and backward references to earlier top-level
 constants); its rules are given in §8 and §13. Package resolution,
 visibility, and merging are specified in §28.
 
-> Provenance: `parse_package_decl` `src/tychoc.c:5253@parse_package_decl`, `parse_import_decl` `:5260@parse_import_decl`, `parse_const`
+> Provenance: `parse_package_decl` `src/tychoc.c:5255@parse_package_decl`, `parse_import_decl` `:5262@parse_import_decl`, `parse_const`
 > (`src/tychoc.c:4902-4921`).
 
 ### 4.1.1 Functions
@@ -307,14 +307,14 @@ ValueCtrl   ::= If | Match              /* value form: block branches ending in 
   unify to one type, and at least one branch MUST be non-diverging. These rules
   are given in §13/§14.
 
-> Provenance: `parse_if` (`src/tychoc.c:3482@parse_if`), `parse_match`
-> (`src/tychoc.c:3588@parse_match`, value form `src/tychoc.c:3719@parse_match`),
+> Provenance: `parse_if` (`src/tychoc.c:3484@parse_if`), `parse_match`
+> (`src/tychoc.c:3590@parse_match`, value form `src/tychoc.c:3721@parse_match`),
 > `for`/`parallel` (`src/tychoc.c:3699-3891`; the three-clause header
 > `src/tychoc.c:3743-3788`, `0..<N` `src/tychoc.c:4133-4158`, the `range`
-> refusal `src/tychoc.c:4226@"range"`), `select` (`src/tychoc.c:4046@TK_SELECT`),
-> value-control routing (`src/tychoc.c:4016@parse_value_ctrl`,
-> `src/tychoc.c:4319@parse_value_ctrl`, `src/tychoc.c:4333@parse_value_ctrl`,
-> `src/tychoc.c:4319@parse_value_ctrl`, `src/tychoc.c:4410@parse_value_ctrl`).
+> refusal `src/tychoc.c:4228@"range"`), `select` (`src/tychoc.c:4048@TK_SELECT`),
+> value-control routing (`src/tychoc.c:4018@parse_value_ctrl`,
+> `src/tychoc.c:4321@parse_value_ctrl`, `src/tychoc.c:4335@parse_value_ctrl`,
+> `src/tychoc.c:4321@parse_value_ctrl`, `src/tychoc.c:4412@parse_value_ctrl`).
 > Every ref here was bare before 2026-07-29 and therefore unchecked: a
 > `> Provenance:` block that names no path leaves `check_citations.py` with no
 > path to bind `:N` to, so the mandatory-anchor rule never fired and all eight

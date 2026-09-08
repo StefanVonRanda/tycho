@@ -143,7 +143,7 @@ fn main():
         acc = acc + i
     print(str(acc) + "\\n")
 ''',
-# `0..<N` starts at a literal 0 (src/tychoc.c:4207@i_dotlt), so the old `range(1, 8)` is
+# `0..<N` starts at a literal 0 (src/tychoc.c:4209@i_dotlt), so the old `range(1, 8)` is
 # respelled `0..<7` with the offset folded into the body. Folding, not renumbering
 # to `0..<8`: a product over a zero-based space is 0, and 0 is also what a
 # reduction that silently drains a private copy produces, so `0..<8` would make the
