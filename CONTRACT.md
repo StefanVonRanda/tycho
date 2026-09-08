@@ -99,3 +99,16 @@ python3 scripts/check_citations.py && sh scripts/check_links.sh
 Both must exit 0. These verify every `path:line` citation and every
 relative Markdown link in the repo, including any new ones added during
 the swarm.
+
+### 7.2 — tycho-make critic: PASS
+
+Re-ran 7.1 checks after G15–G18 fixes:
+- `make make-check`: green (13 MakeErr variants, 6 BuildErr variants, golden byte-identical)
+- `sh scripts/entrypoints.sh`: green (91 entry points compile, 3 warning lines matching scripts/entrypoints.warn)
+
+Revert-each (3 load-bearing, 2 improved-refusal messages):
+- Revert G15 (VariableAssign): `CC = gcc` still refused via NoColon — the specific "variable assignment is not supported" message is lost but the refusal itself is not load-bearing (NoColon catches it)
+- Revert G16 (PatternRule): `%.o: %.c` is now accepted (gap re-introduced) — parser no longer refuses pattern rules
+- Revert G17 (Phony): `.PHONY: app` is now accepted (gap re-introduced) — parser no longer refuses .PHONY declarations
+- Revert G18 (OrderOnly): `app: a | b` is now accepted (gap re-introduced) — parser no longer refuses order-only prerequisites
+- Revert G18 (Include): `include other.mk` still refused via NoColon — same pattern as VariableAssign

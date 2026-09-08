@@ -50,7 +50,7 @@
   - Verify: fixture per refusal; re-record cannot bless a dropped edge; iterate up to 3 times, unticked on failure
   - Gates: `make make-check`, `sh scripts/entrypoints.sh`
   - Not: `make test`, `make ci`
-- [ ] 7.2 critic tycho-make — files: CONTRACT.md — done when: re-ran 7.1 checks; PASS or numbered failures with file:line
+- [x] 7.2 critic tycho-make — files: CONTRACT.md — done when: re-ran 7.1 checks; PASS or numbered failures with file:line
 
 ## Integration
 
