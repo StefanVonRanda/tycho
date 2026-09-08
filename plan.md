@@ -20,7 +20,7 @@
   - Verify: fixture per sub-gap; revert-each reddens; iterate up to 3 times, unticked on failure
   - Gates: `make parse-check`, `make test`
   - Not: `make ci`
-- [ ] 2.2 critic parse — files: CONTRACT.md — done when: re-ran 2.1 checks; PASS or numbered failures with file:line
+- [x] 2.2 critic parse — files: CONTRACT.md — done when: re-ran 2.1 checks; PASS or numbered failures with file:line
 - [ ] 3.1 driver flags + resolve hint — files: compiler/driver/driver.ty, compiler/types/resolve.ty — done when: spaced path builds; hint present on resolve path
   - Scope: `compiler/driver/driver.ty:168`, `compiler/types/resolve.ty:893`
   - Verify: path-with-space build; hint diagnostic output; iterate up to 3 times, unticked on failure

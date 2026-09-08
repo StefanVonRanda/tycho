@@ -41,6 +41,13 @@ Revert-each (both confirmed load-bearing):
 - Revert G9 (remove `ast.Name` case in `_cap_of_target`, remove vcaps population in `_stmt`): abort fixture silently grows, prints `unreachable` exit 0 — gap re-introduced
 - Revert G10 (replace `_parchan` with pre-fix): multi fixture refused by name (`a parallel for with more than one reduction variable -- Phase 8`) exit 1 — gap re-introduced
 
+### 2.2 — parse critic: PASS
+
+Re-ran 2.1 checks after G5, G6, G7 fixes:
+- `make parse-check`: all green — leg4c multi-error recovery: errors=2 (>=2); leg4d parse-only file path in diagnostics: shown=yes
+- `make test`: 1035 passed, 0 failed
+- `tests/generic_typeset.ty` covers G7 where-clause path
+
 ## Done-when check
 
 ```sh
