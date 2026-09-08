@@ -23,11 +23,11 @@
 | G1 | `src/tychoc.c:2662` | Sibling-import check sees only files parsed before current file |
 | G2 | `src/tychoc.c:5367` | Import-used marking not file-scoped; dead import missed when sibling uses same package |
 | G3 | `src/tychoc.c:5852` | One diagnostic self-check has no gate; regression to spelling test invisible |
-| G4 | `compiler/driver/driver.ty:168` | Flags split on spaces; path with space breaks |
+| G4 | `compiler/driver/driver.ty:168` | CLOSED: build uses shell command string; paths with spaces survive |
 | G5 | `compiler/parse/parse.ty:25` | CLOSED: recovery extended to where-on-non-generic, missing ':', missing newline after ':' |
 | G6 | `compiler/parse/parse.ty:120` | PARTIAL: compile path and parse-only path covered; emit f-string holes still uncovered |
 | G7 | `compiler/parse/parse.ty:1959` | CLOSED: _spanttxt skips whitespace tokens (defensive; spaces are not tokens in Tycho) |
-| G8 | `compiler/types/resolve.ty:893` | Corelib hint missing for one resolve path (names `src/tychoc.c:6077`) |
+| G8 | `compiler/types/resolve.ty:893` | CLOSED: corelib_hint scans corelib .ty files at runtime; test passes |
 | G9 | `compiler/emit/emit.ty:279` | Local bounded annotation not tracked; over-capacity push grows |
 | G10 | `compiler/emit/emit.ty:4869` | Two or more reductions need tuple return; single reduction only |
 | G11 | `corelib/os/os_shim.c:225` | Batch files not refused |

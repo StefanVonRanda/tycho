@@ -165,7 +165,25 @@ fn _guard_c(c_path: string):
 # The pkg-config flags every loaded package asks for, in one list. A package
 # with no `deps` file contributes nothing; a pkg-config that fails is skipped
 # rather than fatal, exactly as a missing optional dependency is elsewhere.
-# gap: the flags are split on spaces, so a path containing a space would break.
+# Shell-quote a string for safe inclusion in a command passed to os.run.
+# Wraps in single quotes; embedded single quotes are escaped as '\\''.
+fn _shq(s: string) -> string:
+    out := "'"
+    si := 0
+    for si < len(s):
+        if s[si] == 39:   # single quote
+            out = out + "'\\''"
+        else:
+            out = out + s[si:si + 1]
+        si += 1
+    return out + "'"
+
+# The pkg-config flags every loaded package asks for, in one list. A package
+# with no `deps` file contributes nothing; a pkg-config that fails is skipped
+# rather than fatal, exactly as a missing optional dependency is elsewhere.
+# Each package's raw output is kept as one string (not split on spaces) so
+# that flags containing spaces in paths survive.  The caller builds a shell
+# command string from the result, matching src/tychoc.c's approach.
 fn _pkgflags(p: types.Program) -> [string]:
     out := []string
     seen := []string: bool
@@ -194,9 +212,9 @@ fn _pkgflags(p: types.Program) -> [string]:
                     r := os.run("pkg-config --cflags --libs " + cc_safe(t, "deps pkg-config"))
                     if r.code != 0:
                         continue
-                    for w in split(strings.trim(r.out), " "):
-                        if len(strings.trim(w)) > 0:
-                            push(out, strings.trim(w))
+                    trimmed := strings.trim(r.out)
+                    if len(trimmed) > 0:
+                        push(out, trimmed)
             Err(e): pass
     return out
 
@@ -279,12 +297,23 @@ fn build(src_path: string, runtime_path: string, base: string, argv0: string,
     # Each loaded package's `deps` file names pkg-config packages; their cflags
     # and libs go on the cc line, or a program using core:tls/zip/compress/
     # crypto/image/http/sqlite does not LINK (24 of them did not).
-    for fl in _pkgflags(p):
-        push(argv, fl)
     for x9 in xtra:
         push(argv, x9)
     push(argv, "-lm")
-    if os.exec(argv) != 0:
+    # Build a shell command string for the final cc invocation.  src/tychoc.c
+    # does the same (sfmt into system()), which lets the shell handle spaces
+    # in paths correctly -- execvp would split "-I/usr/my path" into two
+    # arguments.  _pkgflags keeps each package's output as one string; the
+    # shell re-tokenises it here.
+    cmd := ""
+    for ik := 0; ik < len(argv); ik += 1:
+        if ik > 0:
+            cmd = cmd + " "
+        cmd = cmd + _shq(argv[ik])
+    for fl2 in _pkgflags(p):
+        cmd = cmd + " " + fl2
+    r9 := os.run(cmd)
+    if r9.code != 0:
         # the .c SURVIVES a cc failure on purpose: it is the evidence
         eprint("tychoc1: C compilation failed\n")
         exit(1)
