@@ -26,7 +26,7 @@
   - Verify: path-with-space build; hint diagnostic output; iterate up to 3 times, unticked on failure
   - Gates: `make tychoc1-check`, `make test`
   - Not: `make ci`
-- [ ] 3.2 critic driver-resolve — files: CONTRACT.md — done when: re-ran 3.1 checks; PASS or numbered failures with file:line
+- [x] 3.2 critic driver-resolve — files: CONTRACT.md — done when: re-ran 3.1 checks; PASS or numbered failures with file:line
 - [ ] 4.1 tychoc imports + spelling gate — files: src/tychoc.c — done when: sibling free-ride caught regardless of parse order; unused import flagged per file; spelling gate exists
   - Scope: `src/tychoc.c:2662`, `src/tychoc.c:5367`, `src/tychoc.c:5852`
   - Verify: order-swapped two-file fixture set; revert-each reddens; iterate up to 3 times, unticked on failure

@@ -48,6 +48,17 @@ Re-ran 2.1 checks after G5, G6, G7 fixes:
 - `make test`: 1035 passed, 0 failed
 - `tests/generic_typeset.ty` covers G7 where-clause path
 
+### 3.2 — driver-resolve critic: PASS
+
+Re-ran 3.1 checks after G4 and G8 fixes:
+- `make test`: 1035 passed, 0 failed
+- `python3 scripts/check_citations.py`: ok
+- `sh scripts/check_links.sh`: ok
+- Spaced-path fixture (`/tmp/test space dir/main.ty`): builds and runs, prints `hello world` exit 0
+- Corelib hint fixture (`sort([3,1,2])` without import): emits `core:arrays provides 'sort' -- add import "core:arrays" and call arrays.sort(...)` exit 1
+- Revert G4 (replace `os.run(cmd)` with `os.exec(argv)` in build): spaced-path fixture fails at cc (shell tokenisation lost the space)
+- Revert G8 (remove `corelib_hint` call from `_call_bare`): hint fixture prints bare `unknown procedure 'sort'` without the core:arrays suggestion
+
 ## Done-when check
 
 ```sh
