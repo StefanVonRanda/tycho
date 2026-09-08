@@ -55,6 +55,39 @@ if [ -f "$QC" ]; then
     esac
 fi
 
+BC=corelib/os/os_batch_check.c
+if [ -f "$BC" ]; then
+    case "$(uname -s)" in
+        *MSYS*|*MINGW*|*CYGWIN*|*Windows*)
+            echo "skip $BC (already scored by os_argv_quotecheck + os_shim.c)"
+            skipped=$((skipped + 1))
+            ;;
+        *)
+            bc_bin="${TMPDIR:-/tmp}/os_batch_check"
+            bc_cc=""; bc_rc=0
+            bc_cc="$($CC -std=c11 -Wall -Wextra -o "$bc_bin" "$BC" 2>&1)" || bc_rc=$?
+            if [ "$bc_rc" -ne 0 ]; then
+                echo "FAIL $BC"
+                echo "$bc_cc" | sed 's/^/       /'
+                fail=$((fail + 1))
+            else
+                bc_run=""; bc_rrc=0
+                bc_run="$($bc_bin 2>&1)" || bc_rrc=$?
+                if [ "$bc_rrc" -ne 0 ]; then
+                    echo "FAIL $BC"
+                    echo "$bc_cc" | sed 's/^/       /'
+                    echo "$bc_run" | sed 's/^/       /'
+                    fail=$((fail + 1))
+                else
+                    echo "ok   $BC (osx_is_batch suffix logic scored natively)"
+                    echo "       $bc_run"
+                    ok=$((ok + 1))
+                fi
+            fi
+            ;;
+    esac
+fi
+
 # [extern] A package's native dependency does not have to arrive through a shim:
 # core:sqlite binds libsqlite3 with `extern "sqlite3"` and has no shim at all, so
 # the loop above cannot see it. Every `extern "<lib>"` name in corelib must be

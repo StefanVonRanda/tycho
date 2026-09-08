@@ -76,7 +76,7 @@
   - Verify: fixture refused with the VariableAssign message; revert-each reddens; iterate up to 3 times, unticked on failure
   - Gates: `make make-check`, `sh scripts/entrypoints.sh`
   - Not: `make test`, `make ci`
-- [ ] 9.4 batch-refusal host gate — files: corelib/os/os_shim.c — done when: `corelib/os/os_shim.c:302` suffix logic scored natively (pure C, no Win32 API) with revert-each reddening
+- [x] 9.4 batch-refusal host gate — files: corelib/os/os_shim.c — done when: `corelib/os/os_shim.c:302` suffix logic scored natively (pure C, no Win32 API) with revert-each reddening
   - Scope: `corelib/os/os_shim.c:302`
   - Verify: host-side unit gate over the helper; revert-each reddens; iterate up to 3 times, unticked on failure
   - Gates: `make shim-check`, `make corelib`
