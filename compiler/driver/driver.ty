@@ -375,7 +375,7 @@ fn dump_tokens(src_path: string):
     match io.read_text(src_path):
         Ok(s): src = s
         Err(e): die("tychoc1: cannot read '" + src_path + "'")
-    toks := lex.tokenize(src)
+    toks, _ := lex.tokenize_file(src, false, src_path)
     out := ""
     for k := 0; k < len(toks); k += 1:
         t := toks[k]
@@ -390,7 +390,7 @@ fn dump_dnotes(src_path: string):
         Ok(s): src = s
         Err(e): die("tychoc1: cannot read '" + src_path + "'")
     notes := lex.dnotes(src)
-    toks := lex.tokenize(src)
+    toks, _ := lex.tokenize_file(src, false, src_path)
     out := ""
     for k := 0; k < len(notes); k += 1:
         out = out + str(notes[k].line) + " deprecated: " + notes[k].msg + "\n"
@@ -420,7 +420,7 @@ fn roundtrip(src_path: string):
     match io.read_text(src_path):
         Ok(s): src = s
         Err(e): die("tychoc1: cannot read '" + src_path + "'")
-    toks := lex.tokenize_ex(src, true)
+    toks, _ := lex.tokenize_file(src, true, src_path)
     joined := ""
     for k := 0; k < len(toks); k += 1:
         joined = joined + toks[k].raw
@@ -447,12 +447,12 @@ fn _read(src_path: string) -> string:
     return ""
 
 fn parse_only(src_path: string):
-    toks, notes := lex.tokenize_all(_read(src_path), false)
+    toks, notes := lex.tokenize_file(_read(src_path), false, src_path)
     u := parse.unit(toks, notes)
     print("PARSE-OK " + str(len(u.fns)) + "\n")
 
 fn parse_census(src_path: string):
-    toks, notes := lex.tokenize_all(_read(src_path), false)
+    toks, notes := lex.tokenize_file(_read(src_path), false, src_path)
     u := parse.unit(toks, notes)
     ks := ast.census(u)
     counts := []string: int

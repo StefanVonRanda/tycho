@@ -15,7 +15,7 @@
   - Gates: `make parse-check`, `make tychoc1-check`, `make test`
   - Not: `make ci`
 - [x] 1.2 critic emit — files: CONTRACT.md — done when: re-ran 1.1 checks; PASS or numbered failures with file:line
-- [ ] 2.1 parse recovery trio — files: compiler/parse/parse.ty — done when: all three sub-gaps closed or split with a failing gate each
+- [x] 2.1 parse recovery trio — files: compiler/parse/parse.ty — done when: all three sub-gaps closed or split with a failing gate each
   - Scope: `compiler/parse/parse.ty:25`, `compiler/parse/parse.ty:120`, `compiler/parse/parse.ty:1959`
   - Verify: fixture per sub-gap; revert-each reddens; iterate up to 3 times, unticked on failure
   - Gates: `make parse-check`, `make test`

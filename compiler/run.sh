@@ -403,6 +403,48 @@ else echo "  R3-OK-REFUSED :: $("$TYCHOC1" "$T/p/r3_ok/main.ty" --resolve 2>&1 |
 echo "leg4b package-member wording: passed=$n4b/3 (field format, call format, accepting twin)"
 [ "$l4b" = 0 ] || { echo "parse-check: the two package-member formats collapsed into one"; rc=1; }
 
+# [4c] -- MULTI-ERROR RECOVERY. A file with two malformed declarations must
+# report BOTH errors. Before the recovery extension, only the first error was
+# reported because all other parse errors called die() immediately. Recovery
+# now covers: where-on-non-generic, missing ':', missing newline after ':'.
+mkdir -p "$T/r"
+cat > "$T/r/multi_err.ty" <<'EOF'
+fn bad_where() where numeric(T):
+    pass
+fn bad_missing_colon() -> int
+    pass
+fn main():
+    pass
+EOF
+multi_out=$("$TYCHOC1" "$T/r/multi_err.ty" --parse 2>&1 || true)
+n_multi=$(echo "$multi_out" | grep -c 'error:')
+if [ "$n_multi" -lt 2 ]; then
+    echo "  MULTI-ERROR-RECOVERY $n_multi errors (expected >=2)"
+    echo "$multi_out" | head -5
+    l4c=1
+else
+    l4c=0
+fi
+echo "leg4c multi-error recovery: errors=$n_multi (expected >=2)"
+[ "$l4c" = 0 ] || { echo "parse-check: multi-error recovery broken"; rc=1; }
+
+# [4d] -- PARSE-ONLY DIAGNOSTIC FILE PATH. The --parse path must include the
+# source file in error diagnostics (not the bare `tychoc1: line N:` form).
+# Before the fix, driver.ty used tokenize_all (no file) instead of tokenize_file.
+cat > "$T/r/filepath_err.ty" <<'EOF'
+fn f() -> :
+    pass
+EOF
+fp_out=$("$TYCHOC1" "$T/r/filepath_err.ty" --parse 2>&1 || true)
+if echo "$fp_out" | grep -q "$T/r/filepath_err.ty:"; then
+    l4d=0
+else
+    echo "  FILEPATH-DIAG-NOT-SHOWN :: $fp_out"
+    l4d=1
+fi
+echo "leg4d parse-only file path in diagnostics: shown=$( [ $l4d = 0 ] && echo yes || echo no )"
+[ "$l4d" = 0 ] || { echo "parse-check: parse-only path lost file info in diagnostics"; rc=1; }
+
 # [13] -- THE AFFINE RULES, ONE PROBE EACH, EVERY REFUSAL PAIRED WITH AN
 # ACCEPTING TWIN. This leg is written this way because a checker that refuses
 # EVERYTHING scores identically to a correct one on tests/reject/: leg2c cannot

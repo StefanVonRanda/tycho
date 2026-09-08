@@ -22,8 +22,9 @@ import "../lex"
 # is carried instead: the shapes that can be recognised WITHOUT parsing further
 # record their message here, `func` returns immediately, and `unit` resyncs to
 # the next declaration.
-# gap: only a malformed RETURN TYPE recovers. Any other parse error is still
-# fatal at the first one, so a second error later in the file is not reported.
+# Recovery now covers: malformed return type, `where` on a non-generic function,
+# missing `:` after the signature, and missing newline after `:`. Other parse
+# errors in the function body still call `die()`.
 struct PS:
     errs: [string]
     failed: bool
@@ -118,8 +119,9 @@ fn _isid(toks: [lex.Tok], i: int, s: string) -> bool:
 # every token until 2026-08-26 and cost a string copy per token for this one cold
 # read. `toks` was already in scope at all 73 _die sites.
 # gap: a token lexed through tokenize()/tokenize_ex() carries no file, so those
-# paths still print the bare `tychoc1: line N:` form. Only the compile path,
-# which goes through lex.tokenize_file, is covered.
+# paths still print the bare `tychoc1: line N:` form. The compile path
+# (tokenize_file) and the parse-only path (driver.ty) are covered; emit's
+# f-string hole calls remain uncovered because the file is not in scope.
 fn _where(toks: [lex.Tok], t: lex.Tok, msg: string, caret: bool) -> string:
     fl := lex.file_of(toks)
     if len(fl) == 0:
@@ -1956,12 +1958,18 @@ fn _has_name(xs: [string], s: string) -> bool:
 # The source text of the token span [a, b), joined tight -- a `where` type set
 # is compared against a rendered type, and every set element in the corpus is a
 # plain name.
-# gap: a spaced spelling like `[string: int]` renders with the space and would
-# not match this.
+# Whitespace tokens are skipped: a `where` type set is compared against a
+# rendered type, and every set element in the corpus is a plain name. A spaced
+# spelling like `[string: int]` must render as `[string:int]` so the comparison
+# works regardless of source formatting.
 fn _spanttxt(toks: [lex.Tok], a: int, b: int) -> string:
     out := ""
     for k := a; k < b; k += 1:
-        out = out + lex.spell(_at(toks, k))
+        tk := _at(toks, k)
+        if tk.k == lex.K_NEWLINE or tk.k == lex.K_INDENT or tk.k == lex.K_DEDENT or
+                tk.k == lex.K_COMMENT:
+            continue
+        out = out + lex.spell(tk)
     return out
 
 fn _wheres(toks: [lex.Tok], i0: int, tps: [string]) -> ([string], int):
@@ -2112,11 +2120,32 @@ fn _func_into(ps0: inout PS, toks: [lex.Tok], i0: int, notes: [lex.DNote], out: 
     wh := []string
     if _isid(toks, i, "where"):
         if len(tps) == 0 and len(szs) == 0:
-            _die(toks, _at(toks, i), "`where` constraints require a generic function (one with a `$T` parameter)")
+            # RECORDED, not fatal: the declaration is abandoned and `unit`
+            # resyncs, so a second malformed declaration is reported too.
+            push(ps0.errs, _where(toks, _at(toks, i),
+                "`where` constraints require a generic function (one with a `$T` parameter)", false))
+            ps0.failed = true
+            out = ast.Fn(nm, ps, ret, []string, []string, []ast.Stmt, false, "", dn,
+                _at(toks, i0).line)
+            return i
         w, m := _wheres(toks, i, tps)
         wh = w
         i = m
+    if not _isop(toks, i, lex.OP_COLON):
+        push(ps0.errs, _where(toks, _at(toks, i),
+            "expected ':' after the function signature", false))
+        ps0.failed = true
+        out = ast.Fn(nm, ps, ret, tps, wh, []ast.Stmt, false, "", dn,
+            _at(toks, i0).line)
+        return i
     i = _op(toks, i, lex.OP_COLON)
+    if not _kis(toks, i, lex.K_NEWLINE):
+        push(ps0.errs, _where(toks, _at(toks, i),
+            "expected a newline after ':'", false))
+        ps0.failed = true
+        out = ast.Fn(nm, ps, ret, tps, wh, []ast.Stmt, false, "", dn,
+            _at(toks, i0).line)
+        return i
     i = _expect(toks, i, lex.K_NEWLINE, "")
     out = ast.Fn(nm, ps, ret, tps, wh, []ast.Stmt, false, "", dn, _ln(toks, i0))
     return block_into(toks, i, &out.body)
