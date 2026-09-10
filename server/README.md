@@ -412,7 +412,7 @@ curl -s  http://127.0.0.1:8080/img/logo.png | cmp - server/www/img/logo.png
 curl -so /dev/null -w '%{http_code}\n' --path-as-is \
      http://127.0.0.1:8080/../../etc/passwd            # 403
 curl -sv http://127.0.0.1:8080/ http://127.0.0.1:8080/style.css 2>&1 \
-  | grep -i reusing                                    # one connection, two assets
+  | grep -iE 're-?using'                               # one connection, two assets
 ```
 
 That backgrounded server is yours to kill — unlike `server/run.sh`, this

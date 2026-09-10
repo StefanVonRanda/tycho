@@ -1,5 +1,6 @@
 set -u
 cd "$(dirname "$0")/../.." || exit 2
+. ./scripts/shlib.sh          # `timeout` is not in the macOS base system
 TYCHOC="${TYCHOC:-./tychoc1}"
 [ -x "$TYCHOC" ] || { echo "no ./tychoc -- run 'make' first"; exit 2; }
 pkg-config --exists sqlite3 2>/dev/null || { echo "tally-check: SKIPPED (missing: sqlite3)"; exit 0; }

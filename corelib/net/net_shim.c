@@ -304,19 +304,40 @@ static int ty_set_nonblocking(int fd, int on) {
 #endif
 }
 
+/* Serialises the toggle-accept-restore window below. O_NONBLOCK lives on the
+ * shared open file description, not on the caller, so two threads waiting on
+ * ONE listener can interleave: A wins the connection and restores blocking
+ * mode while B sits between its poll() and its accept(), and B's accept() then
+ * blocks forever on a listener with nothing pending. That is not theoretical --
+ * a 4-worker tycho-httpd hung on SIGTERM about 1 run in 8 (macOS 15, arm64),
+ * with the stuck worker parked in __accept, because a shutdown cannot be
+ * noticed by a thread inside a blocking accept.
+ * ponytail: one lock for every listener in the process. accept() under it is a
+ * syscall on an already-ready descriptor, so the hold is short; make it a
+ * per-fd lock table if a process ever serves many busy listeners at once. */
+#ifdef _WIN32
+static SRWLOCK ty_accept_lk = SRWLOCK_INIT;
+#define TY_ACCEPT_LOCK()   AcquireSRWLockExclusive(&ty_accept_lk)
+#define TY_ACCEPT_UNLOCK() ReleaseSRWLockExclusive(&ty_accept_lk)
+#else
+#include <pthread.h>
+static pthread_mutex_t ty_accept_mu = PTHREAD_MUTEX_INITIALIZER;
+#define TY_ACCEPT_LOCK()   (void)pthread_mutex_lock(&ty_accept_mu)
+#define TY_ACCEPT_UNLOCK() (void)pthread_mutex_unlock(&ty_accept_mu)
+#endif
+
 /* Wait up to `ms` for a connection, then accept it. The listener is put into
  * non-blocking mode only for the accept and put BACK on every exit path: leaving
  * it non-blocking made a later plain `net.accept` on the same listener return
  * EAGAIN at once instead of waiting. poll() replaces select() because select's
  * fd_set cannot represent a descriptor at or above FD_SETSIZE (1024) at all, so
- * a busy process could not use this call. */
+ * a busy process could not use this call.
+ *
+ * The wait happens BEFORE the lock and outside it: poll() does not care about
+ * O_NONBLOCK, so nothing is gained by toggling first, and holding a lock across
+ * a `ms`-long wait would serialise the workers instead of the flag. */
 tycho_int netx_accept_wait(tycho_int fd, tycho_int ms) {
     if (fd < 0 || ms < 0 || ms > INT_MAX) return -1;
-#ifndef _WIN32
-    int was_flags = fcntl((int)fd, F_GETFL, 0);
-    if (was_flags < 0) return -1;
-#endif
-    if (!ty_set_nonblocking((int)fd, 1)) return -1;
 #ifdef _WIN32
     fd_set ready;
     FD_ZERO(&ready);
@@ -331,9 +352,16 @@ tycho_int netx_accept_wait(tycho_int fd, tycho_int ms) {
     int selected;
     do { selected = poll(&pfd, 1, (int)ms); } while (selected < 0 && errno == EINTR);
 #endif
+    if (selected == 0) return -2;
+    if (selected < 0)  return -1;
+
     tycho_int rc;
-    if (selected == 0) { rc = -2; goto done; }
-    if (selected < 0)  { rc = -1; goto done; }
+    TY_ACCEPT_LOCK();
+#ifndef _WIN32
+    int was_flags = fcntl((int)fd, F_GETFL, 0);
+    if (was_flags < 0) { rc = -1; goto unlock; }
+#endif
+    if (!ty_set_nonblocking((int)fd, 1)) { rc = -1; goto unlock; }
     rc = netx_accept(fd);
     if (rc < 0) {
 #ifndef _WIN32
@@ -351,6 +379,8 @@ done:
 #else
     (void)ty_set_nonblocking((int)fd, 0);
 #endif
+unlock:
+    TY_ACCEPT_UNLOCK();
     return rc;
 }
 

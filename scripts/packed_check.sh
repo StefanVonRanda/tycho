@@ -23,7 +23,7 @@ sizes() {   # $1 = emitted .c   $2 = "strip" to delete the attribute (control)
     awk '/^struct S_(Ins|Loose)_ \{/,/^\}.*;$/' "$1" > "$D/defs.c"
     [ -s "$D/defs.c" ] || fail "no struct definitions found in $1"
     if [ "$2" = strip ]; then
-        sed -i 's/ __attribute__((packed))//' "$D/defs.c"
+        sed 's/ __attribute__((packed))//' "$D/defs.c" > "$D/defs.tmp" && mv "$D/defs.tmp" "$D/defs.c"
         ! grep -q '__attribute__((packed))' "$D/defs.c" || fail "control: the attribute survived the strip"
     fi
     {   echo '#include <stdio.h>'

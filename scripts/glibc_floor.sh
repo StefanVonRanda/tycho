@@ -33,6 +33,25 @@ above_floor() {
 command -v objdump >/dev/null 2>&1 && command -v nm >/dev/null 2>&1 || {
     echo "glibc-check: SKIP (no objdump/nm on this host -- nothing can read symbol versions)"; exit 0; }
 
+# ...and the host must actually BE a glibc host. Symbol versioning is an ELF +
+# glibc mechanism: on macOS the tools are all present, `nm -D` prints Mach-O
+# symbols with no @GLIBC_ suffix on any of them, and the selfcheck's dirty
+# control therefore comes back unflagged -- reported as "CONTROL DEAD", which
+# reads as "the scanner broke" when the truth is "this question does not exist
+# here". Ask the toolchain rather than uname: a program that calls into libc
+# either carries versioned GLIBC_ symbols or it does not.
+has_glibc_symbols() {
+    _hg=$(mktemp -d) || return 1
+    printf '#include <stdio.h>\nint main(void){printf("x");return 0;}\n' > "$_hg/probe.c"
+    if "$CC" -o "$_hg/probe" "$_hg/probe.c" 2>/dev/null &&
+       nm -D --undefined-only "$_hg/probe" 2>/dev/null | grep -q '@GLIBC_'; then
+        rm -rf "$_hg"; return 0
+    fi
+    rm -rf "$_hg"; return 1
+}
+has_glibc_symbols || {
+    echo "glibc-check: SKIP ($(uname -s) is not a glibc host -- no symbol carries an @GLIBC_ version, so there is no floor to read)"; exit 0; }
+
 # --selfcheck: prove the two scanners can FIRE, on a pair that must disagree.
 # A grep that silently stopped matching is indistinguishable from a clean tree.
 if [ "${1-}" = "--selfcheck" ]; then

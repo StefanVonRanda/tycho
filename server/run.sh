@@ -893,6 +893,19 @@ else
     tail -n 3 "$T/busy.err" | sed 's/^/      /'
 fi
 
+# REPEATED, and that is the point. One pass of this leg passed roughly seven
+# times in eight while `netx_accept_wait` still had its accept race
+# (corelib/net/net_shim.c): the worker that lost the race to another worker
+# blocked in accept() forever and never saw the SIGTERM. A single pass could
+# not tell a fixed server from a lucky one. At 20 a 1-in-8 hang shows up better
+# than 19 runs in 20. Nothing inside is indented -- the `PY` heredocs below
+# close on a column-0 terminator and hold Python whose own indentation is load
+# bearing, so the loop is opened and closed around the block as it stands.
+PARKREPS=20
+parkfail=0
+parkrep=0
+while [ "$parkrep" -lt "$PARKREPS" ] && [ "$parkfail" -eq 0 ]; do
+parkrep=$((parkrep + 1))
 respawn "$T/parked.err" 8000
 # Four connections that each complete ONE request, read the answer, and then go
 # quiet -- which is precisely what leaves all four workers parked in the next
@@ -930,12 +943,13 @@ wait "$WD" 2>/dev/null
 kill "$PARK" 2>/dev/null
 wait "$PARK" 2>/dev/null
 SRV=""
-if [ "$rc" -eq 0 ] && grep -q '^tycho-httpd: stopped after [0-9]' "$T/parked.err"; then
-    echo "  ok   SIGTERM with 4 parked keep-alive readers: exit 0 inside the ${PARKWD}s watchdog (idle is 8s)"
-else
-    echo "  FAIL SIGTERM with parked readers: wait status $rc, want 0 (watchdog was ${PARKWD}s)"; fail=1
+if [ "$rc" -ne 0 ] || ! grep -q '^tycho-httpd: stopped after [0-9]' "$T/parked.err"; then
+    parkfail=1
+    echo "  FAIL SIGTERM with parked readers: wait status $rc on pass $parkrep of $PARKREPS, want 0 (watchdog was ${PARKWD}s)"; fail=1
     tail -n 3 "$T/parked.err" | sed 's/^/      /'
 fi
+done
+[ "$parkfail" -eq 0 ] && echo "  ok   SIGTERM with 4 parked keep-alive readers: exit 0 inside the ${PARKWD}s watchdog on all $PARKREPS passes (idle is 8s)"
 
 
 # ---- the command line -------------------------------------------------------

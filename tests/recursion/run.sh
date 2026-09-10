@@ -15,7 +15,15 @@ if command -v timeout >/dev/null 2>&1 && timeout --version >/dev/null 2>&1; then
 elif command -v gtimeout >/dev/null 2>&1; then TO="gtimeout $TMO"
 else TO=""; fi
 if ( ulimit -v "$LIMV" ) 2>/dev/null; then AS_CAP="ulimit -v $LIMV"; else AS_CAP=":"; fi
-run() { ( ulimit -t "$TMO" 2>/dev/null; $AS_CAP; $TO "$@" ); }
+# PIN THE STACK. The depths below were chosen against a shell's 8MB, and what
+# rejects them is the runtime's SIGSEGV guard, not a depth rule -- so the
+# verdict moved with whatever RLIMIT_STACK the caller happened to have. GNU make
+# raises it to the hard maximum (64MB on macOS), which is why `make recursion`
+# reported paren-nest ACCEPTED while `sh tests/recursion/run.sh` rejected it,
+# same binary, same fixture, same minute.
+LIMS=8192      # KiB
+if ( ulimit -s "$LIMS" ) 2>/dev/null; then S_CAP="ulimit -s $LIMS"; else S_CAP=":"; fi
+run() { ( ulimit -t "$TMO" 2>/dev/null; $S_CAP; $AS_CAP; $TO "$@" ); }
 
 py() { python3 - "$@"; }
 

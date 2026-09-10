@@ -81,12 +81,17 @@ rc=0
 # Corpus sizes, asserted first: a leg that scores 0 of 0 is green by accident,
 # and a new tests/reject/ fixture must force a reclassification rather than
 # being silently absent from the split.
-n_acc=$(ls tests/*.ty | wc -l)
-n_lib=$(find corelib -name '*.ty' | wc -l)
-n_rej=$(ls tests/reject/*.ty | wc -l)
-n_tsv=$(wc -l < "$TSV")
-n_new=$(find tools examples server bench -name '*.ty' | wc -l)
-[ "$n_acc" = 288 ] || { echo "parse-check: tests/*.ty is $n_acc, expected 288"; rc=1; }   # +1 each: tests/packed_struct.ty (V2), tests/vector_type.ty (V3), tests/fixarr_iter.ty (V3a), tests/generic_recur_same.ty, tests/align_struct.ty (L1), tests/multi_assign.ty (L2), tests/swizzle.ty (L3), tests/vector_map_key.ty (composite map keys), tests/lane_names.ty (L4)
+# `tr -d ' '` on every one: BSD wc pads its count with leading spaces, so on a
+# macOS host these string compares read "     287" != "287" and set rc=1 while
+# printing "tests/*.ty is      287, expected 287" -- a failure whose own message
+# says the two numbers agree. parse-check was red here before any change in this
+# tree, and the three census legs below hid it.
+n_acc=$(ls tests/*.ty | wc -l | tr -d ' ')
+n_lib=$(find corelib -name '*.ty' | wc -l | tr -d ' ')
+n_rej=$(ls tests/reject/*.ty | wc -l | tr -d ' ')
+n_tsv=$(wc -l < "$TSV" | tr -d ' ')
+n_new=$(find tools examples server bench -name '*.ty' | wc -l | tr -d ' ')
+[ "$n_acc" = 288 ] || { echo "parse-check: tests/*.ty is $n_acc, expected 288"; rc=1; }   # +1 each: tests/packed_struct.ty (V2), tests/vector_type.ty (V3), tests/fixarr_iter.ty (V3a), tests/generic_recur_same.ty, tests/align_struct.ty (L1), tests/multi_assign.ty (L2), tests/swizzle.ty (L3), tests/vector_map_key.ty (composite map keys), tests/lane_names.ty (L4), tests/bounded_local_cap.ty (G9)
 [ "$n_lib" = 91 ]  || { echo "parse-check: corelib/**.ty is $n_lib, expected 91"; rc=1; }
 [ "$n_new" = 178 ] || { echo "parse-check: tools+examples+server+bench .ty is $n_new, expected 178"; rc=1; }   # -1: tools/tycho-rsa/ removed in 0888bf28, which left this literal at 179 and the lane red
 [ "$n_rej" = "$n_tsv" ] || { echo "parse-check: $n_rej reject fixtures but $n_tsv classified rows -- rerun scripts/classify_rejects.py"; rc=1; }

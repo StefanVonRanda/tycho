@@ -332,7 +332,11 @@ before() {
 }
 before zeta.o app
 before alpha.o app
-[ "$(wc -l < "$W/trace")" = 4 ] || bad "trace has $(wc -l < "$W/trace") lines, expected 4 recipes to have run"
+# `tr -d ' '`: BSD wc pads its count with leading spaces, so the string compare
+# read "        4" != "4" and this leg failed on every macOS run. -ne would
+# tolerate the padding, but the message prints the count too.
+ntrace=$(wc -l < "$W/trace" | tr -d ' ')
+[ "$ntrace" = 4 ] || bad "trace has $ntrace lines, expected 4 recipes to have run"
 # The floor under `before`: the two names must be at DIFFERENT depths, or the
 # assertion is about a pair that could never have raced anyway.
 grep -q '^app: zeta.o alpha.o$' "$W/build.mk" || \
@@ -350,12 +354,20 @@ _rc=$?
 # with nothing in it.
 [ "$(grep -c '^end ' "$R/rtrace")" = 6 ] || \
     bad "race: $(grep -c '^end ' "$R/rtrace") of 6 recipes finished -- [8b] asserts nothing"
+# The LAST `end w`, not the first. A wavefront makes a depth-2 node wait for
+# its WHOLE level, so what disproves one is c2 starting before the wide level
+# has finished -- not before it has begun to. Against the first `end w` this
+# leg failed under CI load with c2 at line 8 and `end w2` at line 9: c2 had
+# overlapped w2, the property held, and the assertion called it a barrier
+# because two of the three w's happened to be quick.
 _c2=$(grep -n '^start c2$' "$R/rtrace" | head -1 | cut -d: -f1)
-_ew=$(grep -n '^end w' "$R/rtrace" | head -1 | cut -d: -f1)
+_ew=$(grep -n '^end w' "$R/rtrace" | tail -1 | cut -d: -f1)
+_nw=$(grep -c '^end w' "$R/rtrace")
+[ "$_nw" -ge 2 ] || bad "race: the wide level has $_nw node(s) -- with fewer than 2 'finished the level' and 'began finishing' are the same instant and [8b] asserts nothing"
 if [ -z "$_c2" ] || [ -z "$_ew" ]; then
     bad "race: 'start c2' or an 'end w' never appeared -- $(tr '\n' ' ' < "$R/rtrace")"
 elif [ "$_c2" -ge "$_ew" ]; then
-    bad "race: c2 started at trace line $_c2, AFTER the wide level began finishing at $_ew -- a node is still waiting for its whole level, which is the wavefront this replaced"
+    bad "race: c2 started at trace line $_c2, AFTER the wide level had entirely finished at $_ew -- a node is waiting for its whole level, which is the wavefront this replaced"
     sed 's/^/      /' "$R/rtrace"
 fi
 # The floor under the fixture: the chain must be deeper than the wide level, or

@@ -44,16 +44,25 @@ __attribute__((constructor)) static void tycho_locale_check_go(void) {
     setlocale(LC_ALL, "");
 }
 EOF
-if ! $CC -shared -fPIC -o "$T/loc.so" "$T/loc.c" 2>"$T/loc.log"; then
-    echo "locale-check: SKIP (cannot build an LD_PRELOAD shared object with '$CC -shared -fPIC')"
+# The MECHANISM is portable; only its spelling is not. Darwin ignores
+# LD_PRELOAD entirely -- it reads DYLD_INSERT_LIBRARIES, wants a .dylib built
+# with -dynamiclib, and the whole lane SKIPPED here ("LD_PRELOAD did not take
+# effect") on the one host whose C library most needed asking.
+case "$(uname -s)" in
+    Darwin) PRELOAD_VAR=DYLD_INSERT_LIBRARIES; LOCLIB="$T/loc.dylib"; SOFLAGS="-dynamiclib" ;;
+    *)      PRELOAD_VAR=LD_PRELOAD;            LOCLIB="$T/loc.so";    SOFLAGS="-shared -fPIC" ;;
+esac
+if ! $CC $SOFLAGS -o "$LOCLIB" "$T/loc.c" 2>"$T/loc.log"; then
+    echo "locale-check: SKIP (cannot build a $PRELOAD_VAR shared object with '$CC $SOFLAGS')"
     sed 's/^/      /' "$T/loc.log"
     exit 0
 fi
 
-[ -n "${LD_PRELOAD-}" ] && printf 'locale-check: note: an LD_PRELOAD was already set (%s); it is REPLACED, not extended, for this lane only\n' "$LD_PRELOAD"
+eval "inherited=\${$PRELOAD_VAR-}"
+[ -n "$inherited" ] && printf 'locale-check: note: a %s was already set (%s); it is REPLACED, not extended, for this lane only\n' "$PRELOAD_VAR" "$inherited"
 
 # hostile: run one command with the preload in and the inherited value out.
-hostile() { env -u LD_PRELOAD LC_ALL="$HOSTILE" LD_PRELOAD="$T/loc.so" "$@"; }
+hostile() { env -u "$PRELOAD_VAR" LC_ALL="$HOSTILE" "$PRELOAD_VAR=$LOCLIB" "$@"; }
 
 # --- prove the preload actually took effect ---------------------------------
 # "The .so compiled" and "the .so changed the decimal separator" are different
@@ -68,7 +77,7 @@ if ! $CC -o "$T/probe" "$T/probe.c" 2>"$T/probe.log"; then
 fi
 got="$(hostile "$T/probe")"
 if [ "$got" != "1,5" ]; then
-    echo "locale-check: SKIP (LD_PRELOAD did not take effect: printf(\"%g\", 1.5) under LC_ALL=$HOSTILE gave '$got', wanted '1,5')"
+    echo "locale-check: SKIP ($PRELOAD_VAR did not take effect: printf(\"%g\", 1.5) under LC_ALL=$HOSTILE gave '$got', wanted '1,5')"
     exit 0
 fi
 
@@ -135,4 +144,4 @@ if [ "$fail" -ne 0 ]; then
     echo "locale-check: FAILED"
     exit 1
 fi
-echo "locale-check: ok (2 fixtures compiled AND run under LC_ALL=$HOSTILE with setlocale forced by LD_PRELOAD)"
+echo "locale-check: ok (2 fixtures compiled AND run under LC_ALL=$HOSTILE with setlocale forced by $PRELOAD_VAR)"

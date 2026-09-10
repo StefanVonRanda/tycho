@@ -38,7 +38,12 @@ FENCE = re.compile(r'^```(\w*)[ \t]*\n(.*?)^```[ \t]*$', re.S | re.M)
 SKIP = re.compile(r'^[ \t]*<!--[ \t]*fence-skip:[ \t]*(.*?)[ \t]*-->[ \t]*$', re.M)
 DECL = re.compile(r'^[ \t]*(package|import)[ \t]')
 TOPDECL = re.compile(r'^(struct|enum|type|const|handle|fn|extern|subscript)[ \t]')
-DECLNAME = re.compile(r'^(?:struct|enum|type|const|handle|subscript|fn)[ \t]+([A-Za-z_]\w*)')
+# `extern fn NAME` and `extern "Lib" fn NAME` declare NAME just as `fn NAME`
+# does. Without the prefix here the carry-over kept an earlier page's `extern
+# "z" fn crc32` alongside the fence that redeclares it: 'crc32' is already
+# defined, on a page whose whole subject is redeclaring C symbols.
+DECLNAME = re.compile(r'^(?:extern[ \t]+(?:"[^"]*"[ \t]+)?)?'
+                      r'(?:struct|enum|type|const|handle|subscript|fn)[ \t]+([A-Za-z_]\w*)')
 # TOP-LEVEL bindings only: a `xs :=` inside a loop body is not in scope for a
 # later fence, so treating it as one drops the outer binding and breaks the page.
 BINDNAME = re.compile(r'^([A-Za-z_]\w*)[ \t]*:=')
@@ -153,6 +158,35 @@ def wrap(body, preamble=""):
     return top + '\n' + decls + '\nfn main():\n' + inner + '\n    return\n'
 
 
+_BUILT = set()
+
+
+def ensure_repo_tool(cmd):
+    """Build `tycho-<name>` into the repo root if it is not there yet.
+
+    A tool's README shows its SYNOPSIS first and the two lines that build it a
+    paragraph later, so the gate reaches the synopsis before the build. On a
+    tree where the tool has never been built the synopsis then exits 127 and is
+    skipped -- and an unenumerated skip is a failure, so `make docs-fences`
+    reddened on a fresh clone and went green on the second run, once the build
+    fence had left the binary behind. Build it here, exactly the way its own
+    README says to, so the first run and the tenth see the same thing.
+    """
+    if not re.match(r'^tycho-[a-z0-9-]+$', cmd or ''):
+        return False
+    exe = os.path.join(ROOT, cmd)
+    if os.path.exists(exe):
+        return True
+    if cmd in _BUILT:
+        return False           # tried once already and it did not build
+    _BUILT.add(cmd)
+    src = os.path.join(ROOT, "tools", cmd, "main.ty")
+    if not os.path.exists(src):
+        return False
+    subprocess.run([TYCHOC, src, "-o", exe], capture_output=True)
+    return os.path.exists(exe)
+
+
 def compiles(src, tmp, run=False, execute=True):
     """Build the fence, and RUN it. Returns (stdout, error) or (None, error).
 
@@ -213,7 +247,7 @@ def main():
                 # shim or of emitted code, so they will not link, but a snippet
                 # that does not parse is wrong on its face.
                 if skip:
-                    nskip += 1; skipped.append((f, line)); print("    skip  %s:%d  %s" % (f, line, skip)); continue
+                    nskip += 1; skipped.append((f, line, '')); print("    skip  %s:%d  %s" % (f, line, skip)); continue
                 # A C fence is an excerpt of emitted code or of a shim, so it
                 # names the runtime's types. Give it that context and it is a
                 # real compile, not a guess -- as written, then wrapped in a
@@ -300,7 +334,7 @@ def main():
                 # releases and publish them. What is checkable without side
                 # effects is that every command it names exists on this machine.
                 if skip:
-                    nskip += 1; skipped.append((f, line)); print("    skip  %s:%d  %s" % (f, line, skip)); continue
+                    nskip += 1; skipped.append((f, line, '')); print("    skip  %s:%d  %s" % (f, line, skip)); continue
                 # A shell fence is RUN when every line is safe to run: no
                 # network, no publishing, no writes outside a temp dir. The
                 # unsafe ones are named, not silently passed.
@@ -319,7 +353,7 @@ def main():
                     tool = dbg.group(1)
                     if subprocess.run(['sh', '-c', 'command -v ' + tool],
                                       capture_output=True).returncode != 0:
-                        nskip += 1; skipped.append((f, line))
+                        nskip += 1; skipped.append((f, line, tool))
                         # say WHY it is absent when that is a platform fact rather
                         # than a missing package: the lldb block documents the
                         # macOS toolchain and its `dsymutil` step has no Linux
@@ -358,6 +392,13 @@ def main():
                             args = ['lldb', '-b']
                             for c in cmds:
                                 args += ['-o', c]
+                            # `breakpoint set` prints the resolved location only
+                            # when there is exactly one; a line that maps to two
+                            # addresses collapses to "Breakpoint 1: 2 locations."
+                            # and the file:line never appears. `breakpoint list`
+                            # always spells them out, so the check below has
+                            # something to read either way.
+                            args += ['-o', 'breakpoint list']
                             args += ['--', os.path.join(tmp, "program")]
                         else:
                             args = ['gdb', '-batch']
@@ -367,7 +408,12 @@ def main():
                         r = subprocess.run(args, capture_output=True, text=True,
                                            errors='replace', timeout=90,
                                            stdin=subprocess.DEVNULL, cwd=tmp)
-                    if b.returncode == 0 and r.returncode == 0 and 'program.ty:' in r.stdout:
+                    # the echoed command already contains "program.ty", so the
+                    # binding is only proved by a RESOLVED location: gdb prints
+                    # `at program.ty:7`, lldb `where = ... at program.ty:7:18`.
+                    bp_bound = re.search(r'at program\.ty:\d', r.stdout) if tool == 'lldb' \
+                        else 'program.ty:' in r.stdout
+                    if b.returncode == 0 and r.returncode == 0 and bp_bound:
                         nok += 1; nsh += 1
                         print("    ok    %s:%d  [%s session RAN; the breakpoint bound to a "
                               ".ty line]" % (f, line, tool))
@@ -405,6 +451,8 @@ def main():
                             for k, v in sub.items():
                                 l = l.replace(k, v)
                             cmds.append(l)
+                        for c in cmds:
+                            ensure_repo_tool(c.strip().split()[0] if c.strip() else '')
                         env = dict(os.environ,
                                    PATH=os.pathsep.join([ROOT, os.environ["PATH"]]))
                         r = subprocess.run(['sh', '-c', "cd %s\n" % ROOT + "\n".join(cmds)],
@@ -418,7 +466,7 @@ def main():
                         print("    ok    %s:%d  [synopsis RAN with real arguments, exit %d]"
                               % (f, line, r.returncode))
                     else:
-                        nskip += 1; skipped.append((f, line))
+                        nskip += 1; skipped.append((f, line, ''))
                         print("    skip  %s:%d  a usage SYNOPSIS; run with real arguments "
                               "it exits %d: %s" % (f, line, r.returncode,
                               (r.stderr.strip().splitlines() or [""])[-1][:44]))
@@ -432,7 +480,7 @@ def main():
                 # banner exactly as `server/run.sh` does, and substitute it.
                 if './tycho-httpd' in joined and '--port' in joined:
                     if not os.access(os.path.join(ROOT, 'tychoc'), os.X_OK):
-                        nskip += 1; skipped.append((f, line))
+                        nskip += 1; skipped.append((f, line, ''))
                         print("    skip  %s:%d  needs ./tychoc to build the server -- "
                               "run 'make' first" % (f, line)); continue
                     with tempfile.TemporaryDirectory() as tmp:
@@ -527,14 +575,14 @@ def main():
                         continue
                     # the repo root holds tychoc, tycho and the built tools; a
                     # reader who installed them has them on PATH, so look there
-                    if subprocess.run(
+                    if not ensure_repo_tool(cmd) and subprocess.run(
                             ['sh', '-c', 'command -v %s' % cmd], capture_output=True,
                             env=dict(os.environ,
                                      PATH=ROOT + os.pathsep + os.environ["PATH"])
                             ).returncode != 0:
                         missing.append(cmd)
                 if missing:
-                    nskip += 1; skipped.append((f, line))
+                    nskip += 1; skipped.append((f, line, ''))
                     print("    skip  %s:%d  shell: not on this machine: %s"
                           % (f, line, " ".join(sorted(set(missing)))))
                 elif unsafe:
@@ -623,7 +671,7 @@ def main():
                 continue
             norun = bool(skip and skip.startswith('norun:'))
             if skip and not norun:
-                nskip += 1; skipped.append((f, line))
+                nskip += 1; skipped.append((f, line, ''))
                 print("    skip  %s:%d  %s" % (f, line, skip))
                 continue
             # `...` is not Tycho. A fence using it as an elided body is showing
@@ -631,7 +679,7 @@ def main():
             # would obscure the very thing it illustrates.
             if re.search(u'^[ \t]*(\\.\\.\\.|\u2026)[ \t]*$|:[ \t]+(\\.\\.\\.|\u2026)[ \t]*$',
                          body, re.M):
-                nskip += 1; skipped.append((f, line))
+                nskip += 1; skipped.append((f, line, ''))
                 print("    skip  %s:%d  a shape illustration: `...` marks an elided body"
                       % (f, line))
                 continue
@@ -776,22 +824,30 @@ def main():
     # failure mode that let four snippets sit unchecked until 2026-08-18. The
     # one entry left is a PLATFORM fact rather than a judgement, and on the
     # platform it documents it must run: on Darwin an empty list is required.
+    # (file, marker) -> (the platform that MUST run it, the reason every other
+    # host may skip). Both halves matter: a skip that is a platform fact is only
+    # an exception away from the platform it documents, and on that platform it
+    # is a failure. Matching on the marker as well as the file is what keeps the
+    # gdb block from inheriting the lldb block's excuse.
     ALLOWED_SKIPS = {
-        ('docs/debugging.md', 'lldb'):
+        ('docs/debugging.md', 'lldb'): ('darwin',
             'macOS toolchain: `dsymutil` is Xcode\'s and writes a Mach-O .dSYM, '
-            'so no Linux host can run it. Runs on Darwin.',
+            'so no Linux host can run it. Runs on Darwin.'),
+        ('docs/debugging.md', 'gdb'): ('linux',
+            'gdb is not in the macOS toolchain and Apple ships lldb instead, so '
+            'a Darwin host cannot run it. Runs on Linux.'),
     }
-    for sf, sl in skipped:
-        key = next((k for k in ALLOWED_SKIPS if k[0] == sf), None)
-        if key is None:
+    for sf, sl, marker in skipped:
+        key = (sf, marker)
+        if key not in ALLOWED_SKIPS:
             nfail += 1
             fails.append("%s:%d is SKIPPED and not in ALLOWED_SKIPS -- every skip is "
                          "an enumerated exception. Run it, or name it there with the "
                          "reason it cannot be run on any host" % (sf, sl))
-        elif sys.platform == 'darwin':
+        elif sys.platform.startswith(ALLOWED_SKIPS[key][0]):
             nfail += 1
-            fails.append("%s:%d is skipped on macOS, which is the platform it "
-                         "documents -- it must RUN here" % (sf, sl))
+            fails.append("%s:%d is skipped on %s, which is the platform it "
+                         "documents -- it must RUN here" % (sf, sl, sys.platform))
 
     for x in fails:
         print("docs-fences: FAIL " + x, file=sys.stderr)

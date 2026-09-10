@@ -15,7 +15,12 @@ cat > "$T/p.c" <<'EOF'
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#ifdef __APPLE__
+#include <malloc/malloc.h>
+#define malloc_usable_size malloc_size
+#else
 #include <malloc.h>
+#endif
 extern void __real_free(void *);
 static const char NEEDLE[] = "SECRETSECRETSECRETSECRETSECRET42";
 static int hits = 0, frees = 0;
@@ -70,6 +75,16 @@ int main(void) {
     return bad;
 }
 EOF
+
+# `--wrap` is a GNU ld / lld feature; Apple's ld64 has no equivalent, and the
+# whole probe is built on wrapping free(). Ask the linker before blaming
+# libcrypto: the old message said "cannot link against libcrypto" on a host
+# where libcrypto was installed and pkg-config found it, which sent the reader
+# looking for the wrong thing.
+printf 'void __real_exit(int);\nvoid __wrap_exit(int c){__real_exit(c);}\nint main(void){return 0;}\n' > "$T/wrapprobe.c"
+cc -o "$T/wrapprobe" "$T/wrapprobe.c" -Wl,--wrap=exit 2>"$T/wrap.log" || {
+    echo "crypto-hygiene: SKIPPED (this linker has no -Wl,--wrap -- $(uname -s) ld64 does not implement it, and the probe wraps free() to read released blocks; porting it here needs a dyld interposing build)"
+    head -2 "$T/wrap.log"; exit 0; }
 
 cc -O0 -g -Wl,--wrap=free -o "$T/p" "$T/p.c" corelib/crypto/crypto_shim.c -lcrypto 2>"$T/cc.log" || {
     echo "crypto-hygiene: SKIPPED (cannot link against libcrypto)"; head -3 "$T/cc.log"; exit 0; }
@@ -163,7 +178,7 @@ EOF
 
     mkdir -p "$T/ctl"
     cp corelib/crypto/crypto_shim.c "$T/ctl/crypto_shim.c"
-    sed -i 's|\*v = is_d \* d + is_x \* (x + 10);|if (is_d) *v = d; else if (is_x) *v = x + 10; else *v = 0;|' "$T/ctl/crypto_shim.c"
+    sed 's|\*v = is_d \* d + is_x \* (x + 10);|if (is_d) *v = d; else if (is_x) *v = x + 10; else *v = 0;|' "$T/ctl/crypto_shim.c" > "$T/ctl_shim.patched" && mv "$T/ctl_shim.patched" "$T/ctl/crypto_shim.c"
     grep -q 'if (is_d) \*v' "$T/ctl/crypto_shim.c" || {
         echo "crypto-hygiene: FAIL -- the control patch did not apply, so [2] would prove nothing"; exit 1; }
 

@@ -74,7 +74,15 @@ fn order() -> [string]:
 fn sys_spawn(w: inout world.World, r: inout Rng, k: int) -> int:
     g := grid()
     for i := 0; i < k; i += 1:
-        world.spawn_at(&w, pick(&r, g), pick(&r, g), 12 + pick(&r, 24))
+        # Three draws, three NAMED steps. Folded into one argument list they
+        # were three side effects in one expression, and spec 13.4 leaves
+        # argument order unspecified: gcc took them right-to-left, clang
+        # left-to-right, and the two hosts spawned different entities from the
+        # same seed. A gate whose subject is DETERMINISM cannot rest on that.
+        x := pick(&r, g)
+        y := pick(&r, g)
+        hp := 12 + pick(&r, 24)
+        world.spawn_at(&w, x, y, hp)
     return k
 
 # Each entity steps by the velocity its SLOT names, so an entity's course is a
