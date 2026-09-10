@@ -384,16 +384,25 @@ selfcheck() {
     # Windows leg can see this one -- what breaks is the POSIX filename.
     c="$T/c6"; rm -rf "$c"; cp -r "$nats" "$c"
     rm -rf "$T/c6src"; mkdir -p "$T/c6src"; cp -r compiler corelib "$T/c6src/"
-    sed 's/win := os.is_windows()/win := true/' "$T/c6src/compiler/types/load.ty" > "$T/c6.patched" && mv "$T/c6.patched" "$T/c6src/compiler/types/load.ty"
+    # `win := true` deletes the only `os.` use in this file, and an unused import
+    # is an ERROR here -- so the import goes with it or the mutant does not build
+    # and the control is dead (it was, until 2026-09-10: the C6 leg was scoring a
+    # log written by a compiler that had never been produced).
+    sed -e 's/win := os.is_windows()/win := true/' -e '/^import "core:os"$/d' "$T/c6src/compiler/types/load.ty" > "$T/c6.patched" && mv "$T/c6.patched" "$T/c6src/compiler/types/load.ty"
     rm -f "$c/tychoc"
     if grep -q 'win := os.is_windows()' "$T/c6src/compiler/types/load.ty"; then
         echo "FAIL control: the unconditional-cut mutation did not apply"; ctl_fail=$((ctl_fail + 1))
     else
         echo "   substitution applied: dir_of in $T/c6src answers the host predicate true ($(grep -c 'win := true' "$T/c6src/compiler/types/load.ty") site), so it cuts on 92 everywhere"
-        ./tychoc "$T/c6src/compiler/main.ty" -o "$c/tychoc" >/dev/null 2>&1
-        [ -x "$c/tychoc" ] || { echo "FAIL control: the C6 mutant did not BUILD -- the control is dead"; ctl_fail=$((ctl_fail + 1)); }
-        ( fail=0; legs=0; check_native "$c" "$ver" ) > "$T/c6.log" 2>&1
-        ctl "dir_of cutting on a POSIX filename's backslash" "literal backslash did not compile" "$T/c6.log"
+        # A dead mutant must not ALSO score its leg green: check_native would run
+        # the archive's own unmutated tychoc, whose log carries the very message
+        # ctl greps for, so the leg passed for exactly the wrong reason.
+        if ./tychoc "$T/c6src/compiler/main.ty" -o "$c/tychoc" >/dev/null 2>&1 && [ -x "$c/tychoc" ]; then
+            ( fail=0; legs=0; check_native "$c" "$ver" ) > "$T/c6.log" 2>&1
+            ctl "dir_of cutting on a POSIX filename's backslash" "literal backslash did not compile" "$T/c6.log"
+        else
+            echo "FAIL control: the C6 mutant did not BUILD -- the control is dead"; ctl_fail=$((ctl_fail + 1))
+        fi
     fi
 
     # [C7] the glibc floor: one tool rebuilt WITHOUT Makefile:TOOL_CFLAGS, which is
