@@ -267,9 +267,27 @@ def selfcheck(page, tychoc):
     expect("[c2] a stale claimed output is caught",
            page.replace("# counted: 1, 2, 3, 4, 5", "# counted: 9, 9, 9"), True)
     # [c3] the way this page rots with nobody touching it: a release ships and
-    # the download block still names the version before it.
-    expect("[c3] a superseded release version is caught",
-           page.replace("v0.7.0", "v0.6.0"), True)
+    # the download block still names the version before it. The version to
+    # demote is READ OUT OF THE PAGE, never written here: a literal goes stale
+    # the first time the page is bumped, and `page.replace` on a string the page
+    # no longer contains is a NO-OP -- it hands this leg an unmutated page, which
+    # passes, and the control reports BROKEN. That is what happened on
+    # 2026-09-10 when the page moved v0.7.0 -> v0.8.5.
+    cur = sorted(set(re.findall(r"/releases/download/v(\d+\.\d+\.\d+)/", page)))
+    if len(cur) != 1:
+        print("  [c3] a superseded release version is caught             "
+              "BROKEN (the page names %d versions, expected 1)" % len(cur))
+        bad += 1
+    else:
+        maj, minr, pat = (int(x) for x in cur[0].split("."))
+        # Demote the PATCH where there is one: "v0.8.5 -> v0.8.4" is the shape
+        # this rot actually takes. Fall back to the minor, then the major, so a
+        # x.y.0 or x.0.0 page still gets a genuinely lower version.
+        prev = ("%d.%d.%d" % (maj, minr, pat - 1) if pat else
+                "%d.%d.%d" % (maj, minr - 1, pat) if minr else
+                "%d.%d.%d" % (maj - 1, minr, pat))
+        expect("[c3] a superseded release version is caught",
+               page.replace("v" + cur[0], "v" + prev).replace(cur[0], prev), True)
     # [c4]/[c5] the transcript's two failure modes -- a line the program prints
     # that the page does not show, and a line the page shows that it never
     # printed. Only [c4] was a real defect; [c5] is the mirror, and a driver
