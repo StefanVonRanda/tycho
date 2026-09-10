@@ -1,53 +1,53 @@
 === demo: 8 ticks over a soa pool, despawn by swap-remove
-tick 0 live=5 slots=5 free=0 despawned=0 hp=205 sum=4092
-tick 1 live=10 slots=10 free=0 despawned=0 hp=364 sum=7802
-tick 2 live=14 slots=15 free=1 despawned=1 hp=498 sum=9940
-tick 3 live=18 slots=19 free=1 despawned=1 hp=612 sum=11630
-tick 4 live=22 slots=23 free=1 despawned=1 hp=690 sum=14464
-tick 5 live=23 slots=27 free=4 despawned=4 hp=767 sum=16140
-tick 6 live=26 slots=28 free=2 despawned=2 hp=860 sum=18126
-tick 7 live=27 slots=31 free=4 despawned=4 hp=951 sum=19008
+tick 0 live=5 slots=5 free=0 despawned=0 hp=195 sum=4012
+tick 1 live=9 slots=10 free=1 despawned=1 hp=336 sum=6675
+tick 2 live=14 slots=14 free=0 despawned=0 hp=438 sum=9760
+tick 3 live=18 slots=19 free=1 despawned=1 hp=584 sum=11286
+tick 4 live=23 slots=23 free=0 despawned=0 hp=655 sum=14774
+tick 5 live=24 slots=28 free=4 despawned=4 hp=725 sum=16211
+tick 6 live=28 slots=29 free=1 despawned=1 hp=819 sum=18349
+tick 7 live=30 slots=33 free=3 despawned=3 hp=888 sum=19550
   gone 0#0: id 0#0 is stale (slot 0 is at generation 1)
-  live 1#0 hp=45 at 99,78
+  live 1#0 hp=59 at 45,78
   gone 2#0: id 2#0 is stale (slot 2 is at generation 1)
-  live 3#0 hp=13 at 85,44
-  gone 4#0: id 4#0 is stale (slot 4 is at generation 1)
-  live 5#0 hp=55 at 85,12
+  live 3#0 hp=3 at 95,44
+  live 4#0 hp=2 at 42,83
+  live 5#0 hp=45 at 55,12
   gone 6#0: id 6#0 is stale (slot 6 is at generation 1)
-  live 7#0 hp=32 at 47,90
+  live 7#0 hp=38 at 41,90
   gone 8#0: id 8#0 is stale (slot 8 is at generation 1)
-  live 9#0 hp=35 at 65,88
-  gone 10#0: id 10#0 names a despawned entity
-  live 11#0 hp=9 at 9,32
-  live 12#0 hp=58 at 44,83
-  live 13#0 hp=18 at 43,2
-  gone 14#0: id 14#0 is stale (slot 14 is at generation 1)
-  live 0#1 hp=49 at 87,2
-  gone 15#0: id 15#0 is stale (slot 15 is at generation 1)
-  live 16#0 hp=30 at 25,0
+  live 9#0 hp=25 at 15,88
+  gone 0#1: id 0#1 names a despawned entity
+  live 10#0 hp=7 at 11,32
+  live 11#0 hp=24 at 58,83
+  live 12#0 hp=8 at 53,2
+  gone 13#0: id 13#0 is stale (slot 13 is at generation 1)
+  live 14#0 hp=47 at 9,2
+  live 15#0 hp=25 at 60,45
+  live 16#0 hp=12 at 83,0
   gone 17#0: id 17#0 names a despawned entity
-  live 18#0 hp=21 at 35,78
-  live 14#1 hp=36 at 26,69
-  live 19#0 hp=30 at 29,60
+  live 18#0 hp=35 at 21,78
+  live 13#1 hp=26 at 76,69
+  live 19#0 hp=28 at 91,60
   gone 20#0: id 20#0 is stale (slot 20 is at generation 1)
-  live 21#0 hp=2 at 51,26
-  gone 22#0: id 22#0 names a despawned entity
-  live 15#1 hp=16 at 53,80
-  live 23#0 hp=50 at 52,39
-  live 24#0 hp=41 at 67,26
-  live 25#0 hp=42 at 86,89
-  live 26#0 hp=59 at 69,88
-  live 20#1 hp=34 at 60,63
-  live 8#1 hp=33 at 87,14
-  live 6#1 hp=44 at 26,25
-  live 4#1 hp=32 at 57,56
-  gone 27#0: id 27#0 is stale (slot 27 is at generation 1)
-  live 27#1 hp=55 at 53,32
-  gone 2#1: id 2#1 names a despawned entity
-  live 28#0 hp=25 at 19,18
-  live 29#0 hp=44 at 6,29
-  live 30#0 hp=43 at 53,72
-demo: handed out 40 ids, 27 resolve, live=27
+  live 21#0 hp=32 at 61,26
+  live 22#0 hp=4 at 4,5
+  live 23#0 hp=30 at 79,80
+  live 24#0 hp=32 at 70,39
+  live 25#0 hp=47 at 61,26
+  live 26#0 hp=16 at 12,89
+  live 27#0 hp=49 at 59,88
+  live 20#1 hp=24 at 50,63
+  live 8#1 hp=47 at 13,14
+  live 6#1 hp=26 at 24,25
+  live 2#1 hp=46 at 63,56
+  gone 28#0: id 28#0 is stale (slot 28 is at generation 1)
+  live 28#1 hp=53 at 35,32
+  gone 29#0: id 29#0 names a despawned entity
+  live 30#0 hp=39 at 65,18
+  live 31#0 hp=26 at 24,29
+  live 32#0 hp=33 at 3,72
+demo: handed out 40 ids, 30 resolve, live=30
 === sweep 24: spawn all, despawn the odd ones
 live=12
   hp 1
@@ -72,31 +72,31 @@ stale: id 0#0 is stale (slot 0 is at generation 1)
 fresh 0#1 hp=44
 === sim: 24 ticks, order spawn,move,combat,decay,reap
 sim seed: spawned=8 live=8
-tick 0 spawned=3 moved=10 hits=0 decayed=11 reaped=0 live=11 hp=239 sum=1217
-tick 1 spawned=3 moved=12 hits=1 decayed=14 reaped=0 live=14 hp=288 sum=1537
-tick 2 spawned=3 moved=15 hits=1 decayed=17 reaped=0 live=17 hp=322 sum=1738
-tick 3 spawned=3 moved=18 hits=7 decayed=20 reaped=0 live=20 hp=306 sum=1774
-tick 4 spawned=3 moved=20 hits=1 decayed=23 reaped=1 live=22 hp=337 sum=1799
-tick 5 spawned=3 moved=22 hits=7 decayed=25 reaped=2 live=23 hp=345 sum=1951
-tick 6 spawned=3 moved=23 hits=4 decayed=26 reaped=2 live=24 hp=358 sum=2021
-tick 7 spawned=3 moved=24 hits=13 decayed=27 reaped=4 live=23 hp=299 sum=1866
-tick 8 spawned=3 moved=23 hits=6 decayed=26 reaped=3 live=23 hp=311 sum=1919
-tick 9 spawned=3 moved=23 hits=7 decayed=26 reaped=1 live=25 hp=311 sum=2112
-tick 10 spawned=3 moved=25 hits=4 decayed=28 reaped=3 live=25 hp=298 sum=1970
-tick 11 spawned=3 moved=25 hits=12 decayed=28 reaped=7 live=21 hp=265 sum=1811
-tick 12 spawned=3 moved=21 hits=7 decayed=24 reaped=6 live=18 hp=284 sum=1667
-tick 13 spawned=3 moved=18 hits=3 decayed=21 reaped=2 live=19 hp=298 sum=1849
-tick 14 spawned=3 moved=19 hits=6 decayed=22 reaped=1 live=21 hp=297 sum=1878
-tick 15 spawned=3 moved=21 hits=10 decayed=24 reaped=5 live=19 hp=262 sum=1698
-tick 16 spawned=3 moved=19 hits=3 decayed=22 reaped=1 live=21 hp=260 sum=1720
-tick 17 spawned=3 moved=21 hits=9 decayed=24 reaped=1 live=23 hp=235 sum=1698
-tick 18 spawned=3 moved=23 hits=7 decayed=26 reaped=5 live=21 hp=227 sum=1624
-tick 19 spawned=3 moved=21 hits=9 decayed=24 reaped=5 live=19 hp=197 sum=1437
-tick 20 spawned=3 moved=19 hits=4 decayed=22 reaped=1 live=21 hp=213 sum=1534
-tick 21 spawned=3 moved=21 hits=6 decayed=24 reaped=2 live=22 hp=211 sum=1684
-tick 22 spawned=3 moved=22 hits=10 decayed=25 reaped=7 live=18 hp=191 sum=1337
-tick 23 spawned=3 moved=20 hits=1 decayed=21 reaped=5 live=16 hp=230 sum=1373
-sim: spawned=80 reaped=64 live=16 moved=485 hits=138 decayed=550 hp=230 sum=1373
+tick 0 spawned=3 moved=10 hits=0 decayed=11 reaped=0 live=11 hp=225 sum=1165
+tick 1 spawned=3 moved=12 hits=1 decayed=14 reaped=0 live=14 hp=276 sum=1521
+tick 2 spawned=3 moved=15 hits=1 decayed=17 reaped=0 live=17 hp=336 sum=1790
+tick 3 spawned=3 moved=18 hits=7 decayed=20 reaped=0 live=20 hp=338 sum=1950
+tick 4 spawned=3 moved=20 hits=1 decayed=23 reaped=0 live=23 hp=387 sum=2084
+tick 5 spawned=3 moved=23 hits=8 decayed=26 reaped=1 live=25 hp=356 sum=1957
+tick 6 spawned=3 moved=25 hits=6 decayed=28 reaped=5 live=23 hp=340 sum=1770
+tick 7 spawned=3 moved=23 hits=8 decayed=26 reaped=3 live=23 hp=332 sum=1847
+tick 8 spawned=3 moved=23 hits=9 decayed=26 reaped=3 live=23 hp=300 sum=1855
+tick 9 spawned=3 moved=23 hits=7 decayed=26 reaped=1 live=25 hp=268 sum=1818
+tick 10 spawned=3 moved=25 hits=4 decayed=28 reaped=2 live=26 hp=262 sum=1703
+tick 11 spawned=3 moved=26 hits=11 decayed=29 reaped=8 live=21 hp=234 sum=1543
+tick 12 spawned=3 moved=22 hits=1 decayed=24 reaped=3 live=21 hp=241 sum=1517
+tick 13 spawned=3 moved=22 hits=5 decayed=24 reaped=3 live=21 hp=265 sum=1518
+tick 14 spawned=3 moved=22 hits=4 decayed=24 reaped=0 live=24 hp=298 sum=1897
+tick 15 spawned=3 moved=24 hits=11 decayed=27 reaped=6 live=21 hp=297 sum=1728
+tick 16 spawned=3 moved=21 hits=8 decayed=24 reaped=5 live=19 hp=287 sum=1601
+tick 17 spawned=3 moved=19 hits=9 decayed=22 reaped=3 live=19 hp=280 sum=1695
+tick 18 spawned=3 moved=19 hits=3 decayed=22 reaped=0 live=22 hp=305 sum=1670
+tick 19 spawned=3 moved=22 hits=5 decayed=25 reaped=4 live=21 hp=314 sum=1697
+tick 20 spawned=3 moved=21 hits=4 decayed=24 reaped=2 live=22 hp=329 sum=1790
+tick 21 spawned=3 moved=22 hits=8 decayed=25 reaped=3 live=22 hp=321 sum=1692
+tick 22 spawned=3 moved=22 hits=9 decayed=25 reaped=2 live=23 hp=301 sum=1745
+tick 23 spawned=3 moved=23 hits=6 decayed=26 reaped=2 live=24 hp=299 sum=1779
+sim: spawned=80 reaped=56 live=24 moved=502 hits=136 decayed=566 hp=299 sum=1779
 === err BadSlot (via the world API)
 no slot 99 (world has 0)
 === err Dead (via the world API)

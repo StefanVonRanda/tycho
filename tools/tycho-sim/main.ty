@@ -52,7 +52,13 @@ fn demo() -> int:
     println("=== demo: 8 ticks over a soa pool, despawn by swap-remove")
     for t := 0; t < 8; t += 1:
         for k := 0; k < 5; k += 1:
-            id := world.spawn_at(&w, sys.pick(&r, 100), sys.pick(&r, 100), 20 + sys.pick(&r, 40))
+            # One draw per statement -- see the note in sys/sys.ty: argument
+            # order is unspecified (spec 13.4), so three picks in one call
+            # spawned a different world on gcc than on clang.
+            x := sys.pick(&r, 100)
+            y := sys.pick(&r, 100)
+            hp := 20 + sys.pick(&r, 40)
+            id := world.spawn_at(&w, x, y, hp)
             push(ids, id)
         # Damage a third of the live pool through their ids, then despawn every
         # entity the damage took to 0 or below. Both the picking and the
