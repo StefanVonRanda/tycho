@@ -84,7 +84,7 @@ aligns() {   # $1 = "strip" to remove the pinning attribute (the control)
     awk '/^struct Tycho(ArrC|VecV)[0-9]+_ \{.*vector_size/' "$D/e.c" > "$D/defs.c"
     [ -s "$D/defs.c" ] || fail "$CC: no vector aggregate found in the emitted C"
     if [ "$1" = strip ]; then
-        sed -i 's/ __attribute__((packed, aligned(8)))//' "$D/defs.c"
+        sed 's/ __attribute__((packed, aligned(8)))//' "$D/defs.c" > "$D/defs.tmp" && mv "$D/defs.tmp" "$D/defs.c"
         ! grep -q 'packed, aligned(8)' "$D/defs.c" || fail "$CC control: the attribute survived the strip"
     fi
     {   echo '#include <stdio.h>'
@@ -131,7 +131,13 @@ grep -q 'vector\[' "$D/ps/s.ty" && fail "the scalar-array substitution did not a
 grep -q '\[4\]float' "$D/ps/s.ty" || fail "the scalar-array substitution produced no [4]float"
 "$CC" "$D/pv/v.ty" --emit-c -o "$D/v" > /dev/null || fail "$CC: the vector probe does not compile"
 "$CC" "$D/ps/s.ty" --emit-c -o "$D/s" > /dev/null || fail "$CC: the array control does not compile"
-packed_ops() { cc "$1" -fwrapv -std=c11 -S "$2" -o - 2>/dev/null | grep -cE '\b(addp[sd]|mulp[sd]|divp[sd]|subp[sd])\b' || true; }
+# The SIMD mnemonics differ per host ISA: x86 packed-scalar (addps), arm64 NEON
+# in either Apple syntax (fadd.4s v0, ...) or GNU syntax (fadd v0.4s, ...).
+case "$(uname -m)" in
+    arm64|aarch64) PACKED_RE='\bf(add|sub|mul|div)(\.[0-9]+[sdh]\b|[[:space:]]+v[0-9]+\.[0-9]+[sdh]\b)' ;;
+    *)             PACKED_RE='\b(addp[sd]|mulp[sd]|divp[sd]|subp[sd])\b' ;;
+esac
+packed_ops() { cc "$1" -fwrapv -std=c11 -S "$2" -o - 2>/dev/null | grep -cE "$PACKED_RE" || true; }
 for O in -O0 -O1; do
     v=$(packed_ops "$O" "$D/v.c")
     s=$(packed_ops "$O" "$D/s.c")
@@ -212,9 +218,20 @@ done
 # two `mulpd`, while x86-64-v3's 32-byte ymm does it in one `vmulpd`. A flag that
 # is accepted and does nothing looks identical to a working one from the exit
 # status, which is why this counts instructions rather than trusting rc=0.
+# What the summary at the bottom is allowed to claim about leg [7]. A skipped
+# leg must not be reported as a finding: the line used to assert the vmulpd
+# count unconditionally, so on a host that never ran the leg it said so anyway.
+L7="leg [7] (--target x86-64-v3) was NOT run"
 if ! command -v objdump > /dev/null 2>&1; then
     echo "vector-check: SKIPPED leg [7] -- objdump not on PATH"
+    L7="leg [7] (--target x86-64-v3) SKIPPED: objdump not on PATH"
+elif [ "$(uname -m)" != x86_64 ] && [ "$(uname -m)" != amd64 ]; then
+    # The leg compares xmm-split against ymm-packed under --target x86-64-v3;
+    # the host cc rejects -march=x86-64-v3 on any other ISA.
+    echo "vector-check: SKIPPED leg [7] -- x86-64 host only (this is $(uname -m))"
+    L7="leg [7] (--target x86-64-v3) SKIPPED: x86-64 host only, this is $(uname -m)"
 else
+    L7="--target x86-64-v3 turns 2 split mulpd into 1 packed vmulpd from one source while the default and --target baseline stay byte-identical"
 mkdir -p "$D/t"
 cat > "$D/t/t.ty" <<'TY'
 fn v_dot(a: vector[4]float, b: vector[4]float) -> float:
@@ -320,4 +337,4 @@ for CC in ./tychoc ./tychoc1; do
     done
 done
 
-echo "vector-check: ok (BOTH compilers emit a GCC vector; the aggregate wants 8-byte alignment and $ctl without the attribute; at -O0/-O1 the vector program emits packed instructions and the [4]float control emits none; both agree on the golden and on all six refusals; a literal lane pays no bounds check and a runtime one still traps; --target x86-64-v3 turns 2 split mulpd into 1 packed vmulpd from one source while the default and --target baseline stay byte-identical; an over-wide vector warns ONCE at the default and under x86-64-v2, is SILENT under x86-64-v3/v4/--native, and a 16-byte one is silent everywhere)"
+echo "vector-check: ok (BOTH compilers emit a GCC vector; the aggregate wants 8-byte alignment and $ctl without the attribute; at -O0/-O1 the vector program emits packed instructions and the [4]float control emits none; both agree on the golden and on all six refusals; a literal lane pays no bounds check and a runtime one still traps; $L7; an over-wide vector warns ONCE at the default and under x86-64-v2, is SILENT under x86-64-v3/v4/--native, and a 16-byte one is silent everywhere)"

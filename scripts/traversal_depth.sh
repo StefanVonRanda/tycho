@@ -36,7 +36,8 @@ build() {
         # Assert the substitution APPLIED. A control that silently does not patch
         # reports the unmodified server as if it were the broken one.
         before=$(cksum < "$T/$tag/main.ty")
-        sed -i "$prog" "$T/$tag/main.ty"
+        sed "$prog" "$T/$tag/main.ty" > "$T/$tag/main.patched" \
+            && mv "$T/$tag/main.patched" "$T/$tag/main.ty"
         after=$(cksum < "$T/$tag/main.ty")
         [ "$before" != "$after" ] || {
             echo "traversal-check: FAILED (patch did not apply for $tag: $prog)"; exit 1; }

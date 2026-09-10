@@ -13,6 +13,7 @@
 # If a wine lane was killed mid-run, `wineserver -k` first.
 set -u
 cd "$(dirname "$0")/.." || exit 2
+. ./scripts/shlib.sh          # `timeout` is not in the macOS base system
 root="$(pwd)"
 export LD_PRELOAD=
 
@@ -341,7 +342,7 @@ selfcheck() {
     # the leg is scored against the actual defect rather than a simulation.
     c="$T/c4"; rm -rf "$c"; cp -r "$base" "$c"
     rm -rf "$T/c4src"; mkdir -p "$T/c4src"; cp -r compiler corelib "$T/c4src/"
-    sed -i 's/if p\[i\] == 47 or p\[i\] == 92:/if p[i] == 47:/' "$T/c4src/compiler/types/load.ty"
+    sed 's/if p\[i\] == 47 or p\[i\] == 92:/if p[i] == 47:/' "$T/c4src/compiler/types/load.ty" > "$T/c4.patched" && mv "$T/c4.patched" "$T/c4src/compiler/types/load.ty"
     if grep -q 'p\[i\] == 47 or p\[i\] == 92' "$T/c4src/compiler/types/load.ty"; then
         echo "FAIL control: the exe_dir_of mutation did not apply"; ctl_fail=$((ctl_fail + 1))
     else
@@ -361,7 +362,7 @@ selfcheck() {
     # The mingw twin of C4: same function, the SOURCE path rather than argv0.
     c="$T/c5"; rm -rf "$c"; cp -r "$base" "$c"
     rm -rf "$T/c5src"; mkdir -p "$T/c5src"; cp -r compiler corelib "$T/c5src/"
-    sed -i 's/win := os.is_windows()/win := false/' "$T/c5src/compiler/types/load.ty"
+    sed 's/win := os.is_windows()/win := false/' "$T/c5src/compiler/types/load.ty" > "$T/c5.patched" && mv "$T/c5.patched" "$T/c5src/compiler/types/load.ty"
     rm -f "$c/tychoc.exe"
     if grep -q 'win := os.is_windows()' "$T/c5src/compiler/types/load.ty"; then
         echo "FAIL control: the dir_of mutation did not apply"; ctl_fail=$((ctl_fail + 1))
@@ -383,7 +384,7 @@ selfcheck() {
     # Windows leg can see this one -- what breaks is the POSIX filename.
     c="$T/c6"; rm -rf "$c"; cp -r "$nats" "$c"
     rm -rf "$T/c6src"; mkdir -p "$T/c6src"; cp -r compiler corelib "$T/c6src/"
-    sed -i 's/win := os.is_windows()/win := true/' "$T/c6src/compiler/types/load.ty"
+    sed 's/win := os.is_windows()/win := true/' "$T/c6src/compiler/types/load.ty" > "$T/c6.patched" && mv "$T/c6.patched" "$T/c6src/compiler/types/load.ty"
     rm -f "$c/tychoc"
     if grep -q 'win := os.is_windows()' "$T/c6src/compiler/types/load.ty"; then
         echo "FAIL control: the unconditional-cut mutation did not apply"; ctl_fail=$((ctl_fail + 1))

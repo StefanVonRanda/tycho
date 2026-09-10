@@ -1,6 +1,7 @@
 set -eu
 
 cd "$(dirname "$0")/.."
+. ./scripts/shlib.sh          # macOS `openssl` is LibreSSL: no s_server -naccept
 T=$(mktemp -d)
 srv=""
 cleanup() {
@@ -14,23 +15,23 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-command -v openssl >/dev/null 2>&1 || { echo "tls-verify: SKIPPED (no openssl cli)"; exit 0; }
+OPENSSL=$(ossl_cli) || { echo "tls-verify: SKIPPED (no openssl cli whose s_server takes -naccept -- macOS ships LibreSSL under that name)"; exit 0; }
 pkg-config --exists libssl 2>/dev/null || { echo "tls-verify: SKIPPED (no libssl to build against)"; exit 0; }
 [ -x ./tychoc ] || make tychoc >/dev/null
 
 # --- a CA and a leaf for "localhost", neither of them trusted by this box ----
-openssl req -x509 -newkey rsa:2048 -keyout "$T/ca.key" -out "$T/ca.pem" -days 2 -nodes \
+"$OPENSSL" req -x509 -newkey rsa:2048 -keyout "$T/ca.key" -out "$T/ca.pem" -days 2 -nodes \
     -subj "/CN=tycho-test-ca" -addext "basicConstraints=critical,CA:TRUE" >/dev/null 2>&1
-openssl req -newkey rsa:2048 -keyout "$T/srv.key" -out "$T/srv.csr" -nodes \
+"$OPENSSL" req -newkey rsa:2048 -keyout "$T/srv.key" -out "$T/srv.csr" -nodes \
     -subj "/CN=localhost" >/dev/null 2>&1
 printf 'subjectAltName=DNS:localhost\n' > "$T/ext"
-openssl x509 -req -in "$T/srv.csr" -CA "$T/ca.pem" -CAkey "$T/ca.key" -CAcreateserial \
+"$OPENSSL" x509 -req -in "$T/srv.csr" -CA "$T/ca.pem" -CAkey "$T/ca.key" -CAcreateserial \
     -out "$T/srv.pem" -days 2 -extfile "$T/ext" >/dev/null 2>&1
 [ -s "$T/srv.pem" ] || { echo "tls-verify: SKIPPED (could not mint a test certificate)"; exit 0; }
 
 # --- the server, on a port the kernel chooses -------------------------------
 port=$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()')
-openssl s_server -quiet -accept "$port" -naccept 40 -cert "$T/srv.pem" -key "$T/srv.key" \
+"$OPENSSL" s_server -quiet -accept "$port" -naccept 40 -cert "$T/srv.pem" -key "$T/srv.key" \
     >/dev/null 2>&1 &
 srv=$!
 # Readiness is a real TCP connect, not a sleep.

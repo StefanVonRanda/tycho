@@ -1,10 +1,17 @@
 set -u
 cd "$(dirname "$0")/../.." || exit 2
+. ./scripts/shlib.sh          # `timeout` is not in the macOS base system
 TYCHOC="${TYCHOC:-./tychoc1}"
 [ -x "$TYCHOC" ] || { echo "no ./tychoc -- run 'make' first"; exit 2; }
 RECORD="${RECORD:-0}"
 golden="tools/tycho-fh/fh.out"
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
+# The gate's own file, not the host's. Seven legs opened /etc/hostname, which
+# does not exist on macOS: the six compile-only probes did not care, but [6]
+# actually RUNS and read -1 -1 off a failed open, so it reported the affine
+# borrow rule broken when nothing was wrong with it.
+FHFILE="$T/fixture.txt"
+printf 'ab\n' > "$FHFILE"
 fail=0
 note() { echo "FAIL $1"; fail=1; }
 
@@ -73,7 +80,7 @@ probe() {   # probe <name> <body> <text the refusal must contain>
     fi
 }
 probe "declcopy" 'fn main():
-    f := fh_open("/etc/hostname", "r")
+    f := fh_open("'"$FHFILE"'", "r")
     g := f
     println(str(fh_live()))'                                    'handle'
 probe "structfield" 'struct S:
@@ -81,19 +88,19 @@ probe "structfield" 'struct S:
 fn main():
     println("x")'                                               'handle'
 probe "returned" 'fn mk() -> File:
-    return fh_open("/etc/hostname", "r")
+    return fh_open("'"$FHFILE"'", "r")
 fn main():
     println("x")'                                               'cannot return a handle'
 probe "array" 'fn main():
-    f := fh_open("/etc/hostname", "r")
+    f := fh_open("'"$FHFILE"'", "r")
     xs := [f]
     println(str(len(xs)))'                                      'container/aggregate'
 probe "option" 'fn main():
-    f := fh_open("/etc/hostname", "r")
+    f := fh_open("'"$FHFILE"'", "r")
     o := Some(f)
     println("x")'                                               'container/aggregate'
 probe "closecall" 'fn main():
-    close(fh_open("/etc/hostname", "r"))
+    close(fh_open("'"$FHFILE"'", "r"))
     println("x")'                                               'handle variable'
 
 # [5b] is_null MUST accept a handle -- it is the only way to ask whether an
@@ -102,7 +109,7 @@ probe "closecall" 'fn main():
 # probe). Passing is a borrow, so the handle must still be usable afterwards.
 mkdir -p "$T/isnull"
 printf '%s\n%s\n' "$PRE" 'fn main():
-    f := fh_open("/etc/hostname", "r")
+    f := fh_open("'"$FHFILE"'", "r")
     if is_null(f):
         println("null")
     println(str(fh_getc(f)))
@@ -122,7 +129,7 @@ fi
 # [6] a borrow is still a borrow -- the [5] fix must not make passing consume
 mkdir -p "$T/borrow"
 printf '%s\n%s\n' "$PRE" 'fn main():
-    f := fh_open("/etc/hostname", "r")
+    f := fh_open("'"$FHFILE"'", "r")
     println(str(fh_getc(f)) + " " + str(fh_getc(f)) + " live=" + str(fh_live()))' > "$T/borrow/main.ty"
 if build "$T/borrow/main.ty" "$T/borrow/b" "$T/borrow.log"; then
     out=$(timeout 10 "$T/borrow/b.bin" 2>&1)

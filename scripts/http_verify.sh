@@ -1,6 +1,7 @@
 set -eu
 
 cd "$(dirname "$0")/.."
+. ./scripts/shlib.sh          # macOS `openssl` is LibreSSL: no s_server -naccept
 T=$(mktemp -d)
 srv=""
 echosrv=""
@@ -16,17 +17,17 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-command -v openssl >/dev/null 2>&1 || { echo "http-verify: SKIPPED (no openssl cli)"; exit 0; }
+OPENSSL=$(ossl_cli) || { echo "http-verify: SKIPPED (no openssl cli whose s_server takes -naccept -- macOS ships LibreSSL under that name)"; exit 0; }
 pkg-config --exists libcurl 2>/dev/null || { echo "http-verify: SKIPPED (no libcurl to build against)"; exit 0; }
 [ -x ./tychoc ] || make tychoc >/dev/null
 
 # --- a CA and a leaf for "localhost", neither of them trusted by this box ----
-openssl req -x509 -newkey rsa:2048 -keyout "$T/ca.key" -out "$T/ca.pem" -days 2 -nodes \
+"$OPENSSL" req -x509 -newkey rsa:2048 -keyout "$T/ca.key" -out "$T/ca.pem" -days 2 -nodes \
     -subj "/CN=tycho-http-test-ca" -addext "basicConstraints=critical,CA:TRUE" >/dev/null 2>&1
-openssl req -newkey rsa:2048 -keyout "$T/srv.key" -out "$T/srv.csr" -nodes \
+"$OPENSSL" req -newkey rsa:2048 -keyout "$T/srv.key" -out "$T/srv.csr" -nodes \
     -subj "/CN=localhost" >/dev/null 2>&1
 printf 'subjectAltName=DNS:localhost\n' > "$T/ext"
-openssl x509 -req -in "$T/srv.csr" -CA "$T/ca.pem" -CAkey "$T/ca.key" -CAcreateserial \
+"$OPENSSL" x509 -req -in "$T/srv.csr" -CA "$T/ca.pem" -CAkey "$T/ca.key" -CAcreateserial \
     -out "$T/srv.pem" -days 2 -extfile "$T/ext" >/dev/null 2>&1
 [ -s "$T/srv.pem" ] || { echo "http-verify: SKIPPED (could not mint a test certificate)"; exit 0; }
 
@@ -34,13 +35,13 @@ openssl x509 -req -in "$T/srv.csr" -CA "$T/ca.pem" -CAkey "$T/ca.key" -CAcreates
 # from [2] rather than the same option spelled twice.
 mkdir -p "$T/cadir"
 cp "$T/ca.pem" "$T/cadir/ca.pem"
-(openssl rehash "$T/cadir" >/dev/null 2>&1 || c_rehash "$T/cadir" >/dev/null 2>&1) || true
+("$OPENSSL" rehash "$T/cadir" >/dev/null 2>&1 || c_rehash "$T/cadir" >/dev/null 2>&1) || true
 capath_ok=0
 ls "$T/cadir"/*.0 >/dev/null 2>&1 && capath_ok=1
 
 # --- the server, on a port the kernel chooses. -www makes it answer HTTP. -----
 port=$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()')
-openssl s_server -www -quiet -accept "$port" -naccept 40 -cert "$T/srv.pem" -key "$T/srv.key" \
+"$OPENSSL" s_server -www -quiet -accept "$port" -naccept 40 -cert "$T/srv.pem" -key "$T/srv.key" \
     >/dev/null 2>&1 &
 srv=$!
 # Readiness is a real TCP connect, not a sleep.
@@ -190,8 +191,11 @@ say "[5] the SAME 7 bytes with a NUL at offset 2" "$n5"
 # options go off together: VERIFYPEER alone still leaves the hostname check
 # refusing this chain, and the control would look like a working [1].
 cp -R corelib "$T/corelib-nv"
-sed -i 's|curl_easy_setopt(c, CURLOPT_USERAGENT|curl_easy_setopt(c, CURLOPT_SSL_VERIFYPEER, 0L);\n    curl_easy_setopt(c, CURLOPT_SSL_VERIFYHOST, 0L);\n    curl_easy_setopt(c, CURLOPT_USERAGENT|' \
-    "$T/corelib-nv/http/http_shim.c"
+# `sed -i` with no suffix is GNU-only: BSD sed reads the next argument as the
+# backup extension and then fails on the filename as a script.
+sed 's|curl_easy_setopt(c, CURLOPT_USERAGENT|curl_easy_setopt(c, CURLOPT_SSL_VERIFYPEER, 0L);\n    curl_easy_setopt(c, CURLOPT_SSL_VERIFYHOST, 0L);\n    curl_easy_setopt(c, CURLOPT_USERAGENT|' \
+    "$T/corelib-nv/http/http_shim.c" > "$T/http_shim.patched" \
+    && mv "$T/http_shim.patched" "$T/corelib-nv/http/http_shim.c"
 grep -q SSL_VERIFYPEER "$T/corelib-nv/http/http_shim.c" || {
     echo "http-verify: FAILED (the control patch did not apply -- it would score nothing)"; exit 1; }
 mkdir -p "$T/pc"

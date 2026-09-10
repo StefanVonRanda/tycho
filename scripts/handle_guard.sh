@@ -23,6 +23,7 @@ set -eu
 #         is the guard and not the copy.
 
 cd "$(dirname "$0")/.."
+. ./scripts/shlib.sh          # macOS `openssl` is LibreSSL: no s_server -naccept
 T=$(mktemp -d)
 tlssrv=""
 httpsrv=""
@@ -239,20 +240,20 @@ else
 fi
 
 # ============================== core:tls =============================
-if pkg-config --exists openssl 2>/dev/null && command -v openssl >/dev/null 2>&1; then
+if pkg-config --exists openssl 2>/dev/null && OPENSSL=$(ossl_cli); then
     echo "core:tls"
     # The same untrusted CA + localhost leaf tls-verify mints, trusted for this
     # probe through SSL_CERT_FILE: the subject here is the handle, not the chain.
-    openssl req -x509 -newkey rsa:2048 -keyout "$T/ca.key" -out "$T/ca.pem" -days 2 -nodes \
+    "$OPENSSL" req -x509 -newkey rsa:2048 -keyout "$T/ca.key" -out "$T/ca.pem" -days 2 -nodes \
         -subj "/CN=tycho-handle-ca" -addext "basicConstraints=critical,CA:TRUE" >/dev/null 2>&1
-    openssl req -newkey rsa:2048 -keyout "$T/srv.key" -out "$T/srv.csr" -nodes \
+    "$OPENSSL" req -newkey rsa:2048 -keyout "$T/srv.key" -out "$T/srv.csr" -nodes \
         -subj "/CN=localhost" >/dev/null 2>&1
     printf 'subjectAltName=DNS:localhost\n' > "$T/ext"
-    openssl x509 -req -in "$T/srv.csr" -CA "$T/ca.pem" -CAkey "$T/ca.key" -CAcreateserial \
+    "$OPENSSL" x509 -req -in "$T/srv.csr" -CA "$T/ca.pem" -CAkey "$T/ca.key" -CAcreateserial \
         -out "$T/srv.pem" -days 2 -extfile "$T/ext" >/dev/null 2>&1
     if [ -s "$T/srv.pem" ]; then
         tport=$(free_port)
-        openssl s_server -quiet -accept "$tport" -naccept 40 -cert "$T/srv.pem" -key "$T/srv.key" \
+        "$OPENSSL" s_server -quiet -accept "$tport" -naccept 40 -cert "$T/srv.pem" -key "$T/srv.key" \
             >/dev/null 2>&1 &
         tlssrv=$!
         if wait_port "$tport"; then
