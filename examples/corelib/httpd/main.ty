@@ -22,7 +22,18 @@ fn round_trip(nl: string) -> Result(int, net.NetErr):
     answered := httpd.write_response(conn_in, httpd.text_response(200, "pong")) or_return
     net.close_fd(conn_in)
 
-    reply := to_str(net.read(conn_out, 512) or_return)
+    # READ TO EOF, not once. One net.read returns one TCP segment's worth, and
+    # under load the loopback delivered the headers and the body separately:
+    # `reply  = ` instead of `pong`, about one run in three with the machine
+    # busy, and never when this example was run on its own. `conn_in` is closed
+    # above, so EOF is the end of the response.
+    reply := ""
+    reading := true
+    for reading:
+        match net.read(conn_out, 512):
+            Ok(chunk): reply = reply + to_str(chunk)
+            Err(net.Eof): reading = false
+            Err(e): return Err(e)
     body := reply[find(reply, nl + nl) + 4:len(reply)]
     println("reply  = " + body)                          # pong
 

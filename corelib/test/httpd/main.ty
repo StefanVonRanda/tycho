@@ -111,8 +111,18 @@ fn main():
     println("wrote_ok = " + str(b(n > 0)))
     net.close_fd(conn)
 
-    # client reads + inspects the response (deterministic header order)
-    wire := to_str(data_of(net.read(cli, 4096)))
+    # client reads + inspects the response (deterministic header order).
+    # READ TO EOF, not once. One net.read returns whatever one TCP segment
+    # carried, and under load the loopback split this response between the
+    # headers and the body: `rbody = ` instead of `pong`, roughly one CI run in
+    # three, while the same lane passed every time it was run on its own. The
+    # server closed `conn` above, so EOF is the end of the response.
+    wire := ""
+    for true:
+        chunk := to_str(data_of(net.read(cli, 4096)))
+        if len(chunk) == 0:
+            break
+        wire = wire + chunk
     rlines := split(wire, "\n")
     println("status = " + httpd.trim(rlines[0]))            # HTTP/1.1 200 OK
     println("has_extra = " + str(b(find(wire, "X-Extra: yes") >= 0)))
