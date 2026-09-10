@@ -52,8 +52,8 @@ The three exceptions in the tree are the ones that prove the rule, because each 
   `tycho_task_free` (`runtime/tycho_rt.c@tycho_task_new`,
   `runtime/tycho_rt.c@tycho_task_free`);
 - a channel cell's payload arena, one per ring slot, created at channel construction
-  and freed when a later send reclaims the slot (`runtime/tycho_rt.c:1080@arena_new`,
-  `runtime/tycho_rt.c:1130@arena_free`);
+  and freed when a later send reclaims the slot (`runtime/tycho_rt.c:1083@arena_new`,
+  `runtime/tycho_rt.c:1133@arena_free`);
 - a typed FFI handle's destructor, which is emitted into exactly the slot the task
   finaliser uses.
 
@@ -214,7 +214,7 @@ and deep-copies each heap argument into it, after which spawner and task share z
 bytes (`src/tychoc.c:11484-11492`, `runtime/tycho_rt.c@tycho_task_new`); `wait` copies
 the result out and frees the root eagerly
 (`src/tychoc.c:11093@arena_free(&_tk->root)`). A channel does the same per payload
-into a per-cell arena (`runtime/tycho_rt.c:1040@payload bytes live here`). An `@r` value
+into a per-cell arena (`runtime/tycho_rt.c:1043@payload bytes live here`). An `@r` value
 offers neither option: copying it means copying the whole region (unbounded — the
 region exists *because* it is the long-lived structure), and passing the region pointer
 shares mutable storage across threads, which is the exact hypothesis the race-freedom
@@ -269,11 +269,11 @@ worth writing down at all. Because a region is owned and pointer-free from outsi
 `copy_into(param, "(&_tk->root)", arg)` (`src/tychoc.c:11563@copy_into`) generalises without a new
 rule: create a fresh arena inside the task root, deep-copy every live element into it.
 Blocks crossing threads is already the status quo — the block pool is thread-local
-(`runtime/tycho_rt.c:610@g_block_pool`), blocks are released to whichever thread's pool
-frees them (`runtime/tycho_rt.c:648@HBlock *nx`), and a spawned thread flushes its pool
+(`runtime/tycho_rt.c:613@g_block_pool`), blocks are released to whichever thread's pool
+frees them (`runtime/tycho_rt.c:651@HBlock *nx`), and a spawned thread flushes its pool
 before exiting so nothing leaks with the TLS (`runtime/tycho_rt.c@tycho_pool_flush`). Channels need nothing new
 either: a region payload deep-copies into the cell arena like any other value
-(`runtime/tycho_rt.c:1040@payload bytes live here`).
+(`runtime/tycho_rt.c:1043@payload bytes live here`).
 
 The honest limit is that this makes regions **cheap to free and no cheaper to send**.
 A 1 GB region crosses a channel as 1 GB of deep copy. Today you would send an index
@@ -300,7 +300,7 @@ longer needed for region-bearing types.
 
 **The arithmetic that decides it.** `arena_new(0)` sets `blocksz` to
 `TYCHO_BLOCK_DEFAULT` = 65536 (`runtime/tycho_rt.c:76@TYCHO_BLOCK_DEFAULT`,
-`runtime/tycho_rt.c:655@TYCHO_BLOCK_DEFAULT`), and the first allocation in a fresh
+`runtime/tycho_rt.c:658@TYCHO_BLOCK_DEFAULT`), and the first allocation in a fresh
 arena takes a block of `max(n, blocksz)` (`runtime/tycho_rt.c@arena_alloc`) from the
 thread-local pool or, failing a fit, from `malloc` (`runtime/tycho_rt.c@block_get`). So **every live region holds a 64 KiB block
 out of the pool for as long as it lives**, whatever it contains. Resident cost is
