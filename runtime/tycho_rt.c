@@ -604,7 +604,10 @@ __attribute__((constructor)) static void stats_init(void) {
     /* TYCHO_BLOCK: override the default block size (bytes); 0/absent = default.
      * Digits by hand: glibc redirects strtol to __isoc23_strtol@GLIBC_2.38. */
     const char *bs = getenv("TYCHO_BLOCK");
-    if (bs && *bs) { long v = 0; const char *q = bs; while (*q >= '0' && *q <= '9' && v < (1L << 40)) v = v * 10 + (*q++ - '0'); if (q != bs && v > 0) g_block_override = (size_t)v; }
+    /* `long long`, not `long`: long is 32-bit on Windows (LLP64), where both
+     * the accumulator and `1L << 40` are undefined -- the cap could not be
+     * reached and the shift is UB. Caught by `make mingw-warn`. */
+    if (bs && *bs) { long long v = 0; const char *q = bs; while (*q >= '0' && *q <= '9' && v < (1LL << 40)) v = v * 10 + (*q++ - '0'); if (q != bs && v > 0) g_block_override = (size_t)v; }
 }
 
 static __thread HBlock *g_block_pool = NULL;
