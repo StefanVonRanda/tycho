@@ -9,7 +9,7 @@
 and can optionally name the library to link.
 
 ```tycho
-extern fn random() -> int                            # libc
+extern fn rand() -> i32                              # libc: C `int rand(void)`
 extern "m" fn cos(x: float) -> float                 # links -lm
 extern fn sx_col_text(stmt: ptr, i: int) -> string   # C string in, Tycho string out
 extern fn crc32(data: bytes, len: u32) -> u32        # sized ints: real uint32_t at the C ABI
@@ -19,7 +19,10 @@ extern fn crc32(data: bytes, len: u32) -> u32        # sized ints: real uint32_t
 `int64_t`, so `extern fn getpid() -> int` collides with `unistd.h`'s `pid_t`
 return and the emitted C will not compile: `conflicting types for 'getpid'`.
 Declare the width the header actually uses (`i32`, `u32`, ...) when it is not
-64-bit.
+64-bit. A C `long` has no Tycho spelling, and it is not portably `int64_t`:
+`extern fn random() -> int` compiles on LP64 Linux, where `long` *is* `int64_t`,
+and fails on macOS, where `long` and `long long` are distinct 64-bit types.
+Prefer a libc function whose header type is fixed on every platform.
 
 ## The boundary
 
@@ -131,8 +134,9 @@ limits.
 An `extern fn` is a bodyless declaration whose name *is* the C symbol name,
 optionally prefixed with the library to link:
 
+<!-- fence-skip: a signature showcase with no main, naming SDL2 and a SQLite shim this host has no symbol for -->
 ```tycho
-extern fn random() -> int                                # libc (already linked)
+extern fn rand() -> i32                                  # libc (already linked)
 extern fn hypot(x: float, y: float) -> float             # libm (already linked)
 extern "z" fn crc32(crc: int, buf: string, n: int) -> int    # links -lz
 extern "SDL2" fn SDL_Init(flags: int) -> int                 # links -lSDL2

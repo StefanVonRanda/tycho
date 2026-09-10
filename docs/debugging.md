@@ -35,31 +35,33 @@ gdb ./program
 a one-step compile+link discards them, so generate a `.dSYM` first:
 
 ```sh
-tychoc program.ty -g --emit-c -o program      # keep the .c
-cc -O0 -g -fwrapv -pthread program.c -o program -lm
-```
-
-Then package the debug info and break by Tycho source line:
-
-```sh
-dsymutil program                               # writes program.dSYM
+tychoc program.ty -g --emit-c -o program           # keep the .c
+cc -O0 -g -fwrapv -pthread -c program.c -o program.o   # keep the .o
+cc -O0 -g -pthread program.o -o program -lm
+dsymutil program                                   # writes program.dSYM
 lldb ./program
 (lldb) breakpoint set -f program.ty -l 7
 ```
 
+`-c` and a separate link step are the point: `dsymutil` reads the DWARF out of
+the object files the executable names, so a one-step `cc program.c -o program`
+leaves it nothing to find and the `.dSYM` comes out empty
+(`dsymutil` says `no debug symbols in executable`, and the breakpoint above
+resolves to no locations).
+
 (`-g` alone still produces a runnable binary on macOS; the `.dSYM` step is only
 needed for source-level stepping.)
 
-> **Unverified on the gating host.** Every other command block in this
-> repository's docs is executed by `make docs-fences` and must exit 0. The three
-> lines above are the one exception: `dsymutil` is Xcode's and writes a Mach-O
-> `.dSYM`, so a Linux gate cannot run them and installing `lldb` there would not
-> change that. The lane *does* drive them on macOS — run `make docs-fences` on a
-> Mac and this block is checked like any other. Until someone does, treat it as
-> the one procedure here that has not been machine-checked. The gdb block above
-> is driven for real on every run, and the DWARF emitted by the two commands
-> above names `program.ty` on 31 line-table entries, so the part this rests on —
-> a breakpoint set on a `.ty` line binding to one — is not in doubt.
+> **Each block is checked on the host that can run it.** `make docs-fences`
+> executes every command block in this repository's docs and requires exit 0.
+> These two cannot both run on one machine: `gdb` is not in the macOS toolchain,
+> and `dsymutil` is Xcode's and writes a Mach-O `.dSYM` that no Linux host can
+> produce. So the lane drives the gdb block on Linux and the lldb block on
+> macOS, and on each platform the *other* one is an enumerated exception in
+> `ALLOWED_SKIPS` (`scripts/docs_fences.py`) rather than an unchecked category —
+> a skip on the platform a block documents is a failure. Both were run: the
+> lldb block was first executed on Darwin 25.5.0 / arm64 on 2026-09-10, and it
+> is what turned up the missing `-c`.
 
 ## `tycho debug` — the gdb adapter
 
