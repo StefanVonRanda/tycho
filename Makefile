@@ -48,12 +48,16 @@ TYCHOC1_SRC := compiler/main.ty $(wildcard compiler/*/*.ty)
 # unsorted, so the first unwind runs classify_object_over_fdes over the whole
 # thing -- 201,604 Ir on EVERY compile regardless of input size (48% of a
 # two-line program, measured identical on tiny.ty and examples/invindex.ty).
-# -fPIE is not redundant beside -static-pie: with -flto, gcc does not propagate
-# the PIE implication into the LTRANS objects, and the link dies on
-# `relocation R_X86_64_32 against .rodata can not be used when making a PIE
-# object; recompile with -fPIE`. Measured 2026-09-11 on gcc 16.2.1 / Fedora 44,
-# where the flags below WITHOUT it cannot build tychoc1 at all. Naming it
-# explicitly costs nothing where the implication already worked.
+# -fPIE is not redundant beside -static-pie. On gcc 16.2.1 / Fedora 44 the
+# implication does not reach the compile step, and any translation unit with a
+# string literal to relocate dies at the link:
+#   relocation R_X86_64_32 against `.rodata.str1.1' can not be used when
+#   making a PIE object; recompile with -fPIE
+# Measured 2026-09-11: WITHOUT it neither tychoc1 (here) nor the three shipped
+# tools (TOOL_CFLAGS below) can be built on that toolchain. It is NOT specific
+# to -flto -- tychofmt has no LTO and fails the same way -- and it is NOT
+# visible to a trivial probe, because a program with no .rodata relocation links
+# fine either way. Naming it costs nothing where the implication already worked.
 TYCHOC1_CFLAGS ?= --param inline-unit-growth=150 -static-pie -flto -fPIE
 # `make clean && make` is the bootstrap check: clean removes tychoc1, so this
 # line runs for real. 8c156d38 swapped it to ./tychoc1 and only a fresh clone saw it.
@@ -75,7 +79,9 @@ tychoc1: tychoc $(TYCHOC1_SRC)
 # -static-pie is what tychoc1 itself already uses (TYCHOC1_CFLAGS above) and it
 # removes the floor outright: max GLIBC symbol version becomes NONE, ldd reports
 # "statically linked". Cost is ~0.93 MB per binary uncompressed.
-TOOL_CFLAGS ?= -static-pie
+# -fPIE for the same reason as TYCHOC1_CFLAGS above; tychofmt has no LTO and
+# still needs it, which is what shows the cause is not LTO.
+TOOL_CFLAGS ?= -static-pie -fPIE
 
 # `tycho` is NOT in either archive (scripts/release.sh:130 copies three tools), so
 # no lane can redden for it and it is left alone deliberately -- reported, not fixed.
