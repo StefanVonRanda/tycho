@@ -51,6 +51,10 @@ static char *g_line_file = NULL;   /* the source path, C-string-escaped, for tho
 static int g_err_col = 0;          /* 1-based caret column (0 = none); set from the offending token before die_at */
 static int g_affine_line = 0;      /* line of the construct being parsed/resolved, for the affine refusals in the type-intern helpers, which take no line of their own (see affine_err) */
 
+static int g_inst_cur = -1;   /* index of the g_ginsts entry whose substituted body is being resolved, or -1 at top level. An instance interned while this is >= 0 is NESTED and records it as its parent. */
+#define INST_CHAIN_MAX 8   /* frames past the innermost; deeper chains elide the middle */
+static const char *g_inst_chain_file[INST_CHAIN_MAX], *g_inst_chain_src[INST_CHAIN_MAX];
+static int g_inst_chain_line[INST_CHAIN_MAX], g_inst_nchain = 0;   /* the instantiation frames ABOVE the innermost, outward. Built per instance in gen_program's resolve loop, where g_ginsts is in scope -- the diag code below runs far earlier in the file and cannot see it. */
 static const char *g_inst_from = NULL, *g_inst_from_src = NULL; static int g_inst_from_line = 0;   /* generics: the call that instantiated the template whose SUBSTITUTED body is being resolved. Set only around gen_program's instance loop, so an ordinary diagnostic never grows a note */
 
 /* show the offending source line under a message (single-file: always the right
@@ -77,6 +81,8 @@ static void src_snippet(const char *src, int line, int col) {
 typedef struct {
     const char *file; int line; int col; char *msg; const char *src;
     const char *inst_file; int inst_line; const char *inst_src;
+    const char *ch_file[INST_CHAIN_MAX], *ch_src[INST_CHAIN_MAX];
+    int ch_line[INST_CHAIN_MAX], nch;   /* frames above inst_*, outward */
     const char *note_file; int note_line; const char *note_src; char *note_msg;
     int from_lexer;   /* an unclosed-bracket report: it already explains this line */
 } Diag;
@@ -961,6 +967,12 @@ static void diag_push(int line, char *msg) {
     g_diags[g_ndiags].inst_file = g_inst_from;
     g_diags[g_ndiags].inst_line = g_inst_from_line;
     g_diags[g_ndiags].inst_src  = g_inst_from_src;
+    g_diags[g_ndiags].nch = g_inst_nchain;
+    for (int _c = 0; _c < g_inst_nchain; _c++) {
+        g_diags[g_ndiags].ch_file[_c] = g_inst_chain_file[_c];
+        g_diags[g_ndiags].ch_line[_c] = g_inst_chain_line[_c];
+        g_diags[g_ndiags].ch_src[_c]  = g_inst_chain_src[_c];
+    }
     g_diags[g_ndiags].note_file = g_note_file;
     g_diags[g_ndiags].note_line = g_note_line;
     g_diags[g_ndiags].note_src  = g_note_src;
@@ -996,6 +1008,14 @@ static void diag_flush(void) {
             fprintf(stderr, "%s:%d: note: required from here -- this call instantiated the generic\n",
                     d->inst_file, d->inst_line);
             src_snippet(d->inst_src, d->inst_line, 0);
+            /* ...and every frame ABOVE it, outward. On a nested chain the innermost
+             * note is inside generic code the reader may not own; the OUTERMOST is
+             * the call they actually wrote, and it is the one worth reaching. */
+            for (int k = 0; k < d->nch; k++) {
+                fprintf(stderr, "%s:%d: note: required from here -- this call instantiated the generic\n",
+                        d->ch_file[k], d->ch_line[k]);
+                src_snippet(d->ch_src[k], d->ch_line[k], 0);
+            }
         }
     }
 }
@@ -2617,7 +2637,7 @@ static Type parse_type_inner(Parser *ps) {
             return mt;
         }
         eat(ps, TK_RBRACKET, "']'");
-        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2559) sits after a die_at */
+        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2579) sits after a die_at */
             die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
         return arr_of(elem);   /* fixed [int]/[float]/[string] or a composite */
     }
@@ -2981,7 +3001,7 @@ static Expr *parse_primary(Parser *ps) {
                 e->ival = mt; e->op = TK_COLON;
                 return e;
             }
-            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2324): parse_type never yields T_VOID */
+            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2344): parse_type never yields T_VOID */
                 die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
             e->ival = arr_of(elem);   /* type carried to the resolver */
             return e;
@@ -5804,7 +5824,7 @@ static const char *ufcs_generic(const char *name, const char *pkg, Type recv) {
  * independently with no shared/sticky resolved state (the source of the prior
  * multi-instantiation, typed-local, and nested-call bugs). */
 typedef struct { Proc *tmpl; char *name; Type params[16]; int nparams; Type ret; Type *binds; Stmt **body; int nbody;
-                 int64_t spvals[16]; int nsp; const char *cfile, *csrc; int cline; } GInst;   /* const generics 1.6B: this instance's `$N` size-param values (names from tmpl->sizeparams). cfile/csrc/cline: the call that chose these types, for a refusal raised in the substituted body */
+                 int64_t spvals[16]; int nsp; const char *cfile, *csrc; int cline; int parent; } GInst;   /* const generics 1.6B: this instance's `$N` size-param values (names from tmpl->sizeparams). cfile/csrc/cline: the call that chose these types, for a refusal raised in the substituted body */
 static GInst *g_ginsts; static int g_nginsts = 0, g_nginsts_cap = 0;
 static Stmt **clone_block(Stmt **body, int n, Type *binds);   /* per-instance body clone; defined near ginst_to_proc */
 static Proc **g_inst_procs; static int g_ninst_procs = 0, g_inst_procs_cap = 0;   /* resolved generic-instance Procs, shared by the prototype + body emit loops (Stage-2 #3) */
@@ -6194,7 +6214,7 @@ static void collect_idents(Expr *e, const char **out, int *n, int cap) {
     }
     if (e->kind == E_CALL) {   /* Neither name on a call is a child expr: the callee lives in
                                 * sval (`g(x)` where g is a closure) and a method call's RECEIVER
-                                * lives in qual (`m.get(k)`, src/tychoc.c:3405), because the parser
+                                * lives in qual (`m.get(k)`, src/tychoc.c:3425), because the parser
                                 * cannot tell it from a package call. Both are outer reads; missing
                                 * qual let `m` reach the lifted body uncaptured and the C compiler,
                                 * not tychoc, reported `h_m undeclared`. pf_scan_expr already does
@@ -7583,7 +7603,7 @@ static Type resolve_expr_inner(Expr *e) {
             if (e->nargs != s->nparams)
                 die_at(e->line, "'%s' takes %d argument(s), got %d",
                        nominal_name(e->sval), s->nparams, e->nargs);
-            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:7004 */
+            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:7024 */
             for (int i = 0; i < e->nargs; i++) {
                 g_in_arg++;
                 Type at_ = resolve_exp(e->args[i], s->params[i]);   /* fixes a None arg */
@@ -8181,7 +8201,7 @@ static void pf_capture(Expr *id) {
 /* capture an outer local named by a STRING rather than by an E_IDENT node -- the
  * callee of `f(x)` and the receiver of `o.f(x)` live in E_CALL's sval/qual, not
  * in a child expr. The synthesized read is resolved in the enclosing scope with
- * every other capture (src/tychoc.c:8752). Non-locals (global fns, builtins,
+ * every other capture (src/tychoc.c:8772). Non-locals (global fns, builtins,
  * enum constructors, package qualifiers) fail vars_find and are dropped. */
 static void pf_capture_name(const char *n, int line) {
     Type vt;
@@ -8204,10 +8224,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:8100),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:8120),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:8374). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:8394). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
@@ -8228,7 +8248,7 @@ static void pf_scan_expr(Expr *e) {
     }
     /* A call's callee is NOT an E_IDENT child of the node: `f(x)` keeps the name
      * in sval, and `o.f(x)` keeps the receiver in qual because the parser cannot
-     * tell it from a package call (src/tychoc.c:3399). The generic descent below
+     * tell it from a package call (src/tychoc.c:3419). The generic descent below
      * visits lhs/rhs/args only, so a fn-typed local reached the lifted chunk proc
      * uncaptured and the C compiler -- not tychoc -- reported the undeclared name.
      * The lambda capture analysis already does the sval half (src/tychoc.c@collect_idents). */
@@ -9565,7 +9585,7 @@ static void instantiate_generic(Proc *gt, Expr *e) {
     for (int j = 0; j < gt->nparams; j++) { s.params[j] = cparams[j]; s.inout[j] = gt->params[j].is_inout; s.sink[j] = gt->params[j].is_sink; s.variadic[j] = gt->params[j].is_variadic; }
     TBL_ENSURE(g_sigs, g_nsigs, g_sigs_cap); g_sigs[g_nsigs++] = s;
     TBL_ENSURE(g_ginsts, g_nginsts, g_nginsts_cap);
-    GInst gi; gi.tmpl = gt; gi.name = nm; gi.nparams = gt->nparams; gi.ret = cret; gi.cfile = g_srcname; gi.csrc = g_src; gi.cline = e->line;   /* resolving the CALLER here, so these name the call site */
+    GInst gi; gi.tmpl = gt; gi.name = nm; gi.nparams = gt->nparams; gi.ret = cret; gi.cfile = g_srcname; gi.csrc = g_src; gi.cline = e->line; gi.parent = g_inst_cur;   /* resolving the CALLER here, so these name the call site */
     gi.binds = (Type *)xmalloc((size_t)(g_ntyparams > 0 ? g_ntyparams : 1) * sizeof(Type));
     for (int i = 0; i < g_ntyparams; i++) gi.binds[i] = binds[i];
     gi.body = clone_block(gt->body, gt->nbody, gi.binds);   /* Stage-2: the instance's own `$T`-substituted body */
@@ -9974,7 +9994,7 @@ static const char *for3_elidable_arr(Stmt *s) {
     if (!bound || bound->kind != E_CALL || !bound->sval || strcmp(bound->sval, "len") ||
         bound->nargs != 1 || !bound->args[0] || bound->args[0]->kind != E_IDENT) return NULL;
     if (IS_INLINE_ARR(bound->args[0]->type)) return NULL;   /* [N]T / bounded / vector store in .v, not .data — elision emits .data[i], so never elide it */
-    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:4222-4227) */
+    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:4242-4247) */
     if (!post || post->kind != S_ASSIGN || !post->name || strcmp(post->name, iv)) return NULL;
     Expr *inc = post->expr;
     if (!inc || inc->kind != E_BINOP || inc->op != TK_PLUS) return NULL;
@@ -13572,7 +13592,15 @@ static void gen_program(FILE *o, ProcVec *prog) {
      * is self-contained, so resolve (here) and emit (below) can be separated. */
     g_ninst_procs = 0; const char *sn0 = g_srcname, *st0 = g_src;
     for (int i = 0; i < g_nginsts; i++) {
-        Proc *p = ginst_to_proc(&g_ginsts[i]); diag_use_proc(p); g_inst_from = g_ginsts[i].cfile; g_inst_from_src = g_ginsts[i].csrc; g_inst_from_line = g_ginsts[i].cline;   /* the body is the TEMPLATE's lines -- name the template's file, not the caller's, and add the call that instantiated it */
+        Proc *p = ginst_to_proc(&g_ginsts[i]); diag_use_proc(p); g_inst_from = g_ginsts[i].cfile; g_inst_from_src = g_ginsts[i].csrc; g_inst_from_line = g_ginsts[i].cline; g_inst_cur = i;
+        g_inst_nchain = 0;   /* frames above this one, outward, for a refusal raised in its body */
+        for (int k = g_ginsts[i].parent; k >= 0 && g_inst_nchain < INST_CHAIN_MAX; k = g_ginsts[k].parent) {
+            if (!g_ginsts[k].cfile) break;
+            g_inst_chain_file[g_inst_nchain] = g_ginsts[k].cfile;
+            g_inst_chain_line[g_inst_nchain] = g_ginsts[k].cline;
+            g_inst_chain_src[g_inst_nchain]  = g_ginsts[k].csrc;
+            g_inst_nchain++;
+        }   /* the body is the TEMPLATE's lines -- name the template's file, not the caller's, and add the call that instantiated it */
         g_nvars = 0;
         for (int j = 0; j < p->nparams; j++) {
             Type pt = p->params[j].type;
@@ -13588,7 +13616,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
         resolve_block(p->body, p->nbody, p->ret);
         TBL_ENSURE(g_inst_procs, g_ninst_procs, g_inst_procs_cap);
         g_inst_procs[g_ninst_procs++] = p;
-    } g_srcname = sn0; g_src = st0; g_inst_from = NULL;   /* the loop retargeted them per instance; the emit below re-targets per proc */
+    } g_srcname = sn0; g_src = st0; g_inst_from = NULL; g_inst_cur = -1; g_inst_nchain = 0;   /* the loop retargeted them per instance; the emit below re-targets per proc */
     /* Types reference one another, sometimes cyclically (a `[Node]` field is a
      * TychoArrC descriptor holding S_Node*). Emit in dependency layers:
      *   1. forward-declare every struct tag,

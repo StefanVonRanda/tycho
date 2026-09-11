@@ -5,13 +5,10 @@
 # user-extensible constraints (traits) are not needed to get usable errors out of
 # structural generics. Nothing pinned it before this fixture.
 #
-# ONE level of instantiation on purpose. tychoc and tychoc1 agree exactly here,
-# and DIVERGE as soon as the generic calls another generic: on a two-level chain
-# tychoc emits two frames and tychoc1 emits three (it reports the outermost call
-# as well). That divergence is real and unfixed -- see the note in
-# docs/internals/FRICTION.md -- so pinning the nested shape here would pin one
-# compiler's wording against the other's. This fixture pins the part they agree
-# on; a nested fixture belongs with the fix, not ahead of it.
+# ONE level of instantiation on purpose -- the simplest shape that shows the note
+# at all, so a regression in the common case is not diagnosed through a nested
+# one. `generic_instantiation_chain.ty` beside this pins the nested form, where
+# every frame out to the caller's own line must appear.
 struct Point:
     x: int
     y: int

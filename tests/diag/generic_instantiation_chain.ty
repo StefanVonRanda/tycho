@@ -1,0 +1,28 @@
+# The nested half of the instantiation note, which could not be pinned until the
+# two compilers agreed on it (FRICTION entry 87): tychoc reported ONE frame and
+# tychoc1 reported the whole chain, so a byte-compared golden could only ever
+# match one of them.
+#
+# main calls outer, outer calls inner, inner calls a concrete show(Point) at the
+# wrong type. All THREE lines must appear, outward: the failing call inside the
+# innermost generic, then each call that instantiated the one below it. The last
+# is the point of the whole feature -- line 28 is the only line here a caller
+# actually wrote, and it is the one the single-frame form used to drop.
+struct Point:
+    x: int
+    y: int
+
+struct Name:
+    s: string
+
+fn show(p: Point) -> string:
+    return "(" + str(p.x) + "," + str(p.y) + ")"
+
+fn inner(v: $T) -> string:
+    return show(v)
+
+fn outer(v: $T) -> string:
+    return "[" + inner(v) + "]"
+
+fn main():
+    println(outer(Name("ada")))

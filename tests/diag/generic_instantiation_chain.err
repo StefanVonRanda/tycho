@@ -1,0 +1,6 @@
+tests/diag/generic_instantiation_chain.ty:22: error: argument type mismatch: argument 1 of 'show' is Name, expected Point
+    22 |     return show(v)
+tests/diag/generic_instantiation_chain.ty:25: note: required from here -- this call instantiated the generic
+    25 |     return "[" + inner(v) + "]"
+tests/diag/generic_instantiation_chain.ty:28: note: required from here -- this call instantiated the generic
+    28 |     println(outer(Name("ada")))

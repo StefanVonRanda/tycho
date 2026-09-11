@@ -318,7 +318,7 @@ pick-up order is written out in full under "What moved this pass" below.
    (*Earlier phases*) — reproduced verbatim again at
    `3ddc8fd` with a scratch program: `spawn work(1)` gives `error: a statement must be a
    declaration, assignment, or call -- a bare expression has no effect`
-   (`src/tychoc.c:4092`, unmoved since the previous pass), which still never states the
+   (`src/tychoc.c:4112`, unmoved since the previous pass), which still never states the
    real rule — a task handle must be *bound* so the compiler can hang the implicit join on
    it. **One line of diagnostic text at a known line.** Open only because nobody has spent
    it, through two re-scores.
@@ -352,15 +352,15 @@ pick-up order is written out in full under "What moved this pass" below.
    rejected at the *definition* with `error: 'die' is already defined`. **The reason is
    pinned:** the definition-time duplicate check is
    `if (sig_find(pr->name) || consts_find(pr->name)) die_dup_proc(...)`
-   (`src/tychoc.c:9108`), and `sig_find` searches `g_sigs` — which holds `die` and `exit`
-   as real entries (`src/tychoc.c:5246-5247`, inside `src/tychoc.c@register_builtins`)
+   (`src/tychoc.c:9128`), and `sig_find` searches `g_sigs` — which holds `die` and `exit`
+   as real entries (`src/tychoc.c:5266-5267`, inside `src/tychoc.c@register_builtins`)
    but **holds no entry for `send`, `recv` or `close` at all**; those three are recognised
-   ad hoc during resolution (`src/tychoc.c:6589`, `src/tychoc.c:6598`,
-   `src/tychoc.c:6617`). So it is not a table that omits three rows, it is three builtins
-   that were never in the table. **The code is ~1 line** at `src/tychoc.c:9108`; the open
+   ad hoc during resolution (`src/tychoc.c:6609`, `src/tychoc.c:6618`,
+   `src/tychoc.c:6637`). So it is not a table that omits three rows, it is three builtins
+   that were never in the table. **The code is ~1 line** at `src/tychoc.c:9128`; the open
    part is the decision — which builtin names are shadowable — because landing it newly
    rejects any program defining `send`/`recv`/`close`. Note the generic path a line above
-   (`src/tychoc.c:9102`) consults the same two tables plus `generic_find`, so whatever is
+   (`src/tychoc.c:9122`) consults the same two tables plus `generic_find`, so whatever is
    decided has to be written twice.
 
    And the "corelib layering decision" this item wanted taken **was already
@@ -390,7 +390,7 @@ pick-up order is written out in full under "What moved this pass" below.
      the reference bounds it at **64**, so above 64 the fan-out is narrower than `ncpu()`
      reports". The old text's "uses `ncpu()` chunks" — false on both counts, the `min`
      and the cap — is gone. The compiler side is cited anchored from the spec's own
-     provenance block, `src/tychoc.c:12085@_pk > 64`, so the gate now polices it.
+     provenance block, `src/tychoc.c:12105@_pk > 64`, so the gate now polices it.
    - **`ncpu()`'s false definition is corrected**, which was the other half:
      `docs/spec/16-builtins.md:248` states outright that it is "the *requested* worker
      count, **not** the width a `parallel for` will actually use" and that "a program that
@@ -414,10 +414,10 @@ pick-up order is written out in full under "What moved this pass" below.
      on 2026-07-30; `docs/spec/13-concurrency.md:81-83` is the corrected text and no
      longer says this.)*
    - The width is now **readable from Tycho**: `ncpu()` is a registered builtin
-     (`src/tychoc.c:5825@ncpu`, lowering at `src/tychoc.c:11069@tycho_ncpu`), so a program can at least
+     (`src/tychoc.c:5845@ncpu`, lowering at `src/tychoc.c:11089@tycho_ncpu`), so a program can at least
      ask. Measured on this box: `ncpu()` → 16.
    - There was an **undocumented hard ceiling of 64 chunks** — `if (_pk < 1) _pk = 1; if
-     (_pk > 64) _pk = 64;` (`src/tychoc.c:11275`, inside `src/tychoc.c@gen_parfor`) —
+     (_pk > 64) _pk = 64;` (`src/tychoc.c:11295`, inside `src/tychoc.c@gen_parfor`) —
      which `docs/spec/13-concurrency.md` did not mention, so on a box with more than 64
      CPUs the spec's "uses `ncpu()` chunks" was false. **That half is a ~1-line spec fix
      and should be split out and taken** — *it was, and closing it is what closed this
@@ -478,7 +478,7 @@ pick-up order is written out in full under "What moved this pass" below.
    recursive fan-out — worker k spawns worker k+1 into a frame-local, then runs its own
    accept loop. **An array of handles is a type-system change, not an item-sized fix.
    Uncosted, and still the honest core of what is left.** *(This entry cited
-   `src/tychoc.c:868` and `server/main.ty:563-565` at the previous pass; the first drifted
+   `src/tychoc.c:874` and `server/main.ty:563-565` at the previous pass; the first drifted
    by one line and the second by 440, because `server/main.ty` roughly doubled — 1088 lines
    now. Both are `path@SYMBOL` here, which is why they will not drift again.)*
    **NARROWED, 2026-07-31, and the item reads stronger than it is** (the prunner plan).
@@ -799,7 +799,7 @@ shape: a bounded pool over a channel with a fan-in, over jobs that all terminate
   continuously; the results channel filling and parking a worker did not happen, or at
   least was not measured.
 - **Nothing above 64 workers as a real workload.** The 64-chunk probe used synthetic 50 ms
-  sleeps; the real corpus ran at `ncpu()` = 16, nowhere near `src/tychoc.c:11275`.
+  sleeps; the real corpus ran at `ncpu()` = 16, nowhere near `src/tychoc.c:11295`.
 - **No nested parallelism** — no `parallel for` inside a spawned task, and no pool inside
   a pool.
 
@@ -1000,7 +1000,7 @@ swept. Recorded so the next reader knows they exist and why nobody fixed them:
   §22.1 and the `ncpu()` correction. The shift bands are mechanical and were
   written down at the time (`docs/reference/concurrency.md` old ≥105 → +13;
   `docs/spec/13-concurrency.md` old 83..112 → +8, and so on).
-- **`src/tychoc.c:3799`** points at `gen_parfor` 98 lines short of where it is.
+- **`src/tychoc.c:3819`** points at `gen_parfor` 98 lines short of where it is.
 - **The package-mode comment above `dup_other_file`** cites two sites and both
   are wrong — one lands in array-copy codegen, the other in an enum comment.
 
@@ -1352,9 +1352,9 @@ confirmed, not a divergence between them. An array aborts on all four, and the
 check is **purely a runtime one**: `a[2:10]` on a 5-element array compiles
 cleanly (exit 0 from tychoc) and dies only when run, so there is no
 compile-time arm to strengthen. The array check is emitted inline into the
-generated C by the compiler — `src/tychoc.c:11579-11581` for an ordinary array
+generated C by the compiler — `src/tychoc.c:11599-11601` for an ordinary array
 (the path the probe above took) and the same test again at
-`src/tychoc.c:11558-11560` for the SoA variant, both spelling it
+`src/tychoc.c:11578-11580` for the SoA variant, both spelling it
 `_lo < 0 || _hi > len || _lo > _hi`, which is why all four shapes abort and not
 just the two that overrun. The clamp is `runtime/tycho_rt.c@tycho_str_substr`,
 whose three lines are exactly `start<0 -> 0`, `end>n -> n`, `end<start -> start`.
@@ -1469,7 +1469,7 @@ an array slice that ABORTS, the MUST NOT infer-from-return rule, and
 The entry's load-bearing sentence — "the builtins are `println`, `die` (stderr,
 then exit 1) and `exit(n)`", so "**a non-fatal warning is inexpressible**" — is
 **false, and was false when it was written**. `eprint(s)` is a builtin: registered
-at `src/tychoc.c:5820@eprint`, emitted as `tycho_eprint`, and defined as
+at `src/tychoc.c:5840@eprint`, emitted as `tycho_eprint`, and defined as
 `fputs(s, stderr)` in `runtime/tycho_rt.c@tycho_eprint`. It is specified —
 `docs/spec/16-builtins.md:74@eprint` says "Write `s`'s bytes to stderr; no
 newline, **no exit**" — and it was added on 2026-06-14 in `61fa0dc`
@@ -2090,12 +2090,12 @@ language changes, which is why this ranks below three corelib items that are not
 >    and runs. The decoration is one underscore per arm, not an invented
 >    identifier. What is refused is dropping the parens entirely —
 >    `VInt: return 1` → `error: VInt binds 1 value(s), got 0`
->    (`src/tychoc.c:8974`).
+>    (`src/tychoc.c:8994`).
 > 2. *"without binding a payload"* — a **nullary** variant needs no match at
 >    all: `if v == VNull:` compiles and runs. `==` is a working discriminator
 >    for the payload-free half of an enum. It stops at the other half:
 >    `if v == VInt:` → `error: VInt carries a payload — write VInt(...)`
->    (`src/tychoc.c:6420`).
+>    (`src/tychoc.c:6440`).
 >
 > So the real gap is narrower than the heading: **a payload-carrying variant
 > has no value-level discriminator**, and `match` is the only test for it.
@@ -2142,7 +2142,7 @@ which arms actually use their payloads.
 > error: or_return propagates a PErr error, but the function's error type is RErr
 > ```
 >
-> — `src/tychoc.c:6406-6408`. So the rule is "no *implicit* conversion", not
+> — `src/tychoc.c:6426-6428`. So the rule is "no *implicit* conversion", not
 > "no conversion".
 >
 > The second, smaller true claim: `map_err` takes a **constant** replacement
@@ -2845,7 +2845,7 @@ records the toll, which is one copied block per shim and is paid once.
   `grep -E '^fn .*-> \[string\]' corelib/strings/strings.ty` returned only
   `lines`. That grep cannot find it: `split(s, sep) -> [string]` is a **language
   builtin**, specified at `docs/spec/16-builtins.md:150` and registered at
-  `src/tychoc.c:5833@.name="split"`, so it is in no package at all.
+  `src/tychoc.c:5853@.name="split"`, so it is in no package at all.
   `corelib/strings/strings.ty:170` says so in a comment one line above `lines`
   — "(split(s, sep) and find(s, sub) are language builtins -- not duplicated
   here.)" — and `corelib/test/wordfreq/main.ty:22` is a word-frequency program
@@ -3277,7 +3277,7 @@ struct Plan($T):
 ```
 
 **The asymmetry, in one line.** A `fn($T) -> $T` typedef is deliberately NOT
-emitted — `src/tychoc.c:13566` skips any function type mentioning a type
+emitted — `src/tychoc.c:13586` skips any function type mentioning a type
 parameter, because `$T` lowers to `void` and a `void` parameter is invalid C.
 But the composite-array BODY loop emitted `struct TychoArrC0_ { FnC0 *data; }`
 for the template's dead `[fn($T)->$T]` anyway, naming the typedef that was just
@@ -3922,8 +3922,8 @@ that there is no element-wise `+` for `string` elements. The message was built
 from the element type at two sites, where `arr_elem(lt)` was spelled into a
 sentence that reads as a claim about the language.
 
-**FIXED 2026-08-13, both sites** (`src/tychoc.c:7878@element-wise` and
-`src/tychoc.c:7933@element-wise`, anchored per this file's header rule). The
+**FIXED 2026-08-13, both sites** (`src/tychoc.c:7898@element-wise` and
+`src/tychoc.c:7953@element-wise`, anchored per this file's header rule). The
 false clause is gone and `+` now names the operation the caller actually wanted:
 
 ```
@@ -6080,12 +6080,20 @@ Found only because an unrelated branch ran every lane it had skipped.
 
 ## Found by pinning the instantiation note, 2026-09-11 (head `6ba1576c`)
 
-### 87. `tychoc` and `tychoc1` report a different number of instantiation frames — **OPEN**
+### 87. ~~`tychoc` and `tychoc1` report a different number of instantiation frames~~ — **FIXED 2026-09-11: tychoc now walks the chain (the owner's call)**
 
-**Nothing pins this, deliberately** — an assertion either way would freeze one
-compiler's wording against the other's. `tests/diag/generic_instantiation_note.ty`
-pins only the ONE-frame shape, where the two agree exactly. (No `Pinned-by:` line:
-this entry is open, and that line is for closed ones.)
+> Pinned-by: make test
+
+**Decided and fixed the same day.** The choice was the owner's, because the two
+directions were opposite edits to a user-facing diagnostic: teach `tychoc` to
+walk the chain, or cap `tychoc1` at one frame. **Option A was taken** — the
+outermost frame is the only line in a nested failure that the caller actually
+wrote, and it was exactly the one the single-frame form dropped.
+
+`tests/diag/generic_instantiation_note.ty` still pins the one-frame shape (the
+common case, diagnosed directly rather than through a nested one), and
+`tests/diag/generic_instantiation_chain.ty` now pins the nested form that could
+not be written while the two disagreed.
 
 A generic body is type-checked after substitution, so a call inside it fails at
 an instantiation and the compiler walks back up naming each instantiating call.
@@ -6125,15 +6133,30 @@ outermost frame is the call the programmer actually wrote, and it is the one a
 reader needs to find the mistake. Deciding it means changing the other compiler
 to match, then a nested fixture can land with the fix.
 
-**Sized, so the decision is cheap.** The divergence is structural rather than a
+**How it was fixed, and the one thing the sizing got wrong.**
+`diag_flush` (`src/tychoc.c:997@diag_flush`) runs some 4,800 lines BEFORE `GInst`
+is declared, so it cannot walk `g_ginsts` at print time — the sizing below
+assumed it could. Instead `GInst` gained a `parent` index, a new `g_inst_cur`
+tracks which instance's body is being resolved (so a nested instantiation records
+its parent when it is interned), and `gen_program`'s resolve loop — where
+`g_ginsts` IS in scope — builds the outward frame list into globals that a
+diagnostic copies when it is raised. Capped at 8 frames.
+
+**The predicted golden churn did not happen.** The sizing called this a
+corpus-wide change wanting its own commit; `make test` came back 1039/0, the
+1039th being the new fixture. No existing fixture's diagnostic ran through a
+nested generic, so nothing else moved. Worth recording: the cost estimate was
+the right shape and the wrong size, and only running it settled that.
+
+**The original sizing, kept for the record.** The divergence is structural rather than a
 wording slip: `tychoc`'s `Diag` carries a *single* instantiation site
-(`src/tychoc.c:79@inst_file` — one `inst_file`/`inst_line`/`inst_src`, not a
-stack), filled from one global pair (`src/tychoc.c:54@g_inst_from`) that
+(`src/tychoc.c:83@inst_file` — one `inst_file`/`inst_line`/`inst_src`, not a
+stack), filled from one global pair (`src/tychoc.c:58@g_inst_from`) that
 `gen_program`'s instance loop retargets per instance
-(`src/tychoc.c:13575@g_inst_from`). So it can only ever name the innermost
+(`src/tychoc.c:13595@g_inst_from`). So it can only ever name the innermost
 frame; it is not dropping the outer one, it never had it. Making it match means
 giving `GInst` a link to the instance that instantiated it and walking that
-chain in `diag_flush` (`src/tychoc.c:985@diag_flush`) — bounded work, but it
+chain in `diag_flush` (`src/tychoc.c:997@diag_flush`) — bounded work, but it
 touches a user-facing diagnostic for every nested generic in the corpus, so it
 is a golden-churn change and wants to be one deliberate commit. The cheaper
 direction, capping `tychoc1` at one frame to match `tychoc`, is smaller and
