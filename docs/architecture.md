@@ -82,6 +82,16 @@ working, not an inversion of it.
 
 ## The verification surface
 
+**One class the lanes below do not cover**, stated so it is not mistaken for
+covered: ASan sees addresses, UBSan undefined behaviour, LSan leaks, TSan races
+— **none sees a read of memory that was never written**, and `arena_alloc` hands
+back non-zeroed memory inside a live block, which ASan considers entirely valid.
+Probed 2026-09-11 with valgrind memcheck and every arena handout marked
+undefined: 288 of 288 flat fixtures clean, against an instrument first proved
+able to fire. No lane was added because it found nothing; the method is recorded
+in [`internals/probe-uninit-arena-2026-09-11.md`](internals/probe-uninit-arena-2026-09-11.md)
+so it can be re-run after codegen work that touches initialisation.
+
 `make ci` runs the whole gate locally — there is no hosted CI, by policy. What each
 step proves:
 
