@@ -81,6 +81,14 @@ rather than obvious.
 
 All three are one-time setup, and all three were found by hitting them.
 
+**`make ci` currently needs gcc specifically**, which is a narrower claim than
+the README's "clang 15 or newer" and does not contradict it: clang builds and
+runs Tycho fine — measured, clang 22.1.8 takes the whole fixture corpus 1039/0
+and bootstraps `tychoc1`. What it cannot do is satisfy `vector-check`'s leg [3],
+whose control relies on `-O0` emitting no packed arithmetic. That is true of gcc
+and false of clang, so the leg refuses to certify. See FRICTION 89; it is a gate
+portability limit, not a language one.
+
 ## The local CI gate (run it before a PR)
 
 **Tycho has no cloud CI — that's on purpose.** There are no GitHub Actions; the

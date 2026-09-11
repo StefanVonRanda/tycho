@@ -6294,3 +6294,61 @@ an invisible group signal into a printed line.
 
 **Not caused by the commits around it** — nothing under `server/` was touched,
 and the same failure predates them.
+
+## Found by running `make ci` under clang, 2026-09-11 (head `3c381c80`)
+
+### 89. `make ci` is gcc-only: vector-check's control does not discriminate under clang — **OPEN, and it is the GATE, not the language**
+
+**Nothing pins this** — the failing leg *is* the assertion, and it already fails
+closed. What is missing is a decision about what it should do on a compiler
+whose `-O0` vectorises.
+
+`make ci` under clang 22.1.8 reaches lane 51 of 51 and everything passes —
+`make test` 1039/0, corelib 46 green, corelib examples 37 green, `server: OK`,
+and the bootstrap fixpoint holds — **except** `vector-check`, which stops with:
+
+```text
+vector-check: FAILED -- ./tychoc: at -O0 the [4]float CONTROL emits 8 packed
+instructions -- leg [3] is not discriminating
+```
+
+**That is the gate working, not a defect in Tycho.** Leg [3]
+(`scripts/vector_check.sh:145@discriminating`) proves `vector[N]T` earns its
+keep by compiling the *same program* twice — once with `vector[4]float`, once
+with `[4]float` substituted in — and requiring the vector form to emit packed
+arithmetic while the plain-array control emits **none**. The control is the
+whole point: without it, packed instructions could be the auto-vectoriser rather
+than the type. When the control stops being a control, the leg refuses to
+certify rather than passing vacuously.
+
+**Measured, both compilers, same two programs** (`addp[sd]|mulp[sd]|divp[sd]|subp[sd]`):
+
+| compiler | opt | vector | control |
+|---|---|---|---|
+| gcc 16.2.1 | `-O0` | 4 | **0** |
+| gcc 16.2.1 | `-O1` | 4 | **0** |
+| clang 22.1.8 | `-O0` | 12 | **8** |
+| clang 22.1.8 | `-O1` | 18 | **14** |
+
+gcc's control is a perfect discriminator. clang emits packed arithmetic for a
+plain `[4]float` **even at `-O0`**, so `control == 0` is a gcc property the leg
+reads as a C property. Note the vector form still emits strictly more than its
+control under clang (12 vs 8, 18 vs 14), so the *feature* is fine — it is the
+binary test that stops working.
+
+**Three options, none taken here because the leg is deliberate work and the
+choice is the owner's:**
+
+1. **Skip leg [3] under a compiler whose control is non-zero**, with a stated
+   reason — matching the norm that every skip is an enumerated exception rather
+   than silence.
+2. **Compare relatively** (`vector > control`) instead of absolutely
+   (`control == 0`). Discriminates under both, but is a weaker assertion under
+   gcc, where the strong form holds today.
+3. **Declare `make ci` gcc-only** and say so. Defensible — but note the README
+   supports "clang 15 or newer" for *building and running Tycho*, which stays
+   true; this is the same build-versus-gate split that
+   [CONTRIBUTING](../../CONTRIBUTING.md) already draws for the sanitizer
+   runtimes and the 32-bit toolchain.
+
+Whichever is chosen, the measurement above is the input.
