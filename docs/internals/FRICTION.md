@@ -6124,3 +6124,17 @@ agree on; the divergence is recorded here rather than papered over.
 outermost frame is the call the programmer actually wrote, and it is the one a
 reader needs to find the mistake. Deciding it means changing the other compiler
 to match, then a nested fixture can land with the fix.
+
+**Sized, so the decision is cheap.** The divergence is structural rather than a
+wording slip: `tychoc`'s `Diag` carries a *single* instantiation site
+(`src/tychoc.c:79@inst_file` — one `inst_file`/`inst_line`/`inst_src`, not a
+stack), filled from one global pair (`src/tychoc.c:54@g_inst_from`) that
+`gen_program`'s instance loop retargets per instance
+(`src/tychoc.c:13575@g_inst_from`). So it can only ever name the innermost
+frame; it is not dropping the outer one, it never had it. Making it match means
+giving `GInst` a link to the instance that instantiated it and walking that
+chain in `diag_flush` (`src/tychoc.c:985@diag_flush`) — bounded work, but it
+touches a user-facing diagnostic for every nested generic in the corpus, so it
+is a golden-churn change and wants to be one deliberate commit. The cheaper
+direction, capping `tychoc1` at one frame to match `tychoc`, is smaller and
+makes the diagnostic worse; recording it only so the choice is explicit.
