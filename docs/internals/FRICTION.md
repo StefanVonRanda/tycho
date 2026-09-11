@@ -6206,13 +6206,50 @@ removes the directory is not terminating the shell.
   predecessor. **That commit message is wrong on this point** and this entry is
   the correction.
 
-**The one structural fact worth starting from:** `run_lanes`
-(`scripts/ci.sh:25@run_lanes`) backgrounds each lane as `sh "$0" "$N" "$child"`,
-so all four share one process group with `ci.sh`. A signal delivered to the
-group, from any lane, reaches the others — and `server/run.sh` traps INT and
-TERM and runs `rm -rf "$T"` in the handler *without exiting*, which is precisely
-the observed shape: directory gone, script still running. Nothing was found that
-sends such a signal, so this is a direction rather than a diagnosis.
+**Traced 2026-09-11, and the shape is now established rather than guessed.** A
+`inotifywait -m -r -e delete_self /tmp` running alongside `make ci` caught the
+moment:
+
+```text
+14:01:45 DELETE_SELF /tmp/tmp.eQ2Ej89ogL/outside/
+14:01:45 DELETE_SELF /tmp/tmp.eQ2Ej89ogL/www/.hidden/
+14:01:45 DELETE_SELF /tmp/tmp.eQ2Ej89ogL/www/img/
+...
+```
+
+Three findings from that trace, each of which rules something out:
+
+1. **The whole tree goes at once** — `outside/`, `www/.hidden/`, `www/img/`,
+   `www/fonts/`. That is `rm -rf "$T"`, so `cleanup` ran. `cleanup` is reachable
+   only from `trap cleanup EXIT INT TERM` (`server/run.sh:14@trap`); nothing
+   calls it directly, which was checked. The script keeps running afterwards, so
+   it was **not** EXIT — it was INT or TERM, handled and returned from.
+2. **It is not only the server's directory.** Six different `mktemp -d` trees
+   died in the same second — `eQ2Ej89ogL`, `ZFZNRnGXvp`, `yr3fCqvrXZ`,
+   `y0lahWrj4d`, `xjPF9Csl4Y`, `VLRt0O0IqZ`. So a signal reached *many* scripts
+   at once. Most of them exit on it and are never heard from; `server/run.sh` is
+   the one that survives to fail visibly, because its handler returns instead of
+   exiting.
+3. **No single lane sends it.** Each of the four was run alone against a canary
+   — a script in the same process group holding a `mktemp -d` and reporting if
+   its directory is destroyed under it. `platform`, `corelib`, `rest` and `apps`
+   each left the canary alive, and `apps` run by itself reports `server: OK`.
+   The failure needs the concurrency.
+
+**The leading hypothesis, explicitly not yet established: a stale PID.** Several
+scripts here save a background `$!` and later `kill` it — `server/run.sh:676`
+does exactly that to its watchdog. Under four concurrent lanes the process churn
+is high enough for a PID to be recycled between the save and the kill, and the
+signal then lands on an unrelated process. That fits every observation above
+(needs concurrency, hits multiple unrelated scripts, no lane does it alone) and
+is consistent with `run_lanes` (`scripts/ci.sh:25@run_lanes`) backgrounding the
+lanes into one process group. Confirming it needs PID-level tracing across a
+full run, which has not been done.
+
+**The canary is the reproduction harness** and is worth keeping in mind for any
+"something killed my test" report here: a background `sh` holding a `mktemp -d`,
+with `trap 'rm -rf "$T"' EXIT INT TERM`, polling for its own directory. It turns
+an invisible group signal into a printed line.
 
 **Not caused by the commits around it** — nothing under `server/` was touched,
 and the same failure predates them.
