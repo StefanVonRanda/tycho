@@ -53,6 +53,33 @@ cannot find `core:strings`.
 runs `classify_object_over_fdes` over the whole table — 201,604 Ir on every
 compile regardless of input size.
 
+The fixpoint is now gated rather than measured by hand: `make fixpoint-check`
+(`scripts/fixpoint_check.sh`) has `tychoc1` emit the compiler's C, builds that
+one generation `-O0` (it only has to run), has *it* emit the compiler again, and
+requires the two C files byte-identical — `f(f(x)) == f(x)`. It compares the
+emitted C rather than binaries, so it is free of link-time noise, and costs
+~2.3s. It is `[1e/13]` in `make ci`.
+
+### Which compiler is right
+
+The two are **not** peers, and saying so turns "keep them agreeing forever" from
+a standing tax into a procedure with a known shape:
+
+- **`src/tychoc.c` is normative.** It defines what the language does. It is also
+  the bootstrap, and the README's "one dependency-free C file" is a promise
+  about it.
+- **`tychoc1` is the oracle.** Its value is being a second implementation that
+  can disagree. It is what every suite here defaults to
+  (`tests/run.sh:168@TYCHOC`), so it is exercised far harder than a spare would
+  be.
+
+**When they disagree the question is "which is right", not "make `tychoc1`
+match".** A divergence is a finding: one of the two is wrong, and which one is
+decided on the merits. FRICTION 87 is the worked example — the two worded a
+diagnostic differently, `tychoc1`'s answer was better, and **`src/tychoc.c` was
+changed to match it**. The oracle improving the reference is the mechanism
+working, not an inversion of it.
+
 ## The verification surface
 
 `make ci` runs the whole gate locally — there is no hosted CI, by policy. What each

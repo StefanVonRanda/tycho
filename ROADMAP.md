@@ -49,12 +49,14 @@ against.
   back. Re-measured 2026-09-11: `tychoc1` compiling `compiler/main.ty` produces
   a binary **byte-identical to itself**. (Three further generations were
   measured byte-identical on 2026-08-30 —
-  [architecture](docs/architecture.md#bootstrapping).) **No gate asserts this.**
-  Both measurements were taken by hand, months apart, and a bootstrap that
-  stopped reaching a fixpoint would show up as nothing at all — which is the
-  shape of behaviour this tree otherwise insists on pinning. A lane would cost
-  one more compiler build; whether the gate's time budget should carry it is a
-  judgement, not an oversight to be fixed silently.
+  [architecture](docs/architecture.md#bootstrapping).) **Now gated**, as
+  `make fixpoint-check`, `[1e/13]` in `make ci`: it compares the emitted C
+  rather than binaries and costs **~2.3s** — the estimate when this was raised
+  was "one more compiler build, one to two minutes", and that was wrong by two
+  orders of magnitude because the one generation it builds only has to run, so
+  it is built `-O0`. Until 2026-09-11 nothing asserted it, which is the worst
+  shape for an invariant: a bootstrap that stopped converging would leave every
+  other lane green.
 - **Two gates carry it.** `make parse-check` scores its front end against
   `./tychoc`'s own verdicts file by file over the whole tree, with an AST census,
   a resolution census and a type census against recorded goldens — an accept/
@@ -67,16 +69,24 @@ against.
   differently, found because a `tests/diag/` golden can only match one, and
   closed by fixing `src/tychoc.c`.
 
-**The open question this section exists to raise.** Its role is written down
-twice — "to prove the language can carry a real program, and to be a second
-opinion on the first" ([architecture](docs/architecture.md)) — and both are
-true today. What is *not* decided is where it ends up. If it is permanently the
-second opinion, `src/tychoc.c` stays the reference and the two must keep
-agreeing forever, which is a standing cost on every diagnostic change. If it is
-the successor, then `src/tychoc.c`'s long-term job is to bootstrap it and
-nothing else, and that should be said out loud before more work is spent keeping
-both at parity. Nothing here decides it; it is the owner's call, and it belongs
-on this page rather than nowhere.
+**Decided 2026-09-11: `tychoc1` stays the second opinion, and does not become
+the successor.** Two implementations over one corpus is the same differential
+instrument as native-vs-ASan, `dis` round-tripping `asm`, and tycho-scheme's two
+backends agreeing — and it is the strongest one here, because there is no hosted
+CI and no second reader. The parity work is not a tax on that; it *is* the gate.
+FRICTION 87 is the evidence: the divergence found a worse diagnostic in the
+shipped compiler and fixing it improved what users get, on the first instance of
+paying the cost. Demoting `src/tychoc.c` to a bootstrap would retire the oracle
+in exchange for not maintaining the thing producing the findings — and would
+make 21,498 lines of Tycho, rather than one dependency-free C file, what people
+actually run.
+
+What that decision required writing down is the **asymmetry**, now in
+[architecture](docs/architecture.md#which-compiler-is-right): `src/tychoc.c` is
+normative, `tychoc1` is the oracle, and when they disagree the question is
+*which is right* — not *make `tychoc1` match*. That is already how 87 was
+resolved (`tychoc1` was right; the reference changed), so this records the
+practice rather than inventing one.
 
 ## The language surface moved once, deliberately
 

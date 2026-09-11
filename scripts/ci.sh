@@ -73,6 +73,9 @@ make -s version-check
 step "[1d/13] make surface-check  (the language surface is frozen: keywords and builtins hard, corelib additive. It was enforced only when somebody typed it -- the freeze that exists because 91 commits touched docs/spec/ and 69 touched src/tychoc.c in ten days had no lane in the sweep. Adding a keyword or a builtin is meant to be a two-part act, the code plus a visible surface.lock diff a reviewer can refuse; without this step the second part was optional)"
 make -s surface-check
 
+step "[1e/13] make fixpoint-check  (the self-hosted compiler reproduces its own output: gen2.c == gen3.c. tychoc1 is built in two stages and is the compiler EVERY suite below defaults to, so the property that makes it trustworthy is that one more generation changes nothing. It was measured by hand twice, a month apart, and asserted by nothing -- the worst shape for an invariant, because a bootstrap that stopped converging would leave every other lane green and show no symptom anyone was looking for. Compares the emitted C, not binaries, so it is free of link-time noise and costs ~2.3s)"
+make -s fixpoint-check
+
 step "[2/13] make test  (golden output + ASan/UBSan/LeakSanitizer)"
 make -s test
 
