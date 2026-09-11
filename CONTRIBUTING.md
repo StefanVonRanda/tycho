@@ -32,6 +32,18 @@ make                 # build ./tychoc
 
 ### What the GATE needs, beyond that
 
+**Run `make preflight` first.** It probes this machine for everything below and
+names the missing package, so you learn it in one command rather than from five
+different failures. It is not a gate — it tests your box, not the tree — and
+optional entries only make a lane skip.
+
+```
+$ make preflight
+required:
+  asan + ubsan           MISSING -- make test fails ~335 fixtures at the LINK step
+                           fedora: libasan libubsan
+```
+
 `cc` and `make` build and run Tycho. They are **not** enough to run the gate
 below, and the difference is worth stating because the failure is confusing
 rather than obvious.
