@@ -48,7 +48,13 @@ TYCHOC1_SRC := compiler/main.ty $(wildcard compiler/*/*.ty)
 # unsorted, so the first unwind runs classify_object_over_fdes over the whole
 # thing -- 201,604 Ir on EVERY compile regardless of input size (48% of a
 # two-line program, measured identical on tiny.ty and examples/invindex.ty).
-TYCHOC1_CFLAGS ?= --param inline-unit-growth=150 -static-pie -flto
+# -fPIE is not redundant beside -static-pie: with -flto, gcc does not propagate
+# the PIE implication into the LTRANS objects, and the link dies on
+# `relocation R_X86_64_32 against .rodata can not be used when making a PIE
+# object; recompile with -fPIE`. Measured 2026-09-11 on gcc 16.2.1 / Fedora 44,
+# where the flags below WITHOUT it cannot build tychoc1 at all. Naming it
+# explicitly costs nothing where the implication already worked.
+TYCHOC1_CFLAGS ?= --param inline-unit-growth=150 -static-pie -flto -fPIE
 # `make clean && make` is the bootstrap check: clean removes tychoc1, so this
 # line runs for real. 8c156d38 swapped it to ./tychoc1 and only a fresh clone saw it.
 tychoc1: tychoc $(TYCHOC1_SRC)

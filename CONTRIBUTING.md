@@ -30,6 +30,45 @@ make                 # build ./tychoc
 ./tychoc f.ty && ./f  # compile + run a program
 ```
 
+### What the GATE needs, beyond that
+
+`cc` and `make` build and run Tycho. They are **not** enough to run the gate
+below, and the difference is worth stating because the failure is confusing
+rather than obvious.
+
+- **The sanitizer runtimes.** `make test` builds every fixture a second time
+  under `-fsanitize=address,undefined`, and `make ci` adds a ThreadSanitizer
+  lane. Without them the link fails, not the build, so you get hundreds of
+  fixtures failing with `cannot find libasan.so.N` and a suite that looks
+  catastrophically broken when nothing is wrong. On Fedora:
+  `sudo dnf install libasan libubsan libtsan` (verified). Other distributions
+  package them differently — some ship them alongside `gcc`, some split them
+  out. The one-line check (it must exit 0; a bare `/dev/null` source fails on a
+  missing `main` instead, which is a false alarm):
+
+  ```
+  echo 'int main(void){return 0;}' | cc -fsanitize=address,undefined -xc - -o /tmp/santest
+  ```
+
+  Measured 2026-09-11 on Fedora 44: absent, 335 of `make test`'s fixtures fail
+  this way and `make friction-check` reddens with them, because most of its pins
+  are `make test`.
+- **A static libc.** `tychoc1` (the self-hosted compiler, which `make test`,
+  `make corelib` and `make ci` all depend on) links `-static-pie`, and so do the
+  three shipped tools (`tychofmt`, `tycho`, `tycho-lsp`) through `TOOL_CFLAGS`.
+  On Fedora: `sudo dnf install glibc-static`. Dropping the static link via
+  `TYCHOC1_CFLAGS` is *not* a general workaround — it does not reach
+  `TOOL_CFLAGS`, so it gets you through `make test` and still fails
+  `make tools-check`.
+- **A 32-bit toolchain**, for the `ilp32` lane — it compiles the emitted C with
+  `gcc -m32` to prove nothing assumes 64-bit `long`. The lane **refuses to skip**
+  ("NOT skipping (RULE 4)"), so without it `make ci` fails rather than passing
+  with a hole. On Fedora: `sudo dnf install glibc-devel.i686 libgcc.i686
+  libatomic.i686`; elsewhere it is the `gcc-multilib` family. Check with
+  `echo 'int main(void){return 0;}' | cc -m32 -xc - -o /tmp/m32`.
+
+All three are one-time setup, and all three were found by hitting them.
+
 ## The local CI gate (run it before a PR)
 
 **Tycho has no cloud CI — that's on purpose.** There are no GitHub Actions; the

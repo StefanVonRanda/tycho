@@ -204,7 +204,7 @@ verifies the whole tree.
 | `make` | Build the `./tychoc` transpiler. |
 | `./tychoc f.ty` | Transpile to C, compile to native `f`; the intermediate `f.c` is removed on success, kept on a `cc` failure. |
 | `./tychoc f.ty --emit-c` / `-o name` | Stop at the C (to stdout; `-o name` writes `name.c`) / name the output. |
-| `make test` | Run the authoritative suite in parallel (`TYCHO_THREADS=N` tunes the worker count). |
+| `make test` | Run the authoritative suite in parallel (`TYCHO_THREADS=N` tunes the worker count). Needs the sanitizer runtimes — see [CONTRIBUTING](CONTRIBUTING.md#what-the-gate-needs-beyond-that). |
 | `make bench` | Run the performance guard (below). |
 | `make fuzz` | Differential + ASan/UBSan soundness fuzzer. |
 | `make corelib` | Build + validate the standard library against its goldens. |
