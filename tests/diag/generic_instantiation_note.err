@@ -1,0 +1,4 @@
+tests/diag/generic_instantiation_note.ty:21: error: argument type mismatch: argument 1 of 'show' is Name, expected Point
+    21 |     return show(v)
+tests/diag/generic_instantiation_note.ty:24: note: required from here -- this call instantiated the generic
+    24 |     return "[" + inner(v) + "]"

@@ -57,7 +57,8 @@ Here's what can cross:
   and `is_null(p)` work on it. `is_null` accepts a `handle` too, which is how you check
   whether an opener succeeded; the scope-exit free is null-guarded, so a failed open is
   safe to let fall out of scope.
-- **typed `handle`s** — `handle Name: free: c_fn` declares a `void*` whose C destructor runs
+- **typed `handle`s** — a `handle Name:` header over an indented `free: c_fn` line (a block, not
+  a one-liner — see the `handle Db:` example below) declares a `void*` whose C destructor runs
   automatically at scope exit (RAII), so a foreign resource won't leak or get used after close.
   What makes that hold is that a handle is **affine — exactly one owner**, and the rules are
   worth knowing before you reach for one: it cannot be copied (`g := f`), reassigned, stored in

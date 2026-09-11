@@ -1,0 +1,27 @@
+# A generic body is type-checked AFTER substitution, so a call inside it can only
+# fail at an instantiation -- possibly frames away from the code that caused it.
+# The note naming the instantiating call is what makes that error readable, and
+# it is load-bearing: docs/architecture.md cites this diagnostic as the reason
+# user-extensible constraints (traits) are not needed to get usable errors out of
+# structural generics. Nothing pinned it before this fixture.
+#
+# `outer` instantiates `inner` at Name; `inner` calls show, which takes a Point.
+# Both lines must appear: the failing call, and the call that instantiated it.
+struct Point:
+    x: int
+    y: int
+
+struct Name:
+    s: string
+
+fn show(p: Point) -> string:
+    return "(" + str(p.x) + "," + str(p.y) + ")"
+
+fn inner(v: $T) -> string:
+    return show(v)
+
+fn outer(v: $T) -> string:
+    return "[" + inner(v) + "]"
+
+fn main():
+    println(outer(Name("ada")))
