@@ -408,7 +408,11 @@ element type instead of a family of per-type siblings.
   listing of the parent — that would be O(entries) and blind to a leaf under an unlistable
   parent; `false` means "`stat` could not say yes", so it fails closed). For
   inputs too large to slurp, a **bounded-memory streaming line reader** over a libc `getline`
-  shim: `open_lines(p)` → `read_line(r)` (`Some(line)` / `None` at EOF) → `close_lines(r)`, plus
+  shim: `open_lines(p) -> Result(LineReader, io.IoErr)` → `read_line(r)` (`Some(line)` / `None`
+  at EOF) → `close_lines(r)`. A `LineReader` is opaque (its C pointer is private), and the opener
+  reports *why* it failed rather than handing back a null to check: `BadPath` for an interior NUL,
+  else `NotFound` / `IsDir` / `Failed`. There is no `defer`, so `close_lines` is yours to call —
+  as it is in Go and Odin, whose openers return the same (resource, error) pair. Plus
   `fold_lines(p, init, f)` — peak memory is O(longest line), not O(file). `read_bytes(p) ->
   Result(bytes, io.IoErr)` reads a whole file as raw `bytes` (binary-safe — interior NUL bytes are
   preserved, unlike `read`'s string), and it reports *why*: an **empty file is `Ok`** with zero

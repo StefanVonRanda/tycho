@@ -187,11 +187,15 @@ that situation. Paying for coherence with no registry is the cost without the
 benefit — and it lands in a 15k-line single-file compiler where the constraint
 diagnostics would have to be as good as the ones above.
 
-**The evidence that prompted the reopening was misfiled, and is being fixed
+**The evidence that prompted the reopening was misfiled, and has been fixed
 separately.** `core:io` having no stream type — `io.open_lines` returning a raw
-`ptr` — is a missing **concrete type**, not a missing abstraction. `handle` is
-already a keyword with a `free` body, so the fix is an `io` reader handle, which
-is a corelib addition the surface lock permits with a recorded diff.
+`ptr` — was a missing **concrete type**, not a missing abstraction. It is now an
+opaque `LineReader` returned in a `Result`, which is what Go's `os.Open` and
+Odin's `os.open` do and what the other seventeen `Result`-returning functions in
+`core:io` already did. Notably it is *not* a `handle`: a `handle` is affine and
+only an `extern fn` may return one, which would have moved the opener into C and
+taken the interior-NUL guard with it. So the gap closed without any new
+abstraction mechanism — which is the same point reason 2 makes about generics.
 
 **What stays open, demand-gated:** *overloading*, listed in
 [ROADMAP](../ROADMAP.md#near-term). The trigger is a real program that needs one
