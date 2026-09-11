@@ -64,17 +64,30 @@ exit=42
 
 It reports. The 288/0 above was measured against a working detector.
 
+**3. Extended to corelib and the examples — 83 ran, 0 errors, 0 failed to
+build.** All 46 packages under `corelib/test/` and all 37 under
+`examples/corelib/`, same instrumented runtime. This is the stronger half of the
+result: the flat fixtures are mostly minimal feature probes, while these are
+real programs that allocate, grow and partially fill buffers — `bignum`,
+`decimal`, `regex`, `json`, `compress`, `sha256`, `zip` — which is the shape
+that produces a read of a slot nobody wrote. The libcurl-, libpng- and
+sqlite-backed packages built and ran too, so nothing was silently skipped.
+
+**371 programs total, 0 uninitialised arena reads.**
+
 ## What this does and does not establish
 
-**Does:** across every flat fixture, no execution reads an arena slot it never
-wrote, with an instrument demonstrated to catch exactly that.
+**Does:** across 371 programs — every flat fixture, every corelib test package
+and every corelib example — no execution reads an arena slot it never wrote,
+with an instrument demonstrated to catch exactly that.
 
 **Does not:** prove the property. The corpus exercises the paths the corpus
-exercises — a codegen path no fixture reaches is as untested here as anywhere.
-The sweep also covers `tests/*.ty` only, not `corelib/`, `tools/` or the
-examples. And memcheck reports the **read**, not the missing **write**, so a
-real finding would still need tracing back to the construct that failed to
-initialise.
+exercises — a codegen path nothing reaches is as untested here as anywhere.
+**`tools/` is still outside it**: those 30 programs mostly need arguments or
+input files to do anything, so a bare invocation would exercise almost nothing,
+and driving each one properly is a bigger job than this probe. And memcheck
+reports the **read**, not the missing **write**, so a real finding would still
+need tracing back to the construct that failed to initialise.
 
 ## Why no lane was added
 
