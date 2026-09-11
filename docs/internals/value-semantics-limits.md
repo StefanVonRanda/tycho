@@ -7,7 +7,16 @@ It is a deliberate trade: you give up manual control (and some workloads) to get
 `malloc`/`free`, no use-after-free, no GC pauses, and value equality that just works. This note
 maps the terrain honestly — where the model is already competitive, and where a workload wants a
 data-oriented representation (a flat pool, an index, a scoped transient) to stay on the
-value-semantics path. The numbers are measured, not asserted; and where a workload's natural
+value-semantics path.
+
+**Read §2 first if you are reading only one.** The memory ratios in §1 are the
+limit people expect and the one that is easiest to measure, but they are a
+constant factor on a program that works. §2 is the one that changes what a
+program *costs per operation* — rebuilding a long-lived value on every edit pays
+a full copy of it each time — and it is the limit most likely to be hit by
+ordinary code that has nothing graph-shaped in it at all. It is ordered second
+here because §1 is the better introduction to *why* the model behaves as it
+does, not because it matters more. The numbers are measured, not asserted; and where a workload's natural
 shape fights the model even after the right representation, the note says so and points you at a
 different tool. The aim is to make the good representation the obvious one, not to apologize for
 the model's edges.
@@ -153,6 +162,55 @@ fn load() -> Doc:
 
 If a transient is built and consumed in the same scope as long-lived results, split it out.
 
+#### Rebuilding a long-lived value on every operation
+
+Recycling is broader than the paragraph above suggests, and it is worth knowing
+exactly how far it reaches before concluding that a workload is doomed. There are
+two distinct paths:
+
+- **Loop-carried reassignment of a named array local** — `a = f(a)` inside a loop
+  (`src/tychoc.c:12401@do_recycle`). Narrow by design: it requires a *named
+  variable* (not an element or field store), a type for which `is_array` holds
+  (`src/tychoc.c:1162@is_array` — note a `string` is **not** an array here), a
+  loop, a non-`inout` non-accumulator target, and at least two reads in the
+  function (the soundness condition — a read-once variable may have been moved
+  out from under it).
+- **Element overwrite of a `[string]`** — `xs[i] = v` recycles the *evicted*
+  element's bytes back to the arena (`runtime/tycho_rt.c:2220-2233@MM-9`), guarded by
+  `arena_owns` so an interned literal or a cross-arena string is never recycled.
+  This is the sliding-window-eviction case, and it is why a bounded ring buffer of
+  strings does not grow without limit.
+
+**So the bytes are usually reused. The cost that survives is the work.** Rebuilding
+a value on every operation pays an allocation, a deep copy of the whole value, and
+the recycle bookkeeping *per operation*, regardless of whether the old bytes come
+back. Where the value is a whole line, a whole document, or a whole record, that
+per-operation copy is the dominant term and it scales with the value's size, not
+with the size of the edit.
+
+The worked case is `tools/tycho-ed/`, measured in both directions in
+[the thesis §4c](../thesis.md). A text editor whose line buffer does
+
+```text
+buf.lines[ln] = s[0:c] + t + s[c:len(s)]      # a whole new line, per keystroke
+```
+
+degrades to ~7× its starting cost per edit by a million edits. Holding the edited
+line in a mutable `[int]` gap buffer instead — a keystroke writes one byte into a
+hole and rebuilds the string once per *focus change* rather than per keystroke —
+flattens the curve completely. **Peak RSS is identical between the two backends**
+(95.7 MB), which is the measurement that says the retained memory was never the
+line churn: it is the undo journal, one entry per keystroke, which is the feature
+working as intended. Two costs that rose together turned out to be one cost and
+one coincidence, and only building the fix separated them.
+
+**Idiom — mutate, don't rebuild, whenever a value is edited many times.** Hold
+hot mutable text as `[int]` rather than `string` and convert at
+the boundary; mutate through `inout` rather than returning a rebuilt copy (§4);
+and where a loop must rebuild, rebuild a *named array local* so the first recycle
+path above can fire. The test is not "will the memory come back" — usually it
+will — but "am I copying the whole value to change a small part of it".
+
 ### 3. Maps / arrays of a large value type, many small instances
 
 A composite map with a big value type over-allocates its backing array (empty slots cost
@@ -182,6 +240,9 @@ borrows (does not copy) `match`/`for` bindings that aren't mutated; lean on that
   `core:pool` (the packaged generational pool) when nodes must be deleted, not just appended.
 - Streaming / long-lived process with heavy transients → **scope transients in inner
   functions** (§2) so arenas reclaim.
+- A long-lived mutable value edited many times (editor buffer, session cache, server
+  state) → **mutate it in place; do not rebuild it per operation** (§2). The arena usually
+  recycles the old bytes; what it cannot give back is the full copy you paid to make them.
 - Known-size or hot maps of large values → **`reserve`, or store handles not structs** (§3).
 
 None of these makes Tycho a systems allocator's equal on its worst cases. They keep you on

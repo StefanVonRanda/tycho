@@ -98,14 +98,50 @@ smoke, so a red `make ci` can't reach `main`: a green `make test` is *not* a gre
 
 These are deliberate, argued, and settled — please don't propose them:
 
-- Traits / typeclasses
-- A package manager
+- A package manager (re-affirmed 2026-08-15: vendoring, Odin-style —
+  [ROADMAP](../ROADMAP.md#what-production-ready-requires) §2)
 - A C-style ternary `?:` (the need is met by expression-valued `if`/`match` in tail position)
 - Hindley-Milner inference
 - Copy-on-write / reference counting
 - Manual memory-management escape hatches as the *idiomatic* path
 - FFI variadics / callbacks-into-Tycho / struct-by-value / auto-bindgen
 - Hosted CI
+
+Each of those stands on a rationale of its own, independent of the one below.
+
+### Reopened: traits / typeclasses
+
+**Status: OPEN for re-decision. Not a proposal, and not a commitment to add
+them — the justification that closed it no longer applies, and nothing has
+replaced it yet.**
+
+Traits were closed under a premise that has since been retired in writing. The
+argument was the one in [ROADMAP](../ROADMAP.md#what-production-ready-requires):
+*"the language is feature-complete for the thesis it exists to prove"* — true,
+and decisive while proving the thesis was the goal. On 2026-08-15 the goal
+became a production-ready language, and the ROADMAP says so explicitly:
+feature-complete for a thesis is not feature-complete for production, so that
+sentence no longer settles anything and the non-goals resting on it are open.
+This entry is that reopening, recorded where the decision lives rather than
+only where it was retired.
+
+**What is actually missing is narrower than "traits".** Ordering is already
+answered by function values — `sort.sort_by(xs, cmp)`
+(`corelib/sort/sort.ty:69@sort_by`) covers multi-key, mixed-direction, and types
+with no `comparable` instance without any user-extensible constraint. The gap is
+abstracting over a *set of operations on a user type*, and the corelib shows
+where it bites: `core:io` has no stream abstraction, so streaming reads leave
+the type system entirely and are expressed as a raw FFI handle —
+`io.open_lines` returns `ptr` and `io.read_line` takes one
+(`corelib/io/io.ty:443@open_lines`). Everything else in `core:io` is a
+path-taking free function. That is the honest cost of the closed constraint set,
+stated as evidence rather than as a preference.
+
+**The decision remains the owner's**, and re-deciding it is not a documentation
+edit. Three outcomes are all live: re-close it with a rationale that survives the
+new goal; close the narrow gap without traits (a stream type, an `io` handle with
+real methods); or open the constraint set. What is no longer available is citing
+the retired premise.
 
 ## Known limits
 

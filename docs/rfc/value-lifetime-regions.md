@@ -96,19 +96,19 @@ is dead but not reclaimable until the owning scope exits.
 ### 3.1 The recommended representation, and what it costs
 
 For pointer-shaped, structurally-shared data the documented idiom is a flat node pool
-with integer-index children (`docs/internals/value-semantics-limits.md:52-85`). The
+with integer-index children (`docs/internals/value-semantics-limits.md:61-94`). The
 project is deliberate that this is a representation worth choosing and not merely a
 constraint to satisfy, and equally deliberate that it is *not* presented as the model
 (`docs/architecture.md:64-67`). Its two named costs are ergonomic: "you index a pool
 instead of following references, and you cannot delete a single node without
-compacting" (`docs/internals/value-semantics-limits.md:82-84`).
+compacting" (`docs/internals/value-semantics-limits.md:91-93`).
 
 The measured cost of *not* using it — the by-value recursive form, which is what a
 naive long-lived structure gets — is **~1.55× C peak RSS**, from a prefix tree where
 each node owns an `int -> child` map: tycho 58.7 MB vs C 37.8 MB vs Go 33.8 MB
-(`docs/internals/value-semantics-limits.md:41-45`). I re-opened every place that
+(`docs/internals/value-semantics-limits.md:50-54`). I re-opened every place that
 figure appears rather than trusting the number I was handed: it is stated identically
-at `docs/internals/value-semantics-limits.md:45`, `docs/memory-model.md:111`,
+at `docs/internals/value-semantics-limits.md:54`, `docs/memory-model.md:111`,
 `docs/architecture.md:64`, `README.md:128`, `bench/README.md:26` and
 `bench/trie/RESULTS.md:28`, all of them attributing the halving from ~3.2× (119 MB) to
 the compact indexed-dict map layout. The figure is current.
@@ -118,9 +118,9 @@ corrected to ~1.55x in the same series as this study.)
 
 Two adjacent measurements bound the shape of the problem. Expressed the value-semantic
 way — a graph as an adjacency list of indices — `bench/dijkstra` lands at ~1.3× C
-memory and ~1.2× wall, competitive (`docs/internals/value-semantics-limits.md:86-95`).
+memory and ~1.2× wall, competitive (`docs/internals/value-semantics-limits.md:95-104`).
 Expressed as a delete-heavy fixed-capacity cache, `bench/lru` lands at ~2.8× C and
-ahead of Go on both axes (`docs/internals/value-semantics-limits.md:96-106`), with the
+ahead of Go on both axes (`docs/internals/value-semantics-limits.md:105-115`), with the
 index pool spelled out in its own header: nodes in one `[Node]` array, `prev`/`next` as
 `int` indices, and the tail slot overwritten in place on eviction so a full cache holds
 steady with zero per-op allocation (`bench/lru/lru.ty:4-13`).
@@ -157,9 +157,9 @@ for a server the owning scope is `main`.
 The second documented weak spot is a long-lived scope holding a transient: an arena
 reclaims at scope exit, not incrementally, so a function that builds a large parse
 buffer and keeps working holds it until it returns
-(`docs/internals/value-semantics-limits.md:118-124`). The documented answer is to
+(`docs/internals/value-semantics-limits.md:127-133`). The documented answer is to
 scope the transient in an inner function or block so its arena reclaims before the
-long-lived work continues (`docs/internals/value-semantics-limits.md:126-135`). That
+long-lived work continues (`docs/internals/value-semantics-limits.md:135-144`). That
 answer is O(1) — one `arena_free` — and needs no new construct. Any proposed region
 feature must beat it, not merely match it.
 
@@ -369,7 +369,7 @@ demonstrate.
 
 **Second objection.** Its motivating case — the build-and-hold transient — already has
 an O(1) answer that needs no new construct (§3.3,
-`docs/internals/value-semantics-limits.md:126-135`). `drop` wins only where the
+`docs/internals/value-semantics-limits.md:135-144`). `drop` wins only where the
 transient's lifetime is genuinely not nestable, and no call site in this repo shows
 that shape (§3.4).
 
@@ -412,7 +412,7 @@ joint (`docs/thesis.md:10`, `:14-17`). Design C buys the least and is the only p
 that weakens the asymmetry the whole project exists to demonstrate
 (`docs/spec/07-memory-model.md:141-152`) — a feature that trades the model's central
 guarantee for a case already answered by an idiom the docs recommend
-(`docs/internals/value-semantics-limits.md:126-135`) is a bad trade at any price.
+(`docs/internals/value-semantics-limits.md:135-144`) is a bad trade at any price.
 
 Design B is the only one that is genuinely sound, and it should still not be built yet,
 because its payoff is a single narrow thing — bulk reclamation at a non-scope-exit point
@@ -427,7 +427,7 @@ tree; §4.2 shows a per-node region is *worse* than the pool it would replace be
 > A benchmark exists in `bench/` whose peak RSS is dominated by storage that is dead
 > but unreclaimable before scope exit, and which none of the three shipped mechanisms
 > recovers: the inner-function transient scope
-> (`docs/internals/value-semantics-limits.md:126-135`), element-overwrite recycling
+> (`docs/internals/value-semantics-limits.md:135-144`), element-overwrite recycling
 > (`docs/memory-model.md:101-106`), or slot reuse in an index pool
 > (`corelib/pool/pool.ty:24-32`). The workload's live values must have payloads
 > comparable to or larger than one 64 KiB block
