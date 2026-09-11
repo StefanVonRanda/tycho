@@ -51,6 +51,9 @@ Each row was compiled. The third column is the diagnostic you will actually see.
 | `struct S:` with field `bytes` | any non-keyword name | `'bytes' is a reserved keyword … as a field name` |
 | `fn get(i: Item($A))` | reuse the struct's own parameter: `Item($T)` | `its type arguments must be EITHER exactly its own parameters, in order` |
 | `_, b = f()` (never declared) | `_, b := f()` | ``_` is not a discard — it is an ordinary variable` |
+| `fn show(a: int)` + `fn show(b: string)` | one name, one definition — or a package prefix | `'show' is already defined` |
+| `handle Db: free: db_close` | a block: `handle Db:` then an indented `free: db_close` | `expected newline` |
+| `fn open() -> Db:` returning a handle | only an `extern fn` may return one | `a Tycho fn cannot return a handle -- only an `extern fn` opener may` |
 
 An unused import is an **error**, not a warning: `` `core:strings` imported and
 not used in this file ``.
@@ -66,6 +69,30 @@ fn main():
 ```
 
 Same for `str`, `substr`, `chr`, `split`, `keys`, `find`, `char_at`.
+
+**A generic body is checked AFTER substitution**, so it may call an ordinary
+function on `$T` with no constraint involved — do not reach for a `where` clause
+to make this legal, and do not assume it is impossible:
+
+```tycho
+package main
+
+struct Point:
+    x: int
+    y: int
+
+fn show(p: Point) -> string:
+    return "(" + str(p.x) + "," + str(p.y) + ")"
+
+fn render(v: $T) -> string:
+    return show(v)
+
+fn main():
+    println(render(Point(1, 2)))   # (1,2)
+```
+
+The limit is the overloading row above: `show` can have only one definition, so
+this works at one type per name, not several.
 
 ## The traps that COMPILE
 
