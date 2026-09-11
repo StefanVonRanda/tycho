@@ -12,6 +12,21 @@ cleanup() {
     rm -rf "$T"
 }
 trap cleanup EXIT INT TERM
+# THIS TRAP IS INHERITED BY SUBSHELLS, and that is a live hazard here, not trivia.
+# The watchdogs below are `( sleep N; srv_kill ) &` -- TWO commands, so bash keeps a
+# real subshell, and a real subshell inherits this trap AND "$T". Cancelling one with
+# the default TERM therefore runs cleanup INSIDE THE WATCHDOG: `rm -rf "$T"` on the
+# directory this script is still using. Nothing signals this script, so it carries on
+# and every later step fails with "No such file or directory".
+#
+# So every watchdog is cancelled with `kill -KILL "$WD"`. SIGKILL cannot be trapped.
+# `trap - INT TERM` inside the subshell is NOT a fix -- the kill can arrive before the
+# subshell has run the reset (measured) -- and a fire-and-forget timer has nothing to
+# clean up regardless.
+#
+# FRICTION 88 is the four-round hunt for this. The reason it hid: a ONE-command
+# subshell `( sleep N )` is exec'd in place by bash, so it has no trap at all, and the
+# obvious minimal reproduction passes while the real thing fails.
 fail=0
 case "$(uname -s)" in *MSYS*|*MINGW*|*CYGWIN*) IS_WINDOWS=1; SORT=/usr/bin/sort ;; *) IS_WINDOWS=0; SORT=sort ;; esac
 
@@ -673,7 +688,7 @@ WD=$!
 srv_sig TERM
 wait "$SRV" 2>/dev/null
 rc=$?
-kill "$WD" 2>/dev/null
+kill -KILL "$WD" 2>/dev/null
 wait "$WD" 2>/dev/null
 SRV=""
 if [ "$rc" -eq 0 ]; then
@@ -832,7 +847,7 @@ else:
     print("  FAIL transient-accept: got %r, want a 200" % body[:40]); sys.exit(1)
 PY
 rc=$?
-kill "$WD" 2>/dev/null
+kill -KILL "$WD" 2>/dev/null
 wait "$WD" 2>/dev/null
 [ "$rc" -eq 0 ] || fail=1
 # ...and the accept loops that survived it are still able to wind DOWN, which is
@@ -848,7 +863,7 @@ WD=$!
 srv_sig TERM
 wait "$SRV" 2>/dev/null
 rc=$?
-kill "$WD" 2>/dev/null
+kill -KILL "$WD" 2>/dev/null
 wait "$WD" 2>/dev/null
 SRV=""
 if [ "$rc" -eq 0 ] && grep -q '^tycho-httpd: stopped after [0-9]' "$T/emfile.err"; then
@@ -881,7 +896,7 @@ WD=$!
 srv_sig TERM
 wait "$SRV" 2>/dev/null
 rc=$?
-kill "$WD" 2>/dev/null
+kill -KILL "$WD" 2>/dev/null
 wait "$WD" 2>/dev/null
 kill "$DRIP" 2>/dev/null
 wait "$DRIP" 2>/dev/null
@@ -938,7 +953,7 @@ WD=$!
 srv_sig TERM
 wait "$SRV" 2>/dev/null
 rc=$?
-kill "$WD" 2>/dev/null
+kill -KILL "$WD" 2>/dev/null
 wait "$WD" 2>/dev/null
 kill "$PARK" 2>/dev/null
 wait "$PARK" 2>/dev/null
