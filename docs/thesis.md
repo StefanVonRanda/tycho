@@ -102,12 +102,16 @@ checked under `cc -fsanitize=address,undefined`, asserting (a) exit 0, (b) clean
 sanitizers, and (c) ASan output byte-identical to native `-O2` output. The full
 `tests/` + `examples/` suite holds to this.
 
-## 4. Where the abstraction would leak — and the two optimizations that seal it
+## 4. Where the abstraction would leak — two optimizations that seal it, and one shape that stays visible
 
-Value semantics buys safety with copies. Two patterns make the copies bite, and
-both are sealed *without making the model visible* — same source, same
-semantics, same bounded memory, no copy. Each one is the asymmetry in §3 applied
-locally.
+Value semantics buys safety with copies. **Three** patterns make the copies
+bite. Two of them the compiler seals *without making the model visible* — same
+source, same semantics, same bounded memory, no copy; each is the asymmetry in
+§3 applied locally. The third (§4c) it does not seal, and on the evidence below
+it cannot: that one is closed by choosing a different representation, which
+means the programmer has to see the copy. It is the largest honest cost in this
+document, so it is written as a shape of its own here and carried into §5 as a
+wall — not left as a footnote to §4b.
 
 ### 4a. The return-path copy tax → return-slot move
 
@@ -148,10 +152,30 @@ everyone else.
 
 Quadratic → linear, and the optimized memory does not scale with N.
 
-#### A second shape the append optimization does not cover: replacement
+The pattern across 4a/4b: **the optimization is the model's own asymmetry,
+applied locally.** Neither touches the source language or the value-semantic
+guarantee.
 
-Self-append is one way a loop abandons its accumulator. There is another, and
-`tools/tycho-ed/` is a worked case of it. A text editor's line buffer does
+### 4c. Rebuild-per-operation on a long-lived value — the shape the compiler does not seal
+
+4a and 4b are the good news, and they share a precondition: the compiler can
+*recognize a shape*. A value returned by name, an accumulator on the left of its
+own `+`. Where no shape is recognizable, nothing is sealed, and what is left is
+the plain cost of the value model: **rebuilding a value copies all of it.** Every
+long-lived mutable structure that is *rebuilt* rather than *mutated* pays that
+copy on every single operation, however small the change.
+
+The bytes are usually not lost — the runtime recycles an overwritten
+`[string]` element back to its arena (`runtime/tycho_rt.c:2220-2233@MM-9`), so
+this is not primarily a retention story. What it costs is *work*, per operation,
+scaling with the size of the whole value rather than the size of the edit.
+
+`tools/tycho-ed/` is a worked case, measured in both directions.
+
+#### The shape: replacement, which self-append does not cover
+
+Self-append is one way a loop abandons its accumulator. There is another, and a
+text editor is the everyday case of it. Its line buffer does
 
 ```
 b.lines[ln] = s[0:c] + t + s[c:len(s)]
@@ -194,7 +218,7 @@ needs: **mutate in place instead of rebuilding**. For an editor that means a gap
 buffer — a line held as text-before-cursor, a gap, and text-after-cursor, where
 inserting a character writes one byte into the gap and allocates nothing.
 
-##### The gap buffer, built and measured
+#### The gap buffer, built and measured
 
 `tools/tycho-ed/` now has both. `--backend=gap` keeps the line being edited in a
 mutable `[int]` with a hole in it (`bytes` is immutable, so it cannot be the
@@ -248,19 +272,57 @@ controls add is the reason to believe the diagnosis: without them, "1 M edits
 got 7× slower" is equally well explained by the arena, by string
 concatenation, or by `inout`, and the fix would be aimed at the wrong one.
 
-The pattern across 4a/4b: **the optimization is the model's own asymmetry,
-applied locally.** Neither touches the source language or the value-semantic
-guarantee.
+#### What it costs the thesis
+
+This is the one place in this document where the abstraction does not hold, and
+the honest statement of it is narrow but real — narrower, in fact, than the
+memory framing this section reached for first. The retained bytes turned out to
+be the undo journal doing its job, and the overwritten lines are recycled. What
+the model actually charged here was a **full copy of the line on every
+keystroke**, and it charged it because the source said to rebuild the line. The
+compiler is not wrong: it has no shape to recognize, and under §3 its only
+freedom is one it may take safely. And the fix works completely — the gap buffer
+flattens the curve to ~100% drift at a million edits.
+
+But the fix was a **representation change made by the programmer**, not an
+optimization applied by the compiler. For this class of program — a long-lived
+mutable structure edited in place over a session — the model asks you to know
+the arena is there and to choose a shape that mutates rather than rebuilds. That
+is a smaller ask than `malloc`/`free`, it is the same ask a data-oriented C
+programmer answers anyway, and it is not zero. "Zero memory cognition" (§6) is
+earned for build-and-return programs and is *not* earned for this one, and the
+two should not be claimed in the same breath.
+
+The boundary is crisp enough to state as a rule of thumb: **if a mutable value
+outlives every scope that would reclaim it, rebuilding it per operation is the
+expensive shape, and mutating it in place is the supported one.** §5 carries
+this as a wall; [the limits note](internals/value-semantics-limits.md) carries
+the representations that answer it.
 
 ## 5. The walls — what's genuinely hard, honestly mapped
 
 A model is defined as much by what it *can't* do, so I want to be honest about
-the limits. Three patterns threaten the model. Two are sealed by the
-optimizations above. The third is narrower than it first looks, and is reachable
-— but it has a residue that isn't a bug, it's the thesis itself.
+the limits. **Four** patterns threaten the model, and they are not equally hard.
+Two the compiler seals outright. One the compiler cannot seal but a
+representation can, at the cost of the programmer seeing the arena. One is not a
+limit to be lifted at all — it is the thesis.
 
-**The return copy tax** and **accumulation retention** are handled in §4a and
-§4b respectively.
+**The return copy tax** and **accumulation retention** are sealed, in §4a and
+§4b respectively. They cost the reader a paragraph each and the programmer
+nothing.
+
+**Rebuild-per-operation on a long-lived value** (§4c) is the one that stays
+visible, and it is the wall a working programmer is most likely to hit, because
+unlike the next one it shows up in ordinary tree-shaped code with nothing
+graph-shaped about it. An editor's buffer, a session cache, a server's
+accumulated state: change one byte by rebuilding the value and you copy the
+whole value, every time. 4a and 4b do not fire — there is no shape to
+recognize — and the arena recycling the old bytes does not refund the copy. It
+is *reachable*: mutate in place instead of rebuilding, and the measured curve
+flattens completely (§4c). But reaching it is a decision the programmer makes,
+which makes this the one place the model is not invisible. Worth stating plainly
+rather than burying: this is the honest price of the thesis, and it is charged
+per-program, not once.
 
 **Shared mutable state** is the genuinely hard one — sometimes described as
 "non-tree data: graphs, cycles, caches." Poking at it empirically dissolves most
@@ -318,6 +380,15 @@ The honest verdict, backed by measurement rather than intuition:
   performance competitive with manual approaches**. The two optimizations are
   what move it from "cute" to "competitive," and they were free because the
   model's safety asymmetry hands them over.
+
+- For **long-lived mutable structures edited over a session** — an editor
+  buffer, a session cache, a server's accumulated state — it works, and it is
+  the one case where the model is **not invisible**. Rebuilding the value per
+  operation copies the whole value per operation; mutating it in place copies
+  nothing and flattens the curve (§4c, measured). Both compile, both are safe,
+  and only one is cheap — so here the programmer, not the compiler, makes the
+  decision. Zero memory cognition is claimed for the bullet above this one and
+  is not claimed for this one.
 
 - For **shared-mutable-graph** programs (long-lived shared caches, observer
   graphs, reference-cyclic structures) it is a poor fit, and no optimization

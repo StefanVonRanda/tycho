@@ -53,7 +53,7 @@ pointer enters Tycho's owned world — but it pushes real cost onto users:
    (`docs/reference/ffi.md:131-142`, `examples/sqlite/`, `corelib/crypto/crypto_shim.c`).
 6. No variadics, no callbacks into Tycho (`docs/reference/ffi.md`).
 
-**Threading.** "Race-free by construction" (`README.md:35-37`,
+**Threading.** "Race-free by construction" (`README.md:16-18`,
 `docs/reference/concurrency.md:5-9`) is *true for pure Tycho values* and **false the
 moment FFI, process-global C state, or a panic is involved**. It is also
 heavy: every `spawn` is one OS thread via `pthread_create`
@@ -280,7 +280,7 @@ small or short-lived tasks.
 
 ### Where it is actually unsafe (despite copy-in/copy-out)
 
-The claim "race-free by construction" (`README.md:35-37`,
+The claim "race-free by construction" (`README.md:16-18`,
 `docs/reference/concurrency.md:5-9`) holds for **pure Tycho values** — after copy-in a
 task shares zero bytes (`runtime/tycho_rt.c:324-333`). It does **not** hold in
 these cases, and the docs only partially flag them:
@@ -328,7 +328,7 @@ these cases, and the docs only partially flag them:
 ### Threading — ranked recommendations
 
 **R1 (highest value, lowest risk). Make the safety claim honest in the docs.**
-- *Action.* Reword `README.md:35-37` and `docs/reference/concurrency.md:5-9` from
+- *Action.* Reword `README.md:16-18` and `docs/reference/concurrency.md:5-9` from
   "race-free by construction" (unqualified) to scope it explicitly:
   > Pure Tycho values crossing a thread boundary are race-free by construction
   > (deep copy = zero sharing). This does **not** extend to: FFI calls into C

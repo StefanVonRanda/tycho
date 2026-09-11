@@ -206,19 +206,15 @@ surface still at zero — generics, newtypes, `subscript`, `bounded[N]`, `select
 and the enum/Option/Result error paths have no non-author program at all. Closing
 it at four would stop the one instrument that is working.
 
-What they established is worth more than the count. The first three each found
-the CHECK harder to get right than the code — a determinism sweep that compared
-eight workers against eight, a word-set comparison that flagged 111 legal hard
-breaks, a `\xff` fixture that was valid UTF-8 under dash. The fourth's most
-useful finding was not in its own report at all: its C shim returned a pointer
-into a directory stream it had already closed, and only ASan saw it.
-
-What the three did establish, and it is worth more than the count: across
-`tycho-diff`, `tycho-hash` and `tycho-fold`, **every one found the CHECK harder to
-get right than the code**. A determinism sweep that compared eight workers against
-eight, a word-set comparison that flagged 111 legal hard breaks, a `\xff` fixture
-that was valid UTF-8 under dash. Each was caught by asking what the check would
-show if the feature were broken. That is the reusable finding.
+What they established is worth more than the count. Across `tycho-diff`,
+`tycho-hash` and `tycho-fold`, **every one found the CHECK harder to get right
+than the code** — a determinism sweep that compared eight workers against eight,
+a word-set comparison that flagged 111 legal hard breaks, a `\xff` fixture that
+was valid UTF-8 under dash. Each was caught by asking what the check would show
+if the feature were broken, and that is the reusable finding. The fourth makes
+the same point from the other side: its most useful finding was not in its own
+report at all — its C shim returned a pointer into a directory stream it had
+already closed, and only ASan saw it.
 
 
 ### 2–6. ~~Papercuts, expressiveness, `core:net`, Windows, a shipped release~~ — **all CLOSED**
@@ -354,7 +350,14 @@ the second of those.
 
 ## Non-goals
 
-Several things are deliberately, permanently out of scope — traits, a package manager, a
-C-style ternary, Hindley-Milner inference, refcounting/GC, and hosted CI among them. The
-full list with rationale is in [docs/architecture.md](docs/architecture.md#decided-non-goals).
+Several things are deliberately, permanently out of scope — a package manager, a C-style
+ternary, Hindley-Milner inference, refcounting/GC, and hosted CI among them. The full list
+with rationale is in [docs/architecture.md](docs/architecture.md#decided-non-goals).
 Please don't open issues proposing them; issues that explore *new* directions are welcome.
+
+**One entry came off that list**, as a consequence of the reframe above rather than a change
+of mind: **traits / typeclasses** were closed on the grounds that the language is
+feature-complete for its thesis, and that ground was retired on 2026-08-15. It is now
+recorded as OPEN for re-decision, with the evidence and the three live outcomes, in
+[docs/architecture.md](docs/architecture.md#reopened-traits--typeclasses). Open means
+undecided — it is not an invitation to assume traits are coming.

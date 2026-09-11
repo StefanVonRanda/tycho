@@ -7,25 +7,6 @@
 
 # Tycho
 
-> **Status: 0.8.5 — pre-1.0. No stability guarantees yet.** Tycho is an
-> experiment testing one idea: implicit arenas under value semantics. It is
-> pre-1.0 because 1.0 is a promise not to break people, and nobody outside this
-> repo has written enough Tycho to know what that promise costs. The
-> engineering is not the open question — see
-> [Architecture](docs/architecture.md) for what each gate proves.
->
-> Until 1.0, expect the language surface and the corelib API to change with a
-> changelog entry and no deprecation window. What is already dependable in
-> practice: the [spec](docs/spec/) is normative and the implementation is gated
-> against it. What is explicitly not: performance tuning and the benches,
-> internal implementation details (the emitted C shape, arena sizes), and the
-> areas the spec or [SECURITY.md](SECURITY.md) mark as sharp edges.
-> [SUPPORT.md](SUPPORT.md) states this as policy — versions, deprecations and
-> which platforms carry a promise.
-> [ROADMAP.md](ROADMAP.md#what-production-ready-requires) lists what production-ready
-> requires; the 1.0 conditions are in the section above it.
-> Versioning is `tychoc --version` + [CHANGELOG.md](CHANGELOG.md).
-
 **An experimental systems language with automatic memory management from lexical
 scope.** Tycho tests one idea: implicit hierarchical arenas under value
 semantics. Every scope owns a memory arena, freed when the scope exits; with no
@@ -47,6 +28,25 @@ fn main():
     name := input()
     println(greet(name))
 ```
+
+> **Status: 0.8.5 — pre-1.0. No stability guarantees yet.** Tycho is an
+> experiment testing one idea: implicit arenas under value semantics. It is
+> pre-1.0 because 1.0 is a promise not to break people, and nobody outside this
+> repo has written enough Tycho to know what that promise costs. The
+> engineering is not the open question — see
+> [Architecture](docs/architecture.md) for what each gate proves.
+>
+> Until 1.0, expect the language surface and the corelib API to change with a
+> changelog entry and no deprecation window. What is already dependable in
+> practice: the [spec](docs/spec/) is normative and the implementation is gated
+> against it. What is explicitly not: performance tuning and the benches,
+> internal implementation details (the emitted C shape, arena sizes), and the
+> areas the spec or [SECURITY.md](SECURITY.md) mark as sharp edges.
+> [SUPPORT.md](SUPPORT.md) states this as policy — versions, deprecations and
+> which platforms carry a promise.
+> [ROADMAP.md](ROADMAP.md#what-production-ready-requires) lists what production-ready
+> requires; the 1.0 conditions are in the section above it.
+> Versioning is `tychoc --version` + [CHANGELOG.md](CHANGELOG.md).
 
 ## Key features
 
@@ -277,6 +277,10 @@ language tick. [`docs/`](docs/README.md) is the full index; the map:
   model in five steps, starting from C you already know. The gentlest way in.
 - **[Language reference](docs/reference/index.md)** — every construct, by topic.
   The source of truth; every example compiles.
+- **[Quiet results](docs/quiet-results.md)** — the complete register of
+  operations that answer instead of refusing (bytes vs characters, clamping
+  slices, wraparound, the lax parsers). Each is deliberate; each has a
+  fail-closed sibling. The page to read before trusting a parse.
 - **[The thesis](docs/thesis.md)** — why value semantics makes implicit arenas
   work, and where it doesn't, with measured numbers.
 - **[Performance](docs/performance.md)** — the measurements behind the claims.
