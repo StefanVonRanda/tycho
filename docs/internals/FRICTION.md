@@ -6077,3 +6077,50 @@ whose subject is *the tree as a whole* has no change that obviously implicates
 it. Nothing about a docs commit says "re-run the perf gate".
 
 Found only because an unrelated branch ran every lane it had skipped.
+
+## Found by pinning the instantiation note, 2026-09-11 (head `6ba1576c`)
+
+### 87. `tychoc` and `tychoc1` report a different number of instantiation frames — **OPEN**
+
+**Nothing pins this, deliberately** — an assertion either way would freeze one
+compiler's wording against the other's. `tests/diag/generic_instantiation_note.ty`
+pins only the ONE-frame shape, where the two agree exactly. (No `Pinned-by:` line:
+this entry is open, and that line is for closed ones.)
+
+A generic body is type-checked after substitution, so a call inside it fails at
+an instantiation and the compiler walks back up naming each instantiating call.
+The two compilers do not walk back the same distance.
+
+On a **two-level** chain — `main` calls `outer`, `outer` calls `inner`, `inner`
+calls a concrete `show(Point)` at the wrong type — `./tychoc` stops after two
+frames and `./tychoc1` emits three, adding the outermost call in `main`:
+
+```text
+# both
+...ty:21: error: argument type mismatch: argument 1 of 'show' is Name, expected Point
+...ty:24: note: required from here -- this call instantiated the generic
+# tychoc1 only
+...ty:27: note: required from here -- this call instantiated the generic
+    27 |     println(outer(Name("ada")))
+```
+
+On a **one-level** chain they agree byte for byte, which is why the fixture uses
+that shape.
+
+**Why it matters more than a wording difference.** `tests/run.sh` judges every
+`tests/diag/` golden with `${TYCHOC:-./tychoc1}` (`tests/run.sh:168@TYCHOC`),
+while `tools/prunner/main.ty@judge_diag` hardcodes `./tychoc`. So the two
+runners over the same corpus disagree about what the right diagnostic IS, and a
+golden recorded from one fails under the other. That is not specific to this
+diagnostic — it is a property of any diag fixture the two compilers word
+differently, and this is the first one found.
+
+**How it was found.** Writing a fixture for the note, recording its golden the
+way `judge_diag` does it (`./tychoc`), and then running `make test`, which judges
+with `./tychoc1` and rejected it. The fixture was rewritten to the shape both
+agree on; the divergence is recorded here rather than papered over.
+
+**Which is right is an open question, and tychoc1's answer looks better** — the
+outermost frame is the call the programmer actually wrote, and it is the one a
+reader needs to find the mistake. Deciding it means changing the other compiler
+to match, then a nested fixture can land with the fix.
