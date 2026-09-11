@@ -365,10 +365,28 @@ of it:
 impossible is *pointer-identity aliasing of two named variables in one scope* —
 two handles to one mutable object, a write through one seen through the other,
 held beyond any single call. The observer pattern, a shared mutable cache held
-in a field, doubly-linked structures by reference. This is forbidden **by
-construction**, and `inout` deliberately doesn't provide it (it's call-scoped,
-not storable). That forbiddance is *what value semantics is*. Removing it
-wouldn't extend Tycho; it would make it a different language.
+in a field, doubly-linked structures by reference, **and dynamic dispatch
+through an interface value**. This is forbidden **by construction**, and `inout`
+deliberately doesn't provide it (it's call-scoped, not storable). That
+forbiddance is *what value semantics is*. Removing it wouldn't extend Tycho; it
+would make it a different language.
+
+**The dispatch case is worth naming on its own, because it is the one people ask
+for.** A trait object — Go's `interface`, Java's, Rust's `dyn Trait` — is *a
+pointer to someone else's value plus a vtable*. Both halves are the thing this
+model does not have: the pointer is a reference into storage the holder does not
+own, and storing it in a field or a list is precisely the escape the syntax is
+supposed to make visible. So a heterogeneous container of implementors, or an
+interface value held in a struct, is not an unimplemented feature here. It is
+the same wall as the observer pattern, wearing different clothes, and no
+constraint system added on top would change that — a `dyn` needs the reference,
+not the constraint.
+
+Static polymorphism is unaffected and already works: a generic body is
+type-checked after substitution, so a generic can call an ordinary function on
+`$T` and monomorphize per instantiation, with no vtable and no indirection. What
+is refused is the *dynamic* form, and it is refused for the same one reason
+everything else in this section is.
 
 ## 6. Where that leaves the idea
 

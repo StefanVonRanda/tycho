@@ -104,6 +104,14 @@ Foundation before feature breadth. In rough priority:
 2. **Keeping the compiler honest.** As new language features land, each is
    adversarially fuzzed and gated against recorded goldens before shipping. This is
    ongoing, not a milestone.
+3. **Overloading — open, demand-gated.** A name may have exactly one definition, so
+   `show(Point)` and `show(Name)` cannot coexist. Since a generic body type-checks
+   *after* substitution, that one-definition rule — not the closed constraint set — is
+   what stops a generic from running over several user types. It is the small feature
+   that sits where traits were asked for
+   ([non-goals](docs/architecture.md#decided-non-goals)). The trigger is a real program
+   that needs it and hits the wall, not a design impulse; like the corelib, it is built
+   against a program that wants it or not at all.
 
 ## What 1.0 requires
 
@@ -350,14 +358,17 @@ the second of those.
 
 ## Non-goals
 
-Several things are deliberately, permanently out of scope — a package manager, a C-style
-ternary, Hindley-Milner inference, refcounting/GC, and hosted CI among them. The full list
-with rationale is in [docs/architecture.md](docs/architecture.md#decided-non-goals).
+Several things are deliberately, permanently out of scope — traits, a package manager, a
+C-style ternary, Hindley-Milner inference, refcounting/GC, and hosted CI among them. The
+full list with rationale is in [docs/architecture.md](docs/architecture.md#decided-non-goals).
 Please don't open issues proposing them; issues that explore *new* directions are welcome.
 
-**One entry came off that list**, as a consequence of the reframe above rather than a change
-of mind: **traits / typeclasses** were closed on the grounds that the language is
-feature-complete for its thesis, and that ground was retired on 2026-08-15. It is now
-recorded as OPEN for re-decision, with the evidence and the three live outcomes, in
-[docs/architecture.md](docs/architecture.md#reopened-traits--typeclasses). Open means
-undecided — it is not an invitation to assume traits are coming.
+**Traits came off that list on 2026-09-11 and went back on the same day**, and the round
+trip is recorded rather than erased. The old rationale — the language is feature-complete
+for its thesis — was retired by the reframe above and cannot be cited again. The new one
+does not depend on it: the *dynamic* form (an interface value in a field) is impossible
+under value semantics rather than merely declined, the *static* form is largely already
+present because generic bodies type-check after substitution, and open-world extension is
+the one thing traits uniquely buy in a language that has deliberately no registry to extend
+from. The argument and its measurements are in
+[docs/architecture.md](docs/architecture.md#traits--typeclasses--reopened-2026-09-11-re-closed-the-same-day).

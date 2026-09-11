@@ -98,6 +98,7 @@ smoke, so a red `make ci` can't reach `main`: a green `make test` is *not* a gre
 
 These are deliberate, argued, and settled — please don't propose them:
 
+- Traits / typeclasses (re-closed 2026-09-11 on new grounds — see below)
 - A package manager (re-affirmed 2026-08-15: vendoring, Odin-style —
   [ROADMAP](../ROADMAP.md#what-production-ready-requires) §2)
 - A C-style ternary `?:` (the need is met by expression-valued `if`/`match` in tail position)
@@ -109,39 +110,97 @@ These are deliberate, argued, and settled — please don't propose them:
 
 Each of those stands on a rationale of its own, independent of the one below.
 
-### Reopened: traits / typeclasses
+### Traits / typeclasses — reopened 2026-09-11, re-closed the same day
 
-**Status: OPEN for re-decision. Not a proposal, and not a commitment to add
-them — the justification that closed it no longer applies, and nothing has
-replaced it yet.**
+It was reopened for a real reason and closed again for a different one, and both
+halves are recorded because the first rationale is dead and citing it again would
+be a mistake.
 
-Traits were closed under a premise that has since been retired in writing. The
-argument was the one in [ROADMAP](../ROADMAP.md#what-production-ready-requires):
-*"the language is feature-complete for the thesis it exists to prove"* — true,
-and decisive while proving the thesis was the goal. On 2026-08-15 the goal
-became a production-ready language, and the ROADMAP says so explicitly:
-feature-complete for a thesis is not feature-complete for production, so that
-sentence no longer settles anything and the non-goals resting on it are open.
-This entry is that reopening, recorded where the decision lives rather than
-only where it was retired.
+**Why it was reopened.** Traits were closed on the grounds that *"the language is
+feature-complete for the thesis it exists to prove"* — decisive while proving the
+thesis was the goal, and retired on 2026-08-15 when the goal became a
+production-ready language
+([ROADMAP](../ROADMAP.md#what-production-ready-requires)). A non-goal resting on a
+retired premise is not settled, it is merely unexamined.
 
-**What is actually missing is narrower than "traits".** Ordering is already
-answered by function values — `sort.sort_by(xs, cmp)`
-(`corelib/sort/sort.ty:69@sort_by`) covers multi-key, mixed-direction, and types
-with no `comparable` instance without any user-extensible constraint. The gap is
-abstracting over a *set of operations on a user type*, and the corelib shows
-where it bites: `core:io` has no stream abstraction, so streaming reads leave
-the type system entirely and are expressed as a raw FFI handle —
-`io.open_lines` returns `ptr` and `io.read_line` takes one
-(`corelib/io/io.ty:443@open_lines`). Everything else in `core:io` is a
-path-taking free function. That is the honest cost of the closed constraint set,
-stated as evidence rather than as a preference.
+**Why it is closed again.** Three reasons, none of which depends on the old one.
 
-**The decision remains the owner's**, and re-deciding it is not a documentation
-edit. Three outcomes are all live: re-close it with a rationale that survives the
-new goal; close the narrow gap without traits (a stream type, an `io` handle with
-real methods); or open the constraint set. What is no longer available is citing
-the retired premise.
+**1. The dynamic form is impossible, not declined.** A trait object is a pointer
+to someone else's value plus a vtable. There is no reference type, and that is the
+load-bearing constraint of the whole model — a value escapes in exactly two ways,
+both visible in the syntax ([thesis §1](thesis.md)). A `dyn Trait` stored in a
+struct field is exactly the aliasing value semantics forbids. So the shape most
+people mean when they ask for this — a Go or Java `interface` held in a field, a
+heterogeneous list of implementors — can never exist here, whatever is decided
+about the static form. [thesis §5](thesis.md) states it as a boundary of the
+model rather than a missing feature.
+
+**2. The static form is largely already present, and the gap is smaller than
+traits.** A generic body is type-checked **after** substitution, not as a
+template against its constraints. So this compiles and runs today, with no
+constraint mechanism involved at all:
+
+```tycho
+package main
+
+struct Point:
+    x: int
+    y: int
+
+fn show(p: Point) -> string:
+    return "(" + str(p.x) + "," + str(p.y) + ")"
+
+fn render(v: $T) -> string:
+    return show(v)
+
+fn main():
+    println(render(Point(1, 2)))
+```
+
+```output
+(1,2)
+```
+
+Verified 2026-09-11 to hold under generic-calling-generic nesting, over `[$T]`
+containers, and alongside a `where` clause on a second parameter. What blocks it
+from covering the trait use-cases is not the absence of a constraint system: it is
+that a name may have exactly one definition, so `show(Point)` and `show(Name)`
+cannot coexist. That is **overloading**, and it is a far smaller feature than a
+nominal constraint system with coherence and instance resolution.
+
+The usual argument for nominal bounds is that structural checking produces
+unreadable errors at a distant instantiation. Measured here, it does not — the
+compiler names the failing call inside the generic *and* the call that
+instantiated it:
+
+```text
+main.ty:14: error: argument type mismatch: argument 1 of 'show' is Name, expected Point
+   14 |     return show(v)
+main.ty:17: note: required from here -- this call instantiated the generic
+```
+
+**3. What traits uniquely buy is open-world extension, and this language has
+opted out of the ecosystem that needs it.** Coherence rules, the orphan rule and
+instance resolution exist to manage strangers adding instances to your
+abstractions across a dependency graph nobody has read. Vendoring rejects exactly
+that situation. Paying for coherence with no registry is the cost without the
+benefit — and it lands in a 15k-line single-file compiler where the constraint
+diagnostics would have to be as good as the ones above.
+
+**The evidence that prompted the reopening was misfiled, and is being fixed
+separately.** `core:io` having no stream type — `io.open_lines` returning a raw
+`ptr` — is a missing **concrete type**, not a missing abstraction. `handle` is
+already a keyword with a `free` body, so the fix is an `io` reader handle, which
+is a corelib addition the surface lock permits with a recorded diff.
+
+**What stays open, demand-gated:** *overloading*, listed in
+[ROADMAP](../ROADMAP.md#near-term). The trigger is a real program that needs one
+generic to run over several user types and hits the one-definition wall — not
+before. An honest adjacent limit to record when that happens: the five built-in
+constraints (`numeric`, `comparable`, `has_str`, `hashable`, `defaultable`,
+`src/tychoc.c@constraint_ok`) are satisfiable only by built-in scalars, so
+`str(myStruct)` inside a generic stays impossible until `has_str` widens,
+overloading or no overloading.
 
 ## Known limits
 
