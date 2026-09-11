@@ -29,6 +29,55 @@ matching the wrong rows), and the money type's only text constructor returning
 `0.15` for `"1.5x"`. All three are fixed and gated; the pattern and the
 `_checked` convention are written up at FRICTION #4 and #56.
 
+## The self-hosted compiler
+
+`compiler/` is Tycho written in Tycho — 21,498 lines across 13 files in six
+packages (`lex`, `parse`, `ast`, `types`, `emit`, `driver`), built as `tychoc1`.
+It has been absent from this roadmap, which understated it: **it is not a side
+project, it is already the compiler the gates run.** `tests/run.sh`,
+`corelib/run.sh`, `examples/corelib/run.sh` and `server/run.sh` every one
+default to `TYCHOC="${TYCHOC:-./tychoc1}"`, so `make test`'s 1039 fixtures, the
+corelib suite and the server lane are compiled by the self-hosted compiler, not
+by `src/tychoc.c`. `src/tychoc.c` is what bootstraps it and what it is scored
+against.
+
+**Measured, not asserted:**
+
+- **The bootstrap is two-stage and the fixpoint holds.** `./tychoc` emits
+  stage 1; stage 1 emits the shipped `tychoc1`, so a defect in tychoc1's own
+  code generation reaches the binary you run rather than hiding a generation
+  back. Re-measured 2026-09-11: `tychoc1` compiling `compiler/main.ty` produces
+  a binary **byte-identical to itself**. (Three further generations were
+  measured byte-identical on 2026-08-30 —
+  [architecture](docs/architecture.md#bootstrapping).) **No gate asserts this.**
+  Both measurements were taken by hand, months apart, and a bootstrap that
+  stopped reaching a fixpoint would show up as nothing at all — which is the
+  shape of behaviour this tree otherwise insists on pinning. A lane would cost
+  one more compiler build; whether the gate's time budget should carry it is a
+  judgement, not an oversight to be fixed silently.
+- **Two gates carry it.** `make parse-check` scores its front end against
+  `./tychoc`'s own verdicts file by file over the whole tree, with an AST census,
+  a resolution census and a type census against recorded goldens — an accept/
+  reject verdict is blind to a parse that succeeds with the *wrong tree*.
+  `make tychoc1-check` substitutes it into the real runners (conc, ffi,
+  recursion, entrypoints, corelib, corelib-ex, server) rather than
+  reimplementing their judgements.
+- **The two compilers are held to agreeing.** Where they diverge it is a defect
+  in one of them: FRICTION 87 was a user-facing diagnostic the two worded
+  differently, found because a `tests/diag/` golden can only match one, and
+  closed by fixing `src/tychoc.c`.
+
+**The open question this section exists to raise.** Its role is written down
+twice — "to prove the language can carry a real program, and to be a second
+opinion on the first" ([architecture](docs/architecture.md)) — and both are
+true today. What is *not* decided is where it ends up. If it is permanently the
+second opinion, `src/tychoc.c` stays the reference and the two must keep
+agreeing forever, which is a standing cost on every diagnostic change. If it is
+the successor, then `src/tychoc.c`'s long-term job is to bootstrap it and
+nothing else, and that should be said out loud before more work is spent keeping
+both at parity. Nothing here decides it; it is the owner's call, and it belongs
+on this page rather than nowhere.
+
 ## The language surface moved once, deliberately
 
 From 2026-08-22 the keyword set, the builtin set and every corelib signature were

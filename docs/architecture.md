@@ -18,8 +18,11 @@ for an honest accounting of where the model wins and loses see
 spec](spec/) define the language: where the two disagree, this one is right by
 definition.
 
-`compiler/` — 18,254 lines of Tycho across 13 files, the same language written
-in itself, built as `tychoc1`. Six packages: `lex`, `parse`, `ast`, `types`,
+`compiler/` — 21,498 lines of Tycho across 13 files (measured 2026-09-11; this
+line read 18,254 until then, which is the drift a counted number always has),
+the same language written in itself, built as `tychoc1`.
+[ROADMAP](../ROADMAP.md#the-self-hosted-compiler) tracks its status and the one
+question about it that is not decided. Six packages: `lex`, `parse`, `ast`, `types`,
 `emit`, `driver`. It exists twice over — to prove the language can carry a real
 program, and to be a second opinion on the first. `make parse-check` scores its
 front end against `./tychoc`'s own answers file by file; `make tychoc1-check`
