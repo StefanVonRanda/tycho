@@ -783,7 +783,7 @@ fn tokenize_named_in(src: string, keep_trivia: bool, file: string, osrc: string,
 
         if bracket_depth == 0 and not cont:
             if col > stack[len(stack) - 1]:
-                # src/tychoc.c:583 caps the indent stack at 256 and dies with
+                # src/tychoc.c:589 caps the indent stack at 256 and dies with
                 # this message; tychoc1 had no cap at all, so what stopped a
                 # deeply nested file here was the runtime's SIGSEGV guard --
                 # which fires or does not depending on RLIMIT_STACK, and GNU

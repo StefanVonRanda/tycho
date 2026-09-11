@@ -9,9 +9,9 @@ non-goal, re-argued 2026-09-11 ([§1.1](00-conventions.md);
 [architecture](../architecture.md)). Generics grow by widening the built-in set.
 
 > Provenance: `instantiate_generic` `src/tychoc.c@instantiate_generic`; constraints
-> `constraint_ok` `src/tychoc.c@constraint_ok`, enforcement `src/tychoc.c:9023-9041`; the `where` clause
-> `src/tychoc.c:4610@where`; type grammar for `$T`/`[$N]T`
-> `src/tychoc.c:2138-2147`,`src/tychoc.c:2236-2260`.
+> `constraint_ok` `src/tychoc.c@constraint_ok`, enforcement `src/tychoc.c:9043-9061`; the `where` clause
+> `src/tychoc.c:4630@where`; type grammar for `$T`/`[$N]T`
+> `src/tychoc.c:2158-2167`,`src/tychoc.c:2256-2280`.
 
 ## 7.1 Type parameters
 
