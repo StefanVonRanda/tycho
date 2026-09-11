@@ -75,7 +75,13 @@ Any C11 compiler will do: gcc, or **clang 15 or newer**. clang 14 builds the
 compiler and then miscompiles what it emits — measured on Ubuntu 22.04, eight
 fixtures come back with empty strings where a string literal was expected — so
 it is not supported. clang 19 was measured against gcc over the whole fixture
-corpus and agrees on every one.
+corpus and agrees on every one, and **clang 22.1.8 was measured the same way on
+2026-09-11**: it builds `tychoc`, bootstraps `tychoc1` through both stages, and
+runs the corpus **1039 / 0** — each fixture built twice, native and under
+clang's own `-fsanitize=address,undefined`, with byte-identical output required
+between them. Until that run the newest clang anyone had measured was three
+major versions old, so "clang 15 or newer" rested on an untested assumption at
+the top of the range.
 
 ```
 $ git clone https://github.com/StefanVonRanda/tycho
