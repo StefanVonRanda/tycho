@@ -6138,3 +6138,58 @@ touches a user-facing diagnostic for every nested generic in the corpus, so it
 is a golden-churn change and wants to be one deliberate commit. The cheaper
 direction, capping `tychoc1` at one frame to match `tychoc`, is smaller and
 makes the diagnostic worse; recording it only so the choice is explicit.
+
+## Found by running `make ci` on a box that had never run it, 2026-09-11 (head `f70199ee`)
+
+### 88. `make server-check` fails inside `make ci` and passes alone — **OPEN, cause not found**
+
+**Nothing pins this** — it is a flake in the gate's own harness, not in a
+shipped behaviour, and a fixture that reproduces it is exactly what is missing.
+
+`make ci` fails at `server-check` (Makefile:404) on 3 of 3 runs. `make
+server-check` alone passes, `server: OK`, 0 FAILs — including once deliberately
+run concurrently with `make corelib` to load the box, which also passed. So it
+is not CPU contention.
+
+**What is observed.** Partway through the lane its own `mktemp -d` directory
+stops being readable, *after* many checks in the same lane have already used it
+successfully. The last run failed immediately after `ok SIGTERM: exit status 0`:
+
+```text
+  ok   SIGTERM: exit status 0 (clean; every accept loop returned and was joined)
+grep: /tmp/tmp.ftf9Z3geSk/srv.err: No such file or directory
+  FAIL SIGTERM: no 'stopped after N requests' line on stderr
+```
+
+and an earlier run lost the built binary the same way — `tycho-httpd: No such
+file or directory`, exit 127, from a lane that had already pushed 156 requests
+through that binary. The script keeps running rather than dying, so whatever
+removes the directory is not terminating the shell.
+
+**Ruled out, each by testing rather than reasoning:**
+
+- *The EXIT trap firing in the watchdog subshell* (`server/run.sh:671@sleep`,
+  `:14@trap`). bash does not run a parent's EXIT trap when a `( ... ) &`
+  subshell exits; probed directly.
+- *The TERM trap firing when the watchdog is killed* (`server/run.sh:676@kill`,
+  which sends the default SIGTERM while the script traps TERM). bash resets the
+  trap in the subshell; probed directly, the marker file survived.
+- *Disk or inode pressure on /tmp* — tmpfs, 63 G with 1% used, 1046640 inodes free.
+- *A script sweeping `/tmp`* — nothing in the tree removes anything but its own
+  `$T`, and no `pkill` pattern here matches `tycho-httpd`.
+- *One earlier theory that was simply wrong*: the first occurrence followed a
+  `make ci` that had been killed mid-flight, and `f70199ee`'s message records it
+  as collateral from orphaned cleanup. It then failed twice more with no killed
+  predecessor. **That commit message is wrong on this point** and this entry is
+  the correction.
+
+**The one structural fact worth starting from:** `run_lanes`
+(`scripts/ci.sh:25@run_lanes`) backgrounds each lane as `sh "$0" "$N" "$child"`,
+so all four share one process group with `ci.sh`. A signal delivered to the
+group, from any lane, reaches the others — and `server/run.sh` traps INT and
+TERM and runs `rm -rf "$T"` in the handler *without exiting*, which is precisely
+the observed shape: directory gone, script still running. Nothing was found that
+sends such a signal, so this is a direction rather than a diagnosis.
+
+**Not caused by the commits around it** — nothing under `server/` was touched,
+and the same failure predates them.
