@@ -87,8 +87,9 @@ covered: ASan sees addresses, UBSan undefined behaviour, LSan leaks, TSan races
 — **none sees a read of memory that was never written**, and `arena_alloc` hands
 back non-zeroed memory inside a live block, which ASan considers entirely valid.
 Probed 2026-09-11 with valgrind memcheck and every arena handout marked
-undefined: 288 of 288 flat fixtures clean, against an instrument first proved
-able to fire. No lane was added because it found nothing; the method is recorded
+undefined: **371 programs clean** — all 288 flat fixtures, all 46 corelib test
+packages and all 37 corelib examples — against an instrument first proved able
+to fire. `tools/` is not covered: those programs need arguments to do anything. No lane was added because it found nothing; the method is recorded
 in [`internals/probe-uninit-arena-2026-09-11.md`](internals/probe-uninit-arena-2026-09-11.md)
 so it can be re-run after codegen work that touches initialisation.
 
