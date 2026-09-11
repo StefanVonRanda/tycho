@@ -5,6 +5,63 @@ The version constant lives in `src/tychoc.c` (`TYCHO_VERSION`, printed by
 `tychoc --version`); bump both together. Per-release publishing notes stay in
 `RELEASE_NOTES.md`; this file is the accumulating record.
 
+## [Unreleased]
+
+### Core library
+
+- **BREAKING: `io.open_lines` returns `Result(LineReader, IoErr)`** instead of a
+  bare `ptr` that is null on failure, and `io.read_line` / `io.close_lines` take
+  that `LineReader` rather than a `ptr`. Three frozen signatures changed, and
+  `surface.lock` records them deliberately.
+
+  The old shape was this corelib's own instance of the pattern
+  [`docs/quiet-results.md`](docs/quiet-results.md) §6 exists to document — a call
+  that answers instead of refusing, where the answer is a null you have to
+  remember to check. Seventeen of the twenty-nine functions in `core:io` already
+  returned `Result`; the streaming opener was the odd one out. Failure now says
+  *which* failure: `BadPath` for an interior NUL (nothing was attempted, so a
+  retry is the wrong next move), otherwise `NotFound` / `IsDir` / `Failed`,
+  classified the way `is_dir` classifies.
+
+  **`LineReader` is a plain struct with a private C pointer, deliberately not a
+  `handle`.** A `handle` is affine and only an `extern fn` may return one, so
+  using one would move the opener into C and take the interior-NUL guard with
+  it — and that guard has to stay on the Tycho side, because that is the only
+  side that knows the string's length. Go's `os.Open` and Odin's `os.open` both
+  return a (resource, error) pair from an ordinary function for the same reason,
+  and neither has an affine handle either. *(That prior-art claim is recalled,
+  not measured — neither toolchain is installed on the box this was written on.
+  It wants the same re-probe the slice-clamp verdict did before anything leans
+  on it harder than this.)*
+
+  **Two costs, both unchanged from the `ptr` this replaces, both now written
+  down.** A `LineReader` is an ordinary value, so `b := r` gives two names for
+  one C reader and closing both is a double free — close exactly one, exactly
+  once. And cleanup is manual: Go and Odin have `defer`, Tycho does not, so a
+  forgotten `close_lines` leaks the C-side reader until the process exits. An
+  affine `handle` would make the first unrepresentable; the bare `ptr` did not,
+  and this does not either. This change is a strict improvement in typing and in
+  error reporting, and neutral on both of those hazards.
+
+  Migration is mechanical — the null check becomes the `Err` arm:
+
+  ```text
+  # before -- shown for migration; the `before` half no longer compiles
+  r := io.open_lines(p)
+  if is_null(r):
+      return
+  # ... io.read_line(r) ...
+  io.close_lines(r)
+
+  # after
+  match io.open_lines(p):
+      Err(e):
+          return
+      Ok(r):
+          # ... io.read_line(r) ...
+          io.close_lines(r)
+  ```
+
 ## [0.8.5] — 2026-09-06
 
 ### Language

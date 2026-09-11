@@ -134,29 +134,30 @@ fn main():
     # Stream the log ONE line at a time: peak memory is O(longest line), not
     # O(file), so this scales to a log far larger than RAM. (read_lines() would
     # slurp the whole file into an array -- see README, finding 1.)
-    lr := io.open_lines(path)
-    if is_null(lr):
-        println("weblog: cannot open " + path)
-        return
-    done := false
-    for not done:
-        match io.read_line(lr):
-            Some(line):
-                if strings.trim(line) != "":
-                    total = total + 1
-                    r := parse_line(line)
-                    if r.ok:
-                        parsed = parsed + 1
-                        inc(&status, r.sclass)
-                        inc(&paths, r.path)
-                        add(&pbytes, r.path, r.size)
-                        inc(&ips, r.ip)
-                        inc(&hours, r.datehour)
-                    else:
-                        skipped = skipped + 1
-            None:
-                done = true
-    io.close_lines(lr)
+    match io.open_lines(path):
+        Err(e):
+            println("weblog: cannot open " + path)
+            return
+        Ok(lr):
+            done := false
+            for not done:
+                match io.read_line(lr):
+                    Some(line):
+                        if strings.trim(line) != "":
+                            total = total + 1
+                            r := parse_line(line)
+                            if r.ok:
+                                parsed = parsed + 1
+                                inc(&status, r.sclass)
+                                inc(&paths, r.path)
+                                add(&pbytes, r.path, r.size)
+                                inc(&ips, r.ip)
+                                inc(&hours, r.datehour)
+                            else:
+                                skipped = skipped + 1
+                    None:
+                        done = true
+            io.close_lines(lr)
 
     println(f"weblog: {parsed} parsed, {skipped} skipped ({total} non-blank lines)")
     println("")

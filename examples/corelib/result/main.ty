@@ -32,12 +32,14 @@ fn main():
     println("dir      = " + describe(rdir))
 
     # --- the Option half: io.read_line is the corelib's Option-returning call ---
-    rd := io.open_lines(p)
-    if not is_null(rd):
-        l1 := io.read_line(rd)
-        l2 := io.read_line(rd)
-        l3 := io.read_line(rd)                                # past EOF -> None
-        println("line1    = " + result.some_or(l1, "<eof>"))
-        println("line2    = " + result.some_or(l2, "<eof>"))
-        println("line3    = " + result.some_or(l3, "<eof>"))
-        io.close_lines(rd)
+    match io.open_lines(p):
+        Ok(rd):
+            l1 := io.read_line(rd)
+            l2 := io.read_line(rd)
+            l3 := io.read_line(rd)                            # past EOF -> None
+            println("line1    = " + result.some_or(l1, "<eof>"))
+            println("line2    = " + result.some_or(l2, "<eof>"))
+            println("line3    = " + result.some_or(l3, "<eof>"))
+            io.close_lines(rd)
+        Err(e):
+            println("line1    = <open failed>")

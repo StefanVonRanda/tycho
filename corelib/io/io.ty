@@ -438,21 +438,53 @@ fn sync(p: string) -> Result(void, IoErr):
         return Err(Unsupported)
     return Err(Failed)
 
-# Open a streaming line reader over `path`. Returns a null ptr (check is_null) if
-# the file can't be opened. Pair every successful open with close_lines(r).
-fn open_lines(path: string) -> ptr:
+# An open streaming line reader. Opaque: the C pointer inside is private to this
+# package, so a caller holds a reader, passes it and closes it, and cannot read,
+# forge or do arithmetic on the pointer itself.
+#
+# It is a plain struct rather than a `handle` for one reason: a `handle` is
+# affine and only an `extern fn` may return one (docs/reference/ffi.md), which
+# would put the opener in C and take the interior-NUL guard below with it --
+# and that guard only works on the Tycho side, which is the only side that knows
+# the string's length. Go's `os.Open` and Odin's `os.open` return a (resource,
+# error) pair from an ordinary function for the same reason; neither has an
+# affine handle either.
+#
+# What that costs, unchanged from the `ptr` this replaced: a LineReader is an
+# ordinary value, so `b := r` gives two names for ONE C reader, and closing both
+# is a double free (iox_close_lines fclose()s and free()s). Close exactly one,
+# exactly once. An affine `handle` would make that unrepresentable; this cannot,
+# and neither could the ptr. Tycho also has no `defer`, so closing is manual
+# here as it is in Go and Odin -- a forgotten close_lines leaks the C-side
+# reader until the process exits.
+struct LineReader:
+    _p: ptr
+
+# Open a streaming line reader over `path`. Failure is a Result, not a null you
+# have to remember to check: BadPath for an interior NUL (nothing was attempted),
+# otherwise the same classification is_dir uses -- NotFound, IsDir, or Failed.
+# Pair every Ok with close_lines(r).
+fn open_lines(path: string) -> Result(LineReader, IoErr):
     if has_nul(path):
-        return null
-    return iox_open_lines(path)
+        return Err(BadPath)
+    p := iox_open_lines(path)
+    if is_null(p):
+        k := iox_stat_kind(path)
+        if k == RF_MISS:
+            return Err(NotFound)
+        if k == RF_DIR:
+            return Err(IsDir)
+        return Err(Failed)
+    return Ok(LineReader(p))
 
 # The next line, without its trailing newline (or CRLF), or None at end of file.
 # An empty line is Some("") -- distinct from EOF's None.
-fn read_line(r: ptr) -> Option(string):
-    return iox_read_line(r)
+fn read_line(r: LineReader) -> Option(string):
+    return iox_read_line(r._p)
 
 # Close a reader opened with open_lines (frees the file handle + line buffer).
-fn close_lines(r: ptr):
-    iox_close_lines(r)
+fn close_lines(r: LineReader):
+    iox_close_lines(r._p)
 
 # Bounded-memory streaming fold: reduce every line of `path` into `init` via
 # f(acc, line), one line at a time (peak memory O(longest line), not O(file)).

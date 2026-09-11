@@ -190,21 +190,23 @@ fn main():
     # streaming line reader: one line at a time (bounded memory), round-tripping
     # the content write_lines wrote. An empty middle line stays Some("").
     w4 := io.write_lines(tmp, ["one", "", "three"])
-    lr := io.open_lines(tmp)
     sn := 0
     sj := ""
-    if not is_null(lr):
-        d := false
-        for not d:
-            match io.read_line(lr):
-                Some(s):
-                    if sn > 0:
-                        sj = sj + "|"
-                    sj = sj + s
-                    sn = sn + 1
-                None:
-                    d = true
-        io.close_lines(lr)
+    match io.open_lines(tmp):
+        Ok(lr):
+            d := false
+            for not d:
+                match io.read_line(lr):
+                    Some(s):
+                        if sn > 0:
+                            sj = sj + "|"
+                        sj = sj + s
+                        sn = sn + 1
+                    None:
+                        d = true
+            io.close_lines(lr)
+        Err(e):
+            sj = "<open failed>"
     println(f"open={b2i(w4)} stream_lines={sn} " + sj)
     # fold_lines: bounded streaming reduce; a missing file folds to init
     tot := io.fold_lines(tmp, 0, addlen)
@@ -490,7 +492,15 @@ fn nul_checks():
     seeded := io.write(nt, "HELLO")
     nb := nt + chr(0) + "x"
     println(f"nul_seed={seeded} nul_exists={io.exists(nb)} nul_read=[{io.read(nb)}] nul_lines={len(io.read_lines(nb))} nul_list={len(io.list(nb))}")
-    println(f"nul_open_null={is_null(io.open_lines(nb))} nul_fold={io.fold_lines(nb, 0, addlen)}")
+    nul_open := "opened"
+    match io.open_lines(nb):
+        Ok(r):
+            io.close_lines(r)
+        Err(BadPath):
+            nul_open = "BadPath"
+        Err(e):
+            nul_open = "other"
+    println(f"nul_open={nul_open} nul_fold={io.fold_lines(nb, 0, addlen)}")
     println(f"nul_write={io.write(nb, "z")} nul_append={io.append(nb, "z")} nul_wlines={io.write_lines(nb, ["z"])}")
     println(f"nul_bytes={why(io.read_bytes(nb))} nul_text={twhy(io.read_text(nb))} nul_at={why(io.read_at(nb, 0, 1))}")
     println(f"nul_isdir={dwhy(io.is_dir(nb))} nul_mtime={mwhy(io.mtime(nb))} nul_size={mwhy(io.size(nb))}")
