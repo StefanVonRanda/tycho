@@ -138,10 +138,24 @@ No cloud CI, deliberately. Everything runs locally with a C compiler and `make`.
 
 ```
 make                      # build ./tychoc -- one C file, no dependencies
-make test                 # 560 fixtures under ASan/UBSan/LeakSanitizer (~8 min)
-make corelib              # every corelib package against its golden (~49s)
-make ci                   # the whole sweep (~8¼ min, parallel)
+make test                 # 1039 fixtures under ASan/UBSan/LeakSanitizer
+make corelib              # every corelib package against its golden
+make ci                   # the whole sweep, four lanes in parallel
 ```
+
+**Timings are given as ranges, and the ranges are wide on purpose.** Measured
+across four green sweeps on one machine in one afternoon (2026-09-18): the whole
+of `make ci` between **422s and 1123s**, `make test` between 82s and 144s,
+`make corelib` between 169s and 379s. Steps that were not touched between runs
+moved by 2x, so a single number here would be an invented precision — see
+FRICTION 91 for the measurement and why no figure in this tree should be read
+off one run. Expect single-digit minutes on a workstation; budget more on a
+shared or throttled box.
+
+`make ci` runs under **gcc or clang** (both measured green, 2026-09-18). It
+needed gcc specifically until then, for three unrelated reasons that were all
+in the gates rather than the language — FRICTION 89, 90 and 92, each with the
+compiler measurement that closed it.
 
 Security-specific lanes, each cheap and each with its controls documented in its
 own header:
