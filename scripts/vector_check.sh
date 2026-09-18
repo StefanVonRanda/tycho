@@ -13,9 +13,12 @@
 # That last point is the whole design of leg [3]. At -O2 gcc vectorises the
 # 4-iteration [4]float loop by itself, so "the assembly contains addpd" is TRUE
 # FOR BOTH SPELLINGS and proves nothing (measured 2026-09-04: vector 8, array
-# 4). At -O0 and -O1 the array version emits 0 and the vector version still
-# emits 4 -- which is the actual claim, that an explicit vector does not depend
-# on the optimiser noticing anything.
+# 4). Under gcc at -O0 and -O1 the array version emits 0 and the vector version
+# still emits 4 -- which is the actual claim, that an explicit vector does not
+# depend on the optimiser noticing anything. "The control emits 0" is a gcc
+# property, though, not a C one: clang vectorises a plain [4]float at -O0 too,
+# so leg [3] picks its form from the measured control rather than assuming the
+# compiler. See the comment at the leg itself.
 #
 # EVERY leg runs BOTH compilers. Until 2026-09-05 the vector legs read ./tychoc
 # alone -- and that is exactly why nothing here could see that the SHIPPED
@@ -34,6 +37,10 @@ fail() { echo "vector-check: FAILED -- $1"; exit 1; }
 
 [ -x ./tychoc ]  || fail "./tychoc is not built"
 [ -x ./tychoc1 ] || fail "./tychoc1 is not built"
+
+# What the summary is allowed to claim about leg [3]; see the leg for why this
+# has two forms. Set here, above the per-compiler loop, so it can only weaken.
+L3="at -O0/-O1 the vector program emits packed instructions and the [4]float control emits none"
 
 for CC in ./tychoc ./tychoc1; do
 "$CC" "$FIX" --emit-c -o "$D/e" > /dev/null || fail "$CC cannot compile $FIX"
@@ -138,11 +145,39 @@ case "$(uname -m)" in
     *)             PACKED_RE='\b(addp[sd]|mulp[sd]|divp[sd]|subp[sd])\b' ;;
 esac
 packed_ops() { cc "$1" -fwrapv -std=c11 -S "$2" -o - 2>/dev/null | grep -cE "$PACKED_RE" || true; }
+# The control is a property of the HOST cc, not of Tycho. gcc emits no packed
+# arithmetic for a plain [4]float at -O0/-O1, so `control == 0` discriminates
+# perfectly; clang emits it even at -O0 (measured 2026-09-11, FRICTION 89 --
+# clang 22.1.8: control 8 at -O0, 14 at -O1). So the absolute form is the
+# STRONGEST form of this assertion and not a portable one, and a leg that fails
+# closed on clang was reporting the HOST's auto-vectoriser as a defect in the
+# feature. Run the strong form where the control earns it and fall back to
+# `vector > control` only where the control is provably non-zero -- rather than
+# skipping the leg (which certifies nothing on clang) or weakening it everywhere
+# (which gives up a claim gcc supports today). The relative form still
+# discriminates: clang's vector spelling emits 12 against 8 and 18 against 14.
+# Which form ran is PRINTED rather than folded into one "ok", because the two
+# are different-sized claims and the summary must not overstate the weaker one.
+# $L3 is initialised ONCE, above the per-compiler loop, and this branch only
+# ever downgrades it: each compiler emits its own control, so one could take the
+# absolute branch and the other the relative one, and a per-compiler reset would
+# let the second pass restore a sentence the first pass had not earned.
 for O in -O0 -O1; do
     v=$(packed_ops "$O" "$D/v.c")
     s=$(packed_ops "$O" "$D/s.c")
     [ "$v" -gt 0 ] || fail "$CC: at $O the vector program emits no packed instruction"
-    [ "$s" -eq 0 ] || fail "$CC: at $O the [4]float CONTROL emits $s packed instructions -- leg [3] is not discriminating"
+    # An `if`, not `[ ... ] && continue`: the left side of an `&&` is exempt
+    # from `set -e` but the list's status is not, and that rule differs enough
+    # between shells to be worth not relying on in a #!/bin/sh gate.
+    if [ "$s" -ne 0 ]; then
+        # The control auto-vectorises on this host, so the absolute form would
+        # fail closed on a working feature. Assert the weaker claim that still
+        # separates the two spellings: whatever the optimiser does to the plain
+        # array, the vector type must buy strictly more than it.
+        [ "$v" -gt "$s" ] || fail "$CC: at $O the vector program emits $v packed instructions and its [4]float control emits $s -- the vector form does not exceed its control, so nothing measured here is attributable to the TYPE"
+        echo "vector-check: leg [3] ran the RELATIVE form at $O -- this host's cc vectorises the [4]float control ($s packed), so the absolute form does not apply; asserted vector ($v) > control ($s) instead"
+        L3="at -O0/-O1 the vector program emits packed instructions and STRICTLY MORE of them than its [4]float control (this host's cc vectorises the control, so leg [3] ran the RELATIVE form -- see FRICTION 89)"
+    fi
 done
 # and the two programs must still agree on the answer
 "$CC" "$D/pv/v.ty" -o "$D/vb" > /dev/null || fail "$CC: the vector probe does not link"
@@ -337,4 +372,4 @@ for CC in ./tychoc ./tychoc1; do
     done
 done
 
-echo "vector-check: ok (BOTH compilers emit a GCC vector; the aggregate wants 8-byte alignment and $ctl without the attribute; at -O0/-O1 the vector program emits packed instructions and the [4]float control emits none; both agree on the golden and on all six refusals; a literal lane pays no bounds check and a runtime one still traps; $L7; an over-wide vector warns ONCE at the default and under x86-64-v2, is SILENT under x86-64-v3/v4/--native, and a 16-byte one is silent everywhere)"
+echo "vector-check: ok (BOTH compilers emit a GCC vector; the aggregate wants 8-byte alignment and $ctl without the attribute; $L3; both agree on the golden and on all six refusals; a literal lane pays no bounds check and a runtime one still traps; $L7; an over-wide vector warns ONCE at the default and under x86-64-v2, is SILENT under x86-64-v3/v4/--native, and a 16-byte one is silent everywhere)"

@@ -6297,7 +6297,10 @@ and the same failure predates them.
 
 ## Found by running `make ci` under clang, 2026-09-11 (head `3c381c80`)
 
-### 89. `make ci` is gcc-only: vector-check's control does not discriminate under clang — **OPEN, and it is the GATE, not the language**
+### 89. ~~`make ci` is gcc-only: vector-check's control does not discriminate under clang~~ — **FIXED 2026-09-18: leg [3] picks its form from the measured control (the owner's call)**
+
+> Pinned-by: grep -q 'the vector form does not exceed its control' scripts/vector_check.sh
+> Pinned-by: make vector-check
 
 **Nothing pins this** — the failing leg *is* the assertion, and it already fails
 closed. What is missing is a decision about what it should do on a compiler
@@ -6313,7 +6316,7 @@ instructions -- leg [3] is not discriminating
 ```
 
 **That is the gate working, not a defect in Tycho.** Leg [3]
-(`scripts/vector_check.sh:145@discriminating`) proves `vector[N]T` earns its
+(`scripts/vector_check.sh:158@discriminates`) proves `vector[N]T` earns its
 keep by compiling the *same program* twice — once with `vector[4]float`, once
 with `[4]float` substituted in — and requiring the vector form to emit packed
 arithmetic while the plain-array control emits **none**. The control is the
@@ -6336,19 +6339,112 @@ reads as a C property. Note the vector form still emits strictly more than its
 control under clang (12 vs 8, 18 vs 14), so the *feature* is fine — it is the
 binary test that stops working.
 
-**Three options, none taken here because the leg is deliberate work and the
-choice is the owner's:**
+**Three options were on the table; the owner took a fourth, which is options 1
+and 2 chosen per-compiler instead of globally:**
 
-1. **Skip leg [3] under a compiler whose control is non-zero**, with a stated
-   reason — matching the norm that every skip is an enumerated exception rather
-   than silence.
-2. **Compare relatively** (`vector > control`) instead of absolutely
-   (`control == 0`). Discriminates under both, but is a weaker assertion under
-   gcc, where the strong form holds today.
-3. **Declare `make ci` gcc-only** and say so. Defensible — but note the README
-   supports "clang 15 or newer" for *building and running Tycho*, which stays
-   true; this is the same build-versus-gate split that
-   [CONTRIBUTING](../../CONTRIBUTING.md) already draws for the sanitizer
-   runtimes and the 32-bit toolchain.
+1. Skip leg [3] where the control is non-zero — rejected: it certifies *nothing*
+   about vectors on clang, and a skip is the one outcome that cannot fail.
+2. Compare relatively (`vector > control`) everywhere — rejected on its own,
+   because it gives up an assertion gcc supports *today*. "The plain array
+   vectorises not at all" is a bigger claim than "the vector wins", and a gate
+   should not trade a claim it can hold for portability it can get otherwise.
+3. Declare `make ci` gcc-only — rejected: the feature is fine under clang, as
+   the table above shows. The gate was the only thing that was not.
 
-Whichever is chosen, the measurement above is the input.
+**What was done** (`scripts/vector_check.sh:177@exceed`): the leg now measures
+the control first and picks the strongest form that control can support.
+
+- `control == 0` → assert the **absolute** form, exactly as before. **gcc is
+  byte-for-byte unaffected** — same assertion, same summary line, and no new
+  output. Verified: a full `vector-check` under gcc 16.2.1 passes and still
+  prints "*the `[4]float` control emits none*".
+- `control != 0` → assert the **relative** form, `vector > control`, and *say
+  so* on stdout with both counts. Under clang 22.1.8 all four legs now print,
+  e.g. "*this host's cc vectorises the `[4]float` control (8 packed) … asserted
+  vector (12) > control (8)*".
+
+**The summary line is the part that mattered most.** It used to claim "*the
+`[4]float` control emits none*" unconditionally, so a relative run would have
+overstated its own result. It now interpolates `$L3`, which carries whichever
+claim was actually established — the same `$L7` device leg [7] already uses for
+a skipped lane. A weaker run reports a weaker sentence.
+
+**The new assertion was proved able to fail, because a check that cannot fail is
+not a check.** Leg [3] was fed the scalar program as *both* sides (`v == s`) and
+run under clang:
+
+```text
+vector-check: FAILED -- ./tychoc: at -O0 the vector program emits 8 packed
+instructions and its [4]float control emits 8 -- the vector form does not
+exceed its control, so nothing measured here is attributable to the TYPE
+exit=1
+```
+
+So the relative form discriminates rather than passing vacuously — which was the
+entire objection to option 2 as a blanket rule, and the reason it is used only
+where the strong form is unavailable.
+
+**This removes `vector-check` as the blocker; it does not make `make ci`
+portable, and the first full run after the fix is what established that.** Under
+clang the gate now gets past leg [3] and travels 20 lanes further before
+`shim-warn` stops it on an entirely different gcc-ism — filed as 90 below. So
+the headline of this entry ("`make ci` is gcc-only") was the symptom of *two*
+causes and this entry only ever measured one of them.
+[CONTRIBUTING](../../CONTRIBUTING.md) was corrected to say exactly that, rather
+than inheriting either the old claim or the overclaim.
+
+### 90. `shim-warn`'s locked baseline is gcc's: a gcc `-Wunused-function` dodge trips clang's `-Wunused-variable` — **OPEN**
+
+**Found by fixing 89 and running further.** With leg [3] no longer stopping the
+run, `make ci` under clang 22.1.8 reaches `shim-warn` (lane 3d2) and fails:
+
+```text
+shim-warn: FAILED (the warnings the corelib shims emit moved)
+  cc: clang version 22.1.8 (Fedora 22.1.8-4.fc44)
+@@ -0,0 +1 @@
++<file>:135:14: warning: unused variable 'osx_is_batch_ref' [-Wunused-variable]
+```
+
+The `<file>` is `corelib/os/os_shim.c:135@osx_is_batch_ref` — spelled that way
+because the gate parses `path:N@token` and not clang's `path:line:column`.
+
+**Measured, same tree, same command:** gcc 16.2.1 — *"14 shim(s) compiled with
+`-Wall -Wextra -Wdeprecated-declarations`, 0 skipped; 0 warning line(s),
+matching `scripts/shim.warn`"*. clang 22.1.8 — the line above.
+`scripts/shim.warn` is **empty**, so the baseline encodes "gcc is silent here",
+which is a narrower claim than it looks.
+
+**The warning is aimed at a suppression, not at a defect.** `osx_is_batch`
+(`corelib/os/os_shim.c:115@osx_is_batch`) is called from exactly one place,
+`:341`, inside the `_WIN32` branch. On a POSIX build nothing calls it, so the
+file takes its address at file scope to keep gcc's `-Wunused-function` quiet:
+
+```c
+#ifndef _WIN32
+/* Nothing on a POSIX build calls it; say so rather than let -Wunused fire. */
+static int (*osx_is_batch_ref)(const char *) = osx_is_batch;
+#endif
+```
+
+That dodge is gcc-shaped. It converts an unused *function* into an unused
+*variable*, and clang warns about the variable — so the suppression is what
+fires. **Nothing is wrong with the shipped code**; this is the same
+gate-versus-language split as 89.
+
+**Not fixed here, because the options are not equivalent and the tree has no
+existing idiom to copy** — `grep` finds no `__attribute__((unused))` or
+`maybe_unused` anywhere under `corelib/`, `runtime/` or `src/`:
+
+1. **Mark the reference unused** — `__attribute__((unused))` on the variable.
+   One line, silences both, but introduces an attribute this tree does not use
+   and that is not MSVC-portable (the block is POSIX-only, so that may not
+   matter).
+2. **Compile `osx_is_batch` only on Windows** — wrap its definition in
+   `#ifdef _WIN32` and delete the reference entirely. The most honest of the
+   three: nothing on POSIX calls it, so nothing on POSIX need compile it. Costs
+   a second `#ifdef` around an existing function.
+3. **Record clang's line in `scripts/shim.warn`** — cheapest, and wrong: the
+   baseline would then assert a warning the code should not be producing, and
+   the gate exists to notice exactly that.
+
+Option 2 is the author's; the measurement above is the input, as in 89.

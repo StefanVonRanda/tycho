@@ -81,13 +81,24 @@ rather than obvious.
 
 All three are one-time setup, and all three were found by hitting them.
 
-**`make ci` currently needs gcc specifically**, which is a narrower claim than
-the README's "clang 15 or newer" and does not contradict it: clang builds and
-runs Tycho fine — measured, clang 22.1.8 takes the whole fixture corpus 1039/0
-and bootstraps `tychoc1`. What it cannot do is satisfy `vector-check`'s leg [3],
-whose control relies on `-O0` emitting no packed arithmetic. That is true of gcc
-and false of clang, so the leg refuses to certify. See FRICTION 89; it is a gate
-portability limit, not a language one.
+**`make ci` still needs gcc, but for one remaining reason rather than two.**
+This is a narrower claim than the README's "clang 15 or newer" and does not
+contradict it: clang builds and runs Tycho fine — measured, clang 22.1.8 takes
+the whole fixture corpus 1039/0 and bootstraps `tychoc1`.
+
+- `vector-check` **no longer blocks it** (fixed 2026-09-18, FRICTION 89). Leg [3]
+  required a plain-`[4]float` control to emit *no* packed arithmetic, which is a
+  gcc property; it now measures the control and asserts the strongest form that
+  control supports, so clang certifies too.
+- `shim-warn` **does block it** (FRICTION 90, open). Its baseline
+  `scripts/shim.warn` is empty, meaning "gcc is silent here", and clang emits one
+  `-Wunused-variable` line — aimed at a gcc `-Wunused-function` dodge in
+  `corelib/os/os_shim.c:135@osx_is_batch_ref`, not at a defect in the shipped
+  code.
+
+Both are gate portability, not language portability, which is the same
+build-versus-gate split this section already draws for the sanitizer runtimes
+and the 32-bit toolchain.
 
 ## The local CI gate (run it before a PR)
 
