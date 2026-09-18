@@ -115,7 +115,7 @@ did only in one:
 The negative half is not decoration: without it a scanner that matches anything
 is indistinguishable from a working one.
 
-**27 tools, 950 instrumented runs, 0 uninitialised arena reads.**
+**27 tools, 972 instrumented runs, 0 uninitialised arena reads.**
 
 **Two of the gaps this record first reported were closed the same day, and the
 first wording of both was wrong:**
@@ -135,12 +135,17 @@ first wording of both was wrong:**
   the probe changes.
 
 **What is NOT covered, named rather than rounded up:**
-- **`tycho-chess`** — 41 runs clean, then stopped. perft is pure compute and
-  barely allocates, so it is the worst ratio of memcheck cost to arena coverage
-  in the tree: minutes of memcheck per arena allocation it does not make.
-  Partial, deliberately, and the cheapest of the remaining gaps to close for
-  anyone willing to leave it running.
-- **`tycho-debug` leg [7]** — see above; not closable by this method at all.
+- **`tycho-debug` leg [7]** — see above; not closable by this method at all, and
+  the only thing in `tools/` that is not.
+
+**`tycho-chess` was the third gap and it is closed too**, by the only method it
+needed: leaving it running. The gate passes *under memcheck* — 24 published and
+oracle perft totals, the divides against golden, 5 search positions deterministic
+and TT-invariant, parallel == serial — across 63 instrumented runs, 0 reads. It
+was stopped at 41 runs earlier for a reason that was about cost rather than
+doubt: perft is pure compute, so it buys minutes of memcheck per arena
+allocation it does not make. Worth knowing before anyone re-runs this sweep in a
+hurry; not worth leaving uncovered.
 - **`tycho-fetch`, `prof`, `prunner`** and the single-file tools — no `run.sh`.
 
 **One failure that is the INSTRUMENT, not the tree.** `tycho-flow` fails under

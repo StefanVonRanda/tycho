@@ -89,7 +89,7 @@ back non-zeroed memory inside a live block, which ASan considers entirely valid.
 Probed 2026-09-11 with valgrind memcheck and every arena handout marked
 undefined: **371 programs clean** — all 288 flat fixtures, all 46 corelib test
 packages and all 37 corelib examples — against an instrument first proved able
-to fire. `tools/` was covered on 2026-09-18 by driving each tool through its own `run.sh` gate, which already supplies the arguments: 27 tools, 950 runs, 0 reads (`tycho-chess` partial and `tycho-debug`'s compiler-lookup leg excepted, each named there). No lane was added because it found nothing; the method is recorded
+to fire. `tools/` was covered on 2026-09-18 by driving each tool through its own `run.sh` gate, which already supplies the arguments: 27 tools, 972 runs, 0 reads (only `tycho-debug`'s compiler-lookup leg excepted, which this method cannot reach). No lane was added because it found nothing; the method is recorded
 in [`internals/probe-uninit-arena-2026-09-11.md`](internals/probe-uninit-arena-2026-09-11.md)
 so it can be re-run after codegen work that touches initialisation.
 
