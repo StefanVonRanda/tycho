@@ -6587,3 +6587,53 @@ un-if-converted branch. None was a defect in Tycho, and all three failed closed,
 which is the gates working. What none of them could do was say "this is a
 property of the compiler I happen to be", which is the recurring shape to watch
 for when adding a control here.
+
+### 93. Five tool gates advertise a `TYCHOC` override, discard it, and test the BOOTSTRAP compiler — **OPEN**
+
+**Found by needing the override.** The `tools/` half of the uninitialised-arena
+probe drives each tool through its own `run.sh` with `TYCHOC` pointed at an
+instrumented wrapper. Six gates reported "no instrumented run"; five of them for
+this reason:
+
+```sh
+TYCHOC="${TYCHOC:-./tychoc1}"        # line 3: honours an override
+[ -x "$TYCHOC" ] || { echo "no ./tychoc -- run 'make' first"; exit 2; }
+TYCHOC="$PWD/tychoc"                 # line 5: throws it away
+```
+
+`tools/tycho-sheet/run.sh`, `tools/tycho-db/run.sh`, `tools/tycho-flow/run.sh`,
+`tools/tycho-sim/run.sh`, `tools/tycho-ed/run.sh` — all five, same three lines.
+
+**Two defects in one, and the second is the one that matters.**
+
+1. The override on line 3 is documentation of a capability the next line
+   removes. Anything setting `TYCHOC` is silently ignored.
+2. **The gate then runs the C bootstrap, not the shipped compiler.** The
+   existence check on line 4 validates `tychoc1` and the gate exercises
+   `tychoc`. This tree states the opposite rule in three separate files
+   (`fuzz/run_leak.py:6@SHIPPED`, `fuzz/run_eqparity.py:4@SHIPPED`,
+   `fuzz/run_typeparity.py:4@SHIPPED`): *"The SHIPPED compiler, not the C
+   bootstrap: every other gate runs tychoc1, and checks present in tychoc are
+   absent from it."* Five tool gates are the exception nobody wrote down.
+
+**The comment says the intent was something else.** It reads *"absolute: the
+probe in [N] is built after a cd"* — the problem being solved was a relative
+path surviving a `cd`, and hardcoding `tychoc` fixed that while changing the
+compiler as collateral. Absoluteness is obtainable without picking a compiler:
+
+```sh
+case "$TYCHOC" in /*) ;; *) TYCHOC="$PWD/${TYCHOC#./}" ;; esac
+```
+
+**Not a latent failure, measured rather than assumed.** `tycho-flow` was run
+with `TYCHOC=$PWD/tychoc1` and no other change: **green**, including the
+200-run reorder leg. So these gates are not passing *because* of the bootstrap
+compiler — they would pass either way, which makes this a correctness-of-scope
+defect rather than a red gate waiting to happen. Four of the five also passed
+under `tychoc1` in the probe sweep; the fifth (`flow`) failed only under
+valgrind, for a reason that is the instrument (probe record, section 4).
+
+**Not fixed here.** The one-line change above is obvious, but it switches which
+compiler five gates exercise, and that is a scope decision for the owner —
+exactly the shape of 90, where the obvious edit turned out to be refused by a
+comment I had not read. The measurement above is the input.

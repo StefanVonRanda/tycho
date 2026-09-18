@@ -82,12 +82,63 @@ and every corelib example — no execution reads an arena slot it never wrote,
 with an instrument demonstrated to catch exactly that.
 
 **Does not:** prove the property. The corpus exercises the paths the corpus
-exercises — a codegen path nothing reaches is as untested here as anywhere.
-**`tools/` is still outside it**: those 30 programs mostly need arguments or
-input files to do anything, so a bare invocation would exercise almost nothing,
-and driving each one properly is a bigger job than this probe. And memcheck
-reports the **read**, not the missing **write**, so a real finding would still
-need tracing back to the construct that failed to initialise.
+exercises — a codegen path nothing reaches is as untested here as anywhere. And
+memcheck reports the **read**, not the missing **write**, so a real finding would
+still need tracing back to the construct that failed to initialise.
+
+## 4. `tools/` — closed 2026-09-18, and it was not the job this record expected
+
+This record said driving 30 programs properly was "a bigger job than this
+probe". It was not, because **the arguments already existed**: 27 of the 30
+tools ship their own `run.sh` gate that feeds them real inputs, and every one
+resolves its compiler as `TYCHOC="${TYCHOC:-./tychoc1}"`. So nothing had to be
+invented and no gate had to be edited — a wrapper standing in for `tychoc1` does
+both halves:
+
+1. appends `--runtime <instrumented copy>`, and
+2. replaces the produced binary with a shim that runs it under `valgrind -q
+   --log-file=...`.
+
+**Findings go to a log, deliberately not to `--error-exitcode`.** The gates'
+exit codes and stdout have to stay byte-identical or they stop testing what they
+test, and a probe that quietly breaks the suite it is riding on is worse than no
+probe.
+
+**The instrument was proved in BOTH directions this time**, which the first pass
+did only in one:
+
+| control | expected | measured |
+|---|---|---|
+| read an arena slot nobody wrote | must fire | exit 42, `Conditional jump or move depends on uninitialised value(s)` |
+| the same slot, written first | must stay silent | exit 0, nothing reported |
+
+The negative half is not decoration: without it a scanner that matches anything
+is indistinguishable from a working one.
+
+**26 tools, 944 instrumented runs, 0 uninitialised arena reads.**
+
+**What is NOT covered, named rather than rounded up:**
+
+- **`tycho-debug`** — its gate drives a scripted debugger session and returns 1
+  under the shim. Void, not clean.
+- **`tycho-fh`** — compiles its own binaries with `cc` after `--emit-c`, so they
+  are built against the instrumented runtime but never run under memcheck.
+- **`tycho-chess`** — 41 runs clean, then stopped. perft is pure compute and
+  barely allocates, so it is the worst ratio of memcheck cost to arena coverage
+  in the tree. Partial, deliberately.
+- **`tycho-fetch`, `prof`, `prunner`** and the single-file tools — no `run.sh`.
+
+**One failure that is the INSTRUMENT, not the tree.** `tycho-flow` fails under
+memcheck: *"the pool drained out of order only 77 of 200 runs"*. Isolated by
+running the same gate with the same compiler and no valgrind, where it is green
+and reorders on essentially all 200 — memcheck serialises threads, so an
+assertion that needs real parallelism degrades. Recorded because the next person
+to point valgrind at a concurrency gate will meet it again.
+
+**Found on the way:** five of these gates silently discard the `TYCHOC`
+override and run the C bootstrap instead of the shipped compiler — FRICTION 93.
+That is why the sweep initially reported "no instrumented run" for them, and it
+is a defect in its own right.
 
 ## Why no lane was added
 
