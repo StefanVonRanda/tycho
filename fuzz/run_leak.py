@@ -1,4 +1,5 @@
 import subprocess, sys, os, tempfile, shutil
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GEN = os.path.join(REPO, "fuzz", "gen.py")
@@ -46,25 +47,48 @@ def _leak_summary(err):
     summ = [ln for ln in err.splitlines() if "SUMMARY:" in ln]
     return (summ[0].strip() if summ else "memory leak")[:200]
 
-def run_seed(seed, tmp):
-    g = subprocess.run([sys.executable, GEN, str(seed)], capture_output=True, text=True, timeout=TIMEOUT)
-    if g.returncode != 0 or not g.stdout.strip():
-        return "GENFAIL", "gen.py rc=%d, %d bytes" % (g.returncode, len(g.stdout))
-    src = os.path.join(tmp, "p.ty")
-    with open(src, "w") as f:
-        f.write(g.stdout)
+def run_seed(seed):
+    """One seed, end to end, in a temp dir OF ITS OWN.
+
+    The serial version shared a single mkdtemp across every seed and wrote
+    `p.ty` into it each time; with workers in parallel that is one file several
+    processes write and one of them copies to findings/, so a reported seed
+    would carry another seed's source. Per-seed dirs are what make this safe,
+    which is why the findings copy moved in here too -- the caller no longer has
+    a directory to copy from. Same shape as fuzz/run.py:run_seed.
+    """
+    tmp = tempfile.mkdtemp()
     try:
-        hc_ok = emit_tychoc(src, os.path.join(tmp, "hc.c"))
-    except subprocess.TimeoutExpired:
-        return "skip", None
-    if not hc_ok:
-        return "skip", None                       # tychoc rejected it
-    v, d = build_run_leak(os.path.join(tmp, "hc.c"), os.path.join(tmp, "run_hc"), "tychoc")
-    if v in ("LEAK", "FAULT"):
-        return "FAIL", d
-    if v == "ccfail":
-        return "FAIL", d                          # emitted C must compile
-    return "ok", None
+        try:
+            g = subprocess.run([sys.executable, GEN, str(seed)], capture_output=True,
+                               text=True, timeout=TIMEOUT)
+        except subprocess.TimeoutExpired:
+            return seed, "skip", "gen timeout"
+        if g.returncode != 0 or not g.stdout.strip():
+            return seed, "GENFAIL", "gen.py rc=%d, %d bytes" % (g.returncode, len(g.stdout))
+        src = os.path.join(tmp, "p.ty")
+        with open(src, "w") as f:
+            f.write(g.stdout)
+        try:
+            hc_ok = emit_tychoc(src, os.path.join(tmp, "hc.c"))
+        except subprocess.TimeoutExpired:
+            return seed, "skip", None
+        if not hc_ok:
+            return seed, "skip", None                 # tychoc rejected it
+        try:
+            v, d = build_run_leak(os.path.join(tmp, "hc.c"), os.path.join(tmp, "run_hc"), "tychoc")
+        except subprocess.TimeoutExpired:
+            return seed, "skip", "harness timeout"
+        # `ccfail` is a FAIL too: the emitted C must compile.
+        if v in ("LEAK", "FAULT", "ccfail"):
+            try:
+                shutil.copy(src, os.path.join(FINDINGS, "leak_seed_%d.ty" % seed))
+            except OSError:
+                pass
+            return seed, "FAIL", d
+        return seed, "ok", None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 def main():
     if sys.platform == "darwin":
@@ -73,24 +97,35 @@ def main():
         return 0
     n = int(sys.argv[1]) if len(sys.argv) > 1 else 200
     start = int(sys.argv[2]) if len(sys.argv) > 2 else 1
+    # Same knob and same default as fuzz/run.py, which has been parallel all
+    # along. This lane was the one that was not: 150 seeds one after another
+    # took 168s and held the ENTIRE fuzz join, while fuzz-main did 200 seeds and
+    # two builds each in 35s beside it.
+    jobs = int(os.environ.get("FUZZ_JOBS", 0)) or max(1, (os.cpu_count() or 4) - 2)
     os.makedirs(FINDINGS, exist_ok=True)
-    tmp = tempfile.mkdtemp()
     counts = {"ok": 0, "skip": 0, "FAIL": 0}
-    for seed in range(start, start + n):
-        try:
-            v, msg = run_seed(seed, tmp)
-        except subprocess.TimeoutExpired:
-            v, msg = "skip", "harness timeout"
-        if v == "GENFAIL":
-            print("GENERATOR FAILURE at seed %d: %s" % (seed, msg))
-            shutil.rmtree(tmp, ignore_errors=True); return 1
-        counts[v] = counts.get(v, 0) + 1
-        if v == "FAIL":
-            shutil.copy(os.path.join(tmp, "p.ty"), os.path.join(FINDINGS, "leak_seed_%d.ty" % seed))
-            print("FAIL seed %d: %s" % (seed, msg))
-        if seed % 50 == 0:
-            print("... %d/%d  ok=%d skip=%d FAIL=%d" % (seed - start + 1, n, counts["ok"], counts["skip"], counts["FAIL"]))
-    shutil.rmtree(tmp, ignore_errors=True)
+    done = genfail = 0
+    print("fuzz-leak: %d seeds under ASan+LSan, %d workers" % (n, jobs))
+    with ProcessPoolExecutor(max_workers=jobs) as ex:
+        futs = {ex.submit(run_seed, seed): seed for seed in range(start, start + n)}
+        for fut in as_completed(futs):
+            seed, v, msg = fut.result()
+            if v == "GENFAIL":
+                # the generator itself produced nothing: the whole run is
+                # meaningless, so stop rather than score the remainder.
+                print("GENERATOR FAILURE at seed %d: %s" % (seed, msg))
+                genfail = 1
+                for f in futs:
+                    f.cancel()
+                break
+            counts[v] = counts.get(v, 0) + 1
+            if v == "FAIL":
+                print("FAIL seed %d: %s" % (seed, msg))
+            done += 1
+            if done % 50 == 0:
+                print("... %d/%d  ok=%d skip=%d FAIL=%d" % (done, n, counts["ok"], counts["skip"], counts["FAIL"]))
+    if genfail:
+        return 1
     print("DONE: ok=%d skip=%d FAIL=%d  (findings in fuzz/findings/)" % (counts["ok"], counts["skip"], counts["FAIL"]))
     return 1 if counts["FAIL"] else 0
 
