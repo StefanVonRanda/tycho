@@ -6448,3 +6448,38 @@ existing idiom to copy** — `grep` finds no `__attribute__((unused))` or
    the gate exists to notice exactly that.
 
 Option 2 is the author's; the measurement above is the input, as in 89.
+
+### 91. `make ci`'s wall clock moves ~2x between runs, so a speedup cannot be read off two totals — **OPEN, and it is the MEASUREMENT, not the gate**
+
+**Found while making the gate faster, which is when it matters most.** Three
+full green sweeps on one machine, one afternoon, same tree bar the changes named:
+
+| run | total | `make corelib` | `conc` | `make test` | `ilp32` | `fixpoint` | `fuzz-leak` |
+|---|---|---|---|---|---|---|---|
+| cold | 1886 | 365 | 208 | ~157 | 133 | 149 | 435 |
+| warm | 1123 | 379 | 196 | 144 | 123 | 142 | 168 |
+| after the perf work | 568 | **168** | **85** | **82** | **62** | **49** | 167 |
+
+**The third row is the problem.** `corelib`, `conc`, `make test`, `ilp32` and
+`fixpoint-check` were not touched by that work and every one of them roughly
+halved. Whatever moved them is machine state — page cache, CPU boost residency,
+whatever else the box was doing — and it is large enough to swamp the effect
+being measured. `fuzz-leak` is the control that makes this legible: 168 then
+167, flat across the same pair, so it is not a uniform clock error.
+
+**What this costs:** 1123 -> 568 reads as a 2x win and cannot be claimed as one.
+The honest statement about that commit is "the gate is green at 568s", not "this
+made it twice as fast".
+
+**The method that does work, and the one used for the claim that was kept:** run
+the two versions **back to back in one session**, alternating if the runs are
+long. `docs-fences` was measured that way — 275.4s serial, 53.2s parallel,
+minutes apart on the same box, same corpus, identical output bar the kernel's
+ephemeral port numbers — and 5.2x is a number worth writing down. Every per-lane
+figure in this file's perf notes that is NOT from such a pairing is an
+observation, not a measurement.
+
+**Not investigated:** what actually causes the 2x. It would need pinned
+frequency, a dropped page cache between runs and an otherwise idle box, which is
+a bigger job than any optimisation it would be qualifying. Filed so the next
+person reads a total with suspicion rather than re-learning this.

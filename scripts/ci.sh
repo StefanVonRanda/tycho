@@ -192,6 +192,24 @@ make -s glibc-check
 
 step "[2f/13] make release-content  (what is INSIDE both release archives, not whether release.sh exited 0. make release-check compares two builds byte for byte and asserts nothing about their contents, which is why an archive shipping the BOOTSTRAP compiler, four .exe files that could not start -- -pthread with no -static, importing a libwinpthread-1.dll nothing carried, wine exit 53 -- and no runtime/ directory was invisible to every lane here. Each archive is extracted and read: layout, runtime/tycho_rt.c cmp-identical to the repo's, the version the packaged compiler reports, every imported DLL either a Windows system one or a file in the archive, every .exe actually starting under wine, the emitted C byte-identical to ./tychoc1's for a program the two compilers DISAGREE on -- the disagreement asserted first, or the identity leg is decoration -- and a core:strings program emitted, linked and RUN with corelib found beside the binary and no TYCHO_CORELIB. Its selfcheck rebuilds all three historical defects for real and requires each to redden the leg that names it)"
 make -s release-content
+
+# MOVED HERE FROM apps AND rest, 2026-09-18, to even the four lanes out. The
+# join waits on the LARGEST lane, not the sum, and the split was badly uneven:
+# rest 651s, apps 516s, corelib 379s, platform 169s, so the gate sat waiting on
+# rest while platform had been idle for eight minutes. corelib is one
+# indivisible step at 379s and sets the floor, so the other three are packed
+# toward it. Nothing about what these four steps assert changes -- only which
+# process runs them. asan-self above builds build/tychoc-asan, NOT ./tychoc, so
+# the compiler these four read is not the one it rebuilds.
+step "[3d3/13] make vector-check  (vector[N]T: the emitted GCC vector, its alignment against the arena, and the packed instruction at -O0 where the auto-vectoriser is off)"
+make -s vector-check
+step "[3j/16] make chess-check  (tycho-chess: perft totals vs published values on start/kiwipete/pos3 + ep/promo/castling vs oracle; search deterministic + TT-invariant with exact tactical probes)"
+make -s chess-check
+step "[9/13] make tools-check  (formatter idempotence + semantic preservation + LSP smoke)"
+sh scripts/tools_check.sh
+
+step "[9b/13] make editors-check  (zed grammar: src/ still generated from grammar.js, corpus still parses; vscode JSON is JSON)"
+make -s editors-check
 fi
 
 if [ "$LANE" = corelib ]; then
@@ -218,8 +236,6 @@ make -s shim-check
 
 step "[3d2/13] make packed-check  (packed struct layout, both compilers, with the attribute-stripped control)"
 make -s packed-check
-step "[3d3/13] make vector-check  (vector[N]T: the emitted GCC vector, its alignment against the arena, and the packed instruction at -O0 where the auto-vectoriser is off)"
-make -s vector-check
 step "[3d4/13] make align-probe  (align(N) struct: the REAL address of an arena value modulo N, both compilers, with the attribute-stripped control)"
 make -s align-probe
 
@@ -247,8 +263,6 @@ step "[3h/14] make scheme-check  (tycho-scheme: fib/closures/ho/sort vs golden b
 make -s scheme-check
 step "[3i/15] make kv-check  (tycho-kv: 3 command scripts byte-identical B+ tree vs map backend; reloads reproduce; golden locked)"
 make -s kv-check
-step "[3j/16] make chess-check  (tycho-chess: perft totals vs published values on start/kiwipete/pos3 + ep/promo/castling vs oracle; search deterministic + TT-invariant with exact tactical probes)"
-make -s chess-check
 step "[3l/18] make kvsrv-check  (tycho-kvsrv: HTTP KV round-trips + 405/404 + keep-alive + 4-way concurrent PUT/GET intact through the actor store)"
 make -s kvsrv-check
 step "[3m/19] make sat-check  (tycho-sat: PHP(2..9) all UNSAT; planted instances SAT with runner-verified models; deterministic; learning comparison recorded)"
@@ -405,12 +419,6 @@ if [ "$LANE" = fuzz-leak ]; then
 fi
 
 if [ "$LANE" = rest ]; then
-step "[9/13] make tools-check  (formatter idempotence + semantic preservation + LSP smoke)"
-sh scripts/tools_check.sh
-
-step "[9b/13] make editors-check  (zed grammar: src/ still generated from grammar.js, corpus still parses; vscode JSON is JSON)"
-make -s editors-check
-
 step "[10/13] bench-guard  (tree-alloc wall: tycho must beat C -- perf regression gate)"
 sh bench/guard.sh
 

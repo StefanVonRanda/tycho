@@ -24,6 +24,9 @@ printed beside it is true.
 `<!-- fence-skip: reason -->` on the line before a fence skips it. The reason is
 printed, so a skip is a stated choice rather than silence.
 """
+import concurrent.futures
+import contextlib
+import io
 import os
 import re
 import subprocess
@@ -183,7 +186,15 @@ def ensure_repo_tool(cmd):
     src = os.path.join(ROOT, "tools", cmd, "main.ty")
     if not os.path.exists(src):
         return False
-    subprocess.run([TYCHOC, src, "-o", exe], capture_output=True)
+    # Build to a private path and rename. Documents run in parallel now, so two
+    # workers can reach the same tool at once; two tychoc invocations writing
+    # one path directly would interleave into a truncated binary that then
+    # "exists" and is run. rename(2) is atomic, so a reader sees the old file or
+    # a whole new one and never a half-written one.
+    staged = "%s.build-%d" % (exe, os.getpid())
+    subprocess.run([TYCHOC, src, "-o", staged], capture_output=True)
+    if os.path.exists(staged):
+        os.replace(staged, exe)
     return os.path.exists(exe)
 
 
@@ -221,18 +232,24 @@ def compiles(src, tmp, run=False, execute=True):
     return q.stdout, ""
 
 
-def main():
-    if not os.path.exists(TYCHOC):
-        print("docs-fences: no ./tychoc -- run 'make' first", file=sys.stderr)
-        return 2
-    # every tracked .md, not a hand-listed subset: a snippet in
-    # examples/*/README.md or tools/*/README.md is a snippet a reader copies.
-    files = subprocess.run(['git', 'ls-files', '*.md'],
-                           capture_output=True, text=True, cwd=ROOT).stdout.split()
+def process_file(f):
+    """Everything ONE document contributes: its counts, skips, failures and the
+    lines it printed.
+
+    Documents are independent of each other, but the fences inside one are not --
+    `carry` prepends a page's earlier fences, which is what makes a reference
+    page checkable at all -- so the document is the unit of parallelism and this
+    stays strictly serial inside. Every result is therefore identical to the
+    serial version; only the wall clock moves.
+
+    stdout is captured rather than written straight out, because workers finish
+    out of order and the report has to read in file order.
+    """
+    buf = io.StringIO()
     nok = nskip = nfail = nrun = nsh = 0
     skipped = []
     fails = []
-    for f in files:
+    with contextlib.redirect_stdout(buf):
         text = open(os.path.join(ROOT, f), encoding='utf-8', errors='replace').read()
         fs = fences(text)
         heads = heading_lines(text)
@@ -781,6 +798,41 @@ def main():
                 carry = (drop_binds(drop_decls(carry, declared(ok_body)), bound(ok_body))
                          + "\n" + ok_body + "\n")
 
+    return buf.getvalue(), nok, nskip, nfail, nrun, nsh, skipped, fails
+
+
+def main():
+    if not os.path.exists(TYCHOC):
+        print("docs-fences: no ./tychoc -- run 'make' first", file=sys.stderr)
+        return 2
+    # every tracked .md, not a hand-listed subset: a snippet in
+    # examples/*/README.md or tools/*/README.md is a snippet a reader copies.
+    files = subprocess.run(['git', 'ls-files', '*.md'],
+                           capture_output=True, text=True, cwd=ROOT).stdout.split()
+    nok = nskip = nfail = nrun = nsh = 0
+    skipped = []
+    fails = []
+    # 134 documents, each shelling out to tychoc up to four times per fence, ran
+    # one after another: 278s warm and 775s cold, the largest single step in
+    # `make ci` and 41% of the lane that holds its critical path.
+    #
+    # PROCESSES, not threads: the worker captures stdout with
+    # contextlib.redirect_stdout, which rebinds a process-global, so threads
+    # would interleave each other's report. ex.map preserves input order, so the
+    # output still reads in `git ls-files` order exactly as before.
+    jobs = os.environ.get("DOCS_FENCES_JOBS")
+    workers = int(jobs) if jobs else (os.cpu_count() or 4)
+    workers = max(1, min(workers, len(files)))
+    if workers > 1:
+        with concurrent.futures.ProcessPoolExecutor(max_workers=workers) as ex:
+            results = list(ex.map(process_file, files))
+    else:
+        results = [process_file(f) for f in files]
+    for out, w_ok, w_skip, w_fail, w_run, w_sh, w_skipped, w_fails in results:
+        sys.stdout.write(out)
+        nok += w_ok; nskip += w_skip; nfail += w_fail; nrun += w_run; nsh += w_sh
+        skipped += w_skipped
+        fails += w_fails
     # An UNTAGGED fence is invisible to everything above: the lane dispatches on
     # the info string, so ```<nothing> holding a whole program is never compiled
     # and never even reported as skipped. README.md's only worked example sat in
