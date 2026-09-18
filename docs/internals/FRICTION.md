@@ -6393,7 +6393,11 @@ causes and this entry only ever measured one of them.
 [CONTRIBUTING](../../CONTRIBUTING.md) was corrected to say exactly that, rather
 than inheriting either the old claim or the overclaim.
 
-### 90. `shim-warn`'s locked baseline is gcc's: a gcc `-Wunused-function` dodge trips clang's `-Wunused-variable` — **OPEN**
+### 90. ~~`shim-warn`'s locked baseline is gcc's: a gcc `-Wunused-function` dodge trips clang's `-Wunused-variable`~~ — **FIXED 2026-09-18: the dodge is now an attribute, and `make ci` runs under clang**
+
+> Pinned-by: grep -q '__attribute__((unused))' corelib/os/os_shim.c
+> Pinned-by: make shim-warn
+> Pinned-by: make shim-check
 
 **Found by fixing 89 and running further.** With leg [3] no longer stopping the
 run, `make ci` under clang 22.1.8 reaches `shim-warn` (lane 3d2) and fails:
@@ -6405,8 +6409,11 @@ shim-warn: FAILED (the warnings the corelib shims emit moved)
 +<file>:135:14: warning: unused variable 'osx_is_batch_ref' [-Wunused-variable]
 ```
 
-The `<file>` is `corelib/os/os_shim.c:135@osx_is_batch_ref` — spelled that way
-because the gate parses `path:N@token` and not clang's `path:line:column`.
+The `<file>` was `corelib/os/os_shim.c` at the `osx_is_batch_ref` definition,
+which this entry's fix deleted — so it is named rather than cited, the citation
+gate quite correctly refusing a live reference to a symbol that no longer
+exists. The line carrying the replacement is
+`corelib/os/os_shim.c:125@unused`.
 
 **Measured, same tree, same command:** gcc 16.2.1 — *"14 shim(s) compiled with
 `-Wall -Wextra -Wdeprecated-declarations`, 0 skipped; 0 warning line(s),
@@ -6415,8 +6422,8 @@ matching `scripts/shim.warn`"*. clang 22.1.8 — the line above.
 which is a narrower claim than it looks.
 
 **The warning is aimed at a suppression, not at a defect.** `osx_is_batch`
-(`corelib/os/os_shim.c:115@osx_is_batch`) is called from exactly one place,
-`:341`, inside the `_WIN32` branch. On a POSIX build nothing calls it, so the
+(`corelib/os/os_shim.c:126@osx_is_batch`) is called from exactly one place,
+`corelib/os/os_shim.c:347@osx_is_batch`, inside the `_WIN32` branch. On a POSIX build nothing calls it, so the
 file takes its address at file scope to keep gcc's `-Wunused-function` quiet:
 
 ```c
@@ -6447,7 +6454,50 @@ existing idiom to copy** — `grep` finds no `__attribute__((unused))` or
    baseline would then assert a warning the code should not be producing, and
    the gate exists to notice exactly that.
 
-Option 2 is the author's; the measurement above is the input, as in 89.
+**OPTION 2 WAS RECOMMENDED HERE AND IS WRONG, AND THE CODE SAYS SO.** The
+comment directly above the function refuses exactly that edit:
+
+> *Deliberately OUTSIDE the _WIN32 split, though only the Windows spawn calls
+> it. The logic is pure C, and while it sat inside the #ifdef no POSIX host
+> could compile it -- so its gate scored a hand-copy instead, which passes
+> whatever the shipped function does and drifts from it silently.*
+
+`corelib/os/os_batch_check.c:24@os_shim.c` does `#include "os_shim.c"` and calls
+`osx_is_batch` directly, scoring the shipped function; `scripts/shim_check.sh`
+builds and runs it (32 assertions). Compiling the function only on Windows would
+have put that gate back to scoring a hand-copy — the precise defect the function
+was moved out of the `#ifdef` to fix. **The recommendation was made without
+reading the eight lines above the function.**
+
+**What was done instead — option 1, the attribute** (`corelib/os/os_shim.c:125@unused`):
+
+```c
+__attribute__((unused))
+static int osx_is_batch(const char *name) {
+```
+
+and the `osx_is_batch_ref` pointer deleted. The dodge converted an unused
+*function* into an unused *variable*; the attribute states the same fact and
+creates nothing for either compiler to warn about. It is harmless where the
+function IS used — the Windows spawn path at `:341`, and the unit gate. The
+tree already uses `__attribute__` (`runtime/tycho_rt.c:225@constructor`,
+`:875@noinline`), and the Windows build is mingw, which is gcc, so no target
+loses it. Option 3 stays rejected for the reason given above.
+
+**Measured, both compilers, same tree:**
+
+| | `make shim-warn` | `make shim-check` | `os_batch_check` |
+|---|---|---|---|
+| gcc 16.2.1 | 0 warning line(s) | 16 ok, 1 skipped, 0 failed | 32 ok, 0 FAIL |
+| clang 22.1.8 | 0 warning line(s) | 16 ok, 1 skipped, 0 failed | 32 ok, 0 FAIL |
+
+**Also corrected while here:** that comment claimed the gate was selected by a
+`TYCHO_OSX_BATCH_UNIT` macro "defined only by that gate". No such macro exists
+anywhere in the tree — `os_batch_check.c` simply includes the file and supplies
+its own `main`. The comment now describes what the gate does.
+
+**With this and 89, `make ci` runs under gcc AND clang** — the two causes behind
+one headline, closed separately.
 
 ### 91. `make ci`'s wall clock moves ~2x between runs, so a speedup cannot be read off two totals — **OPEN, and it is the MEASUREMENT, not the gate**
 
@@ -6483,3 +6533,57 @@ observation, not a measurement.
 frequency, a dropped page cache between runs and an otherwise idle box, which is
 a bigger job than any optimisation it would be qualifying. Filed so the next
 person reads a total with suspicion rather than re-learning this.
+
+### 92. ~~`crypto_hygiene`'s ctgrind control is gcc-shaped: clang if-converts the branch it exists to have~~ — **FIXED 2026-09-18: the control builds at `-O0`, the subject stays at `-O1`**
+
+> Pinned-by: grep -q 'ct_run "$T/ctl" -O0' scripts/crypto_hygiene.sh
+> Pinned-by: sh scripts/crypto_hygiene.sh
+
+**Third in the series, and found the same way as the second: by fixing the one
+in front of it and running further.** With 89 and 90 closed, `make ci` under
+clang 22.1.8 reaches lane `[3u7/27]` and the `apps` lane dies there:
+
+```text
+CONTROL DEAD: a branching digit decode was reported clean -- the
+              suppressions are hiding the subject, so [2] proves nothing.
+```
+
+**The leg is a constant-time proof.** `hexdec_ct` must not branch on secret key
+material, which memcheck can see if the key is marked undefined: a
+secret-dependent branch becomes a "Conditional jump depends on uninitialised
+value". Proving the *absence* of something needs an instrument known to detect
+its presence, so the control is a patched copy of the shim with the branchless
+select rewritten into an `if/else` chain, and it must redden.
+
+**gcc at `-O1` leaves that chain alone. clang at `-O1` if-converts it straight
+back into a branchless select** — so the control emitted no branch, memcheck
+reported 0, and the leg correctly refused to certify. Nothing was wrong with
+the shipped code: **the control had been optimised into the thing it was the
+negative of.**
+
+**The fix is the one this file already uses eight lines up.** The `[c1]`/`[c2]`
+probe is built at `-O0` because gcc elided its `malloc`/`free` pair at `-O1`
+and made *that* control report clean — same failure, other compiler, already
+solved here. So:
+
+- the **control** builds at `-O0`, which is what makes its branch survive any
+  compiler. A control only has to prove the instrument can FIRE.
+- the **subject** keeps `-O1`, because "the shipped decode has no
+  secret-dependent branch" is a claim about optimised code and is worth nothing
+  at `-O0`.
+
+**Measured, same tree, both compilers** — the control scores identically, which
+is the point:
+
+| | control (branching, `-O0`) | subject (`-O1`) |
+|---|---|---|
+| gcc 16.2.1 | 4 reports | **0** secret-dependent branches |
+| clang 22.1.8 | 4 reports | **0** secret-dependent branches |
+
+**The pattern across 89, 90 and 92 is one thing, and it is worth naming:** every
+one was a *control* or a *suppression* that encoded a gcc behaviour as a C
+behaviour — a packed-instruction count, an unused-symbol dodge, an
+un-if-converted branch. None was a defect in Tycho, and all three failed closed,
+which is the gates working. What none of them could do was say "this is a
+property of the compiler I happen to be", which is the recurring shape to watch
+for when adding a control here.

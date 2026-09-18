@@ -182,12 +182,26 @@ EOF
     grep -q 'if (is_d) \*v' "$T/ctl/crypto_shim.c" || {
         echo "crypto-hygiene: FAIL -- the control patch did not apply, so [2] would prove nothing"; exit 1; }
 
-    ct_run() {   # $1 = include dir; echoes the number of reported leaks
-        cc -O1 -g -I "$1" -o "$T/ct" "$T/ct.c" -lcrypto 2>"$T/ct.cc.log" || { echo skip; return; }
+    # THE CONTROL IS BUILT AT -O0 AND THE SUBJECT AT -O1, ON PURPOSE.
+    #
+    # The control above rewrites the branchless digit select into an if/else
+    # chain so memcheck has a secret-dependent branch to report. gcc at -O1
+    # leaves that chain alone; clang at -O1 if-converts it straight back into a
+    # branchless select, so the control emitted no branch, reported 0 and the
+    # leg killed itself as undiscriminating -- on a tree where nothing was
+    # wrong. Same shape as FRICTION 89: a control that is a gcc property read
+    # as a C property.
+    #
+    # -O0 is what makes the control's branch survive any compiler, and a
+    # control only has to prove the instrument can FIRE. The subject keeps -O1,
+    # because "the shipped decode has no secret-dependent branch" is a claim
+    # about optimised code and is worth nothing at -O0.
+    ct_run() {   # $1 = include dir, $2 = -O level; echoes the number of reported leaks
+        cc "$2" -g -I "$1" -o "$T/ct" "$T/ct.c" -lcrypto 2>"$T/ct.cc.log" || { echo skip; return; }
         valgrind -q --suppressions="$T/sup" "$T/ct" >/dev/null 2>"$T/ct.err"
         grep -c uninitialised "$T/ct.err" || true
     }
-    ctl=$(ct_run "$T/ctl")
+    ctl=$(ct_run "$T/ctl" -O0)
     if [ "$ctl" = skip ]; then
         echo "crypto-hygiene: SKIPPED [2] (cannot build the ctgrind probe)"
         head -3 "$T/ct.cc.log"
@@ -196,7 +210,7 @@ EOF
         echo "              suppressions are hiding the subject, so [2] proves nothing."
         exit 1
     else
-        real=$(ct_run corelib/crypto)
+        real=$(ct_run corelib/crypto -O1)
         if [ "$real" != 0 ]; then
             echo "LEAK: the key-import hex decode branches on the secret ($real reports)"
             grep -A2 uninitialised "$T/ct.err" | head -6

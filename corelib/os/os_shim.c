@@ -110,8 +110,19 @@ static int osx_argv_ok(const char *const *v, tycho_int n) {
  * it. The logic is pure C, and while it sat inside the #ifdef no POSIX host
  * could compile it -- so its gate scored a hand-copy instead, which passes
  * whatever the shipped function does and drifts from it silently. Here,
- * scripts/shim_check.sh compiles THIS function. `TYCHO_OSX_BATCH_UNIT` is
- * defined only by that gate, which supplies its own main(). */
+ * corelib/os/os_batch_check.c `#include`s this file and scores THIS function,
+ * supplying its own main(); scripts/shim_check.sh builds and runs it.
+ *
+ * MARKED `unused` RATHER THAN REFERENCED. On a POSIX build outside that gate
+ * nothing calls it, and the previous silencer took its address at file scope:
+ * that quiets gcc's -Wunused-function, but only by creating an unused
+ * VARIABLE, which clang warns about instead. The suppression became the thing
+ * that fired, and since scripts/shim.warn locks this file at zero warnings it
+ * stopped `make ci` under clang outright (FRICTION 90). The attribute says the
+ * same thing to both compilers and creates nothing to warn about. It is
+ * harmless where the function IS used -- the Windows spawn path, and the gate
+ * above. */
+__attribute__((unused))
 static int osx_is_batch(const char *name) {
     size_t len = strlen(name);
     if (len < 4) return 0;
@@ -129,11 +140,6 @@ static int osx_is_batch(const char *name) {
         return 1;
     return 0;
 }
-
-#ifndef _WIN32
-/* Nothing on a POSIX build calls it; say so rather than let -Wunused fire. */
-static int (*osx_is_batch_ref)(const char *) = osx_is_batch;
-#endif
 
 #ifndef _WIN32
 

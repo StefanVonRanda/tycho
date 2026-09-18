@@ -81,22 +81,29 @@ rather than obvious.
 
 All three are one-time setup, and all three were found by hitting them.
 
-**`make ci` still needs gcc, but for one remaining reason rather than two.**
-This is a narrower claim than the README's "clang 15 or newer" and does not
-contradict it: clang builds and runs Tycho fine — measured, clang 22.1.8 takes
-the whole fixture corpus 1039/0 and bootstraps `tychoc1`.
+**`make ci` runs under gcc or clang.** It needed gcc specifically until
+2026-09-18, and for three unrelated reasons behind one headline — all three in
+the gate, none in the language. clang always built and ran Tycho fine: measured,
+clang 22.1.8 takes the whole fixture corpus 1039/0 and bootstraps `tychoc1`.
 
 - `vector-check` **no longer blocks it** (fixed 2026-09-18, FRICTION 89). Leg [3]
   required a plain-`[4]float` control to emit *no* packed arithmetic, which is a
   gcc property; it now measures the control and asserts the strongest form that
   control supports, so clang certifies too.
-- `shim-warn` **does block it** (FRICTION 90, open). Its baseline
-  `scripts/shim.warn` is empty, meaning "gcc is silent here", and clang emits one
-  `-Wunused-variable` line — aimed at a gcc `-Wunused-function` dodge in
-  `corelib/os/os_shim.c:135@osx_is_batch_ref`, not at a defect in the shipped
-  code.
+- `shim-warn` **no longer blocks it either** (fixed 2026-09-18, FRICTION 90).
+  Its baseline `scripts/shim.warn` is empty, meaning "gcc is silent here", and a
+  gcc `-Wunused-function` dodge in `corelib/os/os_shim.c` tripped clang's
+  `-Wunused-variable` instead — the suppression firing, not a defect in the
+  shipped code. It is an `__attribute__((unused))` now, which both compilers
+  read the same way.
 
-Both are gate portability, not language portability, which is the same
+- `crypto_hygiene` **was the third** (fixed 2026-09-18, FRICTION 92). Its
+  constant-time leg builds a deliberately *branching* control so memcheck has
+  something to detect; clang if-converted that branch away at `-O1`, so the
+  control could not fire and the leg refused to certify. The control now builds
+  at `-O0`; the subject stays at `-O1`.
+
+None of the three was language portability; all were the gate's, which is the same
 build-versus-gate split this section already draws for the sanitizer runtimes
 and the 32-bit toolchain.
 
