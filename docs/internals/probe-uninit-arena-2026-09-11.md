@@ -115,17 +115,32 @@ did only in one:
 The negative half is not decoration: without it a scanner that matches anything
 is indistinguishable from a working one.
 
-**26 tools, 944 instrumented runs, 0 uninitialised arena reads.**
+**27 tools, 950 instrumented runs, 0 uninitialised arena reads.**
+
+**Two of the gaps this record first reported were closed the same day, and the
+first wording of both was wrong:**
+
+- **`tycho-fh` — now covered.** It compiles its own binaries with `cc` after
+  `--emit-c`, so the `tychoc1` wrapper alone never reached them. A second shim,
+  on `cc`, wraps only *linked executables* and leaves `-c` objects alone — hand
+  the linker a shell script and the gate fails for the wrong reason. Gate green,
+  6 instrumented runs, 0 reads.
+- **`tycho-debug` — mostly covered, and "void" overstated it.** Legs [1]–[6]
+  pass under instrumentation — scripted session, `-b`, run-to-completion,
+  Ctrl-C, fail-closed, the `tycho debug` wrapper — with 12 instrumented runs and
+  0 reads. Only leg [7] fails, and it is the one leg that *cannot* survive this
+  harness: it asserts how `tycho-debug` **locates a compiler** (beside the
+  binary, via `TYCHOC`, via `PATH`), while the probe's whole method is replacing
+  the compiler with a wrapper somewhere else. The leg is measuring the variable
+  the probe changes.
 
 **What is NOT covered, named rather than rounded up:**
-
-- **`tycho-debug`** — its gate drives a scripted debugger session and returns 1
-  under the shim. Void, not clean.
-- **`tycho-fh`** — compiles its own binaries with `cc` after `--emit-c`, so they
-  are built against the instrumented runtime but never run under memcheck.
 - **`tycho-chess`** — 41 runs clean, then stopped. perft is pure compute and
   barely allocates, so it is the worst ratio of memcheck cost to arena coverage
-  in the tree. Partial, deliberately.
+  in the tree: minutes of memcheck per arena allocation it does not make.
+  Partial, deliberately, and the cheapest of the remaining gaps to close for
+  anyone willing to leave it running.
+- **`tycho-debug` leg [7]** — see above; not closable by this method at all.
 - **`tycho-fetch`, `prof`, `prunner`** and the single-file tools — no `run.sh`.
 
 **One failure that is the INSTRUMENT, not the tree.** `tycho-flow` fails under
