@@ -210,6 +210,9 @@ sh scripts/tools_check.sh
 
 step "[9b/13] make editors-check  (zed grammar: src/ still generated from grammar.js, corpus still parses; vscode JSON is JSON)"
 make -s editors-check
+
+step "[3c/13] make server-check  (tycho-httpd started for real: status codes, binary bodies, traversal, keep-alive, abuse suite, access log, SIGTERM)"
+make -s server-check
 fi
 
 if [ "$LANE" = corelib ]; then
@@ -222,14 +225,15 @@ make -s mandelbrot
 make -s fetch
 make -s weblog
 make -s webserver
+
+step "[3s/25] make sheet-check  (tycho-sheet: demo transcript byte-identical over 2 runs, 98411 generated floats rendered and read back bit-equal with 0.1+0.2, 2^53, DBL_MAX and the min subnormal each asserted separately and none falling back to #NUM!, str(0.1+0.2) round-trips, a cycle NAMED F1 -> F2 -> F3 -> F1 and a self-reference G1 -> G1, 10000- and 100000-deep chains exact and four depth limits past them failing closed by name, 13 of 14 CellErr/ParseErr variants each exiting non-zero with their own whole message and the 14th proved unconstructible)"
+make -s sheet-check
 fi
 
 if [ "$LANE" = apps ]; then
 step "[3b/13] make entrypoints  (every entry point in the tree still compiles)"
 make -s entrypoints
 
-step "[3c/13] make server-check  (tycho-httpd started for real: status codes, binary bodies, traversal, keep-alive, abuse suite, access log, SIGTERM)"
-make -s server-check
 
 step "[3d/13] make shim-check  (every corelib <pkg>_shim.c compiles standalone under -std=c11)"
 make -s shim-check
@@ -311,8 +315,6 @@ make -s flow-check
 step "[3r/24] make ed-check  (tycho-ed: demo transcript byte-identical over 2 runs, a backspace over a 2-byte codepoint asserted at 13->11 bytes and 11->10 codepoints and a forward delete of a 3-byte one at 19->16 and 13->12 against literals, no dump reporting INVALID UTF-8, 6 edits undone to an empty buffer and redone to a byte-identical dump, 7 BufErr variants each refused with their own message)"
 make -s ed-check
 
-step "[3s/25] make sheet-check  (tycho-sheet: demo transcript byte-identical over 2 runs, 98411 generated floats rendered and read back bit-equal with 0.1+0.2, 2^53, DBL_MAX and the min subnormal each asserted separately and none falling back to #NUM!, str(0.1+0.2) round-trips, a cycle NAMED F1 -> F2 -> F3 -> F1 and a self-reference G1 -> G1, 10000- and 100000-deep chains exact and four depth limits past them failing closed by name, 13 of 14 CellErr/ParseErr variants each exiting non-zero with their own whole message and the 14th proved unconstructible)"
-make -s sheet-check
 
 step "[3t/26] make sim-check  (tycho-sim: demo, sweep and stale transcripts each byte-identical over 2 runs, 12 of 24 entities surviving a scripted despawn sweep with the count computed in the runner and every survivor resolved through its id to the hp it was spawned with, a despawned id refused as dead and the same id refused as stale once its slot is handed on with the generation moved, 3 SimErr variants each refused with their own whole message)"
 make -s sim-check
