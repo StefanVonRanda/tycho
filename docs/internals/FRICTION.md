@@ -6283,7 +6283,7 @@ does exactly that to its watchdog. Under four concurrent lanes the process churn
 is high enough for a PID to be recycled between the save and the kill, and the
 signal then lands on an unrelated process. That fits every observation above
 (needs concurrency, hits multiple unrelated scripts, no lane does it alone) and
-is consistent with `run_lanes` (`scripts/ci.sh:25@run_lanes`) backgrounding the
+is consistent with `run_lanes` (`scripts/ci.sh:28@run_lanes`) backgrounding the
 lanes into one process group. Confirming it needs PID-level tracing across a
 full run, which has not been done.
 

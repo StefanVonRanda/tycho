@@ -21,7 +21,33 @@ case "$(uname -s):$(uname -m)" in
 esac
 
 bar() { printf '================================================================\n'; }
-step() { printf '\n>>> %s\n' "$1"; }
+
+# PER-STEP WALL CLOCK. This gate's cost was one number -- "CI GREEN (1920s)" --
+# attributable to nothing, so "which lane should be split" had no answer that was
+# not a guess. Every `step` closes the previous one and an EXIT trap closes the
+# last, which covers the lanes too: they are separate processes (run_lanes forks
+# `sh "$0"`), so each appends to its OWN file and the main lane concatenates them
+# after the join. Costs two date(1) calls per step and changes nothing that is
+# tested.
+_step_t0=0
+_step_name=""
+_timing_flush() {
+    if [ -n "${CI_TIMING:-}" ] && [ -n "$_step_name" ]; then
+        printf '%s\t%s\t%s\n' "$(( $(date +%s) - _step_t0 ))" "$LANE" "$_step_name" \
+            >> "$CI_TIMING/$LANE.t"
+        _step_name=""
+    fi
+    return 0
+}
+trap _timing_flush EXIT
+step() {
+    _timing_flush
+    # The label only, not the paragraph: `step` is called with the whole rationale
+    # and two spaces before the opening paren separate the two.
+    _step_name="${1%%  (*}"
+    _step_t0=$(date +%s)
+    printf '\n>>> %s\n' "$1"
+}
 run_lanes() {
     pids=""
     for child in "$@"; do
@@ -37,6 +63,9 @@ run_lanes() {
 
 if [ "$LANE" = main ]; then
 ci_started=$(date +%s)
+# Fresh each run: a stale file would attribute a previous sweep's time to this one.
+CI_TIMING="$PWD/build/ci-timing"; export CI_TIMING
+rm -rf "$CI_TIMING"; mkdir -p "$CI_TIMING"
 # Captured BEFORE the sweep, not after: a sha read fifteen minutes later names
 # whatever the tree became, not what was tested. The fingerprint covers the
 # uncommitted changes too, and is re-read at the end -- if it moved, nothing is
@@ -79,17 +108,36 @@ make -s fixpoint-check
 step "[2/13] make test  (golden output + ASan/UBSan/LeakSanitizer)"
 make -s test
 
+step "[2a/13] lanes join: platform | corelib | apps | rest (4 in parallel; the wait is the LARGEST, not the sum)"
 run_lanes platform corelib apps rest
 if [ "$N" -gt 0 ]; then
     if [ "$IS_WINDOWS" = 1 ]; then
         step "[6/13] fuzz lanes skipped (Windows: the differential builds ASan binaries; mingw has no -lasan/-lubsan -- docs/internals/windows-port.md phase 2)"
         ci_skipped="fuzz(windows)"
     else
+        step "[6/13] fuzz join: fuzz-main | fuzz-reject | fuzz-leak (3 in parallel)"
         run_lanes fuzz-main fuzz-reject fuzz-leak
     fi
 else
     step "[6/13] fuzz lanes skipped (N=0)"
     ci_skipped="fuzz(N=0)"
+fi
+
+_timing_flush          # close the main lane's own last step before reading the files
+
+# WHERE THE TIME WENT. Printed every run, because the answer moves: the four
+# lanes are wildly uneven (corelib is one step, apps is ~50 run serially inside
+# it), so the join waits on whichever lane holds the critical path and the total
+# alone cannot say which that is.
+if [ -d "${CI_TIMING:-/nonexistent}" ]; then
+    bar
+    printf ' per-lane total (s) -- the join waits on the largest\n'
+    cat "$CI_TIMING"/*.t 2>/dev/null \
+        | awk -F'\t' '{t[$2]+=$1; n[$2]++} END {for (l in t) printf "   %6d  %-10s %d step(s)\n", t[l], l, n[l]}' \
+        | sort -rn
+    printf '\n slowest steps (s)\n'
+    cat "$CI_TIMING"/*.t 2>/dev/null | sort -rn | head -12 \
+        | awk -F'\t' '{printf "   %6d  %-10s %s\n", $1, $2, $3}'
 fi
 
 bar
