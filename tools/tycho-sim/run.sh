@@ -2,7 +2,14 @@ set -u
 cd "$(dirname "$0")/../.." || exit 2          # repo root
 TYCHOC="${TYCHOC:-./tychoc1}"
 [ -x "$TYCHOC" ] || { echo "tycho-sim: no ./tychoc -- run 'make' first"; exit 2; }
-TYCHOC="$PWD/tychoc"          # absolute: the probe in [8] is built after a cd
+# Absolute, because probes below are built after a `cd` -- but ABSOLUTISE the
+# value rather than replacing it. This line used to read `TYCHOC="$PWD/tychoc"`,
+# which solved the path problem and silently changed the compiler too: line
+# above defaults to tychoc1 and checks IT exists, then the gate ran the C
+# bootstrap. Every other gate runs the shipped compiler
+# (fuzz/run_leak.py:6@SHIPPED), and an override nothing honours is worse than no
+# override. FRICTION 93.
+case "$TYCHOC" in /*) ;; *) TYCHOC="$PWD/${TYCHOC#./}" ;; esac
 export TYCHO_CORELIB="$PWD/corelib"
 RECORD="${RECORD:-0}"
 golden="$PWD/tools/tycho-sim/expected.out"

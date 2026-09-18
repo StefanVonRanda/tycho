@@ -6588,7 +6588,11 @@ which is the gates working. What none of them could do was say "this is a
 property of the compiler I happen to be", which is the recurring shape to watch
 for when adding a control here.
 
-### 93. Five tool gates advertise a `TYCHOC` override, discard it, and test the BOOTSTRAP compiler — **OPEN**
+### 93. ~~Five tool gates advertise a `TYCHOC` override, discard it, and test the BOOTSTRAP compiler~~ — **FIXED 2026-09-18: absolutise the value instead of replacing it**
+
+> Pinned-by: test -z "$(grep -lE "^TYCHOC=.\\$PWD/tychoc." tools/*/run.sh)"
+> Pinned-by: make sim-check
+> Pinned-by: make sheet-check
 
 **Found by needing the override.** The `tools/` half of the uninitialised-arena
 probe drives each tool through its own `run.sh` with `TYCHOC` pointed at an
@@ -6633,7 +6637,42 @@ defect rather than a red gate waiting to happen. Four of the five also passed
 under `tychoc1` in the probe sweep; the fifth (`flow`) failed only under
 valgrind, for a reason that is the instrument (probe record, section 4).
 
-**Not fixed here.** The one-line change above is obvious, but it switches which
-compiler five gates exercise, and that is a scope decision for the owner —
-exactly the shape of 90, where the obvious edit turned out to be refused by a
-comment I had not read. The measurement above is the input.
+**Fixed, after measuring that it was safe to.** The concern was that switching
+five gates to the shipped compiler might redden one of them, which is a scope
+decision and not a cleanup. So all five were run under `tychoc1` first, with
+nothing else changed:
+
+| gate | under `tychoc1` |
+|---|---|
+| `sheet-check` | green, 11s |
+| `db-check` | green, 10s |
+| `flow-check` | green, 10s |
+| `sim-check` | green, 3s |
+| `ed-check` | green, 3s |
+
+None of them was passing *because* of the bootstrap compiler, so the fix takes
+nothing away. Line 5 now absolutises the value rather than replacing it:
+
+```sh
+case "$TYCHOC" in /*) ;; *) TYCHOC="$PWD/${TYCHOC#./}" ;; esac
+```
+
+**Proved to do what it claims, in both directions.** A `TYCHOC` pointing at a
+wrapper that `touch`es a marker and then execs the real compiler:
+
+```text
+fixed code   gate rc=0, marker present  -- the override was invoked
+old code     gate rc=0, marker ABSENT   -- the override was discarded
+```
+
+The second line is the one that matters: without it, "the override works" is a
+claim about code that may always have worked. `git stash` and the same probe is
+the whole control.
+
+**One thing deliberately NOT changed.** `tools/tycho-debug/run.sh` passes
+`TYCHOC="$PWD/tychoc"` on six invocations — but as an argument *to the tool
+under test*, telling `tycho-debug` which compiler to build the debuggee with,
+not as a clobber of its own override. Different thing, explicit at each call
+site, and whether the debuggee should be built by the shipped compiler is its
+own question. Named here so the next `grep` for this pattern does not read it as
+a missed instance.
