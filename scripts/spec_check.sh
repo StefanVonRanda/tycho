@@ -58,6 +58,46 @@ missing=$(
         fi
     done
 )
+# The SUB-CASE names, which the container check above cannot see. A row often
+# cites `corelib/test/io` (`byte_index`, `byte_slice`, ...) -- the directory is
+# validated, the names inside it were not, and those names ARE the evidence for
+# the clause. FRICTION 119 found five citations pointing at nothing because they
+# were not path-shaped; this closes the same hole one level down, where a
+# renamed test case would leave the spec citing a name no file contains.
+python3 - "$econf" "$root" <<'ESUB'
+import re, sys, os
+econf, root = sys.argv[1], sys.argv[2]
+bad = 0; checked = 0
+# `container` (`a`, `b`) -- container may be a dir, a .ty, or a source file
+pat = re.compile(r'`([A-Za-z0-9_/.\-]+)`\s*\(((?:\s*`[A-Za-z0-9_]+`\s*,?)+)\)')
+for line in open(econf, encoding='utf-8'):
+    if not line.lstrip().startswith('|'):
+        continue
+    for m in pat.finditer(line):
+        cont, names = m.group(1), re.findall(r'`([A-Za-z0-9_]+)`', m.group(2))
+        cands = [os.path.join(root, cont), os.path.join(root, cont + '.ty'),
+                 os.path.join(root, cont, 'main.ty')]
+        blob = ''
+        for c in cands:
+            if os.path.isfile(c):
+                blob += open(c, encoding='utf-8', errors='replace').read()
+            elif os.path.isdir(c):
+                for dp, _, fs in os.walk(c):
+                    for f in fs:
+                        blob += open(os.path.join(dp, f), encoding='utf-8', errors='replace').read()
+        if not blob:
+            continue                     # container itself is the other check's job
+        for n in names:
+            checked += 1
+            if not re.search(r'\b%s\b' % re.escape(n), blob):
+                print("spec-check: FAIL -- Appendix E cites `%s` inside `%s`, which does not contain it" % (n, cont), file=sys.stderr)
+                bad += 1
+print("spec-check: %d Appendix E sub-case citation(s) resolve inside their container (%s)"
+      % (checked, "ok" if not bad else "FAILED"))
+sys.exit(1 if bad else 0)
+ESUB
+[ $? -eq 0 ] || fail=1
+
 if [ -z "$missing" ]; then
     echo "spec-check: all Appendix E fixture citations resolve (ok)"
 else

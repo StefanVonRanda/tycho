@@ -8272,3 +8272,111 @@ which is the honest state and is said here rather than left implied.
 count, and noticing on the way that `ls fuzz/run_*.py` had four more entries than
 the Makefile did. The pattern's tenth instance today, and the first where the
 uncovered thing was the **spec's** evidence rather than a gate's.
+
+### 120. Appendix E's sub-case citations were unchecked — **GATED 2026-09-19, and no defect found**
+
+> Pinned-by: make spec-fast
+> Pinned-by: grep -q 'Appendix E sub-case citation' scripts/spec_check.sh
+
+The follow-up to [119](#119-the-normative-conformance-table-cites-five-lanes-that-nothing-ran--fixed-for-three-measured-for-two):
+if the conformance table cited five lanes that did not exist, what else does it
+cite that nothing validates?
+
+`scripts/spec_check.sh` already asserts that every fixture path in the table
+resolves — *"the conformance matrix is worthless if it points at fixtures that
+were renamed or removed."* Its regex allows five prefixes: `tests/`, `reject/`,
+`abort/`, `corelib/test/` and `examples/`. Of **341** evidence tokens in the
+table, **316 are validated and 25 are not**.
+
+**Almost all of the 25 are innocent.** Most are prose quoted in the clause
+column — `--help`, `\r`, `GREET`, `usage`. Four were the lane names 119 dealt
+with. And ten are **sub-case names**, a form the checker cannot see:
+
+```text
+| §5.2.6 | ... | `corelib/test/io` (`byte_index`, `byte_slice`, `byte_cat`, ...) |
+| §14.3.1 | ... | `corelib/test/result` (`why`, `io_why`) |
+| §24.1 | ... | `tests/ffi` (`ffi_sfold`, `ffi_spick`) |
+```
+
+The **container** is validated; the names inside the parentheses are not — and
+those names are the actual evidence for the clause. A renamed test case would
+leave the spec citing a name no file contains, and every gate would stay green.
+
+**Every one of them resolves today.** `byte_*` are in `corelib/test/io`, `io_why`
+and `why` in `corelib/test/result`, `ffi_sfold`/`ffi_spick`/`use_res_close` in
+`tests/ffi`, `log_safe` in `server/main.ty`. **This entry found no defect**, and
+says so rather than dressing a latent gap as a discovery — a check added where
+nothing was broken is worth less than one added where something was, and
+pretending otherwise is how a log stops being readable.
+
+What it closes is the *silence*: 12 sub-case citations are now asserted to appear
+inside the file they name, and the lane says how many it checked. Controlled — a
+renamed sub-case reddens `make spec-fast` and names both the missing case and its
+container:
+
+```text
+spec-check: FAIL -- Appendix E cites `byte_index_RENAMED` inside
+            `corelib/test/io`, which does not contain it
+```
+
+**One correction to my own method, recorded because it nearly produced a false
+finding.** Four of these names came back "absent" on the first pass because I
+searched `tests/` for them, while their rows plainly name `corelib/test/io` and
+`server/main.ty` as the container. The citations were right and the search was
+wrong. A sweep that reports a finding without reading the row it came from is
+generating noise, not evidence.
+
+### 121. A wavefront proved by a stopwatch: `make-check`'s race leg flaked a second time — **FIXED 2026-09-19**
+
+> Pinned-by: make make-check
+> Pinned-by: grep -q '_race_attempts=3' tools/tycho-make/run.sh
+
+`make ci` went red on `make-check`, and green on three runs of the lane alone,
+and on six under a 12-way load:
+
+```text
+FAIL: race: c2 started at trace line 9, AFTER the wide level had entirely
+      finished at 8 -- a node is waiting for its whole level
+```
+
+Leg `[8b]` separates a **wavefront** scheduler from a level-synchronised one.
+`race.mk` puts three one-second sleepers and a millisecond-long chain behind one
+source; if `c2` — which names no sleeper — starts before the sleepers finish,
+nothing is imposing a level barrier. The margin is a full second against a chain
+that takes milliseconds.
+
+**It had already been weakened once for this.** The code carries the note: the
+assertion first compared against the *first* `end w`, failed under CI load, and
+was moved to the *last* one. It failed again anyway.
+
+**A wider margin cannot fix it, and that is the point.** The overlap is an
+*observation*, not a guarantee: under a full sweep — a dozen lanes plus this
+build's own `TYCHO_THREADS=8` — the chain can simply not be scheduled for a
+second, and then `c2` starts late **with no barrier present**. A starved thread
+can be starved arbitrarily long, so no constant makes this sound. The project
+already knows this: [86](#86-a-gated-timer-nobody-ran-cost-17x-and-the-gate-that-caught-it-went-unread--fixed-2026-08-18)
+is excused from pinning on the grounds that *"a gate asserting a timing is a coin
+toss"*, and [108](#108-a-retry-that-never-waited-50-iterations-in-0-ms--fixed-2026-09-19)
+was the same mistake in `core:net`'s tests this morning.
+
+**What is sound is the asymmetry.** If a barrier exists, **no** run can show the
+overlap. If none exists, a run that gets CPU will. So the leg now observes up to
+**three** times and requires one success — which turns a coin toss into a
+property test without weakening what it proves.
+
+**Controlled against a real barrier**, which is the leg that matters: giving `c2`
+a genuine dependency on the whole wide level (`c2: c1 w1 w2 w3` — exactly what a
+level-synchronised scheduler imposes) fails **all three** attempts and reports
+
+```text
+race: in 3 attempts c2 never started before the wide level finished
+```
+
+so the retry did not make the assertion unfalsifiable. Restoring the fixture goes
+green.
+
+**Third timing-shaped flake found by running the sweep on a second machine**, and
+the pattern across 102, 108 and this one is worth stating: all three were written
+as *orderings* — "read to EOF", "retry for arrival", "c2 before the level" — and
+all three were implemented as something that only *usually* observes the
+ordering. The property was right each time; the instrument was a stopwatch.

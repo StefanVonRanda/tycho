@@ -343,11 +343,38 @@ grep -q '^app: zeta.o alpha.o$' "$W/build.mk" || \
     bad "build.mk no longer has app depending on zeta.o -- the trace pairs assert nothing"
 printf '=== build cold\n' >> "$out"; cat "$T/cold.log" >> "$out"
 
-R="$T/r"; mkdir -p "$R"
-cp "$src/race.mk" "$R/race.mk"; cp "$MAKE" "$R/tycho-make"
-printf 'b\n' > "$R/base"; : > "$R/rtrace"
-( cd "$R" && env TYCHO_THREADS=8 $TO ./tycho-make race.mk ) > "$T/race.log" 2> "$T/race.err"
-_rc=$?
+# RETRIED, because the overlap below is an OBSERVATION and not a guarantee.
+# race.mk gives a one-second margin -- sleepers sleep 1s against a chain that
+# takes milliseconds -- and that is ample on an idle box. Under a full `make ci`,
+# with a dozen lanes plus this build's own TYCHO_THREADS=8, the chain can simply
+# not be scheduled for a second, and then c2 starts after the wide level has
+# finished WITHOUT any barrier existing. This leg was already weakened once for
+# exactly that reason (first `end w` -> last `end w`, see below) and failed again
+# on 2026-09-19 with c2 at line 9 and the last `end w` at 8.
+#
+# No fixed margin fixes this: a starved thread can be starved arbitrarily long.
+# What IS sound is the asymmetry -- if a barrier exists, NO run can show the
+# overlap; if none exists, a run that gets CPU will. So observe up to three
+# times and require one success, which turns a coin toss into a property test.
+# FRICTION 86 already recorded the principle: a gate asserting a timing is a
+# coin toss. This is the same lesson as 108 (FRICTION 121).
+_race_attempts=3
+_race_i=0
+_race_won=0
+while [ "$_race_i" -lt "$_race_attempts" ]; do
+    _race_i=$((_race_i + 1))
+    R="$T/r$_race_i"; mkdir -p "$R"
+    cp "$src/race.mk" "$R/race.mk"; cp "$MAKE" "$R/tycho-make"
+    printf 'b\n' > "$R/base"; : > "$R/rtrace"
+    ( cd "$R" && env TYCHO_THREADS=8 $TO ./tycho-make race.mk ) > "$T/race.log" 2> "$T/race.err"
+    _rc=$?
+    _c2try=$(grep -n '^start c2$' "$R/rtrace" | head -1 | cut -d: -f1)
+    _ewtry=$(grep -n '^end w' "$R/rtrace" | tail -1 | cut -d: -f1)
+    if [ -n "$_c2try" ] && [ -n "$_ewtry" ] && [ "$_c2try" -lt "$_ewtry" ]; then
+        _race_won=1; break
+    fi
+done
+[ "$_race_won" = 1 ] || echo "      race: no overlap in $_race_attempts attempts -- reported below"
 [ "$_rc" -eq 0 ] || { bad "race: exited $_rc, expected 0"; sed 's/^/      /' "$T/race.err"; }
 [ -s "$T/race.err" ] && { bad "race: wrote to stderr"; sed 's/^/      /' "$T/race.err"; }
 # The floor: every node really ran, or the ordering claim below is about a trace
@@ -367,7 +394,7 @@ _nw=$(grep -c '^end w' "$R/rtrace")
 if [ -z "$_c2" ] || [ -z "$_ew" ]; then
     bad "race: 'start c2' or an 'end w' never appeared -- $(tr '\n' ' ' < "$R/rtrace")"
 elif [ "$_c2" -ge "$_ew" ]; then
-    bad "race: c2 started at trace line $_c2, AFTER the wide level had entirely finished at $_ew -- a node is waiting for its whole level, which is the wavefront this replaced"
+    bad "race: in $_race_attempts attempts c2 never started before the wide level finished (last: c2 at $_c2, level done at $_ew) -- a node is waiting for its whole level, which is the wavefront this replaced"
     sed 's/^/      /' "$R/rtrace"
 fi
 # The floor under the fixture: the chain must be deeper than the wide level, or
