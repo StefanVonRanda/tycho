@@ -105,9 +105,14 @@ taste: `packed` shipped because 141 sites hand-assembled bytes a byte at a time.
 
 ## What is not done
 
-**Platforms.** Artifacts exist for `linux-x86_64` and `mingw64-x86_64`. There is
-still **no macOS or ARM64 release artifact** — but as of 2026-09-19 that is a
-packaging gap and no longer an unknown. The gate was run on `darwin-arm64` for
+**Platforms.** Artifacts exist for `linux-x86_64`, `mingw64-x86_64` and, since
+2026-09-19, **`darwin-arm64`** — built by the unchanged `scripts/release.sh`,
+byte-identical across two builds (`make release-check`), and content-gated at 31
+legs (`make release-content`). It is **built, not published**: `gh release
+create` is still the owner's to run, and it is verified on the build box only.
+Getting there found that the content gate did nothing at all on this platform —
+it exited on a missing *Windows* tool before it ever checked the native archive
+(FRICTION 109). The gate was run on `darwin-arm64` for
 the first time that day and is **green**, repeatedly measured between **267s
 and 390s** — that spread is FRICTION 91, not a regression, which is why no single
 number is quoted: both compilers build native

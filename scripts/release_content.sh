@@ -145,11 +145,50 @@ check_native_glibc() {
 
 # ------------------------------------------------------------- native archive
 
+# The DARWIN analogue of check_native_glibc. There are no versioned glibc symbols
+# in a Mach-O binary, so glibc_floor() returns "none" and the glibc leg would
+# congratulate the archive for being "statically linked" -- a sentence that is
+# false twice over: macOS has no static libc, and these binaries are dynamically
+# linked against libSystem. A leg that cannot fail on a platform is worse than no
+# leg, because it reads in the log exactly like one that passed.
+#
+# Three things actually decide whether this tarball runs on someone else's Mac:
+#
+#   [1] the ARCHITECTURE is the one the name promises -- an x86-64 binary in a
+#       -arm64 archive runs under Rosetta if it is installed and not at all if it
+#       is not, and either way it is not what was shipped.
+#   [2] NOTHING OUTSIDE THE SYSTEM is linked. This is the classic macOS packaging
+#       failure: the build box has Homebrew, the binary picks up
+#       /opt/homebrew/lib/..., and the archive works everywhere except on a
+#       machine that does not have that library at that path -- which is every
+#       machine that is not the build box.
+#   [3] the MINIMUM OS is reported. `minos` is the true floor here, exactly as
+#       GLIBC_x.y is on Linux: a binary built on macOS 27 does not start on 15.
+#       It is REPORTED rather than gated because this project has no macOS
+#       deployment-target policy to check it against -- inventing a ceiling here
+#       would be asserting a decision nobody made. See FRICTION 109.
+check_native_darwin() {
+    st="$1"; tag="$2"; want_arch="$3"
+    for exe in $(archive_exes "$st"); do
+        b="$(basename "$exe")"
+        a="$(lipo -archs "$exe" 2>/dev/null || echo unknown)"
+        [ "$a" = "$want_arch" ] && ok "$tag: $b is Mach-O $a"                                 || bad "$tag: $b is '$a', but the archive name says $want_arch"
+        ext="$(otool -L "$exe" 2>/dev/null | tail -n +2 | awk '{print $1}' \
+               | grep -vE '^(/usr/lib/|/System/)' || true)"
+        [ -z "$ext" ] && ok "$tag: $b links only system libraries"                       || bad "$tag: $b links OUTSIDE the system, so it needs a path the user may not have: $(printf '%s' "$ext" | tr '\n' ' ')"
+        mo="$(otool -l "$exe" 2>/dev/null | awk '/LC_BUILD_VERSION/{f=1} f&&/^ *minos/{print $2; exit}')"
+        [ -n "$mo" ] && ok "$tag: $b needs macOS $mo or newer (reported, not gated -- no deployment-target policy exists)"                      || bad "$tag: $b carries no LC_BUILD_VERSION, so its minimum macOS is unknowable"
+    done
+}
+
 check_native() {
     st="$1"; ver="$2"
     check_layout "$st" native tychoc tychofmt tycho-lsp tycho-debug corelib runtime/tycho_rt.c README.md LICENSE
     check_native_start "$st" native
-    check_native_glibc "$st" native
+    case "$(uname -s)" in
+        Darwin) check_native_darwin "$st" native "$(uname -m)" ;;
+        *)      check_native_glibc  "$st" native ;;
+    esac
 
     v="$("$st/tychoc" --version 2>/dev/null | awk '{print $2}')"
     [ "$v" = "$ver" ] && ok "native: the packaged tychoc reports $ver" \
@@ -451,36 +490,134 @@ selfcheck() {
     exit 0
 }
 
+# The controls for check_native_darwin. Its three legs all PASS on a correct
+# archive, and a leg that has only ever been seen passing is indistinguishable
+# from a leg that cannot fail -- which is precisely what check_native_glibc was
+# on this platform before today. So each one is driven against a binary built to
+# break it:
+#
+#   [d1] an x86_64 binary in an arm64 archive     -> the architecture leg
+#   [d2] a binary linked against Homebrew         -> the external-library leg
+#   [d3] the unmutated archive stays clean        -> the control's control
+#
+# [d2] is the one worth the trouble. It is the classic macOS packaging failure --
+# the build box has Homebrew, the binary quietly picks up /opt/homebrew/..., and
+# the tarball runs everywhere except on a machine that is not the build box.
+selfcheck_darwin() {
+    nats="$1"
+    cp=0; cf=0
+    tmp="$T/dsc"; mkdir -p "$tmp"
+    printf 'int main(void){return 0;}\n' > "$tmp/c.c"
+
+    dleg() {   # $1 label, $2 the mutated exe, $3 = the string its FAIL must contain
+        out="$( fail=0; legs=0; check_native_darwin "$2" native "$(uname -m)" 2>&1 )"
+        case "$out" in
+            *FAIL*"$3"*) cp=$((cp + 1)); echo "   ok  control: $1" ;;
+            *) cf=$((cf + 1)); echo "FAIL control: $1 did NOT redden"; printf '%s\n' "$out" | sed 's/^/     /' ;;
+        esac
+    }
+
+    if clang -arch x86_64 "$tmp/c.c" -o "$tmp/a1/tychoc" 2>/dev/null \
+       || { mkdir -p "$tmp/a1" && clang -arch x86_64 "$tmp/c.c" -o "$tmp/a1/tychoc" 2>/dev/null; }; then
+        dleg "[d1] an x86_64 binary in an arm64 archive" "$tmp/a1" "the archive name says"
+    else
+        echo "   ..  skip [d1]: this clang cannot target x86_64"
+    fi
+
+    lib="$(ls /opt/homebrew/lib/*.dylib 2>/dev/null | head -1)"
+    if [ -n "$lib" ]; then
+        mkdir -p "$tmp/a2"
+        clang "$tmp/c.c" -o "$tmp/a2/tychoc" "$lib" 2>/dev/null \
+            && dleg "[d2] a binary linked against Homebrew" "$tmp/a2" "links OUTSIDE the system" \
+            || echo "   ..  skip [d2]: could not link the probe against $lib"
+    else
+        echo "   ..  skip [d2]: no Homebrew dylib on this host to link against"
+    fi
+
+    out="$( fail=0; legs=0; check_native_darwin "$nats" native "$(uname -m)" 2>&1 )"
+    case "$out" in
+        *FAIL*) cf=$((cf + 1)); echo "FAIL control: the UNMUTATED archive reddens -- [d1]/[d2] prove nothing"
+                printf '%s\n' "$out" | sed -n 's/^FAIL/     FAIL/p' ;;
+        *) cp=$((cp + 1)); echo "   ok  control: [d3] the unmutated archive stays clean" ;;
+    esac
+
+    echo "release-content darwin selfcheck: $cp ok, $cf failed"
+    [ "$cf" -eq 0 ] || exit 1
+    exit 0
+}
+
 # ----------------------------------------------------------------------- main
 
-[ -n "$WINE" ]    || { echo "SKIP release-content: neither wine64 nor wine on PATH"; exit 0; }
-[ -n "$MINGWCC" ] || { echo "SKIP release-content: x86_64-w64-mingw32-gcc not on PATH"; exit 0; }
-[ -n "$OBJDUMP" ] || { echo "SKIP release-content: no objdump on PATH"; exit 0; }
+# THE TWO LEGS ARE INDEPENDENT AND ARE NO LONGER GATED TOGETHER. Until
+# 2026-09-19 this script exited at the first missing Windows tool, BEFORE
+# check_native ran -- so on any host without wine + mingw + objdump, which is
+# every Mac and most Linux boxes, the NATIVE archive got zero content checks
+# while the lane printed a tidy SKIP. That is the shape the macOS artifact would
+# have shipped in: built, smoke-tested by release.sh, and unexamined by the gate
+# whose whole job is examining it (FRICTION 109).
+#
+# Now each leg states its own prerequisites. The native leg needs nothing this
+# host does not already have, so it always runs; the mingw leg skips by name and
+# says which tool is missing. A run that checked one archive says so in its
+# summary rather than reporting "ok" for work it did not do.
+mingw_skip=""
+[ -n "$WINE" ]    || mingw_skip="neither wine64 nor wine on PATH"
+[ -n "$MINGWCC" ] || mingw_skip="x86_64-w64-mingw32-gcc not on PATH"
+[ -n "$OBJDUMP" ] || mingw_skip="no objdump on PATH"
+# objdump is the glibc-floor reader, so a Linux host without it cannot run the
+# native floor leg either. Darwin reads its floor with otool and does not care.
+case "$(uname -s)" in
+    Darwin) ;;
+    *) [ -n "$OBJDUMP" ] || { echo "SKIP release-content: no objdump on PATH"; exit 0; } ;;
+esac
 
 make -s tychoc tychoc1 >/dev/null || { echo "release-content: build failed" >&2; exit 2; }
 ver="$(./tychoc1 --version | awk '{print $2}')"
 os="$(uname -s | tr '[:upper:]' '[:lower:]')"; arch="$(uname -m)"
 nat="dist/tycho-v$ver-$os-$arch"; win="dist/tycho-v$ver-mingw64-$arch"
 
-echo ">> building both archives (scripts/release.sh v$ver)"
+echo ">> building the native archive (scripts/release.sh v$ver)"
 sh scripts/release.sh "v$ver" >/dev/null || { echo "release-content: native release.sh failed" >&2; exit 1; }
-sh scripts/release.sh "v$ver" --mingw >/dev/null || { echo "release-content: mingw release.sh failed" >&2; exit 1; }
-
 mkdir -p "$T/x"
 tar -C "$T/x" -xzf "$nat.tar.gz" || exit 2
-tar -C "$T/x" -xzf "$win.tar.gz" || exit 2
-nats="$T/x/$(basename "$nat")"; wins="$T/x/$(basename "$win")"
+nats="$T/x/$(basename "$nat")"
+
+wins=""
+if [ -z "$mingw_skip" ]; then
+    echo ">> building the mingw archive (scripts/release.sh v$ver --mingw)"
+    sh scripts/release.sh "v$ver" --mingw >/dev/null || { echo "release-content: mingw release.sh failed" >&2; exit 1; }
+    tar -C "$T/x" -xzf "$win.tar.gz" || exit 2
+    wins="$T/x/$(basename "$win")"
+fi
 
 case "${1:---run}" in
-    --selfcheck) selfcheck "$ver" "$wins" ;;
+    --selfcheck)
+        if [ -z "$wins" ]; then
+            # The original selfcheck mutates the WINDOWS archive, so it cannot run
+            # here -- but the Darwin legs added today have their own controls and
+            # there is no reason to skip those too.
+            case "$(uname -s)" in
+                Darwin) selfcheck_darwin "$nats" ;;
+                *) echo "SKIP release-content --selfcheck: $mingw_skip (its controls mutate the WINDOWS archive)"; exit 0 ;;
+            esac
+        fi
+        selfcheck "$ver" "$wins" ;;
     --run) ;;
     *) echo "usage: scripts/release_content.sh [--selfcheck]" >&2; exit 2 ;;
 esac
 
 echo ">> $nat.tar.gz"
 check_native "$nats" "$ver"
-echo ">> $win.tar.gz"
-check_mingw "$wins" "$ver"
+if [ -n "$wins" ]; then
+    echo ">> $win.tar.gz"
+    check_mingw "$wins" "$ver"
+else
+    echo ">> SKIP $win.tar.gz -- $mingw_skip"
+fi
 
-echo "release-content: $legs legs, $fail failed"
+if [ -n "$wins" ]; then
+    echo "release-content: $legs legs over BOTH archives, $fail failed"
+else
+    echo "release-content: $legs legs over the NATIVE archive only, $fail failed -- the Windows archive was NOT checked ($mingw_skip)"
+fi
 [ "$fail" -eq 0 ] || exit 1

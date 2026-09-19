@@ -331,10 +331,13 @@ owner's calls, not a documentation edit.
 
 ### 1. It runs where developers are
 
-Artifacts exist for `linux-x86_64` and `mingw64-x86_64`. **No macOS or ARM64
-binary is PUBLISHED.** A language that cannot be installed on an Apple laptop or
-a Graviton instance is not production-ready whatever its internals are, and this
-is the largest single gap.
+Artifacts exist for `linux-x86_64`, `mingw64-x86_64` and **`darwin-arm64`**, the
+last built 2026-09-19. **None of them is PUBLISHED for macOS yet** — the archive
+is built, reproducible and content-gated, and `gh release create` is the owner's
+call. A language that cannot be installed on an Apple laptop or a Graviton
+instance is not production-ready whatever its internals are; half of that gap is
+now closed, and **ARM64 Linux (Graviton) is still open** — it is compile-only,
+with no machine here to run it.
 
 **"Not shipped" and "not run" are different claims, and as of 2026-09-19 the
 second one is closed.** `make ci` was run on `darwin-arm64` that day and is

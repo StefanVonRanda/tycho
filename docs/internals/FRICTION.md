@@ -7589,3 +7589,76 @@ are unchanged.
 
 **Same family as 102**, which was also a corelib test assuming loopback timing,
 also found by the macOS sweep, and also invisible on an idle machine.
+
+### 109. The macOS artifact would have shipped unexamined — **FIXED 2026-09-19: `darwin-arm64` built, reproducible, and content-gated**
+
+> Pinned-by: grep -q 'check_native_darwin' scripts/release_content.sh
+> Pinned-by: sh -c 'grep -q "mingw_skip=" scripts/release_content.sh'
+> Pinned-by: sh scripts/release_content.sh --selfcheck
+
+[ROADMAP §1](../../ROADMAP.md) calls a macOS/ARM64 build *"the largest single
+gap"*, and [STATUS](../../STATUS.md) recorded that no such binary exists. It does
+now — and building it was the easy half.
+
+**`scripts/release.sh` needed no change at all.** The native leg already derives
+its name from `uname -s`/`uname -m`, and even carries a comment about `touch -t`
+working under both BSD and GNU. One command produced
+`dist/tycho-v0.8.5-darwin-arm64.tar.gz`, it passed release.sh's own smoke test
+(the packaged compiler builds and runs a `core:strings` program with no
+`TYCHO_CORELIB`), and `make release-check` built it **twice, byte-identical**.
+The port was done; only the packaging was missing, exactly as the roadmap
+predicted.
+
+**Then the gate that judges an archive did nothing.**
+
+```text
+$ make release-content
+SKIP release-content: neither wine64 nor wine on PATH
+```
+
+`scripts/release_content.sh` exits at the first missing **Windows** tool — wine,
+mingw, objdump — and those tests sat **above** `check_native`. The native and
+mingw legs are independent and were gated together, so on every Mac and most
+Linux boxes the native tarball received **zero** content checks while the lane
+printed a tidy SKIP and `make ci` stayed green. That is the shape the first macOS
+artifact would have shipped in: built, smoke-tested by the script that built it,
+and unexamined by the gate whose entire job is examining it.
+
+Each leg now states its own prerequisites. The native leg needs nothing a build
+host lacks and always runs; the mingw leg skips **by name**, and the summary says
+what it did not do rather than reporting `ok` for work it never did:
+
+```text
+release-content: 31 legs over the NATIVE archive only, 0 failed
+                 -- the Windows archive was NOT checked (x86_64-w64-mingw32-gcc not on PATH)
+```
+
+**The glibc floor has no Darwin analogue, and skipping it was not the answer.**
+`check_native_glibc` reads versioned `GLIBC_x.y` symbols. A Mach-O binary has
+none, so `glibc_floor` returns `none` and the leg would have printed *"needs no
+versioned glibc symbol (statically linked)"* — a sentence false twice over, since
+macOS has no static libc and these binaries link `libSystem` dynamically. **A leg
+that cannot fail on a platform is worse than no leg**, because in the log it
+reads exactly like one that passed. It is replaced on Darwin, not skipped:
+
+| leg | what it catches |
+|---|---|
+| architecture | an x86-64 binary in an `-arm64` archive — Rosetta if installed, nothing if not |
+| **only system libraries** | the classic macOS packaging failure: the build box has Homebrew, the binary picks up `/opt/homebrew/lib/...`, and the tarball works everywhere except off the build box |
+| minimum macOS | `minos` is the true floor here as `GLIBC_x.y` is on Linux — **reported, not gated**, because this project has no macOS deployment-target policy and inventing a ceiling would assert a decision nobody made |
+
+**All three are controlled**, because three legs that have only ever been seen
+passing are indistinguishable from three that cannot fail — which is what
+`check_native_glibc` was on this platform. `--selfcheck` now drives them against
+binaries built to break them: an `x86_64` probe for the first, a probe linked
+against a real Homebrew dylib for the second, and the unmutated archive for the
+control's control. **3 ok, 0 failed.**
+
+**What this does NOT do.** It does not publish anything; `gh release create` is
+still the owner's to run. It does not check the archive on a *different* Mac, so
+"runs on the build box" is what is proven and "runs on macOS 26" is not — which
+is exactly why `minos` is reported in the log where a human can read it. And the
+Windows archive remains unchecked from here, by name, which is the honest state
+rather than a silent one.
+
+Cost: **3.5s**, inside lane `[2f/13]`, which previously did nothing on this host.
