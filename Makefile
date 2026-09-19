@@ -523,7 +523,14 @@ preflight:
 	@sh scripts/preflight.sh --selfcheck
 	@sh scripts/preflight.sh
 
-builtin-qualified:
+# BOTH compilers are prerequisites, and leaving them undeclared was FRICTION 100
+# repeated by the commit that fixed it. The script compares tychoc against
+# tychoc1, so with either missing it compares a message to an empty string and
+# calls it a disagreement. On the machine it was written on both binaries were
+# lying around from earlier work and it passed; on a FRESH CLONE it failed 42 of
+# 42 -- caught 2026-09-19 by the first `make ci` on aarch64 Linux, in a VM whose
+# whole value is having nothing left over (FRICTION 110).
+builtin-qualified: tychoc tychoc1
 	@sh scripts/builtin_qualified.sh
 
 friction-check:

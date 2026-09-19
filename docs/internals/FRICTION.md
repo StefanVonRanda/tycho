@@ -7662,3 +7662,105 @@ Windows archive remains unchecked from here, by name, which is the honest state
 rather than a silent one.
 
 Cost: **3.5s**, inside lane `[2f/13]`, which previously did nothing on this host.
+
+### 110. aarch64 Linux was compile-only for a month; a VM on the Mac closed it in an hour, and caught me repeating 100 — **FIXED 2026-09-19**
+
+> Pinned-by: grep -q '^builtin-qualified: tychoc tychoc1' Makefile
+> Pinned-by: make builtin-qualified
+
+[ROADMAP §1](../../ROADMAP.md) said of the cross-compiled targets: *"none of those
+binaries has been RUN. There is no Darwin or ARM machine here and no qemu [...]
+What is needed is a real machine, not a port."* Entry 103 retired half of that
+sentence with a real Mac. **This retires the rest without one**: an Apple Silicon
+box runs aarch64 Linux in a VM at native speed, which is a real machine by every
+measure that sentence cared about.
+
+One Homebrew formula (`lima`), no Docker, no daemon, no account. Ubuntu 26.04,
+glibc 2.43, 8 cores, Apple's Virtualization framework:
+
+| | |
+|---|---|
+| `make tychoc` | 3.7s, **ELF aarch64**, runs, reports 0.8.5 |
+| `make tychoc1` | 51s, ELF aarch64 **static-pie** |
+| `make test` | **1065/1065** |
+
+`tychoc1` linking **static-pie** is worth recording on its own: that is the flag
+clang silently drops on macOS, so the Linux archive's "no versioned GLIBC symbol"
+property — the thing [109](#109-the-macos-artifact-would-have-shipped-unexamined--fixed-2026-09-19-darwin-arm64-built-reproducible-and-content-gated)
+had to replace on Darwin — does hold on ARM64 Linux. A Graviton artifact would
+carry the same guarantee the x86-64 one does.
+
+**And the fresh clone immediately caught something the dev machine could not.**
+`make ci` died at lane `[1d4/13]`:
+
+```text
+builtin-qualified: FAILED (42)
+  FAIL args: the two compilers disagree
+    tychoc : error: 'args' is a builtin, not a member of package 'strings' ...
+    tychoc1:
+```
+
+`tychoc1` said **nothing**, because it was not built. The target read:
+
+```make
+builtin-qualified:
+	@sh scripts/builtin_qualified.sh
+```
+
+**No prerequisites.** The script compares the two compilers, so with either
+missing it compares a message against an empty string and calls it a
+disagreement — 42 of 42, including the control.
+
+**That is entry 100, committed by the commit that closed entry 100.** 100 is
+`docs-fences` depending on an undeclared `./tycho`; this is `builtin-qualified`
+depending on an undeclared `./tychoc1`, written hours later, one lane over, by
+someone who had just finished writing the paragraph explaining why that is a
+defect. It passed everywhere it was tried because both binaries were lying around
+from earlier work — which is the entire failure mode, and exactly what a machine
+with nothing left over is for.
+
+Declared, and verified the way the VM found it: `rm -f tychoc tychoc1 && make
+builtin-qualified` now builds both and passes.
+
+**The recurring shape, now on its fourth instance.** 96 (work done, entry never
+updated), 102 (fix applied to one of two sites), 107 (branch existed, asked the
+wrong question), and this. None is ignorance; all four are a correct
+understanding applied incompletely. The sweep for more of these is the open
+question this entry leaves.
+
+### 111. `make test` has an undocumented OS prerequisite, and fails loudly without it — 2026-09-19
+
+> Pinned-by: grep -q 'locale-gen' README.md
+
+The first `make test` on the aarch64 VM came back **1063 passed, 2 failed**:
+
+```text
+FAIL  float_lit_locale   hostile=1 expected, got 0
+FAIL  float_str_locale   hostile=1 expected, got 0
+```
+
+Both fixtures call `runtime/tycho_rt.c@tycho_test_make_locale_hostile`, which
+walks a candidate list — `da_DK`, `de_DE`, `fr_FR`, and the Windows spellings —
+looking for a locale whose `decimal_point` is not `.`. The point of the fixture
+is that Tycho's float formatting does **not** move when the C locale does, and it
+cannot demonstrate that without a comma-decimal locale to move it to.
+
+A minimal Ubuntu image ships `C`, `C.utf8`, `POSIX` and `en_US.utf8` and nothing
+else. No candidate matched, the helper returned 0, and the golden's `hostile=1`
+failed.
+
+**This is not a defect, and the fixture is right.** Returning 0 and failing is
+the correct answer: the alternative is a test that passes while proving nothing,
+which is the thing this repository is most consistently against. `locale-gen
+da_DK.UTF-8` and the suite is **1065/1065**.
+
+**What IS a defect is that nothing said so.** `make test` is the first command in
+CONTRIBUTING's flow, and a fresh clone on a minimal distro — a container, a CI
+image, a new laptop — fails two fixtures with a message that names neither the
+locale nor the cure. The README's platform notes list `xcode-select` for macOS
+and MSYS2 for Windows and said nothing about this. They do now.
+
+Left as REPORTED rather than gated: a lane asserting a comma-decimal locale
+exists would be asserting the developer's OS setup, not the tree, and the fixture
+already fails loudly and specifically enough to be diagnosable once the reader
+knows what `hostile` means.

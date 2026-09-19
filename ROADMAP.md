@@ -336,8 +336,10 @@ last built 2026-09-19. **None of them is PUBLISHED for macOS yet** — the archi
 is built, reproducible and content-gated, and `gh release create` is the owner's
 call. A language that cannot be installed on an Apple laptop or a Graviton
 instance is not production-ready whatever its internals are; half of that gap is
-now closed, and **ARM64 Linux (Graviton) is still open** — it is compile-only,
-with no machine here to run it.
+now closed, and **ARM64 Linux is no longer compile-only**: `make test` is
+1065/1065 on Ubuntu 26.04 / aarch64, in a VM on the Apple Silicon box, at native
+speed. No Graviton artifact is BUILT yet, but the "never been run" half of that
+risk is gone (FRICTION 110).
 
 **"Not shipped" and "not run" are different claims, and as of 2026-09-19 the
 second one is closed.** `make ci` was run on `darwin-arm64` that day and is
@@ -375,9 +377,10 @@ section claimed `make ci` had been run on macOS.** Both sentences sat here at
 once; the second was added without retiring the first. The 2026-09-19 run
 settles it on the evidence: a real `darwin-arm64` machine, the whole gate, and
 three defects that no amount of cross-compiling would have surfaced — which was
-precisely the risk the retired sentence named. The `aarch64-linux` and
-`x86_64-macos` targets are still compile-only, and that half of the caveat
-stands.
+precisely the risk the retired sentence named. `aarch64-linux` stopped being compile-only the same
+day, in a VM on that same Mac — which is the answer to "there is no ARM machine
+here": there was, it just needed a hypervisor. `x86_64-macos` remains the last
+compile-only target, and Rosetta on this box can run it.
 
 ### 2. ~~A story for using other people's code~~ — **DECIDED 2026-08-15: vendoring, Odin-style**
 

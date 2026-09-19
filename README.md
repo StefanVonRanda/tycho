@@ -268,6 +268,23 @@ so the `fuzz-leak` lane and the raytrace and mandelbrot leak legs do not run
 there — ASan, UBSan and TSan still do, and Linux is the only host that scores
 leaks.
 
+**ARM64 Linux** is gated too, since 2026-09-19: `make test` is 1065/1065 on
+Ubuntu 26.04 / aarch64, run in a VM on the Apple Silicon box at native speed. No
+Graviton artifact is built yet.
+
+**On a minimal Linux image, generate a comma-decimal locale before `make test`:**
+
+```sh
+sudo locale-gen da_DK.UTF-8      # or de_DE.UTF-8 / fr_FR.UTF-8
+```
+
+`tests/float_lit_locale` and `float_str_locale` prove that float formatting does
+not move when the C locale does, which needs a locale whose decimal point is not
+`.`. A stock container or CI image ships only `C`/`POSIX`/`en_US`, so both
+fixtures fail with `hostile=1` expected, got `0` — the fixture refusing to pass
+while proving nothing, which is right, but the cure is the line above
+(FRICTION 111).
+
 **Windows** has two supported paths. **WSL2** is the zero-setup one and behaves
 exactly like Linux. **Native Windows is MSYS2 + mingw-w64** — MSVC is not a
 supported C target. The compiler, the runtime, the corelib and the tools build
