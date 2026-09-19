@@ -59,12 +59,33 @@ fn poll_str(r: Result([int], net.NetErr), fds: [int]) -> string:
 # retry is for ARRIVAL, not for the verdict: a byte written on loopback has not
 # necessarily landed when the next statement runs, and a fixed single poll would
 # make this leg a coin toss rather than a check.
+#
+# BOUNDED BY THE CLOCK, NOT BY AN ITERATION COUNT, and that distinction is the
+# whole fix. This was `for t := 0; t < 50; t += 1` with a 200ms poll deadline,
+# which reads like ten seconds of patience and is not: `net.wait_readable`
+# returns the instant ANY descriptor is ready, so once c1 was readable every one
+# of the 50 calls returned immediately and the loop finished in microseconds --
+# never once waiting for the SECOND write to land. A busy spin wearing a retry's
+# clothes. It held on an idle machine and lost the race under a full `make ci`,
+# which is where it was caught, 2026-09-19 (FRICTION 108):
+#
+#     poll_two=[c0,c1]     expected, got [c1]
+#     poll_hup=[c0,c1,c2]  expected, got [c1]
+#
+# The 5ms sleep is what makes the budget real: without it the loop still spins,
+# it just spins for five seconds instead of microseconds and burns a core to do
+# it. The deadline is deliberately generous -- this bounds a FAILURE, and every
+# passing run leaves on the first poll that matches.
 fn poll_until(fds: [int], want: string) -> string:
+    sw := time.start()
     got := ""
-    for t := 0; t < 50; t += 1:
+    for true:
         got = poll_str(net.wait_readable(fds, 200), fds)
         if got == want:
             return got
+        if time.elapsed_ms(sw) >= 5000:
+            return got
+        time.sleep_ms(5)
     return got
 
 fn main():

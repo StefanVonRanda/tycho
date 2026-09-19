@@ -6293,6 +6293,33 @@ static void pend_ground(const char *name, Type t, int line) {
  * tree fails closed here instead of overflowing the C stack (SIGSEGV). */
 #define TYCHO_MAX_TREE_DEPTH 2000
 static int g_resolve_depth = 0;
+/* EVERY builtin, for one purpose: deciding whether a QUALIFIED name -- `strings.len`
+ * -- is a builtin the writer reached for with a package prefix. The other builtin
+ * tables here are narrower on purpose (is_ufcs_builtin is about method syntax,
+ * shadows_builtin about a declaration hiding one), and using either for this
+ * question got it wrong: `sig_find` has no entry for a generic builtin like `len`,
+ * and neither of those lists carries `get` or `wait`. So `strings.len(...)` died as
+ * "package 'strings' has no symbol 'len'" while tychoc1 named the builtin and the
+ * cure -- FRICTION 107, found by `make parse-check` leg15.
+ * COMPLETENESS IS GATED, because a fourth partial list is exactly the defect
+ * repeated: scripts/builtin_qualified.sh compiles a qualified call for every
+ * builtin in surface.lock and requires BOTH compilers to name it, so a builtin
+ * added without being listed here reddens. */
+static int is_builtin_name(const char *n) {
+    if (!n) return 0;
+    static const char *bs[] = {
+        "args", "channel", "char_at", "chr", "clock", "close",
+        "die", "eprint", "exit", "find", "get", "getenv",
+        "hash", "input", "is_null", "len", "list_dir", "ncpu",
+        "now", "pop", "print", "println", "push", "read_all",
+        "read_file", "recv", "reserve", "send", "split", "sqrt",
+        "str", "substr", "to_bytes", "to_char", "to_float", "to_i32",
+        "to_int", "to_ptr", "to_u32", "wait", "write_file",
+        0 };
+    for (int i = 0; bs[i]; i++) if (!strcmp(n, bs[i])) return 1;
+    return 0;
+}
+
 static int is_ufcs_builtin(const char *n) {
     if (!n) return 0;
     static const char *bs[] = { "str", "substr", "chr", "split", "keys", "find", "char_at", "len",
@@ -7075,7 +7102,16 @@ static Type resolve_expr_inner(Expr *e) {
                      * Someone arriving from Go or Python reaches for the package
                      * qualifier first, and a did-you-mean pointing at the nearest
                      * package symbol sends them further away. Checked before it. */
-                    if (sig_find(nominal_name(e->sval)))
+                    /* sig_find alone is NOT the builtin set. A builtin with a declared
+                     * signature is in it; a GENERIC one -- len, push, keys, map_get --
+                     * is implemented specially and has no Sig entry, so `strings.len(...)`
+                     * fell past this branch and died as "package 'strings' has no symbol
+                     * 'len'", sending the reader to look for a symbol that was never going
+                     * to be there. tychoc1 tests the whole builtin table and says the
+                     * useful thing; this matched it on 2026-09-19 (FRICTION 107). Found by
+                     * `make parse-check` leg15, the differential the oracle exists for --
+                     * and found a day late, because nothing runs that gate (FRICTION 106). */
+                    if (is_builtin_name(nominal_name(e->sval)))
                         die_at(e->line, "'%s' is a builtin, not a member of package '%s' -- "
                                "call it directly: %s(...)",
                                nominal_name(e->sval), e->qual, nominal_name(e->sval));

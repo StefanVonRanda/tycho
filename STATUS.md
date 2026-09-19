@@ -78,17 +78,20 @@ whether it is a language someone would choose to use.
 | **Diagnostics** | 325 of the compiler's 335 distinct messages have their wording pinned; the residue is matcher offsets, not gaps | `make test` |
 | **Surface freeze** | 115 keywords, 41 builtins, **431** corelib functions, locked; broken deliberately 3 times, each measured first. Was 559 until 2026-09-19, when 125 internal helpers became package-private (FRICTION 96) — the freeze now covers what it meant to | `make surface-check` |
 
-**One thing this table cannot show: `make parse-check` is RED**, and it is in
-neither `make ci` nor the pre-push hook — so between `f0078c52` and the end of
-2026-09-19, five commits recorded `Verified: make ci GREEN` truthfully while that
-gate was failing. Seven drifted count literals and three stale censuses have
-since been cleared, and `corpus-check` — the sub-second predictor of exactly the
-drift that caused it — is now lane `[1d3/13]`. **What remains red is one genuine
-`tychoc`/`tychoc1` diagnostic divergence**, of the class FRICTION 87 exists for,
-left standing because which compiler is right is an owner's decision and not a
-cleanup. `make tychoc1-check` — the other gate ROADMAP calls load-bearing for the
-self-hosted compiler — passes, and both remain uncalled by any automatic run. See
-FRICTION 106; the row below is `make ci`'s scope, not the project's.
+**`make parse-check` was RED for a day and is now GREEN**, which is worth a
+paragraph because of how it got there. It runs in neither `make ci` nor the
+pre-push hook, so between `f0078c52` and the end of 2026-09-19 five commits
+recorded `Verified: make ci GREEN` truthfully while that gate was failing. Seven
+drifted count literals, three stale censuses and one real defect were sitting in
+it: `strings.len(...)` answered *"package 'strings' has no symbol 'len'"* in the
+reference compiler and named the builtin and the cure in the self-hosted one —
+FRICTION 87's shape exactly, and the reference was the wrong one. All cleared,
+and the cheap predictors are now lanes: `corpus-check` `[1d3/13]` at 0.04s and
+`builtin-qualified` `[1d4/13]`, which reads the builtin set out of `surface.lock`
+so a builtin the compiler forgets to list cannot hide. `make tychoc1-check`
+passes. **Both parse-check and tychoc1-check remain uncalled by any automatic
+run** — +223s on a ~290s sweep is an open cost question. See FRICTION 106-108;
+the row below is `make ci`'s scope, not the project's.
 
 The unusual thing in that table is the last two rows. The defect log is
 *executable* — a closed entry that stops being true makes `make friction-check`

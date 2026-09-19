@@ -527,7 +527,7 @@ fn _unify(cs: inout C, pat: ast.Ty, at: string, b: inout [string: string]) -> bo
     return true
 
 # src/tychoc.c@match_type's array arm against the exact compare that follows
-# instantiation (`src/tychoc.c:7139`, `:6763`, `:7198`) -- TWO stages, fused
+# instantiation (`src/tychoc.c:7175`, `:6763`, `:7198`) -- TWO stages, fused
 # here at the one place they disagree. match_type ignores the BOUNDED flag, so
 # `bounded[N]$T` unifies with a plain `[N]T`; subst_type keeps it
 # (`src/tychoc.c:2161`), so the instance's field/parameter is still

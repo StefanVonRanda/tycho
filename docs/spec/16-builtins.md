@@ -82,7 +82,7 @@ numeric-polymorphic like `str`.
 `print`, `println`, and `eprint` accept a `string` only; they do not implicitly
 stringify. All nine are `Sig` builtins with fixed signatures.
 
-> Provenance: `src/tychoc.c:5290-5297`,`:5373-5374`,`:5383-5384`; `eprint` codegen `:11074@tycho_eprint`; `die` codegen
+> Provenance: `src/tychoc.c:5290-5297`,`:5373-5374`,`:5383-5384`; `eprint` codegen `:11110@tycho_eprint`; `die` codegen
 > `:11460-11461`.
 
 ## 29.4 Conversions
@@ -126,7 +126,7 @@ the abort message names `chr` even when the call was `to_char` (one runtime trap
 serves both), and `to_char` is not in the UFCS builtin set, so `to_char(n)` is the
 only spelling — `n.to_char()` is not.
 
-> Provenance: conversion magic `src/tychoc.c:6687-6764`; `chr` and `to_char` `Sig`
+> Provenance: conversion magic `src/tychoc.c:6714-6791`; `chr` and `to_char` `Sig`
 > `:5846@.name="to_char"`, their shared codegen `:10786-10788`;
 > `is_null`/`to_ptr` `Sig` `:5385-5386`. `to_i32` (and the rest of
 > `to_u8`..`to_f32`) is **not** a `Sig`: it is `is_sized_conv` `:1302-1306` /
@@ -171,8 +171,8 @@ rejected — so they may grow or shrink the value in the owning arena.
 | `pop(a)` | `[T] -> T` | magic | Remove and return the last element; aborts at run time if empty. `a` MUST be mutable. |
 | `reserve(a, n)` | `([T], int) -> void` | magic | Capacity hint: preallocate room for `n` elements. `len` is unchanged and pushing past `n` still grows; an unallocatable capacity aborts. Restricted to arrays of scalars, structs, tuples, or nested arrays (not `soa`), and to **maps** — `reserve(m, n)` pre-sizes a map's entry + index arrays, so a known-size workload skips the retained growth intermediates (the lru bench's one-line fix; entries survive a later re-size). |
 
-> Provenance: `len` `src/tychoc.c:7371@"len"`; `push` `src/tychoc.c:7434@"push"`;
-> `pop` `src/tychoc.c:7473@"pop"`; `reserve` `src/tychoc.c:7494@"reserve"`.
+> Provenance: `len` `src/tychoc.c:7407@"len"`; `push` `src/tychoc.c:7470@"push"`;
+> `pop` `src/tychoc.c:7509@"pop"`; `reserve` `src/tychoc.c:7530@"reserve"`.
 
 ## 29.7 Maps
 
@@ -245,7 +245,7 @@ There is **no** `empty$(T)` builtin. An `empty()` returning `[$T]` is an ordinar
 user-written generic, and `empty$(int)` is merely the `name$(…)` call form
 applied to it ([§7.5](05-generics.md)).
 
-> Provenance: `zero$` `src/tychoc.c:6447-6473`; `defaultable` predicate `:9461@"defaultable"`.
+> Provenance: `zero$` `src/tychoc.c:6474-6500`; `defaultable` predicate `:9497@"defaultable"`.
 
 ## 29.9 Concurrency
 
@@ -269,13 +269,13 @@ builtins below are their only consumers.
 likewise as `t.wait()`. `close` is overloaded across a channel and an FFI handle;
 `ncpu` is the sole `Sig` builtin here.
 
-> Provenance: `wait` `src/tychoc.c:7230@"wait"`; `channel` `src/tychoc.c:7241@"channel"`;
-> `send` `src/tychoc.c:7249@"send"`; `recv` `src/tychoc.c:7258@"recv"`;
-> `close` `src/tychoc.c:7264@"close"`; `ncpu` `Sig` `:5845@.name="ncpu"`;
+> Provenance: `wait` `src/tychoc.c:7266@"wait"`; `channel` `src/tychoc.c:7277@"channel"`;
+> `send` `src/tychoc.c:7285@"send"`; `recv` `src/tychoc.c:7294@"recv"`;
+> `close` `src/tychoc.c:7300@"close"`; `ncpu` `Sig` `:5845@.name="ncpu"`;
 > task/channel method sugar `:6474-6488`. `ncpu()`'s value is
 > `runtime/tycho_rt.c:1108-1123` (`TYCHO_THREADS` first, else
 > `sysconf(_SC_NPROCESSORS_ONLN)`); the fan-out that does **not** follow it above
-> 64 is `src/tychoc.c:12105@_pk > 64`.
+> 64 is `src/tychoc.c:12141@_pk > 64`.
 
 ## 29.10 Filesystem and time
 
@@ -375,5 +375,5 @@ conditions terminate rather than proceed into undefined behavior.
 > skips in `ctrl_rewrite_tails` / `ctrl_collect_tails` and the all-diverge
 > rejection in the `S_DECL` value-`ctrl` arm of `resolve_stmt`; no
 > `assert`/`panic`/`abort` name in `register_builtins` `:5285-5392` or the
-> `resolve_expr` magic block (`case E_CALL:` `:6795@case E_CALL:`, running
-> through `reserve` at `:7494@"reserve"`).
+> `resolve_expr` magic block (`case E_CALL:` `:6822@case E_CALL:`, running
+> through `reserve` at `:7530@"reserve"`).

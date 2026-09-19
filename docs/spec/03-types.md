@@ -559,5 +559,5 @@ One asymmetry follows and is intentional: `bool` is comparable and `str`-able bu
 is not ordered. (`char` is comparable, ordered, and `str`-able — its `str` is the
 one-byte glyph.)
 
-> Provenance: `src/tychoc.c:7159-7192` (equality/ordering resolver); function-
-> value identity equality `:10791@identity equality`.
+> Provenance: `src/tychoc.c:7195-7228` (equality/ordering resolver); function-
+> value identity equality `:10827@identity equality`.

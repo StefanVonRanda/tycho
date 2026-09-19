@@ -5871,7 +5871,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             rt := cs.cur_ret
             if rt == "float" and t == "int":
                 c = "(double)(" + c + ")"
-            # src/tychoc.c:12654@cv_in_parent -- a return-slot local already
+            # src/tychoc.c:12690@cv_in_parent -- a return-slot local already
             # lives in the caller's arena, so the copy would duplicate it.
             if not tmpret and not _shares(&cs, k[0], rt, "_parent") and
                     not _inparent(&cs, k[0]):

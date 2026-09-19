@@ -352,15 +352,15 @@ pick-up order is written out in full under "What moved this pass" below.
    rejected at the *definition* with `error: 'die' is already defined`. **The reason is
    pinned:** the definition-time duplicate check is
    `if (sig_find(pr->name) || consts_find(pr->name)) die_dup_proc(...)`
-   (`src/tychoc.c:9128`), and `sig_find` searches `g_sigs` — which holds `die` and `exit`
+   (`src/tychoc.c:9164`), and `sig_find` searches `g_sigs` — which holds `die` and `exit`
    as real entries (`src/tychoc.c:5266-5267`, inside `src/tychoc.c@register_builtins`)
    but **holds no entry for `send`, `recv` or `close` at all**; those three are recognised
-   ad hoc during resolution (`src/tychoc.c:6609`, `src/tychoc.c:6618`,
-   `src/tychoc.c:6637`). So it is not a table that omits three rows, it is three builtins
-   that were never in the table. **The code is ~1 line** at `src/tychoc.c:9128`; the open
+   ad hoc during resolution (`src/tychoc.c:6636`, `src/tychoc.c:6645`,
+   `src/tychoc.c:6664`). So it is not a table that omits three rows, it is three builtins
+   that were never in the table. **The code is ~1 line** at `src/tychoc.c:9164`; the open
    part is the decision — which builtin names are shadowable — because landing it newly
    rejects any program defining `send`/`recv`/`close`. Note the generic path a line above
-   (`src/tychoc.c:9122`) consults the same two tables plus `generic_find`, so whatever is
+   (`src/tychoc.c:9158`) consults the same two tables plus `generic_find`, so whatever is
    decided has to be written twice.
 
    And the "corelib layering decision" this item wanted taken **was already
@@ -390,7 +390,7 @@ pick-up order is written out in full under "What moved this pass" below.
      the reference bounds it at **64**, so above 64 the fan-out is narrower than `ncpu()`
      reports". The old text's "uses `ncpu()` chunks" — false on both counts, the `min`
      and the cap — is gone. The compiler side is cited anchored from the spec's own
-     provenance block, `src/tychoc.c:12105@_pk > 64`, so the gate now polices it.
+     provenance block, `src/tychoc.c:12141@_pk > 64`, so the gate now polices it.
    - **`ncpu()`'s false definition is corrected**, which was the other half:
      `docs/spec/16-builtins.md:248` states outright that it is "the *requested* worker
      count, **not** the width a `parallel for` will actually use" and that "a program that
@@ -414,10 +414,10 @@ pick-up order is written out in full under "What moved this pass" below.
      on 2026-07-30; `docs/spec/13-concurrency.md:81-83` is the corrected text and no
      longer says this.)*
    - The width is now **readable from Tycho**: `ncpu()` is a registered builtin
-     (`src/tychoc.c:5845@ncpu`, lowering at `src/tychoc.c:11089@tycho_ncpu`), so a program can at least
+     (`src/tychoc.c:5845@ncpu`, lowering at `src/tychoc.c:11125@tycho_ncpu`), so a program can at least
      ask. Measured on this box: `ncpu()` → 16.
    - There was an **undocumented hard ceiling of 64 chunks** — `if (_pk < 1) _pk = 1; if
-     (_pk > 64) _pk = 64;` (`src/tychoc.c:11295`, inside `src/tychoc.c@gen_parfor`) —
+     (_pk > 64) _pk = 64;` (`src/tychoc.c:11331`, inside `src/tychoc.c@gen_parfor`) —
      which `docs/spec/13-concurrency.md` did not mention, so on a box with more than 64
      CPUs the spec's "uses `ncpu()` chunks" was false. **That half is a ~1-line spec fix
      and should be split out and taken** — *it was, and closing it is what closed this
@@ -799,7 +799,7 @@ shape: a bounded pool over a channel with a fan-in, over jobs that all terminate
   continuously; the results channel filling and parking a worker did not happen, or at
   least was not measured.
 - **Nothing above 64 workers as a real workload.** The 64-chunk probe used synthetic 50 ms
-  sleeps; the real corpus ran at `ncpu()` = 16, nowhere near `src/tychoc.c:11295`.
+  sleeps; the real corpus ran at `ncpu()` = 16, nowhere near `src/tychoc.c:11331`.
 - **No nested parallelism** — no `parallel for` inside a spawned task, and no pool inside
   a pool.
 
@@ -1352,9 +1352,9 @@ confirmed, not a divergence between them. An array aborts on all four, and the
 check is **purely a runtime one**: `a[2:10]` on a 5-element array compiles
 cleanly (exit 0 from tychoc) and dies only when run, so there is no
 compile-time arm to strengthen. The array check is emitted inline into the
-generated C by the compiler — `src/tychoc.c:11599-11601` for an ordinary array
+generated C by the compiler — `src/tychoc.c:11635-11637` for an ordinary array
 (the path the probe above took) and the same test again at
-`src/tychoc.c:11578-11580` for the SoA variant, both spelling it
+`src/tychoc.c:11614-11616` for the SoA variant, both spelling it
 `_lo < 0 || _hi > len || _lo > _hi`, which is why all four shapes abort and not
 just the two that overrun. The clamp is `runtime/tycho_rt.c@tycho_str_substr`,
 whose three lines are exactly `start<0 -> 0`, `end>n -> n`, `end<start -> start`.
@@ -2090,12 +2090,12 @@ language changes, which is why this ranks below three corelib items that are not
 >    and runs. The decoration is one underscore per arm, not an invented
 >    identifier. What is refused is dropping the parens entirely —
 >    `VInt: return 1` → `error: VInt binds 1 value(s), got 0`
->    (`src/tychoc.c:8994`).
+>    (`src/tychoc.c:9030`).
 > 2. *"without binding a payload"* — a **nullary** variant needs no match at
 >    all: `if v == VNull:` compiles and runs. `==` is a working discriminator
 >    for the payload-free half of an enum. It stops at the other half:
 >    `if v == VInt:` → `error: VInt carries a payload — write VInt(...)`
->    (`src/tychoc.c:6440`).
+>    (`src/tychoc.c:6467`).
 >
 > So the real gap is narrower than the heading: **a payload-carrying variant
 > has no value-level discriminator**, and `match` is the only test for it.
@@ -2142,7 +2142,7 @@ which arms actually use their payloads.
 > error: or_return propagates a PErr error, but the function's error type is RErr
 > ```
 >
-> — `src/tychoc.c:6426-6428`. So the rule is "no *implicit* conversion", not
+> — `src/tychoc.c:6453-6455`. So the rule is "no *implicit* conversion", not
 > "no conversion".
 >
 > The second, smaller true claim: `map_err` takes a **constant** replacement
@@ -3277,7 +3277,7 @@ struct Plan($T):
 ```
 
 **The asymmetry, in one line.** A `fn($T) -> $T` typedef is deliberately NOT
-emitted — `src/tychoc.c:13586` skips any function type mentioning a type
+emitted — `src/tychoc.c:13622` skips any function type mentioning a type
 parameter, because `$T` lowers to `void` and a `void` parameter is invalid C.
 But the composite-array BODY loop emitted `struct TychoArrC0_ { FnC0 *data; }`
 for the template's dead `[fn($T)->$T]` anyway, naming the typedef that was just
@@ -3922,8 +3922,8 @@ that there is no element-wise `+` for `string` elements. The message was built
 from the element type at two sites, where `arr_elem(lt)` was spelled into a
 sentence that reads as a claim about the language.
 
-**FIXED 2026-08-13, both sites** (`src/tychoc.c:7898@element-wise` and
-`src/tychoc.c:7953@element-wise`, anchored per this file's header rule). The
+**FIXED 2026-08-13, both sites** (`src/tychoc.c:7934@element-wise` and
+`src/tychoc.c:7989@element-wise`, anchored per this file's header rule). The
 false clause is gone and `+` now names the operation the caller actually wanted:
 
 ```
@@ -6153,7 +6153,7 @@ wording slip: `tychoc`'s `Diag` carries a *single* instantiation site
 (`src/tychoc.c:83@inst_file` — one `inst_file`/`inst_line`/`inst_src`, not a
 stack), filled from one global pair (`src/tychoc.c:58@g_inst_from`) that
 `gen_program`'s instance loop retargets per instance
-(`src/tychoc.c:13595@g_inst_from`). So it can only ever name the innermost
+(`src/tychoc.c:13631@g_inst_from`). So it can only ever name the innermost
 frame; it is not dropping the outer one, it never had it. Making it match means
 giving `GInst` a link to the instance that instantiated it and walking that
 chain in `diag_flush` (`src/tychoc.c:997@diag_flush`) — bounded work, but it
@@ -7469,3 +7469,123 @@ papering over it was the one thing this entry existed to prevent.
 **Still uncalled by any automatic run:** `parse-check` (35s) and `tychoc1-check`
 (188s). +223s on a ~290s sweep is the same cost argument as 104 and a much bigger
 bill, so it stays a decision rather than a diff.
+
+### 107. `strings.len(...)` sent the reader looking for a symbol that was never going to exist — **FIXED 2026-09-19**
+
+> Pinned-by: sh scripts/builtin_qualified.sh
+> Pinned-by: grep -q 'is_builtin_name(nominal_name' src/tychoc.c
+
+The divergence [106](#106-parse-check-is-red-has-been-all-day-and-is-in-neither-make-ci-nor-the-hook--drift-cleared-and-corpus-check-gated-2026-09-19-the-divergence-inside-it-is-open-and-the-owners-call)
+left standing. `make parse-check` leg15 scores the two compilers' diagnostics
+against each other by MESSAGE, and it found this:
+
+```text
+tychoc : package 'strings' has no symbol 'len'
+tychoc1: 'len' is a builtin, not a member of package 'strings' -- call it
+         directly: len(...)
+```
+
+**`tychoc1` is right**, and the difference is not stylistic. Someone arriving
+from Go or Python reaches for the package qualifier first; the reference
+compiler's answer sends them to read `core:strings` looking for a `len` that was
+never going to be there, while the self-hosted one names the mistake and the
+cure. This is entry 87's resolution repeated — `tychoc1` is the oracle,
+`src/tychoc.c` is normative, and when they disagree the question is
+[which is right](../architecture.md#which-compiler-is-right).
+
+**The reference compiler already had this branch.** It simply asked the wrong
+question:
+
+```c
+if (sig_find(nominal_name(e->sval)))
+    die_at(..., "'%s' is a builtin, not a member of package '%s' ...");
+```
+
+`sig_find` is the SIGNATURE table. A builtin with a declared signature is in it;
+a **generic** one — `len`, `push`, `keys`, `map_get` — is implemented specially
+and has no `Sig` entry at all, so it fell straight past into the did-you-mean
+path. The branch was written for exactly this case and could not see half of its
+subjects.
+
+**Three partial lists, and none of them was the builtin set.** `sig_find` misses
+the generics. `is_ufcs_builtin` is about method syntax. `shadows_builtin` is
+about a declaration hiding a builtin — and measured against the 41 in
+`surface.lock` it is missing `exit`, `get`, `read_file` and `wait`. Swapping one
+for another fixed 39 of 41 and left `get` and `wait` still diverging, which is
+how the fourth list earned its place rather than being assumed into existence.
+
+**So `is_builtin_name()` carries all 41, and its completeness is GATED**, because
+a fourth list that nothing checks is the same defect waiting to happen.
+`scripts/builtin_qualified.sh` reads the builtin set out of `surface.lock`,
+compiles a qualified call for every one, and requires **both** compilers to name
+it and to agree word for word. A builtin added to the freeze without being listed
+in the compiler reddens there.
+
+| | |
+|---|--:|
+| builtins scored, from `surface.lock` | **41** |
+| both compilers name it and agree | **41** |
+| before the fix | 39, with `get` and `wait` diverging; 1 before that |
+
+The control matters as much as the legs: a name that is **not** a builtin must
+still get `has no symbol`, without which the script would pass by answering every
+input the same way. And the gate is proved to redden — deleting `len` from
+`is_builtin_name` gives `FAIL len: tychoc did not name it a builtin`.
+
+Now lane `[1d4/13]`. **Found a day late**, by a gate nothing runs (106).
+
+### 108. A retry that never waited: 50 iterations in 0 ms — **FIXED 2026-09-19**
+
+> Pinned-by: grep -q 'time.elapsed_ms(sw) >= 5000' corelib/test/net/main.ty
+> Pinned-by: sh -c '! grep -qE "^ +for t := 0; t < 50; t \\+= 1:" corelib/test/net/main.ty'
+
+`make ci` went red on `corelib/test/net`, and green when the package was run on
+its own:
+
+```text
+poll_two=[c0,c1]     expected, got [c1]
+poll_hup=[c0,c1,c2]  expected, got [c1]
+```
+
+`poll_until` exists because a byte written on loopback has not necessarily
+landed when the next statement runs. Its comment says so, and says the retry is
+*"for ARRIVAL, not for the verdict"*. The intent was right. The loop was not:
+
+```text
+for t := 0; t < 50; t += 1:
+    got = poll_str(net.wait_readable(fds, 200), fds)
+    if got == want:
+        return got
+```
+
+Fifty iterations at a 200 ms deadline reads as ten seconds of patience.
+**It is zero.** `net.wait_readable` returns the instant **any** descriptor is
+ready — so once `c1` was readable, every one of the 50 calls returned
+immediately and the whole loop finished in microseconds, never once waiting for
+the second write to land. A busy spin wearing a retry's clothes.
+
+**Measured, because "it returns early" deserves a number.** A probe with one
+socket readable and one that never will be, timing both shapes to the same
+unreachable target:
+
+| shape | elapsed before giving up |
+|---|--:|
+| `for t := 0; t < 50; t += 1` (as written) | **0 ms** |
+| bounded by the clock (the fix) | **1002 ms**, its whole budget |
+
+That is the entire defect in two numbers: the old form's patience was not short,
+it was absent.
+
+The fix bounds the wait by `time.elapsed_ms` instead of an iteration count, with
+a 5 ms sleep between polls — without the sleep the loop still spins, it just
+spins for the whole budget and burns a core doing it. A passing run still leaves
+on the first poll that matches, so nothing gets slower.
+
+**What is NOT claimed: a reproducing control.** The failure needs the full
+parallel sweep; 15 runs of each shape under 24 busy-loops on 12 cores produced
+**0 wrong of 15 for both**, so this was not closed by making a red test green —
+it was closed by reading what the loop does and then measuring it. The goldens
+are unchanged.
+
+**Same family as 102**, which was also a corelib test assuming loopback timing,
+also found by the macOS sweep, and also invisible on an idle machine.

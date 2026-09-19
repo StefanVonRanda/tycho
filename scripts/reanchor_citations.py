@@ -32,7 +32,7 @@ the correct fix. **Read the dry run before `--apply`; it is not a formality.**
 
 LIMITATION, measured rather than assumed. The "changed hunk" guard above is NOT
 a reliable safety net, because difflib aligns on text, not identity. Deleting
-`src/tychoc.c:10883` -- a line whose exact text occurs 5 times in the file --
+`src/tychoc.c:10919` -- a line whose exact text occurs 5 times in the file --
 produced no DROPPED at all: the matcher realigned against one of the duplicates
 and the citation was silently remapped to a different line that happens to read
 the same. The guard catches a citation into genuinely unique deleted text and

@@ -30,7 +30,7 @@ file containing a `NUL` byte MUST be rejected — silently truncating at it woul
 compile a program the file does not contain.
 
 > Provenance: `src/tychoc.c@AT_EOL`, and the reader's refusal at
-> `src/tychoc.c:14599@memchr`; the same rule in the self-hosted
+> `src/tychoc.c:14635@memchr`; the same rule in the self-hosted
 > lexer is `compiler/lex/lex.ty@_at_eol`. Gated by `scripts/source_bytes.sh`.
 
 ## 3.2 Logical lines and `NEWLINE`
@@ -493,7 +493,7 @@ is a single four-byte literal and not a run-time concatenation.
 > rejection `:547-548`, its per-piece bound `:793@rn + 2 >= (int)sizeof rbuf`,`:796@rn + 1 >= (int)sizeof rbuf`,
 > its unterminated diagnostic `:800@unterminated raw string literal`; adjacent join `:2692-2715`; `const` string fold
 > `:5073-5077`; codegen pastes the escaped text into a C string literal
-> `:11501@TYCHO_LIT`; that literal's decoded length `runtime/tycho_rt.c:1469@sizeof s - 1`.
+> `:11537@TYCHO_LIT`; that literal's decoded length `runtime/tycho_rt.c:1469@sizeof s - 1`.
 > Fixtures: `tests/rawstring.ty`,
 > `tests/reject/rawstring_unterminated.ty`.
 
