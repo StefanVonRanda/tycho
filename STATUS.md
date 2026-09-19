@@ -172,7 +172,10 @@ Less than it feels like from inside, which is the point of writing it down:
 - **Nothing for correctness.** The gates are green under two compilers, the
   fuzzer finds nothing at 200 seeds, and the last sweep for the one memory-error
   class no sanitizer catches came back clean over 972 programs.
-- **A macOS/ARM64 build**, for "runs where developers are".
+- **Publishing the macOS/ARM64 build**, for "runs where developers are".
+  The artifact exists as of 2026-09-19 and the gate is green on
+  `darwin-arm64`; what is left is `gh release create`, which is the
+  owner's to run, and a verification anywhere but the build box.
 - **One other person writing one real program**, which is the actual 1.0 gate.
 - **Ergonomics work**, ranked by counting sites the way the surface changes
   already were.
