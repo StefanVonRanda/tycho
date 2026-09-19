@@ -1,0 +1,10 @@
+# expect: break cannot apply to a parallel for (chunks cannot stop each other)
+# A `parallel for` splits its range into chunks that run independently; one
+# chunk cannot stop the others, so `break` has no meaning and is refused
+# instead of breaking only its own chunk.
+fn main():
+    total := 0
+    parallel for i in 0..<4:
+        total = total + i
+        break
+    println(str(total))

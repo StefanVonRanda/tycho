@@ -1,0 +1,12 @@
+# expect: cannot spawn a function with inout parameters (no shared state across threads)
+# The deep-copy call convention IS the thread boundary (spec 21): an `inout`
+# parameter would be shared mutable state across it, so spawning such a
+# function is refused rather than silently copying.
+fn bump(n: inout int) -> int:
+    n += 1
+    return n
+
+fn main():
+    v := 1
+    t := spawn bump(&v)
+    println(str(wait(t)))

@@ -1,0 +1,5 @@
+# expect: wait(t) takes a task from spawn, got int
+# `wait` joins a Task produced by `spawn`. Handing it an ordinary value is a
+# type error, not a silent no-op.
+fn main():
+    println(str(wait(5)))

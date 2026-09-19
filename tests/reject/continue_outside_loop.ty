@@ -1,0 +1,5 @@
+# expect: 'continue' outside a loop
+# `continue` is only meaningful inside a loop body. Refused at the top level of
+# a function, where there is nothing to continue.
+fn main():
+    continue
