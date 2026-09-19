@@ -18,7 +18,7 @@ with `cc` and `make`.
 [Docs](docs/README.md) · [Tutorial](docs/tutorial.md) ·
 [Reference](docs/reference/index.md) · [Thesis](docs/thesis.md) ·
 [Spec](docs/spec/) · [Performance](docs/performance.md) ·
-[How it is tested](docs/controls.md)
+[How it is tested](docs/controls.md) · [Status](STATUS.md)
 
 ```tycho
 fn evens(limit: int) -> [int]:
