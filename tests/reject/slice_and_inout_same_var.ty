@@ -1,0 +1,10 @@
+# expect: cannot pass a slice of
+# expect: and an inout of
+# An inout may reallocate the buffer a slice views, so passing both in one
+# call is refused rather than left to the allocator.
+fn f(xs: inout [int], ys: [int]) -> int:
+    push(xs, 1)
+    return len(ys)
+fn main():
+    a := [1, 2, 3]
+    println(str(f(&a, a[0:2])))

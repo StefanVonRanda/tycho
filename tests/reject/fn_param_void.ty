@@ -1,0 +1,6 @@
+# expect: a function-type parameter cannot be void
+# A function-type parameter cannot take void: there is no value to pass.
+fn f(g: fn(void) -> int) -> int:
+    return 1
+fn main():
+    println(str(f(fn(x: int): 1)))

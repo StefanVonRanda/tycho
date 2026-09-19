@@ -1,0 +1,7 @@
+# expect: an array element type cannot be void
+# An array of void would have a length and no storage; the element type is
+# refused.
+fn f(xs: [void]) -> int:
+    return len(xs)
+fn main():
+    println(str(f([])))

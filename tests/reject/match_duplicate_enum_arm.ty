@@ -1,0 +1,11 @@
+# expect: duplicate arm for
+# A repeated enum arm is dead code and usually a typo for a sibling variant.
+enum Color:
+    Red
+    Green
+fn main():
+    c := Red
+    match c:
+        Red: println("r")
+        Red: println("again")
+        Green: println("g")

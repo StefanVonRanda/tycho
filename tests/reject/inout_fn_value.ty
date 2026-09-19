@@ -1,0 +1,11 @@
+# expect: a function value can't be inout
+# A callee could write a closure back through an inout function value and it
+# would dangle once the callee's scope went, so it is refused.
+fn g(x: int) -> int:
+    return x
+fn f(h: inout fn(int) -> int):
+    h = g
+fn main():
+    k := g
+    f(&k)
+    println(str(k(1)))

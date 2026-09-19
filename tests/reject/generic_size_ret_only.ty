@@ -1,0 +1,8 @@
+# expect: has a type parameter not fixed by any argument
+# A generic SIZE parameter appearing only in the return type is fixed by no
+# argument and must be passed explicitly.
+fn zeros() -> [$N]int:
+    return [0, 0]
+fn main():
+    xs := zeros()
+    println(str(len(xs)))

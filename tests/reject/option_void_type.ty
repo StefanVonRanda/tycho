@@ -1,0 +1,6 @@
+# expect: Option(void) is not a type
+# `void` is a type only as a Result's ok payload, so Option(void) is refused --
+# it would be a two-state type with no value in either state.
+fn main():
+    x: Option(void) = None
+    println(str(is_null(x)))

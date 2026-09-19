@@ -1,0 +1,9 @@
+# expect: may only be updated, not read, inside parallel for
+# The reduction accumulator holds a per-chunk partial value inside the loop;
+# reading it would observe an arbitrary one, so only updates are allowed.
+fn main():
+    acc := 0
+    parallel for i in 0..<4:
+        acc = acc + i
+        println(str(acc))
+    println(str(acc))

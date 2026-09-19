@@ -1,0 +1,8 @@
+# expect: may update an outer variable only as a reduction
+# A `parallel for` chunk may only fold into an outer variable, because chunks
+# run concurrently and a plain assignment would race.
+fn main():
+    acc := 0
+    parallel for i in 0..<4:
+        acc = i * 2
+    println(str(acc))

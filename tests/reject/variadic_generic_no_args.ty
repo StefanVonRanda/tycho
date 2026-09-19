@@ -1,0 +1,7 @@
+# expect: pass at least one argument, or name the type:
+# An empty variadic call gives the inference nothing to read the element type
+# from, so it must be named.
+fn pack(xs: ...$T) -> int:
+    return len(xs)
+fn main():
+    println(str(pack()))

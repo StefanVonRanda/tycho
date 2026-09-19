@@ -1,4 +1,5 @@
 # expect: which an affine type cannot be
+# expect: was instantiated at one. Pass it plainly
 
 fn take(x: sink $T):
     pass

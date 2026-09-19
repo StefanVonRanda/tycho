@@ -1,0 +1,9 @@
+# expect: arithmetic on two different newtypes
+# Two newtypes over the same underlying type are still distinct types, so
+# arithmetic across them is refused rather than silently unwrapping.
+type A = int
+type B = int
+fn main():
+    a := A(1)
+    b := B(2)
+    println(str(to_under(a + b)))

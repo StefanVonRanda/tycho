@@ -72,6 +72,15 @@ element type instead of a family of per-type siblings.
   `strip_prefix`/`strip_suffix`, `pad_left`/`pad_right(s, width, pad)` (pad is one byte),
   `reverse`, `capitalize`, `split_once(s, sep) -> (before, after)` (`(s, "")` if absent).
   (`split`/`find`/`substr`/`len`/`chr` are builtins.)
+  **The checked siblings, which are what to reach for on untrusted input:**
+  `parse_int_checked(s) -> Result(int, IntErr)` and
+  `parse_float(s) -> Result(float, FloatErr)` — the bare `parse_int` **fails open**
+  (`"3x"` is `3`, not an error), so anything read from a file, a socket or a user
+  wants the checked one. `slice_str(s, start, stop) -> Result(string, SliceErr)`
+  and `slice_bytes(b, start, stop)` — a plain slice **clamps** rather than
+  bounds-checking (`b[1:99]` on three bytes gives you two and no trap), so these
+  are the forms that refuse an out-of-range window instead of narrowing it.
+  `format_g17(v)` renders a float at the 17 significant digits that round-trip.
 - **`path`** — POSIX path utilities (separator `/`). Everything above the fence
   below is pure string math (no filesystem access, every function returns a fresh
   value): `base` (final element, trailing slashes ignored; `""`→`.`, `"/"`→`/`), `dir` (all but the final element),
@@ -314,6 +323,9 @@ element type instead of a family of per-type siblings.
 - **`decimal`** — arbitrary-precision base-10 fixed point, composed on `core:bignum` (a `Big`
   coefficient × 10⁻ˢᶜᵃˡᵉ), so decimal fractions are **exact** (`0.1 + 0.2 == 0.3`):
   `from_int`/`from_str`/`to_str`, `add`/`sub`/`mul` (exact), `cmp`, `neg`/`abs`/`is_zero`,
+  `from_str_checked(s) -> Result(Decimal, DecErr)` — the bare `from_str` fails open
+  (`"1.5x"` is `0.15`, a plausible wrong number rather than an error), so use the
+  checked one on anything a user or a file supplied —
   `rescale` (truncating). Division exists and takes its policy from the caller:
   `div(a, b, scale, mode) -> Result(Decimal, DivErr)`, where `mode` is `half_up()` (ties away
   from zero) or `toward_zero()` (agrees with `rescale`) — there is no default, because there
@@ -334,6 +346,17 @@ element type instead of a family of per-type siblings.
   digests) crosses as lowercase hex, because a Tycho string can't hold a `0x00`; use
   `core:hex` to convert text. Checked against independent known-answer vectors (RFC 4231 HMAC,
   RFC 7914 PBKDF2, RFC 8439 ChaCha20-Poly1305, Ed25519/X25519).
+  **Keys are opaque handles, and their lifecycle is the part you need first:**
+  `key_random(n) -> ptr` makes one from the CSPRNG, `key_from_hex(hex) -> ptr`
+  imports one, `key_export_hex(k) -> string` exports it, `key_len(k) -> int` is
+  its byte length, and `key_free(k)` releases it. That handle is what
+  `aead_encrypt`/`aead_decrypt` take. The signature keys have their own
+  constructors — `ed25519_key_from_seed(seed_hex)`, then
+  `ed25519_sign(key, msg_hex) -> string` and
+  `ed25519_verify(pub_hex, msg_hex, sig_hex) -> bool` — as does key agreement:
+  `x25519_key_random()`, `x25519_key_from_secret(secret_hex)`, and
+  `x25519_shared(my_key, their_pubkey_hex) -> ptr`, whose result is a key handle
+  ready for the AEAD.
 - **`result`** — the `Result` / `Option` collapses, generic over `$T` and `$E`:
   `unwrap_or(r, fallback)`, `is_ok(r)`, `is_err(r)`, `err_or(r, fallback)`,
   `map_err(r, replacement)`, `map_err_with(r, f)`, and
@@ -389,7 +412,9 @@ element type instead of a family of per-type siblings.
 - **`log`** — a leveled logger, state threaded like `core:rand`'s:
   `l := log.init(log.level_info(), false)`, then `log.debug/info/warn/error(&l,
   msg)` — each prints `[level] message`, dropping messages below the logger's
-  level; `to_stderr` selects stderr over stdout. No timestamps (they would make
+  level; `to_stderr` selects stderr over stdout. The level constants are
+  functions: `level_info()`, `level_warn()`, `level_error()` (and `level_debug()`).
+   No timestamps (they would make
   output non-deterministic); prepend your own.
 - **`utf8`** — Unicode validation and codepoint iteration over byte strings:
   `valid(s)` (strict — rejects overlong, surrogates, truncated), `decode(s, at)`
@@ -403,8 +428,11 @@ element type instead of a family of per-type siblings.
   empty one alike, so prefer `read_text(p) -> Result(string, IoErr)` (same content, with
   the error channel) or `read_bytes(p)` when the difference matters —
   `write(p, s)` (truncate, returns false if unopenable),
-  `append(p, s)` (read-rewrite, not atomic), `read_lines(p)` / `write_lines(p, lines)`
-  (newline-terminated round-trip), `list(p)` (entry basenames), `exists(p)` (**one `stat(2)`**, not a
+  `append(p, s)` (read-rewrite, not atomic) and `append_text(p, s) -> Result(void, IoErr)`
+  (the same, with the error channel), `read_lines(p)` / `write_lines(p, lines)`
+  (newline-terminated round-trip), `list(p)` (entry basenames) and `list_checked(p) -> Result([string], IoErr)`
+  (which distinguishes an empty directory from an unreadable one, where `list`
+  cannot), `exists(p)` (**one `stat(2)`**, not a
   listing of the parent — that would be O(entries) and blind to a leaf under an unlistable
   parent; `false` means "`stat` could not say yes", so it fails closed). For
   inputs too large to slurp, a **bounded-memory streaming line reader** over a libc `getline`
@@ -473,14 +501,18 @@ element type instead of a family of per-type siblings.
   file — can still read it differently, so don't hand a batch file untrusted
   argv.
 - **`net`** — TCP/UDP sockets over a **libc-only FFI shim** (`net_shim.c`, POSIX sockets;
-  no `deps`, nothing to install). **Every call blocks, by design and by omission: there
-  is no `poll`, `select`, `epoll` or `O_NONBLOCK` anywhere in the package's 12 exports.**
-  A server's worker count is therefore a hard ceiling on concurrent connections — N
-  workers serve N connections, and one slow client occupies one worker for the whole of
-  its request. Size the pool for the concurrency you need, and put a timeout on the
-  socket. This is a stated limit rather than an oversight: readiness polling would
-  cost a redesign of `core:httpd`'s blocking read surface, and adding it later is additive
-  rather than breaking. Every fallible TCP call returns
+  no `deps`, nothing to install). **The transfer calls block; readiness does not.**
+  `read`/`write`/`connect` block, so a worker-per-connection server still has its
+  worker count as a ceiling on concurrent connections — one slow client occupies
+  one worker for the whole of its request, so size the pool for the concurrency
+  you need and put a timeout on the socket. But two calls take a deadline and do
+  not block on the peer: `wait_readable(fds, ms) -> Result([int], NetErr)` names
+  exactly the descriptors that are ready (or an empty list when `ms` elapses), and
+  `accept_wait(fd, ms) -> Result(int, NetErr)` waits for one inbound connection
+  with a timeout. Both are `poll(2)` underneath, **not** `select(2)`, which cannot
+  represent a descriptor at or above 1024 — the case `make net-poll-check` scores
+  along with "exactly the ready fds named" and "the timeout elapses".
+  `close_fd(fd)` releases a descriptor obtained this way. Every fallible TCP call returns
   **`Result(T, net.NetErr)`**: `listen`/`accept`/`connect`/`port_of` give `Result(int, …)`,
   `peer_addr(fd)` gives `Result(string, …)` — the connected peer's address as text
   (`getpeername` + `inet_ntop`), the other half of `port_of`'s `getsockname`, and the

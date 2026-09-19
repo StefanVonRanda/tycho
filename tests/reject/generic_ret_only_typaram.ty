@@ -1,0 +1,9 @@
+# expect: no argument fixes
+# expect: s type parameter $
+# A type parameter that appears only in the return type is fixed by nothing at
+# the call, so it must be given explicitly.
+fn empty() -> [$T]:
+    return []$T
+fn main():
+    xs := empty()
+    println(str(len(xs)))

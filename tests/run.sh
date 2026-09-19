@@ -137,7 +137,7 @@ corpus_census() {
     # Plus the 2 lane-name fixtures (L4, 2026-09-06): a name past the last lane
     # and a lane name on a value wider than four -- both SEMANTIC (the element
     # type settles them) and word-for-word in both compilers.
-    [ "$cc_exp" -eq 597 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=597"
+    [ "$cc_exp" -eq 617 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=617"
 
     cc_dirs=0
     for cc_d in $(git ls-files tests 2>/dev/null | grep '\.ty$' | sed 's|/[^/]*$||' | sort -u); do

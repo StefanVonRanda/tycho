@@ -1,0 +1,9 @@
+# expect: a Result's arms are Ok(x), Err(e), and _, not
+# A Result matches on Ok/Err, not on Option's Some. Naming the wrong family's
+# variant is refused with the arms that do apply.
+fn f() -> Result(int, string):
+    return Ok(1)
+fn main():
+    match f():
+        Some(x): println(str(x))
+        _: println("no")

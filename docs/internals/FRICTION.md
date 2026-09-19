@@ -6902,3 +6902,59 @@ the sweep was rigorous about counting and careless about the premise. A feature
 request derived from real usage is still worthless if nobody checks whether the
 feature exists. `surface.lock` lists 115 keywords and would have answered it in
 one grep.
+
+### 99. The corelib reference told readers `core:net` cannot poll, and it can — **FIXED 2026-09-19**
+
+> Pinned-by: grep -q "wait_readable(fds, ms)" docs/reference/corelib.md
+> Pinned-by: sh -c '! grep -q "no .poll., .select., .epoll. or .O_NONBLOCK. anywhere" docs/reference/corelib.md'
+> Pinned-by: make net-poll-check
+
+**Found by auditing which public corelib functions the catalogue never names.**
+41 of 431 were missing, and chasing `net.wait_readable` turned up something worse
+than an omission — [the reference](../reference/corelib.md) made a claim that is
+false:
+
+> *Every call blocks, by design and by omission: there is no `poll`, `select`,
+> `epoll` or `O_NONBLOCK` anywhere in the package's 12 exports.*
+
+Three errors in one sentence:
+
+| claim | reality |
+|---|---|
+| no `poll` anywhere | `corelib/net/net_shim.c` calls `poll(` **8 times** |
+| every call blocks | `accept_wait(fd, ms)` and `wait_readable(fds, ms)` take deadlines |
+| 12 exports | **15** |
+
+`corelib/net/net.ty:154@wait_readable` even carries the comment *"poll(2)
+underneath, not select(2): select cannot represent a descriptor at or above
+1024"* — and `make net-poll-check` has been scoring exactly that behaviour on
+every sweep.
+
+**Why this is worse than a missing entry.** The paragraph went further than
+omitting the feature: it told the reader the limitation was deliberate
+("a stated limit rather than an oversight") and that lifting it "would cost a
+redesign of `core:httpd`'s blocking read surface". Someone designing a server
+against this reference would architect around a constraint that does not exist,
+and would have no reason to look further — the text pre-empts the question.
+
+**Nothing caught it because nothing could.** `make check-links` verifies links
+and citations; `make version-check` verifies STATUS claims; `docs-fences`
+compiles fenced code. **No gate compares a prose claim about a package against
+that package's exports**, and this claim is prose. The catalogue is the one doc
+whose subject is an inventory, so it is the one where drift is invisible: adding
+`wait_readable` to `net.ty` reddened nothing.
+
+Corrected to describe both halves — the transfer calls block, readiness does
+not — and the three pins above are the cheapest guard available: one that the
+new text is present, one that the false sentence is gone, and the lane that
+proves the feature works.
+
+**The other 40 are omissions, not errors, and are now documented**: the
+`core:crypto` opaque-key lifecycle (`key_random`/`key_from_hex`/`key_export_hex`/
+`key_len`/`key_free` — the handle `aead_encrypt` takes, previously
+undiscoverable), the Ed25519 and X25519 constructors, `strings.parse_int_checked`
+/ `parse_float` / `slice_str` / `slice_bytes`, `decimal.from_str_checked`,
+`io.append_text` / `list_checked`, and `log.level_*`. The `strings` ones are the
+sharpest of those: the agent-facing skill file tells a reader to reach for
+exactly those checked variants on untrusted input, while the reference a human
+reads did not mention them at all.

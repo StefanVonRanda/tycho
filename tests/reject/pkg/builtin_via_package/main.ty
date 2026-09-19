@@ -1,0 +1,8 @@
+# expect: is a builtin, not a member of package
+# expect: -- call it directly:
+# A builtin is global, not a package member. Qualifying one names the package
+# it is not in, and the message says how to call it instead.
+package main
+import "core:strings"
+fn main():
+    println(str(strings.len("hi")))

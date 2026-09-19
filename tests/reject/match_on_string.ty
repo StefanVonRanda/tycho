@@ -1,0 +1,7 @@
+# expect: is refused: nothing in the tree dispatches on it
+# Nothing in the tree dispatches on a string, so `match` on one is refused in
+# favour of if/elif -- design-scalar-match.md D1.
+fn main():
+    s := "hi"
+    match s:
+        _: println("any")

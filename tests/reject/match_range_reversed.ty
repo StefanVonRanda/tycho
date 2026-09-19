@@ -1,0 +1,9 @@
+# expect: a range starts at
+# expect: and ends at
+# A range arm whose start exceeds its end matches nothing; it is refused
+# rather than silently never firing.
+fn main():
+    x := 5
+    match x:
+        9..1: println("weird")
+        _: println("other")

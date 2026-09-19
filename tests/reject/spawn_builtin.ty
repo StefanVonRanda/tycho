@@ -1,0 +1,7 @@
+# expect: spawn requires a user-defined function
+# expect: is not one)
+# `spawn` runs a user-defined function; a builtin has no Tycho body to run on
+# another thread.
+fn main():
+    t := spawn println("hi")
+    wait(t)

@@ -1,0 +1,9 @@
+# expect: (overlapping mutable access)
+# Two inout parameters bound to one variable is overlapping mutable access:
+# the callee's writes through one would be visible through the other.
+fn f(a: inout int, b: inout int):
+    a += b
+fn main():
+    x := 1
+    f(&x, &x)
+    println(str(x))

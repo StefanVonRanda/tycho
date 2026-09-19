@@ -1,0 +1,6 @@
+# expect: Channel(void) is not a type
+# A channel of void would carry no value, so the type is refused.
+fn f(c: Channel(void)) -> int:
+    return 1
+fn main():
+    println(str(f(channel(int, 1))))
