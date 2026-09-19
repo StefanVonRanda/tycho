@@ -109,7 +109,7 @@ fn _assign(tbl: Value, path: [string], v: Value) -> Value:
 
 # Place `tbl` at root[path...], creating intermediate tables. For an array
 # section ([[..]]) the leaf is an array-of-tables: append instead.
-fn place(root: Value, path: [string], tbl: Value, is_arr: bool) -> Value:
+fn _place(root: Value, path: [string], tbl: Value, is_arr: bool) -> Value:
     ks := []string
     vs := []Value
     match root:
@@ -150,7 +150,7 @@ fn place(root: Value, path: [string], tbl: Value, is_arr: bool) -> Value:
                 sub = vs[idx]
             _:
                 sub = TTable([]string, []Value)
-    sub = place(sub, path[1:], tbl, is_arr)
+    sub = _place(sub, path[1:], tbl, is_arr)
     if idx >= 0:
         vs[idx] = sub
     else:
@@ -210,7 +210,7 @@ fn _is_date_valid(t: string) -> bool:
     return d <= dim
 
 # Two digits at `i`, or -1. The -1 is what makes every t[i+k] below in range.
-fn d2(t: string, i: int) -> int:
+fn _d2(t: string, i: int) -> int:
     if i + 2 > len(t):
         return -1
     if t[i] < 48 or t[i] > 57:
@@ -228,9 +228,9 @@ fn _is_time_valid(t: string) -> bool:
     if sep != 84 and sep != 116 and sep != 32:    # 'T' / 't' / ' '
         return false
     a := 11
-    h := d2(t, a)
-    m := d2(t, a + 3)
-    s := d2(t, a + 6)
+    h := _d2(t, a)
+    m := _d2(t, a + 3)
+    s := _d2(t, a + 6)
     if h < 0 or m < 0 or s < 0:
         return false
     if t[a + 2] != 58 or t[a + 5] != 58:          # ':'
@@ -253,8 +253,8 @@ fn _is_time_valid(t: string) -> bool:
         return i + 1 == len(t)
     if c != 43 and c != 45:                       # '+' / '-'
         return false
-    oh := d2(t, i + 1)
-    om := d2(t, i + 4)
+    oh := _d2(t, i + 1)
+    om := _d2(t, i + 4)
     if oh < 0 or om < 0:
         return false
     if t[i + 3] != 58:
@@ -597,7 +597,7 @@ fn parse(s: string) -> Result(Value, string):
                 if len(cur_path) == 0:
                     root = cur                       # root-level section: cur IS the root
                 else:
-                    root = place(root, cur_path, cur, cur_arr)
+                    root = _place(root, cur_path, cur, cur_arr)
             cur = TTable([]string, []Value)
             cur_path = path
             cur_arr = is_arr
@@ -626,5 +626,5 @@ fn parse(s: string) -> Result(Value, string):
     if len(cur_path) == 0:
         root = cur
     else:
-        root = place(root, cur_path, cur, cur_arr)
+        root = _place(root, cur_path, cur, cur_arr)
     return Ok(root)

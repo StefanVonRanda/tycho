@@ -23,6 +23,7 @@ Costs one file read and a substring scan of ~430 names.
 """
 import io
 import json
+import re
 import os
 import sys
 
@@ -33,22 +34,60 @@ CAT = os.path.join(ROOT, "docs", "reference", "corelib.md")
 # Names the catalogue documents as a FAMILY rather than one at a time -- the
 # entry reads `ed25519_pubkey`/`sign`/`verify`, which a reader resolves but a
 # substring scan does not. Each needs the family's stem present in the text.
+#
+# WORD-BOUNDARY, not a bare substring, and the difference is 11 functions.
+# This gate shipped on 2026-09-19 doing `if name in cat`, and its own commit
+# message called it "a substring scan of ~430 names" -- the weakness was
+# written down and its consequence was never measured. A short name passes on
+# any word that contains it: `place` inside *replace*, `ch` inside *search*,
+# `esc` inside *escape*, `asc`/`desc` inside *ascending*/*descending*, `bad`
+# inside *bad request*. So `431/431` meant 420 genuinely named and 11 not
+# documented at all -- a gate reporting complete coverage of an inventory it
+# had not actually checked, which is the exact failure FRICTION 99 created it
+# to prevent (FRICTION 118).
 FAMILY = {
     "ed25519_sign": "ed25519_pubkey",
     "ed25519_verify": "ed25519_pubkey",
 }
 
 
+def named(name, cat):
+    """Is `name` actually NAMED in the catalogue text, as a word?
+
+    One definition, used by the scan and by selfcheck alike -- the two matching
+    each other is the only reason a passing selfcheck says anything about a
+    passing scan. Until 2026-09-19 both used `name in cat`, a bare substring,
+    and so did the selfcheck that was supposed to police it (FRICTION 118)."""
+    return re.search(r"\b%s\b" % re.escape(name), cat) is not None
+
+
 def selfcheck():
     """The scan must be able to FAIL: a name that is not in the catalogue must
     be reported, or a clean run means only that the scan is not looking."""
-    cat = "documented: alpha, beta"
-    ok = [n for n in ("alpha", "beta") if n not in cat]
-    bad = [n for n in ("alpha", "gamma") if n not in cat]
-    if ok != [] or bad != ["gamma"]:
-        print("corelib-doc selfcheck: FAILED (the scan does not discriminate)")
+    cat = "documented: alpha, beta. Also: replace, search, escape, ascending."
+    legs = [
+        ("[1] a documented name passes",            named("alpha", cat),  True),
+        ("[2] an absent name is reported",          named("gamma", cat),  False),
+        # The legs that matter. Every one of these passed the old substring scan
+        # by hiding inside a longer word, and each is a REAL function name that
+        # was reported as documented while the catalogue never mentioned it.
+        ("[3] `place` does NOT match *replace*",    named("place", cat),  False),
+        ("[4] `ch` does NOT match *search*",        named("ch", cat),     False),
+        ("[5] `esc` does NOT match *escape*",       named("esc", cat),    False),
+        ("[6] `asc` does NOT match *ascending*",    named("asc", cat),    False),
+        ("[7] a name at a word boundary still matches",
+                                                    named("search", cat), True),
+    ]
+    bad = 0
+    for label, got, want in legs:
+        good = got == want
+        bad += 0 if good else 1
+        print("  %-44s %s" % (label, "ok" if good else "BROKEN (got %r)" % got))
+    if bad:
+        print("corelib-doc selfcheck: FAILED (%d leg(s) do not discriminate)" % bad)
         return 1
-    print("corelib-doc selfcheck: ok (a documented name passes, an absent one is reported)")
+    print("corelib-doc selfcheck: ok (a documented name passes, an absent one is "
+          "reported, and a short name does not pass by hiding inside a longer word)")
     return 0
 
 
@@ -65,10 +104,10 @@ def main():
         name = full.split(".", 1)[1]
         if name.startswith("_"):
             continue                      # package-private: not API
-        if name in cat:
+        if named(name, cat):
             continue
         stem = FAMILY.get(name)
-        if stem and stem in cat:
+        if stem and named(stem, cat):
             continue
         missing.append(full)
     if missing:

@@ -26,7 +26,7 @@ fn zero() -> Big:
 # ---- limb-magnitude helpers (sign ignored; inputs are normalized) ----------
 
 # Drop trailing (high) zero limbs. Parameters are read-only borrows, so copy first.
-fn strip(r: [int]) -> [int]:
+fn _strip(r: [int]) -> [int]:
     y := r
     for len(y) > 0 and y[len(y) - 1] == 0:
         pop(y)
@@ -83,7 +83,7 @@ fn _mag_sub(x: [int], y: [int]) -> [int]:
             borrow = 0
         push(r, d)
         i = i + 1
-    return strip(r)
+    return _strip(r)
 
 fn _mag_mul(x: [int], y: [int]) -> [int]:
     if len(x) == 0 or len(y) == 0:
@@ -104,7 +104,7 @@ fn _mag_mul(x: [int], y: [int]) -> [int]:
             j = j + 1
         r[i + len(y)] = r[i + len(y)] + carry
         i = i + 1
-    return strip(r)
+    return _strip(r)
 
 # r * BASE + digit (0 <= digit < BASE): shift the magnitude up one limb and drop
 # `digit` into the new low limb -- i.e. prepend it (little-endian).
@@ -157,7 +157,7 @@ fn _mag_divmod(u: [int], v: [int]) -> ([int], [int]):
         if d > 0:
             r = _mag_sub(r, _mag_mul(v, [d]))
         i = i - 1
-    q := strip(reverse(qhi))
+    q := _strip(reverse(qhi))
     return (q, r)
 
 # ---- construction ----------------------------------------------------------
@@ -211,7 +211,7 @@ fn from_str(s: string) -> Big:
             k = k + 1
         push(ls, v)
         hi = lo
-    ls = strip(ls)
+    ls = _strip(ls)
     if len(ls) == 0:
         return zero()
     return Big(sg, ls)

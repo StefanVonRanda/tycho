@@ -689,7 +689,7 @@ fn _hexdig(v: int) -> string:                   # one LOWERCASE hex digit, 0..15
 #               nobody asked; passing the bytes through makes parse -> stringify
 #               -> parse a FIXED POINT, which is the property that matters.
 #     0x7F      DEL is not a control byte for RFC 8259's purposes; legal raw.
-fn esc(s: string) -> string:
+fn _esc(s: string) -> string:
     out := ""
     for i := 0; i < len(s); i += 1:
         c := s[i]
@@ -726,7 +726,7 @@ fn stringify(j: Json) -> string:
         JFloat(v, lx):
             return lx
         JStr(s):
-            return "\"" + esc(s) + "\""
+            return "\"" + _esc(s) + "\""
         JArr(xs):
             out := "["
             for i := 0; i < len(xs); i += 1:
@@ -739,7 +739,7 @@ fn stringify(j: Json) -> string:
             for i := 0; i < len(ks); i += 1:
                 if i > 0:
                     out = out + ","
-                out = out + "\"" + esc(ks[i]) + "\":" + stringify(vs[i])
+                out = out + "\"" + _esc(ks[i]) + "\":" + stringify(vs[i])
             return out + "}"
 
 # ---- accessors (typed queries into the document) ---------------------------

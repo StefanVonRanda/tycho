@@ -8138,3 +8138,72 @@ Every one is a correct understanding applied to a subset of its sites, and this
 is the first where the missed site was the security-critical one — which is the
 argument for auditing by *convention* rather than waiting for the next bug
 report.
+
+### 118. The catalogue gate reported 431/431 by matching substrings; 11 were never named — **FIXED 2026-09-19**
+
+> Pinned-by: python3 scripts/corelib_doc_check.py --selfcheck
+> Pinned-by: grep -q 'def named(name, cat)' scripts/corelib_doc_check.py
+> Pinned-by: make check-links
+
+[99](#99-the-corelib-reference-told-readers-corenet-cannot-poll-and-it-can--fixed-2026-09-19)
+created `scripts/corelib_doc_check.py` that morning so that **absence** from the
+catalogue could not hide, on the reasoning that *"nobody audits an inventory they
+cannot diff."* It reported `431 of 431`. It was matching bare substrings:
+
+```python
+if name in cat:      # `place` is "documented" -- by the word *replace*
+    continue
+```
+
+Every short function name passes on any longer word that contains it:
+
+| function | passed because the catalogue contains |
+|---|---|
+| `toml.place` | *re**place*** |
+| `sha256.ch` | *sear**ch*** |
+| `json.esc`, `markdown.esc` | *__esc__ape* |
+| `sort.asc` / `sort.desc` | *__asc__ending* / *__desc__ending* |
+| `bignum.strip` | *__strip__ped* |
+| `datetime.bad` | *__bad__ request* |
+| `pool.pack`, `toml.d2`, `sha256.maj` | likewise |
+
+So `431/431` meant **420 genuinely named and 11 the catalogue never mentions** —
+a gate reporting complete coverage of an inventory it had not actually checked,
+which is the exact failure it was written to prevent.
+
+**The selfcheck could not have caught it, because it used the same matcher.** It
+asserted "a documented name passes, an absent one is reported" with `n not in
+cat` — so it tested substring behaviour against substring behaviour and agreed
+with itself. A selfcheck sharing the bug it polices is worse than none: it
+converts an unexamined assumption into a printed `ok`.
+
+Both now go through one `named()` function, and the selfcheck carries five legs
+that are **real names which really passed vacuously** — `place` against
+*replace*, `ch` against *search*, `esc` against *escape*, `asc` against
+*ascending* — plus one that must still match at a boundary, so the fix cannot
+overshoot into rejecting everything.
+
+**All 11 were resolved rather than the matcher alone**, because a gate that now
+reddens is only useful if the thing it found gets fixed:
+
+- **3 are real API** and are now documented: `sort.asc` (**15** external qualified
+  calls), `sort.desc`, `markdown.esc`.
+- **8 are internal helpers** with **zero** external callers, privatised under the
+  same two criteria [96](#96-the-corelib-does-not-use-the-visibility-control-the-language-already-has-so-127-internal-helpers-are-frozen-public-api--fixed-2026-09-19)
+  used — not called qualified from outside, and absent from the catalogue:
+  `bignum._strip`, `datetime._bad`, `json._esc`, `pool._pack`, `sha256._ch`,
+  `sha256._maj`, `toml._d2`, `toml._place`.
+
+The frozen surface goes **431 → 423**, re-recorded in the same commit so the diff
+is one a reviewer can refuse, and `make corelib` is green at 46/46 after the
+renames.
+
+**Found by asking 94's question of the corelib.** [94](#94-floor-is-a-shipped-builtin-that-no-fixture-exercised--fixed-2026-09-19-testsfloat_floor)
+established that a shipped *builtin* exercised by no fixture is worth finding, and
+checked all 41. Nobody had asked it of the 431 corelib functions. The answer was
+24 that no test, example or tool references — 20 of them exercised only
+indirectly through their own package, and the 4 with no caller anywhere
+(`http.post_bytes`, `os.is_windows`, `path.last_slash`, `regex.group_end`) are
+**documented public API with no direct test**, which is recorded here and not
+fixed: writing tests for them is real work, and inventing one to close an entry
+is how a suite fills with tests nobody chose.

@@ -19,9 +19,9 @@ struct Pool($T):
 # the one place every handle is minted.
 const MAX_SLOTS = 16777216         # 2^24 -- one more than the index field holds
 
-fn pack(idx: int, gen: int) -> Handle:
+fn _pack(idx: int, gen: int) -> Handle:
     if idx < 0 or idx >= MAX_SLOTS:
-        die("pool.pack: slot index " + str(idx) + " does not fit the 24-bit handle field (max " + str(MAX_SLOTS - 1) + ")")
+        die("pool._pack: slot index " + str(idx) + " does not fit the 24-bit handle field (max " + str(MAX_SLOTS - 1) + ")")
     return Handle((gen << 24) | idx)
 fn index_of(h: Handle) -> int:
     return to_int(h) & 16777215
@@ -36,12 +36,12 @@ fn add(p: inout Pool($T), v: $T) -> Handle:
         idx := pop(p.free)
         p.slots[idx].val = v
         p.slots[idx].used = true
-        return pack(idx, p.slots[idx].gen)
+        return _pack(idx, p.slots[idx].gen)
     ni := len(p.slots)
     if ni >= MAX_SLOTS:
         die("pool.add: pool is full (" + str(MAX_SLOTS) + " slots)")
     push(p.slots, Slot(v, 0, true))
-    return pack(ni, 0)
+    return _pack(ni, 0)
 
 # Is this handle still valid (slot live AND generation matches)?
 fn alive(p: Pool($T), h: Handle) -> bool:
@@ -88,5 +88,5 @@ fn live(p: Pool($T)) -> [Handle]:
     out := []
     for i := 0; i < len(p.slots); i += 1:
         if p.slots[i].used:
-            push(out, pack(i, p.slots[i].gen))
+            push(out, _pack(i, p.slots[i].gen))
     return out

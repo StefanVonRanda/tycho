@@ -34,10 +34,10 @@ fn _lo_hex(n: int) -> int:
 fn _hex2(b: int) -> string:
     return chr(_lo_hex(b / 16)) + chr(_lo_hex(b % 16))
 
-fn ch(x: u32, y: u32, z: u32) -> u32:
+fn _ch(x: u32, y: u32, z: u32) -> u32:
     return (x & y) ^ (~x & z)
 
-fn maj(x: u32, y: u32, z: u32) -> u32:
+fn _maj(x: u32, y: u32, z: u32) -> u32:
     return (x & y) ^ (x & z) ^ (y & z)
 
 fn _bigsig0(x: u32) -> u32:
@@ -112,8 +112,8 @@ fn block(hv: inout [u32], kt: [u32], src: bytes, base: int):
     h := hv[7]
     i := 0
     for i < 64:
-        t1 := h + _bigsig1(e) + ch(e, f, g) + kt[i] + w[i]
-        t2 := _bigsig0(a) + maj(a, b, c)
+        t1 := h + _bigsig1(e) + _ch(e, f, g) + kt[i] + w[i]
+        t2 := _bigsig0(a) + _maj(a, b, c)
         h = g
         g = f
         f = e

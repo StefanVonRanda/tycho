@@ -10,7 +10,7 @@
 # offsets via a tiny libc shim (local_offset / offset_at / now_local, the only
 # FFI here -- see datetime_shim.c). There is still no IANA tz database.
 #
-# Parsers (all fail-closed to a `bad()` sentinel): parse_iso / parse_iso_tz for
+# Parsers (all fail-closed to a `_bad()` sentinel): parse_iso / parse_iso_tz for
 # ISO-8601, and parse_clf / parse_clf_tz for the Common Log Format timestamp
 # (`dd/Mon/yyyy:HH:MM:SS ±HHMM`, as in Apache/nginx access logs).
 package datetime
@@ -194,7 +194,7 @@ fn format_iso_tz(dt: DateTime, offset_secs: int) -> string:
 fn ok(dt: DateTime) -> bool:                    # did a parse succeed?
     return dt.year >= 0
 
-fn bad() -> DateTime:                           # the fail-closed sentinel
+fn _bad() -> DateTime:                           # the fail-closed sentinel
     return DateTime(-1, 0, 0, 0, 0, 0, 0)
 
 fn is_digit(c: int) -> bool:
@@ -217,18 +217,18 @@ fn _digits_val(s: string, a: int, b: int) -> int:   # [a, b) assumed all digits
 # space. Returns the civil fields; use parse_iso_tz to fold an offset into UTC.
 fn parse_iso(s: string) -> DateTime:
     if len(s) < 19:
-        return bad()
+        return _bad()
     if s[4] != 45 or s[7] != 45:                # '-' '-'
-        return bad()
+        return _bad()
     sep := s[10]
     if sep != 84 and sep != 32:                 # 'T' or ' '
-        return bad()
+        return _bad()
     if s[13] != 58 or s[16] != 58:              # ':' ':'
-        return bad()
+        return _bad()
     if not (_all_digits(s, 0, 4) and _all_digits(s, 5, 7) and _all_digits(s, 8, 10)):
-        return bad()
+        return _bad()
     if not (_all_digits(s, 11, 13) and _all_digits(s, 14, 16) and _all_digits(s, 17, 19)):
-        return bad()
+        return _bad()
     y := _digits_val(s, 0, 4)
     mo := _digits_val(s, 5, 7)
     da := _digits_val(s, 8, 10)
@@ -236,11 +236,11 @@ fn parse_iso(s: string) -> DateTime:
     mi := _digits_val(s, 14, 16)
     se := _digits_val(s, 17, 19)
     if mo < 1 or mo > 12:
-        return bad()
+        return _bad()
     if da < 1 or da > days_in_month(y, mo):
-        return bad()
+        return _bad()
     if ho > 23 or mi > 59 or se > 60:           # 60 allows a leap second
-        return bad()
+        return _bad()
     return DateTime(y, mo, da, ho, mi, se, weekday(y, mo, da))
 
 # Parse "+HH:MM" / "-HH:MM" / "Z" at index `at`; returns (offset_secs, ok). A
@@ -272,10 +272,10 @@ fn _parse_offset(s: string, at: int) -> (int, bool):
 fn parse_iso_tz(s: string) -> DateTime:
     dt := parse_iso(s)
     if not ok(dt):
-        return bad()
+        return _bad()
     off, good := _parse_offset(s, 19)
     if not good:
-        return bad()
+        return _bad()
     return from_unix(to_unix_at(dt, off))       # local+offset -> UTC instant
 
 # ---- Common Log Format (Apache/nginx access logs) --------------------------
@@ -319,15 +319,15 @@ fn _parse_clf_offset(s: string, at: int) -> (int, bool):
 # shape, unknown month, or out-of-range field.
 fn parse_clf(s: string) -> DateTime:
     if len(s) < 20:
-        return bad()
+        return _bad()
     if s[2] != 47 or s[6] != 47:                # '/' '/'
-        return bad()
+        return _bad()
     if s[11] != 58 or s[14] != 58 or s[17] != 58:   # ':' ':' ':'
-        return bad()
+        return _bad()
     if not (_all_digits(s, 0, 2) and _all_digits(s, 7, 11)):
-        return bad()
+        return _bad()
     if not (_all_digits(s, 12, 14) and _all_digits(s, 15, 17) and _all_digits(s, 18, 20)):
-        return bad()
+        return _bad()
     da := _digits_val(s, 0, 2)
     mo := month_num(substr(s, 3, 6))
     y := _digits_val(s, 7, 11)
@@ -335,11 +335,11 @@ fn parse_clf(s: string) -> DateTime:
     mi := _digits_val(s, 15, 17)
     se := _digits_val(s, 18, 20)
     if mo < 1:                                  # unknown month name
-        return bad()
+        return _bad()
     if da < 1 or da > days_in_month(y, mo):
-        return bad()
+        return _bad()
     if ho > 23 or mi > 59 or se > 60:           # 60 allows a leap second
-        return bad()
+        return _bad()
     return DateTime(y, mo, da, ho, mi, se, weekday(y, mo, da))
 
 # Parse a CLF timestamp WITH its ` ±HHMM` offset and return the UTC instant (the
@@ -347,13 +347,13 @@ fn parse_clf(s: string) -> DateTime:
 fn parse_clf_tz(s: string) -> DateTime:
     dt := parse_clf(s)
     if not ok(dt):
-        return bad()
+        return _bad()
     at := 20
     if at < len(s) and s[at] == 32:             # skip the space before the offset
         at = at + 1
     off, good := _parse_clf_offset(s, at)
     if not good:
-        return bad()
+        return _bad()
     return from_unix(to_unix_at(dt, off))
 
 # ---- system / zone local time (libc) ---------------------------------------

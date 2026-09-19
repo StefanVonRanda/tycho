@@ -144,7 +144,9 @@ element type instead of a family of per-type siblings.
   it is `sort_by(xs, fn(a, b) -> int: key(a) - key(b))`. When the order needs more than one key, mixed
   directions, or a type with no `comparable` instance, `sort_by(xs, cmp)` takes a
   three-way compare `fn($T, $T) -> int` — bottom-up merge, stable, so equal elements
-  keep their input order under a descending compare too.
+  keep their input order under a descending compare too. `asc(a, b)` and
+  `desc(a, b)` are the two ready-made comparators for that parameter, so the
+  common orderings need no lambda: `sort_by(xs, sort.asc)`.
 - **`pool`** — a generational node pool for pointer-shaped data (graphs, trees,
   doubly-linked structures). Value semantics forbids a shared-mutable pointer graph, so the
   idiom is to hold every node in one array and link by integer index; `pool` packages that
@@ -267,7 +269,8 @@ element type instead of a family of per-type siblings.
   `` `code` ``, `[text](url)`, `![alt](src)`. All text is HTML-escaped and unknown
   syntax degrades to escaped plain text (never a parse abort). Not full CommonMark
   (no nested lists, reference links, tables, or setext headings) — targets a
-  blog/wiki.
+  blog/wiki. `esc(s)` is that HTML escaper on its own, for callers assembling
+  markup around rendered output.
 - **`base64`** — Base64 (RFC 4648) `encode`/`decode`, plus `encode_url` (URL-safe
   `-`/`_` alphabet, no padding). Pure arithmetic — the 6-bit packing uses `/` and `%`
   (exact on the unsigned 0..255 that `s[i]` returns), no bit-operators. `decode` is
