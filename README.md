@@ -285,6 +285,15 @@ fixtures fail with `hostile=1` expected, got `0` — the fixture refusing to pas
 while proving nothing, which is right, but the cure is the line above
 (FRICTION 111).
 
+The optional corelib packages need their dev libraries, or `make shim-warn`
+refuses — it compiles 9 shims, wants 10, and will not read an empty warning file
+as a pass:
+
+```sh
+sudo apt-get install zlib1g-dev libssl-dev libcurl4-openssl-dev \
+                     libpng-dev libsqlite3-dev pkg-config
+```
+
 **Windows** has two supported paths. **WSL2** is the zero-setup one and behaves
 exactly like Linux. **Native Windows is MSYS2 + mingw-w64** — MSVC is not a
 supported C target. The compiler, the runtime, the corelib and the tools build

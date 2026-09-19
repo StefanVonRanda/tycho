@@ -7764,3 +7764,162 @@ Left as REPORTED rather than gated: a lane asserting a comma-decimal locale
 exists would be asserting the developer's OS setup, not the tree, and the fixture
 already fails loudly and specifically enough to be diagnosable once the reader
 knows what `hostile` means.
+
+### 112. The C compiler decided how many times to round, and the answer changed with the architecture — **FIXED 2026-09-19**
+
+> Pinned-by: grep -q 'ffp-contract=off' src/tychoc.c
+> Pinned-by: grep -q 'ffp-contract=off' compiler/driver/driver.ty
+
+The first `make ci` on aarch64 Linux ([110](#110-aarch64-linux-was-compile-only-for-a-month-a-vm-on-the-mac-closed-it-in-an-hour-and-caught-me-repeating-100--fixed-2026-09-19))
+failed `sheet-check`:
+
+```text
+FAIL: nearest: expected '0.1+0.2 0.30000000000000004'
+      -- render() returned a decimal that reads back but is not the nearest
+      near 0.1+0.2 0.30000000000000006
+```
+
+Every x86-64 run for months had said `...004`. The aarch64 one said `...006`, and
+the min subnormal came out `2.2250738585072012e-308` against `...14e-308`. Same
+source, same flags, same compiler version — different answers.
+
+**The cause is one flag nobody set.** Tycho's emitted C is compiled with `-O3
+-fwrapv -pthread` and **no `-ffp-contract`**, so the C compiler is free to fuse
+`a*b + c` into a single FMA, rounding **once** where the source says twice. For
+ordinary arithmetic that is a better answer. For the algorithms that exist to
+*recover* rounding error it is a wrong one, and
+`tools/tycho-sheet/cell/dtoa.ty@_two_prod` is exactly that — a Dekker
+two-product:
+
+```text
+(p, ((ah * bh - p) + ah * bl + al * bh) + al * bl)
+```
+
+`ah*bh - p` is there to capture precisely what `a*b` lost. Contract it and it
+evaluates to something else, the error term is wrong, and the exactness trick
+silently stops working. The digits it then generates still *parse back* to the
+right double — which is why nothing crashed — they are simply not the nearest
+ones, and `render()` is documented to produce the shortest nearest decimal.
+
+**It bites by ARCHITECTURE, which is the worst way to find out.** ARM always has
+FMA, so gcc contracts there; baseline x86-64 has none, so it cannot, whatever the
+flag says. A defect that is invisible on the only machine the project was ever
+gated on is not a defect anyone was going to notice.
+
+| | `0.1+0.2` renders |
+|---|---|
+| x86-64 Linux, every run for months | `0.30000000000000004` |
+| aarch64 Linux, first run ever | `0.30000000000000006` |
+| aarch64 Linux, `-ffp-contract=off` | `0.30000000000000004` |
+
+Proved before it was fixed: `TYCHO_CFLAGS=-ffp-contract=off make sheet-check`
+turned the lane green on aarch64, **all 98411 generated floats included**, with
+no source change at all.
+
+**Why this is a language fix and not a sheet fix.** `dtoa.ty` is written in
+Tycho, and nothing in it is wrong. Any Tycho program doing compensated
+arithmetic — Kahan summation, two-sum, a correctly-rounded conversion — has the
+same hole, and would find it the same way: by being run on hardware the author
+does not own. A language whose fixture goldens are byte-identical, whose
+benchmark table says *"same checksum computed by every binary"*, and whose
+`make test` compares output to recorded text **cannot let the C compiler choose
+the rounding.** Both compilers now pass `-ffp-contract=off`.
+
+**What it costs**, stated plainly: FMA is given up in hot float loops, and some
+numeric code will be measurably slower. That is the price of the same program
+producing the same floats on every host, which is the property this project
+sells.
+
+**What found it**: not a fuzzer, not a sanitizer, not review — a second
+architecture. `make ci` is green on both, and neither machine alone could have
+told the difference.
+
+### 113. `x86_64-macos` was the last compile-only target — 2026-09-19
+
+> Pinned-by: none -- the claim is that binaries RAN on a host; a lane cannot
+> assert an architecture this repo's gate does not run on. Recorded with its
+> method so it can be repeated.
+
+[103](#103-two-claims-about-this-projects-own-state-that-no-gate-can-read--fixed-2026-09-19)
+retired *"none of those binaries has been RUN"* for `aarch64-macos`;
+[110](#110-aarch64-linux-was-compile-only-for-a-month-a-vm-on-the-mac-closed-it-in-an-hour-and-caught-me-repeating-100--fixed-2026-09-19)
+retired it for `aarch64-linux`. This is the third and last of the targets
+`zig cc` was only ever known to *compile* for.
+
+**Method**, on the same Apple Silicon box: build the bootstrap compiler with
+`CC="clang -arch x86_64"`, run it under Rosetta, have it emit C, compile that C
+natively with `-arch x86_64`, run the result and compare to the fixture's golden.
+
+```text
+x86_64-macos fixtures: 288 match golden, 0 differ, 1 skipped
+```
+
+The skip is `io_builtins`, which reads stdin the probe does not feed — not a
+failure, and chased down rather than left as a number.
+
+**One real limitation, and it is Rosetta's, not Tycho's.** The x86_64 compiler
+cannot spawn the C compiler itself:
+
+```text
+xcrun: error: unable to load libxcrun ... (have 'arm64,arm64e', need 'x86_64')
+```
+
+An x86_64 process gets x86_64 children, and this machine's Command Line Tools
+ship arm64-only. On a real Intel Mac `clang` is x86_64 native and this does not
+arise. So what is proven is that the compiler's **output** is correct for
+x86_64 macOS and those binaries run; what is not is the driver's `cc` subprocess
+on *this* box, for a reason that has nothing to do with the port. Saying which is
+which is the point of the entry.
+
+### 114. `tests/conc/chan` dies with SIGILL under TSan on aarch64 Linux — **OPEN, reproduced and narrowed, not root-caused**
+
+Found by the first full `make ci` on aarch64 Linux (110). Four conc fixtures fail
+the same way — `chan`, `chancap1`, `parfor_chan`, `parfor_width` — all in the
+**tsan** variant only, and all with:
+
+```text
+FAIL chan (tsan run)
+      Illegal instruction
+```
+
+Exit 132, which is 128+SIGILL. **No TSan report at all**, which is the odd part:
+a race would print a diagnosis, and this dies before saying anything.
+
+**What has been ruled out.**
+
+| probe | result |
+|---|---|
+| TSan itself on this host | **works** — a hand-written racing C program is caught, exit 66 |
+| a Tycho program with no concurrency, under TSan | **exit 0** |
+| `spawn` + `wait`, under TSan | **exit 0** |
+| a single `channel` send/recv, under TSan | **exit 0** |
+| `tests/conc/chan.ty`, under TSan | **SIGILL** |
+
+So it is neither "TSan is broken on aarch64" nor "Tycho programs cannot run under
+TSan". It is something `chan.ty` reaches that the minimal cases do not — it runs
+two consumers and a producer over one buffered `channel(string, 8)`, so the
+suspects are multi-consumer contention or the string payload's arena traffic.
+
+**Not narrowed further, deliberately.** `gdb` cannot run in this VM at all
+(`Unable to fetch SVE/SSVE vector length` — Apple's virtualization does not
+expose what it probes), so there is no backtrace, and the next honest step is
+either a host with a working debugger or bisecting `chan.ty` by hand. Guessing at
+a cause with no faulting address would be inventing one.
+
+**What it does NOT block.** The native and ASan variants of all four fixtures
+pass on aarch64, `make test` is 1065/1065 there, and x86-64 Linux runs the tsan
+variant green — so this is one sanitizer on one architecture, not the
+concurrency implementation being wrong. It is recorded here rather than fixed
+because a finding with a clean reproduction and no cause is worth more written
+down than guessed at.
+
+**Two environment prerequisites came out of the same run**, neither a defect:
+
+- `shim-warn` fails on a box without the optional dev libraries — it compiled 9
+  shims and wants 10, and refuses on exactly the right grounds: *"An empty
+  warning file means nothing when nothing was compiled."* `apt-get install
+  zlib1g-dev libssl-dev libcurl4-openssl-dev libpng-dev libsqlite3-dev` fixes it.
+- the locale prerequisite of [111](#111-make-test-has-an-undocumented-os-prerequisite-and-fails-loudly-without-it--2026-09-19).
+
+Both are now in the README's platform notes, which is where someone cloning onto
+a fresh Linux box will look.

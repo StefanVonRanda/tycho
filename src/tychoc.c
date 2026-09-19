@@ -15306,7 +15306,15 @@ int main(int argc, char **argv) {
      * reported as ITS OWN syntax error (generics probe, 2026-08-19). */
     const char *cl_root = corelib_root();
     char *incdir = cl_root ? sfmt(" -I%s", shq(cl_root)) : (char *)"";
-    char *cmd = sfmt("%s %s -fwrapv%s -pthread%s -o %s %s%s -lm%s%s %s", cc, optdbg, march, incdir, shq(base), shq(c_path), shims, links, extra, pkgdeps);
+    /* -ffp-contract=off is a CORRECTNESS flag, not a tuning one: without it the C
+     * compiler may fuse `a*b + c` into one FMA and round ONCE where the source
+     * says twice, which silently breaks every algorithm that exists to recover
+     * rounding error (Dekker two-product, Kahan summation, two-sum). It bites by
+     * ARCHITECTURE -- ARM always has FMA, baseline x86-64 does not -- so the same
+     * source gave 0.1+0.2 = ...004 on x86-64 and ...006 on aarch64 until
+     * 2026-09-19. Must match compiler/driver/driver.ty, which carries the long
+     * version of this note (FRICTION 112). */
+    char *cmd = sfmt("%s %s -fwrapv -ffp-contract=off%s -pthread%s -o %s %s%s -lm%s%s %s", cc, optdbg, march, incdir, shq(base), shq(c_path), shims, links, extra, pkgdeps);
     int rc = system(cmd);
     if (rc != 0) { fprintf(stderr, "tychoc: C compilation failed (%s)\n", cmd); return 1; }   /* the .c SURVIVES a cc failure on purpose: it is the evidence the printed command refers to */
     remove(c_path);

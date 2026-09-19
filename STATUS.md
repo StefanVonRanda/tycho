@@ -72,6 +72,7 @@ whether it is a language someone would choose to use.
 | **Normative spec** | 28 files, and the implementation is gated against them | `make spec-check` |
 | **The whole gate** | 77 lanes, ~407s, green under **gcc and clang** | `make ci` |
 | **Memory safety** | 4 sanitizer lanes (ASan/UBSan/LSan/TSan) + 3 fuzz lanes at 200 seeds | `make ci` |
+| **Float determinism** | the emitted C is compiled `-ffp-contract=off`, so `a*b+c` rounds twice on every host — without it ARM fuses and x86-64 cannot, and `0.1+0.2` rendered differently on the two (FRICTION 112) | `make sheet-check` |
 | **Uninitialised reads** | 972 programs swept under an instrumented arena, 0 findings — the class no sanitizer sees | `docs/internals/probe-uninit-arena-2026-09-11.md` |
 | **Defect log** | **every closed entry is pinned by a command that is executed** — 1 excused with its reason, **0 unpinned**, which is the number that matters and the only one quoted here, because the totals move with every entry added. `make ci` scores the *fact* pins as lane `[1d2/13]` in 0.16s and names how many suite pins it defers; the deferred ones are asserted only by the full command (FRICTION 104) | `make friction-check` |
 | **Docs** | 88 reachable pages, no dead links, every `path:line` citation resolves to the line it names, and **every public corelib function is named in the catalogue** (431/431) | `make check-links` |

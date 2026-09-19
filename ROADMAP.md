@@ -379,8 +379,11 @@ settles it on the evidence: a real `darwin-arm64` machine, the whole gate, and
 three defects that no amount of cross-compiling would have surfaced — which was
 precisely the risk the retired sentence named. `aarch64-linux` stopped being compile-only the same
 day, in a VM on that same Mac — which is the answer to "there is no ARM machine
-here": there was, it just needed a hypervisor. `x86_64-macos` remains the last
-compile-only target, and Rosetta on this box can run it.
+here": there was, it just needed a hypervisor. **`x86_64-macos` went the same
+day**, under Rosetta: 288 fixtures built through an x86_64 compiler and matched
+their goldens. **All three targets have now had binaries RUN**, and doing so
+found a float-determinism defect that no single machine could have shown
+(FRICTION 112-113).
 
 ### 2. ~~A story for using other people's code~~ — **DECIDED 2026-08-15: vendoring, Odin-style**
 

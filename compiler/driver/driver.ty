@@ -271,7 +271,27 @@ fn build(src_path: string, runtime_path: string, base: string, argv0: string,
     # TYCHO_CFLAGS appends to the cc line. It exists so the MAKEFILE can pick
     # the compiler binary's own flags, exactly as it picks ./tychoc's -O2,
     # without changing what every other Tycho program is built with.
-    argv := [cc9, "-O3", "-fwrapv", "-pthread"]
+    # -ffp-contract=off, and it is a CORRECTNESS flag here, not a tuning one.
+    # Without it the C compiler may fuse `a*b + c` into a single FMA, which
+    # rounds ONCE instead of twice. That is a better answer for most arithmetic
+    # and a WRONG one for the algorithms that exist to recover rounding error:
+    # a Dekker two-product computes `ah*bh - p` precisely to capture what `a*b`
+    # lost, and an FMA makes that expression evaluate to something else. The
+    # whole trick silently stops working.
+    #
+    # It bites by ARCHITECTURE, which is the worst way to find out: ARM always
+    # has FMA so gcc contracts there, baseline x86-64 does not so it cannot.
+    # tools/tycho-sheet's dtoa.ty@_two_prod is a two-product, and on
+    # 2026-09-19 the first `make ci` on aarch64 Linux rendered 0.1+0.2 as
+    # 0.30000000000000006 where every x86-64 run had said ...04 -- a decimal
+    # that reads back but is not the nearest. Setting this flag turned that lane
+    # green, all 98411 generated floats included (FRICTION 112).
+    #
+    # A language whose goldens are byte-identical and whose benchmark table says
+    # "same checksum computed by every binary" cannot let the C compiler choose
+    # how many times to round. The cost is giving up FMA in hot float loops;
+    # the alternative is float results that depend on the host.
+    argv := [cc9, "-O3", "-fwrapv", "-ffp-contract=off", "-pthread"]
     if nat:
         push(argv, "-march=native")
     # A --target the host cc cannot honour must FAIL, not vanish: a silently
