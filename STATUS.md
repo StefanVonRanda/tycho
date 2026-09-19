@@ -66,7 +66,7 @@ whether it is a language someone would choose to use.
 | | | checked by |
 |---|---|---|
 | **Self-hosting** | the compiler compiles itself and reaches a fixpoint: `gen2.c == gen3.c` | `make fixpoint-check` |
-| **Fixture corpus** | 1031 fixtures, **620 of them refusals** — what must *not* compile is the larger half | `make test` |
+| **Fixture corpus** | 1057 fixtures, **645 of them refusals** — what must *not* compile is the larger half | `make test` |
 | **Corelib** | 45 packages shipped, each golden-locked (46 directories — `corelib/test/` is the test tree, not a package) | `make corelib` |
 | **Real programs** | 29 tools in Tycho, 18.5k lines — **5 over 1000 lines** (`db` 2063, `scheme` 1609, `sheet` 1523, `q` 1359, `chess` 1166), 8 mid-size, 16 small utilities. Not 29 substantial programs; `tycho-db`'s gate does assert crash recovery from a real `kill -9`, torn-record discard and a TCP server | their own `*-check` lanes |
 | **Normative spec** | 28 files, and the implementation is gated against them | `make spec-check` |
@@ -74,8 +74,9 @@ whether it is a language someone would choose to use.
 | **Memory safety** | 4 sanitizer lanes (ASan/UBSan/LSan/TSan) + 3 fuzz lanes at 200 seeds | `make ci` |
 | **Uninitialised reads** | 972 programs swept under an instrumented arena, 0 findings — the class no sanitizer sees | `docs/internals/probe-uninit-arena-2026-09-11.md` |
 | **Defect log** | 102 entries; 93 closed, **92 pinned by 66 commands that are executed**, 0 unpinned | `make friction-check` |
-| **Docs** | 87 reachable pages, no dead links, every `path:line` citation resolves to the line it names | `make check-links` |
-| **Surface freeze** | 115 keywords, 41 builtins, 559 corelib functions, locked; broken deliberately 3 times, each measured first | `make surface-check` |
+| **Docs** | 88 reachable pages, no dead links, every `path:line` citation resolves to the line it names, and **every public corelib function is named in the catalogue** (431/431) | `make check-links` |
+| **Diagnostics** | 325 of the compiler's 335 distinct messages have their wording pinned; the residue is matcher offsets, not gaps | `make test` |
+| **Surface freeze** | 115 keywords, 41 builtins, **431** corelib functions, locked; broken deliberately 3 times, each measured first. Was 559 until 2026-09-19, when 125 internal helpers became package-private (FRICTION 96) — the freeze now covers what it meant to | `make surface-check` |
 
 The unusual thing in that table is the last two rows. The defect log is
 *executable* — a closed entry that stops being true turns a gate red. And every
