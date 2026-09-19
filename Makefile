@@ -11,7 +11,7 @@ TYCHOC  ?= ./tychoc
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: preflight fixpoint-check corpus-check packed-check vector-check align-probe status status-net status-check parse-check fstr-hole-file-check tychoc1-check script-check friction-check surface-check net-poll-check version-check all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check shim-warn mingw-warn source-bytes goldens-check embed-check tls-verify http-verify handle-guard format-diff math-diff traversal-check ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check flow-check ed-check sheet-check sim-check make-check snap-check tally-check agg-check tmpl-check stat-check ledger-check fh-check grid-check chess-check kvsrv-check sat-check locale-check glibc-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check spec-fast docs-fences check-links corelib-doc-check server server-check wiki ci release-check release-content hooks ilp32 asan-self editors-check clean
+.PHONY: preflight fixpoint-check corpus-check packed-check vector-check align-probe status status-net status-check parse-check fstr-hole-file-check tychoc1-check script-check friction-check friction-check-light surface-check net-poll-check version-check all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check shim-warn mingw-warn source-bytes goldens-check embed-check tls-verify http-verify handle-guard format-diff math-diff traversal-check ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check flow-check ed-check sheet-check sim-check make-check snap-check tally-check agg-check tmpl-check stat-check ledger-check fh-check grid-check chess-check kvsrv-check sat-check locale-check glibc-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check spec-fast docs-fences check-links corelib-doc-check server server-check wiki ci release-check release-content hooks ilp32 asan-self editors-check clean
 
 # tychoc1, the self-hosted compiler, is what `make` produces and what ships.
 # It still depends on tychoc: src/tychoc.c is the bootstrap stage that builds it.
@@ -117,7 +117,17 @@ spec-check:
 spec-fast:
 	@sh scripts/spec_check.sh --fast
 
-docs-fences: tychoc1
+# `tycho` is a PREREQUISITE, not a convenience: docs/debugging.md:73 is a fence
+# whose command is the bare `tycho` wrapper, and scripts/docs_fences.py's
+# ensure_repo_tool only builds names matching `tycho-<name>` out of
+# tools/<name>/main.ty -- `tycho` matches neither the regex nor that layout, and
+# it needs a --shim besides. Without this the fence's verdict depended on whether
+# some OTHER lane had built ./tycho first: inside `make ci` on a tree that had
+# not, it ran as exit 127 `tycho: command not found`, which the synopsis rule
+# records as a SKIP, and an unenumerated skip is a hard failure. Found on macOS
+# 2026-09-19 (FRICTION 100); nothing about it is Darwin-specific -- a fresh Linux
+# clone running `make docs-fences` as its first target reddens the same way.
+docs-fences: tychoc1 tycho
 	@python3 scripts/docs_fences.py
 
 check-links:
@@ -516,6 +526,19 @@ preflight:
 friction-check:
 	@python3 scripts/friction_check.py --selfcheck
 	@python3 scripts/friction_check.py
+
+# The subset `make ci` runs: every pin that asserts a SPECIFIC FACT (a grep, a
+# test -f, an inline python3 -c), and none of the `make`/`sh scripts/` pins,
+# which re-run suites ci has just finished. That duplication is the whole reason
+# the full target stayed out of ci -- 113s against a ~288s gate for coverage ci
+# largely already has (FRICTION 104). The split is one rule in
+# friction_check.py@split, shared with the full run so the two cannot disagree
+# about which pins are the expensive ones, and selfcheck legs [7]-[10] pin it in
+# both directions: classify everything light and ci re-runs the suites; classify
+# everything heavy and the lane scores nothing while still printing ok.
+friction-check-light:
+	@python3 scripts/friction_check.py --selfcheck
+	@python3 scripts/friction_check.py --light
 
 surface-check:
 	@python3 scripts/surface_lock.py --selfcheck

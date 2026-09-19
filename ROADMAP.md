@@ -331,16 +331,30 @@ owner's calls, not a documentation edit.
 
 ### 1. It runs where developers are
 
-Artifacts exist for `linux-x86_64` and `mingw64-x86_64`. **No macOS or ARM64 binary is
-PUBLISHED** — the release assets are `linux-x86_64` and `mingw64-x86_64`. Tycho
-IS built and tested on macOS / Apple Silicon (see the README's platform notes;
-`make ci` has been run there), so "not shipped" and "not run" are different
-claims and this section used to conflate them.** A language that cannot be installed on an
-Apple laptop or a Graviton instance is not production-ready whatever its
-internals are, and this is the largest single gap.
+Artifacts exist for `linux-x86_64` and `mingw64-x86_64`. **No macOS or ARM64
+binary is PUBLISHED.** A language that cannot be installed on an Apple laptop or
+a Graviton instance is not production-ready whatever its internals are, and this
+is the largest single gap.
 
-**The gap is smaller than "no build" suggests.** It was
-never attempted rather than attempted and failed:
+**"Not shipped" and "not run" are different claims, and as of 2026-09-19 the
+second one is closed.** `make ci` was run on `darwin-arm64` that day and is
+**green**, repeatedly measured between 267s and 390s (that spread is FRICTION
+91, not a regression); both compilers build native Mach-O arm64 with no source
+change and `make test` is 1065/1065. That green carries **12 skips over 7
+causes**, each printing its reason, and one is a genuine coverage loss:
+**Apple's ASan ships no LeakSanitizer**, so the leak lane and two sanitizer legs
+do not run there and Linux remains the only host that scores them. The others
+are lanes with no subject on this platform — gdb, the glibc symbol floor,
+`ilp32`, `resource.prlimit`, an x86-64 `--target` leg, and `-Wl,--wrap`, which
+ld64 does not implement.
+
+**It was not free**: the run found three defects — FRICTION
+[100](docs/internals/FRICTION.md), 101 and 102 — two of them latent in shipped
+code, including a listen backlog that made every Tycho server refuse peers under
+a burst on any BSD-derived kernel. What remains is packaging, not porting.
+
+**Why the native build needed no porting**, which is what the 2026-09-19 run
+confirmed rather than discovered:
 
 - `runtime/tycho_rt.c` already carries **explicit macOS support** — the Darwin
   `sys/ucontext.h` include, `pthread_get_stackaddr_np` for the stack bounds, and
@@ -352,12 +366,15 @@ never attempted rather than attempted and failed:
   `aarch64-macos`, `x86_64-macos` and `aarch64-linux`, and so does the **emitted
   C including the embedded runtime** — three targets, no source change.
 
-**What that does NOT establish, and it is the whole remaining risk:** none of
-those binaries has been RUN. There is no Darwin or ARM machine here and no qemu,
-so this says the code compiles for those targets, not that a program behaves
-correctly on them — and the stack-overflow guard, the one piece with
-per-architecture code, is exactly the kind that compiles everywhere and works in
-one place. What is needed is a real machine, not a port.
+**This paragraph used to end by saying none of those binaries had been RUN —
+"there is no Darwin or ARM machine here and no qemu" — while the top of the same
+section claimed `make ci` had been run on macOS.** Both sentences sat here at
+once; the second was added without retiring the first. The 2026-09-19 run
+settles it on the evidence: a real `darwin-arm64` machine, the whole gate, and
+three defects that no amount of cross-compiling would have surfaced — which was
+precisely the risk the retired sentence named. The `aarch64-linux` and
+`x86_64-macos` targets are still compile-only, and that half of the caveat
+stands.
 
 ### 2. ~~A story for using other people's code~~ — **DECIDED 2026-08-15: vendoring, Odin-style**
 

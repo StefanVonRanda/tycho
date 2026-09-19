@@ -143,7 +143,25 @@ fn main():
     br := httpd.with_header(httpd.response(200, blob), "Content-Type", httpd.content_type(rq2.path))
     bn := n_of(httpd.write_response(conn2, httpd.with_connection(br, false)))
     net.close_fd(conn2)
-    w2 := to_str(data_of(net.read(cli2, 4096)))
+    # READ TO EOF, for the reason the text response above already gives: one
+    # net.read returns one TCP segment's worth, and the split lands differently
+    # under load. That fix was made at the site above on the run that found it
+    # and NOT here, 25 lines below, where the consequence is worse -- the text
+    # case degrades to `rbody = ` and a golden diff, while this one indexes
+    # body2[0] on an empty string and ABORTS the process:
+    #     tycho: string index 0 out of bounds (len 0)
+    # Found 2026-09-19 on macOS/arm64 (FRICTION 102), where `make ci` runs 12
+    # lanes wide and the loopback splits often enough to hit it; the same lane
+    # passed on its own every time. Measured against a copy with the single read
+    # restored, 25 runs each under 12 busy-loops on a 12-core machine: the copy
+    # aborted 12 times, this loop 0. conn2 is closed above and the response
+    # carries `Connection: close`, so EOF is the end of it.
+    w2 := ""
+    for true:
+        chunk2 := to_str(data_of(net.read(cli2, 4096)))
+        if len(chunk2) == 0:
+            break
+        w2 = w2 + chunk2
     s2 := find(w2, nl + nl)
     body2 := w2[s2 + 4:len(w2)]
     println("sock_bin_len   = " + str(len(body2)))

@@ -6740,7 +6740,23 @@ Renumbered to §21/§22/§23, rows put in order, and the heading corrected to
 "§21–26". The gate gap is recorded rather than fixed: a clause-number checker is
 a real piece of work and this entry is the measurement that would justify it.
 
-### 96. The corelib does not use the visibility control the language already has, so 127 internal helpers are frozen public API — **OPEN**
+### 96. The corelib does not use the visibility control the language already has, so 127 internal helpers are frozen public API — **FIXED 2026-09-19**
+
+> Pinned-by: grep -q '^fn _mag_cmp' corelib/bignum/bignum.ty
+> Pinned-by: python3 -c "import json;d=json.load(open('surface.lock'));assert not [k for k in d['corelib'] if '._' in k], 'a package-private name is back in the freeze'"
+> Pinned-by: make surface-check
+
+> **Closed by options (1) AND (2) below, both in `aa85edd9`.** The extractor
+> learned the underscore rule, dropping `compress._cause`, `image._cause` and
+> `io._status`; and 125 internal helpers across 28 packages were renamed
+> `_`-prefixed. The freeze went 559 -> **431**, and `surface.lock` now carries
+> no `._` name at all. **The commit that did it never touched this file**, so
+> the entry sat marked OPEN, describing the pre-fix state, through two further
+> commits and a STATUS.md refresh whose own surface row cited *this entry* for
+> the change. `make friction-check` could not see it: an entry with no closure
+> word is not scored, so a fix that lands without editing its entry is exactly
+> the drift the executable log has no leg for. Found 2026-09-19 while reading
+> the open list on macOS (FRICTION 100-102).
 
 > **This entry's first draft was wrong and the correction is the interesting
 > half.** It claimed Tycho has no visibility marker. It has one: **a
@@ -6837,7 +6853,7 @@ Each attempt produced a number that looked publishable. Only comparing them
 against individually checked samples showed which was true.
 
 **One of the 34 was the visibility rule itself**, which is how it connects to
-[96](#96-the-corelib-does-not-use-the-visibility-control-the-language-already-has-so-127-internal-helpers-are-frozen-public-api--open):
+[96](#96-the-corelib-does-not-use-the-visibility-control-the-language-already-has-so-127-internal-helpers-are-frozen-public-api--fixed-2026-09-19):
 
 ```text
 'secretlib._scale' is package-private: a leading-underscore name is not
@@ -6974,3 +6990,433 @@ undiscoverable), the Ed25519 and X25519 constructors, `strings.parse_int_checked
 sharpest of those: the agent-facing skill file tells a reader to reach for
 exactly those checked variants on untrusted input, while the reference a human
 reads did not mention them at all.
+
+## Found by running `make ci` on macOS / arm64 for the first time, 2026-09-19 (head `4a08a396`)
+
+[STATUS](../../STATUS.md) names *"a macOS/ARM64 build"* as one of four things
+between this project and being seen, and records that no such binary exists.
+This is the first time the gate has been run on that platform. **Both compilers
+build native Mach-O arm64 unchanged** — `make tychoc` in 2.0s, `make tychoc1`
+in 34.1s — and `make test` is **1065/1065** (1057 fixtures plus the 8 standalone
+cases `tests/run.sh` adds; STATUS's figure is the fixture count and is correct).
+
+Three defects below. **None of the three is Darwin-specific in its cause**; the
+platform is what made them visible, which is the argument for running the gate
+somewhere it has never run — the same argument that produced entries 88-90.
+
+**What a Darwin run does not cover, which is why this is a second opinion and
+not a replacement.** The green carries **12 skips over 7 causes**, each printing
+its reason. Six of the causes are lanes with no subject here: gdb (`debug-check`
+entirely, plus `docs/debugging.md:26`'s transcript — the enumerated
+`ALLOWED_SKIPS` entry that exists for exactly this), `-Wl,--wrap` (ld64 does not
+implement it, so `crypto_hygiene.sh` cannot read released blocks), the glibc
+symbol floor, `ilp32`, `resource.prlimit` (`server/run.sh`'s transient-accept
+leg), and `vector-check` leg [7] (`--target x86-64-v3` on an arm64 host).
+
+**The seventh is a real coverage loss and should not be filed with the others:
+Apple's ASan ships no LeakSanitizer.** `fuzz-leak` and the raytrace and
+mandelbrot leak legs do not run on macOS at all, so a leak this platform
+introduces would be caught only by the Linux host. That is the argument against
+ever treating a Darwin green as a substitute for the Linux one.
+
+The **lldb** block at `docs/debugging.md:37` — the one no Linux host can check,
+which is why it is the other half of that pair — RAN here and its breakpoint
+bound to a `.ty` line.
+
+**Two flags in `Makefile@TYCHOC1_CFLAGS` are gcc-shaped and clang drops them**:
+`--param inline-unit-growth=150` and `-static-pie`. The second cannot work on
+macOS at all — there is no static libc — so the release archive's "no versioned
+GLIBC symbol" property (`scripts/release_content.sh:96`) has no Darwin analogue
+and a macOS artifact would need a different claim. Reported, not fixed: nothing
+here builds a macOS archive yet.
+
+### 100. `docs-fences`' verdict depended on whether some OTHER lane had built `./tycho` — **FIXED 2026-09-19**
+
+> Pinned-by: grep -qE '^docs-fences: tychoc1 tycho$' Makefile
+
+`make ci` failed the `docs-fences` lane on:
+
+```text
+docs-fences: FAIL docs/debugging.md:73 is SKIPPED and not in ALLOWED_SKIPS
+```
+
+The fence is a two-line synopsis whose command is the bare `tycho` wrapper.
+`scripts/docs_fences.py@ensure_repo_tool` builds a missing tool on demand —
+atomically, because the workers run in parallel — but only for names matching
+`^tycho-[a-z0-9-]+$`, built from `tools/<name>/main.ty`. **`tycho` matches
+neither the regex nor that layout**, and it needs a `--shim` besides, so it was
+never built. It ran as exit 127, `tycho: command not found`; the synopsis rule
+records a non-{0,1} exit as a SKIP, and an unenumerated skip is a hard failure.
+
+The rule read `docs-fences: tychoc1`. **`./tycho` was a real prerequisite that
+was never declared**, so the lane's verdict was decided by whether another
+target had happened to build it first. Run alone on a tree that had one, the
+same lane passed — which is why this has never been seen.
+
+`Makefile:86` says of `tycho` that it is in neither release archive, so *"no
+lane can redden for it and it is left alone deliberately — reported, not
+fixed."* That was true of its **contents**. It was not true of its
+**existence**, and this is the lane that quietly depended on it.
+
+Declaring it (`docs-fences: tychoc1 tycho`) fixes it. Verified by deleting
+`./tycho` and running the lane: `docs/debugging.md:73` comes back **ok**, and
+the lane now reports **225** snippets and **21** shell fences where it reported
+224 and 20 — the extra one is this fence, which had never actually run.
+
+Nothing about this is Darwin-specific. A fresh clone whose first target is
+`make docs-fences` reddens identically on any platform.
+
+### 101. Every Tycho server refuses connections under a burst on macOS, because the listen backlog is a literal 16 — **FIXED 2026-09-19**
+
+> Pinned-by: grep -q 'listen((int)fd, SOMAXCONN)' corelib/net/net_shim.c
+
+`make server-check` failed inside `make ci`, and passed when run alone:
+
+```text
+FAIL stalled-partial: could not open socket 28: [Errno 54] Connection reset by peer
+```
+
+That is the shape of entry 88 and it is **not** the same cause. `netx_listen`
+(`corelib/net/net_shim.c@netx_listen`) called `listen(fd, 16)`. The accept queue
+holds connections that finished the handshake and are waiting for `accept()`,
+and **the two kernels disagree about what a full queue means**: Linux drops the
+SYN, so the client's TCP retries a second later and the overflow costs latency;
+Darwin and the BSDs **reset** the connection, so the overflow costs the
+connection. A backlog of 16 is therefore invisible on Linux and refuses peers on
+macOS.
+
+`server/run.sh`'s own abuse suite is what reaches it — 64 peers stalled mid-head
+against 4 workers, which is 64 connections arriving faster than 4 workers accept
+them. Reproduced deterministically by running the lane under 12 busy-loops on a
+12-core machine, so the accept loop cannot keep the queue drained:
+
+| backlog | under load | alone |
+|---|---|---|
+| `16` | **FAIL 2 of 2** — ECONNRESET on the 28th peer, and on the second run also the 43rd, then EPIPE | OK |
+| `SOMAXCONN` | **OK 2 of 2** | OK |
+
+The load is 12 busy-loops on a 12-core machine, started and reaped by the
+harness around each run, so all four runs above saw the same load.
+
+The control is the point: the *unchanged* lane passes on an idle machine, so
+the gate that found this cannot assert it, and a behavioural pin would be a
+load-dependent coin toss. The pin above is on the source for that reason.
+
+`SOMAXCONN` rather than a bigger literal: it is defined by `<sys/socket.h>` and
+by `<winsock2.h>`, every kernel clamps it to its own ceiling, and it asks each
+platform for its own answer instead of encoding one platform's. This is a
+**corelib** fix, not a server one — `net.listen` is what every Tycho program
+calls, and the server is merely the program this repository points at it.
+
+### 102. The loopback-split fix was applied to one of the two sites that needed it, and the other one ABORTS — **FIXED 2026-09-19**
+
+> Pinned-by: sh -c 'grep -q "chunk2 := to_str(data_of(net.read(cli2, 4096)))" corelib/test/httpd/main.ty'
+
+`make corelib` failed the `httpd` package:
+
+```text
+FAIL httpd (exit 1)
+      tycho: string index 0 out of bounds (len 0)
+```
+
+`corelib/test/httpd/main.ty` already carries this comment, on the text response
+at line 115:
+
+> *READ TO EOF, not once. One `net.read` returns whatever one TCP segment
+> carried, and under load the loopback split this response between the headers
+> and the body [...] roughly one CI run in three, while the same lane passed
+> every time it was run on its own.*
+
+**Twenty-five lines below, the binary-body case still did a single `net.read`.**
+The diagnosis was right, it was written down, and it was applied to one of the
+two sites that have the shape.
+
+And the split is not bad luck: `corelib/httpd/httpd.ty@write_response` issues
+**two** `net.write` calls, the head and then the body. A reader that wins the
+race sees the head alone — which is the normal case, not the rare one. The text
+site degrades to `rbody = ` and a golden diff; this one computes an empty
+`body2` and indexes `body2[0]`, which **aborts the process**.
+
+Reproduced by rate, not by luck. 25 runs of the test binary against the same
+binary with the loop restored, each arm under 12 busy-loops on a 12-core machine:
+
+| the read | 25 runs, 12 busy-loops on 12 cores |
+|---|--:|
+| one `net.read` (the control) | **12 aborted** on `string index 0 out of bounds` |
+| read to EOF (the fix) | **0** |
+
+`conn2` is closed before the client reads and the response carries
+`Connection: close`, so EOF is the end of it — the same justification the site
+above already gives. The golden is unchanged, which is the other half of the
+claim: this was never a disagreement about what the answer is.
+
+**Why no Linux run has seen it.** It needs the reader to win a race against a
+two-write response, which needs the machine to be busy. `make ci` here runs 12
+lanes wide on 12 cores. The entry above is the same story told by a different
+subsystem, and both were found in one run for the same reason.
+
+### 103. Two claims about this project's own state that no gate can read — **FIXED 2026-09-19**
+
+> Pinned-by: sh -c '! grep -q "There is no Darwin or ARM machine here and no qemu" ROADMAP.md'
+> Pinned-by: sh -c '! grep -q "102 entries; 93 closed" STATUS.md'
+
+Found while writing 100-102 up, in the two documents those entries had to touch.
+Neither is a defect in the tree; both are the class entry 99 named — **a prose
+claim about the project, in the one place a reader checks it, that nothing
+executes.**
+
+**ROADMAP §1 asserted both halves of a contradiction, eight lines apart.** The
+opening said Tycho *"IS built and tested on macOS / Apple Silicon [...] `make ci`
+has been run there"*; the same section closed with *"none of those binaries has
+been RUN. There is no Darwin or ARM machine here and no qemu."* The second
+sentence is the original and the first was added over it without retiring it, so
+the section simultaneously claimed the platform was covered and that no machine
+existed to cover it. A reader deciding whether macOS is supported got whichever
+answer they stopped reading at. Today's run settles it on evidence and only one
+sentence survives.
+
+**STATUS's defect-log row led with a number its own gate does not produce.**
+The row read *"102 entries; 93 closed, 92 pinned by 66 commands"* and cited
+`make friction-check`. That command prints the closed, pinned, excused and
+unpinned counts — it prints **no total**, and 102 matches nothing in the file:
+at that commit `FRICTION.md` had **99** distinct entry numbers, **108** numbered
+headings (some numbers recur across sections) and **133** `###` sections. The
+three counts it could have been are all different from it and from each other.
+
+The other three figures in that row were correct, which is what makes this worth
+an entry rather than a typo: **the page's stated rule is that every number is
+checkable by the command named beside it**, and one number in the row was
+outside the reach of the command it cited, sitting first, where it reads as the
+headline. The row now quotes the gate's output and nothing else.
+
+**Neither is gatable in general** — no lane can compare a sentence about the
+project against the project — but both are gatable *in particular*, which is
+what the two pins above do: each asserts the retired sentence has not come back.
+That is the same shape as 99's pins, and it is the most that class admits.
+
+### 104. The executable defect log is executed by nobody — `make ci` has never called `friction-check` — **FIXED 2026-09-19: option (1), the fact pins, as lane `[1d2/13]`**
+
+> Pinned-by: grep -q 'make -s friction-check-light' scripts/ci.sh
+> Pinned-by: grep -q '^friction-check-light:' Makefile
+> Pinned-by: python3 scripts/friction_check.py --selfcheck
+
+Found by adding eight pins to this file (96, 100-103) and going looking for the
+run that would execute them. There is none:
+
+```text
+$ grep -rn friction scripts/ci.sh
+                         <- no output: ci.sh does not mention it
+$ grep -rn 'friction-check' scripts/ Makefile
+                         <- the Makefile target, its two recipe lines, and the
+                            .PHONY list. No caller anywhere.
+```
+
+**The target is defined and called by nothing.** It runs only when a person
+types it. [STATUS](../../STATUS.md) said of this file *"the defect log is
+executable — a closed entry that stops being true turns a gate red"*, and that
+sentence was true of `make friction-check` and false of `make ci`, which is the
+gate anyone means by "a gate".
+
+**This is the exact shape the surface freeze was in, and that one was fixed.**
+`make ci`'s own description of `surface-check` reads: *"It was enforced only when
+somebody typed it — the freeze [...] had no lane in the sweep."* The remedy then
+was to add the lane. `friction-check` is in the state `surface-check` was
+rescued from, and the entry that rescued it is in this file.
+
+**The cost is why this is a decision and not a one-liner.** Measured here on
+2026-09-19:
+
+| | wall |
+|---|--:|
+| `make ci` | 273s / 288s / 322s over three runs (see 91) |
+| `make friction-check` | 113s |
+
+**+39%, and most of it is duplicated work**: of the 83 distinct pin commands, a
+large share are `make <target>` invocations for targets `make ci` has just run,
+so a naive append re-runs them. The options, cheapest first:
+
+1. **Run the pins that are NOT `make` targets** — the greps, the `test -f`s, the
+   inline `python3 -c`s — as a `ci` lane, and leave the `make <target>` pins to
+   the standalone run. Nearly free, and it covers the pins that assert a
+   *specific fact* rather than re-running a suite. It does not score every pin.
+2. **Add the whole thing as a lane.** Complete, and pays 113s for coverage
+   `ci` largely already has.
+3. **Teach `friction_check.py` to skip a pin whose command `ci` ran in the same
+   invocation**, then add it. Correct and cheap at runtime; it needs the two to
+   share a record of what ran, which neither does today.
+4. **Leave it standalone and fix the STATUS sentence**, accepting that the log is
+   executable on demand rather than continuously.
+
+**(1) was taken, and (4) was done regardless** — the STATUS sentence was wrong
+however this was decided. `make friction-check-light` is lane **`[1d2/13]`**, and
+it costs **0.16s**, not the 113s the full run costs:
+
+```text
+friction check (--light): ok (65 of 103 closed entries scored here by 65 fact
+pins; 37 entries and 21 suite pin(s) DEFERRED to `make friction-check`, which is
+the full run)
+```
+
+(Closing this entry moved those figures itself — it added the 103rd entry and
+three fact pins. Quoted post-closure, which is the state the lane is in.)
+
+**The split is one rule, not two.** `friction_check.py@split` already sorted pins
+into heavy and light to decide *scheduling width* — suites 2-way, facts 8-way,
+because 46 commands 8-way took 9m29 against 2m07. `--light` scores exactly the
+light half, reusing that function rather than re-deriving the boundary, so the
+ci lane and the standalone run cannot drift into disagreeing about which pins
+are the expensive ones.
+
+**The summary names what it did not run**, which is the whole difference between
+a subset and a smaller-looking whole. An entry pinned *only* by suites is scored
+by nothing here, so it is counted and reported as deferred rather than dropped —
+otherwise this lane would print `ok` in the same shape as the full run while
+covering 65 of 103 entries.
+
+**Both directions are controlled**, because a gate that cannot redden proves
+nothing and a subset that reddens for everything is not a subset:
+
+| control | `[1d2/13]` | `make friction-check` |
+|---|---|---|
+| a **fact** pin that stops holding | **FAILED**, naming the entry | FAILED |
+| a **suite** pin that stops holding | ok — deferred count rises 37→38 entries, 21→22 pins | **FAILED**, naming the entry |
+
+Selfcheck legs **[7]-[10]** pin the classification itself, in both directions:
+classify everything light and the lane re-runs the suites it exists to avoid;
+classify everything heavy and it scores nothing while still printing `ok`. [10]
+covers the deferral accounting specifically.
+
+**What is still standalone-only**, stated plainly rather than left implied: the
+21 suite pins, and the 37 entries that carry no fact pin. Those are asserted by
+`make friction-check`, which a person still has to type. The trade is deliberate
+— they re-run lanes `make ci` has just finished — and it is the reason this is
+option (1) and not (2).
+
+### 105. A backtick in a `ci.sh` step banner is a COMMAND SUBSTITUTION, and two of them were live — **FIXED 2026-09-19**
+
+> Pinned-by: python3 scripts/check_scripts.py
+> Pinned-by: python3 scripts/check_scripts.py --selfcheck
+
+`scripts/ci.sh` announces each lane with `step "<label>  (<rationale>)"`. The
+string is **double-quoted**, so a backtick inside it is not punctuation — the
+shell runs the text and splices its output into the banner. Two were live.
+
+**The pre-existing one, `scripts/ci.sh:90`.** Its rationale quoted the two
+diagnostic examples the lane exists for. Every sweep printed:
+
+```text
+... and numbers its lines from 0, so  died as  -- no path, wrong line.
+```
+
+Both examples gone, and two `command not found` lines in the log that nobody
+read. The lane still did its job; it just stopped being able to say what it was
+for, which for a file whose rationales are its documentation is the whole value.
+
+**The one added the same day, and it was worse.** The `friction-check-light`
+banner (104) backticked `make friction-check` — a real target. The sweep RAN it,
+113s of it, and spliced its output into the banner mid-sentence. It also ran a
+bare `> Pinned-by:` from the same string, which is a redirect, leaving an empty
+file named `Pinned-by:` in the repository root. That file is untracked and
+non-ignored, so it moved `status.sh --fingerprint`, and **two consecutive green
+sweeps printed `NOT RECORDED -- the tree changed while the sweep ran`** before
+the cause was found. The gate was right every time; the tree really was changing
+under it, because the gate itself was changing it.
+
+**`sh -n` is blind to this by construction.** The script is valid; it simply does
+something other than describe itself. `make script-check` parses every tracked
+`.sh` and said ok on both instances.
+
+**Now gated**, as leg [3] of `scripts/check_scripts.py` — the file that already
+exists for "valid syntax, silently wrong", which is exactly this shape. It
+refuses an unescaped backtick in any `step "..."` line of a tracked `.sh`;
+`\`` is the cure and is accepted. Selfcheck legs `[c5]`-`[c7]` hold it to
+reddening on a live backtick, ignoring an escaped one, and ignoring backticks in
+comments, where the file's other 8 are and where they are harmless.
+
+Both instances are fixed and `ci.sh:90` prints its examples again.
+
+**Caveat on the pin, stated because it matters.** `make script-check` is **not**
+in `make ci` — it is in the pre-push hook, which is deliberate and documented
+there ("THE SWEEP IS YOURS TO RUN"), and which requires `make hooks` to have been
+run. `core.hooksPath` is unset on the machine this was found on. So this guard
+runs at push time for a developer who activated the hook, and not in the sweep.
+See 106.
+
+### 106. `parse-check` is RED, has been all day, and is in neither `make ci` nor the hook — **OPEN, and the divergence inside it is the owner's call**
+
+Entry 104 found `friction-check` defined and called by nothing. That prompted the
+obvious next question — *what else?* — and the answer is worse than a lane that
+does not run: **a lane that does not run and is failing.**
+
+**The coverage map, measured 2026-09-19.** Every `*-check`/`*-warn` target was
+matched against what `scripts/ci.sh` invokes and what `.githooks/pre-push` runs:
+
+| gate | `make ci` | pre-push hook |
+|---|---|---|
+| `script-check`, `check-links`, `version-check`, `spec-fast`, `surface-check`, `rtparity`, `fuzz-quick` | some | **yes** |
+| `contrast-check`, `site-code-check` | no | yes, on a gh-pages push only |
+| `corpus-check` | no | no — `parse-check` runs it, and that does not run either |
+| `mingw-warn` | no | no — needs the mingw cross toolchain; platform-gated, fair |
+| **`parse-check`** | **no** | **no** |
+| **`tychoc1-check`** | **no** | **no** |
+
+The hook's own header says the sweep is deliberately not in it — *"THE SWEEP IS
+YOURS TO RUN"* — so the hook being a subset is by design. It also requires
+`make hooks`; `core.hooksPath` was **unset** on the machine this was found on.
+
+**Those last two are the ones ROADMAP calls load-bearing.** Its self-hosted
+compiler section reads: *"Two gates carry it. `make parse-check` scores its front
+end against `./tychoc`'s own verdicts file by file over the whole tree [...]
+`make tychoc1-check` substitutes it into the real runners."* Neither runs
+unattended. The differential oracle that the project decided, on 2026-09-11, to
+keep `src/tychoc.c` alive for is scored only when somebody types it.
+
+**`tychoc1-check` passes** — 36 lanes, 0 failed, 188s.
+
+**`parse-check` FAILS**, and it fails for two different reasons:
+
+1. **Three count literals drifted.** `tests/*.ty` is 289 against an expected 288,
+   the tree is 1401 `.ty` files against 1375, leg15 refused is 52 against 51, and
+   617 reject fixtures have 593 classified rows. Mechanical.
+2. **A real divergence between the two compilers**, which is not mechanical:
+
+```text
+MSG-DISAGREE tests/reject/pkg/builtin_via_package/main.ty
+  tychoc : package 'strings' has no symbol 'len'
+  tychoc1: 'len' is a builtin, not a member of package 'strings' -- call it
+           directly: len(...)
+```
+
+**That is FRICTION 87's shape exactly** — a user-facing diagnostic the two
+compilers word differently — and 87 is the entry that justified keeping the
+oracle at all: it found a worse diagnostic in the shipped compiler, and fixing
+`src/tychoc.c` improved what users get. Here `tychoc1` again says the more useful
+thing. Per the asymmetry recorded in
+[architecture](../architecture.md#which-compiler-is-right), the question is
+*which is right*, not *make tychoc1 match* — so this is the owner's call and is
+deliberately left red rather than papered over.
+
+**It went red today.** `tests/*.ty` crossed 288 → 289 at `0b385a24`, the commit
+that added `tests/float_floor.ty` to close entry 94. **Five commits have landed
+since, and every one of them recorded `Verified: make ci GREEN`** — truthfully,
+because `make ci` does not run this gate. The sweep was green and the tree was
+not.
+
+**Why the literals are NOT being quietly updated here.** Greening the counts
+would leave one failure — the divergence — and an entry that reads "mostly
+fixed" invites exactly the mechanical pass that buries it. The counts and the
+divergence went red together and should be read together.
+
+**The options, cheapest first:**
+
+1. **Update the three literals and rerun `scripts/classify_rejects.py`**, leaving
+   the divergence red and visible. Minutes. Does not answer (4).
+2. **Add `corpus-check` to `make ci`** — it is the sub-second predictor of
+   parse-check's opening counts, by its own Makefile comment, and it would have
+   caught the drift at `0b385a24` for no measurable cost.
+3. **Add `parse-check` (35s) and `tychoc1-check` (188s) as `ci` lanes.** +223s on
+   a ~290s sweep, which is the same cost argument as 104 and a much bigger bill.
+4. **Decide the diagnostic**, the way 87 was decided.
+
+(2) is the cheap one and is worth doing whatever is decided about the rest: the
+gate that fails is expensive, and the gate that predicts its failure is free.

@@ -82,7 +82,22 @@ tycho_int netx_listen(const char *host, tycho_int port) {
     if (fd < 0) return -1;
     int on = 1;
     setsockopt((int)fd, SOL_SOCKET, SO_REUSEADDR, (const void *)&on, sizeof on);
-    if (bind((int)fd, (struct sockaddr *)&a, sizeof a) != 0 || listen((int)fd, 16) != 0) {
+    /* SOMAXCONN, not a literal 16. The accept queue is what holds connections
+     * that have completed the handshake and are waiting for accept(), and the
+     * two kernels disagree about what happens when it is FULL: Linux drops the
+     * SYN and the client's TCP retries a second later, so an overflow costs
+     * latency; Darwin and the BSDs RESET the connection, so an overflow costs
+     * the connection. A backlog of 16 therefore looked fine on Linux and made
+     * every Tycho server REFUSE peers on macOS under a burst it should only
+     * have delayed. Measured 2026-09-19 (FRICTION 101) with server/run.sh's own
+     * abuse suite -- 64 peers stalled mid-head against 4 workers, under 12
+     * busy-loops on a 12-core machine so the accept loop cannot keep the queue
+     * drained: backlog 16 failed 2 of 2 runs (ECONNRESET on the 28th peer),
+     * SOMAXCONN passed 2 of 2. SOMAXCONN is defined by <sys/socket.h> and by
+     * <winsock2.h>, and every kernel clamps it to its own ceiling, so this asks
+     * each platform for its own answer instead of encoding one platform's. */
+    if (bind((int)fd, (struct sockaddr *)&a, sizeof a) != 0 ||
+        listen((int)fd, SOMAXCONN) != 0) {
         TY_CLOSE((int)fd);
         return -1;
     }

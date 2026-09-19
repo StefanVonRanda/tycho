@@ -2,7 +2,7 @@
 
 One page, written 2026-09-19. `make status` answers *"is the tree healthy right
 now"*. This answers *"where is this project, and what is actually left"* — the
-question that is otherwise smeared across a 6,678-line friction log, a roadmap
+question that is otherwise smeared across a 7,144-line friction log, a roadmap
 and `surface.lock`.
 
 Where a number comes from a gate, the gate is named, so any line here can be
@@ -73,13 +73,26 @@ whether it is a language someone would choose to use.
 | **The whole gate** | 77 lanes, ~407s, green under **gcc and clang** | `make ci` |
 | **Memory safety** | 4 sanitizer lanes (ASan/UBSan/LSan/TSan) + 3 fuzz lanes at 200 seeds | `make ci` |
 | **Uninitialised reads** | 972 programs swept under an instrumented arena, 0 findings — the class no sanitizer sees | `docs/internals/probe-uninit-arena-2026-09-11.md` |
-| **Defect log** | 102 entries; 93 closed, **92 pinned by 66 commands that are executed**, 0 unpinned | `make friction-check` |
+| **Defect log** | **every closed entry is pinned by a command that is executed** — 1 excused with its reason, **0 unpinned**, which is the number that matters and the only one quoted here, because the totals move with every entry added. `make ci` scores the *fact* pins as lane `[1d2/13]` in 0.16s and names how many suite pins it defers; the deferred ones are asserted only by the full command (FRICTION 104) | `make friction-check` |
 | **Docs** | 88 reachable pages, no dead links, every `path:line` citation resolves to the line it names, and **every public corelib function is named in the catalogue** (431/431) | `make check-links` |
 | **Diagnostics** | 325 of the compiler's 335 distinct messages have their wording pinned; the residue is matcher offsets, not gaps | `make test` |
 | **Surface freeze** | 115 keywords, 41 builtins, **431** corelib functions, locked; broken deliberately 3 times, each measured first. Was 559 until 2026-09-19, when 125 internal helpers became package-private (FRICTION 96) — the freeze now covers what it meant to | `make surface-check` |
 
+**One thing this table cannot show, and it is the sharpest finding of
+2026-09-19: `make parse-check` is RED and has been since `0b385a24` that
+morning** — it is in neither `make ci` nor the pre-push hook, so five commits
+have since recorded `Verified: make ci GREEN` truthfully while the tree was not.
+Three of its count literals drifted, and it is also holding a genuine
+`tychoc`/`tychoc1` diagnostic divergence of exactly the class FRICTION 87 exists
+for. `make tychoc1-check` — the other gate ROADMAP calls load-bearing for the
+self-hosted compiler — passes, and is equally uncalled. See FRICTION 106; the
+row below is `make ci`'s scope, not the project's.
+
 The unusual thing in that table is the last two rows. The defect log is
-*executable* — a closed entry that stops being true turns a gate red. And every
+*executable* — a closed entry that stops being true makes `make friction-check`
+red, and since 2026-09-19 it turns **`make ci`** red too for every pin that
+asserts a specific fact, which `ci` scores in 0.16s (FRICTION 104; before that
+the target existed and nothing called it). And every
 surface change so far was justified by counting sites in real programs, not by
 taste: `packed` shipped because 141 sites hand-assembled bytes a byte at a time.
 
@@ -88,7 +101,31 @@ taste: `packed` shipped because 141 sites hand-assembled bytes a byte at a time.
 ## What is not done
 
 **Platforms.** Artifacts exist for `linux-x86_64` and `mingw64-x86_64`. There is
-**no macOS or ARM64 binary**, though the runtime carries explicit Darwin support.
+still **no macOS or ARM64 release artifact** — but as of 2026-09-19 that is a
+packaging gap and no longer an unknown. The gate was run on `darwin-arm64` for
+the first time that day and is **green**, repeatedly measured between **267s
+and 390s** — that spread is FRICTION 91, not a regression, which is why no single
+number is quoted: both compilers build native
+Mach-O arm64 with no source change (`make tychoc` 2.0s, `make tychoc1` 34.1s)
+and `make test` is 1065/1065.
+
+**Read that green with its scope**, the way the Windows green is read. It
+carries **12 skips over 7 causes**, each printing its reason, and one of them is
+a real coverage loss rather than an inapplicable lane: **Apple's ASan ships no
+LeakSanitizer**, so `fuzz-leak` and the raytrace and mandelbrot leak legs do not
+run on macOS at all, so the LSan lane named in the memory-safety row above is
+Linux's alone. The rest are
+lanes with nothing to test here: gdb (`debug-check` and the gdb transcript in
+`docs/debugging.md` — whose lldb counterpart runs *only* on macOS), the glibc
+symbol floor, `ilp32`, `resource.prlimit`, `vector-check` leg [7]
+(`--target x86-64-v3` on an arm64 host), and the `crypto_hygiene` probe, which
+needs `-Wl,--wrap` that ld64 does not implement.
+
+Getting to green cost three fixes, none Darwin-specific in cause: FRICTION
+[100](docs/internals/FRICTION.md), 101 and 102. Two were latent defects in
+shipped code — a listen backlog that made any Tycho server refuse peers under a
+burst on any BSD-derived kernel, and a single-read site that aborts the process
+— which is the return on running the gate somewhere it had never run.
 
 **1.0 is blocked on two things, and neither is code:**
 

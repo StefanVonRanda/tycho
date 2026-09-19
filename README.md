@@ -257,10 +257,16 @@ test-update`, never by a normal run.
 `make bench` guards the *performance* claims the way `make test` guards
 correctness: each `bench/*.ty` asserts one metric against a generous bound.
 
-**Platform notes.** Builds on any unix-like OS — developed and
-gated on Debian (x86-64), and benchmarked on macOS (Apple Silicon). On macOS,
-`xcode-select --install`; Apple's AddressSanitizer ships no LeakSanitizer, so
-that half of the sanitizer build is skipped there (the rest still runs).
+**Platform notes.** Builds on any unix-like OS — developed and gated on Debian
+(x86-64), and **gated on macOS / Apple Silicon since 2026-09-19**: `make ci` is
+green on `darwin-arm64` (267-390s across repeated runs; the spread is FRICTION
+91), carrying 12 skips over 7 causes, each printing
+its reason (gdb, `-Wl,--wrap`, the glibc symbol floor, `ilp32`,
+`resource.prlimit`, an x86-64 `--target` leg, and LeakSanitizer). On macOS,
+`xcode-select --install`; **Apple's AddressSanitizer ships no LeakSanitizer**,
+so the `fuzz-leak` lane and the raytrace and mandelbrot leak legs do not run
+there — ASan, UBSan and TSan still do, and Linux is the only host that scores
+leaks.
 
 **Windows** has two supported paths. **WSL2** is the zero-setup one and behaves
 exactly like Linux. **Native Windows is MSYS2 + mingw-w64** — MSVC is not a
