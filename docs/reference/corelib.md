@@ -205,6 +205,7 @@ element type instead of a family of per-type siblings.
   negative). The core is UTC; timezone support is layered on — **fixed offsets** (`from_unix_at`,
   `to_unix_at`, `format_iso_tz`) in pure Tycho, plus DST-aware **system/zone** offsets via a
   small libc shim (`local_offset`, `offset_at`, `now_local`). There is no IANA tz database.
+  `format_offset(offset_secs)` renders a UTC offset as `+HH:MM` / `-HH:MM`, the form the timestamp formats above embed.
 - **`regex`** — POSIX extended regular expressions (ERE), the first **C-shim-backed**
   core module (FFI over `<regex.h>`, libc). `compile(pat) -> ptr` (opaque handle;
   `ok`/`is_null` to check), `is_match`, `find` / `find_end` (offset or −1), `matched`
@@ -248,6 +249,7 @@ element type instead of a family of per-type siblings.
   point, embedded NULs included. Two limits: a number outside binary64's range
   (`1e400`) is refused rather than represented, and `get` returns `JNull` for both
   a null-valued member and an absent one — walk `keys` to tell those apart.
+  `err_at(code, off)` builds a `JsonErr` for a given code and byte offset, which is what a caller layering its own parse step on top of this one uses to report in the same shape.
 - **`csv`** — an RFC 4180 CSV parser + serializer. A document is rows of fields,
   `[[string]]`. `parse(s) -> [[string]]` is a small state machine handling quoted
   fields, the `""` escape, embedded delimiters/newlines inside quotes, and LF / CRLF /
@@ -317,6 +319,9 @@ element type instead of a family of per-type siblings.
   (words, length suffix, output). A **real cryptographic digest** — fine for checksums,
   content addressing, and HMAC building blocks (not a standalone password hash; use a KDF
   for that). Bit-exact against NIST vectors (`sha256("abc") = ba7816bf…f20015ad`).
+  For input too large to hold at once there is a **streaming** form: `init()` gives
+  a `State`, `update(&st, data)` folds in each chunk, and `final_hex(&st)` closes
+  it and returns the digest — the same answer `hex(s)` gives for the concatenation.
 - **`bignum`** — arbitrary-precision integers in pure Tycho (sign + base-10⁹ limb array),
   value-semantic: `from_int`/`from_str`/`to_str`/`to_int`, `add`/`sub`/`mul`/`divmod`/`div`/
   `mod`/`pow`, `abs`/`neg`/`cmp`/`is_zero`.
@@ -396,6 +401,7 @@ element type instead of a family of per-type siblings.
   strings, ints (dec/0x/0o/0b/underscores), floats, bools, arrays with
   trailing commas; an ISO-8601 datetime is kept as a string. Not inline tables
   or multi-line strings.
+  `empty_table()` gives an empty `Value` table, the starting point for building one up rather than parsing it.
 - **`zip`** — a ZIP archive reader and writer over core:compress's raw
   deflate: `list(bytes)` (names, methods, sizes, CRCs), `extract(bytes, name)`
   (fail-closed: missing/corrupt entries or a CRC mismatch yield empty), and
@@ -409,6 +415,7 @@ element type instead of a family of per-type siblings.
   count), `query(&db, sql)` / `query_params(&db, sql, params)` → `[[string]]`
   (every column read as text), `errmsg(db)`. Parameters bind as text and
   coerce; fail-closed with sqlite's own messages.
+  `exec_params(&d, sql, params)` is the parameter-binding form of `exec`, returning the affected-row count; the parameters bind as text and coerce, as elsewhere in this package.
 - **`log`** — a leveled logger, state threaded like `core:rand`'s:
   `l := log.init(log.level_info(), false)`, then `log.debug/info/warn/error(&l,
   msg)` — each prints `[level] message`, dropping messages below the logger's
@@ -475,7 +482,8 @@ element type instead of a family of per-type siblings.
   `make_dir` / `remove` above, which do return a bool, because there `Ok(false)` is a real
   second answer. The rest keeps the builtins' sentinels.
   Nothing aborts.
-- **`os`** — run external commands, via a **libc-only FFI shim** (`popen`/`system`; no
+- **`os`** — `is_windows()` reports the host family at runtime (the compile-time
+  split is `_WIN32` in a shim; this is the one a Tycho program can branch on) — run external commands, via a **libc-only FFI shim** (`popen`/`system`; no
   `deps`, nothing to install). `os.system(cmd)` runs `cmd` through the shell with stdout/
   stderr inherited, returning its exit code (0..255, `128+signal` if killed, `-1` if the
   shell won't start); `os.run(cmd)` additionally captures stdout into `Output{code, out}`.
@@ -585,6 +593,7 @@ element type instead of a family of per-type siblings.
   loses every request after the first. Handing the leftover back would need a
   per-connection buffer these signatures do not carry — what matters is that the leftover
   is never glued onto this request's body, which is the smuggling bug.
+  The request-shaping helpers the server layer calls are public too: `reason_phrase(status)` gives the status text, `bodyless(status)` says whether a status may carry a body at all (204/304 and the 1xx range), `content_length_conflict(r)` reports a request carrying both `Content-Length` and `Transfer-Encoding` (the request-smuggling shape), `parse_len(s) -> (int, bool)` parses a length header with its validity flag, `has_ext(path, ext)` tests a path's extension, and `crlf()` is the line terminator as a string.
 - **`cli`** — command-line argument parsing, pure string math. `parse(argv) -> Cli` sorts the
   vector into three buckets: `--key=value` **options**, boolean **flags** (`--flag`, and short
   clusters `-abc` → `a`/`b`/`c`), and **positionals** (everything else, plus everything after
@@ -616,6 +625,7 @@ element type instead of a family of per-type siblings.
   malformed / truncated / wrong-format input (check `width > 0`). Assembling the binary
   output is what the `to_bytes([int])` builtin enables — pure Tycho otherwise can't build a
   `bytes` with an interior `0x00` (a black or transparent pixel is `0x00` components).
+  `too_big(w, h)` is the decode guard in front of every codec here: it answers whether a declared width and height would allocate past the ceiling, which is what stops a 69-byte header claiming a 3.6 GB image.
 - **`signal`** — **clean shutdown on SIGTERM/SIGINT, and nothing else**: a libc-only shim over
   `sigaction(2)` and `shutdown(2)`, with nothing to install and nothing to link.
   `on_shutdown(fd) -> bool` installs one handler for both signals whose **only** action is
@@ -640,6 +650,7 @@ element type instead of a family of per-type siblings.
   blocked accept loops in the same millisecond where `close(fd)` released 1/4 and handed the
   fd number back out to a later `open()`. Normative text: `docs/spec/18-library.md` §32.27.
 
+  For a server that must report which connections it dropped, `register_conn(slot, fd)` records a live descriptor against a slot and `retire_conn(slot)` clears it, so the handler knows what was open when the signal arrived.
 ## C-shim (FFI-backed) modules
 
 A core module can wrap a C library via FFI. Drop a `<module>/<module>_shim.c` next to
@@ -701,6 +712,7 @@ plus three more:
   `tools/tycho-ar` depends on this: its "archive the same tree twice, `cmp`-identical"
   gate reddens if it ever stops holding. The compressed *length* is a zlib tuning
   detail — it is not stable across zlib versions and no golden here locks it.
+  `raw_compress(data)` is the same deflate without the gzip framing, for callers that supply their own container.
 - **`image`** — PNG decode/encode over **libpng** (`deps: libpng`): `decode(bytes) ->
   Result(Image{width, height, pixels}, ImgErr)` (8-bit RGBA) and `encode(Image) ->
   Result(bytes, ImgErr)`. A sentinel — a 0×0 `Image`, an empty buffer — would make a

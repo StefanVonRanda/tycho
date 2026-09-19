@@ -6908,6 +6908,7 @@ one grep.
 > Pinned-by: grep -q "wait_readable(fds, ms)" docs/reference/corelib.md
 > Pinned-by: sh -c '! grep -q "no .poll., .select., .epoll. or .O_NONBLOCK. anywhere" docs/reference/corelib.md'
 > Pinned-by: make net-poll-check
+> Pinned-by: python3 scripts/corelib_doc_check.py
 
 **Found by auditing which public corelib functions the catalogue never names.**
 41 of 431 were missing, and chasing `net.wait_readable` turned up something worse
@@ -6945,9 +6946,24 @@ whose subject is an inventory, so it is the one where drift is invisible: adding
 `wait_readable` to `net.ty` reddened nothing.
 
 Corrected to describe both halves — the transfer calls block, readiness does
-not — and the three pins above are the cheapest guard available: one that the
-new text is present, one that the false sentence is gone, and the lane that
-proves the feature works.
+not — and the three pins above guard that sentence.
+
+**The class is now gated too, which the pins alone did not do.**
+`scripts/corelib_doc_check.py` (run by `make check-links`) asserts that every
+**public** corelib function in `surface.lock` is named in the catalogue.
+Package-private names are excluded, because the resolver refuses them from
+another package and they are not API. Prose cannot be checked — but **absence
+can**, and absence is the state this entry was found in: 41 of 431 functions the
+catalogue never mentioned, including the crypto key lifecycle that made the
+package unusable from the reference alone.
+
+It carries its own selfcheck, because a scan that cannot report is
+indistinguishable from a clean catalogue. All 41 are now documented and the gate
+passes at 431/431. Two things it deliberately does not do: it cannot tell a
+*wrong* sentence from a right one (the defect above would still have needed a
+human), and a function documented by family — the entry reads
+`ed25519_pubkey`/`sign`/`verify` — needs an explicit exception, of which there
+are two.
 
 **The other 40 are omissions, not errors, and are now documented**: the
 `core:crypto` opaque-key lifecycle (`key_random`/`key_from_hex`/`key_export_hex`/
