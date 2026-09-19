@@ -6676,3 +6676,229 @@ not as a clobber of its own override. Different thing, explicit at each call
 site, and whether the debuggee should be built by the shipped compiler is its
 own question. Named here so the next `grep` for this pattern does not read it as
 a missed instance.
+
+## Found by inspecting the whole locked surface, 2026-09-19 (head `71efc6f8`)
+
+The surface freeze records 41 builtins, 115 keywords and 559 corelib functions.
+Nothing had ever asked the obvious question of that list: **is every entry on it
+actually exercised, and is every entry on it actually meant to be there?** Three
+answers below; the method was to read `surface.lock` and grep the 1,389 tracked
+`.ty` files for each entry.
+
+### 94. ~~`floor` is a shipped builtin that no fixture exercised~~ — **FIXED 2026-09-19: `tests/float_floor`**
+
+> Pinned-by: test -f tests/float_floor.ty
+> Pinned-by: test -f tests/float_floor.out
+
+Of 41 builtins and 115 keywords, exactly one entry appeared in **no** test or
+example: `floor`. It is not a stub — `float -> float`, specified at spec 29 and
+[appendix D](../spec/appendix-d-builtins.md), implemented in both compilers
+(`src/tychoc.c:5864@floor`) — it simply had no fixture.
+
+**It was correct.** Checked against C's libm on the six values a test would have
+pinned, all six identical:
+
+```text
+            tycho     C
+2.7          2.0      2
+-2.1        -3.0     -3     <- rounds DOWN, not toward zero
+0.0          0.0      0
+-0.5        -1.0     -1
+3.0          3.0      3
+1e15+0.5     1e+15    1e+15
+```
+
+So this is a **coverage** finding, not a defect, which is the only reason it
+could sit there: a builtin that works is invisible until something counts. The
+fixture is now in the corpus (1039 -> 1040 passing) and the boundary values are
+chosen rather than arbitrary, with the reasoning in the file.
+
+### 95. ~~Appendix E maps two concurrency clauses to the wrong section numbers~~ — **FIXED 2026-09-19**
+
+> Pinned-by: grep -q "^| §21 | spawn / Task / wait" docs/spec/appendix-e-conformance.md
+> Pinned-by: grep -q "^| §22 | parallel-for" docs/spec/appendix-e-conformance.md
+
+[Appendix E](../spec/appendix-e-conformance.md) exists so that "conforming" is a
+checkable claim: it maps every normative clause to a test. It mapped two of the
+three concurrency clauses to the wrong clause.
+
+`docs/spec/13-concurrency.md` numbers its chapters **21** (`spawn`, `Task`,
+`wait`), **22** (`parallel for`) and **23** (channels and `select`). Appendix E
+filed *spawn/Task/wait* and *parallel-for* both under `§23.x` — channels — under
+a heading reading "§23–24 Concurrency & FFI". The cited fixtures were right and
+real; the clause numbers were wrong, so §21 and §22 read as having no
+conformance mapping at all while §23 carried three unrelated rows.
+
+**`make spec-check` cannot catch this, by construction.** Its two checks are (1)
+Appendix A's collected grammar matches the chapters, and (2) every fixture cited
+in Appendix E exists. Nothing verifies that a cited **clause** exists, or that it
+says what the row claims. A conformance map can therefore point at any section
+number at all and stay green — which is how a heading that disagreed with its own
+chapter survived.
+
+Renumbered to §21/§22/§23, rows put in order, and the heading corrected to
+"§21–26". The gate gap is recorded rather than fixed: a clause-number checker is
+a real piece of work and this entry is the measurement that would justify it.
+
+### 96. The corelib does not use the visibility control the language already has, so 127 internal helpers are frozen public API — **OPEN**
+
+> **This entry's first draft was wrong and the correction is the interesting
+> half.** It claimed Tycho has no visibility marker. It has one: **a
+> leading-underscore name is package-private**, enforced by the compiler.
+
+```text
+./main.ty:6: error: 'mypkg._secret' is package-private:
+             a leading-underscore name is not accessible from another package
+```
+
+The original test proved only that `bignum.mag_cmp` is *not marked* private —
+it has no underscore — and that was read as "no mechanism exists". The mechanism
+was found afterwards in the compiler's own diagnostic list, by a sweep looking
+for something else entirely. **A negative claim about a language needs the
+feature's absence demonstrated, not one example of it not applying.**
+
+**The real finding, which survives.** Of 559 corelib functions in
+`surface.lock`, 163 are never called qualified from outside their own package
+and 168 are absent from [the catalogue](../reference/corelib.md); **127 are
+both** — `bignum.mag_divmod`, `bignum.pad_limb`, `base64.enc_char`,
+`base64.encode_impl`. They are implementation details, they are publicly
+callable, and they are frozen.
+
+Not because the language lacks a way to hide them, but because **the corelib
+barely uses it**: across every `corelib/*/*.ty`, only 2 distinct `fn _name`
+definitions exist, in 3 files. The feature is shipped, documented by its own
+error message, and unused where it would matter most.
+
+**Why this matters for 1.0.** The roadmap defines 1.0 as *"a promise not to
+break people"*. That promise currently covers 127 functions nobody documented,
+nobody outside their package calls, and nobody intended to publish — renaming
+`mag_add` is a `surface.lock` diff a reviewer must approve. The freeze is doing
+its job perfectly; it is pointed at the wrong set. And the fix needs **no
+language change at all**, which is not what the first draft of this entry
+concluded.
+
+**A second, smaller defect found on the way.** `surface.lock` records three
+names the compiler *forbids* calling from outside:
+
+```text
+compress._cause (st: int)-> ZErr
+image._cause   (st: int)-> ImgErr
+io._status     (st: int)-> Result(void, IoErr)
+```
+
+These are package-private. They cannot be part of a public surface, because no
+other package can name them — yet the freeze tracks them, so renaming one is a
+reviewable surface change for something that was never reachable. The surface
+extractor does not know about the underscore rule that the type checker
+enforces.
+
+**Options, in the order they get cheaper:**
+
+1. **Teach the surface extractor the underscore rule** — drop `_`-prefixed names
+   from `surface.lock`. Small, purely a gate change, and it fixes the second
+   defect outright. It does nothing about the 127, which carry no underscore.
+2. **Rename the 127 to `_`-prefixed** and let (1) remove them from the freeze.
+   Mechanical, uses a shipped feature as intended, touches no compiler code —
+   but it is 127 renames across the corelib and every internal call site.
+3. **Leave it and document the split**, accepting that the freeze covers more
+   than it means to.
+
+(1) is worth doing regardless of what is decided about (2): the extractor
+disagreeing with the type checker about what is reachable is a defect on its own
+terms. The measurement is the input; the choice is the owner's.
+
+### 97. 34 of the compiler's 335 diagnostics have no pinned wording — **PARTLY CLOSED 2026-09-19**
+
+> Pinned-by: grep -q "^# expect: is package-private" tests/reject/pkg/privacy_cross/main.ty
+
+**The refusal is gated; the sentence is not.** 593 flat reject fixtures assert
+that an invalid program *fails*, and an `# expect:` line pinning WHY is opt-in.
+`tests/diag/` pins 42 diagnostics byte-exact. Together those cover **301 of the
+335 distinct prose diagnostics** the shipped compiler can construct. The other
+34 can degrade to a worse sentence — or to a correct-but-useless one — with
+every gate still green.
+
+That matters more here than in most compilers, because the diagnostics are a
+deliberate feature: the tree ships `tests/diag/` precisely so the message text is
+an asserted contract, and the agent-facing skill file tells a reader that "the
+message usually carries the fix".
+
+**The measurement took four attempts and the first three were wrong**, which is
+worth recording because the shape of the error repeated:
+
+| attempt | method | result | why it was wrong |
+|---|---|---|---|
+| 1 | prose string literals in `compiler/` | 99% unpinned | scraped source *comments*, not diagnostics |
+| 2 | literals at `_cerr`/`_err` call sites, vs `tests/diag` only | 92% unpinned | ignored the 618 `# expect:` lines in reject fixtures |
+| 3 | same, with `# expect:` included, prefix match | 27% unpinned | messages are built by concatenation, so a prefix match misses a pinned middle |
+| 4 | any 18-character run present in the pinned corpus | **10% unpinned** | — |
+
+Each attempt produced a number that looked publishable. Only comparing them
+against individually checked samples showed which was true.
+
+**One of the 34 was the visibility rule itself**, which is how it connects to
+[96](#96-the-corelib-does-not-use-the-visibility-control-the-language-already-has-so-127-internal-helpers-are-frozen-public-api--open):
+
+```text
+'secretlib._scale' is package-private: a leading-underscore name is not
+accessible from another package
+```
+
+`tests/reject/pkg/privacy_cross` asserts the refusal and carried no `# expect:`
+line, so nothing pinned the sentence that explains the language's only privacy
+mechanism. **Closed**: the fixture now pins it, and the suite went 1039 -> 1040
+with the `floor` fixture from [94](#94-floor-is-a-shipped-builtin-that-no-fixture-exercised--fixed-2026-09-19-testsfloat_floor).
+
+**The remaining 33 are not closed here.** Each needs a fixture that reaches it,
+and reaching some of them — `overlapping mutable access`, the `sink`-in-a-loop
+refusals — means constructing a program that trips a rule the corpus does not
+otherwise exercise. The list is the work item; the count is the argument for
+doing it.
+
+### 98. 34 error-forwarding blocks predate `or_return`; the other 42 want a form that does not exist — **OPEN**
+
+**This entry exists because a recommendation was made from a count without
+checking whether the feature already shipped.** An ergonomics sweep found 76
+four-line `match` blocks whose entire content is "bind on ok, return on error",
+and concluded the language wanted an Odin-style `or_return`. **Tycho has had
+`or_return` the whole time** — spec [§14.6](../spec/10-statements.md#146-or_return),
+a reserved word since the lexical chapter, used in `tools/tycho-db` and
+`corelib/httpd` today. The sweep counted the sites and never grepped the
+keyword list it was proposing to add to.
+
+**With that corrected, the 76 split in two, and only one half is a language
+question:**
+
+| shape | count | status |
+|---|--:|---|
+| `Err(e): return Err(e)` — same error, pure forwarding | **34** | `or_return` expresses this **today** |
+| `Err(e): return Err(Wrap(e))` / a fresh domain error | **42** | `or_return` cannot: §14.6 returns `Err(err)` *unchanged* |
+
+**The 34 are migration debt, not a missing feature.** They sit in files that use
+`or_return` zero times — `tools/tycho-flow/graph/graph.ty`,
+`tools/tycho-ed/buf/buf.ty`, `tools/tycho-sheet/main.ty` — beside
+`corelib/httpd/httpd.ty`, which uses it five times. The construct arrived and
+the older code was never brought forward. That is a cleanup any contributor
+could do, with no surface change and no decision required.
+
+**The 42 are the real design question.** `or_return` propagates the error it was
+given; every one of these sites deliberately changes it, because a `net.listen`
+failure surfacing to a caller as a `SrvErr` is the whole point of a domain error
+type:
+
+```text
+match net.listen(host, port):
+    Ok(f): fd = f
+    Err(e): return Err(Listen(host, port))
+```
+
+An `or_return` that takes a mapping expression would cover all 42 and the 34
+together. That is a surface change, it is demand-gated like every other, and the
+count above is the demand — measured the way `packed` was measured, which is the
+only part of the original sweep that was done right.
+
+**The lesson, which is the reason this is an entry and not a commit message:**
+the sweep was rigorous about counting and careless about the premise. A feature
+request derived from real usage is still worthless if nobody checks whether the
+feature exists. `surface.lock` lists 115 keywords and would have answered it in
+one grep.

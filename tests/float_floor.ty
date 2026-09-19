@@ -1,0 +1,13 @@
+# `floor` is a shipped, specified builtin (spec 29, appendix D) and was the one
+# entry in the locked surface that no fixture exercised. Values chosen at the
+# boundaries libm gets asked about: a positive fraction, a negative fraction
+# (floor rounds DOWN, not toward zero -- -2.1 is -3, not -2), both zeroes, an
+# exact integer, and a magnitude past the point where a double can still hold a
+# fraction at all.
+fn main():
+    println(str(floor(2.7)))
+    println(str(floor(-2.1)))
+    println(str(floor(0.0)))
+    println(str(floor(-0.5)))
+    println(str(floor(3.0)))
+    println(str(floor(1e15 + 0.5)))

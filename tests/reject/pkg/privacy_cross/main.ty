@@ -1,6 +1,7 @@
 package main
 import "secretlib"
 
+# expect: is package-private: a leading-underscore name is not accessible from another package
 # B3: a cross-package access to a leading-underscore (package-private) name must
 # be rejected by the resolver. `secretlib._scale` starts with '_', so this is a
 # privacy violation even though the symbol exists.

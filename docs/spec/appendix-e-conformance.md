@@ -171,13 +171,13 @@ drawn from:
 | §19.x | `or_return` propagation | `tests/or_return`, `tests/or_return_option`, `tests/or_return_frees` |
 | §5.3.6 | `Result(void, E)`: `Ok()`, a bare `Ok:` arm, the `or_return` statement form | `tests/result_void`, `reject/void_not_a_type`, `reject/option_void`, `reject/result_void_err`, `reject/result_void_ok_arg`, `reject/ok_empty_nonvoid`, `reject/err_empty`, `reject/result_void_bind`, `reject/result_void_arm_binds`, `reject/match_result_void_missing_err`, `reject/orreturn_stmt_value` |
 
-### §23–24 Concurrency & FFI
+### §21–26 Concurrency & FFI
 
 | Clause | Requirement (abbrev.) | Fixture(s) |
 |---|---|---|
-| §23.x | spawn / Task / wait (affine, implicit join) | `tests/conc/basic`, `tests/conc/implicit`, `reject/task_copy` |
-| §23.1 | channels (Vyukov, capacity, select) | `tests/conc/chan`, `tests/conc/chancap1`, `tests/conc/select`, `reject/send_wrong_type`, `reject/chan_reassign` |
-| §23.x | parallel-for (`0..<N` counting form and foreach); channel-drain | `tests/conc/parfor`, `tests/conc/parfor_dotlt`, `tests/conc/parfor_chan`, `tests/conc/select_parfor`, `parforparity` lane |
+| §21 | spawn / Task / wait (affine, implicit join) | `tests/conc/basic`, `tests/conc/implicit`, `reject/task_copy` |
+| §22 | parallel-for (`0..<N` counting form and foreach); channel-drain | `tests/conc/parfor`, `tests/conc/parfor_dotlt`, `tests/conc/parfor_chan`, `tests/conc/select_parfor`, `parforparity` lane |
+| §23 | channels (Vyukov, capacity, select) | `tests/conc/chan`, `tests/conc/chancap1`, `tests/conc/select`, `reject/send_wrong_type`, `reject/chan_reassign` |
 | §24.1 | FFI crossable types (scalars/str/bytes/handles/sized) | `tests/ffi`, `examples/sqlite/demo.ty` |
 | §24.1 | `[string]` param crosses as `(const char *const *, long)`, borrowed; empty array | `tests/ffi` (`ffi_sfold`, `ffi_spick`) |
 | §24.1 | a `[string]` *return* stays rejected | `tests/reject/extern_ret_arr_string.ty` |
