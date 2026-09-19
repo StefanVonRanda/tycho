@@ -64,7 +64,21 @@ fn parse_line(line: string) -> Rec:
     if path == "":
         return bad
     sclass := substr(status, 0, 1) + "xx"
-    nbytes := strings.parse_int(bytes_s)
+    # CHECKED, for the same reason the timestamp above is. `strings.parse_int`
+    # fails OPEN: "abc" is 0, an overflowing count is 0, and "50x" is 50 -- it
+    # takes the numeric prefix and discards the rest. Every one of those is a
+    # plausible byte count that goes straight into the reported totals, from a
+    # field an HTTP client can influence. Measured on a crafted log before the
+    # fix: 9999999999999999999 reported as 0 bytes and "50x" as 50 (FRICTION 115).
+    #
+    # `-` is NOT malformed -- it is how CLF spells "no body sent" -- so it maps to
+    # 0 explicitly rather than arriving there by accident, which is exactly the
+    # distinction the bare parse could not make.
+    nbytes := 0
+    if bytes_s != "-":
+        match strings.parse_int_checked(bytes_s):
+            Ok(v): nbytes = v
+            Err(e): return bad
     return Rec(true, ip, datehour, path, sclass, nbytes)
 
 # keys of a [string:int] map ordered by value descending (stable -> deterministic)

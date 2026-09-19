@@ -7871,55 +7871,122 @@ x86_64 macOS and those binaries run; what is not is the driver's `cc` subprocess
 on *this* box, for a reason that has nothing to do with the port. Saying which is
 which is the point of the entry.
 
-### 114. `tests/conc/chan` dies with SIGILL under TSan on aarch64 Linux — **OPEN, reproduced and narrowed, not root-caused**
+### 114. Four conc fixtures SIGILL under TSan on aarch64 — **ROOT-CAUSED 2026-09-19: TSan's shadow layout, not Tycho**
 
-Found by the first full `make ci` on aarch64 Linux (110). Four conc fixtures fail
-the same way — `chan`, `chancap1`, `parfor_chan`, `parfor_width` — all in the
-**tsan** variant only, and all with:
+> Pinned-by: none -- the subject is a sanitizer's behaviour on one host, which no
+> lane in this tree can assert. Recorded with its reproduction and its evidence.
+
+Found by the first full `make ci` on aarch64 Linux ([110](#110-aarch64-linux-was-compile-only-for-a-month-a-vm-on-the-mac-closed-it-in-an-hour-and-caught-me-repeating-100--fixed-2026-09-19)).
+`chan`, `chancap1`, `parfor_chan` and `parfor_width` failed, **tsan variant
+only**, with exit 132 (128+SIGILL) and no TSan report at all.
+
+**Reduced to 20 lines, deterministic.** The boundary is exactly one spawned task:
+
+| program | under TSan |
+|---|---|
+| a Tycho program with no concurrency | exit 0 |
+| two `spawn`s with **no channel** | exit 0 |
+| **one** spawned task on a channel, main on the other end | **exit 0** |
+| **two** spawned tasks sharing a channel | **SIGILL, 3 of 3** |
+
+**TSan says what is wrong itself**, once stderr is not thrown away —
+`TSAN_OPTIONS=verbosity=1` on the failing case:
 
 ```text
-FAIL chan (tsan run)
-      Illegal instruction
+WARNING: ThreadSanitizer: memory layout is incompatible, possibly due to
+         high-entropy ASLR.  Re-execing with fixed virtual address space.
+***** Running under ThreadSanitizer v3 *****
+Illegal instruction
 ```
 
-Exit 132, which is 128+SIGILL. **No TSan report at all**, which is the odd part:
-a race would print a diagnosis, and this dies before saying anything.
+The passing one-task case prints **no such warning**. TSan cannot map its shadow
+memory once the second task's arena is allocated, re-execs to fix it, and dies
+anyway.
 
-**What has been ruled out.**
+**Not Tycho's defect, on the evidence:**
 
-| probe | result |
-|---|---|
-| TSan itself on this host | **works** — a hand-written racing C program is caught, exit 66 |
-| a Tycho program with no concurrency, under TSan | **exit 0** |
-| `spawn` + `wait`, under TSan | **exit 0** |
-| a single `channel` send/recv, under TSan | **exit 0** |
-| `tests/conc/chan.ty`, under TSan | **SIGILL** |
+- the same emitted C, built **without** a sanitizer, prints the right answer and
+  exits 0;
+- the **ASan** variants of all four fixtures pass on this host;
+- x86-64 Linux runs the tsan variant **green**;
+- `make test` is 1065/1065 on aarch64;
+- the runtime calls `mmap` **nowhere** and sets no custom thread stack size —
+  arenas are `malloc`, so there is no exotic mapping to blame it for.
 
-So it is neither "TSan is broken on aarch64" nor "Tycho programs cannot run under
-TSan". It is something `chan.ty` reaches that the minimal cases do not — it runs
-two consumers and a producer over one buffered `channel(string, 8)`, so the
-suspects are multi-consumer contention or the string payload's arena traffic.
+**The obvious fix does not work.** Ubuntu's documented sanitizer workaround is to
+lower ASLR entropy; `vm.mmap_rnd_bits` at 28, 24, 18 and 16 all still SIGILL. So
+it is not simply entropy — it is TSan v3's shadow layout against this kernel
+(7.0.0 aarch64) under Apple's virtualization.
 
-**Not narrowed further, deliberately.** `gdb` cannot run in this VM at all
-(`Unable to fetch SVE/SSVE vector length` — Apple's virtualization does not
-expose what it probes), so there is no backtrace, and the next honest step is
-either a host with a working debugger or bisecting `chan.ty` by hand. Guessing at
-a cause with no faulting address would be inventing one.
+**Scope of the claim, stated because it matters.** This was measured in a VM on
+Apple Silicon. Whether real aarch64 Linux hardware behaves the same is untested
+here, and the honest reading is "TSan's shadow mapping fails on *this* host",
+not "TSan is broken on ARM".
 
-**What it does NOT block.** The native and ASan variants of all four fixtures
-pass on aarch64, `make test` is 1065/1065 there, and x86-64 Linux runs the tsan
-variant green — so this is one sanitizer on one architecture, not the
-concurrency implementation being wrong. It is recorded here rather than fixed
-because a finding with a clean reproduction and no cause is worth more written
-down than guessed at.
+**What it costs.** The aarch64 gate runs 46 of 48 conc fixtures and loses the
+TSan variant of four. That is the same shape as macOS losing LeakSanitizer (109):
+a sanitizer absent on one platform, named rather than silently skipped, with
+Linux/x86-64 remaining the host that scores it.
 
-**Two environment prerequisites came out of the same run**, neither a defect:
 
-- `shim-warn` fails on a box without the optional dev libraries — it compiled 9
-  shims and wants 10, and refuses on exactly the right grounds: *"An empty
-  warning file means nothing when nothing was compiled."* `apt-get install
-  zlib1g-dev libssl-dev libcurl4-openssl-dev libpng-dev libsqlite3-dev` fixes it.
-- the locale prerequisite of [111](#111-make-test-has-an-undocumented-os-prerequisite-and-fails-loudly-without-it--2026-09-19).
+### 115. The fail-open audit reached three parsers and missed a fourth, on the untrusted side — **FIXED 2026-09-19**
 
-Both are now in the README's platform notes, which is where someone cloning onto
-a fresh Linux box will look.
+> Pinned-by: make weblog
+> Pinned-by: grep -q 'strings.parse_int_checked(bytes_s)' examples/weblog/main.ty
+> Pinned-by: sh -c '! grep -q "nbytes := strings.parse_int(bytes_s)" examples/weblog/main.ty'
+
+Found by auditing the shape that produced four findings in one day — a fix
+understood, written down, and applied to *some* of the sites it covers (96, 102,
+107, 110). The candidate here was the ROADMAP's own fail-open sweep: *"every
+corelib parse function and every caller that reads persisted or wire data,
+checked for a parser that returns a plausible wrong value instead of an error."*
+It fixed three. This is a fourth.
+
+**`examples/weblog/main.ty` parsed the byte count of an HTTP access-log line
+with the unchecked `strings.parse_int`**, which fails open in three different
+ways:
+
+| input | `parse_int` returns |
+|---|--:|
+| `"abc"` | `0` — indistinguishable from a real zero |
+| `"9999999999999999999"` | `0` — an overflow becomes a plausible count |
+| `"50x"` | **`50`** — it takes the numeric prefix and discards the rest |
+
+Measured end-to-end on a crafted log before the fix — both records **accepted**,
+carrying invented numbers into the report:
+
+```text
+    hits    bytes  url
+       1      100  /good
+       1        0  /over     <- 9999999999999999999
+       1       50  /junk     <- "50x"
+```
+
+**What makes it worth an entry is which side was checked.** Twelve lines above,
+the CLF timestamp is parsed and validated, and a bad one fails the record.
+Forty lines below, the `--top` CLI flag — a number the operator typed — uses
+`strings.parse_int_checked`. So the **trusted** input was checked and the
+**attacker-influenceable** one was not, in the same function, by the same author,
+on the same day. That is not ignorance about the API; it is the convention being
+applied unevenly, which is this file's most repeated finding.
+
+Fixed with `parse_int_checked`, failing the record exactly as the timestamp does.
+**`-` is handled explicitly**, because CLF spells "no body sent" that way: it maps
+to 0 deliberately instead of arriving there through the same fail-open path that
+swallowed `"abc"` — the distinction the bare parse could not make.
+
+**The golden could not have caught this and still cannot**, which is why the
+lane gained a leg rather than a fixture: `examples/weblog/access.log` contains no
+malformed byte count, so `weblog: ok (tychoc == golden)` was true with the field
+unchecked. `examples/weblog/run.sh` now feeds a crafted log and requires `/over`
+and `/junk` to be **rejected**, `/good` to survive, and `/nobody` (bytes `-`) to
+count as 0. Controlled: with the fail-open parse restored the lane names both
+accepted records and exits 1.
+
+**The sweep also cleared four parsers it suspected**, which is worth recording so
+the next reader does not redo it: `datetime.parse_iso`/`parse_iso_tz`/
+`parse_clf`/`parse_clf_tz` return a bare `DateTime` with no `Result`, but they
+fail **closed** to a `-1` year sentinel, `datetime.ok()` is the documented test,
+and both production callers — `server/main.ty@parse_http_date` and this one —
+call it. The residual `Err(e): return Err(e)` count from the `or_return`
+migration is **0**.
