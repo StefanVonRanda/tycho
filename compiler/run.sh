@@ -91,7 +91,7 @@ n_lib=$(find corelib -name '*.ty' | wc -l | tr -d ' ')
 n_rej=$(ls tests/reject/*.ty | wc -l | tr -d ' ')
 n_tsv=$(wc -l < "$TSV" | tr -d ' ')
 n_new=$(find tools examples server bench -name '*.ty' | wc -l | tr -d ' ')
-[ "$n_acc" = 288 ] || { echo "parse-check: tests/*.ty is $n_acc, expected 288"; rc=1; }   # +1 each: tests/packed_struct.ty (V2), tests/vector_type.ty (V3), tests/fixarr_iter.ty (V3a), tests/generic_recur_same.ty, tests/align_struct.ty (L1), tests/multi_assign.ty (L2), tests/swizzle.ty (L3), tests/vector_map_key.ty (composite map keys), tests/lane_names.ty (L4), tests/bounded_local_cap.ty (G9)
+[ "$n_acc" = 289 ] || { echo "parse-check: tests/*.ty is $n_acc, expected 289"; rc=1; }   # +1 each: tests/packed_struct.ty (V2), tests/vector_type.ty (V3), tests/fixarr_iter.ty (V3a), tests/generic_recur_same.ty, tests/align_struct.ty (L1), tests/multi_assign.ty (L2), tests/swizzle.ty (L3), tests/vector_map_key.ty (composite map keys), tests/lane_names.ty (L4), tests/bounded_local_cap.ty (G9), tests/float_floor.ty (FRICTION 94, 0b385a24 -- the commit that turned this leg RED for a day because nothing runs parse-check; FRICTION 106)
 [ "$n_lib" = 91 ]  || { echo "parse-check: corelib/**.ty is $n_lib, expected 91"; rc=1; }
 [ "$n_new" = 178 ] || { echo "parse-check: tools+examples+server+bench .ty is $n_new, expected 178"; rc=1; }   # -1: tools/tycho-rsa/ removed in 0888bf28, which left this literal at 179 and the lane red
 [ "$n_rej" = "$n_tsv" ] || { echo "parse-check: $n_rej reject fixtures but $n_tsv classified rows -- rerun scripts/classify_rejects.py"; rc=1; }
@@ -124,7 +124,7 @@ leg_accept() {
     echo "$1: files=$((ok+bad)) parse-ok=$ok fail=$bad"
     [ "$ok" = "$3" ] && [ "$bad" = 0 ] || { echo "parse-check: $1 expected $3 ok, 0 fail"; rc=1; }
 }
-leg_accept "leg1  tests/*.ty" "$(ls tests/*.ty)" 288
+leg_accept "leg1  tests/*.ty" "$(ls tests/*.ty)" 289
 leg_accept "leg1b corelib/**.ty" "$(find corelib -name '*.ty' | sort)" 91
 leg_accept "leg1c tools+examples+server+bench" "$(find tools examples server bench -name '*.ty' | sort)" 178
 
@@ -203,7 +203,7 @@ echo "leg2c tests/reject/*.ty --typecheck: all=$((tr+tm)) rejected=$tr missed=$t
 # four raised inside parse_struct and so all four the parser's to refuse.
 # SYNTAX 108 -> 111: the three refusals diag_coverage.py found unfixtured --
 # a repeated `align`, a repeated `packed`, and an empty `align()`.
-[ "$nsyn" = 119 ] && [ "$nname" = 35 ] && [ "$ntype" = 166 ] && [ "$nsem" = 273 ] || { echo "parse-check: the split moved -- expected SYNTAX=119 NAME=35 TYPE=166 SEMANTIC=273"; rc=1; }
+[ "$nsyn" = 119 ] && [ "$nname" = 35 ] && [ "$ntype" = 175 ] && [ "$nsem" = 288 ] || { echo "parse-check: the split moved -- expected SYNTAX=119 NAME=35 TYPE=175 SEMANTIC=288"; rc=1; }
 [ "$mr" = 0 ] || { echo "parse-check: a NAME or SEMANTIC fixture was rejected by --parse; a parser has no symbol table"; rc=1; }
 [ "$sa" = 0 ] || { echo "parse-check: a SYNTAX fixture was accepted; the parser must refuse it"; rc=1; }
 [ "$rm_" = 0 ] || { echo "parse-check: a NAME fixture resolved; the resolver must refuse it"; rc=1; }
@@ -213,7 +213,7 @@ echo "leg2c tests/reject/*.ty --typecheck: all=$((tr+tm)) rejected=$tr missed=$t
 got=$(echo $seen_miss | tr ' ' '\n' | LC_ALL=C sort | tr '\n' ' ')
 want=$(echo $KNOWN_TYPE_MISS | tr ' ' '\n' | LC_ALL=C sort | tr '\n' ' ')
 [ "$got" = "$want" ] || { echo "parse-check: the TYPE misses moved"; echo "    now:  $got"; echo "    was:  $want"; rc=1; }
-[ "$tr" = 593 ] || { echo "parse-check: --typecheck refused $tr of 593, expected 593"; rc=1; }
+[ "$tr" = 617 ] || { echo "parse-check: --typecheck refused $tr of 617, expected 617"; rc=1; }
 
 # [3] -- the census, against a recorded golden
 for f in $(ls tests/*.ty) $(find corelib -name '*.ty' | sort) $(find tools examples server bench -name '*.ty' | sort); do
@@ -749,8 +749,8 @@ for f in tests/conc/*.ty tests/pkg/*/main.ty; do
     if "$TYCHOC1" "$f" --typecheck >/dev/null 2>&1; then n15a=$((n15a+1))
     else echo "  CONC-WRONGLY-REFUSED $f :: $("$TYCHOC1" "$f" --typecheck 2>&1 | head -1)"; l15=1; fi
 done
-echo "leg15 conc + pkg rules by MESSAGE: refused=$n15r/51 disagree=$n15d accepted=$n15a/41"
-[ "$n15r" = 51 ] && [ "$n15a" = 41 ] || { echo "parse-check: leg15 corpus moved -- update the literals"; l15=1; }
+echo "leg15 conc + pkg rules by MESSAGE: refused=$n15r/52 disagree=$n15d accepted=$n15a/41"
+[ "$n15r" = 52 ] && [ "$n15a" = 41 ] || { echo "parse-check: leg15 corpus moved -- update the literals"; l15=1; }
 [ "$l15" = 0 ] || { echo "parse-check: a concurrency or match-arm rule moved"; rc=1; }
 
 # [5] -- the whole tree, both verdicts, split by the same site table. See the
