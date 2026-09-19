@@ -8207,3 +8207,68 @@ indirectly through their own package, and the 4 with no caller anywhere
 **documented public API with no direct test**, which is recorded here and not
 fixed: writing tests for them is real work, and inventing one to close an entry
 is how a suite fills with tests nobody chose.
+
+### 119. The normative conformance table cites five "lanes" that nothing ran — **FIXED for three, MEASURED for two**
+
+> Pinned-by: grep -q 'make -s parity-fuzz' scripts/ci.sh
+> Pinned-by: make parity-fuzz
+
+`docs/spec/appendix-e-conformance.md` is how the spec claims to be backed by
+executable evidence: one row per clause, naming what proves it. Five rows name a
+**lane**:
+
+| clause | cited as evidence |
+|---|---|
+| §5.5, §9.3 — structural `==`, functions not comparable | `eqparity` lane |
+| §8.1 — literal adaptation to context type | `typeparity` lane |
+| §13.3 — unary `-` `~` `not` | `unaryparity` lane |
+| §22 — parallel-for, channel-drain | `parforparity` lane |
+
+**None of them is a lane.** `fuzz/run_eqparity.py`, `run_unaryparity.py`,
+`run_parforparity.py`, `run_typeparity.py` and `run_pkg.py` appear in neither the
+`Makefile` nor `scripts/ci.sh` nor any other script. Seven fuzz drivers exist;
+three are wired. The word "lane" is doing work in that table that nothing backs.
+
+**They are not rotted — they work, and they pass.** Run by hand:
+
+```text
+eq-parity:     512/512 composite/newtype ==,!= cases match the oracle
+type-parity:  4608/4608 scalar binop cases match the `expect` oracle
+unary-parity:    30/30 unary-operator cases match the oracle
+parfor-parity:   25/25 parallel-for gate cases match the oracle
+run_pkg:         ok=20  skip=0  FAIL=0
+```
+
+That is the worst version of this, not the best. A rotted script announces
+itself the first time anyone runs it. These are correct, comprehensive
+differential fuzzers — they generate cases, compile with **both** compilers, and
+compare accept/reject **and the emitted C** against an oracle — sitting one line
+of Makefile away from being enforced, and nothing would have noticed the day they
+started failing.
+
+**Three are now lane `[1d5/13]`, and the cost is why there was never an
+argument:**
+
+| fuzzer | time |
+|---|--:|
+| `eqparity` | 5s |
+| `parforparity` | 1s |
+| `unaryparity` | 0s |
+| **all three** | **6s** |
+
+Six seconds on a ~300s gate. There was no budget objection to answer; there was
+simply never a target.
+
+**Two are left out deliberately, and this is a decision rather than an
+oversight.** `typeparity` costs **65s** and `run_pkg.py` **143s** — +24% and +48%
+on the sweep. That is the same shape as `parse-check` in
+[106](#106-parse-check-is-red-has-been-all-day-and-is-in-neither-make-ci-nor-the-hook--drift-cleared-and-corpus-check-gated-2026-09-19-the-divergence-inside-it-is-open-and-the-owners-call)
+and gets the same treatment: measured, written down, and the owner's call.
+**§8.1's citation stays unbacked by any automatic run until that call is made**,
+which is the honest state and is said here rather than left implied.
+
+**How it was found.** Not by reading the fuzz directory — by asking why
+`STATUS.md` says the fuzzer finds nothing *"at 200 seeds"*, going to raise the
+count, and noticing on the way that `ls fuzz/run_*.py` had four more entries than
+the Makefile did. The pattern's tenth instance today, and the first where the
+uncovered thing was the **spec's** evidence rather than a gate's.
