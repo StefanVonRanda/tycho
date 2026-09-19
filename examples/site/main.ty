@@ -126,7 +126,23 @@ fn build(site_dir: string, out_dir: string):
             fmtext, body := split_content(io.read(path.join(content_dir, fname)))
             fm := parse_front(fmtext)
             ptitle := fm.get("title", fname)
-            pdate := strings.parse_int(fm.get("date", "0"))
+            # CHECKED, and it DIES rather than publishing a wrong date. This
+            # value both sorts the index and is rendered through
+            # datetime.from_unix, and `strings.parse_int` fails open by taking a
+            # numeric PREFIX -- so the most plausible mistake an author can make,
+            # writing an ISO date where a unix timestamp belongs, silently became
+            # a real-looking wrong one (FRICTION 116):
+            #
+            #   date: 2024-01-15  ->  2024  ->  renders 1970-01-01T00:33:44
+            #                                   and sorts first, as the oldest
+            #
+            # A generator that publishes that is worse than one that stops: the
+            # page looks finished and the date is a lie.
+            draw := fm.get("date", "0")
+            pdate := 0
+            match strings.parse_int_checked(draw):
+                Ok(v): pdate = v
+                Err(e): die("site: " + fname + ": `date:` wants a unix timestamp, got: " + draw)
             pauthor := authors.get(fm.get("author", ""), "unknown")
             slug := path.stem(fname)
             html := page_html(title, ptitle, pauthor, render_md(body))

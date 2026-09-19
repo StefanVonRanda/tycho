@@ -42,5 +42,25 @@ if [ "$fail" -eq 0 ] && [ ! -f "$golden" ]; then echo "FAIL: no golden -- run RE
 if [ "$fail" -eq 0 ] && ! cmp -s "$T/c.out" "$golden"; then
     echo "FAIL: output != golden"; diff "$golden" "$T/c.out" | sed 's/^/      /'; fail=1
 fi
+# A MALFORMED `date:` MUST STOP THE BUILD. Every date in the shipped content is a
+# valid unix timestamp, so the golden above passes whether or not the field is
+# checked -- which is how strings.parse_int's fail-open PREFIX behaviour sat on
+# it unnoticed: `date: 2024-01-15` became 2024 and rendered 1970-01-01T00:33:44,
+# sorted first as the oldest post (FRICTION 116). This leg supplies what the
+# corpus lacks: a copy of the site with one ISO-shaped date.
+BAD="$T/badsite"
+cp -R "$SITE" "$BAD"
+badmd="$(ls "$BAD"/content/*.md | head -1)"
+sed -i.bak 's/^date: .*/date: 2024-01-15/' "$badmd" && rm -f "$badmd.bak"
+if "$T/c" "$BAD" "$T/badout" > "$T/bad.out" 2>&1; then
+    echo "FAIL: a malformed \`date:\` was ACCEPTED -- the build should stop"
+    grep -iE "1970|0033" "$T/badout"/*.html 2>/dev/null | head -2 | sed 's/^/      /'
+    fail=1
+elif ! grep -q "wants a unix timestamp" "$T/bad.out"; then
+    echo "FAIL: the build stopped, but not with the message that names the cure"
+    sed 's/^/      /' "$T/bad.out" | head -3
+    fail=1
+fi
+
 if [ "$IS_WINDOWS" = 1 ]; then SAN="ASan SKIPPED (no mingw runtime)"; else SAN="ASan"; fi
-[ "$fail" -eq 0 ] && echo "site: green (io+path+json+csv+strings+sort+datetime+sha256 compose; tychoc+$SAN, matches golden)" || { echo "site: FAIL"; exit 1; }
+[ "$fail" -eq 0 ] && echo "site: green (io+path+json+csv+strings+sort+datetime+sha256 compose; tychoc+$SAN, matches golden; a malformed \`date:\` stops the build by name)" || { echo "site: FAIL"; exit 1; }

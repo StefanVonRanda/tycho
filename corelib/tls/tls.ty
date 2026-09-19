@@ -32,12 +32,33 @@ extern fn tlsx_write(conn: ptr, data: bytes) -> int
 extern fn tlsx_read(conn: ptr, max: int) -> bytes
 extern fn tlsx_close(conn: ptr)
 
+# An interior NUL in `host` truncates the C string, and in THIS package that is
+# worse than anywhere else in the corelib: the shim hands `host` to three
+# different consumers -- tcp_connect (the machine dialled),
+# SSL_set_tlsext_host_name (the SNI name the server picks a cert for) and
+# SSL_set1_host (the name that cert is VERIFIED against). All three would silently
+# use the prefix while the caller's own checks -- an allowlist, a policy, a log
+# line -- saw the whole string. `core:net` has refused exactly this since the NUL
+# sweep, as BadAddr, on the grounds that no syscall was made so retrying cannot
+# help; `core:http` refuses it too. The sweep reached net, http, io, os, path and
+# datetime, and missed the one package where the string drives a security
+# decision (FRICTION 117).
+fn _has_nul(host: string) -> bool:
+    for i := 0; i < len(host); i += 1:
+        if host[i] == 0:
+            return true
+    return false
+
 fn connect(host: string, port: int) -> ptr:
+    if _has_nul(host):
+        return to_ptr(0)             # fail CLOSED, as a failed handshake does
     return tlsx_connect(host, port)
 
 # Connect with the TCP connect and the TLS handshake each bounded at `ms`
 # milliseconds. `ms <= 0` is the unbounded `connect` above.
 fn _connect_timeout(host: string, port: int, ms: int) -> ptr:
+    if _has_nul(host):
+        return to_ptr(0)             # same refusal as connect, same reason
     return tlsx_connect_timeout(host, port, ms)
 
 # Bound every later read and write on `conn`; 0 clears the bound. False on failure.

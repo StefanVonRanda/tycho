@@ -15,4 +15,14 @@ fn main():
     println("write=" + str(tls.write(c, to_bytes("hello"))))   # -1
     println("read_len=" + str(len(tls.read(c, 64))))           # 0
     tls.close_conn(c)                                          # safe on null
+
+    # An interior NUL in the host is REFUSED, not truncated. The shim feeds `host`
+    # to tcp_connect, SSL_set_tlsext_host_name (SNI) and SSL_set1_host (the name
+    # the certificate is verified against), so a truncation would dial, announce
+    # and verify a DIFFERENT name than the caller passed -- while the caller's own
+    # allowlist saw the whole string (FRICTION 117). core:net has refused this
+    # since the NUL sweep; this package had not.
+    nulhost := "127.0.0.1" + chr(0) + "evil.example.com"
+    cn := tls.connect(nulhost, 443)
+    println("nul_host_refused=" + str(b2i(is_null(cn))))       # 1
     println("done=1")

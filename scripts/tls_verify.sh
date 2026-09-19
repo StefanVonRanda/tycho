@@ -52,7 +52,13 @@ package main
 import "core:tls"
 
 fn main():
-    c := tls.connect(args()[1], $port)
+    # argv cannot carry a NUL, so leg [4] asks the probe to build the hostile
+    # host itself: the SAME name leg [2] proves is accepted, with an interior NUL
+    # and junk after it.
+    host := args()[1]
+    if host == "--nul-host":
+        host = "localhost" + chr(0) + "evil.example.com"
+    c := tls.connect(host, $port)
     if is_null(c):
         println("FAIL")
     else:
@@ -84,6 +90,15 @@ r3=$(SSL_CERT_FILE="$T/ca.pem" "$T/probe" 127.0.0.1 2>/dev/null || true)
 say "[3] same server, CA trusted, name differs" "$r3"
 [ "$r3" = FAIL ] || { echo "  LEAK: the hostname was NOT checked -- a valid cert for another name was accepted."; fail=1; }
 
+# [4] the SAME trusted, name-matching host with an interior NUL -> must FAIL.
+# This is the one leg [2] makes meaningful: `localhost` IS accepted by this
+# server, so if core:tls truncated at the NUL this would come back OK. The shim
+# feeds `host` to tcp_connect, SSL_set_tlsext_host_name and SSL_set1_host, so a
+# truncation would dial, announce and VERIFY a name the caller never passed
+# (FRICTION 117).
+r4=$(SSL_CERT_FILE="$T/ca.pem" "$T/probe" --nul-host 2>/dev/null || true)
+say "[4] trusted host with an interior NUL" "$r4"
+[ "$r4" = FAIL ] || { echo "  LEAK: an interior NUL was TRUNCATED -- core:tls connected to, announced and verified a name the caller did not pass."; fail=1; }
 
 [ "$fail" -eq 0 ] || { echo "tls-verify: FAIL"; exit 1; }
-echo "tls-verify: green (an untrusted certificate is refused, the same server is accepted once its CA is trusted and reached by the name in the cert, and refused again when reached by a name the cert does not carry -- so the refusals are verification, not a dead connection)"
+echo "tls-verify: green (an untrusted certificate is refused, the same server is accepted once its CA is trusted and reached by the name in the cert, and refused again when reached by a name the cert does not carry, and refused when that same accepted name carries an interior NUL -- so the refusals are verification, not a dead connection)"

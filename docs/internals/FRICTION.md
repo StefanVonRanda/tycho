@@ -7990,3 +7990,125 @@ fail **closed** to a `-1` year sentinel, `datetime.ok()` is the documented test,
 and both production callers — `server/main.ty@parse_http_date` and this one —
 call it. The residual `Err(e): return Err(e)` count from the `or_return`
 migration is **0**.
+
+### 116. A plausible typo in a post's date rendered as 1970 and sorted first — **FIXED 2026-09-19**
+
+> Pinned-by: make site
+> Pinned-by: grep -q 'parse_int_checked(draw)' examples/site/main.ty
+
+The second site the [115](#115-the-fail-open-audit-reached-three-parsers-and-missed-a-fourth-on-the-untrusted-side--fixed-2026-09-19)
+sweep turned up. `examples/site/main.ty` read a post's `date:` front matter with
+the unchecked `strings.parse_int`, and that value does two jobs: it **sorts the
+index** (`sort.argsort(dates)`) and it is **rendered** through
+`datetime.format_iso(datetime.from_unix(...))`.
+
+`parse_int` fails open by taking a numeric **prefix**, so the most plausible
+mistake an author can make — writing an ISO date where a unix timestamp
+belongs — produced a real-looking wrong one:
+
+```text
+date: 1700000000   ->  1700000000   renders 2023-11-14T22:13:20   (correct)
+date: 2024-01-15   ->        2024   renders 1970-01-01T00:33:44
+date: Jan 15 2024  ->           0   renders 1970-01-01T00:00:00
+date:              ->           0   renders 1970-01-01T00:00:00
+```
+
+The `2024-01-15` row is the one that matters. It is not a crash and not an
+obviously empty value — it is a **date**, on a finished-looking page, wrong by
+54 years, and the post silently sorts first as the oldest.
+
+**It dies now**, naming the file and the cure, rather than publishing it:
+
+```text
+site: hello-tycho.md: `date:` wants a unix timestamp, got: 2024-01-15
+```
+
+A generator that emits a page with a fabricated date is worse than one that
+stops, because nothing downstream will ever question it.
+
+**Same gate-blindness as 115, same remedy.** Every date in the shipped content is
+a valid timestamp, so `site: green [...] matches golden` was true with the field
+unchecked. `examples/site/run.sh` now copies the site, rewrites one post's date
+to `2024-01-15`, and requires the build to **fail** with the message that names
+the cure. Controlled: with the fail-open parse restored the leg reports
+`a malformed \`date:\` was ACCEPTED` and the lane exits 1.
+
+**Where the sweep found nothing, recorded so it is not redone.** Of ~50 unchecked
+`parse_int`/`parse_float` call sites, most are CLI arguments or test fixtures.
+The ones reading real data were checked individually and are **sound**:
+
+| site | guard |
+|---|---|
+| `server/main.ty@parse_pos` | `is_digits` **and** a length cap to `HUGE_POS` — it handles the overflow case explicitly |
+| `server/main.ty@as_uint` | `is_digits`, dies otherwise |
+| `tools/tycho-q/main.ty` | a **round trip**: `str(n) == cell`, which rejects `007`, `-0` and overflow alike — stricter than `_checked` |
+| `corelib/toml`, `corelib/json`, `tycho-sheet`, `tycho-ledger` | already `match` on a `Result` |
+
+`tycho-q`'s round trip is the best guard in the tree for this and is worth
+copying: it does not ask whether the parse succeeded, it asks whether the parse
+is **reversible**, which is the only test that catches a silently-normalised
+value.
+
+### 117. The NUL sweep reached six packages and missed the one where the string is a security decision — **FIXED 2026-09-19**
+
+> Pinned-by: make tls-verify
+> Pinned-by: grep -q '_has_nul(host)' corelib/tls/tls.ty
+
+Third find of the "applied to some of the sites it covers" audit, and the worst
+of the three.
+
+Entries 75-78 swept the corelib for strings crossing into C where an interior NUL
+truncates them, and fixed a password, a URL and a TZ string. Checking where that
+sweep landed: `core:net` refuses with a named error (`BadAddr` — *"NOT Failed: no
+syscall was made, so retrying cannot help"*), and `core:http`, `core:io`,
+`core:os`, `core:path` and `core:datetime` all guard, the last two with inline
+loops rather than a shared helper. **`core:tls` did not.**
+
+```text
+fn connect(host: string, port: int) -> ptr:
+    return tlsx_connect(host, port)          # host straight through
+```
+
+**Why this package is the one that mattered.** The shim hands `host` to three
+different consumers:
+
+| line | consumer | what a truncation changes |
+|---|---|---|
+| `tcp_connect(host, port, ms)` | the TCP target | **which machine is dialled** |
+| `SSL_set_tlsext_host_name(ssl, host)` | SNI | **which certificate the server offers** |
+| `SSL_set1_host(ssl, host)` | verification | **which name the cert is checked against** |
+
+So `"good.example.com\0anything"` connects to, announces, and verifies
+`good.example.com`, while every check the *caller* performs — an allowlist, a
+policy, an audit log — sees the whole string. The two disagree, and the one that
+decides security is the truncated one. In the package whose header promises
+*"secure by default [...] fail closed, so you never get an insecure connection by
+accident."*
+
+Guarded now, failing closed to a null handle, which is the documented failure
+this package already has.
+
+**Gated with a leg that can actually tell the difference**, which took some care:
+the obvious test — connect to `127.0.0.1\0junk` and expect refusal — proves
+nothing, because a truncated `127.0.0.1` connect fails too. `scripts/tls_verify.sh`
+already stands up a real TLS server with a real CA, and its leg **[2]** proves
+that `localhost` **is accepted** by it. So leg **[4]** asks the probe to build
+`"localhost" + chr(0) + "evil.example.com"` itself — argv cannot carry a NUL —
+against that same server. With the guard it is refused; **without it, it comes
+back OK**, and the leg reports:
+
+```text
+LEAK: an interior NUL was TRUNCATED -- core:tls connected to, announced
+      and verified a name the caller did not pass.
+```
+
+Controlled both ways: removing the guard reddens `make tls-verify`; restoring it
+goes green. `corelib/test/tls` also gained a `nul_host_refused=1` assertion,
+though that one is documentation rather than a discriminator, and the entry says
+so rather than letting it look like proof.
+
+**The pattern, sixth instance in a day.** 96, 102, 107, 110, 115/116, and this.
+Every one is a correct understanding applied to a subset of its sites, and this
+is the first where the missed site was the security-critical one — which is the
+argument for auditing by *convention* rather than waiting for the next bug
+report.

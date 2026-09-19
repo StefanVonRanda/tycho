@@ -2,4 +2,5 @@ connect_null=1
 ok=0
 write=-1
 read_len=0
+nul_host_refused=1
 done=1
