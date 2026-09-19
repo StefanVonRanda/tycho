@@ -80,7 +80,7 @@ fn exec(d: inout Db, sql: string) -> Result(int, string):
         return Err(msg)
     return Ok(sqlite3_total_changes(d.h) - before)
 
-fn run_stmt(d: inout Db, sql: string, params: [string]) -> Result(ptr, string):
+fn _run_stmt(d: inout Db, sql: string, params: [string]) -> Result(ptr, string):
     st := null
     if sqlite3_prepare_v2(d.h, sql, len(sql), &st, null) != 0:
         return Err(errmsg(d))
@@ -93,11 +93,11 @@ fn run_stmt(d: inout Db, sql: string, params: [string]) -> Result(ptr, string):
 # SELECT (or any statement producing rows), with SQL NULL kept apart from the
 # empty string: a NULL column is None, every other column is Some(its text).
 # `query`/`query_params` are this with None flattened to "".
-fn query_null(d: inout Db, sql: string) -> Result([[Option(string)]], string):
-    return query_null_params(&d, sql, []string)
+fn _query_null(d: inout Db, sql: string) -> Result([[Option(string)]], string):
+    return _query_null_params(&d, sql, []string)
 
-fn query_null_params(d: inout Db, sql: string, params: [string]) -> Result([[Option(string)]], string):
-    match run_stmt(&d, sql, params):
+fn _query_null_params(d: inout Db, sql: string, params: [string]) -> Result([[Option(string)]], string):
+    match _run_stmt(&d, sql, params):
         Err(m):
             return Err(m)
         Ok(st):
@@ -136,7 +136,7 @@ fn query(d: inout Db, sql: string) -> Result([[string]], string):
     return query_params(&d, sql, []string)
 
 fn query_params(d: inout Db, sql: string, params: [string]) -> Result([[string]], string):
-    match query_null_params(&d, sql, params):
+    match _query_null_params(&d, sql, params):
         Err(m):
             return Err(m)
         Ok(rs):
@@ -155,7 +155,7 @@ fn query_params(d: inout Db, sql: string, params: [string]) -> Result([[string]]
 # A parameterized statement with no result rows (INSERT/UPDATE with a ? or
 # :name placeholder); Ok(the change count).
 fn exec_params(d: inout Db, sql: string, params: [string]) -> Result(int, string):
-    match run_stmt(&d, sql, params):
+    match _run_stmt(&d, sql, params):
         Err(m):
             return Err(m)
         Ok(st):

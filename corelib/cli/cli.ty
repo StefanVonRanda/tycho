@@ -38,41 +38,41 @@ fn argv() -> [string]:
     return a[1:len(a)]
 
 # `--` prefix test (a long option or long flag).
-fn is_long(s: string) -> bool:
+fn _is_long(s: string) -> bool:
     return len(s) >= 2 and s[0] == 45 and s[1] == 45
 
 # a single-dash short cluster like `-v` or `-abc` (but not `-` alone).
-fn is_short(s: string) -> bool:
+fn _is_short(s: string) -> bool:
     return len(s) >= 2 and s[0] == 45 and s[1] != 45
 
 # Is `s` in `xs`? The schema lists are short (a handful of option names), so a
 # linear scan is the right shape -- same reason the Cli itself is parallel arrays.
-fn in_list(xs: [string], s: string) -> bool:
+fn _in_list(xs: [string], s: string) -> bool:
     for i := 0; i < len(xs); i += 1:
         if xs[i] == s:
             return true
     return false
 
-fn undash(s: string) -> string:
+fn _undash(s: string) -> string:
     if len(s) > 2 and s[0] == 45 and s[1] == 45:      # "--name"
         return s[2:len(s)]
     if len(s) == 2 and s[0] == 45:                    # "-f", a short flag
         return s[1:len(s)]
     return s
 
-fn undash_all(xs: [string]) -> [string]:
+fn _undash_all(xs: [string]) -> [string]:
     out := []string
     for x in xs:
-        push(out, undash(x))
+        push(out, _undash(x))
     return out
 
 # The one parse loop. `strict` selects which of the two public entry points is
 # calling: false = `parse` (schema-free, every unrecognised `--x` is a flag),
 # true = `parse_spec` (schema-carrying, an unrecognised token is recorded).
-fn parse_into(av_in: [string], valued_in: [string], boolean_in: [string], strict: bool) -> Cli:
+fn _parse_into(av_in: [string], valued_in: [string], boolean_in: [string], strict: bool) -> Cli:
     av := av_in
-    valued := undash_all(valued_in)
-    boolean := undash_all(boolean_in)
+    valued := _undash_all(valued_in)
+    boolean := _undash_all(boolean_in)
     keys := []string
     vals := []string
     flags := []string
@@ -89,21 +89,21 @@ fn parse_into(av_in: [string], valued_in: [string], boolean_in: [string], strict
             push(pos, a)
         elif a == "--":
             only_pos = true                     # end of options; `--` itself vanishes
-        elif is_long(a):
+        elif _is_long(a):
             body := a[2:len(a)]                 # strip the leading "--"
             eq := find(body, "=")
             if eq >= 0:
                 name := body[0:eq]
                 if name == "":                  # `--=v` names no option at all
                     push(unk, a)
-                elif in_list(boolean, name):
+                elif _in_list(boolean, name):
                     push(flags, name)           # `--quiet=1`: a flag is a flag, value dropped
-                elif not strict or in_list(valued, name):
+                elif not strict or _in_list(valued, name):
                     push(keys, name)
                     push(vals, body[eq + 1:len(body)])
                 else:
                     push(unk, a)
-            elif in_list(valued, body):
+            elif _in_list(valued, body):
                 # `--root DIR`. The next argument is taken WHATEVER it looks like,
                 # which is getopt's rule: `--root --port` sets root to "--port".
                 # A schema cannot tell a missing value from a wrong one, and
@@ -114,26 +114,26 @@ fn parse_into(av_in: [string], valued_in: [string], boolean_in: [string], strict
                     push(keys, body)
                     push(vals, av[i + 1])
                     step = 2
-            elif not strict or in_list(boolean, body):
+            elif not strict or _in_list(boolean, body):
                 push(flags, body)               # `--verbose`
             else:
                 push(unk, a)
-        elif is_short(a) and find(a, "=") >= 0:
+        elif _is_short(a) and find(a, "=") >= 0:
             # `-o=file` is ONE valued option, not the six short flags o = f i l e
             # that the cluster loop below used to make of it.
             seq := find(a, "=")
             sname := a[1:seq]
-            if sname == "" or in_list(boolean, sname):
+            if sname == "" or _in_list(boolean, sname):
                 push(unk, a)                    # `-=v`, or a flag given a value
-            elif not strict or in_list(valued, sname):
+            elif not strict or _in_list(valued, sname):
                 push(keys, sname)
                 push(vals, a[seq + 1:len(a)])
             else:
                 push(unk, a)
-        elif is_short(a):
+        elif _is_short(a):
             bad := false
             for j := 1; j < len(a); j += 1:
-                if strict and not in_list(boolean, chr(a[j])):
+                if strict and not _in_list(boolean, chr(a[j])):
                     bad = true
             if bad:
                 push(unk, a)                    # the whole cluster, as written
@@ -147,7 +147,7 @@ fn parse_into(av_in: [string], valued_in: [string], boolean_in: [string], strict
 
 # Parse an argument vector into a Cli. Schema-free: values must be `=`-attached.
 fn parse(av: [string]) -> Cli:
-    return parse_into(av, []string, []string, false)
+    return _parse_into(av, []string, []string, false)
 
 enum CliErr:
     Unknown(string)        # a token the schema does not name, as written
@@ -186,12 +186,12 @@ fn parse_checked(av: [string], valued: [string], boolean: [string]) -> Result(Cl
 # Nothing here reads a value for a SHORT option: `-p 80` is not a spelling this
 # package has, and adding it would make `-abc` ambiguous. Use `--port 80`.
 fn parse_spec(av: [string], valued: [string], boolean: [string]) -> Cli:
-    return parse_into(av, valued, boolean, true)
+    return _parse_into(av, valued, boolean, true)
 
 # The value of option `key`, or `dflt` if it was not supplied. Last one wins if
 # an option is repeated.
 fn get(c: Cli, key_in: string, dflt: string) -> string:
-    key := undash(key_in)          # `get(c, "--out", ...)` reads the same as `get(c, "out", ...)`
+    key := _undash(key_in)          # `get(c, "--out", ...)` reads the same as `get(c, "out", ...)`
     out := dflt
     for i := 0; i < len(c.keys); i += 1:
         if c.keys[i] == key:
@@ -199,7 +199,7 @@ fn get(c: Cli, key_in: string, dflt: string) -> string:
     return out
 
 fn has(c: Cli, key_in: string) -> bool:
-    key := undash(key_in)          # same both-spellings rule as `get`
+    key := _undash(key_in)          # same both-spellings rule as `get`
     for i := 0; i < len(c.keys); i += 1:
         if c.keys[i] == key:
             return true
@@ -207,7 +207,7 @@ fn has(c: Cli, key_in: string) -> bool:
 
 # Was flag `name` present? Long (`--name`) and short (`-n` -> name "n") both count.
 fn flag(c: Cli, name_in: string) -> bool:
-    name := undash(name_in)        # same both-spellings rule as `get`
+    name := _undash(name_in)        # same both-spellings rule as `get`
     for i := 0; i < len(c.flags); i += 1:
         if c.flags[i] == name:
             return true

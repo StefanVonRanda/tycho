@@ -17,7 +17,7 @@
 package base64
 
 # A 6-bit value (0..63) -> its alphabet byte. `url` picks `-`/`_` over `+`/`/`.
-fn enc_char(n: int, url: bool) -> int:
+fn _enc_char(n: int, url: bool) -> int:
     if n < 26:
         return 65 + n                  # 'A'..'Z'
     if n < 52:
@@ -34,7 +34,7 @@ fn enc_char(n: int, url: bool) -> int:
 
 # An alphabet byte -> its 6-bit value, or -1 if it is not a Base64 character
 # (covers '=', whitespace, and anything else). Accepts both alphabets.
-fn dec_val(c: int) -> int:
+fn _dec_val(c: int) -> int:
     if c >= 65 and c <= 90:
         return c - 65                  # 'A'..'Z' -> 0..25
     if c >= 97 and c <= 122:
@@ -49,7 +49,7 @@ fn dec_val(c: int) -> int:
 
 # ---- encode ----------------------------------------------------------------
 
-fn encode_impl(s: string, url: bool, pad: bool) -> string:
+fn _encode_impl(s: string, url: bool, pad: bool) -> string:
     # Gather the output alphabet bytes in an int array, then materialize the
     # string in ONE to_bytes/to_str pass. The old `out = out + chr(x)` per output
     # char allocated a 1-char temp and appended it -- ~28% of an encode/decode's
@@ -61,36 +61,36 @@ fn encode_impl(s: string, url: bool, pad: bool) -> string:
         b0 := s[i]
         b1 := s[i + 1]
         b2 := s[i + 2]
-        push(cs, enc_char(b0 / 4, url))
-        push(cs, enc_char((b0 % 4) * 16 + b1 / 16, url))
-        push(cs, enc_char((b1 % 16) * 4 + b2 / 64, url))
-        push(cs, enc_char(b2 % 64, url))
+        push(cs, _enc_char(b0 / 4, url))
+        push(cs, _enc_char((b0 % 4) * 16 + b1 / 16, url))
+        push(cs, _enc_char((b1 % 16) * 4 + b2 / 64, url))
+        push(cs, _enc_char(b2 % 64, url))
         i = i + 3
     rem := n - i
     if rem == 1:
         b0 := s[i]
-        push(cs, enc_char(b0 / 4, url))
-        push(cs, enc_char((b0 % 4) * 16, url))
+        push(cs, _enc_char(b0 / 4, url))
+        push(cs, _enc_char((b0 % 4) * 16, url))
         if pad:
             push(cs, 61)                       # "=="
             push(cs, 61)
     elif rem == 2:
         b0 := s[i]
         b1 := s[i + 1]
-        push(cs, enc_char(b0 / 4, url))
-        push(cs, enc_char((b0 % 4) * 16 + b1 / 16, url))
-        push(cs, enc_char((b1 % 16) * 4, url))
+        push(cs, _enc_char(b0 / 4, url))
+        push(cs, _enc_char((b0 % 4) * 16 + b1 / 16, url))
+        push(cs, _enc_char((b1 % 16) * 4, url))
         if pad:
             push(cs, 61)                       # "="
     return to_str(to_bytes(cs))
 
 # Standard Base64 with `=` padding.
 fn encode(s: string) -> string:
-    return encode_impl(s, false, true)
+    return _encode_impl(s, false, true)
 
 # URL-safe Base64 (`-`/`_`), no padding -- the common form for tokens/URLs.
 fn encode_url(s: string) -> string:
-    return encode_impl(s, true, false)
+    return _encode_impl(s, true, false)
 
 # ---- decode ----------------------------------------------------------------
 
@@ -99,7 +99,7 @@ fn encode_url(s: string) -> string:
 fn decode(s: string) -> string:
     vals := []int                      # gather the 6-bit values
     for i := 0; i < len(s); i += 1:
-        v := dec_val(s[i])
+        v := _dec_val(s[i])
         if v >= 0:
             push(vals, v)
     # Gather the decoded bytes in an int array, then materialize in ONE

@@ -1,17 +1,17 @@
 package markdown
 import "core:strings"
 
-fn safe_url(u: string) -> bool:
+fn _safe_url(u: string) -> bool:
     for i := 0; i < len(u); i += 1:
         c := u[i]
         if c == 47 or c == 63 or c == 35:           # / ? # -> no scheme present
             return true
         if c == 58:                                 # :
-            sch := ascii_lower_md(substr(u, 0, i))
+            sch := _ascii_lower_md(substr(u, 0, i))
             return sch == "http" or sch == "https" or sch == "mailto"
     return true
 
-fn ascii_lower_md(s: string) -> string:
+fn _ascii_lower_md(s: string) -> string:
     out := ""
     for i := 0; i < len(s); i += 1:
         c := s[i]
@@ -40,7 +40,7 @@ fn esc(s: string) -> string:
     return out
 
 # index of byte `b` in `s` at or after `from`, or -1
-fn index_from(s: string, b: int, from: int) -> int:
+fn _index_from(s: string, b: int, from: int) -> int:
     i := from
     n := len(s)
     for i < n:
@@ -50,7 +50,7 @@ fn index_from(s: string, b: int, from: int) -> int:
     return 0 - 1
 
 # find the literal `close` string in `s` at or after `from`, or -1
-fn find_from(s: string, close: string, from: int) -> int:
+fn _find_from(s: string, close: string, from: int) -> int:
     n := len(s)
     cl := len(close)
     i := from
@@ -70,9 +70,9 @@ fn find_from(s: string, close: string, from: int) -> int:
 const MD_MAX_NEST = 64
 
 fn inline(s: string) -> string:
-    return inline_at(s, 0)
+    return _inline_at(s, 0)
 
-fn inline_at(s: string, depth: int) -> string:
+fn _inline_at(s: string, depth: int) -> string:
     out := ""
     i := 0
     n := len(s)
@@ -93,7 +93,7 @@ fn inline_at(s: string, depth: int) -> string:
         if c == 96:                                 # `code`
             j := 0 - 1
             if not no_bt:
-                j = index_from(s, 96, i + 1)
+                j = _index_from(s, 96, i + 1)
                 if j < 0:
                     no_bt = true
             if j < 0:
@@ -105,19 +105,19 @@ fn inline_at(s: string, depth: int) -> string:
         elif c == 33 and i + 1 < n and s[i + 1] == 91:   # ![alt](src)
             rb := 0 - 1
             if not no_rb:
-                rb = index_from(s, 93, i + 2)           # ]
+                rb = _index_from(s, 93, i + 2)           # ]
                 if rb < 0:
                     no_rb = true
             if rb > 0 and rb + 1 < n and s[rb + 1] == 40:   # (
                 rp := 0 - 1
                 if not no_rp:
-                    rp = index_from(s, 41, rb + 2)      # )
+                    rp = _index_from(s, 41, rb + 2)      # )
                     if rp < 0:
                         no_rp = true
                 if rp > 0:
                     alt := substr(s, i + 2, rb)
                     src := substr(s, rb + 2, rp)
-                    if safe_url(src):
+                    if _safe_url(src):
                         out = out + "<img src=\"" + esc(src) + "\" alt=\"" + esc(alt) + "\">"
                     else:                            # fail soft: the alt text, no src
                         out = out + esc(alt)
@@ -131,22 +131,22 @@ fn inline_at(s: string, depth: int) -> string:
         elif c == 91:                               # [text](url)
             rb := 0 - 1
             if not no_rb:
-                rb = index_from(s, 93, i + 1)       # ]
+                rb = _index_from(s, 93, i + 1)       # ]
                 if rb < 0:
                     no_rb = true
             if rb > 0 and rb + 1 < n and s[rb + 1] == 40:   # (
                 rp := 0 - 1
                 if not no_rp:
-                    rp = index_from(s, 41, rb + 2)  # )
+                    rp = _index_from(s, 41, rb + 2)  # )
                     if rp < 0:
                         no_rp = true
                 if rp > 0:
                     txt := substr(s, i + 1, rb)
                     url := substr(s, rb + 2, rp)
-                    if safe_url(url):
-                        out = out + "<a href=\"" + esc(url) + "\">" + inline_at(txt, depth + 1) + "</a>"
+                    if _safe_url(url):
+                        out = out + "<a href=\"" + esc(url) + "\">" + _inline_at(txt, depth + 1) + "</a>"
                     else:                            # fail soft: the text, unlinked
-                        out = out + inline_at(txt, depth + 1)
+                        out = out + _inline_at(txt, depth + 1)
                     i = rp + 1
                 else:
                     out = out + chr(91)             # unmatched '[' -> literal
@@ -157,14 +157,14 @@ fn inline_at(s: string, depth: int) -> string:
         elif c == 42 and i + 1 < n and s[i + 1] == 42:   # **bold**
             j := 0 - 1
             if not no_bb:
-                j = find_from(s, "**", i + 2)
+                j = _find_from(s, "**", i + 2)
                 if j < 0:
                     no_bb = true
             if j < 0:
                 out = out + "**"
                 i = i + 2
             else:
-                out = out + "<strong>" + inline_at(substr(s, i + 2, j), depth + 1) + "</strong>"
+                out = out + "<strong>" + _inline_at(substr(s, i + 2, j), depth + 1) + "</strong>"
                 i = j + 2
         elif c == 42 or c == 95:                    # *italic* or _italic_
             j := 0 - 1
@@ -172,7 +172,7 @@ fn inline_at(s: string, depth: int) -> string:
             if c == 95:
                 gone = no_us
             if not gone:
-                j = index_from(s, c, i + 1)
+                j = _index_from(s, c, i + 1)
                 if j < 0:
                     if c == 95:
                         no_us = true
@@ -182,7 +182,7 @@ fn inline_at(s: string, depth: int) -> string:
                 out = out + chr(c)
                 i = i + 1
             else:
-                out = out + "<em>" + inline_at(substr(s, i + 1, j), depth + 1) + "</em>"
+                out = out + "<em>" + _inline_at(substr(s, i + 1, j), depth + 1) + "</em>"
                 i = j + 1
         elif c == 38:                               # & -> escaped
             out = out + "&amp;"
@@ -199,11 +199,11 @@ fn inline_at(s: string, depth: int) -> string:
     return out
 
 # --- block helpers -----------------------------------------------------------
-fn is_blank(s: string) -> bool:
+fn _is_blank(s: string) -> bool:
     return strings.trim(s) == ""
 
 # a line is a thematic break if it's 3+ of the same -, *, or _ (after trim)
-fn is_hr(line: string) -> bool:
+fn _is_hr(line: string) -> bool:
     t := strings.trim(line)
     if len(t) < 3:
         return false
@@ -218,7 +218,7 @@ fn is_hr(line: string) -> bool:
     return true
 
 # heading level 1..6 for an ATX line, or 0 if not a heading
-fn heading_level(line: string) -> int:
+fn _heading_level(line: string) -> int:
     i := 0
     n := len(line)
     for i < n and line[i] == 35:                    # count leading '#'
@@ -228,14 +228,14 @@ fn heading_level(line: string) -> int:
     return 0
 
 # an unordered-list marker (`- `, `* `, `+ `) -> the item text, or "" if not one
-fn ul_item(line: string) -> string:
+fn _ul_item(line: string) -> string:
     t := line
     if len(t) >= 2 and (t[0] == 45 or t[0] == 42 or t[0] == 43) and t[1] == 32:
         return strings.trim(substr(t, 2, len(t)))
     return ""
 
 # an ordered-list marker (`<digits>. `) -> the item text, or "" if not one
-fn ol_item(line: string) -> string:
+fn _ol_item(line: string) -> string:
     i := 0
     n := len(line)
     for i < n and line[i] >= 48 and line[i] <= 57:  # digits
@@ -246,16 +246,16 @@ fn ol_item(line: string) -> string:
 
 # --- the block renderer ------------------------------------------------------
 fn render(src: string) -> string:
-    return render_at(src, 0)
+    return _render_at(src, 0)
 
-fn render_at(src: string, depth: int) -> string:
+fn _render_at(src: string, depth: int) -> string:
     lines := strings.lines(src)
     out := ""
     i := 0
     n := len(lines)
     for i < n:
         line := lines[i]
-        if is_blank(line):
+        if _is_blank(line):
             i = i + 1
         elif strings.starts_with(strings.trim(line), "```"):    # fenced code
             i = i + 1
@@ -266,11 +266,11 @@ fn render_at(src: string, depth: int) -> string:
             if i < n:
                 i = i + 1                                        # closing fence
             out = out + "<pre><code>" + code + "</code></pre>\n"
-        elif is_hr(line):
+        elif _is_hr(line):
             out = out + "<hr>\n"
             i = i + 1
-        elif heading_level(line) > 0:
-            h := heading_level(line)
+        elif _heading_level(line) > 0:
+            h := _heading_level(line)
             text := strings.trim(substr(line, h + 1, len(line)))
             hs := str(h)
             out = out + "<h" + hs + ">" + inline(text) + "</h" + hs + ">\n"
@@ -284,22 +284,22 @@ fn render_at(src: string, depth: int) -> string:
             if depth + 1 >= MD_MAX_NEST:
                 out = out + "<blockquote>\n<p>" + esc(strings.trim(body)) + "</p>\n</blockquote>\n"
             else:
-                out = out + "<blockquote>\n" + render_at(body, depth + 1) + "</blockquote>\n"
-        elif ul_item(line) != "":                               # unordered list
+                out = out + "<blockquote>\n" + _render_at(body, depth + 1) + "</blockquote>\n"
+        elif _ul_item(line) != "":                               # unordered list
             out = out + "<ul>\n"
-            for i < n and ul_item(lines[i]) != "":
-                out = out + "<li>" + inline(ul_item(lines[i])) + "</li>\n"
+            for i < n and _ul_item(lines[i]) != "":
+                out = out + "<li>" + inline(_ul_item(lines[i])) + "</li>\n"
                 i = i + 1
             out = out + "</ul>\n"
-        elif ol_item(line) != "":                               # ordered list
+        elif _ol_item(line) != "":                               # ordered list
             out = out + "<ol>\n"
-            for i < n and ol_item(lines[i]) != "":
-                out = out + "<li>" + inline(ol_item(lines[i])) + "</li>\n"
+            for i < n and _ol_item(lines[i]) != "":
+                out = out + "<li>" + inline(_ol_item(lines[i])) + "</li>\n"
                 i = i + 1
             out = out + "</ol>\n"
         else:                                                   # paragraph
             para := ""
-            for i < n and not is_blank(lines[i]) and heading_level(lines[i]) == 0 and not is_hr(lines[i]) and not strings.starts_with(lines[i], ">") and ul_item(lines[i]) == "" and ol_item(lines[i]) == "" and not strings.starts_with(strings.trim(lines[i]), "```"):
+            for i < n and not _is_blank(lines[i]) and _heading_level(lines[i]) == 0 and not _is_hr(lines[i]) and not strings.starts_with(lines[i], ">") and _ul_item(lines[i]) == "" and _ol_item(lines[i]) == "" and not strings.starts_with(strings.trim(lines[i]), "```"):
                 if para != "":
                     para = para + "\n"
                 para = para + lines[i]

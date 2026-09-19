@@ -3,7 +3,7 @@ package csv
 # ---- parsing ---------------------------------------------------------------
 
 # One record (up to and including its line terminator). Always advances `pos`.
-fn parse_row(s: string, n: int, pos: inout int, d: int) -> [string]:
+fn _parse_row(s: string, n: int, pos: inout int, d: int) -> [string]:
     fields := []string
     field := ""
     done := false
@@ -64,7 +64,7 @@ fn parse_delim(s: string, d: int) -> [[string]]:
     n := len(s)
     pos := 0
     for pos < n:
-        row := parse_row(s, n, &pos, d)
+        row := _parse_row(s, n, &pos, d)
         push(rows, row)
     return rows
 
@@ -75,7 +75,7 @@ fn parse(s: string) -> [[string]]:
 # ---- serializing -----------------------------------------------------------
 
 # True if a field must be quoted under delimiter `d` (contains d, ", CR, or LF).
-fn needs_quote(f: string, d: int) -> bool:
+fn _needs_quote(f: string, d: int) -> bool:
     for i := 0; i < len(f); i += 1:
         c := f[i]
         if c == d or c == 34 or c == 10 or c == 13:
@@ -83,7 +83,7 @@ fn needs_quote(f: string, d: int) -> bool:
     return false
 
 # Wrap a field in quotes, doubling any internal quote.
-fn quote_field(f: string) -> string:
+fn _quote_field(f: string) -> string:
     cs := []int                                # gather bytes, materialize once
     push(cs, 34)                               # opening "
     for i := 0; i < len(f); i += 1:
@@ -110,8 +110,8 @@ fn stringify_delim(rows: [[string]], d: int) -> string:
             # `parse(stringify(rows)) == rows` failed for exactly that input and
             # nothing else (414 row-sets differentialed against Python's csv
             # module, which quotes it for the same reason).
-            if needs_quote(f, d) or (len(row) == 1 and f == ""):
-                out = out + quote_field(f)
+            if _needs_quote(f, d) or (len(row) == 1 and f == ""):
+                out = out + _quote_field(f)
             else:
                 out = out + f
         out = out + "\n"

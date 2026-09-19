@@ -87,7 +87,7 @@ fn crc32(b: bytes) -> int:
 fn list(b: bytes) -> [Meta]:
     out := []Meta
     # find the EOCD: scan backwards from the end for the 0x06054b50 signature
-    eocd := find_eocd(b)
+    eocd := _find_eocd(b)
     if eocd < 0:
         return out
     e := from_bytes$(Eocd)(b[eocd:eocd + size_of$(Eocd)])
@@ -112,7 +112,7 @@ fn list(b: bytes) -> [Meta]:
         pos = pos + skip
     return out
 
-fn find_eocd(b: bytes) -> int:
+fn _find_eocd(b: bytes) -> int:
     # the EOCD signature is at least 22 bytes from the end; scan back
     i := len(b) - size_of$(Eocd)
     for i >= 0:
@@ -126,12 +126,12 @@ fn find_eocd(b: bytes) -> int:
 fn extract(b: bytes, name: string) -> bytes:
     for e in list(b):
         if e.name == name:
-            return entry_body(b, e)
+            return _entry_body(b, e)
     return to_bytes([]int)
 
-fn entry_body(b: bytes, e: Meta) -> bytes:
+fn _entry_body(b: bytes, e: Meta) -> bytes:
     # walk the central directory again to find this entry's local offset
-    eocd := find_eocd(b)
+    eocd := _find_eocd(b)
     if eocd < 0:
         return to_bytes([]int)
     d := from_bytes$(Eocd)(b[eocd:eocd + size_of$(Eocd)])
@@ -192,33 +192,33 @@ fn create(entries: [Entry]) -> bytes:
         push(cdatas, to_str(cdata))
         push(methods, method)
         push(crcs, crc32(e.data))
-        push_bytes(&out, to_bytes(Local(to_u32(SIG_LOCAL), to_u16(20),
+        _push_bytes(&out, to_bytes(Local(to_u32(SIG_LOCAL), to_u16(20),
             to_u16(0), to_u16(method), to_u16(0), to_u16(0),
             to_u32(crc32(e.data)), to_u32(len(cdata)), to_u32(len(e.data)),
             to_u16(len(e.name)), to_u16(0))))
-        push_str(&out, e.name)
-        push_bytes(&out, cdata)
+        _push_str(&out, e.name)
+        _push_bytes(&out, cdata)
     cd_start := len(out)
     for i := 0; i < len(entries); i += 1:
         e := entries[i]
         cdata := cdatas[i]
         method := methods[i]
         c := crcs[i]
-        push_bytes(&out, to_bytes(Central(to_u32(SIG_CENTRAL), to_u16(20),
+        _push_bytes(&out, to_bytes(Central(to_u32(SIG_CENTRAL), to_u16(20),
             to_u16(20), to_u16(0), to_u16(method), to_u16(0), to_u16(0),
             to_u32(c), to_u32(len(cdata)), to_u32(len(e.data)),
             to_u16(len(e.name)), to_u16(0), to_u16(0), to_u16(0), to_u16(0),
             to_u32(0), to_u32(offs[i]))))
-        push_str(&out, e.name)
+        _push_str(&out, e.name)
     cd_size := len(out) - cd_start
-    push_bytes(&out, to_bytes(Eocd(to_u32(SIG_EOCD), to_u16(0), to_u16(0),
+    _push_bytes(&out, to_bytes(Eocd(to_u32(SIG_EOCD), to_u16(0), to_u16(0),
         to_u16(len(entries)), to_u16(len(entries)), to_u32(cd_size),
         to_u32(cd_start), to_u16(0))))
     return to_bytes(out)
 
-fn push_str(b: inout [int], s: string):
+fn _push_str(b: inout [int], s: string):
     for i := 0; i < len(s); i += 1:
         push(b, s[i])
-fn push_bytes(b: inout [int], by: bytes):
+fn _push_bytes(b: inout [int], by: bytes):
     for i := 0; i < len(by); i += 1:
         push(b, by[i])

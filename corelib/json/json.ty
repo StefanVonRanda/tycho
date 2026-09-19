@@ -172,7 +172,7 @@ fn err_str(e: JsonErr) -> string:
 
 # ---- parser (recursive descent; `pos` and `ecode` are threaded by inout) ----
 
-fn skip_ws(s: string, n: int, pos: inout int):
+fn _skip_ws(s: string, n: int, pos: inout int):
     for pos < n and (s[pos] == 32 or s[pos] == 9 or s[pos] == 10 or s[pos] == 13):
         pos = pos + 1
 
@@ -188,7 +188,7 @@ const SURR_HI_HI = 56319        # 0xDBFF, last leading surrogate
 const SURR_LO_LO = 56320        # 0xDC00, first trailing surrogate
 const SURR_LO_HI = 57343        # 0xDFFF, last trailing surrogate
 
-fn hexval(c: int) -> int:                      # 0..15 for 0-9 a-f A-F, else -1
+fn _hexval(c: int) -> int:                      # 0..15 for 0-9 a-f A-F, else -1
     if c >= 48 and c <= 57:                    # '0'..'9'
         return c - 48
     if c >= 97 and c <= 102:                   # 'a'..'f' -- hex is CASE-INSENSITIVE
@@ -204,14 +204,14 @@ fn hexval(c: int) -> int:                      # 0..15 for 0-9 a-f A-F, else -1
 # On failure nothing advances again, per the file's error invariant: JE_UESC
 # leaves `pos` on the byte that is not a hex digit (which is how `"\u00"` is
 # reported -- the closing quote is that byte), and JE_TRUNC leaves `pos == n`.
-fn hex4(s: string, n: int, pos: inout int, ecode: inout int) -> int:
+fn _hex4(s: string, n: int, pos: inout int, ecode: inout int) -> int:
     v := 0
     for i := 0; i < 4; i += 1:
         pos = pos + 1
         if pos >= n:
             ecode = JE_TRUNC                   # `"\u00` -- input ended mid-escape
             return 0
-        d := hexval(s[pos])
+        d := _hexval(s[pos])
         if d < 0:
             ecode = JE_UESC
             return 0
@@ -239,7 +239,7 @@ fn utf8(cp: int) -> string:
 # surrogate range (ED A0-BF), a value above U+10FFFF (F4 90-BF and F5-FF), or
 # a truncated sequence. The `\uXXXX` escapes are validated separately (hex4 and
 # the SURR pair logic); this is only the raw-bytes path.
-fn utf8_len(s: string, pos: int, n: int) -> int:
+fn _utf8_len(s: string, pos: int, n: int) -> int:
     b0 := s[pos]
     if b0 < 128:
         return 1
@@ -283,7 +283,7 @@ fn utf8_len(s: string, pos: int, n: int) -> int:
         return 4
     return -1                       # F5-FF: above U+10FFFF
 
-fn parse_string(s: string, n: int, pos: inout int, ecode: inout int) -> string:
+fn _parse_string(s: string, n: int, pos: inout int, ecode: inout int) -> string:
     pos = pos + 1                              # skip opening "
     start := pos
     # Fast path: scan the escape-free span up to the closing " or the first '\'.
@@ -294,7 +294,7 @@ fn parse_string(s: string, n: int, pos: inout int, ecode: inout int) -> string:
     # %x5D-10FFFF, so a raw control byte ends the span and is an error below.
     for pos < n and s[pos] != 34 and s[pos] != 92 and s[pos] >= 32:
         if s[pos] >= 128:                      # a raw byte must be part of a
-            k := utf8_len(s, pos, n)           # well-formed UTF-8 sequence (s8.1)
+            k := _utf8_len(s, pos, n)           # well-formed UTF-8 sequence (s8.1)
             if k < 0:
                 ecode = JE_UTF8
                 return substr(s, start, pos)
@@ -338,7 +338,7 @@ fn parse_string(s: string, n: int, pos: inout int, ecode: inout int) -> string:
                 r = r + chr(13)
             elif e == 117:                     # \uXXXX -- decoded to UTF-8
                 ustart := pos                  # the `u`; the byte JE_SURR names
-                cp := hex4(s, n, &pos, &ecode)
+                cp := _hex4(s, n, &pos, &ecode)
                 if ecode != JE_OK:
                     return r
                 if cp >= SURR_HI_LO and cp <= SURR_HI_HI:
@@ -352,7 +352,7 @@ fn parse_string(s: string, n: int, pos: inout int, ecode: inout int) -> string:
                         ecode = JE_SURR
                         return r
                     pos = pos + 2              # onto the second escape's `u`
-                    lo := hex4(s, n, &pos, &ecode)
+                    lo := _hex4(s, n, &pos, &ecode)
                     if ecode != JE_OK:
                         return r
                     if lo < SURR_LO_LO or lo > SURR_LO_HI:
@@ -373,7 +373,7 @@ fn parse_string(s: string, n: int, pos: inout int, ecode: inout int) -> string:
                 ecode = JE_CTRL                # fast path, on the slow path too
                 return r
             if s[pos] >= 128:                  # raw UTF-8: validate the sequence
-                k := utf8_len(s, pos, n)
+                k := _utf8_len(s, pos, n)
                 if k < 0:
                     ecode = JE_UTF8
                     return r
@@ -398,7 +398,7 @@ const INT_MAX_LAST  = 7
 # Returns JNum for an integer PROVED to survive 64 bits, JFloat(value, lexeme)
 # for everything else. See NUMBERS in the file header for why the lexeme is
 # carried rather than the value alone.
-fn parse_number(s: string, n: int, pos: inout int, ecode: inout int) -> Json:
+fn _parse_number(s: string, n: int, pos: inout int, ecode: inout int) -> Json:
     start := pos
     neg := false
     if s[pos] == 45:                           # '-'
@@ -467,26 +467,26 @@ fn parse_number(s: string, n: int, pos: inout int, ecode: inout int) -> Json:
             ecode = JE_RANGE
             return JNull
 
-fn parse_array(s: string, n: int, pos: inout int, ecode: inout int) -> Json:
+fn _parse_array(s: string, n: int, pos: inout int, ecode: inout int) -> Json:
     pos = pos + 1                              # skip [
     xs := []Json
-    skip_ws(s, n, &pos)
+    _skip_ws(s, n, &pos)
     for pos < n and s[pos] != 93 and ecode == JE_OK:   # until ]
         before := pos
-        push(xs, parse_value(s, n, &pos, &ecode))
+        push(xs, _parse_value(s, n, &pos, &ecode))
         if ecode != JE_OK:
             return JArr(xs)
         if pos == before:                      # cannot happen today -- see above
             ecode = JE_STUCK
             return JArr(xs)
-        skip_ws(s, n, &pos)
+        _skip_ws(s, n, &pos)
         if pos >= n:
             ecode = JE_TRUNC
             return JArr(xs)
         if s[pos] == 44:                       # ,
             cpos := pos                        # remembered so the error can name it
             pos = pos + 1
-            skip_ws(s, n, &pos)
+            _skip_ws(s, n, &pos)
             if pos < n and s[pos] == 93:       # `[1,]` -- a comma promises an element
                 pos = cpos
                 ecode = JE_COMMA
@@ -502,26 +502,26 @@ fn parse_array(s: string, n: int, pos: inout int, ecode: inout int) -> Json:
     pos = pos + 1                              # skip ]
     return JArr(xs)
 
-fn key_index(ks: [string], k: string) -> int:  # position of k in ks, or -1
+fn _key_index(ks: [string], k: string) -> int:  # position of k in ks, or -1
     for i := 0; i < len(ks); i += 1:
         if ks[i] == k:
             return i
     return -1
 
-fn parse_object(s: string, n: int, pos: inout int, ecode: inout int) -> Json:
+fn _parse_object(s: string, n: int, pos: inout int, ecode: inout int) -> Json:
     pos = pos + 1                              # skip {
     ks := []string
     vs := []Json
-    skip_ws(s, n, &pos)
+    _skip_ws(s, n, &pos)
     for pos < n and s[pos] != 125 and ecode == JE_OK:  # until }
         before := pos
         if s[pos] != 34:                       # a member must start with a key
             ecode = JE_KEY
             return JObj(ks, vs)
-        k := parse_string(s, n, &pos, &ecode)
+        k := _parse_string(s, n, &pos, &ecode)
         if ecode != JE_OK:
             return JObj(ks, vs)
-        skip_ws(s, n, &pos)
+        _skip_ws(s, n, &pos)
         if pos >= n:
             ecode = JE_TRUNC
             return JObj(ks, vs)
@@ -534,8 +534,8 @@ fn parse_object(s: string, n: int, pos: inout int, ecode: inout int) -> Json:
         # the last. Keeping both meant `get` returned the FIRST -- the opposite
         # answer to every mainstream parser, and a filter that read one value
         # while the consumer downstream read the other.
-        kv := parse_value(s, n, &pos, &ecode)
-        dup := key_index(ks, k)
+        kv := _parse_value(s, n, &pos, &ecode)
+        dup := _key_index(ks, k)
         if dup >= 0:
             vs[dup] = kv
         else:
@@ -546,14 +546,14 @@ fn parse_object(s: string, n: int, pos: inout int, ecode: inout int) -> Json:
         if pos == before:                      # cannot happen today -- see above
             ecode = JE_STUCK
             return JObj(ks, vs)
-        skip_ws(s, n, &pos)
+        _skip_ws(s, n, &pos)
         if pos >= n:
             ecode = JE_TRUNC
             return JObj(ks, vs)
         if s[pos] == 44:                       # ,
             cpos := pos                        # remembered so the error can name it
             pos = pos + 1
-            skip_ws(s, n, &pos)
+            _skip_ws(s, n, &pos)
             if pos < n and s[pos] == 125:      # `{"a":1,}` -- a comma promises a member
                 pos = cpos
                 ecode = JE_COMMA
@@ -569,19 +569,19 @@ fn parse_object(s: string, n: int, pos: inout int, ecode: inout int) -> Json:
     pos = pos + 1                              # skip }
     return JObj(ks, vs)
 
-fn parse_value(s: string, n: int, pos: inout int, ecode: inout int) -> Json:
-    skip_ws(s, n, &pos)
+fn _parse_value(s: string, n: int, pos: inout int, ecode: inout int) -> Json:
+    _skip_ws(s, n, &pos)
     if pos >= n:
         ecode = JE_TRUNC                       # truncated / empty: fail closed
         return JNull
     c := s[pos]
     match c:
         123:                                 # {
-            return parse_object(s, n, &pos, &ecode)
+            return _parse_object(s, n, &pos, &ecode)
         91:                                   # [
-            return parse_array(s, n, &pos, &ecode)
+            return _parse_array(s, n, &pos, &ecode)
         34:                                   # "
-            return JStr(parse_string(s, n, &pos, &ecode))
+            return JStr(_parse_string(s, n, &pos, &ecode))
         116:                                  # 'true'
             e := pos + 4
             if e <= n and s[pos:e] == "true":
@@ -604,7 +604,7 @@ fn parse_value(s: string, n: int, pos: inout int, ecode: inout int) -> Json:
             ecode = JE_KEYWORD
             return JNull
         45 | 48..57:                          # '-' or a digit -- number, JNum or JFloat
-            return parse_number(s, n, &pos, &ecode)
+            return _parse_number(s, n, &pos, &ecode)
         _:
             # Everything else -- `.` `+` `:` `,` a stray closer, a control byte.
             # The old parser fell through to parse_number here, which consumed
@@ -612,7 +612,7 @@ fn parse_value(s: string, n: int, pos: inout int, ecode: inout int) -> Json:
             ecode = JE_BYTE
             return JNull
 
-fn depth_of(s: string) -> int:
+fn _depth_of(s: string) -> int:
     d := 0
     m := 0
     in_str := false
@@ -637,15 +637,15 @@ fn depth_of(s: string) -> int:
     return m
 
 fn parse_checked(s: string) -> Result(Json, JsonErr):
-    if depth_of(s) > 2000:
+    if _depth_of(s) > 2000:
         return Err(TooDeep(0))
     n := len(s)
     pos := 0
     ecode := JE_OK
-    j := parse_value(s, n, &pos, &ecode)
+    j := _parse_value(s, n, &pos, &ecode)
     if ecode != JE_OK:
         return Err(err_at(ecode, pos))
-    skip_ws(s, n, &pos)                        # a trailing newline is still fine
+    _skip_ws(s, n, &pos)                        # a trailing newline is still fine
     if pos != n:
         return Err(TrailingText(pos))
     return Ok(j)
@@ -664,7 +664,7 @@ fn parse(s: string) -> Json:
 
 # ---- serializer (walk the tree, build a compact string) --------------------
 
-fn hexdig(v: int) -> string:                   # one LOWERCASE hex digit, 0..15
+fn _hexdig(v: int) -> string:                   # one LOWERCASE hex digit, 0..15
     if v < 10:
         return chr(48 + v)
     return chr(87 + v)
@@ -708,7 +708,7 @@ fn esc(s: string) -> string:
         elif c == 9:
             out = out + "\\t"
         elif c < 32:                           # every other control byte
-            out = out + "\\u00" + hexdig(c / 16) + hexdig(c % 16)
+            out = out + "\\u00" + _hexdig(c / 16) + _hexdig(c % 16)
         else:
             out = out + chr(c)
     return out

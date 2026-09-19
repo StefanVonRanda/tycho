@@ -118,6 +118,17 @@ def corelib(root="corelib"):
         for line in open(f):
             m = FN.match(line.rstrip())
             if m:
+                # A leading-underscore name is PACKAGE-PRIVATE: the resolver
+                # refuses `pkg._name` from another package outright ("a
+                # leading-underscore name is not accessible from another
+                # package"). It therefore cannot be part of a public surface,
+                # and freezing it made renaming an unreachable helper into a
+                # reviewable surface change. Three were locked this way --
+                # compress._cause, image._cause, io._status -- until the
+                # extractor was taught the rule the type checker already
+                # enforces. FRICTION 96.
+                if m.group(1).startswith("_"):
+                    continue
                 sig = "(%s)%s" % (m.group(2).strip(), (m.group(3) or "").strip())
                 out["%s.%s" % (pkg, m.group(1))] = sig
     return out

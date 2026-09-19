@@ -200,13 +200,13 @@ fn bad() -> DateTime:                           # the fail-closed sentinel
 fn is_digit(c: int) -> bool:
     return c >= 48 and c <= 57
 
-fn all_digits(s: string, a: int, b: int) -> bool:
+fn _all_digits(s: string, a: int, b: int) -> bool:
     for i := a; i < b; i += 1:
         if not is_digit(s[i]):
             return false
     return true
 
-fn digits_val(s: string, a: int, b: int) -> int:   # [a, b) assumed all digits
+fn _digits_val(s: string, a: int, b: int) -> int:   # [a, b) assumed all digits
     v := 0
     for i := a; i < b; i += 1:
         v = v * 10 + (s[i] - 48)
@@ -225,16 +225,16 @@ fn parse_iso(s: string) -> DateTime:
         return bad()
     if s[13] != 58 or s[16] != 58:              # ':' ':'
         return bad()
-    if not (all_digits(s, 0, 4) and all_digits(s, 5, 7) and all_digits(s, 8, 10)):
+    if not (_all_digits(s, 0, 4) and _all_digits(s, 5, 7) and _all_digits(s, 8, 10)):
         return bad()
-    if not (all_digits(s, 11, 13) and all_digits(s, 14, 16) and all_digits(s, 17, 19)):
+    if not (_all_digits(s, 11, 13) and _all_digits(s, 14, 16) and _all_digits(s, 17, 19)):
         return bad()
-    y := digits_val(s, 0, 4)
-    mo := digits_val(s, 5, 7)
-    da := digits_val(s, 8, 10)
-    ho := digits_val(s, 11, 13)
-    mi := digits_val(s, 14, 16)
-    se := digits_val(s, 17, 19)
+    y := _digits_val(s, 0, 4)
+    mo := _digits_val(s, 5, 7)
+    da := _digits_val(s, 8, 10)
+    ho := _digits_val(s, 11, 13)
+    mi := _digits_val(s, 14, 16)
+    se := _digits_val(s, 17, 19)
     if mo < 1 or mo > 12:
         return bad()
     if da < 1 or da > days_in_month(y, mo):
@@ -245,7 +245,7 @@ fn parse_iso(s: string) -> DateTime:
 
 # Parse "+HH:MM" / "-HH:MM" / "Z" at index `at`; returns (offset_secs, ok). A
 # missing suffix (end of string) is treated as UTC (offset 0, ok).
-fn parse_offset(s: string, at: int) -> (int, bool):
+fn _parse_offset(s: string, at: int) -> (int, bool):
     n := len(s)
     if at >= n:
         return (0, true)
@@ -259,10 +259,10 @@ fn parse_offset(s: string, at: int) -> (int, bool):
         return (0, false)
     if at + 6 > n or s[at + 3] != 58:           # need "+HH:MM"
         return (0, false)
-    if not (all_digits(s, at + 1, at + 3) and all_digits(s, at + 4, at + 6)):
+    if not (_all_digits(s, at + 1, at + 3) and _all_digits(s, at + 4, at + 6)):
         return (0, false)
-    hh := digits_val(s, at + 1, at + 3)
-    mm := digits_val(s, at + 4, at + 6)
+    hh := _digits_val(s, at + 1, at + 3)
+    mm := _digits_val(s, at + 4, at + 6)
     return (sign * (hh * 3600 + mm * 60), true)
 
 # Parse an ISO-8601 timestamp WITH a zone suffix and return the UTC civil
@@ -273,7 +273,7 @@ fn parse_iso_tz(s: string) -> DateTime:
     dt := parse_iso(s)
     if not ok(dt):
         return bad()
-    off, good := parse_offset(s, 19)
+    off, good := _parse_offset(s, 19)
     if not good:
         return bad()
     return from_unix(to_unix_at(dt, off))       # local+offset -> UTC instant
@@ -296,7 +296,7 @@ fn month_num(mon: string) -> int:
 
 # Parse a bare CLF `±HHMM` (no colon) at index `at`; (offset_secs, ok). A missing
 # suffix (end of string) is treated as UTC. Sibling of parse_offset.
-fn parse_clf_offset(s: string, at: int) -> (int, bool):
+fn _parse_clf_offset(s: string, at: int) -> (int, bool):
     n := len(s)
     if at >= n:
         return (0, true)                        # absent -> UTC
@@ -308,10 +308,10 @@ fn parse_clf_offset(s: string, at: int) -> (int, bool):
         return (0, false)
     if at + 5 > n:                              # need "±HHMM"
         return (0, false)
-    if not (all_digits(s, at + 1, at + 3) and all_digits(s, at + 3, at + 5)):
+    if not (_all_digits(s, at + 1, at + 3) and _all_digits(s, at + 3, at + 5)):
         return (0, false)
-    hh := digits_val(s, at + 1, at + 3)
-    mm := digits_val(s, at + 3, at + 5)
+    hh := _digits_val(s, at + 1, at + 3)
+    mm := _digits_val(s, at + 3, at + 5)
     return (sign * (hh * 3600 + mm * 60), true)
 
 # Parse a CLF timestamp and return the CIVIL fields as written (any trailing
@@ -324,16 +324,16 @@ fn parse_clf(s: string) -> DateTime:
         return bad()
     if s[11] != 58 or s[14] != 58 or s[17] != 58:   # ':' ':' ':'
         return bad()
-    if not (all_digits(s, 0, 2) and all_digits(s, 7, 11)):
+    if not (_all_digits(s, 0, 2) and _all_digits(s, 7, 11)):
         return bad()
-    if not (all_digits(s, 12, 14) and all_digits(s, 15, 17) and all_digits(s, 18, 20)):
+    if not (_all_digits(s, 12, 14) and _all_digits(s, 15, 17) and _all_digits(s, 18, 20)):
         return bad()
-    da := digits_val(s, 0, 2)
+    da := _digits_val(s, 0, 2)
     mo := month_num(substr(s, 3, 6))
-    y := digits_val(s, 7, 11)
-    ho := digits_val(s, 12, 14)
-    mi := digits_val(s, 15, 17)
-    se := digits_val(s, 18, 20)
+    y := _digits_val(s, 7, 11)
+    ho := _digits_val(s, 12, 14)
+    mi := _digits_val(s, 15, 17)
+    se := _digits_val(s, 18, 20)
     if mo < 1:                                  # unknown month name
         return bad()
     if da < 1 or da > days_in_month(y, mo):
@@ -351,7 +351,7 @@ fn parse_clf_tz(s: string) -> DateTime:
     at := 20
     if at < len(s) and s[at] == 32:             # skip the space before the offset
         at = at + 1
-    off, good := parse_clf_offset(s, at)
+    off, good := _parse_clf_offset(s, at)
     if not good:
         return bad()
     return from_unix(to_unix_at(dt, off))
@@ -385,7 +385,7 @@ fn offset_at(tz: string, secs: int) -> int:
 
 # A UTC timestamp rendered as SYSTEM-local civil fields (DST-aware). For the
 # numeric offset (e.g. to pass to format_iso_tz) call local_offset(secs).
-fn from_unix_local(secs: int) -> DateTime:
+fn _from_unix_local(secs: int) -> DateTime:
     return from_unix_at(secs, local_offset(secs))
 
 # Current SYSTEM-local time (reads now(); non-deterministic, like now_utc).

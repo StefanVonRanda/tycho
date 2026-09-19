@@ -25,7 +25,7 @@ fn pack(idx: int, gen: int) -> Handle:
     return Handle((gen << 24) | idx)
 fn index_of(h: Handle) -> int:
     return to_int(h) & 16777215
-fn generation_of(h: Handle) -> int:
+fn _generation_of(h: Handle) -> int:
     return to_int(h) >> 24
 
 # --- lifecycle ---
@@ -48,7 +48,7 @@ fn alive(p: Pool($T), h: Handle) -> bool:
     idx := index_of(h)
     if idx < 0 or idx >= len(p.slots):
         return false
-    return p.slots[idx].used and p.slots[idx].gen == generation_of(h)
+    return p.slots[idx].used and p.slots[idx].gen == _generation_of(h)
 
 # Read the value behind a handle. Dies (use-after-free) on a stale/invalid handle.
 # Returns a COPY (value semantics) -- the pool is never aliased.

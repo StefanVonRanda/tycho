@@ -274,9 +274,7 @@ fn _raw_ins(b: inout Buf, ln: int, c: int, t: string) -> Result(void, BufErr):
             b.gbuf[b.gs] = t[i]
             b.gs += 1
         return Ok()
-    match _check(b, ln, c):
-        Ok: pass
-        Err(e): return Err(e)
+    _check(b, ln, c) or_return
     s := b.lines[ln]
     b.lines[ln] = s[0:c] + t + s[c:len(s)]
     return Ok()
@@ -292,9 +290,7 @@ fn _raw_del(b: inout Buf, ln: int, c: int, n: int) -> Result(void, BufErr):
         _g_gap_to(&b, c)
         b.ge += n
         return Ok()
-    match _check(b, ln, c + n):
-        Ok: pass
-        Err(e): return Err(e)
+    _check(b, ln, c + n) or_return
     s := b.lines[ln]
     b.lines[ln] = s[0:c] + s[c + n:len(s)]
     return Ok()
@@ -304,9 +300,7 @@ fn _raw_del(b: inout Buf, ln: int, c: int, n: int) -> Result(void, BufErr):
 # line) and happens once per sixty keystrokes in the stress workload.
 fn _raw_split(b: inout Buf, ln: int, c: int) -> Result(void, BufErr):
     _unfocus(&b)
-    match _check(b, ln, c):
-        Ok: pass
-        Err(e): return Err(e)
+    _check(b, ln, c) or_return
     s := b.lines[ln]
     tail := s[c:len(s)]
     b.lines[ln] = s[0:c]
@@ -334,18 +328,14 @@ fn insert(b: inout Buf, t: string) -> Result(void, BufErr):
     if t == "":
         return Ok()
     before := b.cur
-    match _raw_ins(&b, b.cur.line, b.cur.col, t):
-        Ok: pass
-        Err(e): return Err(e)
+    _raw_ins(&b, b.cur.line, b.cur.col, t) or_return
     _record(&b, Ins(before.line, before.col, t), before)
     b.cur = Cursor(before.line, before.col + len(t))
     return Ok()
 
 fn newline(b: inout Buf) -> Result(void, BufErr):
     before := b.cur
-    match _raw_split(&b, before.line, before.col):
-        Ok: pass
-        Err(e): return Err(e)
+    _raw_split(&b, before.line, before.col) or_return
     _record(&b, Split(before.line, before.col), before)
     b.cur = Cursor(before.line + 1, 0)
     return Ok()
@@ -367,21 +357,15 @@ fn del_back(b: inout Buf) -> Result(void, BufErr):
             return Err(AtStart)
         prev := before.line - 1
         at := len(b.lines[prev])
-        match _raw_join(&b, prev):
-            Ok: pass
-            Err(e): return Err(e)
+        _raw_join(&b, prev) or_return
         _record(&b, Join(prev, at), before)
         b.cur = Cursor(prev, at)
         return Ok()
     start := 0
-    match _prev_start(b.lines[before.line], before.line, before.col):
-        Ok(i): start = i
-        Err(e): return Err(e)
+    start = _prev_start(b.lines[before.line], before.line, before.col) or_return
     s := b.lines[before.line]
     gone := s[start:before.col]
-    match _raw_del(&b, before.line, start, before.col - start):
-        Ok: pass
-        Err(e): return Err(e)
+    _raw_del(&b, before.line, start, before.col - start) or_return
     _record(&b, Del(before.line, start, gone), before)
     b.cur = Cursor(before.line, start)
     return Ok()
@@ -395,20 +379,14 @@ fn del_fwd(b: inout Buf) -> Result(void, BufErr):
         if before.line + 1 >= len(b.lines):
             return Err(AtEnd)
         at := len(s)
-        match _raw_join(&b, before.line):
-            Ok: pass
-            Err(e): return Err(e)
+        _raw_join(&b, before.line) or_return
         _record(&b, Join(before.line, at), before)
         b.cur = before
         return Ok()
     w := 0
-    match _width_at(s, before.line, before.col):
-        Ok(x): w = x
-        Err(e): return Err(e)
+    w = _width_at(s, before.line, before.col) or_return
     gone := s[before.col:before.col + w]
-    match _raw_del(&b, before.line, before.col, w):
-        Ok: pass
-        Err(e): return Err(e)
+    _raw_del(&b, before.line, before.col, w) or_return
     _record(&b, Del(before.line, before.col, gone), before)
     b.cur = before
     return Ok()
@@ -422,11 +400,9 @@ fn left(b: inout Buf) -> Result(void, BufErr):
             return Err(AtStart)
         b.cur = Cursor(b.cur.line - 1, len(b.lines[b.cur.line - 1]))
         return Ok()
-    match _prev_start(b.lines[b.cur.line], b.cur.line, b.cur.col):
-        Ok(i):
-            b.cur = Cursor(b.cur.line, i)
-            return Ok()
-        Err(e): return Err(e)
+    i := _prev_start(b.lines[b.cur.line], b.cur.line, b.cur.col) or_return
+    b.cur = Cursor(b.cur.line, i)
+    return Ok()
 
 fn right(b: inout Buf) -> Result(void, BufErr):
     _unfocus(&b)
@@ -436,11 +412,9 @@ fn right(b: inout Buf) -> Result(void, BufErr):
             return Err(AtEnd)
         b.cur = Cursor(b.cur.line + 1, 0)
         return Ok()
-    match _width_at(s, b.cur.line, b.cur.col):
-        Ok(w):
-            b.cur = Cursor(b.cur.line, b.cur.col + w)
-            return Ok()
-        Err(e): return Err(e)
+    w := _width_at(s, b.cur.line, b.cur.col) or_return
+    b.cur = Cursor(b.cur.line, b.cur.col + w)
+    return Ok()
 
 fn up(b: inout Buf) -> Result(void, BufErr):
     _unfocus(&b)

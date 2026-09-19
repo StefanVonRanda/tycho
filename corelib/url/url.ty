@@ -17,7 +17,7 @@ package url
 import "core:char"
 
 # RFC 3986 unreserved: never percent-encoded.
-fn is_unreserved(c: int) -> bool:
+fn _is_unreserved(c: int) -> bool:
     if c >= 65 and c <= 90:                # A-Z
         return true
     if c >= 97 and c <= 122:               # a-z
@@ -28,34 +28,34 @@ fn is_unreserved(c: int) -> bool:
         return true
     return false
 
-fn up_hex(n: int) -> int:                  # nibble (0..15) -> uppercase hex byte
+fn _up_hex(n: int) -> int:                  # nibble (0..15) -> uppercase hex byte
     if n < 10:
         return 48 + n                      # '0'..'9'
     return 65 + (n - 10)                   # 'A'..'F'
 
-fn encode_impl(s: string, plus_space: bool) -> string:
+fn _encode_impl(s: string, plus_space: bool) -> string:
     cs := []int                                # gather the output bytes, materialize once
     for i := 0; i < len(s); i += 1:
         c := s[i]
-        if is_unreserved(c):
+        if _is_unreserved(c):
             push(cs, c)
         elif c == 32 and plus_space:
             push(cs, 43)                       # '+'
         else:
             push(cs, 37)                       # '%'
-            push(cs, up_hex(c / 16))
-            push(cs, up_hex(c % 16))
+            push(cs, _up_hex(c / 16))
+            push(cs, _up_hex(c % 16))
     return to_str(to_bytes(cs))
 
 # Percent-encode a component; a space becomes %20.
 fn encode(s: string) -> string:
-    return encode_impl(s, false)
+    return _encode_impl(s, false)
 
 # Encode for application/x-www-form-urlencoded; a space becomes '+'.
 fn encode_form(s: string) -> string:
-    return encode_impl(s, true)
+    return _encode_impl(s, true)
 
-fn decode_impl(s: string, plus_space: bool) -> string:
+fn _decode_impl(s: string, plus_space: bool) -> string:
     bs := []int                            # to_bytes preserves 0x00 (a %00 escape round-trips)
     n := len(s)
     i := 0
@@ -80,8 +80,8 @@ fn decode_impl(s: string, plus_space: bool) -> string:
 
 # Decode percent-escapes; '+' is left as-is.
 fn decode(s: string) -> string:
-    return decode_impl(s, false)
+    return _decode_impl(s, false)
 
 # Decode application/x-www-form-urlencoded; '+' becomes a space.
 fn decode_form(s: string) -> string:
-    return decode_impl(s, true)
+    return _decode_impl(s, true)

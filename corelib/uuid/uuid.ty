@@ -2,13 +2,13 @@ package uuid
 import "core:rand"
 import "core:char"
 
-fn lo_hex(n: int) -> int:                      # nibble (0..15) -> lowercase hex byte
+fn _lo_hex(n: int) -> int:                      # nibble (0..15) -> lowercase hex byte
     if n < 10:
         return 48 + n
     return 97 + (n - 10)
 
-fn hex2(b: int) -> string:                     # a byte -> two lowercase hex digits
-    return chr(lo_hex(b / 16)) + chr(lo_hex(b % 16))
+fn _hex2(b: int) -> string:                     # a byte -> two lowercase hex digits
+    return chr(_lo_hex(b / 16)) + chr(_lo_hex(b % 16))
 
 # Format 16 bytes as the canonical 8-4-4-4-12 string. Shorter input is zero
 # padded; each value is masked to a byte.
@@ -18,7 +18,7 @@ fn format(buf: [int]) -> string:
         b := 0
         if i < len(buf):
             b = buf[i]
-        out = out + hex2(b % 256)
+        out = out + _hex2(b % 256)
         if i == 3 or i == 5 or i == 7 or i == 9:
             out = out + "-"
     return out

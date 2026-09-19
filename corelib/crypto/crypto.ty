@@ -92,7 +92,7 @@ fn aead_encrypt(key: ptr, nonce_hex: string, plaintext_hex: string, aad_hex: str
 fn aead_decrypt(key: ptr, nonce_hex: string, ciphertext_hex: string, aad_hex: string) -> string:
     return cx_aead_decrypt(key, nonce_hex, ciphertext_hex, aad_hex)
 
-fn ed25519_key_random() -> ptr:
+fn _ed25519_key_random() -> ptr:
     return cx_ed25519_key_random()
 
 # A signing key from a known 32-byte seed (hex). Null on bad input.

@@ -77,6 +77,5 @@ fn run_try(p: Plan($T), inp: Channel(stage.Item($T)), out: Channel(Result(stage.
 # The link check first: `reorder` alone would report a lost element as a
 # truncation, which names the symptom; `check_link` names the stage.
 fn collect(p: Plan($T), got: [stage.Item($T)], made: int) -> Result([$T], stage.FlowErr):
-    match stage.check_link(p.name, made, len(got)):
-        Ok(): return stage.reorder(got, made)
-        Err(e): return Err(e)
+    stage.check_link(p.name, made, len(got)) or_return
+    return stage.reorder(got, made)

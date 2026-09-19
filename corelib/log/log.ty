@@ -23,7 +23,7 @@ const Error = 3
 # A `const` does not cross a package boundary here (the decimal package
 # documents the same limit), so the levels are readable as calls:
 # `log.init(log.level_info(), false)`.
-fn level_debug() -> int:
+fn _level_debug() -> int:
     return Debug
 fn level_info() -> int:
     return Info

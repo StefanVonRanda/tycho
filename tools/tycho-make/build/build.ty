@@ -260,9 +260,7 @@ fn rdeps_of(g: graph.Graph) -> [[int]]:
 # see the pool at all.
 fn build(g: graph.Graph, ord: [int], stamp: string) -> Result([string], BuildErr):
     prev := []string: Stamp
-    match stamps_read(stamp):
-        Ok(m): prev = m
-        Err(e): return Err(e)
+    prev = stamps_read(stamp) or_return
     racy := 0
     match io.mtime(stamp):
         Ok(v): racy = v

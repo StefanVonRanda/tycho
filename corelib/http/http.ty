@@ -7,7 +7,7 @@ extern fn http_body(resp: ptr) -> string
 extern fn http_body_bytes(resp: ptr) -> bytes
 extern fn http_free(resp: ptr)
 
-fn has_nul(s: string) -> bool:
+fn _has_nul(s: string) -> bool:
     for i := 0; i < len(s); i += 1:
         if s[i] == 0:
             return true
@@ -17,7 +17,7 @@ fn has_nul(s: string) -> bool:
 # which is also the answer for a URL carrying an interior NUL: a truncated URL is
 # not a shorter one, it is a different one.
 fn get(url: string) -> ptr:
-    if has_nul(url):
+    if _has_nul(url):
         return null
     return http_get(url)
 
@@ -27,13 +27,13 @@ fn get(url: string) -> ptr:
 # Content-Type is still refused -- a truncated URL is not a shorter one, it is a
 # different one, and a header cannot carry a NUL at all.
 fn post(url: string, body: string, content_type: string) -> ptr:
-    if has_nul(url) or has_nul(content_type):
+    if _has_nul(url) or _has_nul(content_type):
         return null
     return http_post_bytes(url, to_bytes(body), content_type)
 
 # The binary-safe sibling of post(): a `bytes` body, for a PNG or a protobuf.
 fn post_bytes(url: string, body: bytes, content_type: string) -> ptr:
-    if has_nul(url) or has_nul(content_type):
+    if _has_nul(url) or _has_nul(content_type):
         return null
     return http_post_bytes(url, body, content_type)
 
@@ -70,7 +70,7 @@ fn release(resp: ptr):
 
 # Convenience: GET a URL and return just the body ("" on failure); frees the handle.
 fn get_body(url: string) -> string:
-    if has_nul(url):
+    if _has_nul(url):
         return ""
     r := http_get(url)
     if is_null(r):
@@ -81,7 +81,7 @@ fn get_body(url: string) -> string:
 
 # Convenience: GET a URL and return just the status code (0 on failure); frees the handle.
 fn get_status(url: string) -> int:
-    if has_nul(url):
+    if _has_nul(url):
         return 0
     r := http_get(url)
     if is_null(r):

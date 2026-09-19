@@ -1,6 +1,6 @@
 package hash
 
-fn lo_hex(n: int) -> int:                  # nibble (0..15) -> lowercase hex byte
+fn _lo_hex(n: int) -> int:                  # nibble (0..15) -> lowercase hex byte
     if n < 10:
         return 48 + n
     return 97 + (n - 10)
@@ -15,7 +15,7 @@ fn to_hex(h: int) -> string:
     i := 0
     for i < 8:
         nib := (v / shift) % 16
-        out = out + chr(lo_hex(nib))
+        out = out + chr(_lo_hex(nib))
         shift = shift / 16
         i = i + 1
     return out

@@ -8,7 +8,7 @@ enum NetErr:
     BadAddr            # `host` holds an interior NUL -- see has_nul. NOT Failed:
                        # no syscall was made, so retrying cannot help.
 
-fn has_nul(host: string) -> bool:
+fn _has_nul(host: string) -> bool:
     for i := 0; i < len(host); i += 1:
         if host[i] == 0:
             return true
@@ -40,7 +40,7 @@ const RD_TMO  = 2
 
 # ---- TCP ----
 fn listen(host: string, port: int) -> Result(int, NetErr):
-    if has_nul(host):
+    if _has_nul(host):
         return Err(BadAddr)
     fd := netx_listen(host, port)
     if fd < 0:
@@ -54,7 +54,7 @@ fn accept(fd: int) -> Result(int, NetErr):
     return Ok(c)
 
 fn connect(host: string, port: int) -> Result(int, NetErr):
-    if has_nul(host):
+    if _has_nul(host):
         return Err(BadAddr)
     fd := netx_connect(host, port)
     if fd < 0:
@@ -107,12 +107,12 @@ fn close_fd(fd: int):
     netx_close(fd)
 
 fn udp_bind(host: string, port: int) -> int:
-    if has_nul(host):
+    if _has_nul(host):
         return -1
     return netx_udp_bind(host, port)
 
 fn udp_send(fd: int, host: string, port: int, data: bytes) -> int:
-    if has_nul(host):
+    if _has_nul(host):
         return -1
     return netx_udp_send(fd, host, port, data)
 

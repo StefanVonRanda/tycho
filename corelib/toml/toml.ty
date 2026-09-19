@@ -37,10 +37,10 @@ fn get(t: Value, path: string) -> Option(Value):
 fn empty_table() -> Value:
     return TTable([]string, []Value)
 
-# Would `assign(tbl, path, _)` overwrite something? True when the exact path is
+# Would `_assign(tbl, path, _)` overwrite something? True when the exact path is
 # already bound, and also when a PREFIX of it names a non-table -- `a = 1` then
 # `a.b = 2` replaces the scalar, which is the same silent override.
-fn has_path(tbl: Value, path: [string]) -> bool:
+fn _has_path(tbl: Value, path: [string]) -> bool:
     cur := tbl
     for i := 0; i < len(path); i += 1:
         match cur:
@@ -73,7 +73,7 @@ fn keys(t: Value) -> [string]:
 
 # Set tbl[path] = v inside a table value, creating intermediate tables for
 # dotted keys.
-fn assign(tbl: Value, path: [string], v: Value) -> Value:
+fn _assign(tbl: Value, path: [string], v: Value) -> Value:
     ks := []string
     vs := []Value
     match tbl:
@@ -99,7 +99,7 @@ fn assign(tbl: Value, path: [string], v: Value) -> Value:
                 sub = vs[idx]
             _:
                 sub = TTable([]string, []Value)
-    sub = assign(sub, path[1:], v)
+    sub = _assign(sub, path[1:], v)
     if idx >= 0:
         vs[idx] = sub
     else:
@@ -160,33 +160,33 @@ fn place(root: Value, path: [string], tbl: Value, is_arr: bool) -> Value:
 
 # --- scalar parsers ---------------------------------------------------------
 
-fn parse_value(tok: string) -> Result(Value, string):
+fn _parse_value(tok: string) -> Result(Value, string):
     if len(tok) == 0:
         return Err("empty value")
     c := tok[0]
     if c == 34:                    # '"' basic string
-        return parse_basic(tok)
+        return _parse_basic(tok)
     if c == 39:                    # "'" literal string
         if len(tok) < 2 or tok[len(tok) - 1] != 39:
             return Err("unterminated literal string")
         return Ok(TStr(tok[1:len(tok) - 1]))
     if c == 91:                    # '[' array
-        return parse_array(tok)
+        return _parse_array(tok)
     if tok == "true":
         return Ok(TBool(true))
     if tok == "false":
         return Ok(TBool(false))
-    if len(tok) >= 10 and is_date_head(tok):
-        if not is_date_valid(tok):
+    if len(tok) >= 10 and _is_date_head(tok):
+        if not _is_date_valid(tok):
             return Err("not a real date: " + tok)
-        if not is_time_valid(tok):
+        if not _is_time_valid(tok):
             return Err("not a real time: " + tok)
         return Ok(TStr(tok))       # ISO-8601 datetime, kept as a string
-    if is_num_start(c) or c == 43 or c == 45:
-        return parse_number(tok)
+    if _is_num_start(c) or c == 43 or c == 45:
+        return _parse_number(tok)
     return Err("cannot parse value: " + tok)
 
-fn dnum(t: string, a: int, b: int) -> int:
+fn _dnum(t: string, a: int, b: int) -> int:
     v := 0
     for i := a; i < b; i += 1:
         v = v * 10 + (t[i] - 48)
@@ -194,10 +194,10 @@ fn dnum(t: string, a: int, b: int) -> int:
 
 # A SHAPE is not a date: `9999-99-99` is ten bytes shaped NNNN-NN-NN and was
 # accepted whole as a datetime string. Month and day ranges, leap year included.
-fn is_date_valid(t: string) -> bool:
-    y := dnum(t, 0, 4)
-    m := dnum(t, 5, 7)
-    d := dnum(t, 8, 10)
+fn _is_date_valid(t: string) -> bool:
+    y := _dnum(t, 0, 4)
+    m := _dnum(t, 5, 7)
+    d := _dnum(t, 8, 10)
     if m < 1 or m > 12 or d < 1:
         return false
     dim := 31
@@ -221,7 +221,7 @@ fn d2(t: string, i: int) -> int:
 
 # Everything after the ten-byte date head. Was accepted whole, so
 # `2023-01-01T99:99:99` and `2023-01-01hello` were both datetimes.
-fn is_time_valid(t: string) -> bool:
+fn _is_time_valid(t: string) -> bool:
     if len(t) == 10:
         return true                       # local date, no time half
     sep := t[10]
@@ -261,7 +261,7 @@ fn is_time_valid(t: string) -> bool:
         return false
     return oh <= 23 and om <= 59 and i + 6 == len(t)
 
-fn is_date_head(t: string) -> bool:       # YYYY-MM-DD shape only
+fn _is_date_head(t: string) -> bool:       # YYYY-MM-DD shape only
     for i := 0; i < 10; i += 1:
         if i == 4 or i == 7:
             if t[i] != 45:
@@ -270,10 +270,10 @@ fn is_date_head(t: string) -> bool:       # YYYY-MM-DD shape only
             return false
     return true
 
-fn is_num_start(c: int) -> bool:
+fn _is_num_start(c: int) -> bool:
     return (c >= 48 and c <= 57) or c == 120 or c == 88   # digit, x, X
 
-fn parse_basic(t: string) -> Result(Value, string):
+fn _parse_basic(t: string) -> Result(Value, string):
     out := ""
     i := 1
     for i < len(t):
@@ -304,7 +304,7 @@ fn parse_basic(t: string) -> Result(Value, string):
                     return Err("short \\u escape")
                 cp := 0
                 for k := 0; k < 4; k += 1:
-                    d := hex_digit(t[i + 1 + k])
+                    d := _hex_digit(t[i + 1 + k])
                     if d < 0:
                         return Err("bad \\u escape")
                     cp = cp * 16 + d
@@ -317,7 +317,7 @@ fn parse_basic(t: string) -> Result(Value, string):
         i = i + 1
     return Err("unterminated basic string")
 
-fn hex_digit(c: int) -> int:
+fn _hex_digit(c: int) -> int:
     if c >= 48 and c <= 57:
         return c - 48
     if c >= 97 and c <= 102:
@@ -328,7 +328,7 @@ fn hex_digit(c: int) -> int:
 
 const TOML_INT_MIN = (0 - 9223372036854775807) - 1
 
-fn parse_number(t: string) -> Result(Value, string):
+fn _parse_number(t: string) -> Result(Value, string):
     neg := false
     i := 0
     if t[0] == 43:
@@ -342,7 +342,7 @@ fn parse_number(t: string) -> Result(Value, string):
             base = 8
         elif t[i + 1] == 98 or t[i + 1] == 66:
             base = 2
-        if not underscores_ok(t, i + 2, base):
+        if not _underscores_ok(t, i + 2, base):
             return Err("bad number: " + t)
         v := 0
         seen := false
@@ -353,7 +353,7 @@ fn parse_number(t: string) -> Result(Value, string):
                 continue
             d := -1
             if base == 16:
-                d = hex_digit(t[j])
+                d = _hex_digit(t[j])
             elif base == 8:
                 if t[j] >= 48 and t[j] <= 55:
                     d = t[j] - 48
@@ -392,9 +392,9 @@ fn parse_number(t: string) -> Result(Value, string):
     # exponent digit by digit and then multiplied by 10.0 that many times, so
     # `1e99999999999` looped ~10^11 times (a hang, not an answer) and `1e400`
     # came back as infinity; the hand-rolled int wrapped silently.
-    if not underscores_ok(t, i, 10):
+    if not _underscores_ok(t, i, 10):
         return Err("bad number: " + t)
-    clean := strip_underscores(t)
+    clean := _strip_underscores(t)
     if is_float:
         match strings.parse_float(clean):
             Ok(v):
@@ -415,9 +415,9 @@ fn parse_number(t: string) -> Result(Value, string):
         Err(e2):
             return Err("bad number: " + t)
 
-fn digit_ok(c: int, base: int) -> bool:
+fn _digit_ok(c: int, base: int) -> bool:
     if base == 16:
-        return hex_digit(c) >= 0
+        return _hex_digit(c) >= 0
     if base == 8:
         return c >= 48 and c <= 55
     if base == 2:
@@ -427,17 +427,17 @@ fn digit_ok(c: int, base: int) -> bool:
 # TOML allows `_` only BETWEEN digits. strip_underscores dropped one anywhere,
 # so `1__0`, `_1` and `1_` read back as 10, 1 and 1 -- a wrong answer, not a
 # refusal. `from` is the first digit position (past any sign or base prefix).
-fn underscores_ok(t: string, from: int, base: int) -> bool:
+fn _underscores_ok(t: string, from: int, base: int) -> bool:
     for i := from; i < len(t); i += 1:
         if t[i] != 95:
             continue
         if i == from or i + 1 >= len(t):
             return false
-        if not digit_ok(t[i - 1], base) or not digit_ok(t[i + 1], base):
+        if not _digit_ok(t[i - 1], base) or not _digit_ok(t[i + 1], base):
             return false
     return true
 
-fn strip_underscores(t: string) -> string:
+fn _strip_underscores(t: string) -> string:
     out := ""
     for i := 0; i < len(t); i += 1:
         if t[i] != 95:
@@ -450,7 +450,7 @@ fn strip_underscores(t: string) -> string:
 # `["x,y"]` into `["x` and `y"]` ("unterminated basic string"). Both are valid
 # TOML and both were refused; `[[1],[2]]` worked only because no comma fell
 # inside an element.
-fn split_items(body: string) -> [string]:
+fn _split_items(body: string) -> [string]:
     out := []string
     depth := 0
     instr := false
@@ -476,7 +476,7 @@ fn split_items(body: string) -> [string]:
     push(out, body[start:len(body)])
     return out
 
-fn parse_array(t: string) -> Result(Value, string):
+fn _parse_array(t: string) -> Result(Value, string):
     # The terminator is CHECKED, like the literal-string branch in parse_value.
     # Without this, `[1, 2` had its last byte stripped as if it were the `]`,
     # leaving `1,`, and the array came back as [1] -- an element silently lost.
@@ -487,13 +487,13 @@ fn parse_array(t: string) -> Result(Value, string):
         return Ok(TArr([]Value))
     if body[len(body) - 1] == 44:      # trailing comma
         body = strings.trim(body[0:len(body) - 1])
-    items := split_items(body)
+    items := _split_items(body)
     arr := []Value
     for it in items:
         it2 := strings.trim(it)
         if it2 == "":
             return Err("empty array element")
-        match parse_value(it2):
+        match _parse_value(it2):
             Ok(v):
                 push(arr, v)
             Err(m):
@@ -508,7 +508,7 @@ fn parse_array(t: string) -> Result(Value, string):
 # the comment was kept -- valid TOML, refused. Same state machine as
 # split_items: a string closes only on its OWN quote, and a backslash escape is
 # skipped inside a basic string.
-fn find_outside_quotes(ln: string, target: int) -> int:
+fn _find_outside_quotes(ln: string, target: int) -> int:
     instr := false
     quote := 0
     for i := 0; i < len(ln); i += 1:
@@ -525,8 +525,8 @@ fn find_outside_quotes(ln: string, target: int) -> int:
             return i
     return -1
 
-fn strip_comment(ln: string) -> string:   # drop an unquoted # ... comment
-    p := find_outside_quotes(ln, 35)
+fn _strip_comment(ln: string) -> string:   # drop an unquoted # ... comment
+    p := _find_outside_quotes(ln, 35)
     if p < 0:
         return ln
     return ln[0:p]
@@ -540,10 +540,10 @@ fn split_path(body: string) -> [string]:  # "a.b.c" -> segments
             push(out, t2)
     return out
 
-fn find_key_eq(ln: string) -> int:        # index of the separator '=' outside quotes
-    return find_outside_quotes(ln, 61)
+fn _find_key_eq(ln: string) -> int:        # index of the separator '=' outside quotes
+    return _find_outside_quotes(ln, 61)
 
-fn parse_key(key: string) -> [string]:    # split + strip quotes from segments
+fn _parse_key(key: string) -> [string]:    # split + strip quotes from segments
     parts := split(key, ".")
     out := []string
     for p in parts:
@@ -565,7 +565,7 @@ fn parse(s: string) -> Result(Value, string):
     seen := []string
     for i := 0; i < len(ls); i += 1:
         ln := ls[i]
-        ln = strip_comment(ln)
+        ln = _strip_comment(ln)
         ln = strings.trim(ln)
         if ln == "":
             continue
@@ -603,23 +603,23 @@ fn parse(s: string) -> Result(Value, string):
             cur_arr = is_arr
             cur_dirty = false
             continue
-        eq := find_key_eq(ln)
+        eq := _find_key_eq(ln)
         if eq < 0:
             return Err("expected 'key = value' or a [header], got: " + ln)
         key := strings.trim(ln[0:eq])
         val := strings.trim(ln[eq + 1:])
-        kp := parse_key(key)
+        kp := _parse_key(key)
         if len(kp) == 0:
             return Err("empty key in: " + ln)
         # TOML forbids redefining a key. Accepting it silently meant a later
         # line overrode an earlier one with no diagnostic -- in a config file
         # that is an override nobody can see. The check used to look at
         # single-segment keys ONLY, so `a.b = 1` then `a.b = 2` still overrode.
-        if has_path(cur, kp):
+        if _has_path(cur, kp):
             return Err("duplicate key: " + key)
-        match parse_value(val):
+        match _parse_value(val):
             Ok(v):
-                cur = assign(cur, kp, v)
+                cur = _assign(cur, kp, v)
                 cur_dirty = true
             Err(m):
                 return Err(m)

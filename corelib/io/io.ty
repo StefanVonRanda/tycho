@@ -15,7 +15,7 @@ enum IoErr:
                        # has_nul. NOT Failed: nothing was attempted, so a retry
                        # or a permission fix is the wrong next move.
 
-fn has_nul(p: string) -> bool:
+fn _has_nul(p: string) -> bool:
     for i := 0; i < len(p); i += 1:
         if p[i] == 0:
             return true
@@ -25,7 +25,7 @@ fn has_nul(p: string) -> bool:
 # is indistinguishable from a genuinely empty one. Prefer read_text below when
 # the difference matters -- which is most of the time.
 fn read(p: string) -> string:
-    if has_nul(p):
+    if _has_nul(p):
         return ""
     return read_file(p)
 
@@ -39,13 +39,13 @@ fn read(p: string) -> string:
 #   Err(IsDir)      the path names a directory
 #   Err(Failed)     it exists but could not be read
 fn read_text(p: string) -> Result(string, IoErr):
-    if has_nul(p):
+    if _has_nul(p):
         return Err(BadPath)
     b := read_bytes(p) or_return
     return Ok(to_str(b))
 
 fn write_bytes(p: string, b: bytes) -> Result(void, IoErr):
-    if has_nul(p):
+    if _has_nul(p):
         return Err(BadPath)
     st := 0
     iox_write_bytes(p, b, &st)
@@ -58,7 +58,7 @@ fn write_bytes(p: string, b: bytes) -> Result(void, IoErr):
     return Err(Failed)
 
 fn write_at(p: string, off: int, b: bytes) -> Result(void, IoErr):
-    if has_nul(p):
+    if _has_nul(p):
         return Err(BadPath)
     st := 0
     iox_write_at(p, off, b, &st)
@@ -72,7 +72,7 @@ fn write_at(p: string, off: int, b: bytes) -> Result(void, IoErr):
 
 # Truncate `p` and write `s`. Returns false if the path can't be opened.
 fn write(p: string, s: string) -> bool:
-    if has_nul(p):
+    if _has_nul(p):
         return false
     return write_file(p, s)
 
@@ -88,7 +88,7 @@ fn append(p: string, s: string) -> bool:
 # way to the shim -- it travels as a pointer and a length -- which is what makes
 # this the cheap way to assemble a large file from parts.
 fn append_text(p: string, s: string) -> Result(void, IoErr):
-    if has_nul(p):
+    if _has_nul(p):
         return Err(BadPath)
     st := 0
     iox_append_str(p, s, len(s), &st)
@@ -99,7 +99,7 @@ fn append_text(p: string, s: string) -> Result(void, IoErr):
 # TOUCHED when `src` cannot be opened, so a caller walking a list of candidate
 # sources cannot destroy its own destination with a miss.
 fn copy(src: string, dst: string) -> Result(void, IoErr):
-    if has_nul(src) or has_nul(dst):
+    if _has_nul(src) or _has_nul(dst):
         return Err(BadPath)
     st := 0
     iox_copy_file(src, dst, &st)
@@ -118,14 +118,14 @@ fn _status(st: int) -> Result(void, IoErr):
 # File split into lines (core:strings.lines: CRLF-aware, a trailing newline
 # adds no empty line). A missing file yields one empty line, like lines("").
 fn read_lines(p: string) -> [string]:
-    if has_nul(p):
+    if _has_nul(p):
         return strings.lines("")
     return strings.lines(read_file(p))
 
 # Write each line followed by '\n' (so the file ends with a newline). The
 # inverse of read_lines for newline-terminated files.
 fn write_lines(p: string, lines: [string]) -> bool:
-    if has_nul(p):
+    if _has_nul(p):
         return false
     out := ""
     for i := 0; i < len(lines); i += 1:
@@ -187,7 +187,7 @@ const FS_EXISTS = 4
 const FS_UNSUP = 5
 
 fn read_bytes(p: string) -> Result(bytes, IoErr):
-    if has_nul(p):
+    if _has_nul(p):
         return Err(BadPath)
     st := 0
     b := iox_read_file(p, &st)
@@ -200,7 +200,7 @@ fn read_bytes(p: string) -> Result(bytes, IoErr):
     return Err(Failed)
 
 fn read_at(p: string, off: int, n: int) -> Result(bytes, IoErr):
-    if has_nul(p):
+    if _has_nul(p):
         return Err(BadPath)
     st := 0
     b := iox_read_at(p, off, n, &st)
@@ -213,7 +213,7 @@ fn read_at(p: string, off: int, n: int) -> Result(bytes, IoErr):
     return Err(Failed)
 
 fn is_dir(p: string) -> Result(bool, IoErr):
-    if has_nul(p):
+    if _has_nul(p):
         return Err(BadPath)
     k := iox_stat_kind(p)
     if k == RF_DIR:
@@ -249,7 +249,7 @@ fn is_dir(p: string) -> Result(bool, IoErr):
 # A caller doing both pays two; a conditional GET that answers 304 pays exactly
 # this one and never opens the file.
 fn mtime(p: string) -> Result(int, IoErr):
-    if has_nul(p):
+    if _has_nul(p):
         return Err(BadPath)
     secs := 0
     k := iox_stat_mtime(p, &secs)
@@ -260,7 +260,7 @@ fn mtime(p: string) -> Result(int, IoErr):
     return Err(Failed)
 
 fn set_mtime(p: string, secs: int) -> Result(void, IoErr):
-    if has_nul(p):
+    if _has_nul(p):
         return Err(BadPath)
     k := iox_set_mtime(p, secs)
     if k == RF_OK:
@@ -303,7 +303,7 @@ fn set_mtime(p: string, secs: int) -> Result(void, IoErr):
 # length and reads nothing, and a suffix range needs the length to know where to
 # start. See iox_stat_size in io_shim.c for the caller count behind the split.
 fn size(p: string) -> Result(int, IoErr):
-    if has_nul(p):
+    if _has_nul(p):
         return Err(BadPath)
     n := 0
     k := iox_stat_size(p, &n)
@@ -316,7 +316,7 @@ fn size(p: string) -> Result(int, IoErr):
     return Err(Failed)
 
 fn make_dir(p: string) -> Result(bool, IoErr):
-    if has_nul(p):
+    if _has_nul(p):
         return Err(BadPath)
     k := iox_make_dir(p)
     if k == RF_OK:
@@ -334,7 +334,7 @@ fn make_dir(p: string) -> Result(bool, IoErr):
 # anything" boolean `make_dir` returns, so a caller can tell a fresh tree from a
 # reused one. `Err` names the FIRST component that failed and stops there.
 fn make_dir_all(p: string) -> Result(bool, IoErr):
-    if has_nul(p):
+    if _has_nul(p):
         return Err(BadPath)
     if len(p) == 0 or p == "." or p == "/":
         return Ok(false)
@@ -369,7 +369,7 @@ fn make_dir_all(p: string) -> Result(bool, IoErr):
     return Ok(made)
 
 fn remove(p: string) -> Result(bool, IoErr):
-    if has_nul(p):
+    if _has_nul(p):
         return Err(BadPath)
     k := iox_remove(p)
     if k == RF_OK:
@@ -427,7 +427,7 @@ fn remove(p: string) -> Result(bool, IoErr):
 # it is NOT: a silent Ok. A no-op reported as success would rebuild the same false
 # durability claim one layer down, where nothing can see it.
 fn sync(p: string) -> Result(void, IoErr):
-    if has_nul(p):
+    if _has_nul(p):
         return Err(BadPath)
     k := iox_sync(p)
     if k == RF_OK:
@@ -465,7 +465,7 @@ struct LineReader:
 # otherwise the same classification is_dir uses -- NotFound, IsDir, or Failed.
 # Pair every Ok with close_lines(r).
 fn open_lines(path: string) -> Result(LineReader, IoErr):
-    if has_nul(path):
+    if _has_nul(path):
         return Err(BadPath)
     p := iox_open_lines(path)
     if is_null(p):
@@ -492,7 +492,7 @@ fn close_lines(r: LineReader):
 # line is O(n^2); for that, use an open_lines/read_line loop that mutates in
 # place. A path that can't be opened folds to `init` unchanged.
 fn fold_lines(path: string, init: $A, f: fn($A, string) -> $A) -> $A:
-    if has_nul(path):
+    if _has_nul(path):
         return init
     r := iox_open_lines(path)
     acc := init
@@ -510,7 +510,7 @@ fn fold_lines(path: string, init: $A, f: fn($A, string) -> $A) -> $A:
 
 # Directory entry names (basenames, not full paths); [] if not a directory.
 fn list(p: string) -> [string]:
-    if has_nul(p):
+    if _has_nul(p):
         return []string
     return list_dir(p)
 
@@ -529,7 +529,7 @@ fn list(p: string) -> [string]:
 #                   when the difference matters.
 #   Err(BadPath)    interior NUL -- nothing was attempted
 fn list_checked(p: string) -> Result([string], IoErr):
-    if has_nul(p):
+    if _has_nul(p):
         return Err(BadPath)
     k := iox_dir_probe(p)
     if k == RF_MISS:
@@ -539,7 +539,7 @@ fn list_checked(p: string) -> Result([string], IoErr):
     return Ok(list_dir(p))
 
 fn exists(p: string) -> bool:
-    if has_nul(p):
+    if _has_nul(p):
         return false
     k := iox_stat_kind(p)
     return k == RF_OK or k == RF_DIR

@@ -17,23 +17,15 @@ fn cmd_set(sh: inout sheet.Sheet, rest: string) -> Result(void, string):
     name, src := strings.split_once(rest, " ")
     if name == "":
         return Err("set needs a reference and a value")
-    row := 0
-    col := 0
-    match _ref(name):
-        Ok(rc):
-            r, c := rc
-            row = r
-            col = c
-        Err(e): return Err(e)
+    rc := _ref(name) or_return
+    row, col := rc
     return sheet.set(&sh, row, col, src)
 
 fn cmd_get(sh: inout sheet.Sheet, rest: string) -> Result(void, string):
-    match _ref(strings.trim(rest)):
-        Ok(rc):
-            row, col := rc
-            println("  " + cell.ref_name(row, col) + " = " +
-                    cell.detail_value(sheet.get(&sh, row, col)))
-        Err(e): return Err(e)
+    rc := _ref(strings.trim(rest)) or_return
+    row, col := rc
+    println("  " + cell.ref_name(row, col) + " = " +
+            cell.detail_value(sheet.get(&sh, row, col)))
     return Ok()
 
 # An n-deep dependency chain: A1 = A2 + 1, ... A(n-1) = A(n) + 1, A(n) = 1.
@@ -44,12 +36,8 @@ fn cmd_chain(sh: inout sheet.Sheet, rest: string) -> Result(void, string):
     if n < 2:
         return Err("chain needs a length of at least 2")
     for i := 1; i < n; i += 1:
-        match sheet.set(&sh, i - 1, 0, "=A" + str(i + 1) + "+1"):
-            Ok(): pass
-            Err(e): return Err(e)
-    match sheet.set(&sh, n - 1, 0, "1"):
-        Ok(): pass
-        Err(e): return Err(e)
+        sheet.set(&sh, i - 1, 0, "=A" + str(i + 1) + "+1") or_return
+    sheet.set(&sh, n - 1, 0, "1") or_return
     println("  built a chain " + str(n) + " deep: A1 = A2 + 1 ... A" + str(n) + " = 1")
     return Ok()
 
@@ -59,9 +47,7 @@ fn cmd_chain(sh: inout sheet.Sheet, rest: string) -> Result(void, string):
 fn cmd_roundtrip(rest: string) -> Result(void, string):
     t := strings.trim(rest)
     v := 0.0
-    match cell.parse_num(t):
-        Ok(x): v = x
-        Err(e): return Err(e)
+    v = cell.parse_num(t) or_return
     s := cell.render(v)
     verdict := "LOST"
     match strings.parse_float(s):

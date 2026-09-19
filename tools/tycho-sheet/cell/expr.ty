@@ -275,9 +275,7 @@ fn _atom(p: inout P, depth: int) -> Result(int, ParseErr):
     if t.kind == T_LP():
         p.i += 1
         inner := 0
-        match _cmp(&p, depth + 1):
-            Ok(x): inner = x
-            Err(e): return Err(e)
+        inner = _cmp(&p, depth + 1) or_return
         if _peek(&p).kind != T_RP():
             return Err(Unclosed(t.pos))
         p.i += 1
@@ -337,9 +335,7 @@ fn _call(p: inout P, t: Tok, name: string, depth: int) -> Result(int, ParseErr):
         return Ok(_add(&p, n))
     for true:
         arg := 0
-        match _cmp(&p, depth + 1):
-            Ok(x): arg = x
-            Err(e): return Err(e)
+        arg = _cmp(&p, depth + 1) or_return
         push(n.kids, arg)
         if _peek(&p).kind == T_COMMA():
             p.i += 1
@@ -354,17 +350,13 @@ fn _power(p: inout P, depth: int) -> Result(int, ParseErr):
     if depth > MAX_DEPTH():
         return Err(TooDeep(_peek(&p).pos))
     left := 0
-    match _atom(&p, depth):
-        Ok(x): left = x
-        Err(e): return Err(e)
+    left = _atom(&p, depth) or_return
     t := _peek(&p)
     if t.kind == T_OP() and t.text == "^":
         p.i += 1
         # right associative: 2^3^2 is 2^(3^2)
         right := 0
-        match _unary(&p, depth + 1):
-            Ok(x): right = x
-            Err(e): return Err(e)
+        right = _unary(&p, depth + 1) or_return
         n := _mk(K_BIN())
         n.text = "^"
         n.a = left
@@ -379,9 +371,7 @@ fn _unary(p: inout P, depth: int) -> Result(int, ParseErr):
     if t.kind == T_OP() and (t.text == "-" or t.text == "+"):
         p.i += 1
         inner := 0
-        match _unary(&p, depth + 1):
-            Ok(x): inner = x
-            Err(e): return Err(e)
+        inner = _unary(&p, depth + 1) or_return
         if t.text == "+":
             return Ok(inner)
         n := _mk(K_UN())
@@ -394,18 +384,14 @@ fn _mul(p: inout P, depth: int) -> Result(int, ParseErr):
     if depth > MAX_DEPTH():
         return Err(TooDeep(_peek(&p).pos))
     left := 0
-    match _unary(&p, depth):
-        Ok(x): left = x
-        Err(e): return Err(e)
+    left = _unary(&p, depth) or_return
     for true:
         t := _peek(&p)
         if t.kind != T_OP() or (t.text != "*" and t.text != "/"):
             break
         p.i += 1
         right := 0
-        match _unary(&p, depth + 1):
-            Ok(x): right = x
-            Err(e): return Err(e)
+        right = _unary(&p, depth + 1) or_return
         n := _mk(K_BIN())
         n.text = t.text
         n.a = left
@@ -417,18 +403,14 @@ fn _add_expr(p: inout P, depth: int) -> Result(int, ParseErr):
     if depth > MAX_DEPTH():
         return Err(TooDeep(_peek(&p).pos))
     left := 0
-    match _mul(&p, depth):
-        Ok(x): left = x
-        Err(e): return Err(e)
+    left = _mul(&p, depth) or_return
     for true:
         t := _peek(&p)
         if t.kind != T_OP() or (t.text != "+" and t.text != "-"):
             break
         p.i += 1
         right := 0
-        match _mul(&p, depth + 1):
-            Ok(x): right = x
-            Err(e): return Err(e)
+        right = _mul(&p, depth + 1) or_return
         n := _mk(K_BIN())
         n.text = t.text
         n.a = left
@@ -440,9 +422,7 @@ fn _cmp(p: inout P, depth: int) -> Result(int, ParseErr):
     if depth > MAX_DEPTH():
         return Err(TooDeep(_peek(&p).pos))
     left := 0
-    match _add_expr(&p, depth):
-        Ok(x): left = x
-        Err(e): return Err(e)
+    left = _add_expr(&p, depth) or_return
     for true:
         t := _peek(&p)
         if t.kind != T_OP():
@@ -451,9 +431,7 @@ fn _cmp(p: inout P, depth: int) -> Result(int, ParseErr):
             break
         p.i += 1
         right := 0
-        match _add_expr(&p, depth + 1):
-            Ok(x): right = x
-            Err(e): return Err(e)
+        right = _add_expr(&p, depth + 1) or_return
         n := _mk(K_BIN())
         n.text = t.text
         n.a = left
@@ -467,14 +445,10 @@ fn parse(src: string) -> Result(Ast, ParseErr):
     if body == "":
         return Err(NoInput)
     toks: [Tok] = []
-    match lex(body):
-        Ok(t): toks = t
-        Err(e): return Err(e)
+    toks = lex(body) or_return
     p := P(toks, 0, []Node)
     root := 0
-    match _cmp(&p, 0):
-        Ok(x): root = x
-        Err(e): return Err(e)
+    root = _cmp(&p, 0) or_return
     t := _peek(&p)
     if t.kind != T_END():
         return Err(Trailing(t.text, t.pos))

@@ -296,7 +296,7 @@ enum SliceErr:
     OutOfBounds        # start or stop outside [0, len(x)]
     Inverted           # start > stop (an empty slice the caller did not mean)
 
-fn slice_ok(n: int, start: int, stop: int) -> Result(void, SliceErr):
+fn _slice_ok(n: int, start: int, stop: int) -> Result(void, SliceErr):
     if start < 0 or stop > n:
         return Err(OutOfBounds)
     if start > stop:
@@ -304,11 +304,11 @@ fn slice_ok(n: int, start: int, stop: int) -> Result(void, SliceErr):
     return Ok()
 
 fn slice_bytes(b: bytes, start: int, stop: int) -> Result(bytes, SliceErr):
-    slice_ok(len(b), start, stop) or_return
+    _slice_ok(len(b), start, stop) or_return
     return Ok(b[start:stop])
 
 fn slice_str(s: string, start: int, stop: int) -> Result(string, SliceErr):
-    slice_ok(len(s), start, stop) or_return
+    _slice_ok(len(s), start, stop) or_return
     return Ok(s[start:stop])
 
 fn split_once(s: string, sep: string) -> (string, string):

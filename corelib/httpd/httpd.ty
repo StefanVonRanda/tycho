@@ -72,7 +72,7 @@ struct Response:
 
 # ---- small pure helpers ----------------------------------------------------
 
-fn ascii_lower(s: string) -> string:
+fn _ascii_lower(s: string) -> string:
     out := ""
     for i := 0; i < len(s); i += 1:
         c := s[i]
@@ -96,7 +96,7 @@ fn crlf() -> string:
     return chr(13) + chr(10)
 
 # Strip one trailing CR (a line came from splitting on LF).
-fn chomp(s: string) -> string:
+fn _chomp(s: string) -> string:
     if len(s) > 0 and s[len(s) - 1] == 13:
         return s[0:len(s) - 1]
     return s
@@ -105,7 +105,7 @@ fn chomp(s: string) -> string:
 # Every byte a digit, and at least one. to_uint below stops at the first
 # non-digit and returns what it had, which is the right shape for a lenient
 # reader and the wrong one for deciding HOW MANY BYTES TO WAIT FOR.
-fn all_digits(s: string) -> bool:
+fn _all_digits(s: string) -> bool:
     if s == "":
         return false
     for i := 0; i < len(s); i += 1:
@@ -121,7 +121,7 @@ fn content_length_conflict(r: Request) -> bool:
     seen := ""
     found := false
     for i := 0; i < len(r.header_keys); i += 1:
-        if ascii_lower(r.header_keys[i]) == "content-length":
+        if _ascii_lower(r.header_keys[i]) == "content-length":
             v := trim(r.header_vals[i])
             if found and v != seen:
                 return true
@@ -129,7 +129,7 @@ fn content_length_conflict(r: Request) -> bool:
             found = true
     return false
 
-fn to_uint(s: string) -> int:
+fn _to_uint(s: string) -> int:
     v := 0
     for i := 0; i < len(s); i += 1:
         c := s[i]
@@ -147,7 +147,7 @@ fn to_uint(s: string) -> int:
 # a 16+ digit Content-Length is refused as malformed, not parsed into a
 # value that overflows int64.
 fn parse_len(s: string) -> (int, bool):
-    if not all_digits(s):
+    if not _all_digits(s):
         return (0, false)
     i := 0
     for i < len(s) - 1 and s[i] == 48:          # leading zeros are legal: 1*DIGIT
@@ -187,8 +187,8 @@ fn framing(r: Request) -> (int, bool):
 
 # True when `hay` contains `needle` as a comma-separated token, case-insensitively
 # (the shape of `Connection: keep-alive, Upgrade`).
-fn has_token(hay: string, needle: string) -> bool:
-    parts := split(ascii_lower(hay), ",")
+fn _has_token(hay: string, needle: string) -> bool:
+    parts := split(_ascii_lower(hay), ",")
     for i := 0; i < len(parts); i += 1:
         if trim(parts[i]) == needle:
             return true
@@ -216,13 +216,13 @@ fn parse_request(raw: string) -> Result(Request, ReqErr):
     lines := split(head, "\n")
     if len(lines) == 0:
         return Err(Malformed)
-    parts := split(chomp(lines[0]), " ")
+    parts := split(_chomp(lines[0]), " ")
     if len(parts) < 3:
         return Err(Malformed)
     keys := []string
     vals := []string
     for i := 1; i < len(lines); i += 1:
-        ln := chomp(lines[i])
+        ln := _chomp(lines[i])
         col := find(ln, ":")
         if col > 0:
             push(keys, trim(ln[0:col]))
@@ -231,16 +231,16 @@ fn parse_request(raw: string) -> Result(Request, ReqErr):
 
 # The value of header `name` (case-insensitive), or "" if absent.
 fn header(r: Request, name: string) -> string:
-    want := ascii_lower(name)
+    want := _ascii_lower(name)
     out := ""
     for i := 0; i < len(r.header_keys); i += 1:
-        if ascii_lower(r.header_keys[i]) == want:
+        if _ascii_lower(r.header_keys[i]) == want:
             out = r.header_vals[i]
     return out
 
 # A socket failure, in this package's vocabulary. net.NetErr says what the
 # transport did; ReqErr says what it means for a request.
-fn cause_of(e: net.NetErr) -> ReqErr:
+fn _cause_of(e: net.NetErr) -> ReqErr:
     if e == net.Eof:
         return Closed
     if e == net.Timeout:
@@ -336,7 +336,7 @@ fn read_request_resume(fd: int, cap: int, deadline_ms: int, have: string) -> (Re
             match net.read(fd, want):
                 Ok(chunk): buf = buf + to_str(chunk)
                 Err(e):
-                    why = cause_of(e)
+                    why = _cause_of(e)
                     cut = true
                     reading = false
     out: Result(Request, ReqErr) = Err(TooLarge)
@@ -367,11 +367,11 @@ fn connection_close(r: Request) -> bool:
     if r.method == "":
         return true
     conn := header(r, "connection")
-    if has_token(conn, "close"):
+    if _has_token(conn, "close"):
         return true
     if r.version == "HTTP/1.1":
         return false
-    return not has_token(conn, "keep-alive")    # 1.0 and anything unknown
+    return not _has_token(conn, "keep-alive")    # 1.0 and anything unknown
 
 # ---- responses -------------------------------------------------------------
 
@@ -451,7 +451,7 @@ fn with_connection(r: Response, alive: bool) -> Response:
 fn has_ext(path: string, ext: string) -> bool:
     if len(path) < len(ext):
         return false
-    return ascii_lower(path[len(path) - len(ext):len(path)]) == ext
+    return _ascii_lower(path[len(path) - len(ext):len(path)]) == ext
 
 # The MIME type for a filename or URL path, by extension. An UNKNOWN extension
 # yields application/octet-stream, never text/plain: a wrong text/* guess is how
@@ -508,7 +508,7 @@ fn content_type(path: string) -> string:
 fn bodyless(status: int) -> bool:
     return (status >= 100 and status < 200) or status == 204 or status == 304
 
-fn no_crlf(s: string) -> string:
+fn _no_crlf(s: string) -> string:
     out := ""
     for i := 0; i < len(s); i += 1:
         if s[i] != 13 and s[i] != 10:
@@ -517,16 +517,16 @@ fn no_crlf(s: string) -> string:
 
 fn render_head(r: Response) -> string:
     nl := crlf()
-    out := "HTTP/1.1 " + str(r.status) + " " + no_crlf(r.reason) + nl
+    out := "HTTP/1.1 " + str(r.status) + " " + _no_crlf(r.reason) + nl
     has_len := bodyless(r.status)
     has_type := has_len
     for i := 0; i < len(r.header_keys); i += 1:
-        lk := ascii_lower(r.header_keys[i])
+        lk := _ascii_lower(r.header_keys[i])
         if lk == "content-length":
             has_len = true
         if lk == "content-type":
             has_type = true
-        out = out + no_crlf(r.header_keys[i]) + ": " + no_crlf(r.header_vals[i]) + nl
+        out = out + _no_crlf(r.header_keys[i]) + ": " + _no_crlf(r.header_vals[i]) + nl
     if not has_len:
         out = out + "Content-Length: " + str(len(r.body)) + nl
     if not has_type:

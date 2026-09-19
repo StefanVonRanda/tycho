@@ -4,15 +4,15 @@ struct Output:
     code: int
     out: string
 
-fn has_nul(s: string) -> bool:
+fn _has_nul(s: string) -> bool:
     for i := 0; i < len(s); i += 1:
         if s[i] == 0:
             return true
     return false
 
-fn argv_has_nul(argv: [string]) -> bool:
+fn _argv_has_nul(argv: [string]) -> bool:
     for i := 0; i < len(argv); i += 1:
-        if has_nul(argv[i]):
+        if _has_nul(argv[i]):
             return true
     return false
 
@@ -28,13 +28,13 @@ extern fn osx_is_windows() -> int              # the build's _WIN32, as a runtim
 
 # Run cmd, inheriting stdout/stderr; return its exit code.
 fn system(cmd: string) -> int:
-    if has_nul(cmd):
+    if _has_nul(cmd):
         return -1
     return osx_system(cmd)
 
 # Run cmd, capturing stdout; return Output{code, out}.
 fn run(cmd: string) -> Output:
-    if has_nul(cmd):
+    if _has_nul(cmd):
         return Output(-1, "")
     r := osx_run(cmd)
     if is_null(r):
@@ -52,13 +52,13 @@ fn run(cmd: string) -> Output:
 # copied or freed on either side; the shim appends the NULL execv wants to a
 # vector it owns, and refuses (-1) an empty or oversized argv.
 fn exec(argv: [string]) -> int:
-    if argv_has_nul(argv):
+    if _argv_has_nul(argv):
         return -1
     return osx_exec(argv)
 
 # Run argv with no shell, capturing stdout; return Output{code, out}.
 fn exec_out(argv: [string]) -> Output:
-    if argv_has_nul(argv):
+    if _argv_has_nul(argv):
         return Output(-1, "")
     r := osx_exec_out(argv)
     if is_null(r):
