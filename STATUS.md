@@ -79,7 +79,7 @@ whether it is a language someone would choose to use.
 | **Surface freeze** | 115 keywords, 41 builtins, **431** corelib functions, locked; broken deliberately 3 times, each measured first. Was 559 until 2026-09-19, when 125 internal helpers became package-private (FRICTION 96) — the freeze now covers what it meant to | `make surface-check` |
 
 **One thing this table cannot show: `make parse-check` is RED**, and it is in
-neither `make ci` nor the pre-push hook — so between `0b385a24` and the end of
+neither `make ci` nor the pre-push hook — so between `cff8fe2b` and the end of
 2026-09-19, five commits recorded `Verified: make ci GREEN` truthfully while that
 gate was failing. Seven drifted count literals and three stale censuses have
 since been cleared, and `corpus-check` — the sub-second predictor of exactly the

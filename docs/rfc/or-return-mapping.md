@@ -10,7 +10,7 @@ and leave on an `Err` found **76 sites across 17 files**. They split cleanly:
 
 | shape | count | today |
 |---|--:|---|
-| `Err(e): return Err(e)` — same error, forwarded | 34 | **`or_return` already does this** — all 34 migrated in `aa85edd9` |
+| `Err(e): return Err(e)` — same error, forwarded | 34 | **`or_return` already does this** — all 34 migrated in `d363f618` |
 | `Err(e): return Err(Wrap(e))` — wrapped | 25 | no form exists |
 | `Err(e): return Err(Fresh(...))` — replaced | 17 | no form exists |
 
