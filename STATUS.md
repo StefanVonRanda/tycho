@@ -68,9 +68,9 @@ whether it is a language someone would choose to use.
 | **Self-hosting** | the compiler compiles itself and reaches a fixpoint: `gen2.c == gen3.c` | `make fixpoint-check` |
 | **Fixture corpus** | 1057 fixtures, **645 of them refusals** — what must *not* compile is the larger half | `make test` |
 | **Corelib** | 45 packages shipped, each golden-locked (46 directories — `corelib/test/` is the test tree, not a package) | `make corelib` |
-| **Real programs** | 29 tools in Tycho, 18.5k lines — **5 over 1000 lines** (`db` 2063, `scheme` 1609, `sheet` 1523, `q` 1359, `chess` 1166), 8 mid-size, 16 small utilities. Not 29 substantial programs; `tycho-db`'s gate does assert crash recovery from a real `kill -9`, torn-record discard and a TCP server | their own `*-check` lanes |
+| **Real programs** | **31 programs in Tycho, 18,498 lines** — every `.ty` under `tools/`, which is 28 `tools/tycho-*/` directories plus `tycho.ty`, `tychofmt.ty` and `lsp.ty`. **6 over 1000 lines** (`db` 2063, `scheme` 1609, `sheet` 1483, `lsp` 1403, `q` 1359, `chess` 1166), 10 between 300 and 999, 15 under 300. Not 31 substantial programs; `tycho-db`'s gate does assert crash recovery from a real `kill -9`, torn-record discard and a TCP server | `find tools -name '*.ty' \| xargs wc -l` |
 | **Normative spec** | 28 files, and the implementation is gated against them | `make spec-check` |
-| **The whole gate** | 77 lanes, ~407s, green under **gcc and clang** | `make ci` |
+| **The whole gate** | **76 lanes** (`grep -c '^step "' scripts/ci.sh`), green under **gcc and clang** on x86-64 Linux and under **clang on darwin-arm64**. Wall clock is deliberately not quoted as one number — repeated runs here span 263-390s, which is FRICTION 91 | `make ci` |
 | **Memory safety** | 4 sanitizer lanes (ASan/UBSan/LSan/TSan) + 3 fuzz lanes at 200 seeds | `make ci` |
 | **Float determinism** | the emitted C is compiled `-ffp-contract=off`, so `a*b+c` rounds twice on every host — without it ARM fuses and x86-64 cannot, and `0.1+0.2` rendered differently on the two (FRICTION 112) | `make sheet-check` |
 | **Uninitialised reads** | 972 programs swept under an instrumented arena, 0 findings — the class no sanitizer sees | `docs/internals/probe-uninit-arena-2026-09-11.md` |

@@ -65,6 +65,32 @@ language forced that — `or_return` was sitting right there.
 > an unambiguous one is line-for-line neutral — and that the conversion surfaced
 > five new ergonomic gaps of its own, recorded below.
 >
+> **Status, 2026-09-19 — and the note above was itself an incomplete fix.** It
+> retired the `net.*` rows and stopped there, while `io` and `httpd` were
+> converted afterwards and nobody came back. **Six of the seven rows are now
+> historical**, and the paragraph's headline number is wrong in the direction
+> that matters:
+>
+> | the claim above | today |
+> |---|---|
+> | "**1** of the corelib's **386** functions returns an `Option`" | **560** functions; **60** return `Result`, 2 return `Option` |
+> | `net.accept` / `net.write` / `net.read` | `Result(T, NetErr)` |
+> | `io.read_bytes` | `Result(bytes, IoErr)` |
+> | `httpd.parse_request` / `httpd.write_response` | `Result(Request, ReqErr)` / `Result(int, NetErr)` |
+>
+> **Still sentinels, and deliberately:** `path.safe_join` returns `""` and
+> `net.set_read_timeout_ms` returns `false`. Both are unambiguous — no successful
+> join is empty, no successful arming is false — which is exactly the case the
+> 2026-07-26 measurement found to be line-for-line neutral to convert.
+>
+> **The finding this section records still stands as history and should not be
+> deleted**: it is why `core:result` exists and why `or_return` got used. What was
+> false was leaving it in the present tense at the top of the file, where it tells
+> every new reader that the standard library does not use the feature it now uses
+> in 60 places. Found 2026-09-19 by auditing the conventions rather than the code
+> — the same sweep as 115-117, and the same shape: a fix applied to some of the
+> sites it covered.
+>
 > **Also historical, from the option-result plan:** the `io.read_bytes` and
 > `httpd.parse_request` rows. `read_bytes` returns `Result(bytes, io.IoErr)` —
 > an empty file is `Ok`, `Err(NotFound)` and `Err(IsDir)` are distinct — and
