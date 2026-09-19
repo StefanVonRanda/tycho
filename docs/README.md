@@ -21,6 +21,7 @@
 | A program is misbehaving | **[`debugging.md`](debugging.md)** |
 | The numbers behind the claims | **[`performance.md`](performance.md)** |
 | The idea the language argues for | **[`thesis.md`](thesis.md)** |
+| Whether the evidence can be trusted | **[`controls.md`](controls.md)** — four times a gate was proved unable to fail |
 
 **[`reference/`](reference/)** is the single answer layer: basics, types,
 functions, arrays and slices, structs and tuples, maps, enums and options,

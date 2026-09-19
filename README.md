@@ -17,17 +17,44 @@ with `cc` and `make`.
 
 [Docs](docs/README.md) · [Tutorial](docs/tutorial.md) ·
 [Reference](docs/reference/index.md) · [Thesis](docs/thesis.md) ·
-[Spec](docs/spec/) · [Performance](docs/performance.md)
+[Spec](docs/spec/) · [Performance](docs/performance.md) ·
+[How it is tested](docs/controls.md)
 
 ```tycho
-fn greet(name: string) -> string:
-    return "hello " + name
+fn evens(limit: int) -> [int]:
+    xs := []int                    # no size, no malloc, no owner to track
+    for i := 0; i < limit; i += 1:
+        if i % 2 == 0:
+            push(xs, i)            # grows in place
+    return xs                      # it escapes, so it was built in the CALLER's arena
 
 fn main():
-    print("what is your name: ")
-    name := input()
-    println(greet(name))
+    xs := evens(10)
+    println(str(len(xs)) + " evens, last " + str(xs[4]))
+    # xs dies when main's scope does. No free() here, and none in the emitted C.
 ```
+
+That last comment is the whole language, and the compiler decides it from the
+shape of the code. `evens` returns `xs`, so there is nothing to free at its
+scope exit and the array is built in the caller's arena from the start:
+
+```c
+TychoArrInt h_evens(Arena *_parent, tycho_int limit) {
+    TychoArrInt h_xs = tycho_arr_int_with_cap(_parent, 0);   /* caller's arena */
+```
+
+Change one line — `return len(xs)` instead of `return xs`, so nothing escapes —
+and the same function emits a scope of its own, released on the way out:
+
+```c
+tycho_int h_count_evens(Arena *_parent, tycho_int limit) {
+    Arena _scope = arena_child(_parent);                     /* its own arena */
+    ...
+    { tycho_int _ret = h_xs.len; arena_free(&_scope); return _ret; }
+```
+
+No annotation chose that, and no runtime worked it out. The lifetime is visible
+in the syntax, so the compiler places every allocation and every free itself.
 
 > **Status: 0.8.5 — pre-1.0. No stability guarantees yet.** Tycho is an
 > experiment testing one idea: implicit arenas under value semantics. It is

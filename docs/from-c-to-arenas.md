@@ -88,7 +88,49 @@ scope ends. The compiler placed every allocation and every free itself, from the
 the code. No garbage collector runs; no annotations were written.
 
 And it's not magic underneath — Tycho transpiles to C, so you can read exactly the arena
-calls it emits (`./tychoc greet.ty --emit-c`).
+calls it emits. Here is that `greet`, run through `./tychoc greet.ty --emit-c`:
+
+```c
+char *h_greet(Arena *_parent, char *h_name) {
+    { char *_ret = tycho_str_concat(_parent, TYCHO_LIT("hello "), h_name); return _ret; }
+}
+```
+
+`_parent` is the **caller's** arena. The string is built there directly, so there is
+nothing to free on the way out and no scope of its own to create — the claim above, in
+the generated code.
+
+Now change one thing, so the string no longer escapes:
+
+```tycho
+fn greet_len(name: string) -> int:
+    msg := "hello " + name
+    return len(msg)
+```
+
+Same shape, one line different, and the compiler reaches a different decision:
+
+```c
+tycho_int h_greet_len(Arena *_parent, char *h_name) {
+    Arena _scope = arena_child(_parent); _scope.name = "greet_len";
+    char *h_msg = tycho_str_concat(&_scope, TYCHO_LIT("hello "), h_name);
+    { tycho_int _ret = tycho_str_len(h_msg); arena_free(&_scope); return _ret; }
+}
+```
+
+A child arena, the string built inside it, and `arena_free` on the way out — placed
+without an annotation, a lifetime, or a runtime check. That is the whole mechanism, and
+the diff between the two C functions is the diff between `return msg` and
+`return len(msg)`.
+
+Two things worth noticing, because they are what the C programmer is really being asked
+to trade:
+
+- **`greet` creates no arena at all.** A function whose result escapes does not pay for a
+  scope it would immediately hand upward. The cheap case is the common one.
+- **`arena_free` is one call, not one per allocation.** It reclaims everything the scope
+  took, whether that was one string or ten thousand, which is why the cost does not scale
+  with how many objects you made.
 
 ## Step 5 — the honest cost
 
