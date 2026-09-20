@@ -9,7 +9,7 @@ ROADMAP.md is the kind that drifts -- this repo has the receipts.
 Three surfaces, two policies:
 
   keywords  (src/tychoc.c's lexer)          FROZEN HARD -- no additions, no removals
-  builtins  (docs/reference/builtins.md)    FROZEN HARD -- same
+  builtins  (src/tychoc.c's is_builtin_name) FROZEN HARD -- same
   corelib   (every exported `fn` in corelib/) ADDITIONS ALLOWED but RECORDED; a
             removal or a CHANGED SIGNATURE reddens, because that is what breaks
             a program somebody already wrote
@@ -59,8 +59,12 @@ KW = re.compile(r'!strcmp\(s,\s*"([a-z_0-9]+)"\)\s*\)\s*return\s+TK_')
 # catches a few internal spellings too, and the cost of that is one deliberate
 # --record on a rename.
 KWCTX = re.compile(r'!strcmp\([\w>()&\s,.\-]*->(?:text|sval),\s*"([a-z_0-9]+)"\)')
-# Both the plain `name(` form and the method form `m.get(`.
-BUILTIN = re.compile(r"^\|\s*`(?:[a-z_0-9]+\.)?([a-z_0-9]+)\(")
+# The compiler's own table, not a document. It was read out of a reference page
+# until 2026-09-20, which made a prose file load-bearing for the freeze: the page
+# could be edited into agreement with a compiler that had changed, and the lock
+# would never notice. is_builtin_name is the list scripts/builtin_qualified.sh
+# already requires to be complete, so reading it here closes the loop in code.
+BUILTIN = re.compile(r'"([a-z_0-9]+)"')
 FN = re.compile(r"^fn\s+([a-z_0-9]+)\s*\((.*?)\)\s*(->.*?)?:\s*(#.*)?$")
 # A marker matched by strncmp rather than an identifier compare: `# deprecated:`
 # is language surface (grid-check exists for it) and no ->text pattern reaches it.
@@ -96,13 +100,15 @@ def unreachable(kws, src="src/tychoc.c"):
             "and no pattern above reaches it" % w for w in tbl if w not in kws]
 
 
-def builtins(doc="docs/reference/builtins.md"):
-    out = set()
-    for line in open(doc):
-        m = BUILTIN.match(line)
-        if m:
-            out.add(m.group(1))
-    return sorted(out)
+def builtins(src="src/tychoc.c"):
+    """The string literals in is_builtin_name's table, in source order."""
+    text = open(src).read()
+    i = text.find("static int is_builtin_name(")
+    if i < 0:
+        raise SystemExit("surface_lock: is_builtin_name NOT FOUND in %s -- the "
+                         "builtin freeze has no source" % src)
+    body = text[i:text.index("\n}", i)]
+    return sorted(set(BUILTIN.findall(body)))
 
 
 def corelib(root="corelib"):
@@ -126,7 +132,7 @@ def corelib(root="corelib"):
                 # reviewable surface change. Three were locked this way --
                 # compress._cause, image._cause, io._status -- until the
                 # extractor was taught the rule the type checker already
-                # enforces. FRICTION 96.
+                # enforces.
                 if m.group(1).startswith("_"):
                     continue
                 sig = "(%s)%s" % (m.group(2).strip(), (m.group(3) or "").strip())

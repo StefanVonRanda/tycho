@@ -1,5 +1,5 @@
 # The nested half of the instantiation note, which could not be pinned until the
-# two compilers agreed on it (FRICTION entry 87): tychoc reported ONE frame and
+# two compilers agreed on it: tychoc reported ONE frame and
 # tychoc1 reported the whole chain, so a byte-compared golden could only ever
 # match one of them.
 #

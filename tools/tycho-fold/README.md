@@ -24,4 +24,3 @@ make tychoc
 ```
 
 The design notes and the rough edges hit while writing it are in
-[`FRICTION-OUTSIDE.md`](FRICTION-OUTSIDE.md).

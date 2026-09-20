@@ -8,7 +8,7 @@ TYCHOC="${TYCHOC:-./tychoc1}"
 # above defaults to tychoc1 and checks IT exists, then the gate ran the C
 # bootstrap. Every other gate runs the shipped compiler
 # (fuzz/run_leak.py:6@SHIPPED), and an override nothing honours is worse than no
-# override. FRICTION 93.
+# override.
 case "$TYCHOC" in /*) ;; *) TYCHOC="$PWD/${TYCHOC#./}" ;; esac
 export TYCHO_CORELIB="$PWD/corelib"
 CC="${CC:-cc}"

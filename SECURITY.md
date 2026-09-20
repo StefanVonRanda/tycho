@@ -9,7 +9,7 @@ use it for anything where a compromise would actually matter.
 
 A structured pass over the FFI shims by a **non-author** reviewer was done on
 2026-08-14 and is written up in
-[docs/internals/ffi-review-2026-08-14.md](docs/internals/ffi-review-2026-08-14.md):
+an internal FFI boundary review, 2026-08-14:
 the unbounded-copy and process-execution classes came back clean, and three real
 findings in `corelib/http` were fixed (an uncapped response body, a `size_t` wrap
 reachable on the supported 32-bit target, and redirects followed with no bound
@@ -170,7 +170,7 @@ they rely on are `docs/spec/14-ffi.md` §24.1 and the codegen they lower to.
 
 ## For a reviewer
 
-[docs/internals/audit-brief.md](docs/internals/audit-brief.md) is the packet to
+The threat model above is the starting point to
 start from: threat model, the entry points where untrusted bytes reach
 hand-written C, what each lane already holds and the honest scope of each claim,
 how to run any of it, and where we would start. It is written for someone who has

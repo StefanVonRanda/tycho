@@ -86,18 +86,18 @@ All three are one-time setup, and all three were found by hitting them.
 the gate, none in the language. clang always built and ran Tycho fine: measured,
 clang 22.1.8 takes the whole fixture corpus 1039/0 and bootstraps `tychoc1`.
 
-- `vector-check` **no longer blocks it** (fixed 2026-09-18, FRICTION 89). Leg [3]
+- `vector-check` **no longer blocks it** (fixed 2026-09-18). Leg [3]
   required a plain-`[4]float` control to emit *no* packed arithmetic, which is a
   gcc property; it now measures the control and asserts the strongest form that
   control supports, so clang certifies too.
-- `shim-warn` **no longer blocks it either** (fixed 2026-09-18, FRICTION 90).
+- `shim-warn` **no longer blocks it either** (fixed 2026-09-18).
   Its baseline `scripts/shim.warn` is empty, meaning "gcc is silent here", and a
   gcc `-Wunused-function` dodge in `corelib/os/os_shim.c` tripped clang's
   `-Wunused-variable` instead — the suppression firing, not a defect in the
   shipped code. It is an `__attribute__((unused))` now, which both compilers
   read the same way.
 
-- `crypto_hygiene` **was the third** (fixed 2026-09-18, FRICTION 92). Its
+- `crypto_hygiene` **was the third** (fixed 2026-09-18). Its
   constant-time leg builds a deliberately *branching* control so memcheck has
   something to detect; clang if-converted that branch away at `-O1`, so the
   control could not fire and the leg refused to certify. The control now builds
@@ -220,8 +220,8 @@ reach for first.
 
 | You changed | Run | Notes |
 |---|---|---|
-| Markdown, comments, a `path:line` citation, a commit hash in prose | `make check-links` | ~2.7s. Since 2026-09-03 it also runs `reanchor_citations.py --selfcheck`, the four idempotence cases for the tool that MAINTAINS those refs, which had been in no lane at all. Also fails a NEW document under `docs/` that no index links to, and any backticked path like `docs/reference/ffi.md` that is not a tracked file — from the repo root or from the citing document's own directory. Nothing else can tell you more — none of it reaches a compiled artifact |
-| an entry in `docs/internals/FRICTION.md` that claims to be closed | `make friction-check` | ~2 min. Runs each entry's `> Pinned-by:` command, deduped and in parallel, so a fix that quietly stopped holding is named with its entry. A pin that fails is a red; an entry with **no** pin is reported and counted, never a failure. **All 87 closed entries carry one now** (86 pinned, 1 excused), so an unpinned entry means a NEW entry landed without saying what asserts it. An entry may carry several pins -- typically a cheap `test -f`/`grep` that discriminates plus the lane that runs the behaviour -- and each is deduped separately across the file, which is what keeps `make test` to one run. Lanes run 2-way and the cheap pins 8-way: a lane already saturates the box, and 8-way over everything measured 9m29 against 2m35. `none -- <reason>` excuses an entry nothing can assert, such as a timing claim. Six legs under `--selfcheck`. |
+| Markdown, comments, a `path:line` citation, a commit hash in prose | `make check-links` | ~2.7s. It also runs `reanchor_citations.py --selfcheck`, the four idempotence cases for the tool that MAINTAINS those refs, which had been in no lane at all. Also fails a NEW document under `docs/` that no index links to, and any backticked path like `docs/spec/14-ffi.md` that is not a tracked file — from the repo root or from the citing document's own directory. Nothing else can tell you more — none of it reaches a compiled artifact |
+| a fix whose only evidence is a code property -- a compiler flag, a shim call, a retry count, a lane's presence in `ci.sh` | `make pin-check` | ~1s. Runs 25 assertions that no suite covers, each carrying the one line saying what breaks if it goes. These were 198 `Pinned-by:` lines in an 8,382-line defect log until 2026-09-20; 31 re-ran lanes `make ci` already runs and ~40 were `test -f` on files `corpus-check`, `goldens-check` and `make corelib` already require. |
 | a keyword, a builtin, or a corelib signature | `make surface-check` | ~0.17s (0.16 / 0.17 / 0.17 s, measured 2026-09-04; this row said ~1s). **Run by the pre-push hook since 2026-09-04** -- before that it lived only in `make ci` step [1d], and a lane that only the sweep runs is a lane nobody runs: it was RED at HEAD across two pushed commits that removed eight corelib functions. **The language surface is frozen.** Keywords and builtins are locked hard: an addition or a removal fails. Corelib may GAIN functions, but the gain must be RECORDED in the same commit -- an addition the lock has not seen fails the gate as `UNRECORDED`, which is not a freeze violation and says so. Until 2026-09-03 it was a `note` line attached to no verdict, and 22 functions across http/httpd/io/json/markdown/path/raster/strings/toml had arrived that way, each in a real fix commit but none through the deliberate step this gate exists to force. A removal or a changed signature still fails outright, because that is what breaks a program somebody already wrote. `--record` re-locks deliberately and shows up as a `surface.lock` diff a reviewer can refuse. Fourteen legs under `--selfcheck`, one of which checks the extractors still reach every hand-measured construct -- three accessor spellings and a `strncmp` marker mean "grep the lexer" is not one pattern, and the first two versions of this gate left `soa`, `sink`, `where`, `subscript` and `yield` outside the freeze. |
 | `runtime/tycho_rt.c`, or a codegen arm that emits a `tycho:` trap | `make rtparity` | ~0.04s (0.042 / 0.043 / 0.045 s, measured 2026-09-04) -- the cheapest lane here after `make contrast-check`. Checks the emitted runtime SURFACE against a written-down oracle: the `getenv` knobs, every `tycho: ...` trap text, every arena-stats row. Both directions fail, so a new trap must be recorded with a reason and cannot drift in. **`make test` cannot redden for it** -- a fixture exercises the traps it happens to trigger, and the oracle is about the whole set. Like `surface-check` it lived only in `make ci` step [2d] and so was run by nobody: it had been RED since `51dcb45b` added `packed`, across nine clean pushes, because `from_bytes()`'s two layout traps were emitted with no oracle entry. **Run by the pre-push hook since 2026-09-04.** |
 | `compiler/lex/`, `compiler/parse/`, `compiler/ast/` | `make parse-check` | ~12.8s (13.27 / 12.49 / 12.75, measured 2026-08-30). The only lane that runs the self-hosted compiler's front end, and it scores against `./tychoc`'s own answers rather than a golden. `tests/reject/` is split by a committed classifier table: a SYNTAX rejection must be refused, a SEMANTIC one must be **accepted** — which is what stops "reject everything" scoring full marks, since most of those fixtures are type errors a parser cannot see. An accept/reject verdict is blind to a parse that succeeds with the WRONG TREE, so an AST node-kind census is compared to a golden as well. `RECORD=1` re-records that census and cannot bless a lost count — the verdict legs compare against literals in the runner. |
@@ -299,11 +299,11 @@ in this repo can break; when the two disagree, it is right by definition.
 ## Two rules that will surprise you
 
 2. **The arena memory model is the whole point.** Value semantics + implicit
-   per-scope arenas (no GC, no manual `free`) is the thesis
-   ([docs/thesis.md](docs/thesis.md)). Changes that quietly break the in-place
+   per-scope arenas (no GC, no manual `free`) is the whole point.
+   Changes that quietly break the in-place
    optimizations (string append, the map accumulator, move-on-last-use) turn an
    O(n) idiom into O(n²), and `make bench` / `bench/` guard against that. When in
-   doubt, read [docs/memory-model.md](docs/memory-model.md).
+   doubt, read [§7 Memory model](docs/spec/07-memory-model.md).
 
 ## Where feature work is useful
 
@@ -316,8 +316,7 @@ now is **ergonomics polish, not new pillars**:
 
 - **User-defined projections** — yielding subscripts that generalize the built-in
   `&m[k]` (zero-copy views into part of a value). This is the one
-  limited-reference idea that fits the arena + deep-copy-thread-boundary model;
-  see [docs/rfc/limited-references-spike.md](docs/rfc/limited-references-spike.md).
+  limited-reference idea that fits the arena + deep-copy-thread-boundary model.
   Low priority, scope it if a real need appears.
 - **Small rough edges** real use turns up — clearer diagnostics (e.g. a
   keyword-used-as-variable message), FFI read-once-borrow docs, corelib gaps.
@@ -327,10 +326,9 @@ ternary/conditional expression, a package manager, user-defined traits /
 type-classes, Swift-style reference-counted copy-on-write, and **shared-mutable /
 `remote-parts`-style references** for graphs — resolved against the model; store
 graph-shaped data as an index pool (see
-[docs/rfc/limited-references-spike.md](docs/rfc/limited-references-spike.md) and
 [docs/internals/value-semantics-limits.md](docs/internals/value-semantics-limits.md)).
 Generics, on the other hand, *are* supported — `$T`, see
-[docs/reference/generics.md](docs/reference/generics.md).
+[§5 Generics](docs/spec/05-generics.md).
 
 ## Code style
 

@@ -26,8 +26,8 @@ checked for a parser that returns a plausible wrong value instead of an error.
 It found a build tool accepting a damaged mtime (a stale output shipped as
 current), a database lexer turning an out-of-range literal into `0` (a query
 matching the wrong rows), and the money type's only text constructor returning
-`0.15` for `"1.5x"`. All three are fixed and gated; the pattern and the
-`_checked` convention are written up at FRICTION #4 and #56.
+`0.15` for `"1.5x"`. All three are fixed and gated, and the `_checked` convention exists because of
+them: `scripts/check_pins.py` asserts the checked call site in each.
 
 ## The self-hosted compiler
 
@@ -65,16 +65,16 @@ against.
   recursion, entrypoints, corelib, corelib-ex, server) rather than
   reimplementing their judgements.
 - **The two compilers are held to agreeing.** Where they diverge it is a defect
-  in one of them: FRICTION 87 was a user-facing diagnostic the two worded
+  in one of them. One was a user-facing diagnostic the two worded
   differently, found because a `tests/diag/` golden can only match one, and
-  closed by fixing `src/tychoc.c`.
+  closed by fixing `src/tychoc.c` (`tests/diag/generic_instantiation_chain.ty`).
 
 **Decided 2026-09-11: `tychoc1` stays the second opinion, and does not become
 the successor.** Two implementations over one corpus is the same differential
 instrument as native-vs-ASan, `dis` round-tripping `asm`, and tycho-scheme's two
 backends agreeing — and it is the strongest one here, because there is no hosted
 CI and no second reader. The parity work is not a tax on that; it *is* the gate.
-FRICTION 87 is the evidence: the divergence found a worse diagnostic in the
+The diagnostic divergence above is the evidence: it found a worse message in the
 shipped compiler and fixing it improved what users get, on the first instance of
 paying the cost. Demoting `src/tychoc.c` to a bootstrap would retire the oracle
 in exchange for not maintaining the thing producing the findings — and would
@@ -193,17 +193,15 @@ building more.
 What remains for 1.0 is §1 and §7, and neither is sequenced here because neither
 is a task this list can complete. §1 gates the freeze, not the work: it wants a
 program by a second author, so a fourth program by the same one does not advance
-it. §7 wants a reviewer who is not the project. Both need a person;
-`docs/internals/audit-brief.md` is what §7's needs handing to them.
+it. §7 wants a reviewer who is not the project. Both need a person.
 
 
 ### 1. Someone other than the author has written a real program
 
 The blocking one, and nothing else on this list substitutes for it. Every
-ergonomic finding in [docs/internals/FRICTION.md](docs/internals/FRICTION.md)
-came from the author dogfooding against a program he also designed. That
-catches a lot — the file is unusually honest about its own defeats — but it
-cannot catch what only a stranger's mental model produces.
+ergonomic finding so far came from the author dogfooding against a program he
+also designed. That catches a lot, but it cannot catch what only a stranger's
+mental model produces.
 
 Concretely: **three non-trivial programs written against the docs alone**, each
 with its friction written down, and each targeting a different half of the
@@ -221,8 +219,7 @@ covered is worth less than the first one that reaches an untouched part.
 
 **One of the three exists**: `tools/tycho-diff`, a Myers O(ND)
 line differ with unified output, written against `docs/` alone by someone who had
-not read `src/tychoc.c`, with its friction in
-[tools/tycho-diff/FRICTION-OUTSIDE.md](tools/tycho-diff/FRICTION-OUTSIDE.md).
+not read `src/tychoc.c`.
 Four first-contact findings, all diagnostics and all in the first ten minutes: the
 `die` collision warning offers a remedy that `package main` forbids; a missing
 import is reported as a missing SYMBOL; `eprintln` does not exist and the
@@ -235,9 +232,8 @@ evidence: value semantics made the algorithm's frontier snapshot
 
 **A second landed the same day**: `tools/tycho-hash`, sha256 over a directory
 tree by a worker pool, written for the OTHER half of the surface — `spawn`,
-channels, backpressure, and the determinism a parallel tool has to prove. Its
-[FRICTION-OUTSIDE.md](tools/tycho-hash/FRICTION-OUTSIDE.md) repeats none of
-tycho-diff's four, which is the argument for a second program rather than a
+channels, backpressure, and the determinism a parallel tool has to prove. It
+repeated none of tycho-diff's four, which is the argument for a second program rather than a
 longer first one: `io.list` is the directory listing but its name contains no
 "dir" so no search finds it; it returns `[]` for a directory it cannot read,
 where everything around it returns `Result`; `sha256.hex` takes a string where a
@@ -254,9 +250,8 @@ the option itself.
 
 **A third landed 2026-08-15**: `tools/tycho-fold`, wrapping text by CODEPOINTS,
 chosen for a surface neither of the others touched — UTF-8, where the bug is that
-everything looks right until the input stops being ASCII. Its
-[FRICTION-OUTSIDE.md](tools/tycho-fold/FRICTION-OUTSIDE.md) again repeats none of
-the earlier findings: `utf8.decode` returning `nb <= 0` on invalid input is an
+everything looks right until the input stops being ASCII. It again repeated
+none of the earlier findings: `utf8.decode` returning `nb <= 0` on invalid input is an
 infinite loop for a caller who trusts it, and every ergonomic path (`len`, `s[i]`)
 is byte-based while the codepoint count lives in a separate import — correct
 layering that makes the NATURAL program the wrong one, wrong only on input the
@@ -264,12 +259,10 @@ author probably never tried.
 
 **Four now exist, across four different halves of the surface** — `tycho-diff`
 (algorithms), `tycho-hash` (concurrency), `tycho-fold` (text and codepoints), and
-the 2026-08-19 FFI probe ([record](docs/internals/probe-ffi-2026-08-19.md);
-its program was thrown away, the record being the artifact). By the letter above
+a 2026-08-19 FFI probe whose program was thrown away. By the letter above
 that meets the requirement. It is left OPEN deliberately: the probes keep
-returning things the author could not have found, and
-[docs/internals/probe-procedure.md](docs/internals/probe-procedure.md) shows the
-surface still at zero — generics, newtypes, `subscript`, `bounded[N]`, `select`
+returning things the author could not have found, and much of the
+surface is still at zero — generics, newtypes, `subscript`, `bounded[N]`, `select`
 and the enum/Option/Result error paths have no non-author program at all. Closing
 it at four would stop the one instrument that is working.
 
@@ -286,9 +279,8 @@ already closed, and only ASan saw it.
 
 ### 2–6. ~~Papercuts, expressiveness, `core:net`, Windows, a shipped release~~ — **all CLOSED**
 
-Closed between 2026-08-10 and 2026-08-15, in that order. The record of each —
-what was measured, what was refused and why, and the commit that closed it — is
-[`docs/internals/roadmap-closed-2026-08.md`](docs/internals/roadmap-closed-2026-08.md).
+Closed between 2026-08-10 and 2026-08-15, in that order. What was measured,
+what was refused and why, and the commit that closed each, is in git history.
 
 ### 7. An external security review
 
@@ -299,12 +291,9 @@ closed on 2026-08-09 by `core:os`'s argv path — but the FFI boundary is unsafe
 by design and nobody outside the project has looked at it. 1.0 invites people
 to build on that boundary.
 
-**A packet for a reviewer now exists**:
-[docs/internals/audit-brief.md](docs/internals/audit-brief.md) — threat model,
-where untrusted bytes reach hand-written C, what each existing lane does and does
-not cover, how to reproduce any of it, and five suggested starting points. It
-does not close this section; it removes the excuse that "get an audit" had no
-scope attached. Three internal passes found 5, 9 and 10 issues respectively with
+[SECURITY.md](SECURITY.md) states the threat model and where untrusted bytes
+reach hand-written C, which is where a reviewer would start. It
+does not close this section. Three internal passes found 5, 9 and 10 issues respectively with
 zero overlap between them, which is the argument for §7 stated as evidence.
 
 
@@ -339,12 +328,12 @@ instance is not production-ready whatever its internals are; half of that gap is
 now closed, and **ARM64 Linux is no longer compile-only**: `make test` is
 1065/1065 on Ubuntu 26.04 / aarch64, in a VM on the Apple Silicon box, at native
 speed. No Graviton artifact is BUILT yet, but the "never been run" half of that
-risk is gone (FRICTION 110).
+risk is gone.
 
 **"Not shipped" and "not run" are different claims, and as of 2026-09-19 the
 second one is closed.** `make ci` was run on `darwin-arm64` that day and is
-**green**, repeatedly measured between 267s and 390s (that spread is FRICTION
-91, not a regression); both compilers build native Mach-O arm64 with no source
+**green**, repeatedly measured between 267s and 390s (that spread is machine
+noise, not a regression); both compilers build native Mach-O arm64 with no source
 change and `make test` is 1065/1065. That green carries **12 skips over 7
 causes**, each printing its reason, and one is a genuine coverage loss:
 **Apple's ASan ships no LeakSanitizer**, so the leak lane and two sanitizer legs
@@ -353,8 +342,7 @@ are lanes with no subject on this platform — gdb, the glibc symbol floor,
 `ilp32`, `resource.prlimit`, an x86-64 `--target` leg, and `-Wl,--wrap`, which
 ld64 does not implement.
 
-**It was not free**: the run found three defects — FRICTION
-[100](docs/internals/FRICTION.md), 101 and 102 — two of them latent in shipped
+**It was not free**: the run found three defects, two of them latent in shipped
 code, including a listen backlog that made every Tycho server refuse peers under
 a burst on any BSD-derived kernel. What remains is packaging, not porting.
 
@@ -382,8 +370,7 @@ day, in a VM on that same Mac — which is the answer to "there is no ARM machin
 here": there was, it just needed a hypervisor. **`x86_64-macos` went the same
 day**, under Rosetta: 288 fixtures built through an x86_64 compiler and matched
 their goldens. **All three targets have now had binaries RUN**, and doing so
-found a float-determinism defect that no single machine could have shown
-(FRICTION 112-113).
+found a float-determinism defect that no single machine could have shown.
 
 ### 2. ~~A story for using other people's code~~ — **DECIDED 2026-08-15: vendoring, Odin-style**
 
@@ -415,8 +402,8 @@ vendored copy has a security fix upstream — the same trade Odin makes, taken
 deliberately rather than by omission.
 
 **Written and gated.** The convention is in
-[docs/reference/packages.md](docs/reference/packages.md#vendoring-goodin-style),
-reached from the reference index; `tests/pkg/vendor_deps/` gates both shapes.
+[§15 Program structure](docs/spec/15-program.md); `tests/pkg/vendor_deps/`
+gates both shapes.
 
 ### 3. The promise, written down
 
@@ -438,8 +425,7 @@ plainly that the 1.0-onward promises are not yet ones you can rely on at 0.x.
 under it rather than less. Shipping to strangers is precisely the situation in
 which an unaudited FFI boundary is a liability, and a language whose only
 programs were written by its author has not been used, only demonstrated.
-[docs/internals/audit-brief.md](docs/internals/audit-brief.md) is the packet for
-the second of those.
+[SECURITY.md](SECURITY.md) is the starting point for the second of those.
 
 ## Non-goals
 

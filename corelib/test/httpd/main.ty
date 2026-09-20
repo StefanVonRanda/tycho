@@ -150,7 +150,7 @@ fn main():
     # case degrades to `rbody = ` and a golden diff, while this one indexes
     # body2[0] on an empty string and ABORTS the process:
     #     tycho: string index 0 out of bounds (len 0)
-    # Found 2026-09-19 on macOS/arm64 (FRICTION 102), where `make ci` runs 12
+    # Found 2026-09-19 on macOS/arm64 (), where `make ci` runs 12
     # lanes wide and the loopback splits often enough to hit it; the same lane
     # passed on its own every time. Measured against a copy with the single read
     # restored, 25 runs each under 12 busy-loops on a 12-core machine: the copy

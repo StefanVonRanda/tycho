@@ -165,9 +165,12 @@ def main():
     paths = tracked_markdown()
     offences, hits = scan(paths, want)
     # A regex that matches nothing looks exactly like a clean tree. This tree
-    # has six known status claims; fewer means the pattern broke, not that the
-    # docs got tidier.
-    if len(hits) < 6:
+    # has four known status claims -- CONTRIBUTING.md, README.md, ROADMAP.md and
+    # SECURITY.md each open by naming the shipped version -- and fewer means the
+    # pattern broke, not that the docs got tidier. It was six until 2026-09-20,
+    # when the two docs carrying the others were deleted; the floor tracks the
+    # tree deliberately, so removing a claim has to be a decision, not a drift.
+    if len(hits) < 4:
         print(
             "version check: FAILED (only {} status claim(s) found across {} "
             "tracked docs -- the pattern is not matching, not the tree being "

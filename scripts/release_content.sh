@@ -166,7 +166,7 @@ check_native_glibc() {
 #       GLIBC_x.y is on Linux: a binary built on macOS 27 does not start on 15.
 #       It is REPORTED rather than gated because this project has no macOS
 #       deployment-target policy to check it against -- inventing a ceiling here
-#       would be asserting a decision nobody made. See FRICTION 109.
+#       would be asserting a decision nobody made. 
 check_native_darwin() {
     st="$1"; tag="$2"; want_arch="$3"
     for exe in $(archive_exes "$st"); do
@@ -554,7 +554,7 @@ selfcheck_darwin() {
 # every Mac and most Linux boxes, the NATIVE archive got zero content checks
 # while the lane printed a tidy SKIP. That is the shape the macOS artifact would
 # have shipped in: built, smoke-tested by release.sh, and unexamined by the gate
-# whose whole job is examining it (FRICTION 109).
+# whose whole job is examining it ().
 #
 # Now each leg states its own prerequisites. The native leg needs nothing this
 # host does not already have, so it always runs; the mingw leg skips by name and

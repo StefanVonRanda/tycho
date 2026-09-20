@@ -95,7 +95,7 @@ say "[3] same server, CA trusted, name differs" "$r3"
 # server, so if core:tls truncated at the NUL this would come back OK. The shim
 # feeds `host` to tcp_connect, SSL_set_tlsext_host_name and SSL_set1_host, so a
 # truncation would dial, announce and VERIFY a name the caller never passed
-# (FRICTION 117).
+# ().
 r4=$(SSL_CERT_FILE="$T/ca.pem" "$T/probe" --nul-host 2>/dev/null || true)
 say "[4] trusted host with an interior NUL" "$r4"
 [ "$r4" = FAIL ] || { echo "  LEAK: an interior NUL was TRUNCATED -- core:tls connected to, announced and verified a name the caller did not pass."; fail=1; }

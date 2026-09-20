@@ -2,10 +2,10 @@
 """Every document under `docs/` must be REACHABLE from an index, not merely linked-to.
 
 WHY THIS EXISTS. `scripts/check_links.sh` fails a link that points nowhere and
-says nothing about a document nobody points at. sat orphaned
-for days and was found by a human reading the index, not by a gate
-(`docs/internals/FRICTION.md`, open-list item 13). A dead link is loud; an
-invisible document is silent, and silence is the failure mode worth gating.
+says nothing about a document nobody points at. A page orphaned by an index
+edit stayed that way for days and was found by a human reading the index, not
+by a gate. A dead link is loud; an invisible document is silent, and silence is
+the failure mode worth gating.
 
 WHAT "REACHABLE" MEANS HERE, and why not something broader:
 
@@ -23,7 +23,7 @@ WHAT "REACHABLE" MEANS HERE, and why not something broader:
   SUBJECT is `docs/**.md` only. The other 43 unlinked Markdown files in the tree
   are a different thing and are deliberately out of scope: a `<dir>/README.md` is
   the entry point OF its directory (GitHub renders it on the directory page),
-  `bench/*/RESULTS.md` are data beside a benchmark, `.github/*` is consumed by
+  `.github/*` is consumed by
   GitHub, `plan.md` is a working file. Gating those would be a 43-file flag day
   that says nothing about whether the documentation is navigable.
 

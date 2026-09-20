@@ -285,7 +285,7 @@ fn build(src_path: string, runtime_path: string, base: string, argv0: string,
     # 2026-09-19 the first `make ci` on aarch64 Linux rendered 0.1+0.2 as
     # 0.30000000000000006 where every x86-64 run had said ...04 -- a decimal
     # that reads back but is not the nearest. Setting this flag turned that lane
-    # green, all 98411 generated floats included (FRICTION 112).
+    # green, all 98411 generated floats included ().
     #
     # A language whose goldens are byte-identical and whose benchmark table says
     # "same checksum computed by every binary" cannot let the C compiler choose

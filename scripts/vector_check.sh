@@ -147,8 +147,7 @@ esac
 packed_ops() { cc "$1" -fwrapv -std=c11 -S "$2" -o - 2>/dev/null | grep -cE "$PACKED_RE" || true; }
 # The control is a property of the HOST cc, not of Tycho. gcc emits no packed
 # arithmetic for a plain [4]float at -O0/-O1, so `control == 0` discriminates
-# perfectly; clang emits it even at -O0 (measured 2026-09-11, FRICTION 89 --
-# clang 22.1.8: control 8 at -O0, 14 at -O1). So the absolute form is the
+# perfectly; clang emits it even at -O0. So the absolute form is the
 # STRONGEST form of this assertion and not a portable one, and a leg that fails
 # closed on clang was reporting the HOST's auto-vectoriser as a defect in the
 # feature. Run the strong form where the control earns it and fall back to
@@ -176,7 +175,7 @@ for O in -O0 -O1; do
         # array, the vector type must buy strictly more than it.
         [ "$v" -gt "$s" ] || fail "$CC: at $O the vector program emits $v packed instructions and its [4]float control emits $s -- the vector form does not exceed its control, so nothing measured here is attributable to the TYPE"
         echo "vector-check: leg [3] ran the RELATIVE form at $O -- this host's cc vectorises the [4]float control ($s packed), so the absolute form does not apply; asserted vector ($v) > control ($s) instead"
-        L3="at -O0/-O1 the vector program emits packed instructions and STRICTLY MORE of them than its [4]float control (this host's cc vectorises the control, so leg [3] ran the RELATIVE form -- see FRICTION 89)"
+        L3="at -O0/-O1 the vector program emits packed instructions and STRICTLY MORE of them than its [4]float control (this host's cc vectorises the control, so leg [3] ran the RELATIVE form -- see)"
     fi
 done
 # and the two programs must still agree on the answer

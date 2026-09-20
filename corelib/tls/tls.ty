@@ -42,7 +42,7 @@ extern fn tlsx_close(conn: ptr)
 # sweep, as BadAddr, on the grounds that no syscall was made so retrying cannot
 # help; `core:http` refuses it too. The sweep reached net, http, io, os, path and
 # datetime, and missed the one package where the string drives a security
-# decision (FRICTION 117).
+# decision ().
 fn _has_nul(host: string) -> bool:
     for i := 0; i < len(host); i += 1:
         if host[i] == 0:

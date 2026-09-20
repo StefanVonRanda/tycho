@@ -4,7 +4,7 @@
  * `make shim-check` and spliced onto the real cc line as a separate .c file.
  * There is no generated header, so before this file every shim hand-declared
  * `tycho_int` -- 13 of 14 carried the same four guarded lines, and a first-time
- * shim author had to know to copy them (FRICTION #11).
+ * shim author had to know to copy them ().
  *
  * Include it relative to the shim's own directory, which needs no -I in either
  * build path:  #include "../tycho.h"

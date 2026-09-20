@@ -6,8 +6,7 @@ transpilers and gates, not asserted from memory.
 
 Tycho tests one claim: value semantics
 makes hierarchical arena allocation fully implicit, with no whole-program analysis. It
-transpiles to C and is MIT-licensed. For the argument itself see [thesis.md](thesis.md);
-for an honest accounting of where the model wins and loses see
+transpiles to C and is MIT-licensed. for an honest accounting of where the model wins and loses see
 [internals/value-semantics-limits.md](internals/value-semantics-limits.md).
 
 ## The pieces
@@ -75,7 +74,7 @@ a standing tax into a procedure with a known shape:
 
 **When they disagree the question is "which is right", not "make `tychoc1`
 match".** A divergence is a finding: one of the two is wrong, and which one is
-decided on the merits. FRICTION 87 is the worked example — the two worded a
+decided on the merits. One diagnostic is the worked example — the two worded a
 diagnostic differently, `tychoc1`'s answer was better, and **`src/tychoc.c` was
 changed to match it**. The oracle improving the reference is the mechanism
 working, not an inversion of it.
@@ -90,7 +89,7 @@ Probed 2026-09-11 with valgrind memcheck and every arena handout marked
 undefined: **371 programs clean** — all 288 flat fixtures, all 46 corelib test
 packages and all 37 corelib examples — against an instrument first proved able
 to fire. `tools/` was covered on 2026-09-18 by driving each tool through its own `run.sh` gate, which already supplies the arguments: 27 tools, 972 runs, 0 reads (only `tycho-debug`'s compiler-lookup leg excepted, which this method cannot reach). No lane was added because it found nothing; the method is recorded
-in [`internals/probe-uninit-arena-2026-09-11.md`](internals/probe-uninit-arena-2026-09-11.md)
+in a one-off 2026-09-11 probe
 so it can be re-run after codegen work that touches initialisation.
 
 `make ci` runs the whole gate locally — there is no hosted CI, by policy. What each
@@ -169,11 +168,11 @@ retired premise is not settled, it is merely unexamined.
 **1. The dynamic form is impossible, not declined.** A trait object is a pointer
 to someone else's value plus a vtable. There is no reference type, and that is the
 load-bearing constraint of the whole model — a value escapes in exactly two ways,
-both visible in the syntax ([thesis §1](thesis.md)). A `dyn Trait` stored in a
+both visible in the syntax. A `dyn Trait` stored in a
 struct field is exactly the aliasing value semantics forbids. So the shape most
 people mean when they ask for this — a Go or Java `interface` held in a field, a
 heterogeneous list of implementors — can never exist here, whatever is decided
-about the static form. [thesis §5](thesis.md) states it as a boundary of the
+about the static form. It is a boundary of the
 model rather than a missing feature.
 
 **2. The static form is largely already present, and the gap is smaller than

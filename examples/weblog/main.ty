@@ -69,7 +69,7 @@ fn parse_line(line: string) -> Rec:
     # takes the numeric prefix and discards the rest. Every one of those is a
     # plausible byte count that goes straight into the reported totals, from a
     # field an HTTP client can influence. Measured on a crafted log before the
-    # fix: 9999999999999999999 reported as 0 bytes and "50x" as 50 (FRICTION 115).
+    # fix: 9999999999999999999 reported as 0 bytes and "50x" as 50 ().
     #
     # `-` is NOT malformed -- it is how CLF spells "no body sent" -- so it maps to
     # 0 explicitly rather than arriving there by accident, which is exactly the

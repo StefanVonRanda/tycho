@@ -1,39 +1,19 @@
 # Internals
 
-Maintainer notes. Not user documentation — these record decisions, dead ends and
-measurements, and they assume you already know the codebase.
-
-## Design notes
+Maintainer notes. Not user documentation — these record decisions that the code
+cannot state for itself, and they assume you already know the codebase.
 
 - [`value-semantics-limits.md`](value-semantics-limits.md) — where the memory
   model costs, and why those costs were accepted.
 - [`design-aggregate-ref.md`](design-aggregate-ref.md) — aggregate references.
-- [`design-scalar-match.md`](design-scalar-match.md) — scalar patterns in `match`.
-
-## Records
-
-- [`FRICTION.md`](FRICTION.md) — the running log of what fought back while
-  writing real programs against this language. The primary source for what is
-  actually hard here.
-- [`audit-brief.md`](audit-brief.md) — what a third-party reviewer would need.
-- [`ffi-review-2026-08-14.md`](ffi-review-2026-08-14.md) — an FFI boundary review.
-- [`audit-2026-08-16.md`](audit-2026-08-16.md) — security audit across the whole
-  threat model: two vulnerabilities found and fixed, and what it did not cover.
-- [`roadmap-closed-2026-08.md`](roadmap-closed-2026-08.md) — the 1.0 conditions
-  closed in August 2026, moved out of `ROADMAP.md`.
+- [`design-scalar-match.md`](design-scalar-match.md) — scalar patterns in
+  `match`. Cited by name in a compiler error message, so it is load-bearing:
+  see `src/tychoc.c@is_builtin_name`'s neighbourhood and the `match` refusal.
 - [`windows-port.md`](windows-port.md) — the design record of the native
   Windows port. Cited by `tests/run.sh`, `scripts/ci.sh` and the wine lanes.
 
-## Completed plans
-
-Each `plan-*-DONE.md` is the finished record of one campaign, kept for its
-evidence rather than its instructions:
-[repo-polish](plan-repo-polish-DONE.md),
-[chess](plan-tycho-chess-DONE.md),
-[kv](plan-tycho-kv-DONE.md),
-[kvsrv](plan-tycho-kvsrv-DONE.md),
-[rsa](plan-tycho-rsa-DONE.md),
-[sat](plan-tycho-sat-DONE.md),
-[scheme](plan-tycho-scheme-DONE.md),
-[scheme-compiler](plan-tycho-scheme-compiler-DONE.md),
-[vm](plan-tycho-vm-DONE.md).
+Dated probes, completed `plan-*-DONE.md` campaigns, point-in-time audits and the
+8,382-line FRICTION log were deleted on 2026-09-20. They were snapshots of a tree
+that has moved, and git history holds them. The 25 assertions FRICTION carried
+that no suite covers now live in `scripts/check_pins.py`, where they run in
+`make ci` instead of being narrated.

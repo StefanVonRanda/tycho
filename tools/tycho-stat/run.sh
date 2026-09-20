@@ -68,7 +68,7 @@ fn main():
     println(str(num.count()))
 PROBE
 if $TYCHOC -o "$T/probe/x" "$T/probe/main.ty" > "$T/probe/err" 2>&1; then
-    note "[6] an empty generic variadic naming NO type COMPILED -- FRICTION #40's fix now infers where it should refuse"
+    note "[6] an empty generic variadic naming NO type COMPILED -- the inference fix now infers where it should refuse"
 else
     grep -q "cannot infer the element type" "$T/probe/err" || note "[6] refused, but not with the element-type diagnostic"
     grep -q "name the type" "$T/probe/err" || note "[6] the refusal does not point at the \$(<type>)() spelling that works"

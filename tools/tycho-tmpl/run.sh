@@ -42,7 +42,7 @@ probe() {   # probe <name> <body-file-content>
     mkdir -p "$T/p_$_n"
     printf '%s\n' "$_src" > "$T/p_$_n/main.ty"
     if $TYCHOC -o "$T/p_$_n/x" "$T/p_$_n/main.ty" > "$T/p_$_n/err" 2>&1; then
-        note "[3] $_n COMPILED -- the sink consume rule was relaxed; FRICTION #37 needs re-reading"
+        note "[3] $_n COMPILED -- the sink consume rule was relaxed; this lane needs re-reading"
     elif ! grep -q "sink" "$T/p_$_n/err"; then
         note "[3] $_n failed, but not with a sink diagnostic"; head -1 "$T/p_$_n/err"
     fi

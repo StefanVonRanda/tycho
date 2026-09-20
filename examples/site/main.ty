@@ -131,7 +131,7 @@ fn build(site_dir: string, out_dir: string):
             # datetime.from_unix, and `strings.parse_int` fails open by taking a
             # numeric PREFIX -- so the most plausible mistake an author can make,
             # writing an ISO date where a unix timestamp belongs, silently became
-            # a real-looking wrong one (FRICTION 116):
+            # a real-looking wrong one ():
             #
             #   date: 2024-01-15  ->  2024  ->  renders 1970-01-01T00:33:44
             #                                   and sorts first, as the oldest

@@ -172,4 +172,4 @@ prerel=""
 case "$version" in v0.*) prerel=" --prerelease" ;; esac
 
 echo "publish with:"
-echo "  gh release create ${version} dist/${name}.tar.gz dist/${name}.tar.gz.sha256 --notes-file RELEASE_NOTES.md${prerel}"
+echo "  gh release create ${version} dist/${name}.tar.gz dist/${name}.tar.gz.sha256 --notes-file CHANGELOG.md${prerel}"

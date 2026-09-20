@@ -2984,7 +2984,7 @@ static Expr *parse_primary(Parser *ps) {
                                          * writer reaches for by analogy with `[]string`, and
                                          * without it here the literal fell through to the
                                          * untyped marker and the `$` died "expected newline"
-                                         * (FRICTION #36). parse_type already handles `$T`. */
+                                         * (). parse_type already handles `$T`. */
                 e->ival = T_VOID;            /* the "untyped" marker */
                 return e;
             }
@@ -4547,7 +4547,7 @@ static int shadows_builtin(const char *n) {
         /* is_pure_builtin adds */
         "to_char", "hash",
         /* I/O and process, from the spec's builtin appendix */
-        "print", "println", "eprint", "input", "read_all",   /* no `eprintln`: not a builtin (FRICTION #6) */
+        "print", "println", "eprint", "input", "read_all",   /* no `eprintln`: not a builtin () */
         "write_file", "list_dir", "getenv", "args", "die", "now", "clock",
         "ncpu", "channel", "send", "recv", "close", 0 };     /* no `zero`: that is core:bignum's, not a builtin */
     for (int i = 0; bs[i]; i++) if (!strcmp(n, bs[i])) return 1;
@@ -6300,7 +6300,7 @@ static int g_resolve_depth = 0;
  * question got it wrong: `sig_find` has no entry for a generic builtin like `len`,
  * and neither of those lists carries `get` or `wait`. So `strings.len(...)` died as
  * "package 'strings' has no symbol 'len'" while tychoc1 named the builtin and the
- * cure -- FRICTION 107, found by `make parse-check` leg15.
+ * cure. Found by `make parse-check` leg15.
  * COMPLETENESS IS GATED, because a fourth partial list is exactly the defect
  * repeated: scripts/builtin_qualified.sh compiles a qualified call for every
  * builtin in surface.lock and requires BOTH compilers to name it, so a builtin
@@ -7108,9 +7108,9 @@ static Type resolve_expr_inner(Expr *e) {
                      * fell past this branch and died as "package 'strings' has no symbol
                      * 'len'", sending the reader to look for a symbol that was never going
                      * to be there. tychoc1 tests the whole builtin table and says the
-                     * useful thing; this matched it on 2026-09-19 (FRICTION 107). Found by
+                     * useful thing; this matched it on 2026-09-19 (). Found by
                      * `make parse-check` leg15, the differential the oracle exists for --
-                     * and found a day late, because nothing runs that gate (FRICTION 106). */
+                     * and found a day late, because nothing runs that gate (). */
                     if (is_builtin_name(nominal_name(e->sval)))
                         die_at(e->line, "'%s' is a builtin, not a member of package '%s' -- "
                                "call it directly: %s(...)",
@@ -15313,7 +15313,7 @@ int main(int argc, char **argv) {
      * ARCHITECTURE -- ARM always has FMA, baseline x86-64 does not -- so the same
      * source gave 0.1+0.2 = ...004 on x86-64 and ...006 on aarch64 until
      * 2026-09-19. Must match compiler/driver/driver.ty, which carries the long
-     * version of this note (FRICTION 112). */
+     * version of this note (). */
     char *cmd = sfmt("%s %s -fwrapv -ffp-contract=off%s -pthread%s -o %s %s%s -lm%s%s %s", cc, optdbg, march, incdir, shq(base), shq(c_path), shims, links, extra, pkgdeps);
     int rc = system(cmd);
     if (rc != 0) { fprintf(stderr, "tychoc: C compilation failed (%s)\n", cmd); return 1; }   /* the .c SURVIVES a cc failure on purpose: it is the evidence the printed command refers to */

@@ -189,7 +189,7 @@ EOF
     # leaves that chain alone; clang at -O1 if-converts it straight back into a
     # branchless select, so the control emitted no branch, reported 0 and the
     # leg killed itself as undiscriminating -- on a tree where nothing was
-    # wrong. Same shape as FRICTION 89: a control that is a gcc property read
+    # wrong. Same shape as the vector-check control: a gcc property read
     # as a C property.
     #
     # -O0 is what makes the control's branch survive any compiler, and a
