@@ -38,7 +38,17 @@ $fx = if (Test-Path fixtures.txt) {
 
 $pass = 0; $fail = 0; $bad = @()
 foreach ($x in $fx) {
-    $ty = "tests\$x.ty"; $want = "tests\$x.out"; $exe = "$env:TEMP\pm-$x.exe"
+    $ty = "tests\$x.ty"; $exe = "$env:TEMP\pm-$x.exe"
+    # EITHER golden is a pass where both exist. float_roundtrip and
+    # float_str_locale ship a `.out.win` because their rt= column needs
+    # newlocale, which CLASSIC mingw lacks -- but this guest builds with
+    # llvm-mingw against UCRT, which HAS it, so the output matches the POSIX
+    # golden instead. Preferring .out.win unconditionally failed both fixtures
+    # on a toolchain that is behaving correctly; requiring .out fails the
+    # toolchain the golden was recorded for. Accepting either is the honest
+    # rule: both are sanctioned answers and which applies depends on the CRT.
+    $wants = @("tests\$x.out")
+    if (Test-Path "tests\$x.out.win") { $wants += "tests\$x.out.win" }
     if (-not (Test-Path $ty)) { $fail++; $bad += "$x(no-fixture)"; continue }
     # --cc: tychoc shells out to `cc`, which does not exist here. Naming clang
     # explicitly keeps the emitted program native x86_64.
@@ -64,10 +74,14 @@ foreach ($x in $fx) {
     }
     if ($null -eq $got) { $got = "" }
     $got = $got -replace "`r`n", "`n"
-    $exp = (Get-Content $want -Raw) -replace "`r`n", "`n"
+    $ok = $false
+    foreach ($w in $wants) {
+        $exp = (Get-Content $w -Raw) -replace "`r`n", "`n"
+        if ($got.TrimEnd("`n") -eq $exp.TrimEnd("`n")) { $ok = $true; break }
+    }
     # Trailing-newline differences are a text-mode artefact of the transport,
     # not a language difference, so both sides are normalised before compare.
-    if ($got.TrimEnd("`n") -eq $exp.TrimEnd("`n")) { $pass++ } else { $fail++; $bad += $x }
+    if ($ok) { $pass++ } else { $fail++; $bad += $x }
     Remove-Item $exe -ErrorAction SilentlyContinue
 }
 if ($bad.Count) { Write-Output ("  FAIL " + ($bad -join ' ')) }

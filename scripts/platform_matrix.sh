@@ -135,6 +135,23 @@ FIXTURES=$(echo $FIXTURES | tr -s '[:space:]' ' ')
 nfix=$(echo $FIXTURES | wc -w | tr -d ' ')
 
 mkdir -p "$ROOT/build"
+
+# ONE RUN AT A TIME. Two concurrent invocations drive the SAME guests and each
+# one wipes the other's workspace -- every runner starts by removing and
+# re-extracting the tree -- so fixtures fail to compile at random and the
+# failure set differs between runs. They also both truncate $OUT.tmp, and the
+# verdict file that release_cross.sh reads ends up holding one row, marking
+# passing platforms as untested. Both happened on 2026-09-20 within one minute
+# of each other. A second run refuses rather than corrupting the first.
+LOCK="$ROOT/build/platform-matrix.lock"
+if ! mkdir "$LOCK" 2>/dev/null; then
+    echo "platform-matrix: another run holds $LOCK" >&2
+    echo "  Concurrent runs share the VMs and the verdict file and corrupt both." >&2
+    echo "  Wait for it, or remove the directory if no run is active." >&2
+    exit 2
+fi
+trap 'rm -rf "$LOCK"' EXIT HUP INT TERM
+
 : > "$OUT.tmp"
 rc=0; npass=0; nskip=0; nfail=0
 
