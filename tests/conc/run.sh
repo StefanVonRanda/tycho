@@ -134,7 +134,7 @@ else
 fi
 
 # `parallel(W)` must reach CODEGEN, which no output can show. With no way to
-# observe a worker's identity from inside the loop,
+# observe a worker's identity from inside the loop (FRICTION open-list item 8b),
 # a `parallel(3)` that quietly ran at ncpu() prints exactly what a real one
 # prints -- tests/conc/parfor_width.ty says so in its own header. So the emitted
 # `_pk` initialiser is read here: the literal widths must appear as themselves

@@ -24,7 +24,7 @@ make -s tychoc
 ver="$(./tychoc --version | awk '{print $2}')"
 [ "v$ver" = "$version" ] || {
     echo "!! version mismatch: src/tychoc.c says $ver, asked for $version" >&2
-    echo "   bump TYCHO_VERSION in src/tychoc.c and CHANGELOG.md together" >&2
+    echo "   bump TYCHO_VERSION in src/tychoc.c and README.md together" >&2
     exit 2; }
 
 built=0
@@ -64,10 +64,23 @@ for row in $TARGETS; do
     cp -R corelib examples README.md LICENSE "$stage/"
     # A note IN the artifact, not only in the release page: whoever unpacks this
     # on a Mac should know nobody has run it there.
-    case "$plat" in
-        linux-x86_64|windows-x86_64) ;;
-        *) printf 'This build was cross-compiled with `zig cc` on linux-x86_64 and has\nNOT been executed on %s. It compiles cleanly and reports the right\narchitecture; that is all that is known. Please report anything that\nbreaks -- see SECURITY.md and CONTRIBUTING.md in the repository.\n' \
-             "$plat" > "$stage/UNTESTED-PLATFORM.txt" ;;
+    # MEASURED, not asserted. This was a case statement naming linux-x86_64 and
+    # windows-x86_64 as the tested pair, which made the shipped disclaimer a
+    # hardcoded belief: aarch64-linux went 1065/1065 by hand and still shipped
+    # saying nobody had run it, and a platform that REGRESSED would have gone on
+    # shipping with no disclaimer at all. scripts/platform_matrix.sh executes
+    # each platform and records a verdict; a PASS there is the only thing that
+    # removes this file.
+    matrix="$root/build/platform-matrix.tsv"
+    verdict=""
+    [ -f "$matrix" ] && verdict=$(awk -F'\t' -v p="$plat" '$1==p{print $2; exit}' "$matrix")
+    case "$verdict" in
+        PASS) ;;
+        *)
+            when="never"
+            [ -f "$matrix" ] || when="no matrix has been run (scripts/platform_matrix.sh)"
+            printf 'This build was cross-compiled with `zig cc` on linux-x86_64.\n\nIt has NOT been executed on %s: %s. It compiles cleanly and\nreports the right architecture; that is all that is known.\n\nWhat would change this line: a PASS for %s in\nbuild/platform-matrix.tsv, written by running\n`make platform-check` on a machine that can reach that platform.\n\nPlease report anything that breaks.\n' \
+              "$plat" "${verdict:-$when}" "$plat" > "$stage/UNTESTED-PLATFORM.txt" ;;
     esac
 
     ( cd dist && tar czf "$name.tar.gz" "$name" && sha256sum "$name.tar.gz" > "$name.tar.gz.sha256" )
@@ -78,4 +91,11 @@ done
 
 rm -f "$root/dist-cross.log"
 [ "$built" -gt 0 ] || { echo "!! no target matched '$only'" >&2; exit 2; }
-echo "release-cross: built $built artifact(s). linux-x86_64 is the host and windows-x86_64 runs under wine; the other four are UNTESTED and say so in UNTESTED-PLATFORM.txt"
+tested=$(ls dist/*/UNTESTED-PLATFORM.txt 2>/dev/null | wc -l | tr -d ' ')
+echo "release-cross: built $built artifact(s). Which of them have actually been"
+echo "               EXECUTED is read from build/platform-matrix.tsv, not assumed;"
+echo "               every platform without a PASS there carries UNTESTED-PLATFORM.txt."
+[ -f "$root/build/platform-matrix.tsv" ] || \
+  echo "               NOTE: no matrix on this machine -- run \`make platform-check\`, so" >&2
+[ -f "$root/build/platform-matrix.tsv" ] || \
+  echo "               every archive is marked untested even where coverage exists." >&2

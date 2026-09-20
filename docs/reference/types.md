@@ -1,0 +1,180 @@
+# Types
+
+> **Memory:** Newtypes are erased in lowering, and the arena-based deep copy respects
+> type identity. Bidirectional inference means type-driven allocation decisions are
+> never deferred.
+
+Tycho is statically typed, and every value has a type known at compile time. This page
+covers the scalar types, the `bytes` buffer, distinct `type` newtypes, and how
+bidirectional inference lets you leave most annotations off without ever introducing a
+type variable. The compound types — arrays, structs, maps, tuples, enums — each have
+their own page.
+
+## Scalars
+
+| Type | Values |
+| --- | --- |
+| `int` | 64-bit signed integer |
+| `float` | 64-bit IEEE-754 double |
+| `bool` | `true` / `false` |
+| `string` | an immutable, length-counted byte string |
+| `char` | a single byte (`0`–`255`) |
+| `u32` / `u64` | 32- / 64-bit **unsigned** integer, wraps at 2³² / 2⁶⁴ |
+| `f32` | 32-bit IEEE-754 single-precision float |
+
+`int` and `float` never mix implicitly — there is no automatic widening. Convert
+explicitly with `to_float(n)` and `to_int(x)` (the latter truncates toward zero). The
+operators each type supports are in [Basics](basics.md#expressions).
+
+### `u32` / `u64` / `f32`
+
+Fixed-width numerics for bit-twiddling, hashing, and crypto (`corelib/sha256` is written
+in `u32`). They behave like `int`/`float` but at a defined width:
+
+- **Wrap is defined.** `u32`/`u64` arithmetic (`+ - * << ~` …) wraps modulo 2³²/2⁶⁴ — no
+  masking needed. `>>` is a logical shift; `/` and `%` abort cleanly on a zero divisor.
+- **Distinct and non-mixing**, like `char`. A `u32` never silently becomes an `int`.
+  Bridge explicitly with `to_u32(x)`, `to_u64(x)`, `to_f32(x)`, `to_int(x)`, `to_float(x)`
+  (each takes any numeric scalar). A bare **int literal adapts** to a `u32`/`u64` operand
+  and a numeric literal to `f32`, so `h ^ 16777619` and `x & 255` need no cast on the
+  constant; a non-literal `int` does (`state[i]` → `to_u32(state[i])`).
+- Arrays (`[u32]`, `[f32]`, …), struct fields, `str(...)`, and f-strings all work.
+- They also cross [FFI](ffi.md) as their real C type (`u32` ↔ `uint32_t`, etc.).
+
+### `char`
+
+A `char` is one byte, written with a quoted literal — `'x'`, with the escapes
+`\n \t \r \0 \\ \'` and `\xNN` (exactly two hex digits, either case: `'\x41'` is
+`'A'`). That set is **not** the one a [string literal](#string-escapes) takes. It
+interoperates with `int` deliberately and narrowly:
+
+- `char ± int` is a `char` (a byte offset — `'a' + 1` is `'b'`). The result keeps the
+  `char` type but its value is the ordinary integer result — it is **not** reduced to
+  `0..255` (e.g. `'a' + 300` is a `char` holding `397`).
+- `string + char` appends the byte **in place**, without allocating, so building a string
+  one character at a time is a byte-write, not an allocation per character:
+
+```tycho
+s := ""
+for d := 0; d < 10; d += 1:
+    s = s + ('0' + d)          # zero-allocation one-byte append per digit
+```
+
+`char` does not silently become `int` elsewhere — `str(c)` and `c == n` (mixing `char`
+and `int`) are type errors, so the byte/number distinction is never lost by accident.
+
+### `bytes`
+
+`bytes` is an immutable binary buffer. Unlike `string`, it is not NUL-terminated, so
+interior `\0` bytes survive — which is what you want for hashing, crypto, and binary I/O.
+`to_bytes(s)` and `to_str(b)` bridge the two; `to_bytes(xs)` over an `[int]` (each
+element `& 0xFF`) builds a binary buffer from computed bytes — the way to produce a
+`bytes` with interior NULs in pure Tycho. `bytes` also crosses the [FFI](ffi.md)
+boundary as a `(pointer, length)` pair.
+
+## String escapes
+
+A string literal takes exactly five escapes; anything else is a compile error that
+names the set — `unsupported escape \q (use \n \t \r \\ \")`.
+
+| escape | byte | |
+|---|---|---|
+| `\n` | 10 | newline |
+| `\t` | 9 | tab |
+| `\r` | 13 | carriage return |
+| `\\` | 92 | backslash |
+| `\"` | 34 | double quote |
+
+There is no `\0`, `\'`, `\a`, `\b`, `\f`, `\v`, `\e`, `\xNN` or `\uNNNN`. A single
+quote needs no escape — `"it's"` is a valid literal. For any other byte, build it:
+`chr(27)` is a one-byte string holding ESC, and `to_bytes(xs)` over an `[int]` is
+the way to a `bytes` with interior NULs. An `f"..."` lexes the same five and
+rejects the same rest. A [`char` literal](#char) is a **different** set — it takes
+`\0`, `\'` and `\xNN`, and refuses `\"`.
+
+```tycho
+fn main():
+    println("tab:\there")
+    println("quote:\" backslash:\\")
+    println(str(len("a\rb")))
+```
+
+```output
+tab:	here
+quote:" backslash:\
+3
+```
+
+## String interpolation
+
+An `f"..."` string interpolates `{expr}` holes, desugaring to ordinary concatenation —
+`f"point=({p.x},{p.y}) sum={a + b}"` becomes `"point=(" + str(p.x) + ...`. A plain
+`"..."` is **never** interpolated, so it needs no brace escaping; inside an `f"..."`,
+`{{` and `}}` are literal braces. A hole may hold any expression — including one with its
+own string literals or a nested f-string — and must evaluate to a value `str` accepts: an
+`int`, a `u32`/`u64`/`f32`, a `float`, a `bool` (printed `true`/`false`), or a `string`.
+
+## Distinct newtypes (`type`)
+
+`type Meters = float` declares a **distinct** type: same runtime representation as its
+underlying type (zero cost — a `Meters` *is* a `double` in the generated C), but
+type-incompatible with `float` and with every other newtype. This is Odin's
+`distinct` — Tycho has no *transparent* alias, so `type` always means distinct.
+
+```tycho
+type Meters = float
+type Seconds = float
+
+fn area(w: Meters, h: Meters) -> Meters:
+    return w * h               # arithmetic stays in Meters
+
+fn main():
+    w := Meters(3.0)
+    a := area(w, Meters(4.0))
+    print(str(a))              # 12.0 -- str sees the underlying float
+    # area(3.0, 4.0)           -> error: a float is not a Meters
+    # w + Seconds(1.0)         -> error: can't mix two newtypes
+```
+
+A newtype supports its base type's **arithmetic, ordering, `==`, and `str`** — but only
+between two values of the *same* newtype, so `Meters` and `Seconds` never mix by accident.
+That is the point: zero-cost unit and ID safety. Construct one with `Meters(x)`; recover
+the raw value with `to_int` / `to_float` / `to_str` / `to_bool` per the underlying scalar.
+
+The underlying type may also be an **aggregate** — `type Ids = [int]`,
+`type Env = [string: int]`, `type Pos = Pt` (a struct). Wrap with `Ids(v)`, unwrap with the
+generic `to_under(x)` (zero-cost, works on any newtype), and value semantics carries
+through the wrapper unchanged. A newtype over `string` or `int` is also a valid
+[map key](maps.md#keys).
+
+## Type inference (bidirectional)
+
+A local infers forward from its initializer — `x := e` gives `x` the type of `e`. In the
+other direction, every position with a known destination type — declarations, assignments,
+call arguments, `return`, stores, literal elements — *checks* the expression against it.
+This is Pierce–Turner local inference, and it lets the annotation-light forms work:
+
+```tycho
+import "core:iter"
+
+fn tally(m: [string: int], extra: [int]) -> int:
+    return len(m) + len(extra)
+
+em := []string: int
+f := 1.5
+
+xs : [int] = []              # bare [] takes the expected array type
+_n := tally(em, [])           # ...in argument position too
+_g := f + 2                   # an int literal adapts to a float context (f : float)
+_doubled := iter.map(xs, fn(x: int) -> int: x * 2)   # lambda params from the expected fn type
+
+ys := []                     # a bare decl stays pending...
+push(ys, 3)                  # ...until its first grounding use types it ([int])
+```
+
+There are **no type variables and no unification**: every expression is typed at its own
+line, either synthesized from its parts or checked against a known destination. Errors
+stay local, and the memory model's type-driven decisions are never deferred. The cost is
+that a value with *no* way to determine its type is rejected rather than guessed — a bare
+`x := None` or `x := []` with no grounding use is a compile error; annotate it. Function
+signatures are always explicit: they are the module's interface and the inference's seeds.

@@ -215,17 +215,16 @@ the compiler places every allocation and free itself, from the syntax alone — 
 collector, no manual `free`, and no lifetime annotations to write.
 
 That is the entire idea the language exists to test. The full argument, with the
-measurements and the cases where it costs, is in
-[architecture.md](architecture.md).
+measurements and the cases where it costs, is in [thesis.md](thesis.md).
 
 ## Next steps
 
 - **Reaching for the core library?** Every program in this tutorial stands alone,
   so none of them needed a `package` line. The moment you add an `import`, the file
   becomes a package and must say so — put `package main` on line 1, and give the
-  program its own directory. See **[§15 Program structure](spec/15-program.md)**.
-- **[The specification](spec/README.md)** — the precise behavior of every feature.
+  program its own directory. See **[Packages](reference/packages.md)**.
+- **[Language reference](reference/index.md)** — the precise behavior of every feature.
 - **[Examples](../examples/)** — larger runnable programs (a JSON parser, an HTTP client,
   a static-site generator, a ray tracer).
-- **[architecture.md](architecture.md)** — how the project is built and what each gate proves.
-- **[§31 Library](spec/18-library.md)** — the batteries: strings, math, io, json, http, and more.
+- **[thesis.md](thesis.md)** — why the language is shaped this way.
+- **[Core library](reference/corelib.md)** — the batteries: strings, math, io, json, http, and more.

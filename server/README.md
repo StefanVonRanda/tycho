@@ -125,7 +125,8 @@ keep N live handles is N stack frames. Phase 1 of
 the webserver plan measured the alternatives —
 `parallel for` silently collapses to `min(N, ncpu)` live iterations, and
 accept-on-main-spawn-per-connection serialises completely because the compiler
-emits an implicit join at the handle's scope exit. Both are still open.
+emits an implicit join at the handle's scope exit. Both are still open as
+`docs/internals/FRICTION.md` items 3 and 4.
 
 Each worker polls over the listener and every connection it holds, up to
 `MAX_CONNS` of them (`server/main.ty@MAX_CONNS`), so N workers means far more

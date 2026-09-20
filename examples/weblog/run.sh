@@ -21,7 +21,7 @@ diff -u "$D/expected.out" "$T/out_c" || { echo "weblog: tychoc output differs fr
 # A MALFORMED BYTE COUNT MUST FAIL THE RECORD, and the shipped access.log has
 # none -- so the golden above passes whether or not the field is checked, which
 # is how `strings.parse_int` (fail-open: "50x" is 50, an overflow is 0) sat on an
-# attacker-influenced field unnoticed (). This leg supplies what the
+# attacker-influenced field unnoticed (FRICTION 115). This leg supplies what the
 # corpus lacks. Without the fix /over and /junk are ACCEPTED carrying 0 and 50.
 cat > "$T/bad.log" <<'LOG'
 1.2.3.4 - - [10/Oct/2000:13:55:36 -0700] "GET /good HTTP/1.0" 200 100

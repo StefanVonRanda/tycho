@@ -39,7 +39,7 @@ roundtrip 2.2250738585072014e-308
 # strings.parse_float refused everything below DBL_MIN as Underflow, so
 # `=1e-308` was rejected as a malformed NUMBER at parse time and a subnormal
 # reached by arithmetic rendered #NUM! -- one corelib limit, seen twice. It was
-# fixed (); both now hold and print their value. They stay in the
+# fixed (FRICTION #23); both now hold and print their value. They stay in the
 # demo as the regression guard for it. See cell/dtoa.ty.
 set B6 =1e-308
 set B7 =1e-300/1e10

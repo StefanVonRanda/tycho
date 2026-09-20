@@ -356,8 +356,8 @@ printf '=== build cold\n' >> "$out"; cat "$T/cold.log" >> "$out"
 # What IS sound is the asymmetry -- if a barrier exists, NO run can show the
 # overlap; if none exists, a run that gets CPU will. So observe up to three
 # times and require one success, which turns a coin toss into a property test.
-# An earlier lane already recorded the principle: a gate asserting a timing is a
-# coin toss. This is the same lesson as 108 ().
+# FRICTION 86 already recorded the principle: a gate asserting a timing is a
+# coin toss. This is the same lesson as 108 (FRICTION 121).
 _race_attempts=3
 _race_i=0
 _race_won=0

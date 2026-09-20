@@ -145,7 +145,7 @@ says so). The order that works:
    contract, and the file is short.
 2. Check `corelib/test/<pkg>/main.ty` and its `.out` golden for the answer to
    an edge case.
-3. `docs/spec/18-library.md` is the catalogue: which package holds what.
+3. `docs/reference/corelib.md` is the catalogue: which package holds what.
 
 Names that are not where you would look: `strings.parse_int` (no bare builtin),
 `sort.asc` / `sort.desc` / `sort.by_key` (not `sort.strings`), `to_under(x)` to

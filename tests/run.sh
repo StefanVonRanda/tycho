@@ -1,5 +1,6 @@
 #!/bin/sh
-# Differential + golden test harness, plus an expected-output check.
+# Differential + golden test harness — the verification standard from
+# docs/thesis.md §3, plus an expected-output check.
 #
 # For every .ty program in examples/ and tests/, transpile it, build BOTH a
 # native -O2 binary and an AddressSanitizer+UBSan binary, run both on the same

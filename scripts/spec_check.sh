@@ -61,7 +61,7 @@ missing=$(
 # The SUB-CASE names, which the container check above cannot see. A row often
 # cites `corelib/test/io` (`byte_index`, `byte_slice`, ...) -- the directory is
 # validated, the names inside it were not, and those names ARE the evidence for
-# the clause. Five citations were found pointing at nothing because they
+# the clause. FRICTION 119 found five citations pointing at nothing because they
 # were not path-shaped; this closes the same hole one level down, where a
 # renamed test case would leave the spec citing a name no file contains.
 python3 - "$econf" "$root" <<'ESUB'

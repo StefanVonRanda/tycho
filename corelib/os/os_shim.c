@@ -118,7 +118,7 @@ static int osx_argv_ok(const char *const *v, tycho_int n) {
  * that quiets gcc's -Wunused-function, but only by creating an unused
  * VARIABLE, which clang warns about instead. The suppression became the thing
  * that fired, and since scripts/shim.warn locks this file at zero warnings it
- * stopped `make ci` under clang outright (). The attribute says the
+ * stopped `make ci` under clang outright (FRICTION 90). The attribute says the
  * same thing to both compilers and creates nothing to warn about. It is
  * harmless where the function IS used -- the Windows spawn path, and the gate
  * above. */

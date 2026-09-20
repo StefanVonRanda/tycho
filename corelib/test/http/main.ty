@@ -38,7 +38,7 @@ fn main():
     println(f"file_post_null={b2i(is_null(pc))} file_post_len={len(http.body(pc))}")
     http.release(pc)
     println(f"file_gb={len(http.get_body(base))}")
-    # The interior-NUL guard () is NOT scored here any more, and the
+    # The interior-NUL guard (FRICTION #78) is NOT scored here any more, and the
     # reason is the whole point: it needs a POSITIVE control -- a URL that really
     # fetches -- and file:// was that control. Now that file:// is refused, a
     # NUL'd URL and a clean one would both answer null/0 here, which is a leg

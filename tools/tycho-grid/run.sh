@@ -121,7 +121,7 @@ fn main():
     println("x")
 FLAT
 if $TYCHOC --emit-c -o "$T/flat/p" "$T/flat/main.ty" > "$T/flat/err" 2>&1; then
-    echo "note [5b] the flat 2-D subscript now COMPILES -- the restriction was lifted; update the program and this lane"
+    echo "note [5b] the flat 2-D subscript now COMPILES -- FRICTION #48 was lifted; update the program and this lane"
     fail=1
 else
     grep -q "used more than once" "$T/flat/err" || note "[5b] the flat 2-D form is refused, but no longer for the once-per-parameter reason"

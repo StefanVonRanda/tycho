@@ -8,10 +8,10 @@ A fence is tried in this order, stopping at the first that compiles:
   3. wrapped in a `main`             -- the fence is loose statements
   4. 3, with the earlier fences of the SAME document prepended
 
-Step 4 is what makes a multi-fence page checkable. A page that defines a value
-in one fence and uses it in the next three is coherent read top to bottom, and
-read one fence at a time it is an undefined variable. The carry-over reads the
-page the way a reader does.
+Step 4 is what makes a reference page checkable. `docs/reference/maps.md`
+defines `counts` in one fence and uses it in the next three; read top to bottom
+that is coherent, and read one fence at a time it is an undefined variable. The
+carry-over reads the page the way a reader does.
 
 A bare expression (`len(counts)` on its own line) is bound to `_` before
 compiling. Those lines are illustrations of an EXPRESSION, and binding is what
@@ -840,7 +840,9 @@ def main():
     # Tycho and carries no tag is a failure unless its file is named here with a
     # reason -- the two allowed ones hold code that is SUPPOSED not to compile.
     UNTAGGED_OK = {
+        'docs/internals/FRICTION.md': 'a defect record: the code is what FAILED',
         '.github/ISSUE_TEMPLATE/bug_report.md': 'a form the reporter fills in',
+        'docs/rfc/parallel-for-width.md': 'grammar, not a program',
     }
     stray = []
     for f in sorted(subprocess.run(['git', 'ls-files', '*.md'], capture_output=True,

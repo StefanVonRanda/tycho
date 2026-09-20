@@ -4,7 +4,7 @@ The thesis: a **value-semantic + implicit-arena** memory model gives **C-class
 memory and predictable, pause-free reclamation, with no manual frees and no GC**.
 The only way I trust that claim is numbers next to C, Rust, Go (GC), and Koka
 (Perceus RC) on memory-heavy work, with **byte-identical output** per workload —
-not a passing test suite. This file is the map; each row names a workload
+not a passing test suite. This file is the map; each row links to a `RESULTS.md`
 with detail.
 
 ## Axis 1 — memory (peak RSS)
@@ -112,8 +112,7 @@ Not cleanly benchmarkable, and why (honest negative space):
   deep copies. On the `pool` workload — a bounded-channel worker pool written as
   one line, `parallel for x in ch:` — tycho is at Go parity (~5% faster, 150
   vs 157 ms) against Go's hand-written `range`-over-channel + `WaitGroup`
-  pool, both lock-free on the hot path.
+  pool, both lock-free on the hot path. See `conc/RESULTS.md`.
 
-See [../docs/architecture.md](../docs/architecture.md) for the model. Per-workload
-numbers are produced by running the benchmark, not stored: a recorded number is
-stale the day the tree moves.
+See [../docs/thesis.md](../docs/thesis.md) for the model; each subdirectory's
+`RESULTS.md` for the per-workload analysis.

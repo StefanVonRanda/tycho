@@ -1,6 +1,6 @@
 # Design: a cheap reference to an aggregate
 
-Status: the deliverable of the tycho-vm campaign, Phase 3. Read
+Status: the deliverable of `docs/internals/plan-tycho-vm-DONE.md` Phase 3. Read
 before any implementation starts; this document's recommendation is that the
 answer is **mostly already shipped**, that the plan's premise is stale in one
 measured place, and that the residual gap is not worth a new construct.
@@ -79,14 +79,14 @@ measured above:
    construction (the parameter dies at return); its exclusivity is the
    existing inout rule. Its codegen is the pointer + `_ina_` arena pass.
 2. **Yielding subscripts** — a scoped, zero-copy place projection into one of
-   the receiver's parts (`docs/spec/12-aggregates.md`). Verified: a
+   the receiver's parts (`docs/reference/subscripts.md:1-8`). Verified: a
    subscript result is usable as an `inout` argument and mutates the original
    (`bump(&g.node(1))` — the array element changed in place). Subscripts are
    compile-time place macros with no runtime object, so they carry none of the
    lifetime machinery a stored reference would.
 
 Both were independently concluded to be "the one compatible increment" by the
-limited-references spike, and the
+reference spike (`docs/rfc/limited-references-spike.md:104-131`), and the
 latter half has since shipped. A `ref` **binding** (`r := &a`) is the only
 piece of the space that does not exist — and it must not be added (below).
 
@@ -105,7 +105,8 @@ piece of the space that does not exist — and it must not be added (below).
 3. **What stops it outliving its target.** `inout` is call-scoped by
    construction; subscripts are compile-time. A stored reference fails the
    thread boundary: it has no sound deep-copy, so it breaks the invariant that
-   makes tasks race-free — the limited-references spike's recorded decision.
+   makes tasks race-free — the reference spike's recorded decision
+   (`docs/rfc/limited-references-spike.md:90-102`).
 4. **Type or binding.** Both compatible forms live at the binding/declaration
    level; neither introduces a reference **type**. A reference type would let
    references be stored, composed, and passed on — the escape question the
@@ -116,10 +117,10 @@ piece of the space that does not exist — and it must not be added (below).
    as `tools/tycho-ar` already does it inline. That is a library phase, not a
    language feature.
 6. **The counter-argument.** Value semantics with no references is the
-   project's central position, not an oversight. A general
+   project's central position, not an oversight (`docs/thesis.md`). A general
    borrow is Design A of the regions study — "a borrow checker with a
-   different keyword" that "contradicts the thesis at the joint".
-   The regions study's
+   different keyword" that "contradicts the thesis at the joint"
+   (`docs/rfc/value-lifetime-regions.md:405-406`). The regions study's
    recommendation applies here unchanged: the one genuinely sound increment in
    the space (Design B, value-owned arenas) has no paying customer in the tree,
    and the one compatible ergonomic increment (projections) has shipped. What
@@ -134,8 +135,8 @@ piece of the space that does not exist — and it must not be added (below).
 the copy costs the plan premises do not exist in the codegen — and the cost is
 the borrow checker. Three things ARE worth doing, in order:
 
-1. **Fix the stale documentation.** `docs/spec/07-memory-model.md:23-26`
-   says `inout` is copy-in/copy-out; the spec is the
+1. **Fix the stale documentation.** `docs/spec/07-memory-model.md:23-26` and
+   `docs/reference/basics.md` say `inout` is copy-in/copy-out; the spec is the
    semantic contract (fine), but it has been read as the implementation, which
    is how the plan's copy-tax premise entered. One sentence per site: the
    contract is `x = f(x)`; the codegen is an in-place pointer pass with the

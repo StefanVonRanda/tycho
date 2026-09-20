@@ -192,6 +192,7 @@ gmon.out
 !/.claude/skills/
 dist/
 
+# generated wiki mirror (see scripts/sync-wiki.py, make wiki)
 .wiki/
 # the tycho-chess engine's perft divide transcript golden
 # (tools/tycho-chess/expected.out) is tracked too, same line, same reason as

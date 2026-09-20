@@ -16,8 +16,9 @@ collector, no manual `free`, no borrow checker. It transpiles to C and builds
 with `cc` and `make`.
 
 [Docs](docs/README.md) · [Tutorial](docs/tutorial.md) ·
-[Spec](docs/spec/README.md) · [Architecture](docs/architecture.md) ·
-[Status](STATUS.md)
+[Reference](docs/reference/index.md) · [Thesis](docs/thesis.md) ·
+[Spec](docs/spec/) · [Performance](docs/performance.md) ·
+[How it is tested](docs/controls.md) · [Status](STATUS.md)
 
 ```tycho
 fn evens(limit: int) -> [int]:
@@ -119,8 +120,8 @@ hello Ada
 ```
 
 New here? The **[tutorial](docs/tutorial.md)** goes from this to a real program
-in about an hour, and **[§7 Memory model](docs/spec/07-memory-model.md)** states
-the arena rules exactly. Full build details are under
+in about an hour, and **[from `malloc` to arenas](docs/from-c-to-arenas.md)**
+explains the memory model from C you already know. Full build details are under
 [Trying it](#trying-it). The syntax is Python/Nim-flavored and the semantics
 Go/Odin-like; the value-semantics core comes from
 **[Hylo](https://www.hylo-lang.org/)**.
@@ -137,8 +138,8 @@ placed from the syntax alone. Two optimizations keep it from being slow — a
 returned value is built in the caller's arena (a move, not a copy), and
 `acc = acc + x` in a loop grows one buffer in place instead of reallocating
 each step — both sound because the value is provably un-aliased. The full
-rules are **[§7 Memory model](docs/spec/07-memory-model.md)**; `make bench`
-re-measures the cost.
+argument, with the measurements and the places it costs, is
+**[docs/thesis.md](docs/thesis.md)**.
 
 ## The testing campaign
 
@@ -163,8 +164,7 @@ languages measured head-to-head — 40% of C's on binary-trees, half on
 tree-rewrite — with no GC and no reference counting, only lexical arenas and
 value semantics. A 220-line recursive JSON parser holds a flat 10 MB across
 5,000,000 documents in a loop. The tables, the measurements, and the honest
-costs are reproduced by `make bench`, which re-measures every row rather than
-quoting a stored one.
+costs are in **[docs/performance.md](docs/performance.md)**.
 
 ## FAQ
 
@@ -259,7 +259,7 @@ correctness: each `bench/*.ty` asserts one metric against a generous bound.
 
 **Platform notes.** Builds on any unix-like OS — developed and gated on Debian
 (x86-64), and **gated on macOS / Apple Silicon since 2026-09-19**: `make ci` is
-green on `darwin-arm64` (267-390s across repeated runs; the spread is machine
+green on `darwin-arm64` (267-390s across repeated runs; the spread is FRICTION
 91), carrying 12 skips over 7 causes, each printing
 its reason (gdb, `-Wl,--wrap`, the glibc symbol floor, `ilp32`,
 `resource.prlimit`, an x86-64 `--target` leg, and LeakSanitizer). On macOS,
@@ -283,7 +283,7 @@ not move when the C locale does, which needs a locale whose decimal point is not
 `.`. A stock container or CI image ships only `C`/`POSIX`/`en_US`, so both
 fixtures fail with `hostile=1` expected, got `0` — the fixture refusing to pass
 while proving nothing, which is right, but the cure is the line above
-
+(FRICTION 111).
 
 The optional corelib packages need their dev libraries, or `make shim-warn`
 refuses — it compiles 9 shims, wants 10, and will not read an empty warning file
@@ -338,12 +338,19 @@ hour that ends with a small real program and the one idea that makes the
 language tick. [`docs/`](docs/README.md) is the full index; the map:
 
 - **[Tutorial](docs/tutorial.md)** — learn the language by writing and running code.
-- **[The specification](docs/spec/README.md)** — every construct, normatively.
-  The single source of truth; every example compiles. Operations that answer
-  instead of refusing (bytes vs characters, clamping slices, wraparound, the lax
-  parsers) are marked in the chapter that defines each — read those before
-  trusting a parse.
-- **[Debugging](docs/debugging.md)** — when a program misbehaves.
+- **[From `malloc` to implicit arenas](docs/from-c-to-arenas.md)** — the memory
+  model in five steps, starting from C you already know. The gentlest way in.
+- **[Language reference](docs/reference/index.md)** — every construct, by topic.
+  The source of truth; every example compiles.
+- **[Quiet results](docs/quiet-results.md)** — the complete register of
+  operations that answer instead of refusing (bytes vs characters, clamping
+  slices, wraparound, the lax parsers). Each is deliberate; each has a
+  fail-closed sibling. The page to read before trusting a parse.
+- **[The thesis](docs/thesis.md)** — why value semantics makes implicit arenas
+  work, and where it doesn't, with measured numbers.
+- **[Performance](docs/performance.md)** — the measurements behind the claims.
+- **[The memory model](docs/memory-model.md)** — why value semantics makes
+  implicit arenas work in practice, and what it costs.
 - **[Architecture & status](docs/architecture.md)** — how it's built, what each
   verification gate proves, what's shipped, and the decided non-goals.
 

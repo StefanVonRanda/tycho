@@ -51,8 +51,10 @@ Rust improvement — while leaving the tree workloads, where the numbers are ten
 of megabytes, essentially unaffected. And **wall times are not comparable across
 host and container** the way the kernel-measured RSS is.
 
-These figures are reproducible by someone who did not write them: `make
-bench-prongB` re-measures every row.
+These figures land within 1-2 MB of the values recorded in
+[`bench/prongB/RESULTS.md`](bench/prongB/RESULTS.md) on every row, which is the
+useful result: the table in this repository is reproducible by someone who did
+not write it.
 
 **That question is answered.** Everything below is about the second project:
 whether it is a language someone would choose to use.
@@ -68,14 +70,14 @@ whether it is a language someone would choose to use.
 | **Corelib** | 45 packages shipped, each golden-locked (46 directories — `corelib/test/` is the test tree, not a package) | `make corelib` |
 | **Real programs** | **31 programs in Tycho, 18,498 lines** — every `.ty` under `tools/`, which is 28 `tools/tycho-*/` directories plus `tycho.ty`, `tychofmt.ty` and `lsp.ty`. **6 over 1000 lines** (`db` 2063, `scheme` 1609, `sheet` 1483, `lsp` 1403, `q` 1359, `chess` 1166), 10 between 300 and 999, 15 under 300. Not 31 substantial programs; `tycho-db`'s gate does assert crash recovery from a real `kill -9`, torn-record discard and a TCP server | `find tools -name '*.ty' \| xargs wc -l` |
 | **Normative spec** | 28 files, and the implementation is gated against them | `make spec-check` |
-| **The whole gate** | **77 lanes** (`grep -c '^step "' scripts/ci.sh`), green under **gcc and clang** on x86-64 Linux and under **clang on darwin-arm64**. Wall clock is deliberately not quoted as one number — repeated runs here span 263-390s, which is machine noise | `make ci` |
-| **Memory safety** | 4 sanitizer lanes (ASan/UBSan/LSan/TSan) + 3 fuzz lanes at 200 seeds; **re-run at 2000 seeds on 2026-09-19: `ok=2000 skip=0 timeout=0 FAIL=0`** in 7m14s. Plus 3 differential parity fuzzers | `make ci`, `make fuzz N=2000` |
-| **Float determinism** | the emitted C is compiled `-ffp-contract=off`, so `a*b+c` rounds twice on every host — without it ARM fuses and x86-64 cannot, and `0.1+0.2` rendered differently on the two | `make sheet-check` |
-| **Uninitialised reads** | 972 programs swept under an instrumented arena, 0 findings — the class no sanitizer sees | a one-off probe, not a standing lane |
-| **Code properties no suite covers** | 25 assertions — the float-contraction flag in both compilers, `listen()`'s backlog, the TLS host NUL check, a hard kill in one runner, the checked parse in two examples reading untrusted input, and the presence of two lanes in `ci.sh`. Each is a fix whose absence is silent | `make pin-check` |
-| **Docs** | every page reachable from an index, no dead links or dead anchors, every `path:line` citation resolves to the line it names | `make check-links` |
+| **The whole gate** | **76 lanes** (`grep -c '^step "' scripts/ci.sh`), green under **gcc and clang** on x86-64 Linux and under **clang on darwin-arm64**. Wall clock is deliberately not quoted as one number — repeated runs here span 263-390s, which is FRICTION 91 | `make ci` |
+| **Memory safety** | 4 sanitizer lanes (ASan/UBSan/LSan/TSan) + 3 fuzz lanes at 200 seeds; **re-run at 2000 seeds on 2026-09-19: `ok=2000 skip=0 timeout=0 FAIL=0`** in 7m14s. Plus 3 differential parity fuzzers (FRICTION 119) | `make ci`, `make fuzz N=2000` |
+| **Float determinism** | the emitted C is compiled `-ffp-contract=off`, so `a*b+c` rounds twice on every host — without it ARM fuses and x86-64 cannot, and `0.1+0.2` rendered differently on the two (FRICTION 112) | `make sheet-check` |
+| **Uninitialised reads** | 972 programs swept under an instrumented arena, 0 findings — the class no sanitizer sees | `docs/internals/probe-uninit-arena-2026-09-11.md` |
+| **Defect log** | **every closed entry is pinned by a command that is executed** — 1 excused with its reason, **0 unpinned**, which is the number that matters and the only one quoted here, because the totals move with every entry added. `make ci` scores the *fact* pins as lane `[1d2/13]` in 0.16s and names how many suite pins it defers; the deferred ones are asserted only by the full command (FRICTION 104) | `make friction-check` |
+| **Docs** | 88 reachable pages, no dead links, every `path:line` citation resolves to the line it names, and **every public corelib function is named in the catalogue** (423/423, matched as a word — it was 431/431 by substring until FRICTION 118) | `make check-links` |
 | **Diagnostics** | 325 of the compiler's 335 distinct messages have their wording pinned; the residue is matcher offsets, not gaps | `make test` |
-| **Surface freeze** | 115 keywords, 41 builtins, **423** corelib functions, locked; broken deliberately 3 times, each measured first. Was 559 until 2026-09-19: 125 internal helpers became package-private, then 8 more the catalogue gate had never actually checked — the freeze now covers what it meant to | `make surface-check` |
+| **Surface freeze** | 115 keywords, 41 builtins, **423** corelib functions, locked; broken deliberately 3 times, each measured first. Was 559 until 2026-09-19: 125 internal helpers became package-private (FRICTION 96), then 8 more the catalogue gate had never actually checked (FRICTION 118) — the freeze now covers what it meant to | `make surface-check` |
 
 **`make parse-check` was RED for a day and is now GREEN**, which is worth a
 paragraph because of how it got there. It runs in neither `make ci` nor the
@@ -84,15 +86,19 @@ recorded `Verified: make ci GREEN` truthfully while that gate was failing. Seven
 drifted count literals, three stale censuses and one real defect were sitting in
 it: `strings.len(...)` answered *"package 'strings' has no symbol 'len'"* in the
 reference compiler and named the builtin and the cure in the self-hosted one —
-the reference compiler was the wrong one. All cleared,
+FRICTION 87's shape exactly, and the reference was the wrong one. All cleared,
 and the cheap predictors are now lanes: `corpus-check` `[1d3/13]` at 0.04s and
 `builtin-qualified` `[1d4/13]`, which reads the builtin set out of `surface.lock`
 so a builtin the compiler forgets to list cannot hide. `make tychoc1-check`
 passes. **Both parse-check and tychoc1-check remain uncalled by any automatic
-run** — +223s on a ~290s sweep is an open cost question; the row below is `make
-ci`'s scope, not the project's.
+run** — +223s on a ~290s sweep is an open cost question. See FRICTION 106-108;
+the row below is `make ci`'s scope, not the project's.
 
-The unusual thing in that table is the last two rows. Every
+The unusual thing in that table is the last two rows. The defect log is
+*executable* — a closed entry that stops being true makes `make friction-check`
+red, and since 2026-09-19 it turns **`make ci`** red too for every pin that
+asserts a specific fact, which `ci` scores in 0.16s (FRICTION 104; before that
+the target existed and nothing called it). And every
 surface change so far was justified by counting sites in real programs, not by
 taste: `packed` shipped because 141 sites hand-assembled bytes a byte at a time.
 
@@ -106,11 +112,11 @@ byte-identical across two builds (`make release-check`), and content-gated at 31
 legs (`make release-content`). It is **built, not published**: `gh release
 create` is still the owner's to run, and it is verified on the build box only.
 Getting there found that the content gate did nothing at all on this platform —
-it exited on a missing *Windows* tool before it ever checked the native archive.
-The gate was run on `darwin-arm64` for
+it exited on a missing *Windows* tool before it ever checked the native archive
+(FRICTION 109). The gate was run on `darwin-arm64` for
 the first time that day and is **green**, repeatedly measured between **267s
-and 390s** — that spread is machine noise, not a regression, which is why no
-single number is quoted: both compilers build native
+and 390s** — that spread is FRICTION 91, not a regression, which is why no single
+number is quoted: both compilers build native
 Mach-O arm64 with no source change (`make tychoc` 2.0s, `make tychoc1` 34.1s)
 and `make test` is 1065/1065.
 
@@ -126,7 +132,8 @@ symbol floor, `ilp32`, `resource.prlimit`, `vector-check` leg [7]
 (`--target x86-64-v3` on an arm64 host), and the `crypto_hygiene` probe, which
 needs `-Wl,--wrap` that ld64 does not implement.
 
-Getting to green cost three fixes, none Darwin-specific in cause. Two were latent defects in
+Getting to green cost three fixes, none Darwin-specific in cause: FRICTION
+[100](docs/internals/FRICTION.md), 101 and 102. Two were latent defects in
 shipped code — a listen backlog that made any Tycho server refuse peers under a
 burst on any BSD-derived kernel, and a single-read site that aborts the process
 — which is the return on running the gate somewhere it had never run.
@@ -135,8 +142,8 @@ burst on any BSD-derived kernel, and a single-read site that aborts the process
 
 1. **A real program written by someone who is not the author.** A fourth program
    by the same person does not advance this.
-2. **An external security review.** `SECURITY.md` states the threat model a
-   reviewer would start from.
+2. **An external security review.** `docs/internals/audit-brief.md` is what that
+   reviewer gets handed.
 
 The roadmap is explicit that neither is a task the roadmap can complete. Both
 need a person. No amount of further work alone moves either one.
@@ -151,7 +158,8 @@ nothing more of it has been mined yet.
 **A structural limit, already decided.** Pointer-shaped and structurally-shared
 data (tries, graphs, DAGs) cost more here than in C or Go, because value
 semantics store children by value and there are no references to share. The
-index-pool idiom is the answer. References are not, because the feature that would lift the limit would
+index-pool idiom is the answer, and `docs/rfc/limited-references-spike.md`
+records *why* references are not: the feature that would lift the limit would
 dismantle the invariants the project exists to demonstrate. Closed as a decision,
 not left open.
 
@@ -181,4 +189,5 @@ It is the overview that did not exist, so that the decision — whatever it is �
 gets made against what this thing measurably is, rather than against how the
 last stretch of work happened to feel.
 
-See also: [ROADMAP](ROADMAP.md) · [how it is built and tested](docs/architecture.md) · `make status`
+See also: [ROADMAP](ROADMAP.md) · [how it is tested](docs/controls.md) ·
+[the friction log](docs/internals/FRICTION.md) · `make status`

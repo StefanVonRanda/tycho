@@ -11,7 +11,7 @@ TYCHOC  ?= ./tychoc
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: preflight fixpoint-check corpus-check packed-check vector-check align-probe status status-net status-check parse-check fstr-hole-file-check tychoc1-check script-check builtin-qualified parity-fuzz pin-check surface-check net-poll-check version-check all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check shim-warn mingw-warn source-bytes goldens-check embed-check tls-verify http-verify handle-guard format-diff math-diff traversal-check ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check flow-check ed-check sheet-check sim-check make-check snap-check tally-check agg-check tmpl-check stat-check ledger-check fh-check grid-check chess-check kvsrv-check sat-check locale-check glibc-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints spec-check spec-fast docs-fences check-links server server-check ci release-check release-content hooks ilp32 asan-self editors-check clean
+.PHONY: preflight fixpoint-check corpus-check packed-check vector-check align-probe status status-net status-check parse-check fstr-hole-file-check tychoc1-check script-check builtin-qualified parity-fuzz friction-check friction-check-light surface-check net-poll-check version-check all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check shim-warn mingw-warn source-bytes goldens-check embed-check tls-verify http-verify handle-guard format-diff math-diff traversal-check ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check flow-check ed-check sheet-check sim-check make-check snap-check tally-check agg-check tmpl-check stat-check ledger-check fh-check grid-check chess-check kvsrv-check sat-check locale-check glibc-check fetch weblog webserver site raytrace mandelbrot ffi recursion entrypoints platform-check platform-check-strict platform-list spec-check spec-fast docs-fences check-links corelib-doc-check server server-check wiki ci release-check release-content hooks ilp32 asan-self editors-check clean
 
 # tychoc1, the self-hosted compiler, is what `make` produces and what ships.
 # It still depends on tychoc: src/tychoc.c is the bootstrap stage that builds it.
@@ -108,6 +108,25 @@ editors-check:
 entrypoints: tychoc1
 	@sh scripts/entrypoints.sh
 
+# Every platform release_cross.sh SHIPS, executed rather than assumed. Six
+# targets are built and four carried a hardcoded UNTESTED-PLATFORM.txt, which
+# made the shipped disclaimer a belief rather than a measurement: aarch64-linux
+# went 1065/1065 by hand and still shipped saying nobody had run it. Verdicts
+# land in build/platform-matrix.tsv and release_cross.sh reads them.
+#
+# Coverage depends on the machine you run it from and the lane SAYS so: a
+# platform whose runner is unreachable is a loud SKIP, never a silent pass.
+platform-check:
+	@sh scripts/platform_matrix.sh --selfcheck
+	@sh scripts/platform_matrix.sh
+
+# The release gate: every shipped platform must have been executed.
+platform-check-strict: platform-check
+	@sh scripts/platform_matrix.sh --strict
+
+platform-list:
+	@sh scripts/platform_matrix.sh --list
+
 spec-check:
 	@sh scripts/spec_check.sh
 
@@ -125,16 +144,14 @@ spec-fast:
 # some OTHER lane had built ./tycho first: inside `make ci` on a tree that had
 # not, it ran as exit 127 `tycho: command not found`, which the synopsis rule
 # records as a SKIP, and an unenumerated skip is a hard failure. Found on macOS
-# 2026-09-19 (); nothing about it is Darwin-specific -- a fresh Linux
+# 2026-09-19 (FRICTION 100); nothing about it is Darwin-specific -- a fresh Linux
 # clone running `make docs-fences` as its first target reddens the same way.
 docs-fences: tychoc1 tycho
 	@python3 scripts/docs_fences.py
 
-# corelib_doc_check.py was the fourth leg here until 2026-09-20. Its whole
-# subject was the corelib catalogue page -- "every public corelib function is
-# named in it" -- and with that page gone there is no claim left for it to
-# score, so it went too rather than being kept pointed at nothing.
 check-links:
+	@python3 scripts/corelib_doc_check.py --selfcheck
+	@python3 scripts/corelib_doc_check.py
 	@sh scripts/check_links.sh
 	@python3 scripts/check_citations.py --selfcheck
 	@python3 scripts/check_citations.py
@@ -142,6 +159,14 @@ check-links:
 # scores, so its selfcheck belongs in the same lane. It ran only when somebody
 # typed it; script-check merely parses the file.
 	@python3 scripts/reanchor_citations.py --selfcheck
+
+WIKI_DIR ?= .wiki
+WIKI_REMOTE ?= https://github.com/StefanVonRanda/tycho.wiki.git
+wiki:
+	@if [ -d $(WIKI_DIR)/.git ]; then git -C $(WIKI_DIR) pull --ff-only; \
+	else git clone $(WIKI_REMOTE) $(WIKI_DIR); fi
+	@python3 scripts/sync-wiki.py $(WIKI_DIR)
+	@echo "Review $(WIKI_DIR)/, then: git -C $(WIKI_DIR) add -A && git -C $(WIKI_DIR) commit -m ... && git -C $(WIKI_DIR) push"
 
 demo: tychoc1
 	./tychoc examples/hello.ty
@@ -517,19 +542,19 @@ preflight:
 	@sh scripts/preflight.sh --selfcheck
 	@sh scripts/preflight.sh
 
-# BOTH compilers are prerequisites, and leaving them undeclared was the defect
+# BOTH compilers are prerequisites, and leaving them undeclared was FRICTION 100
 # repeated by the commit that fixed it. The script compares tychoc against
 # tychoc1, so with either missing it compares a message to an empty string and
 # calls it a disagreement. On the machine it was written on both binaries were
 # lying around from earlier work and it passed; on a FRESH CLONE it failed 42 of
 # 42 -- caught 2026-09-19 by the first `make ci` on aarch64 Linux, in a VM whose
-# whole value is having nothing left over ().
+# whole value is having nothing left over (FRICTION 110).
 # The three differential fuzzers docs/spec/appendix-e-conformance.md cites as
 # "lanes" for section 5.5, 9.3, 13.3 and 22 -- and which nothing ran until
 # 2026-09-19. They generate cases, compile them with BOTH compilers, and compare
 # accept/reject plus the emitted C against an oracle. 6s for all three together,
 # which is why there was never a cost argument for leaving them out; there was
-# simply never a target ().
+# simply never a target (FRICTION 119).
 #
 # typeparity (65s, cited for section 8.1) and run_pkg.py (143s, cited by nothing)
 # are deliberately NOT here: they are a budget decision on a ~300s gate, recorded
@@ -542,15 +567,22 @@ parity-fuzz: tychoc1
 builtin-qualified: tychoc tychoc1
 	@sh scripts/builtin_qualified.sh
 
-# The code properties no suite covers: a compiler flag, a shim call, a retry
-# count, a lane's presence in the sweep. These were 198 `Pinned-by:` lines in an
-# 8,382-line narrative until 2026-09-20; scoring them showed 31 re-ran lanes this
-# gate already runs and ~40 were `test -f` on files corpus-check, goldens-check
-# and `make corelib` already require. The 25 that survive are here, each with the
-# one line saying what breaks if it goes. ~1s, so it runs in the sweep unsplit.
-pin-check:
-	@python3 scripts/check_pins.py --selfcheck
-	@python3 scripts/check_pins.py
+friction-check:
+	@python3 scripts/friction_check.py --selfcheck
+	@python3 scripts/friction_check.py
+
+# The subset `make ci` runs: every pin that asserts a SPECIFIC FACT (a grep, a
+# test -f, an inline python3 -c), and none of the `make`/`sh scripts/` pins,
+# which re-run suites ci has just finished. That duplication is the whole reason
+# the full target stayed out of ci -- 113s against a ~288s gate for coverage ci
+# largely already has (FRICTION 104). The split is one rule in
+# friction_check.py@split, shared with the full run so the two cannot disagree
+# about which pins are the expensive ones, and selfcheck legs [7]-[10] pin it in
+# both directions: classify everything light and ci re-runs the suites; classify
+# everything heavy and the lane scores nothing while still printing ok.
+friction-check-light:
+	@python3 scripts/friction_check.py --selfcheck
+	@python3 scripts/friction_check.py --light
 
 surface-check:
 	@python3 scripts/surface_lock.py --selfcheck

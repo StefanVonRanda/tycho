@@ -24,7 +24,7 @@ trap cleanup EXIT INT TERM
 # subshell has run the reset (measured) -- and a fire-and-forget timer has nothing to
 # clean up regardless.
 #
-# This took a four-round hunt. The reason it hid: a ONE-command
+# FRICTION 88 is the four-round hunt for this. The reason it hid: a ONE-command
 # subshell `( sleep N )` is exec'd in place by bash, so it has no trap at all, and the
 # obvious minimal reproduction passes while the real thing fails.
 fail=0

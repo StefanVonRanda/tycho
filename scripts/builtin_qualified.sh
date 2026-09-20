@@ -7,7 +7,7 @@
 # symbol 'len'" -- pointing the reader at a symbol that was never going to be
 # there. tychoc1 tested its whole builtin table and said the useful thing. The two
 # disagreed for a day and nothing noticed, because the gate that scores them is
-# `make parse-check` and nothing runs it ().
+# `make parse-check` and nothing runs it (FRICTION 106, 107).
 #
 # The fix put a FOURTH builtin list in src/tychoc.c, and a list that nothing
 # checks is the same defect waiting. This reads the builtin set out of

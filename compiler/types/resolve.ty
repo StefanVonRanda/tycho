@@ -107,7 +107,7 @@ fn _builtins() -> [string: bool]:
 # these names does NOT win an unqualified call -- the builtin does -- so the
 # declaration warns and the procedure is unreachable by that name. The two
 # exclusions are deliberate there and kept here: no `eprintln` (not a builtin,
-#) and no `zero` (core:bignum's, not a builtin).
+# FRICTION #6) and no `zero` (core:bignum's, not a builtin).
 fn _shadowable() -> [string: bool]:
     m := []string: bool
     reserve(m, 64)

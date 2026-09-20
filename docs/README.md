@@ -4,24 +4,41 @@
 
 1. **[The README](../README.md)** — what Tycho is, and whether it's for you.
 2. **[Tutorial](tutorial.md)** — write and run your first programs.
-3. **[The specification](spec/)** — how the language behaves, precisely. The
-   grammar and the normative semantics, in numbered chapters.
+3. **[From `malloc` to implicit arenas](from-c-to-arenas.md)** — the memory model
+   in five steps from familiar C. The gentlest route to the core idea.
+4. **[Language reference](reference/index.md)** — how each feature behaves.
+5. **[Quiet results](quiet-results.md)** — the seven places the language answers
+   instead of refusing. Short, and worth reading before your first real program.
 
 ## Where to look for what
 
 | You want | Go to |
 |---|---|
-| The exact rule for anything in the language | **[`spec/`](spec/README.md)** |
-| To get something running | **[`tutorial.md`](tutorial.md)** |
+| What a feature does, precisely | **[`reference/`](reference/)** — one terse page per topic |
+| Why a feature works that way | **[`reference/`](reference/)** — each page ends with a "Working with it" section |
+| The exact rule for an edge case | **[`spec/`](spec/)** — grammar and normative semantics |
+| An operation answered when you expected it to refuse | **[`quiet-results.md`](quiet-results.md)** |
 | A program is misbehaving | **[`debugging.md`](debugging.md)** |
-| How the project is built, and what each gate proves | **[`architecture.md`](architecture.md)** |
-| Maintainer design notes | **[`internals/`](internals/README.md)** |
+| The numbers behind the claims | **[`performance.md`](performance.md)** |
+| The idea the language argues for | **[`thesis.md`](thesis.md)** |
+| Whether the evidence can be trusted | **[`controls.md`](controls.md)** — four times a gate was proved unable to fail |
 
-The spec is the single answer layer. There was a second one — a `reference/`
-tree of sixteen topic pages restating the same rules in friendlier prose — and
-it was deleted on 2026-09-20 because two descriptions of one language drift
-apart and the reader cannot tell which is lying. When the spec is hard to read,
-the fix is to the spec.
+**[`reference/`](reference/)** is the single answer layer: basics, types,
+functions, arrays and slices, structs and tuples, maps, enums and options,
+generics, subscripts, packages, strings, concurrency, FFI, the corelib catalogue,
+and builtins. Each page states the rule first and then how to work with it.
+
+**[`memory-model.md`](memory-model.md)**, **[`perf.md`](perf.md)**,
+**[`quiet-results.md`](quiet-results.md)** and **[`debugging.md`](debugging.md)**
+are the topic pages that are not about one feature.
+
+## Also here
+
+- **[`architecture.md`](architecture.md)** — how the project is built and what
+  each verification gate proves.
+- **[`internals/`](internals/README.md)** and **[`rfc/`](rfc/README.md)** — design
+  notes, proposals, and the running record of what fought back. Written for
+  maintainers.
 
 ## Contributing
 

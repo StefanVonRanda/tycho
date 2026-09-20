@@ -21,7 +21,7 @@ REC="$T/records"; : > "$REC"                   # "<workload> <lang> <rssMB> <ms>
 WL="-"                                         # current workload slug (set by workload()/json_workload())
 # The `md5=` label on the digest below is load-bearing, not decoration: a bare
 # 8-hex token is indistinguishable from a short commit hash once it is pasted
-# CONTRIBUTING.md:88-91 requires the label for that reason.
+# into RESULTS.md, and CONTRIBUTING.md:88-91 requires the label for that reason.
 run_one() {                                   # <label> <binary>
     lbl="$1"; bin="$2"
     [ -x "$bin" ] || { printf '%-12s %10s   (not built)\n' "$lbl" "-"; return; }

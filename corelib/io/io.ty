@@ -443,7 +443,7 @@ fn sync(p: string) -> Result(void, IoErr):
 # forge or do arithmetic on the pointer itself.
 #
 # It is a plain struct rather than a `handle` for one reason: a `handle` is
-# affine and only an `extern fn` may return one (docs/spec/14-ffi.md), which
+# affine and only an `extern fn` may return one (docs/reference/ffi.md), which
 # would put the opener in C and take the interior-NUL guard below with it --
 # and that guard only works on the Tycho side, which is the only side that knows
 # the string's length. Go's `os.Open` and Odin's `os.open` return a (resource,

@@ -8,8 +8,8 @@ implementation achieves the contract and why the language needs neither a GC nor
 manual `free`, but an implementation MAY use any strategy with the same
 observable behavior.
 
-> Provenance: runtime `runtime/tycho_rt.c`;
-> `docs/internals/value-semantics-limits.md`.
+> Provenance: `docs/memory-model.md`, `docs/thesis.md` §2–§5; runtime
+> `runtime/tycho_rt.c`; `docs/internals/value-semantics-limits.md`.
 
 ## 9. Value semantics
 

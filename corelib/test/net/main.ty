@@ -67,7 +67,7 @@ fn poll_str(r: Result([int], net.NetErr), fds: [int]) -> string:
 # of the 50 calls returned immediately and the loop finished in microseconds --
 # never once waiting for the SECOND write to land. A busy spin wearing a retry's
 # clothes. It held on an idle machine and lost the race under a full `make ci`,
-# which is where it was caught, 2026-09-19 ():
+# which is where it was caught, 2026-09-19 (FRICTION 108):
 #
 #     poll_two=[c0,c1]     expected, got [c1]
 #     poll_hup=[c0,c1,c2]  expected, got [c1]

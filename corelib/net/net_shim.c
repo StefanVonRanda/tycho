@@ -89,7 +89,7 @@ tycho_int netx_listen(const char *host, tycho_int port) {
      * latency; Darwin and the BSDs RESET the connection, so an overflow costs
      * the connection. A backlog of 16 therefore looked fine on Linux and made
      * every Tycho server REFUSE peers on macOS under a burst it should only
-     * have delayed. Measured 2026-09-19 () with server/run.sh's own
+     * have delayed. Measured 2026-09-19 (FRICTION 101) with server/run.sh's own
      * abuse suite -- 64 peers stalled mid-head against 4 workers, under 12
      * busy-loops on a 12-core machine so the accept loop cannot keep the queue
      * drained: backlog 16 failed 2 of 2 runs (ECONNRESET on the 28th peer),

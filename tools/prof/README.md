@@ -13,8 +13,8 @@ wrote it for environments where the usual tools don't work:
   that overhead and *looks* like 25–33% of runtime — when at `-O2` it's ~0.3%.
   Chasing that ghost cost real effort. **Trust this sampler (or `-O2` wall-clock
   deltas), not gprof self-times, for hot tiny functions.** The measured figures
-  are here rather than elsewhere on purpose: no shared page carries them,
-  because they were taken against a workload that can
+  are here rather than elsewhere on purpose: `docs/perf.md` states the rule
+  but no longer carries the numbers, which were taken against a workload that can
   no longer be run.
 
 ## How it works

@@ -20,7 +20,7 @@ fn main():
     # to tcp_connect, SSL_set_tlsext_host_name (SNI) and SSL_set1_host (the name
     # the certificate is verified against), so a truncation would dial, announce
     # and verify a DIFFERENT name than the caller passed -- while the caller's own
-    # allowlist saw the whole string (). core:net has refused this
+    # allowlist saw the whole string (FRICTION 117). core:net has refused this
     # since the NUL sweep; this package had not.
     nulhost := "127.0.0.1" + chr(0) + "evil.example.com"
     cn := tls.connect(nulhost, 443)

@@ -55,8 +55,8 @@ Measured (`bench/trie`, a prefix tree, each node owning an `int -> child` map):
 layout: an `int32` index table pointing at dense value entries sized to the live child
 count (a 1-child node no longer carries three empty inline-struct slots), and no per-slot
 insertion-order list. That roughly halved the trie and, at ~59 ms, brought its wall below
-Go's (~66 ms). The residual gap below is value-vs-pointer storage and is structural;
-`make bench` re-measures it.
+Go's (~66 ms). The residual gap below is value-vs-pointer storage and is structural — see
+`bench/trie/RESULTS.md`.
 
 **Idiom — a flat node pool with integer-index children.** Keep all nodes in one array and
 make children indices into it, so an "edge" is an 8-byte `int`, sharing is just two indices
@@ -124,7 +124,7 @@ eviction — the pointer-linked list a textbook LRU uses, expressed value-shaped
 until rehash-to-purge was bounded), and most recently the **compact indexed-dict** layout,
 which dropped it from ~40 MB by deleting the per-slot insertion-order list entirely. The
 residual ~2.8× is the index table's open-addressing load-factor slack, the same header-cost
-family as the trie, not a pointer blowup.
+family as the trie, not a pointer blowup. See `bench/lru/RESULTS.md`.
 
 Measured on the same 150k-word workload, the by-value recursive version is now **~59 MB**
 (the compact indexed-dict layout roughly halved it). The flat-pool trie stays below that by
@@ -189,7 +189,7 @@ per-operation copy is the dominant term and it scales with the value's size, not
 with the size of the edit.
 
 The worked case is `tools/tycho-ed/`, measured in both directions in
-the memory model. A text editor whose line buffer does
+[the thesis §4c](../thesis.md). A text editor whose line buffer does
 
 ```text
 buf.lines[ln] = s[0:c] + t + s[c:len(s)]      # a whole new line, per keystroke
@@ -259,7 +259,7 @@ references (`../rfc/limited-references-spike.md`) settled this as a decision. A 
 deep-copy thread boundary (a stored pointer can't survive a call's copy-in) and the no-escape
 arena model — so adding it would dismantle the value-semantics guarantees, not extend them. The
 index-pool isn't the fallback after references didn't make it; within this model it *is* the way
-to store a graph, and the copy-cost side of the same question is what [`sink`](../spec/11-functions.md)
+to store a graph, and the copy-cost side of the same question is what [`sink`](../reference/basics.md)
 answers for call arguments. The only reference-shaped feature that fits — user-defined
 projections, a generalization of the shipped `&m[k]` — is an ergonomic convenience over the
 index idiom, not a different way to store the data.

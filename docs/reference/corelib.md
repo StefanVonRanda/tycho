@@ -1,0 +1,796 @@
+# corelib — Tycho's standard library
+
+> **Memory:** Every corelib function allocates its results into the caller's arena
+> and returns independent values, never aliasing the caller's inputs. **The one
+> exception is a C-owned opaque handle returned as `ptr`** — `core:regex`,
+> `core:http`, `core:crypto`, `core:tls`, `core:io` and `core:sqlite` return one —
+> which is not arena-managed and must be released by that package's own free
+> function; the normative statement is [§31.1](../spec/18-library.md). The shim
+> boundary is narrow on purpose, so C's memory model stays on C's side of it.
+
+corelib is Tycho's standard library: a set of packages under `corelib/`, imported with the
+`core:` collection root. It's experimental, like the rest of Tycho, but the modules below
+are usable today.
+
+```tycho
+package main
+
+import "core:math"
+
+fn main():
+    println(f"gcd={math.gcd(12, 18)}")
+```
+
+## Quick start
+
+1. `import "core:<pkg>"` in your source. The name `<pkg>` is bound to the package.
+   The transpiler finds `corelib/` next to its own binary by default, so no setup is
+   needed in this repo. Set `TYCHO_CORELIB` to a corelib directory to override.
+2. Call its functions either free-standing (`math.gcd(12, 18)`) or method-style via UFCS
+   (`x.abs()`).
+
+## Resolution
+
+`import "core:<pkg>"` resolves to `<corelib>/<pkg>` and binds the name `<pkg>`, where
+`<corelib>` is `TYCHO_CORELIB` if set, otherwise `corelib/` next to the transpiler binary.
+Non-`core:` imports stay relative to the importing package, unchanged. `tychoc` resolves `core:` natively, with no
+bundling step required.
+
+## How corelib is shaped
+
+corelib is **generic free functions over a type parameter `$T`**, with `where` constraints
+(`comparable(T)`, `numeric(T)`, `has_str(T)`) picking which element types each function
+accepts. Tycho monomorphizes generics, so array and iterator utilities are single generic
+packages over any element type `[$T]` (`core:arrays`, `core:iter`) rather than one package
+per element type. The functions are also callable method-style through UFCS, so
+`index_of(xs, v)` and `xs.index_of(v)` are the same call.
+
+Higher-order helpers (map / filter / reduce that take a function) live in `core:iter` and
+its siblings, and take a first-class `fn`/closure argument. Lambdas in Tycho are
+expression-bodied; pass a named function where you need a multi-line body.
+
+This generic, single-package shape keeps the surface small: one `core:arrays` covers every
+element type instead of a family of per-type siblings.
+
+## Packages
+
+- **`math`** — scalar math. `min`/`max`/`clamp(x, lo, hi)` are generic over any
+  comparable type (int/float/string/char) and `sign(x)` over any numeric type
+  (returns an int −1/0/1); `abs`, `gcd`, `ipow(base, exp)` (exp ≥ 0) are integer-
+  specific. (`sqrt`/`pow`/`floor`/`fabs` are float builtins.)
+- **`fmath`** — float-only helpers (scalar `min`/`max`/`clamp`/`sign` live in `math`):
+  `pi`, `e`, `round` (half away from zero), `trunc`, `lerp(a, b, t)`,
+  `approx_eq(a, b, eps)`. (No trig — the language has no libm sin/cos builtin.)
+- **`char`** — byte/char classification & conversion over int byte values (what
+  `s[i]`/`chr` use): `is_digit`, `is_alpha`, `is_alnum`, `is_upper`, `is_lower`,
+  `is_space`, `is_hex`, `to_upper`/`to_lower` (one byte), `digit_val` (−1 if not a
+  digit), `hex_val` (0..15 or −1). The lexer/parser workhorse.
+- **`strings`** — `to_upper`, `to_lower`, `starts_with`, `ends_with`, `contains`,
+  `repeat(s, n)`, `trim` (ASCII whitespace), `parse_int`, `is_space`, `lines` (splits on
+  `\n`, drops one trailing `\r` per line, trailing newline adds no empty line), `replace`
+  (non-overlapping, left to right; empty `old` returns the input unchanged), `count(s, sub)`,
+  `strip_prefix`/`strip_suffix`, `pad_left`/`pad_right(s, width, pad)` (pad is one byte),
+  `reverse`, `capitalize`, `split_once(s, sep) -> (before, after)` (`(s, "")` if absent).
+  (`split`/`find`/`substr`/`len`/`chr` are builtins.)
+  **The checked siblings, which are what to reach for on untrusted input:**
+  `parse_int_checked(s) -> Result(int, IntErr)` and
+  `parse_float(s) -> Result(float, FloatErr)` — the bare `parse_int` **fails open**
+  (`"3x"` is `3`, not an error), so anything read from a file, a socket or a user
+  wants the checked one. `slice_str(s, start, stop) -> Result(string, SliceErr)`
+  and `slice_bytes(b, start, stop)` — a plain slice **clamps** rather than
+  bounds-checking (`b[1:99]` on three bytes gives you two and no trap), so these
+  are the forms that refuse an out-of-range window instead of narrowing it.
+  `format_g17(v)` renders a float at the 17 significant digits that round-trip.
+- **`path`** — POSIX path utilities (separator `/`). Everything above the fence
+  below is pure string math (no filesystem access, every function returns a fresh
+  value): `base` (final element, trailing slashes ignored; `""`→`.`, `"/"`→`/`), `dir` (all but the final element),
+  `ext` (extension incl. the dot, `""` if none; a leading dot is a dotfile, not an
+  ext), `stem` (base minus ext), `join(a, b)` (exactly one separator, empty operands
+  drop out), `is_abs`, `split_path(p) -> (dir, base)` (the inverse of `join`), and
+  `clean` (lexical normalize: collapse `//`, drop `.`, resolve `..` but never above
+  the root or past a leading `..`). `last_slash(s)` is the shared scan helper.
+  `safe_join(base, rel)` is the lexical containment prefilter: the cleaned join when
+  an untrusted `rel` stays under `base`, `""` when it is absolute, escapes via `..`,
+  or carries a backslash or an `X:` drive prefix — those are refused rather than
+  interpreted, so the answer does not vary by build target.
+
+  **The filesystem fence.** A lexical check cannot see a symlink: `safe_join` is
+  perfectly happy with a contained name whose target is `/etc/passwd`. Three
+  functions therefore make a real syscall, and all three fail closed — `""` is a
+  refusal and callers MUST treat it as one before using the path.
+
+  - `real(p)` — realpath(3): the absolute path with every symlink and `..`
+    resolved, or `""` if the path does not exist, cannot be read, contains a NUL,
+    or does not fit.
+  - `under(root, p)` — true when `p` **is** `root` or lies underneath it. This is
+    the comparison only, not the resolution: both arguments must already be resolved.
+  - `resolve_under(base, rel)` — **the one to reach for first** when a path is
+    built from untrusted input; `safe_join` is the cheap prefilter inside it. It
+    returns the path to use, or `""` when `rel` is refused — refused lexically, or
+    because the resolved answer lands outside `base`, or because `base` itself does
+    not resolve. A path that **does not exist is not a refusal**: the longest
+    existing ancestor is resolved and checked instead, and the lexical join comes
+    back, so the caller reports its own "not found" rather than a spurious
+    "forbidden". Nothing can escape through a component that is not there — there
+    is no symlink to follow.
+
+    **Residual TOCTOU, stated rather than hidden:** between this check and the
+    caller's own open, an attacker *with write access inside the root* could
+    replace a resolved component with a symlink. Closing that needs the open done
+    here, with `O_NOFOLLOW` per component. This narrows an unconditional escape to
+    a race an outside attacker cannot reach; it does not remove it.
+
+- **`arrays`** — generic utilities over any element type `[T]`: `contains`, `index_of`
+  (−1 if absent), `count`, `reverse`, `take(xs, n)`, `drop(xs, n)`, `concat(a, b)`,
+  `fill(n, v)`, `dedup` (consecutive — sort first for a full dedup); `sort` (ascending),
+  `is_sorted`, `min`, `max` (`where comparable` — int/char/float/string); `sum`, `product`
+  (`where numeric` — int/float); `join(xs, sep)` (`where` the element converts to a string).
+  All return a new array — value semantics, the input is never mutated. `min`/`max`/`sum`/
+  `product` seed from `xs[0]`, so they need a non-empty array. (`push`/`pop`/`len`/`range`
+  are builtins; higher-order `map`/`filter`/`reduce` live in `iter`.)
+- **`iter`** — generic higher-order helpers over any `[T]`, each taking a `fn`/closure:
+  `map` (two type variables — `map(xs: [$T], f: fn($T) -> $U) -> [$U]`, the only one that may change element type, so `iter.map(nums, to_str)` is a `[string]`), `filter`, `reduce`, `count`, `any`. (Predicates return a `bool`; they returned a 0/1 int until 2026-08-11.)
+  Fallible stages get two siblings whose callback returns a `Result`:
+  `try_map(xs, f: fn($T) -> Result($U, $E)) -> Result([$U], $E)` and
+  `try_filter(xs, keep: fn($T) -> Result(bool, $E)) -> Result([$T], $E)`. Both stop at
+  the **first** `Err` and return it unchanged, so a stage that can fail carries its
+  error to the caller instead of unwrapping or picking a sentinel. `reduce`/`count`/`any`
+  have no fallible form — write the `for` loop with `or_return` if you need one.
+- **`sort`** — `argsort(keys)` / `argsort_desc(keys)`: return the index permutation that
+  orders the keys — generic over any comparable key type (int/float/string/char). The way
+  to order data by a derived value: keep it in parallel arrays, argsort one, and walk every
+  array through the permutation. All stable. Plus `by_key(xs, key)`: sort an array by a
+  derived int key (a fn/closure) — **deprecated since 0.5.0, removed in 1.0**:
+  it is `sort_by(xs, fn(a, b) -> int: key(a) - key(b))`. When the order needs more than one key, mixed
+  directions, or a type with no `comparable` instance, `sort_by(xs, cmp)` takes a
+  three-way compare `fn($T, $T) -> int` — bottom-up merge, stable, so equal elements
+  keep their input order under a descending compare too. `asc(a, b)` and
+  `desc(a, b)` are the two ready-made comparators for that parameter, so the
+  common orderings need no lambda: `sort_by(xs, sort.asc)`.
+- **`pool`** — a generational node pool for pointer-shaped data (graphs, trees,
+  doubly-linked structures). Value semantics forbids a shared-mutable pointer graph, so the
+  idiom is to hold every node in one array and link by integer index; `pool` packages that
+  idiom. Generic over the element type `Pool($T)`: `add(&p, v) -> Handle`, `get(p, h)`,
+  `set(&p, h, v)`, `remove(&p, h)`, `alive(p, h)`, `count(p)`, and `live(p) -> [Handle]`
+  (all live handles in slot order, skipping freed slots — the way to walk a pool). A
+  `Handle` is a single packed
+  `int` **newtype** (pointer-sized, value-semantic, introduces no aliasing, and type-distinct
+  from a raw `int` so you can't pass the wrong thing) carrying a slot index plus a generation;
+  every access checks the generation, so a handle to a freed-and-reused slot is caught
+  (use-after-free / double-free) at runtime instead of silently reading the new occupant. Create one with `p := pool.Pool([]pool.Slot(int), []int)`. It improves
+  *ergonomics*, not memory — pointer-shaped storage still costs ~1.55× C in this model
+  (fundamental; see [value-semantics limits](../internals/value-semantics-limits.md)) — what
+  it removes is the hand-rolled index-plus-generation bookkeeping.
+- **`intern`** — hash-consing / interning: canonical storage of values keyed by a hashable
+  key. Generic `Interner($K, $V)`: `intern(&i, k, v) -> Handle` returns the canonical handle
+  for key `k` — the first sight stores `v` and mints the handle, every later sight of the
+  same key returns the **same** handle and ignores its `v` (first sight wins, a hit is a
+  cache hit) — plus `get(i, h)` and `count(i)`. Two handles are equal iff their keys were
+  equal at first sight, so interning gives a cheap identity test and one canonical copy of
+  each logical object (a string read from many files, a row seen in many batches). Handles
+  are stable for the interner's lifetime; values are never removed — it is a
+  *canonicalization* table, not a cache, so an unbounded working set leaks by design (use a
+  plain `[K: V]` map for a bounded cache). Keys are any map-key type — `string`, `[int]`,
+  a struct, a tuple; the map hashes composites natively, so generic keys need no separate
+  hash. Create one with `i := intern.Interner([]int, []string: int)`.
+- **`rand`** — deterministic xorshift32 (not cryptographic). No globals in Tycho, so the
+  state is an explicit int threaded via `inout` (the `&` marks the `inout` call site,
+  [Basics](../reference/basics.md#procedures)). There is no `rand.State` type — a
+  function of your own that draws numbers declares the parameter as a plain int,
+  `fn pick(st: inout int) -> int`. Calls: `st := rand.seed(42)`,
+  `rand.next(&st)` ([1, 2³²)), `rand.below(&st, n)` ([0, n)), `rand.shuffle(&st, xs)`
+  (Fisher-Yates, returns a new array). Every left shift is masked to 32 bits inside the
+  signed 64-bit int, so the generator is UB-free by construction.
+- **`time`** — wraps the `clock()` (monotonic ns) and `now()` (UNIX seconds) builtins.
+  Stopwatch (value-semantic, no inout — a reading is just an int): `sw := time.start()`,
+  then `time.elapsed_ns(sw)` / `elapsed_us` / `elapsed_ms`. Duration conversions
+  `ns_to_us` / `ns_to_ms` / `ns_to_s`. Wall clock `unix_secs()` (named so, not `now`,
+  to avoid shadowing the builtin and recursing). Blocking sleep `sleep_ms(ms)` /
+  `sleep_ns(ns)` (a libc-only shim over `nanosleep`): a non-positive duration returns
+  immediately, the sleep is *not* interruptible (it retries on `EINTR` with the
+  remaining time, so the full duration always elapses — backoff schedules stay
+  honest), and it parks the **calling task only**, so a sleeping worker does not
+  stall its siblings.
+- **`datetime`** — civil (proleptic Gregorian) calendar math over UNIX timestamps, all
+  pure integer arithmetic (Howard Hinnant's `days_from_civil`/`civil_from_days`, which
+  port verbatim because tycho's int `/` truncates like C's). A `DateTime` struct
+  (`year`/`month`/`day`/`hour`/`minute`/`second`/`weekday`, all UTC). `from_unix(secs)`
+  and its exact inverse `to_unix(dt)`; `days_from_civil`/`civil_from_days`/
+  `weekday_from_days` (the day-count core); `weekday(y,m,d)` (0=Sun..6=Sat), `is_leap`,
+  `days_in_month`; `now_utc()` (the only non-pure fn — reads `now()`); formatting
+  `format_iso` (`YYYY-MM-DDTHH:MM:SS`), `weekday_name`, `month_name`, `pad2`/`pad4`; and its
+  inverse **parsing** `parse_iso` (wall-clock fields; `T` or space separator, trailing zone
+  ignored) / `parse_iso_tz` (`+HH:MM` / `-HH:MM` / `Z` folded to the UTC instant), plus
+  `parse_clf` / `parse_clf_tz` for the Common Log Format stamp (`dd/Mon/yyyy:HH:MM:SS ±HHMM`,
+  as in Apache/nginx access logs) and `month_num` (`"Jan"`..`"Dec"` → 1..12), all
+  fail-closed via a `year = -1` sentinel that `ok(dt)` checks (a real 4-digit parse is never
+  negative). The core is UTC; timezone support is layered on — **fixed offsets** (`from_unix_at`,
+  `to_unix_at`, `format_iso_tz`) in pure Tycho, plus DST-aware **system/zone** offsets via a
+  small libc shim (`local_offset`, `offset_at`, `now_local`). There is no IANA tz database.
+  `format_offset(offset_secs)` renders a UTC offset as `+HH:MM` / `-HH:MM`, the form the timestamp formats above embed.
+- **`regex`** — POSIX extended regular expressions (ERE), the first **C-shim-backed**
+  core module (FFI over `<regex.h>`, libc). `compile(pat) -> ptr` (opaque handle;
+  `ok`/`is_null` to check), `is_match`, `find` / `find_end` (offset or −1), `matched`
+  (first match substring). **Capture groups** of the first match by index (0 = whole
+  match): `ngroups`, `group_start` / `group_end` (offset or −1), `group(re, s, n)`
+  (substring), `groups(re, s)` (all groups as `[string]`). `release` frees the C-owned
+  handle — the compiled pattern is C-malloc'd, **not** arena-managed, so call it when done.
+- **`http`** — an HTTP(S) client over **libcurl** (C-shim, FFI), and the first module to
+  declare an [external dependency](#external-dependencies-c-shim-deps) (`corelib/http/deps`
+  → `libcurl`). `get(url) -> ptr` / `post(url, body, content_type) -> ptr` return an opaque
+  response handle, or null on a transport failure (`ok`/`is_null`). `status(r)` (e.g. 200),
+  `body(r)` (arena-copied), `release(r)` (the handle is C-owned). Convenience: `get_body(url)`
+  / `get_status(url)` do the request and free the handle. The body is arena-copied via the
+  FFI string-return, so a binary body with interior `0x00` truncates — `body(r)` is for text
+  APIs; `body_bytes(r)` is the binary-safe sibling (the full byte length, interior NULs
+  preserved — used by tycho-fetch). `post(url, body, content_type)` takes a `string` body
+  and stops at the first interior `0x00`; `post_bytes(url, body, content_type)` is its
+  binary-safe sibling, taking `bytes` and sending the whole length — the same split
+  `body`/`body_bytes` make on the way back. Tests are skipped where libcurl is absent.
+- **`json`** — a recursive-descent JSON parser + serializer (the `examples/json.ty`
+  demo promoted to a reusable module). The document is a value-semantic tree, the
+  `Json` enum (`JNull`/`JBool`/`JNum`/`JFloat`/`JStr`/`JArr`/`JObj`, objects as
+  parallel key/value arrays). **`parse_checked(s) -> Result(Json, JsonErr)` is the
+  entry point new code wants** — the grammar it accepts is exactly RFC 8259's and
+  every refusal carries the byte offset that caused it (`err_reason`, `err_offset`,
+  `err_str`). `parse(s) -> Json` is the lenient wrapper that throws the error away
+  and returns `JNull` for the whole document. `stringify(j) -> string` (compact;
+  escapes `"` `\` and every control byte, `\b \f \n \r \t` where a short form
+  exists). Typed queries: `kind` (the variant tag as a string), `get(j, key)`
+  (object field, else `JNull`), `at(j, i)` (array element, else `JNull`), `keys`
+  (object keys in order), `len_of` (array/object count or string length),
+  `as_num`/`as_str`/`as_bool`/`as_float`/`as_lexeme` (payload with a zero-value
+  default). Variants are constructible cross-package (`json.JNum(1)`).
+  **Round-trip fidelity**, each measured: an integer that fits 64 bits is `JNum`
+  and everything else — a fraction, an exponent, or an integer too large — is
+  `JFloat(value, lexeme)` carrying the original digits, so `stringify` re-emits
+  every accepted number byte-for-byte; object keys keep insertion order; a duplicate
+  key resolves to its **last** value at the first key's position, as Python,
+  JavaScript and Go all do, so a parsed object holds each key once; a `\uXXXX` escape decodes to
+  its UTF-8 bytes, so it is not byte-identical but parse→stringify is a fixed
+  point, embedded NULs included. Two limits: a number outside binary64's range
+  (`1e400`) is refused rather than represented, and `get` returns `JNull` for both
+  a null-valued member and an absent one — walk `keys` to tell those apart.
+  `err_at(code, off)` builds a `JsonErr` for a given code and byte offset, which is what a caller layering its own parse step on top of this one uses to report in the same shape.
+- **`csv`** — an RFC 4180 CSV parser + serializer. A document is rows of fields,
+  `[[string]]`. `parse(s) -> [[string]]` is a small state machine handling quoted
+  fields, the `""` escape, embedded delimiters/newlines inside quotes, and LF / CRLF /
+  lone-CR line endings; it fails closed (an unterminated quote parses leniently, never
+  aborts). Bytes after a closing quote JOIN the field (`"ab"cd` is `abcd`), which is
+  what Python's reader does. A trailing newline adds no empty row; a mid-file blank
+  line is a row with NO fields, which is what makes the round trip hold for one.
+  `stringify(rows) -> string` emits LF endings and quotes only fields containing the
+  delimiter/quote/CR/LF (doubling internal quotes) -- `parse`/`stringify` round-trip.
+  `parse_delim`/`stringify_delim` take an arbitrary single-byte delimiter (TSV is
+  `parse_delim(s, 9)`); `get(rows, r, c)` is a bounds-safe cell read (`""` if OOB).
+- **`markdown`** — a pragmatic Markdown → HTML renderer in pure Tycho. `render(src)`
+  handles ATX headings, fenced code (HTML-escaped), blockquotes, unordered/ordered
+  lists, thematic breaks, and paragraphs; inline `**bold**`, `*italic*`/`_italic_`,
+  `` `code` ``, `[text](url)`, `![alt](src)`. All text is HTML-escaped and unknown
+  syntax degrades to escaped plain text (never a parse abort). Not full CommonMark
+  (no nested lists, reference links, tables, or setext headings) — targets a
+  blog/wiki. `esc(s)` is that HTML escaper on its own, for callers assembling
+  markup around rendered output.
+- **`base64`** — Base64 (RFC 4648) `encode`/`decode`, plus `encode_url` (URL-safe
+  `-`/`_` alphabet, no padding). Pure arithmetic — the 6-bit packing uses `/` and `%`
+  (exact on the unsigned 0..255 that `s[i]` returns), no bit-operators. `decode` is
+  lenient: it skips any non-alphabet byte (padding `=`, whitespace, newlines in wrapped
+  Base64) and accepts both alphabets. **Byte-safety caveat** (a tycho string-model limit,
+  not a Base64 one): `encode` is fully byte-safe, but `decode` builds its result with
+  `chr()`, and a tycho string can't hold an interior `0x00` (`chr(0)` appends nothing), so
+  decoding plaintext that contains a NUL byte silently drops it — `decode` is exact for
+  text and any non-NUL binary, lossy only for data containing `0x00`.
+- **`hex`** — hexadecimal `encode` (lowercase) / `encode_upper` / `decode`, two digits per
+  byte, plus `is_valid` (strict: even length, all hex digits). `decode` is lenient (skips
+  any non-hex byte, so `de:ad:be:ef` and spaced/newlined hex work, either case) and reuses
+  `core:char`'s `hex_val`. Same `0x00` decode caveat as `base64` (`decode("00")` is `""`).
+- **`url`** — URL percent-encoding (RFC 3986). `encode` is component-style (like JS
+  `encodeURIComponent` — everything but unreserved `A-Z a-z 0-9 - _ . ~` becomes `%XX`,
+  uppercase, space → `%20`); `encode_form` / `decode_form` use the
+  `x-www-form-urlencoded` convention (space ↔ `+`); `decode` decodes `%XX` (leaving `+`).
+  `decode` is lenient (a `%` not followed by two hex digits is emitted literally) and reuses
+  `core:char`'s `hex_val`. Same `0x00` decode caveat as `base64`/`hex`.
+- **`uuid`** — version-4-shaped UUIDs (RFC 4122) plus the nil UUID and helpers. `v4(&st)`
+  draws from `rand`'s 32-bit xorshift, so it is **not unguessable** — use
+  `crypto.random_hex` for a token.
+  draws 16 bytes from `core:rand` (state threaded by `inout`) and sets the version/variant
+  bits with plain arithmetic; `nil()`, `parse(s) -> [int]` (16 bytes, lenient on separators,
+  `[]` unless exactly 32 hex digits), `format(bytes) -> string` (canonical 8-4-4-4-12),
+  `is_valid` (strict), `version` (the version nibble, `-1` if invalid). v1 and the name-based
+  v3/v5 are out of scope (they need a MAC / MD5 / SHA-1, none of which corelib has). Bytes are
+  formatted with an inline byte→hex, not `chr(b)`, so zero bytes survive.
+- **`hash`** — non-cryptographic 32-bit hashes for hash tables / checksums / dedup (NOT for
+  security): `fnv1a_32`, `djb2`, `sdbm`, and `crc32` (IEEE/zlib, bit-by-bit), plus `to_hex`
+  (8-digit lowercase). All return a non-negative int in `[0, 2^32)` and are kept UB-free the
+  same way `core:rand` is — values never leave `[0, 2^32)` and shifts/masks use `* / %` so no
+  signed 64-bit overflow (only `^` among the bit-operators). Hashing only reads bytes, so
+  there is no `0x00` caveat on the input. Matches published vectors:
+  `crc32("123456789") = cbf43926`, `fnv1a_32("foobar") = bf9cf968`. For a hash of
+  **any** hashable value (struct/tuple/array, not just a string) use the generic builtin
+  `hash(x)` — deterministic (fixed keys/seed: the same value hashes the same on every
+  run and machine, so it doubles as a checksum over composites; the map's internal
+  hashing stays per-process seeded for DoS defense), full 64-bit as a signed
+  int ([builtins §29.7](../spec/16-builtins.md#297-maps)).
+- **`md5`** — the MD5 message-digest (RFC 1321): `hex(s)` (32-char lowercase digest) and
+  `digest(s)` (16 raw bytes). Pure 32-bit arithmetic — adds masked with `% 4294967296`, the
+  32-bit NOT is `4294967295 - x`, and the left-rotate uses `* / +` (disjoint halves), all
+  UB-free. **MD5 is broken for security** (use it for checksums / content-addressing / interop,
+  never passwords or signatures). Bit-exact against the RFC 1321 suite
+  (`md5("abc") = 900150983cd24fb0d6963f7d28e17f72`).
+- **`sha256`** — the SHA-256 hash (FIPS 180-4): `hex(s)` (64-char lowercase digest) and
+  `digest(s)` (32 raw bytes). Pure 32-bit arithmetic, UB-free like `md5`/`hash`; big-endian
+  (words, length suffix, output). A **real cryptographic digest** — fine for checksums,
+  content addressing, and HMAC building blocks (not a standalone password hash; use a KDF
+  for that). Bit-exact against NIST vectors (`sha256("abc") = ba7816bf…f20015ad`).
+  For input too large to hold at once there is a **streaming** form: `init()` gives
+  a `State`, `update(&st, data)` folds in each chunk, and `final_hex(&st)` closes
+  it and returns the digest — the same answer `hex(s)` gives for the concatenation.
+- **`bignum`** — arbitrary-precision integers in pure Tycho (sign + base-10⁹ limb array),
+  value-semantic: `from_int`/`from_str`/`to_str`/`to_int`, `add`/`sub`/`mul`/`divmod`/`div`/
+  `mod`/`pow`, `abs`/`neg`/`cmp`/`is_zero`.
+- **`decimal`** — arbitrary-precision base-10 fixed point, composed on `core:bignum` (a `Big`
+  coefficient × 10⁻ˢᶜᵃˡᵉ), so decimal fractions are **exact** (`0.1 + 0.2 == 0.3`):
+  `from_int`/`from_str`/`to_str`, `add`/`sub`/`mul` (exact), `cmp`, `neg`/`abs`/`is_zero`,
+  `from_str_checked(s) -> Result(Decimal, DecErr)` — the bare `from_str` fails open
+  (`"1.5x"` is `0.15`, a plausible wrong number rather than an error), so use the
+  checked one on anything a user or a file supplied —
+  `rescale` (truncating). Division exists and takes its policy from the caller:
+  `div(a, b, scale, mode) -> Result(Decimal, DivErr)`, where `mode` is `half_up()` (ties away
+  from zero) or `toward_zero()` (agrees with `rescale`) — there is no default, because there
+  is no correct one. A zero divisor, a negative scale and an unknown mode are each an `Err`.
+- **`crypto`** — the security-grade module, a C-shim over OpenSSL `libcrypto` (see
+  [C-shim modules](#c-shim-ffi-backed-modules); needs the OpenSSL dev package). Where the
+  pure-Tycho `sha256`/`md5` are for non-adversarial integrity, this is what you reach for
+  when an attacker is in the threat model: CSPRNG (`random_hex`), `sha256`/`sha512` of
+  binary, `hmac_sha256`, `pbkdf2_sha256`, constant-time `ct_equal`, ChaCha20-Poly1305 AEAD
+  (`aead_encrypt`/`aead_decrypt`, `"!err"` on auth failure), Ed25519
+  (`ed25519_pubkey`/`sign`/`verify`), and X25519 (`x25519_pubkey`/`shared`). Real crypto must be
+  constant-time and **pure Tycho cannot be**: `/` and `%` lower to a runtime helper that
+  branches on its operands (`runtime/tycho_rt.c@tycho_imod`), so a routine written over
+  secret values branches on those values however the source is written. That is why these
+  primitives are bound to OpenSSL rather than reimplemented. Constant-time code needs
+  guarantees no high-level language makes about its own arithmetic, which is why Go ships
+  `crypto/subtle` and why nobody writes production RSA in Python either. Every value (keys, nonces, ciphertext, signatures,
+  digests) crosses as lowercase hex, because a Tycho string can't hold a `0x00`; use
+  `core:hex` to convert text. Checked against independent known-answer vectors (RFC 4231 HMAC,
+  RFC 7914 PBKDF2, RFC 8439 ChaCha20-Poly1305, Ed25519/X25519).
+  **Keys are opaque handles, and their lifecycle is the part you need first:**
+  `key_random(n) -> ptr` makes one from the CSPRNG, `key_from_hex(hex) -> ptr`
+  imports one, `key_export_hex(k) -> string` exports it, `key_len(k) -> int` is
+  its byte length, and `key_free(k)` releases it. That handle is what
+  `aead_encrypt`/`aead_decrypt` take. The signature keys have their own
+  constructors — `ed25519_key_from_seed(seed_hex)`, then
+  `ed25519_sign(key, msg_hex) -> string` and
+  `ed25519_verify(pub_hex, msg_hex, sig_hex) -> bool` — as does key agreement:
+  `x25519_key_random()`, `x25519_key_from_secret(secret_hex)`, and
+  `x25519_shared(my_key, their_pubkey_hex) -> ptr`, whose result is a key handle
+  ready for the AEAD.
+- **`result`** — the `Result` / `Option` collapses, generic over `$T` and `$E`:
+  `unwrap_or(r, fallback)`, `is_ok(r)`, `is_err(r)`, `err_or(r, fallback)`,
+  `map_err(r, replacement)`, `map_err_with(r, f)`, and
+  `some_or(o, fallback)` / `is_some(o)` for the `Option` half. `or_return` unwraps a
+  `Result` only inside a function that itself returns a compatible `Result`
+  (`docs/spec/10-statements.md:75`), so a `main()`, or a handler that returns a
+  `Response`, needs another way — and before this package the only one was a four-line
+  `match` per call site (three copies of it existed in this tree). `err_or` plus `==` is
+  how a caller asks *which* failure happened **without writing a `match` at all** — a
+  one-line `if`. `map_err(r, replacement)` is the other half of that gap: `or_return`
+  also refuses when the two error types differ, so a function calling two packages'
+  fallible functions used to get `or_return` for one and a hand-written collapse for the
+  other. `map_err` re-labels the error so `or_return` carries it —
+  `req := result.map_err(httpd.read_request(fd), net.Failed) or_return` — at the cost of
+  the original cause, so reach for it where the caller's own enum already has a variant
+  that means what happened. **`map_err_with(r, f)` is its cause-preserving sibling** —
+  identical job and argument order, except `f` RECEIVES the `Err` payload and builds the
+  replacement from it, so a `Syntax(7)` arrives as `FromParse(7)` rather than as a
+  constant. Use it where the cause carries something the caller still needs (a byte
+  offset, a column name) and `map_err` where it does not, which is the common case.
+  A caller who *is* writing one should use a nested pattern instead
+  (`Err(io.IsDir):`,
+  [§14.3.1](../spec/10-statements.md#1431-nested-patterns)); the corelib's error enums
+  stay payload-free so both spellings keep working. Pure computation: no shim, no
+  allocation, nothing aborts.
+- **`testing`** — a unit-test framework, state threaded like `core:rand`'s:
+  `t := testing.new("name")`, then `check(&t, cond, msg)` and generic
+  `eq(&t, got, want, msg)` (comparable scalars — int/float/string/char; for a
+  composite compare with `==` and pass the message), and
+  `exit(testing.report(t))` — prints `ok name (N checks)` or the failing checks
+  plus `FAIL name (N of M checks failed)` and returns 0/1 for the exit code.
+- **`toml`** — a TOML v1.0-subset parser: `parse(s) -> Result(Value, string)`
+  (fail-closed), a recursive `Value` enum (TStr/TInt/TFloat/TBool/TArr/TTable;
+  tables are parallel keys/values arrays), and `get(t, "a.b.c") -> Option(Value)`
+  / `keys(t)`. Supports bare + quoted + dotted keys, `[table]` and
+  `[[array-of-tables]]`, basic strings with escapes and \uXXXX, literal
+  strings, ints (dec/0x/0o/0b/underscores), floats, bools, arrays with
+  trailing commas; an ISO-8601 datetime is kept as a string. Not inline tables
+  or multi-line strings.
+  `empty_table()` gives an empty `Value` table, the starting point for building one up rather than parsing it.
+- **`zip`** — a ZIP archive reader and writer over core:compress's raw
+  deflate: `list(bytes)` (names, methods, sizes, CRCs), `extract(bytes, name)`
+  (fail-closed: missing/corrupt entries or a CRC mismatch yield empty), and
+  `create([Entry(name, data)])` (stored or deflated, CRC-32 computed here).
+  Entries are names, not paths — extracting never touches the filesystem.
+  The writer's output is read back byte-exactly by Python's zipfile.
+- **`sqlite`** — a thin wrapper over libsqlite3, bound directly (no
+  hand-written shim — the `extern "sqlite3"` forms name the pkg-config
+  dependency, so the package and its test skip where sqlite3 is absent):
+  `open(path)` (or `":memory:"`), `close(&db)`, `exec(&db, sql)` (change
+  count), `query(&db, sql)` / `query_params(&db, sql, params)` → `[[string]]`
+  (every column read as text), `errmsg(db)`. Parameters bind as text and
+  coerce; fail-closed with sqlite's own messages.
+  `exec_params(&d, sql, params)` is the parameter-binding form of `exec`, returning the affected-row count; the parameters bind as text and coerce, as elsewhere in this package.
+- **`log`** — a leveled logger, state threaded like `core:rand`'s:
+  `l := log.init(log.level_info(), false)`, then `log.debug/info/warn/error(&l,
+  msg)` — each prints `[level] message`, dropping messages below the logger's
+  level; `to_stderr` selects stderr over stdout. The level constants are
+  functions: `level_info()`, `level_warn()`, `level_error()` (and `level_debug()`).
+   No timestamps (they would make
+  output non-deterministic); prepend your own.
+- **`utf8`** — Unicode validation and codepoint iteration over byte strings:
+  `valid(s)` (strict — rejects overlong, surrogates, truncated), `decode(s, at)`
+  → `(codepoint, width)` at a byte offset (the iteration idiom), `encode(cp)` →
+  its UTF-8 bytes, `count(s)` → codepoints or -1. No case mapping or full
+  tables — validation + iteration is the core.
+- **`io`** — filesystem helpers over the `read_file`/`write_file`/`list_dir` builtins, and **the
+  first corelib module to compose others** (imports `core:strings` for line splitting; it also
+  imported `core:path` for the old `exists`, which the `stat`-backed one no longer needs).
+  `read(p)` — **fail-open**: `""` for a missing file, an unreadable one and a genuinely
+  empty one alike, so prefer `read_text(p) -> Result(string, IoErr)` (same content, with
+  the error channel) or `read_bytes(p)` when the difference matters —
+  `write(p, s)` (truncate, returns false if unopenable),
+  `append(p, s)` (read-rewrite, not atomic) and `append_text(p, s) -> Result(void, IoErr)`
+  (the same, with the error channel), `read_lines(p)` / `write_lines(p, lines)`
+  (newline-terminated round-trip), `list(p)` (entry basenames) and `list_checked(p) -> Result([string], IoErr)`
+  (which distinguishes an empty directory from an unreadable one, where `list`
+  cannot), `exists(p)` (**one `stat(2)`**, not a
+  listing of the parent — that would be O(entries) and blind to a leaf under an unlistable
+  parent; `false` means "`stat` could not say yes", so it fails closed). For
+  inputs too large to slurp, a **bounded-memory streaming line reader** over a libc `getline`
+  shim: `open_lines(p) -> Result(LineReader, io.IoErr)` → `read_line(r)` (`Some(line)` / `None`
+  at EOF) → `close_lines(r)`. A `LineReader` is opaque (its C pointer is private), and the opener
+  reports *why* it failed rather than handing back a null to check: `BadPath` for an interior NUL,
+  else `NotFound` / `IsDir` / `Failed`. There is no `defer`, so `close_lines` is yours to call —
+  as it is in Go and Odin, whose openers return the same (resource, error) pair. Plus
+  `fold_lines(p, init, f)` — peak memory is O(longest line), not O(file). `read_bytes(p) ->
+  Result(bytes, io.IoErr)` reads a whole file as raw `bytes` (binary-safe — interior NUL bytes are
+  preserved, unlike `read`'s string), and it reports *why*: an **empty file is `Ok`** with zero
+  bytes, a missing path is `Err(NotFound)` and a directory is `Err(IsDir)` — three outcomes a
+  single empty `bytes` would collapse, which is how a static file server ends up serving a
+  0-byte `200` for a path it cannot read. The variants are payload-free, so `==` and a nested
+  `Err(io.IsDir)` arm both work. **Six** calls go past the builtins to real syscalls. Three of them
+  resolve `list`'s empty-directory-vs-non-directory ambiguity, which is a missing `stat(2)`
+  and never a return type: `is_dir(p) -> Result(bool, io.IoErr)` asks it (an **empty directory is
+  a directory**, which `len(list(p)) > 0` gets wrong), and `make_dir(p)` / `remove(p)` —
+  `mkdir(2)` and `remove(3)`, **one entry each, never recursive** — answer `Ok(true)` for "changed it" and `Ok(false)` for "it was already how you
+  asked", splitting `EEXIST` into `Ok(false)` (already a directory: goal met) and `Err(Exists)`
+  (something else is in the way), and `remove` refusing a **non-empty directory with
+  `Err(Failed)`**. `make_dir_all(p)` is the `mkdir -p`, and it is a **separate name on
+  purpose**: it walks the components, returns `Ok(true)` if it created at least one and
+  `Ok(false)` if the whole path was already there, and stops at the first component it could
+  not make. The rule the old wording was reaching for is not "corelib has no recursion" but
+  **"no corelib name is secretly recursive"** — the `_all` is the disclosure. There is
+  deliberately **no `remove_all`**: a recursive delete is the one where a caller's wrong path
+  costs data that is not coming back, and that half of the prohibition stands.
+  Three more are HTTP answers `tycho-httpd` could not otherwise give: `mtime(p) -> Result(int, io.IoErr)`, whole seconds on `now()`'s clock, where a **directory
+  is `Ok`** because it has a modification time; `size(p) -> Result(int, io.IoErr)`, a length
+  without reading the file, where a **directory is `Err(IsDir)`** because `st_size` there is the
+  entry structure and not readable bytes, and `size` succeeds on exactly the paths `read_at` can
+  read; and `read_at(p, off, n) -> Result(bytes, io.IoErr)` over `pread(2)`, which allocates
+  `min(n, size - off)` and never `n`, so a length off the wire cannot over-allocate, and answers
+  `Ok` with zero bytes past EOF. The **writers that can only succeed or fail** —
+  `write_bytes(p, b)`, `write_at(p, off, b)`, `set_mtime(p, secs)` and `sync(p)` — return
+  `Result(void, io.IoErr)`, so `io.write_bytes(p, b) or_return` is a statement and a `match`
+  arm is `Ok():`. There is no bool: `Ok(false)` would be
+  unreachable, and a caller binding one would be guarding a case that cannot occur. Contrast
+  `make_dir` / `remove` above, which do return a bool, because there `Ok(false)` is a real
+  second answer. The rest keeps the builtins' sentinels.
+  Nothing aborts.
+- **`os`** — `is_windows()` reports the host family at runtime (the compile-time
+  split is `_WIN32` in a shim; this is the one a Tycho program can branch on) — run external commands, via a **libc-only FFI shim** (`popen`/`system`; no
+  `deps`, nothing to install). `os.system(cmd)` runs `cmd` through the shell with stdout/
+  stderr inherited, returning its exit code (0..255, `128+signal` if killed, `-1` if the
+  shell won't start); `os.run(cmd)` additionally captures stdout into `Output{code, out}`.
+  `cmd` is a `/bin/sh -c` line — shell metacharacters are active, so quote untrusted input
+  yourself. The stdout-capture read loop lives in `os_shim.c`, so
+  Tycho only ever receives the finished, NUL-terminated string.
+  **`os.exec(argv)` / `os.exec_out(argv)`** are the array-argv pair and take a
+  `[string]`: no shell is started at all (`posix_spawnp`), so an argument of
+  `"; rm -rf /"` is one ordinary argument rather than a second command — prefer
+  them whenever the arguments are not compile-time constants. Neither REPLACES the
+  calling process despite the name — both spawn, wait, and return, so execution
+  continues at the next statement. Same exit-code
+  contract; `exec_out` captures stdout. They **fail closed** with `-1` on an
+  empty argv, more than 4096 entries, an allocation failure mid-build, or a
+  program that cannot be spawned — never a silent fallback to the shell. The
+  vector crosses the FFI as one `[string]` (§24.1), borrowed for the call: the
+  shim appends the `NULL` `execv` wants to a copy it owns. Implemented on
+  both platforms — `posix_spawnp` on POSIX, `CreateProcess` (never `cmd.exe`) on
+  Windows, where the vector is joined by the `CommandLineToArgvW` quoting rules
+  and round-tripped through the real splitter as a `make shim-check` leg
+  (`corelib/os/os_argv_quotecheck.c`). What remains is callee-side: a program
+  that parses its own command line by other rules — `cmd.exe`, a `.bat`/`.cmd`
+  file — can still read it differently, so don't hand a batch file untrusted
+  argv.
+- **`net`** — TCP/UDP sockets over a **libc-only FFI shim** (`net_shim.c`, POSIX sockets;
+  no `deps`, nothing to install). **The transfer calls block; readiness does not.**
+  `read`/`write`/`connect` block, so a worker-per-connection server still has its
+  worker count as a ceiling on concurrent connections — one slow client occupies
+  one worker for the whole of its request, so size the pool for the concurrency
+  you need and put a timeout on the socket. But two calls take a deadline and do
+  not block on the peer: `wait_readable(fds, ms) -> Result([int], NetErr)` names
+  exactly the descriptors that are ready (or an empty list when `ms` elapses), and
+  `accept_wait(fd, ms) -> Result(int, NetErr)` waits for one inbound connection
+  with a timeout. Both are `poll(2)` underneath, **not** `select(2)`, which cannot
+  represent a descriptor at or above 1024 — the case `make net-poll-check` scores
+  along with "exactly the ready fds named" and "the timeout elapses".
+  `close_fd(fd)` releases a descriptor obtained this way. Every fallible TCP call returns
+  **`Result(T, net.NetErr)`**: `listen`/`accept`/`connect`/`port_of` give `Result(int, …)`,
+  `peer_addr(fd)` gives `Result(string, …)` — the connected peer's address as text
+  (`getpeername` + `inet_ntop`), the other half of `port_of`'s `getsockname`, and the
+  field a real access log leads with.
+  `write` gives `Result(int, …)` (bytes sent), `read` gives `Result(bytes, …)`. Payloads
+  are binary-safe `bytes`. `NetErr` is `Eof` / `Timeout` / `Failed`, all payload-free so
+  a single cause can be tested with `==` (`if e == net.Timeout`) without opening a
+  `match` at all — or, inside one, with a nested `Err(net.Timeout)` arm (§14.3.1).
+  `read` **distinguishes** a clean hangup (`Err(Eof)`) from an expired receive deadline
+  (`Err(Timeout)`) from a hard error (`Err(Failed)`) — three answers a bare empty `bytes`
+  would collapse into one. `set_read_timeout_ms(fd, ms)` arms `SO_RCVTIMEO` and stays a
+  plain `bool` — one failure, one cause, no collision to remove; `ms <= 0` restores the
+  blocking default and `false` means the option could not be set (fail closed — the
+  socket keeps blocking). The **UDP** calls (`udp_bind`/`udp_send`/`udp_read`) are still
+  sentinel-based on purpose: a zero-length datagram is legal, so `udp_read`'s empty
+  result is a real success value and a return-type change alone would not remove the
+  ambiguity.
+- **`httpd`** — a minimal HTTP/1.1 **server** toolkit over `core:net` (no external
+  dependency — net is libc-only). The request/response plumbing is pure Tycho; you own the
+  accept loop. `parse_request(raw) -> Result(Request, httpd.ReqErr)` (method/path/version,
+  case-insensitive `header(r, name)`, honors Content-Length; `Err(Malformed)` on a
+  malformed request line);
+  `response(status, body: bytes)` (standard reason phrase) /
+  `response_reason(status, reason, body: bytes)` (your own phrase, for a status the
+  table does not carry — so no caller has to build the struct positionally to set
+  one string) / `text_response(status, body: string)` /
+  `with_header(r, k, v)` / `with_body(r, b)` / `render_head(r) -> string` /
+  `render(r) -> bytes` (Content-Length and a default `text/plain` Content-Type are added
+  automatically); and the socket glue `read_request(fd) -> Result(Request, httpd.ReqErr)`
+  (reads until the header terminator, then exactly Content-Length body bytes, bounded so a
+  hostile peer can't spin) — its `Err` says **which** failure, `Malformed` / `Closed` /
+  `Timeout` / `Failed` / `TooLarge`, so a server can answer `400` to garbage while hanging
+  up silently on a disconnect
+  (`corelib/test/httpd.out` records four of them as distinct) /
+  `read_request_capped(fd, cap) -> (Result(Request, httpd.ReqErr), string)` (the same read
+  with your own byte budget — reaching it with no header terminator is `Err(TooLarge)`, the
+  `431` decision — plus every byte read as the second tuple element, so an access log can
+  name a request that would not parse; `read_request` is this with `cap = MAX_REQUEST`) /
+  `read_request_deadline(fd, cap, deadline_ms)` (the same again, with a deadline on the
+  **whole** head-and-body rather than on one `read`) /
+  `read_request_resume(fd, cap, deadline_ms, have)` (the same again, RESUMED: `have` is the
+  buffer a previous call returned beside `Err(Timeout)` on **this same fd**, so an event
+  loop can give a slow head a short slice per visit instead of blocking for the whole
+  budget and discarding what arrived. Hand the buffer back only after `Err(Timeout)` and
+  drop it on every other outcome — carrying it past a completed request would splice two
+  heads together; `cap` bounds `have` plus everything read after it, never one call) /
+  `write_response(fd, r) -> Result(int, net.NetErr)` (Ok = total bytes written;
+  it returns the same error type `net.write` does, so `or_return` propagates a failed
+  send with no sentinel check). **Binary-safe bodies** — `Request.body` and
+  `Response.body` are `bytes`, so a PNG or a font round-trips byte for byte; headers stay
+  `string` (ASCII by spec). `write_response` sends head and body as two `net.write` calls,
+  so the body buffer is never copied into an intermediate string.
+  `content_type(path)` maps a file extension to a MIME type — `.html .htm .css .js .mjs
+  .json .txt .xml .svg .png .jpg .jpeg .gif .webp .ico .woff .woff2 .pdf .wasm` — and an
+  **unknown extension yields `application/octet-stream`, never `text/plain`** (a wrong
+  `text/*` guess is how a browser is talked into rendering something it should download).
+  Keep-alive: `connection_close(req)` (HTTP/1.1 defaults open, 1.0 defaults closed, an
+  empty `bad_request()` always closes) and `with_connection(r, alive)`; pair it with
+  `net.set_read_timeout_ms` so an idle peer cannot pin a worker. CRLF is built with
+  `chr(13)` (tycho strings have no `\r` escape).
+  **Framing is refused, never guessed**, by all three read entry points
+  (`corelib/httpd/httpd.ty@framing`): any `Transfer-Encoding` at all — **chunked bodies are
+  not decoded** — a `Content-Length` that is not a plain decimal, two `Content-Length`
+  headers that disagree, or `Content-Length` together with `Transfer-Encoding`, are each
+  `Err(Malformed)`, and the connection must not be reused. A framed size past `cap` is
+  `Err(TooLarge)` *before* the body is read; a body shorter than its own `Content-Length` is
+  `Err(Closed)`, because an unfinished request is not a short one.
+  **Pipelining is not supported.** Exactly the bytes this request framed are parsed;
+  anything the peer sent past them is discarded with the buffer, so a client that pipelines
+  loses every request after the first. Handing the leftover back would need a
+  per-connection buffer these signatures do not carry — what matters is that the leftover
+  is never glued onto this request's body, which is the smuggling bug.
+  The request-shaping helpers the server layer calls are public too: `reason_phrase(status)` gives the status text, `bodyless(status)` says whether a status may carry a body at all (204/304 and the 1xx range), `content_length_conflict(r)` reports a request carrying both `Content-Length` and `Transfer-Encoding` (the request-smuggling shape), `parse_len(s) -> (int, bool)` parses a length header with its validity flag, `has_ext(path, ext)` tests a path's extension, and `crlf()` is the line terminator as a string.
+- **`cli`** — command-line argument parsing, pure string math. `parse(argv) -> Cli` sorts the
+  vector into three buckets: `--key=value` **options**, boolean **flags** (`--flag`, and short
+  clusters `-abc` → `a`/`b`/`c`), and **positionals** (everything else, plus everything after
+  a bare `--`). Values always attach with `=`, so `parse` needs **no schema** of which options
+  take a value — `--verbose` is unambiguously a flag and `--out=x` unambiguously an option.
+  `argv()` is the builtin `args()` with `args()[0]` (the program path) dropped, which is what
+  `parse` wants, so a program's whole front door is `c := cli.parse(cli.argv())` — no copy
+  loop. Pass a vector to `parse` yourself and it is used as given; the skip lives in `argv()`,
+  not in `parse`, so a synthetic argv with no program name in it is never eaten.
+  `parse_spec(argv, valued, boolean) -> Cli` is the **schema-carrying** form, and it is what
+  buys the space-separated Unix spelling `--root DIR`: `valued` and `boolean` list long option
+  names and short flag letters **without dashes**, the same spelling `get`/`flag` take. It is
+  an addition, not a migration — `parse` is unchanged and every `=`-attached spelling means
+  the same thing in both. Its rules: a `valued` name consumes the next argument **as-is**
+  (getopt's rule, so `--root --port` sets root to `--port`) or lands in `missing(c)` if there
+  is nothing after it; a `boolean` name spelled `--flag=v` sets the flag and **drops** `v`; a
+  name in neither list, and a short cluster containing a letter in neither, land in
+  `unknown(c)` as written. No short option takes a value (`-p 80` is not a spelling this
+  package has — it would make `-abc` ambiguous); use `--port 80`. Accessors:
+  `get(c, key, default)`, `has(c, key)`, `flag(c, name)` (long or short), `positionals(c)`,
+  `count(c)`, `missing(c)`, `unknown(c)`. Uses parallel arrays, not maps. `server/main.ty`
+  is the worked example: 5 valued names, 4 boolean, and no parser of its own.
+- **`raster`** — pure-Tycho raster image codecs, **BMP** and **QOI**, with no external
+  dependency (unlike `core:image`'s libpng-backed PNG). An `Image` is 8-bit RGBA (4
+  bytes/pixel, row-major, top-to-bottom); pixel data is `bytes`. `encode_bmp`/`decode_bmp`
+  (writes 32-bit BGRA, bottom-up, uncompressed; reads 24- or 32-bpp `BI_RGB`) and
+  `encode_qoi`/`decode_qoi` (all six QOI chunk types, spec-exact 14-byte header and end
+  marker). Both **round-trip losslessly**; the decoders **fail closed** to a 0×0 Image on a
+  malformed / truncated / wrong-format input (check `width > 0`). Assembling the binary
+  output is what the `to_bytes([int])` builtin enables — pure Tycho otherwise can't build a
+  `bytes` with an interior `0x00` (a black or transparent pixel is `0x00` components).
+  `too_big(w, h)` is the decode guard in front of every codec here: it answers whether a declared width and height would allocate past the ceiling, which is what stops a 69-byte header claiming a 3.6 GB image.
+- **`signal`** — **clean shutdown on SIGTERM/SIGINT, and nothing else**: a libc-only shim over
+  `sigaction(2)` and `shutdown(2)`, with nothing to install and nothing to link.
+  `on_shutdown(fd) -> bool` installs one handler for both signals whose **only** action is
+  `shutdown(fd, SHUT_RDWR)` on the listening socket, so every thread blocked in
+  `net.accept(fd)` is released with `Err(Failed)` and the program winds down through the path
+  it already has instead of a new one. It **fails closed**: `false` means the handler was not
+  installed and the default disposition (die on SIGTERM) still stands.
+  `shutdown_requested() -> bool` reads the flag the handler set, for a loop that wants to stop
+  for a reason other than a failed accept. **Order matters** — call `on_shutdown` *after*
+  `net.listen`, with the listening fd, and *before* the accept loops start; the fd is
+  registered before the handler is, so a signal arriving mid-install can never act on a
+  descriptor that is not there yet. `server/main.ty` is the tree's only caller.
+  **The width is the design.** There is deliberately no `signal.on(sig, handler)`: calling a
+  Tycho function from handler context is a language feature, not a library one, and it needs
+  answers this package does not have — what a handler may allocate (the arena is not
+  re-entrant), what it may do to a task (the scheduler's queues are mutex-guarded), and which
+  thread it lands on (process-directed signals go to whichever one the kernel picks). So **no
+  Tycho code runs in handler context**: the handler is three statements of C, each on the
+  POSIX async-signal-safe list. What it costs — `shutdown` on a *listening* socket waking a
+  blocked `accept()` is a **Linux behaviour, not a POSIX guarantee**, and connections still in
+  the backlog are dropped rather than drained; it was chosen by measurement, releasing 4/4
+  blocked accept loops in the same millisecond where `close(fd)` released 1/4 and handed the
+  fd number back out to a later `open()`. Normative text: `docs/spec/18-library.md` §32.27.
+
+  For a server that must report which connections it dropped, `register_conn(slot, fd)` records a live descriptor against a slot and `retire_conn(slot)` clears it, so the handler knows what was open when the signal arrived.
+## C-shim (FFI-backed) modules
+
+A core module can wrap a C library via FFI. Drop a `<module>/<module>_shim.c` next to
+the `.ty`; the transpiler auto-compiles and links it on `import "core:<module>"` (no
+`--shim` needed). The `.ty` declares the shim's functions with `extern fn` (and
+`extern "Lib" fn` auto-adds `-lLib` for an external library; `core:regex` needs none —
+POSIX regex is in libc). Opaque handles cross as `ptr` (carried by value, never
+dereferenced or arena-managed — `null` / `is_null`). `tychoc` links a module's shim
+automatically — no `--shim` needed for a corelib package.
+
+### Freeing a shim handle
+
+A `ptr` handle is not affine, so nothing in the type system stops a caller freeing one
+twice or reading one after free. `core:crypto`, `core:tls`, `core:http` and `core:image`
+guard that at run time instead: the payload is released on free — cleansed first, for a
+crypto key — while the handle's own header is kept and a DEAD sentinel written into it, so
+a second free or a later use has something to read and dies by name (`tycho: double free
+of crypto key handle`, `tycho: image handle used after free`) rather than reading freed
+memory. `make handle-guard` is the lane that holds it.
+
+The kept header is never reused for a new handle, so a stale handle can never come back as
+somebody else's; it is also never freed. The cost is therefore a few dozen bytes per handle
+the process has **ever** opened, not per handle live at once. Measured on Linux x86-64 with
+glibc — one open-and-free per iteration, peak RSS against iteration count — it is 32 bytes
+per `crypto` key, 48 per `image` handle, 55 per `tls` connection and 61 per `http` response.
+The last two sit above the bare header because the retained headers interleave with
+OpenSSL's and libcurl's own allocation churn. Below roughly 40,000 handles it does not show
+up in peak RSS at all, being absorbed under a high-water mark those libraries set anyway.
+
+At the `http` rate that is one megabyte per 17,000 responses and one gigabyte per 17
+million, so a one-shot program pays nothing measurable and a daemon making 100 requests a
+second grows by about 22 MB an hour. That is the figure to check a long-lived program
+against. The alternative — quarantining a bounded ring of freed headers and really releasing
+the oldest — would cap the cost but give up the diagnosis for a handle freed long ago, and
+has not been taken: nothing shipped here opens handles in a loop that runs long enough to
+need it.
+
+### External dependencies (C-shim `deps`)
+
+A shim that needs a system library beyond libc — one with headers to find and a link
+flag that **varies by platform** — declares it in a `corelib/<module>/deps` manifest:
+pkg-config package names, one per line (`#` comments and blank lines ignored). For
+example `corelib/http/deps` is just `libcurl`.
+
+The `deps`-backed modules are `http` (libcurl) and `crypto` (libcrypto), documented above,
+plus three more:
+
+- **`compress`** — gzip (RFC 1952) compress/decompress over **zlib** (`deps: zlib`).
+  `compress(bytes) -> bytes`; `decompress(bytes) -> Result(bytes, ZErr)` and
+  `raw_decompress` likewise, where `ZErr` is `Corrupt` / `Truncated` / `Failed`.
+  **`Ok` with length 0 is a real empty payload**, distinct from every failure. With bare `bytes` a corrupt
+  stream is indistinguishable from an empty one, which for a container format means a
+  damaged member reads as a zero-byte file. On a RAW deflate stream `Truncated` also covers "not a deflate
+  stream": there is no wrapper or checksum to tell those apart.
+  **`compress` is byte-deterministic** and callers may rely on it: for one zlib build
+  it is a pure function of its input — same bytes in, byte-identical bytes out, in any
+  process, at any time, under any locale or TZ. RFC 1952's MTIME header field is held
+  at zero (the shim never calls `deflateSetHeader`), unlike `gzip(1)`, which fills it.
+  `tools/tycho-ar` depends on this: its "archive the same tree twice, `cmp`-identical"
+  gate reddens if it ever stops holding. The compressed *length* is a zlib tuning
+  detail — it is not stable across zlib versions and no golden here locks it.
+  `raw_compress(data)` is the same deflate without the gzip framing, for callers that supply their own container.
+- **`image`** — PNG decode/encode over **libpng** (`deps: libpng`): `decode(bytes) ->
+  Result(Image{width, height, pixels}, ImgErr)` (8-bit RGBA) and `encode(Image) ->
+  Result(bytes, ImgErr)`. A sentinel — a 0×0 `Image`, an empty buffer — would make a
+  truncated PNG, a JPEG renamed `.png` and an empty file one answer, so `ImgErr` names which: `Empty`, `NotPng`, `Corrupt` on the
+  decode side, `BadDims`, `ShortPixels` on the encode side, `Failed` for an allocation or
+  a libpng failure. PNG has no 0-dimension image, so an `Ok` always carries `width >= 1`.
+  JPEG is a demand-gated follow-up.
+- **`tls`** — a TLS 1.2/1.3 client over **OpenSSL** (`deps: openssl`). Secure by default:
+  `connect(host, port)` verifies the certificate against the system CA store, checks the
+  hostname, and sends SNI; failure returns a null handle (never a silent insecure
+  connection). `write`/`read`/`close_conn` over the encrypted stream.
+
+This keeps the test suite libc-only and portable while still allowing library-backed modules.
+A libc-only shim needs no `deps` — `core:regex`, `core:os`, `core:net` and `core:signal`
+among them; a library with no `.pc` file can still use `extern "Lib" fn` for a bare `-lLib`.
+
+## Testing
+
+`make corelib` (→ `corelib/run.sh`): every `corelib/test/<name>/main.ty` is built and
+run, and must produce the golden `corelib/test/<name>.out`. Re-record goldens with `RECORD=1 sh corelib/run.sh`. Part of
+`make ci`.
+
+## Examples
+
+Every module also has a small, readable **usage example** at
+`examples/corelib/<name>/main.ty` — usage as documentation (idiomatic calls, human-friendly
+output), as opposed to the assertion-style tests above. `make corelib-examples`
+(→ `examples/corelib/run.sh`) validates them the same way against
+`examples/corelib/<name>.out`, with the same dependency skip, and is part of `make ci`.
+
+## The corelib surface (pre-1.0 — NOT frozen)
+
+**The corelib API is not frozen.** All 45 packages are golden-locked by `make corelib` and `make corelib-examples` — that has not
+changed and is what makes the surface worth relying on in practice. What changed
+is the promise:
+
+- **Not frozen.** A public function may change name, signature, or semantics
+  before 1.0, with a `CHANGELOG.md` entry and no deprecation window. In practice
+  changes are additive — `core:os`'s `exec`/`exec_out` are the most recent, and
+  nothing has been removed — but "in practice" is not a contract.
+- **Still a regression, not a licence.** A bug in a package's documented
+  behavior is a bug to fix, not an excuse to redesign the API around it.
+- **Caveats inside the surface stay:** `core:hash` is non-cryptographic and
+  `core:md5` is broken for security (use `core:sha256`), the codecs' `0x00`
+  caveat holds, and the FFI-backed packages (`core:http`, `core:tls`,
+  `core:crypto`, `core:image`, `core:sqlite`, `core:compress`) need their
+  external library present at build time (the skip-if-absent convention above).
+- **New packages still arrive only through the demand gate** — a real program
+  that needs them — and they join the surface the day they ship, with their
+  test + golden + this guide entry.
+- **The surface is the same on native Windows (MSYS2/mingw)**, and so is every
+  signature: the FFI-backed packages link MSYS2's mingw builds of the same
+  libraries (the Windows-only linker flags come from a `_WIN32:` section of the
+  package's `deps` manifest, appended verbatim and never pkg-config'd), and the
+  pure-Tycho packages are unchanged. Three packages *behave* differently there
+  — `core:signal`, `core:datetime`'s POSIX-`TZ` offsets, and `core:os`'s
+  shell-out through `cmd.exe`; each difference is spelled out in
+  [SECURITY.md](../../SECURITY.md). WSL2 is the Linux build and has none of
+  them.
+
+**Deprecation path.** A package or function is deprecated by (1) a `deprecated:`
+notice in its doc comment, (2) an entry in `CHANGELOG.md` naming the
+replacement, and (3) a `warning:` on use emitted by the compiler.
+
+Step (3) is now mechanical: a `# deprecated: <text>` comment line **directly
+above** a `fn` marks it, and every call site warns with `<text>`. The
+immediately-above rule is what makes "which function does this notice belong
+to" answerable without tracking comment blocks. Locked by
+`tests/warn/deprecated.ty`. Deprecated members keep working for the current major
+version. **Removal is a breaking change**: it happens only in a major version
+bump, is recorded in `CHANGELOG.md` and `RELEASE_NOTES.md`, and ships with the
+migration spelled out. Nothing in the frozen surface may be removed in a minor
+release.
+
+Before 1.0 none of that binds: a removal needs the changelog entry and nothing
+else. Which packages are in the frozen surface is a decision 1.0 has to make,
+not one inherited from this list — see
+[ROADMAP.md](../../ROADMAP.md#what-10-requires).

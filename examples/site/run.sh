@@ -46,7 +46,7 @@ fi
 # valid unix timestamp, so the golden above passes whether or not the field is
 # checked -- which is how strings.parse_int's fail-open PREFIX behaviour sat on
 # it unnoticed: `date: 2024-01-15` became 2024 and rendered 1970-01-01T00:33:44,
-# sorted first as the oldest post (). This leg supplies what the
+# sorted first as the oldest post (FRICTION 116). This leg supplies what the
 # corpus lacks: a copy of the site with one ISO-shaped date.
 BAD="$T/badsite"
 cp -R "$SITE" "$BAD"

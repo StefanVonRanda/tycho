@@ -47,8 +47,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC_PREFIX = ("docs/", "src/", "compiler/", "runtime/", "corelib/", "tests/",
               "scripts/", "tools/", "examples/", "server/", "bench/", "fuzz/",
               "editors/", ".githooks/",
-              "README.md", "ROADMAP.md", "CLAUDE.md",
-              "CONTRIBUTING.md", "SECURITY.md", "STATUS.md")
+              "docs/internals/FRICTION.md", "README.md", "ROADMAP.md", "CLAUDE.md",
+              "CONTRIBUTING.md", "RELEASE_NOTES.md", "SECURITY.md")
 
 # Source trees scanned for the SRC -> DOC direction.
 DOC_SCAN_PREFIX = ("src/", "compiler/", "runtime/", "corelib/", "tests/",

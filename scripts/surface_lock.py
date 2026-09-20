@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """The language surface is FROZEN. This is what enforces it.
 
-Measured 2026-08-22: 91 commits touched docs/spec/ and 69 touched src/tychoc.c
-in ten days, 11 of them `feat` on the compiler. A surface that moves that fast
-cannot be learned, documented or depended on, and a freeze written as prose in
-ROADMAP.md is the kind that drifts -- this repo has the receipts.
+Measured 2026-08-22: 69 commits touched src/tychoc.c in ten days, 11 of them
+`feat`. A surface that moves that fast cannot be learned or depended on, and a
+freeze written as prose is the kind that drifts -- this repo has the receipts,
+which is why surface.lock is a machine-readable file and not a paragraph.
 
 Three surfaces, two policies:
 

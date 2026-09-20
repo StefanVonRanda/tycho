@@ -28,10 +28,9 @@
 
 ## What this document is
 
-Where the [tutorial](../tutorial.md) teaches the language by
-example, this document defines it by rule. It is the only normative description
-of Tycho: on any conflict with a comment, a README or a compiler message, **the
-specification governs**.
+Where the [reference pages](../reference/index.md) teach the language by
+example, this document defines it by rule. On any conflict, **the specification
+governs**, and the divergence is logged in [Appendix H](appendix-h-differences.md).
 
 ## How to read it
 
@@ -71,6 +70,7 @@ indentation-sensitive; see [§3](01-lexical.md)).
 | E | [Conformance map](appendix-e-conformance.md) | clause → fixture | **1.0** |
 | F | [Impl-defined register](appendix-f-impl-defined.md) | unspecified + impl-defined | **1.0** |
 | G | [Glossary](appendix-g-glossary.md) | terms | **1.0** |
+| H | [Differences](appendix-h-differences.md) | reference-doc drift log | **1.0** |
 
 ## Conformance in one paragraph
 

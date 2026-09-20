@@ -234,7 +234,9 @@ element).
 > bracket form, including `[bool]`. That was never implemented — `tests/bool_array.ty`
 > has exercised dynamic bool arrays since the drift hunt, and `tests/cond_stmt_expr.ty`
 > carries a `[bool]` field — so the sentence was a spec defect, corrected here.
-> See also [§5.3.1](03-types.md#531-arrays-t).
+> The reference page `docs/reference/arrays-slices.md` gives only positive array
+> examples and does not state the restriction — an under-documentation gap, not a
+> contradiction. See also [§5.3.1](03-types.md#531-arrays-t).
 
 ### 16.8 Element-wise arithmetic
 

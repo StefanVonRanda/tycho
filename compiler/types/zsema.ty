@@ -1056,7 +1056,7 @@ fn _place_root(e: ast.Expr) -> string:
 #
 # src/tychoc.c@struct_instantiate / enum_instantiate, and the Stage-2 deep clone
 # at :12773. `subst_type` there rebuilds every field type FROM SCRATCH, which is
-# the seam that lost `bounded` once (): the instance is not the
+# the seam that lost `bounded` once (FRICTION #51-54): the instance is not the
 # template, and a rule checked on the template sees `$T`, never the type it was
 # bound to. So an instance here is stamped as a real TDecl whose field types are
 # re-encoded through `_subst` -- the SAME encoder, which is what makes the

@@ -1,0 +1,28 @@
+# The linux-x86_64 platform leg. Debian rather than the host distro on purpose:
+# the point is a pinned, reproducible userland, so a green lane means "builds
+# and passes on a clean x86_64 Linux" and not "passes on whatever the box has
+# installed today". Built once and cached by podman; rebuilt only when this
+# file changes.
+FROM docker.io/library/debian:trixie
+
+# Exactly what the tree needs to build and run its suite: a C compiler, make,
+# python3 for the gates, and git because the payload unpacks a `git archive`.
+# No extras -- an image that carries more than the build needs cannot answer
+# "does this work on a clean machine".
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+        gcc libc6-dev make python3 git ca-certificates locales \
+ && rm -rf /var/lib/apt/lists/*
+
+# A COMMA-DECIMAL locale, and it is not optional. tests/float_lit_locale and
+# tests/float_str_locale prove that float formatting ignores LC_NUMERIC, and
+# they set that up through tycho_test_make_locale_hostile(), which walks
+# da_DK/de_DE/fr_FR and returns 0 when the system has none. A bare Debian image
+# has none: the hook finds nothing hostile, the fixture prints the other branch
+# and both tests FAIL -- for a missing locale, not for a defect. Generating one
+# makes the lane test the thing it is named after instead of the image.
+RUN sed -i 's/^# *da_DK.UTF-8/da_DK.UTF-8/' /etc/locale.gen \
+ && locale-gen da_DK.UTF-8 \
+ && [ -n "$(locale -a | grep -i '^da_DK')" ]
+
+WORKDIR /src

@@ -14,7 +14,8 @@ The version constant lives in `src/tychoc.c` (`TYCHO_VERSION`, printed by
   that `LineReader` rather than a `ptr`. Three frozen signatures changed, and
   `surface.lock` records them deliberately.
 
-  The old shape was this corelib's own instance of the quiet-result pattern — a call
+  The old shape was this corelib's own instance of the pattern
+  [`docs/quiet-results.md`](docs/quiet-results.md) §6 exists to document — a call
   that answers instead of refusing, where the answer is a null you have to
   remember to check. Seventeen of the twenty-nine functions in `core:io` already
   returned `Result`; the streaming opener was the odd one out. Failure now says
@@ -298,7 +299,7 @@ refused all four too.
   `io.append_text`, `io.copy`, `strings.format_g17`.
 - `decimal.from_str` is **deprecated**, not removed. It fails open — it returned
   `0.15` for `"1.5x"` — and `decimal.parse_unchecked` is the explicit spelling
-  for callers that want the old behaviour.
+  for callers that want the old behaviour (FRICTION #56).
 
 ### Tooling
 
@@ -344,30 +345,31 @@ contain them (see 0.6.0's opening note).
   Reassignment (`g = f`) was already refused; only the declaration path was open.
   Migration: pass the handle as an argument, which borrows it, or bind the opener
   directly (`f := open(...)`). Nothing outside `tests/` declared a handle, so no
-  known program is affected.
+  known program is affected (FRICTION #43).
 - **A bare handle may no longer be a struct field.** `f: File` in a struct is a
   compile error, matching every other aggregate — an array, map, tuple, `Option`
   and `Result` already refused one. `items: [R]` was refused before this only
   because the ARRAY intern helper checked its element; a handle that *is* the
-  field type passed through no such helper.
+  field type passed through no such helper (FRICTION #44).
 - **`sink` and `inout` are refused on an affine type** — a `handle`, `Task(T)` or
   `Channel(T)` parameter may not carry either. Both were accepted and silently
   ignored: a `sink` handle callee borrowed exactly like a default parameter,
   leaving the value live and unclosed at return. Passing an affine value plainly
   is already a borrow, which is what a caller wants; consuming one would free it
-  at the callee's scope exit while its destructor is emitted at the owner's.
+  at the callee's scope exit while its destructor is emitted at the owner's
+  (FRICTION #49).
 - **A channel can no longer be COPIED.** `e := c` on a `Channel(T)` is a compile
   error: a channel-typed declaration is legal only from `channel(...)` itself,
   which is what the spec already required and nothing enforced. No double free
   came of the copy, but the alias hid every send and receive from the compiler's
   analysis — a program sending on every path still drew "nothing ever sends on
   channel 'c'". Passing a channel as an argument is unchanged, so a consumer
-  still receives one normally.
+  still receives one normally (FRICTION #45).
 - **A comment must now OPEN with `deprecated:` to mark a function.** The scan
   matched the marker anywhere in the line, so ordinary prose that merely
   mentioned it deprecated the next `fn` and every caller got a warning nobody
   wrote. Both real users in the tree already use the opening form, so no marker
-  changed meaning.
+  changed meaning (FRICTION #46).
 - **Affine rules now hold through a GENERIC.** Every refusal that named a
   `handle`, `Channel(T)` or `Task(T)` was enforced on the template, where the
   field type is `$T` and not an affine type, and never re-checked on the
@@ -379,18 +381,19 @@ contain them (see 0.6.0's opening note).
   was received through the other; the return double freed, with glibc reporting
   `double free detected in tcache 2` and exit 134. Migration: pass the affine
   value as a plain parameter, which is already a borrow. A **Task has no type
-  syntax**, so a `$T` binding was the only way one could reach a field at all.
+  syntax**, so a `$T` binding was the only way one could reach a field at all
+  (FRICTION #53, #54, #55).
 - **`bounded[N]T` in a generic struct stays bounded.** Instantiation rebuilt
   every array through the fixed-array constructor, dropping the capacity rule
   while keeping the size, so a field declared `bounded[4]$T` came out `[4]int`.
   A plain `[4]int` was accepted for it and pushes past the capacity grew instead
   of trapping. Migration: pass a real `bounded[N]T` — the fixed array that used
-  to be accepted is now refused by name.
+  to be accepted is now refused by name (FRICTION #52).
 
 ### Diagnostics
 
 Four messages that an outside reader hit in the first ten minutes writing
-`tools/tycho-diff` against `docs/` alone.
+`tools/tycho-diff` against `docs/` alone (`tools/tycho-diff/FRICTION-OUTSIDE.md`).
 
 - **The builtin-collision warning no longer offers a remedy `package main`
   forbids.** It said "rename it, or call it qualified as `pkg.name(...)`" — but
@@ -416,11 +419,11 @@ Four messages that an outside reader hit in the first ten minutes writing
   The `$` previously fell through to a field access and the spelling was a parse
   error in every form, while the unqualified `ident$(int)(5)` had always worked —
   so the two spellings of one call disagreed. §3/§4, Appendix A, §7.5 and §15.3
-  move with it.
+  move with it (FRICTION #39).
 - **An empty call to a generic variadic may name its element type**:
   `count$(int)()` supplies the empty `[]int`. It was rejected with "pass at least
   one argument" even though the type was given, because the packing site never
-  read the explicit type-argument list.
+  read the explicit type-argument list (FRICTION #40).
 
 ### Language — fixed
 
@@ -439,16 +442,16 @@ Four messages that an outside reader hit in the first ten minutes writing
   [string: fn($T) -> $T]` emitted C naming an `FnC<id>` that was deliberately
   never defined, and cc rejected the program with `unknown type name 'FnC0'`.
   The array form of the same field was fixed earlier; the map body loop was the
-  only one of five without the guard its siblings had.
+  only one of five without the guard its siblings had (FRICTION #51).
 - **A variadic called through a package qualifier now packs.** `vp.sum(1, 2, 3)`
   died with `'vp__sum' takes 1 argument(s), got 3`: the fold that gathers trailing
   arguments was skipped for a qualified callee, so the call reached the arity
   check unpacked. The same declaration called unqualified always worked, which is
-  why three fixture files never caught it.
+  why three fixture files never caught it (FRICTION #38).
 - **A deprecated function taken as a VALUE now warns.** `f := stale` warned
   nowhere, and the later `f(1)` names the binding rather than the function, so one
   line laundered the whole policy. The warning now also fires where the value is
-  taken.
+  taken (FRICTION #47).
 
 ### Diagnostics
 
@@ -457,18 +460,19 @@ Four messages that an outside reader hit in the first ten minutes writing
   `declared type int but value is pool__Handle` for a user who wrote
   `pool.Handle`, and `argument 2 of 'money__add'`. This covered structs, enums,
   handles and newtypes alike, so it reached every corelib type in every message.
-  Same-package types were never affected, which is why the tree never noticed.
+  Same-package types were never affected, which is why the tree never noticed
+  (FRICTION #41).
 - **`for k in m` over a map says what to do.** It reported `map key must be
   string, got int` — about an index the user never wrote, since the loop desugars
   to one — and named neither the loop nor the cure. It now points at `keys(m)`. A
-  genuine wrong index keeps the precise old message.
+  genuine wrong index keeps the precise old message (FRICTION #42).
 
 ### Tools
 
 - **`tycho-make` refuses a damaged mtime in its stamp file.** Every other field
   of a stamp line was validated; the mtime went through the lax `parse_int`, so
   `17x` read as 17 and `abc` as 0. The mtime decides staleness, so a corrupted
-  stamp file shipped a stale output as up to date.
+  stamp file shipped a stale output as up to date (FRICTION #4).
 - **`tycho-db` refuses a SQL integer literal outside int range.** The lexer's
   numeric span is all digits by construction, but `parse_int` returns 0 on
   overflow, so `WHERE id = 9223372036854775808` silently meant `WHERE id = 0`
@@ -483,7 +487,7 @@ Four messages that an outside reader hit in the first ten minutes writing
   `0.012` and the comma-decimal `1,5` is `1`. For the type this package exists to
   make exact, that is the worst failure it could have. The checked form accepts
   exactly `[-|+]digits[.digits]`; `from_str` is unchanged and still lax, so no
-  caller moves.
+  caller moves (FRICTION #56).
 
 ### Core library — security
 
@@ -511,7 +515,7 @@ Four messages that an outside reader hit in the first ten minutes writing
   gate needs a leg that must SUCCEED, and without one "the untrusted server was
   refused" reads exactly like "nothing connected", so a `CURLOPT_SSL_VERIFYPEER,
   0L` left in after debugging would have passed every lane in this tree.
-  `make http-verify` closes that.
+  `make http-verify` closes that (FRICTION #57).
 - **`math.sign` returns ±1 for the infinities.** It documented `-1 / 0 / 1` and
   derived its zero as `x - x` so one body could serve int and float. For an
   infinity that derived zero is NaN, every comparison against a NaN is false, and
@@ -520,7 +524,8 @@ Four messages that an outside reader hit in the first ten minutes writing
   through a newtype, so it would have stopped `math.sign(Cents(-7))` compiling —
   and the NaN case is answered where it lands instead. `NaN` still returns 0, now
   deliberately rather than by fall-through. Int is untouched by construction:
-  integer arithmetic cannot produce the NaN that reaches the new branch.
+  integer arithmetic cannot produce the NaN that reaches the new branch
+  (FRICTION #65).
 - **`fmath.round` rounds.** It documented "round half away from zero" and was
   `floor(x + 0.5)`, an addition that rounds before `floor` ever runs.
   `round(0.49999999999999994)` returned **1.0** for a value strictly *below* a
@@ -528,13 +533,13 @@ Four messages that an outside reader hit in the first ten minutes writing
   exact integer** — every double at or above 2^52 is one, so the whole range was
   at risk. Decided by the fraction now (`x - trunc(x)`, which is exact for every
   finite x). `0.5`/`1.5`/`2.5` were always correct, which is why the golden never
-  noticed.
+  noticed (FRICTION #66).
 - **`fmath.lerp` returns its endpoints exactly.** `lerp(1e308, 1.0, 1.0)` gave
   **0.0** instead of `b`: `1.0 - 1e308` *is* `-1e308`, so `b` is lost before `t`
   is applied, and `a + (b - a) * t` collapses. The same subtraction overflows to
   an infinity for a far-apart opposite-sign pair, making `t = 0` return NaN
   instead of `a`. Both endpoints are special-cased. No monotonicity guarantee is
-  claimed for the interior.
+  claimed for the interior (FRICTION #67).
 - **`strings.pad_left`/`pad_right` no longer overshoot a multi-byte pad.** The
   deficit was counted in bytes and decremented by one per iteration while
   `len(pad)` bytes were appended, so `pad_left("x", 5, "ab")` returned **nine**
@@ -543,7 +548,7 @@ Four messages that an outside reader hit in the first ten minutes writing
   while being far too wide. A pad that does not divide the deficit now leaves the
   result **short** of width rather than over, which also keeps it from being split
   mid-codepoint. Every caller in the tree passes a one-byte pad and is
-  bit-identical.
+  bit-identical (FRICTION #68).
 - **`sqlite.exec` reports the rows it actually changed.** It read
   `sqlite3_changes`, which describes the most recent statement alone, while
   `sqlite3_exec` runs every statement in the string — so
@@ -554,11 +559,11 @@ Four messages that an outside reader hit in the first ten minutes writing
   `pzTail`, so everything after the first statement is discarded and the call
   still returns `Ok` — the opposite of `exec`. Pass one statement per call to the
   `_params` forms; the limitation is pinned by a fixture rather than left to
-  drift.
+  drift (FRICTION #69).
 - **`core:sqlite`'s usage example no longer shows `defer`**, which this language
   refused in 2026-08-10. A reader copying the package header got *"a statement
   must be a declaration, assignment, or call"* — a message that never mentions
-  `defer`. One instance tree-wide.
+  `defer`. One instance tree-wide (FRICTION #69).
 - **`sqlite` bound parameters survive an interior NUL.** `sqlite3_bind_text` was
   given `-1`, which reads to the first NUL, while a Tycho string is
   length-carrying and may contain one: a 5-byte `"hi\0zz"` stored **two** bytes
@@ -567,7 +572,7 @@ Four messages that an outside reader hit in the first ten minutes writing
   matters for a token, a key or a filename. Now bound with `len(params[i])`; the
   value round-trips whole. `sqlite3_prepare_v2` got the same treatment
   (`len(sql)`), though that side is program-authored and is **not covered by a
-  test**.
+  test** (FRICTION #70).
 - **`toml.parse` refuses a repeated `[table]` header.** The second `[t]`
   **replaced** the first rather than merging, so `[t] x=1 [t] y=2` silently lost
   `x` — the same "override nobody can see" as the duplicate key, and worse, since
@@ -577,7 +582,7 @@ Four messages that an outside reader hit in the first ten minutes writing
   accepted that would lose data or invent a value the text does not carry.
   "Nothing is guessed" was untrue of `a = 01`, `a = 1__0`, `a = 1.` and
   `a b = 1`, which stay accepted and are now listed in the header with what each
-  yields — a documented subset rather than a validator.
+  yields — a documented subset rather than a validator (FRICTION #62).
 - **`crypto.pbkdf2_sha256` no longer truncates a password at its first NUL.** The
   shim called `strlen`, so `"secret\0A"` and `"secret\0B"` derived the **same
   key** — and the same one as `"secret"`. The failure is collision, not weakness:
@@ -585,20 +590,21 @@ Four messages that an outside reader hit in the first ten minutes writing
   credentials authenticate against each other. The length is passed explicitly
   now and fails closed rather than guessing. **A signature change**: the extern
   `cx_pbkdf2_sha256` takes a `pwlen`; the Tycho-facing `pbkdf2_sha256` is
-  unchanged, so no caller moves.
+  unchanged, so no caller moves (FRICTION #75).
 - **`crypto.ct_equal` no longer compares two hex strings by their prefixes.** An
   interior NUL shortened both inputs, so two different hex strings truncating to
   the same prefix compared **equal**. **Not an authentication bypass** — a
   computed MAC carries no NUL, so its length disagreed with a truncated attacker
   value and the answer was already false — but a caller comparing two *supplied*
   values had a collision. Lengths are passed and a mismatch refuses. A signature
-  change to the extern only; `ct_equal` itself is unchanged.
+  change to the extern only; `ct_equal` itself is unchanged (FRICTION #76).
 - **`http.get`/`get_body`/`get_status`/`post` refuse a URL with an interior
   NUL**, and **`datetime.offset_at` refuses a TZ with one.** Both truncated at
   the NUL: a `file://…/real.txt\0/ignored` fetch returned real.txt's bytes, and
   `offset_at("EST5\0UTC0")` applied EST rather than the string given. A truncated
   URL is not a shorter one, it is a different one. This closes the sweep — all 46
-  corelib externs taking a `string` are now length-carrying or NUL-guarded.
+  corelib externs taking a `string` are now length-carrying or NUL-guarded
+  (FRICTION #77, #78).
 - **`json.parse_checked` refuses a document nested past 2000 instead of aborting
   the process.** The parser is recursive descent, so depth is C stack: at 50000
   the runtime killed the process with `tycho: stack overflow` and exit 1. That
@@ -607,7 +613,7 @@ Four messages that an outside reader hit in the first ten minutes writing
   document survived. A server that chose it for exactly that reason still died on
   100 KB of `[`. **New `JsonErr.TooDeep` variant** — a breaking change for an
   exhaustive `match` on `JsonErr`; nothing in this tree matched on it outside the
-  package.
+  package (FRICTION #79).
 
 ### Core library — breaking
 
@@ -615,7 +621,7 @@ Four messages that an outside reader hit in the first ten minutes writing
   `Result(void, IoErr)`**, not `Result(bool, IoErr)`. Every one of them returned
   `Ok(true)` or an `Err` — `Ok(false)` was unreachable — so the bool made
   `or_return` produce a value the caller had to bind and then guard against a
-  case that could not happen. `io.write_bytes(p, b) or_return` is
+  case that could not happen (FRICTION #15). `io.write_bytes(p, b) or_return` is
   now a statement. Migration: drop the binding, and rewrite a `match` arm
   `Ok(x)` as `Ok()`. **`io.is_dir`, `io.make_dir` and `io.remove` are
   unchanged** — their `Ok(false)` is a real second answer ("it was already how
@@ -821,7 +827,7 @@ are mechanical, and each is stated as "what you wrote" → "what you write".
   `Err(NotFound)` — and a directory is fine. The access time is deliberately
   left alone (`utimensat` with `UTIME_OMIT`), so preserving a timestamp is
   `io.set_mtime(dst, io.mtime(src) or_return) or_return` and nothing else moves.
-  It is what let `tycho-ar` restore mtimes at all.
+  Closes FRICTION #8; it is what let `tycho-ar` restore mtimes at all.
 
 - **`strings.slice_bytes` and `strings.slice_str`**, returning
   `Result(_, SliceErr)` with `OutOfBounds` and `Inverted`. A `bytes` or `string`
@@ -836,7 +842,7 @@ are mechanical, and each is stated as "what you wrote" → "what you write".
   `try_filter(xs, keep: fn($T) -> Result(bool, $E)) -> Result([$T], $E)`. Both
   stop at the first `Err` and return it unchanged, with no partial array — so a
   parse over a list is `nums := iter.try_map(lines, parse_int) or_return`
-  instead of a hand-rolled loop with an early return.
+  instead of a hand-rolled loop with an early return. Closes FRICTION q#7.
 
 - **`result.map_err_with(r, f)`**, `fn($E) -> $F`, so the cause survives the
   translation. `map_err` replaces an error with a *constant* of the new type,
@@ -847,7 +853,7 @@ are mechanical, and each is stated as "what you wrote" → "what you write".
   `HALF_UP` and `TOWARD_ZERO` (also spelled `decimal.half_up()` /
   `decimal.toward_zero()`). Three failure causes, not one: `DivByZero`,
   `BadScale(int)` for a negative scale, and `BadMode(int)` for an unknown mode.
-  A worked example that claimed `DivByZero` was the only
+  Closes FRICTION q#2. A worked example that claimed `DivByZero` was the only
   cause was corrected with it.
 
 - **The `core:result` combinators work at `Result(void, E)`.** `is_ok`, `is_err`
@@ -989,7 +995,7 @@ on 2026-08-11; a `v0.5.0` tarball does not contain them.
   `sort_by(xs, fn(a, b) -> int: k(a) - k(b))`. It keeps working for all of 0.x
   and is **removed in 1.0**. Calling it warns.
 
-  This is the corelib deprecation policy run end to end for
+  This is the deprecation policy in `docs/reference/corelib.md` run end to end for
   the first time, which is the point — a policy that has never been executed is
   prose. Step (3), the compiler warning, is now a general mechanism rather than
   a one-off: a `# deprecated: <text>` comment line **directly above** a `fn`
@@ -1049,7 +1055,8 @@ on 2026-08-11; a `v0.5.0` tarball does not contain them.
   as a bare expression with no effect, which left a void-payload `Result` no
   propagation form at all — `x := f() or_return` has nothing to bind. Over any
   other payload type it is still an error, now naming the type it would have
-  dropped. These were one defect with three independent sightings, closed together.
+  dropped. `docs/internals/FRICTION.md` §4 recorded these as one defect with
+  three independent sightings; they are closed together.
 
   Internally, the generic bind vector's "not yet bound" sentinel moved off
   `T_VOID` to its own `T_UNBOUND`. That collision was latent rather than live —
@@ -1063,7 +1070,7 @@ on 2026-08-11; a `v0.5.0` tarball does not contain them.
   and that had never been tested — `git tag` showed only `v0.1.0`, the
   `[1.0.0]` entry below describes a release that was never cut, and no one
   outside this repo has written a line of Tycho. Withdrawn with the number: the
-  corelib API freeze and the spec's "first frozen
+  corelib API freeze (`docs/reference/corelib.md`) and the spec's "first frozen
   version" (`docs/spec/00-conventions.md` §1.5). The spec stays normative and
   the implementation stays gated against it. `ROADMAP.md` gains "What 1.0
   requires" — the conditions, so the number is earned next time rather than
@@ -1100,7 +1107,7 @@ that landed before the version number was corrected.
   performance tuning and benches); a security review of the FFI shims
   (string/bytes ownership, the core:os shell-out paths, the TLS wrapper)
   with findings recorded in `SECURITY.md`; and the corelib 1.0 API-freeze
-  decision with its deprecation path.
+  decision with its deprecation path, recorded in `docs/reference/corelib.md`.
 
 ## [0.1.0] — earlier
 
