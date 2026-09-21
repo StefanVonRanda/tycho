@@ -347,7 +347,7 @@ fn main():
     print(str(frexp(8.0, &n)))
 EOF
 # The accepting subscript twin is also the only place either corpus writes
-# THROUGH a subscript, which is the `g.at(0) = 5` place form (src/tychoc.c:4448).
+# THROUGH a subscript, which is the `g.at(0) = 5` place form (src/tychoc.c:4462).
 pr ok_subscript <<'EOF'
 package main
 struct G:
@@ -375,8 +375,8 @@ echo "leg4  declaration rules: refused=$nref/5 accepted=$nacc/5"
 
 # [4b] -- the two package-member formats, which NO verdict leg can see: both
 # spellings are a refusal, so leg2b/5/6/8 are green either way and the wording
-# is decoration until Phase 9 pins message text. src/tychoc.c:6714 answers
-# `pkg.Name` written with NO call; src/tychoc.c:7073 answers `pkg.name(...)`.
+# is decoration until Phase 9 pins message text. src/tychoc.c:6728 answers
+# `pkg.Name` written with NO call; src/tychoc.c:7087 answers `pkg.name(...)`.
 # Both measured against ./tychoc 2026-08-23. The accepting twin is required for
 # the usual reason: two refusals alone are satisfied by refusing everything.
 pr r3_field <<'EOF'

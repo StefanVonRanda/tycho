@@ -1,2 +1,2 @@
-tests/warn/vector_over_wide.ty:5: warning: `vector[4]float` is 32 bytes but x86-64 baseline holds 16, so every operation on it splits -- build with `--target x86-64-v3`
-     5 | fn dot(a: vector[4]float, b: vector[4]float) -> float:
+tests/warn/vector_over_wide.ty:10: warning: `vector[4]float` is 32 bytes but the baseline vector register holds 16, so every operation on it splits -- use a narrower vector, or on x86-64 build with `--target x86-64-v3`
+    10 | fn dot(a: vector[4]float, b: vector[4]float) -> float:

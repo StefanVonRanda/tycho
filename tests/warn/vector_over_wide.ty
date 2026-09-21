@@ -1,7 +1,12 @@
-# 32 bytes against baseline x86-64's 16-byte SSE register, so every operation on
-# it is split. Six spellings, ONE warning. The silent-under-`--target` half
-# cannot live here -- this lane passes no flags -- and is scripts/vector_check.sh
-# leg [8].
+# 32 bytes against the assumed 16-byte baseline register, so every operation on
+# it is split. Six spellings, ONE warning. The golden is checked on every shipped
+# platform, so the message may not name an ISA that is only half of them: 16 is a
+# static assumption (target_vec_bytes never reads the host) and is right for SSE
+# and for aarch64's NEON alike. The `--target` remedy IS x86-64-only, which is
+# why it is offered as such and why narrowing the vector leads -- on aarch64 cc
+# rejects -march=x86-64-v3, as scripts/vector_check.sh:266 already knew.
+# The silent-under-`--target` half cannot live here -- this lane passes no
+# flags -- and is scripts/vector_check.sh leg [8].
 fn dot(a: vector[4]float, b: vector[4]float) -> float:
     c := a * b
     return c[0] + c[1] + c[2] + c[3]
