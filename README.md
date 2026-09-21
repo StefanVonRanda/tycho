@@ -165,19 +165,8 @@ want a different tool, is
 
 ## Quick start
 
-A C compiler (`cc`) and `make` — that's the whole toolchain.
-
-Any C11 compiler will do: gcc, or **clang 15 or newer**. clang 14 builds the
-compiler and then miscompiles what it emits — measured on Ubuntu 22.04, eight
-fixtures come back with empty strings where a string literal was expected — so
-it is not supported. clang 19 was measured against gcc over the whole fixture
-corpus and agrees on every one, and **clang 22.1.8 was measured the same way on
-2026-09-11**: it builds `tychoc`, bootstraps `tychoc1` through both stages, and
-runs the corpus **1039 / 0** — each fixture built twice, native and under
-clang's own `-fsanitize=address,undefined`, with byte-identical output required
-between them. Until that run the newest clang anyone had measured was three
-major versions old, so "clang 15 or newer" rested on an untested assumption at
-the top of the range.
+**You need `make` and a C11 compiler — gcc, or clang 15 or newer.** That is the
+whole toolchain.
 
 ```
 $ git clone https://github.com/StefanVonRanda/tycho
@@ -194,6 +183,131 @@ explains the memory model from C you already know. Full build details are under
 [Trying it](#trying-it). The syntax is Python/Nim-flavored and the semantics
 Go/Odin-like; the value-semantics core comes from
 **[Hylo](https://www.hylo-lang.org/)**.
+
+(clang 14 is the one exclusion, and it is measured: it builds the compiler and
+then miscompiles what it emits. Which compilers have been run against the whole
+corpus, and what each scored, is the
+[toolchain matrix](docs/platforms.md#c-toolchains).)
+
+## Trying it
+
+`./tychoc f.ty` transpiles `f.ty` to C and compiles it to a native binary `f`,
+removing the intermediate `f.c` once `cc` succeeds (it is kept when `cc` fails,
+as the evidence); `-o name` names the output, `--emit-c` stops at the C (writing
+it to stdout unless `-o` names a file) — that is how you keep the C. The
+transpiler is one dependency-free C file. The only optional extras are
+`pkg-config` plus a library for the FFI-backed corelib modules (like
+`core:http`) and a Go toolchain for the cross-language benchmarks — both skip
+cleanly when absent.
+
+**Core library.** `corelib/` is Tycho's core library, imported as
+`core:<name>`. The transpiler finds it beside its own binary, so there's no
+setup (`TYCHO_CORELIB` overrides). A file with an `import` is a *package* —
+give it its own directory:
+
+`mysite/main.ty`:
+
+```tycho
+package main
+import "core:strings"
+
+fn main():
+    println(strings.to_upper("hello"))     # HELLO
+```
+
+Every corelib module has a runnable example under
+[`examples/corelib/`](examples/corelib); two larger programs compose several
+end-to-end — [`examples/fetch`](examples/fetch) (HTTP client) and
+[`examples/site`](examples/site) (static-site generator). `make ci` builds and
+verifies the whole tree.
+
+### Building
+
+| Command | What it does |
+| --- | --- |
+| `make` | Build the `./tychoc` transpiler. |
+| `./tychoc f.ty` | Transpile to C, compile to native `f`; the intermediate `f.c` is removed on success, kept on a `cc` failure. |
+| `./tychoc f.ty --emit-c` / `-o name` | Stop at the C (to stdout; `-o name` writes `name.c`) / name the output. |
+| `make test` | Run the authoritative suite in parallel (`TYCHO_THREADS=N` tunes the worker count). Needs the sanitizer runtimes — see [CONTRIBUTING](CONTRIBUTING.md#what-the-gate-needs-beyond-that). |
+| `make bench` | Run the performance guard (below). |
+| `make fuzz` | Differential + ASan/UBSan soundness fuzzer. |
+| `make corelib` | Build + validate the standard library against its goldens. |
+| `make ci` | The full local gate; independent lanes run in parallel — no cloud CI. |
+| `make release-check` | Build and smoke-test the current-version tarball twice; require byte-identical archives. |
+| `make clean` | Remove build artifacts. |
+
+`make test` builds every `examples/*.ty` and `tests/*.ty` twice — native `-O2`
+and `-fsanitize=address,undefined` — runs both on the same stdin, and asserts:
+exit 0, no sanitizer report, **byte-identical output** between the builds, and a
+match against the committed golden `tests/<name>.out`. Byte-identity catches UB
+the optimizer and sanitizer disagree on; the golden catches a miscompile that's
+self-consistently wrong. LeakSanitizer is on — every scope frees its arena at
+exit, so a leak means a real missing free. Goldens are rewritten only by `make
+test-update`, never by a normal run.
+
+`make bench` guards the *performance* claims the way `make test` guards
+correctness: each `bench/*.ty` asserts one metric against a generous bound.
+
+**Platforms.** Every row below is *gated* — `make ci` or `make test` green on
+that platform, executed there, not cross-compiled and hoped for.
+
+| platform | status |
+| --- | --- |
+| **Linux x86-64** | gated — the development host, and the only one that scores leaks |
+| **Linux arm64** | gated since 2026-09-19 — `make test` 1065/1065 on Ubuntu 26.04 / aarch64 |
+| **macOS / Apple Silicon** | gated since 2026-09-19 — `xcode-select --install` is the whole setup |
+| **Windows x86-64** | gated natively under MSYS2 + mingw-w64; **WSL2** needs no setup and behaves exactly like Linux |
+| **Windows arm64** | executed by `make platform-check`; a mingw target |
+
+Three caveats are worth knowing before you build, and each is one line to fix or
+one consequence to accept:
+
+- **On a minimal Linux image, generate a comma-decimal locale first:**
+  `sudo locale-gen da_DK.UTF-8` (or `de_DE.UTF-8` / `fr_FR.UTF-8`). Two
+  float-formatting fixtures need a locale whose decimal point is not `.`, and a
+  stock container ships only `C`/`POSIX`/`en_US`.
+- **macOS scores no leaks.** Apple's AddressSanitizer ships no LeakSanitizer, so
+  the leak lanes do not run there. ASan, UBSan and TSan do; Linux is the only
+  host that scores leaks.
+- **A native Windows server winds down slower** — within its idle timeout rather
+  than within a millisecond, because MSYS2's `kill` terminates a native program
+  instead of signalling it. Nothing is lost or corrupted. Sanitizer coverage is
+  partial there too; [SECURITY.md](SECURITY.md) carries both measurements.
+
+The optional FFI-backed corelib packages need their dev libraries (`zlib1g-dev`,
+`libssl-dev`, `libcurl4-openssl-dev`, `libpng-dev`, `libsqlite3-dev`,
+`pkg-config`), or `make shim-warn` refuses rather than passing vacuously.
+
+Which lanes skip on which host and why each one does, the C toolchains that have
+been measured against the whole corpus, and the per-platform friction entries are
+the inventory in **[docs/platforms.md](docs/platforms.md)**. MSVC is not a
+supported C target. Release tarballs are built per platform by
+`scripts/release.sh`.
+
+## Documentation
+
+New to Tycho? **Start with the [tutorial](docs/tutorial.md)** — a guided first
+hour that ends with a small real program and the one idea that makes the
+language tick. [`docs/`](docs/README.md) is the full index; the map:
+
+- **[Tutorial](docs/tutorial.md)** — learn the language by writing and running code.
+- **[From `malloc` to implicit arenas](docs/from-c-to-arenas.md)** — the memory
+  model in five steps, starting from C you already know. The gentlest way in.
+- **[Language reference](docs/reference/index.md)** — every construct, by topic.
+  The source of truth; every example compiles.
+- **[Quiet results](docs/quiet-results.md)** — the complete register of
+  operations that answer instead of refusing (bytes vs characters, clamping
+  slices, wraparound, the lax parsers). Each is deliberate; each has a
+  fail-closed sibling. The page to read before trusting a parse.
+- **[The thesis](docs/thesis.md)** — why value semantics makes implicit arenas
+  work, and where it doesn't, with measured numbers.
+- **[Performance](docs/performance.md)** — the measurements behind the claims.
+- **[The memory model](docs/memory-model.md)** — why value semantics makes
+  implicit arenas work in practice, and what it costs.
+- **[Architecture & status](docs/architecture.md)** — how it's built, what each
+  verification gate proves, what's shipped, and the decided non-goals.
+
+That is everything needed to *use* Tycho. What follows is the case that it works: why the memory model holds, the programs that prove it, the numbers, and the questions a skeptic asks first.
 
 ## Why arenas and value semantics
 
@@ -285,162 +399,6 @@ tables.
 directory of `.ty` files you import by path; the corelib lives under `core:`.
 Adding third-party code is a deliberate manual act — vendor the source — never a
 one-line command that pulls a transitive graph you've never read.
-
-## Trying it
-
-`./tychoc f.ty` transpiles `f.ty` to C and compiles it to a native binary `f`,
-removing the intermediate `f.c` once `cc` succeeds (it is kept when `cc` fails,
-as the evidence); `-o name` names the output, `--emit-c` stops at the C (writing
-it to stdout unless `-o` names a file) — that is how you keep the C. The
-transpiler is one dependency-free C file. The only optional extras are
-`pkg-config` plus a library for the FFI-backed corelib modules (like
-`core:http`) and a Go toolchain for the cross-language benchmarks — both skip
-cleanly when absent.
-
-**Core library.** `corelib/` is Tycho's core library, imported as
-`core:<name>`. The transpiler finds it beside its own binary, so there's no
-setup (`TYCHO_CORELIB` overrides). A file with an `import` is a *package* —
-give it its own directory:
-
-`mysite/main.ty`:
-
-```tycho
-package main
-import "core:strings"
-
-fn main():
-    println(strings.to_upper("hello"))     # HELLO
-```
-
-Every corelib module has a runnable example under
-[`examples/corelib/`](examples/corelib); two larger programs compose several
-end-to-end — [`examples/fetch`](examples/fetch) (HTTP client) and
-[`examples/site`](examples/site) (static-site generator). `make ci` builds and
-verifies the whole tree.
-
-### Building
-
-| Command | What it does |
-| --- | --- |
-| `make` | Build the `./tychoc` transpiler. |
-| `./tychoc f.ty` | Transpile to C, compile to native `f`; the intermediate `f.c` is removed on success, kept on a `cc` failure. |
-| `./tychoc f.ty --emit-c` / `-o name` | Stop at the C (to stdout; `-o name` writes `name.c`) / name the output. |
-| `make test` | Run the authoritative suite in parallel (`TYCHO_THREADS=N` tunes the worker count). Needs the sanitizer runtimes — see [CONTRIBUTING](CONTRIBUTING.md#what-the-gate-needs-beyond-that). |
-| `make bench` | Run the performance guard (below). |
-| `make fuzz` | Differential + ASan/UBSan soundness fuzzer. |
-| `make corelib` | Build + validate the standard library against its goldens. |
-| `make ci` | The full local gate; independent lanes run in parallel — no cloud CI. |
-| `make release-check` | Build and smoke-test the current-version tarball twice; require byte-identical archives. |
-| `make clean` | Remove build artifacts. |
-
-`make test` builds every `examples/*.ty` and `tests/*.ty` twice — native `-O2`
-and `-fsanitize=address,undefined` — runs both on the same stdin, and asserts:
-exit 0, no sanitizer report, **byte-identical output** between the builds, and a
-match against the committed golden `tests/<name>.out`. Byte-identity catches UB
-the optimizer and sanitizer disagree on; the golden catches a miscompile that's
-self-consistently wrong. LeakSanitizer is on — every scope frees its arena at
-exit, so a leak means a real missing free. Goldens are rewritten only by `make
-test-update`, never by a normal run.
-
-`make bench` guards the *performance* claims the way `make test` guards
-correctness: each `bench/*.ty` asserts one metric against a generous bound.
-
-**Platform notes.** Builds on any unix-like OS — developed and gated on Debian
-(x86-64), and **gated on macOS / Apple Silicon since 2026-09-19**: `make ci` is
-green on `darwin-arm64` (267-390s across repeated runs; the spread is FRICTION
-91), carrying 12 skips over 7 causes, each printing
-its reason (gdb, `-Wl,--wrap`, the glibc symbol floor, `ilp32`,
-`resource.prlimit`, an x86-64 `--target` leg, and LeakSanitizer). On macOS,
-`xcode-select --install`; **Apple's AddressSanitizer ships no LeakSanitizer**,
-so the `fuzz-leak` lane and the raytrace and mandelbrot leak legs do not run
-there — ASan, UBSan and TSan still do, and Linux is the only host that scores
-leaks.
-
-**ARM64 Linux** is gated too, since 2026-09-19: `make test` is 1065/1065 on
-Ubuntu 26.04 / aarch64, run in a VM on the Apple Silicon box at native speed. No
-Graviton artifact is built yet.
-
-**On a minimal Linux image, generate a comma-decimal locale before `make test`:**
-
-```sh
-sudo locale-gen da_DK.UTF-8      # or de_DE.UTF-8 / fr_FR.UTF-8
-```
-
-`tests/float_lit_locale` and `float_str_locale` prove that float formatting does
-not move when the C locale does, which needs a locale whose decimal point is not
-`.`. A stock container or CI image ships only `C`/`POSIX`/`en_US`, so both
-fixtures fail with `hostile=1` expected, got `0` — the fixture refusing to pass
-while proving nothing, which is right, but the cure is the line above
-(FRICTION 111).
-
-The optional corelib packages need their dev libraries, or `make shim-warn`
-refuses — it compiles 9 shims, wants 10, and will not read an empty warning file
-as a pass:
-
-```sh
-sudo apt-get install zlib1g-dev libssl-dev libcurl4-openssl-dev \
-                     libpng-dev libsqlite3-dev pkg-config
-```
-
-**Windows** has two supported paths. **WSL2** is the zero-setup one and behaves
-exactly like Linux. **Native Windows is MSYS2 + mingw-w64** — MSVC is not a
-supported C target. The compiler, the runtime, the corelib and the tools build
-and run there, and `make ci` is **green on native x86-64 Windows 11 under
-MSYS2 + mingw-w64 gcc**.
-
-Read that green with its scope. It is **one box, one toolchain**, and it
-carries 49 Windows-specific skips, each printing its reason: the sanitizer
-lanes (mingw ships no ASan/UBSan runtime, and gcc has no TSan for a Windows
-target at all), the fuzzer, the 32-bit lane, the `LD_PRELOAD` locale lane, the
-POSIX-only emitted C,
-the perf gate, and every lane that needs a POSIX signal delivered to a process
-— `core:signal`'s test and the HTTP server's six shutdown cases — because
-MSYS2's `kill` terminates a native Windows program instead of signalling it.
-**Green there means nothing reddened, not that everything ran.**
-
-**One measured behavioural difference, and it is a documented platform limit,
-not a bug to be fixed.** A thread parked in `recv` on an accepted connection is
-not released by the shutdown handler as it is on Linux, so a Windows server
-winds down within its idle timeout rather than within a millisecond. Nothing is
-lost or corrupted — the wind-down is slower, and only that.
-[SECURITY.md](SECURITY.md) carries the measurement.
-
-The one hole worth naming: for a long time the Windows-only code paths were the
-newest code in the tree and the only code with no memory-safety checking at
-all. Installing MSYS2's **clang64** toolchain closes most of that — 60 corpus
-fixtures under ASan+UBSan and the 13-program concurrency suite under UBSan all
-come back clean — but ASan itself does not work on threaded
-programs with that toolchain, so the channel and allocator paths have UBSan
-coverage only. That is not parity with Linux, where everything runs under
-ASan/UBSan/TSan and a fuzz campaign.
-
-The behavioural gaps that survive the port — non-ASCII filenames, `TZ`
-handling, `core:os` through `cmd.exe`, the debugger's Ctrl-C — are listed in
-[SECURITY.md](SECURITY.md). Release tarballs are built per platform by
-`scripts/release.sh` (`--mingw` cross-builds the Windows one).
-
-## Documentation
-
-New to Tycho? **Start with the [tutorial](docs/tutorial.md)** — a guided first
-hour that ends with a small real program and the one idea that makes the
-language tick. [`docs/`](docs/README.md) is the full index; the map:
-
-- **[Tutorial](docs/tutorial.md)** — learn the language by writing and running code.
-- **[From `malloc` to implicit arenas](docs/from-c-to-arenas.md)** — the memory
-  model in five steps, starting from C you already know. The gentlest way in.
-- **[Language reference](docs/reference/index.md)** — every construct, by topic.
-  The source of truth; every example compiles.
-- **[Quiet results](docs/quiet-results.md)** — the complete register of
-  operations that answer instead of refusing (bytes vs characters, clamping
-  slices, wraparound, the lax parsers). Each is deliberate; each has a
-  fail-closed sibling. The page to read before trusting a parse.
-- **[The thesis](docs/thesis.md)** — why value semantics makes implicit arenas
-  work, and where it doesn't, with measured numbers.
-- **[Performance](docs/performance.md)** — the measurements behind the claims.
-- **[The memory model](docs/memory-model.md)** — why value semantics makes
-  implicit arenas work in practice, and what it costs.
-- **[Architecture & status](docs/architecture.md)** — how it's built, what each
-  verification gate proves, what's shipped, and the decided non-goals.
 
 ## License
 

@@ -36,10 +36,14 @@ others are well exercised:
 | platform | what backs it |
 |---|---|
 | **Linux x86_64** — supported | the full fixture suite under ASan/UBSan/LeakSanitizer, plus every gate lane; `make status` prints the current fixture count |
-| Windows x86_64 — best-effort | six wine lanes including a trap-mode UBSan sweep over the corpus; no native CI |
-| macOS x86_64 / arm64 — best-effort | cross-compiled; **never executed on the platform** |
-| Linux arm64 — best-effort | cross-compiled; **never executed on the platform** |
-| Windows arm64 — best-effort | cross-compiled; **never executed on the platform** |
+| macOS arm64 — best-effort | gated since 2026-09-19: `make ci` green on `darwin-arm64`, carrying 12 enumerated skips; no LeakSanitizer on the platform |
+| Linux arm64 — best-effort | gated since 2026-09-19: `make test` 1065/1065 on Ubuntu 26.04 / aarch64 |
+| Windows x86_64 — best-effort | `make ci` green natively under MSYS2 + mingw-w64 on one box, carrying 49 enumerated skips; plus six wine lanes including a trap-mode UBSan sweep |
+| macOS x86_64 — best-effort | cross-compiled; **never executed on the platform** |
+| Windows arm64 — best-effort | executed by `make platform-check`; a mingw target |
+
+Which lanes skip on which host, and why each one does, is in
+[docs/platforms.md](docs/platforms.md).
 
 This is one person's project, which is the real reason the supported list has one
 row on it: Linux x86_64 is the machine the work happens on. Artifacts that have
