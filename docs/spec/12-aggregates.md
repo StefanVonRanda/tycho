@@ -12,10 +12,10 @@ produces a **place** (an lvalue); the general place, borrow, and `inout` rules
 are in [§11](07-memory-model.md#11-inout).
 
 > Provenance: array element restriction `src/tychoc.c:2348-2349`,`:2365-2366`;
-> `pop`-empty abort `:14395@pop from an empty array`,`:14395@pop from an empty array`; `reserve` `:7238-7264`,`:10725-10731`; tuple
+> `pop`-empty abort `:14427@pop from an empty array`,`:14427@pop from an empty array`; `reserve` `:7238-7264`,`:10757-10763`; tuple
 > arity `:2577@a tuple has at most 8 elements`,`:2582@a tuple type needs at least two elements`, index `:5878-5886`; destructuring `:3905-3919`,`:8778-8794`;
 > map read (pure `map_get`, no insert) `:6400-6415`; map place insert+zero
-> `:11577-11586`; `keys()` insertion order — the walk `:14557@m.elive[e]` over the append-only entries array `:14309@m->ecount++`; `delete` → `map_del`
+> `:11609-11618`; `keys()` insertion order — the walk `:14589@m.elive[e]` over the append-only entries array `:14341@m->ecount++`; `delete` → `map_del`
 > `:3753-3777`,`:7161-7167`; subscript parse + rules `:4461-4513`, dispatch
 > `:4536-4544`; `or_return` `:6238-6255`.
 
@@ -125,11 +125,11 @@ first argument.
 | `reserve(a, n)` | Grow backing capacity to at least `n`; `len` is unchanged. |
 
 `push` and `pop` require element type equality: `v` MUST have type `T` for a
-`[T]`. `pop(a)` on an **empty** array MUST abort (`src/tychoc.c:14194@pop`); it is not
+`[T]`. `pop(a)` on an **empty** array MUST abort (`src/tychoc.c:14226@pop`); it is not
 silently zero-returning. `reserve(a, n)` is a capacity hint only — it copies the
 existing elements into a buffer of capacity `≥ n` and is a no-op when
 `n ≤ cap`; it never changes `len` and never inserts elements
-(`src/tychoc.c:13211-13216`).
+(`src/tychoc.c:13243-13248`).
 
 An array **parameter** is a read-only borrow ([§11](07-memory-model.md#11-inout)):
 passed without a copy, but `push`, `pop`, `reserve`, or an index-write on it is a
@@ -336,10 +336,10 @@ Its fixtures are in `tests/` and `tests/abort/` (Appendix E.2.1).
 > `src/tychoc.c:7981@arr_elem(lt) != arr_elem(rt)`; scalar must land at the
 > element type `src/tychoc.c:8050@requires the scalar to have the array's element type`,
 > its literal adaptation `src/tychoc.c:7385-7391`; the fresh spine
-> `src/tychoc.c:11557@arena_alloc`, the per-element emit shared with the scalar
-> case `src/tychoc.c:11521@gen_arith_op`, operands never reordered
-> `src/tychoc.c:11518@int la = is_array`; the runtime length check, emitted only
-> when both sides are arrays `src/tychoc.c:11561@tycho_ew_len`, and the abort
+> `src/tychoc.c:11589@arena_alloc`, the per-element emit shared with the scalar
+> case `src/tychoc.c:11553@gen_arith_op`, operands never reordered
+> `src/tychoc.c:11550@int la = is_array`; the runtime length check, emitted only
+> when both sides are arrays `src/tychoc.c:11593@tycho_ew_len`, and the abort
 > itself `runtime/tycho_rt.c:3205@arithmetic on arrays of different lengths`;
 > literal-zero divisor `src/tychoc.c:7938@division by zero`.
 
@@ -750,7 +750,7 @@ Writing to `m[k]`:
 - **inserts** the entry if `k` is absent, first initializing the slot to `V`'s
   zero (for a compound `V`, the zero-value is materialized before the write, so a
   field- or element-write lands on a valid zero-initialized value)
-  (`src/tychoc.c:13307-13311`).
+  (`src/tychoc.c:13339-13343`).
 
 This makes the accumulator idioms one line each; the compiler proves the map is
 uniquely owned at the mutation and updates it in place, so a `+=` loop is O(n)
@@ -808,7 +808,7 @@ counts["ada"] = counts.get("ada", 0) + 1   # equivalent to counts["ada"] += 1
 ### 18.6 `keys(m)`
 
 `keys(m)` returns the map's live keys as an array `[K]` in **insertion order** —
-the order in which each key was first inserted (`src/tychoc.c:13341-13344`; the
+the order in which each key was first inserted (`src/tychoc.c:13373-13376`; the
 emitted `keys` walks the append-ordered entries array and keeps the live ones —
 order falls out of append order plus an `elive` flag). It is the way to
 iterate a map; `k in m` only tests membership. For a newtype or fieldless-enum

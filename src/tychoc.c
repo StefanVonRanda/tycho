@@ -9929,6 +9929,38 @@ static void resolve_program(ProcVec *prog) {
         TBL_ENSURE(g_sigs, g_nsigs, g_sigs_cap);
         g_sigs[g_nsigs++] = s;
     }
+    /* FFI-H: the `free:` name must actually BE the destructor. Checked here and
+     * not in parse_handle, because the destructor may be declared after the
+     * handle -- every extern fn is a Sig by this point.
+     *
+     * Unchecked, both mistakes escaped Tycho entirely. A misspelled `free:`
+     * reached cc as `if (h_d) dw_shut(h_d);` -- "call to undeclared function",
+     * in a GENERATED file, at a generated line, with no reference to the .ty
+     * line that caused it; every other mistake in this compiler gets a Tycho
+     * line and a caret. And a destructor declared `(d: ptr)` for a `handle Dir`
+     * compiled SILENTLY, because nothing ever compared the two. The parse
+     * comment above has always said the free fn is "normally an
+     * `extern fn c_free_fn(h: Name)`"; these two make "normally" into the rule. */
+    for (int h = 0; h < g_nhandles; h++) {
+        const char *fname = g_handles[h].free_fn;
+        const char *hname = nominal_name(g_handles[h].name);
+        /* the DECLARING file, so package mode points at the handle rather than
+         * at whatever file happened to be in hand -- same reason .file is stored */
+        g_srcname = g_handles[h].file; g_src = g_handles[h].src;
+        Sig *fs = sig_find(fname);
+        if (!fs || !fs->is_extern)
+            die_at(g_handles[h].line,
+                   "the destructor '%s' of handle '%s' is not a declared `extern fn` -- "
+                   "add `extern fn %s(h: %s)`; without it the scope-exit free reaches cc "
+                   "with no prototype and the error names the generated C, not this line",
+                   fname, hname, fname, hname);
+        Type ht = T_HANDLE_BASE + h;
+        if (fs->nparams != 1 || fs->params[0] != ht)
+            die_at(g_handles[h].line,
+                   "the destructor '%s' of handle '%s' must take exactly one parameter "
+                   "of type %s -- that is what the scope-exit free passes it",
+                   fname, hname, hname);
+    }
     Sig *m = sig_find("main");
     if (!m) { fprintf(stderr, "%s: error: no 'main' procedure\n", g_entry_srcname ? g_entry_srcname : g_srcname); exit(1); }
     /* `i` is volatile because it is written after setjmp and read after longjmp;

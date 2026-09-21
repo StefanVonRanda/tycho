@@ -4,7 +4,7 @@ import "core:sort"
 import "../ast"
 
 # The monomorphic type checker -- src/tychoc.c's type-resolve section
-# (src/tychoc.c:6151-9939) for the non-generic language, plus the type rules
+# (src/tychoc.c:6151-9971) for the non-generic language, plus the type rules
 # parse_type enforces while a declaration is read (src/tychoc.c:2488-2797).
 #
 # THE ONE INVARIANT THAT MATTERS. A type is a STRING and `?` is UNKNOWN.
@@ -219,7 +219,7 @@ struct C:
                                        # is_extern and spawn needs one
     mbind: [string: bool]              # match/if-let arm bindings. They BORROW the
                                        # scrutinee's payload, so they own no arena
-                                       # (src/tychoc.c:12881 pushes NULL) and can
+                                       # (src/tychoc.c:12913 pushes NULL) and can
                                        # never be adopted by a `sink`
     pend: [Pend]                       # locals declared as a bare `[]`: PENDING,
                                        # grounded by their first typed use
@@ -3376,7 +3376,7 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
             elif known(cs.ret) and cs.ret != "void":
                 cs.line = l
                 _cerr(&cs, "missing return value (proc returns " + cs.ret + ")")
-        # src/tychoc.c:12909-12912. cs.loopd was already maintained by every loop
+        # src/tychoc.c:12941-12944. cs.loopd was already maintained by every loop
         # arm below and read by nothing.
         ast.BreakS(l):
             if cs.loopd == 0:
@@ -3638,17 +3638,43 @@ fn _fill_decls(cs: inout C, p: Program):
                     _cperr(&cs, "too many size parameters (max 16)")
             cs.skip = false
             _typarams_of(&cs, []string)
+    # src/tychoc.c@resolve_program -- the `free:` name must actually BE the
+    # destructor. Runs HERE, after every signature is registered, because the
+    # destructor may be declared below the handle it frees. Unchecked, a
+    # misspelled `free:` reached cc as a call with no prototype -- an error in a
+    # GENERATED file naming no .ty line -- and a destructor declared `(d: ptr)`
+    # for a `handle Dir` compiled silently.
+    for f in p.files:
+        for hd in f.unit.handles:
+            hn := f.prefix + hd.name
+            cs.file = f.path
+            cs.line = hd.line
+            si := _sigidx(&cs, hd.free_fn)
+            if si < 0 or not (hd.free_fn in cs.extfn):
+                _cerr(&cs, "the destructor '" + hd.free_fn + "' of handle '" + hd.name +
+                    "' is not a declared `extern fn` -- add `extern fn " + hd.free_fn +
+                    "(h: " + hd.name + ")`; without it the scope-exit free reaches cc " +
+                    "with no prototype and the error names the generated C, not this line")
+            # "@" + name: a nominal type is ENCODED with that sentinel and
+            # _tdecl strips it. Comparing against the bare name refused both of
+            # the tree's own correct handle programs (tests/ffi, tools/tycho-fh)
+            # and parse-check's leg13 caught it -- which is the differential
+            # lane doing exactly its job.
+            elif len(cs.sg[si].ptypes) != 1 or cs.sg[si].ptypes[0] != "@" + hn:
+                _cerr(&cs, "the destructor '" + hd.free_fn + "' of handle '" + hd.name +
+                    "' must take exactly one parameter of type " + hd.name +
+                    " -- that is what the scope-exit free passes it")
 
 # src/tychoc.c@check_finite_types -- a THREE-COLOUR DFS over the emit type
 # graph, rooted at every struct in declaration order. A type that contains
 # itself by value has no size; an array or a map breaks the cycle, a tuple, an
-# inline array, an Option and a Result do not (src/tychoc.c:13394 emits
+# inline array, an Option and a Result do not (src/tychoc.c:13426 emits
 # `struct TychoOpt%d_ { char has; T val; }` and :12826 the Result twin).
 # Which arm fires is decided by which GREY node the walk re-enters, so the
 # Option, Result or tuple that closes a cycle names ITSELF
-# (src/tychoc.c:13388, src/tychoc.c:13399, src/tychoc.c:13415). Walking struct
+# (src/tychoc.c:13420, src/tychoc.c:13431, src/tychoc.c:13447). Walking struct
 # DECLARATIONS alone, as this did until 2026-09-04, could only ever reach the
-# struct arm (src/tychoc.c:13359).
+# struct arm (src/tychoc.c:13391).
 # The line reported is the declaration whose fields were being walked when the
 # cycle closed -- g_emit_line, saved and restored per struct at :12789/:12794.
 fn _fin_dfs(cs: inout C, t0: string, ln: int, fl: string, col: inout [string: int]) -> bool:

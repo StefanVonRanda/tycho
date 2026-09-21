@@ -141,7 +141,10 @@ corpus_census() {
     # bare statement and as an argument. Both SEMANTIC and word-for-word in both
     # compilers. They come from the `handle` agent probe, which measured the leak
     # they now refuse -- five unbound opens gave 15 opens / 5 closes.
-    [ "$cc_exp" -eq 619 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=619"
+    # Plus the 2 handle-destructor fixtures (2026-09-21): `free:` naming a
+    # function that is not a declared `extern fn`, and one declared at the wrong
+    # parameter type. Both SEMANTIC and word-for-word in both compilers.
+    [ "$cc_exp" -eq 621 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=621"
 
     cc_dirs=0
     for cc_d in $(git ls-files tests 2>/dev/null | grep '\.ty$' | sed 's|/[^/]*$||' | sort -u); do

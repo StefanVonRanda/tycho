@@ -1,0 +1,16 @@
+# src/tychoc.c@resolve_program -- the `free:` name must BE the destructor, and
+# the check runs after every signature is registered because the destructor may
+# be declared below the handle. Unchecked this reached cc as `if (h_d)
+# hc2(h_d);` -- "call to undeclared function", in a GENERATED file, at a
+# generated line, naming no .ty line at all, while every other mistake in this
+# compiler gets a line and a caret. The wrong-type twin is
+# tests/reject/handle_free_wrong_type.ty.
+# expect: is not a declared `extern fn`
+handle R:
+    free: hc2
+extern fn ho(i: int) -> R
+extern fn hc(h: R) -> int
+
+fn main():
+    f := ho(1)
+    println(str(is_null(f)))

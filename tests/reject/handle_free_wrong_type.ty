@@ -1,0 +1,15 @@
+# src/tychoc.c@resolve_program -- the destructor's one parameter is what the
+# scope-exit free passes it, so it must be the handle's own type. Declared
+# `(h: ptr)` for a `handle R` this compiled SILENTLY: nothing compared the two,
+# and the emitted `if (h_f) hc(h_f);` type-checks in C either way because a
+# handle IS a void* there. The undeclared twin is
+# tests/reject/handle_free_undeclared.ty.
+# expect: must take exactly one parameter of type R
+handle R:
+    free: hc
+extern fn ho(i: int) -> R
+extern fn hc(h: ptr) -> int
+
+fn main():
+    f := ho(1)
+    println(str(is_null(f)))

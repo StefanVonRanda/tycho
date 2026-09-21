@@ -205,7 +205,8 @@ echo "leg2c tests/reject/*.ty --typecheck: all=$((tr+tm)) rejected=$tr missed=$t
 # a repeated `align`, a repeated `packed`, and an empty `align()`.
 # SEMANTIC 288 -> 290: the two unbound-opener fixtures (2026-09-21). The rule
 # needs the symbol table AND the callee's return type, so both are SEMANTIC.
-[ "$nsyn" = 119 ] && [ "$nname" = 35 ] && [ "$ntype" = 175 ] && [ "$nsem" = 290 ] || { echo "parse-check: the split moved -- expected SYNTAX=119 NAME=35 TYPE=175 SEMANTIC=290"; rc=1; }
+# SEMANTIC 290 -> 292: the two handle-destructor fixtures (2026-09-21).
+[ "$nsyn" = 119 ] && [ "$nname" = 35 ] && [ "$ntype" = 175 ] && [ "$nsem" = 292 ] || { echo "parse-check: the split moved -- expected SYNTAX=119 NAME=35 TYPE=175 SEMANTIC=292"; rc=1; }
 [ "$mr" = 0 ] || { echo "parse-check: a NAME or SEMANTIC fixture was rejected by --parse; a parser has no symbol table"; rc=1; }
 [ "$sa" = 0 ] || { echo "parse-check: a SYNTAX fixture was accepted; the parser must refuse it"; rc=1; }
 [ "$rm_" = 0 ] || { echo "parse-check: a NAME fixture resolved; the resolver must refuse it"; rc=1; }
@@ -215,7 +216,7 @@ echo "leg2c tests/reject/*.ty --typecheck: all=$((tr+tm)) rejected=$tr missed=$t
 got=$(echo $seen_miss | tr ' ' '\n' | LC_ALL=C sort | tr '\n' ' ')
 want=$(echo $KNOWN_TYPE_MISS | tr ' ' '\n' | LC_ALL=C sort | tr '\n' ' ')
 [ "$got" = "$want" ] || { echo "parse-check: the TYPE misses moved"; echo "    now:  $got"; echo "    was:  $want"; rc=1; }
-[ "$tr" = 619 ] || { echo "parse-check: --typecheck refused $tr of 619, expected 619"; rc=1; }   # +2: the unbound-opener fixtures (2026-09-21)
+[ "$tr" = 621 ] || { echo "parse-check: --typecheck refused $tr of 621, expected 621"; rc=1; }   # +2 each: the unbound-opener and handle-destructor fixtures (2026-09-21)
 
 # [3] -- the census, against a recorded golden
 for f in $(ls tests/*.ty) $(find corelib -name '*.ty' | sort) $(find tools examples server bench -name '*.ty' | sort); do
