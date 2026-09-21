@@ -7,13 +7,15 @@
 
 # Tycho
 
-**An experimental systems language with automatic memory management from lexical
-scope.** Tycho tests one idea: implicit hierarchical arenas under value
-semantics. Every scope owns a memory arena, freed when the scope exits; with no
-reference type in the language, the compiler sees every value's lifetime from
-the syntax alone and inserts every allocation and free itself. No garbage
-collector, no manual `free`, no borrow checker. It transpiles to C and builds
-with `cc` and `make`.
+**A systems language with automatic memory management from lexical scope.**
+Tycho began as an experiment testing one idea — implicit hierarchical arenas
+under value semantics — and that idea now holds: it is evolving into a tool for
+**data-oriented programs that allocate hard and cannot afford a GC pause**:
+parsers, interpreters, solvers, batch CLIs and long-running services. Every
+scope owns a memory arena, freed when the scope exits; with no reference type in
+the language, the compiler sees every value's lifetime from the syntax alone and
+inserts every allocation and free itself. No garbage collector, no manual
+`free`, no borrow checker. It transpiles to C and builds with `cc` and `make`.
 
 [Docs](docs/README.md) · [Tutorial](docs/tutorial.md) ·
 [Reference](docs/reference/index.md) · [Thesis](docs/thesis.md) ·
@@ -56,10 +58,66 @@ tycho_int h_count_evens(Arena *_parent, tycho_int limit) {
 No annotation chose that, and no runtime worked it out. The lifetime is visible
 in the syntax, so the compiler places every allocation and every free itself.
 
-> **Status: 0.8.5 — pre-1.0. No stability guarantees yet.** Tycho is an
-> experiment testing one idea: implicit arenas under value semantics. It is
-> pre-1.0 because 1.0 is a promise not to break people, and nobody outside this
-> repo has written enough Tycho to know what that promise costs. The
+## What you give up, before anything else
+
+**There is no reference type.** That is what makes the paragraph above work, and
+it is the part that will cost you a weekend if you meet it on page 40 instead of
+here. A shared mutable graph, a doubly-linked list, an observer holding a
+pointer back at its subject — none of them can be written in Tycho at all. Not
+"discouraged": inexpressible. If your mental model is C's, the first complex
+data structure you reach for will not compile, and the compiler will look broken
+when it is the model that changed.
+
+**The idiom that replaces them is a flat node pool.** Hold every node in one
+array; an edge is an integer index into it, not an address. Sharing is two
+indices naming one slot:
+
+```tycho
+struct Node:
+    kids: [int: int]           # next byte -> node INDEX, not a Node by value
+    word: bool
+
+fn insert(pool: inout [Node], s: string):
+    cur := 0
+    for i := 0; i < len(s); i += 1:
+        c := s[i]
+        if not (c in pool[cur].kids):
+            push(pool, Node([]int: int, false))
+            pool[cur].kids[c] = len(pool) - 1
+        cur = pool[cur].kids[c]
+    pool[cur].word = true
+
+fn main():
+    pool := [Node([]int: int, false)]
+    insert(&pool, "ab")
+    insert(&pool, "ac")
+    println(str(len(pool)) + " nodes, root fanout " + str(len(pool[0].kids)))
+```
+
+```output
+4 nodes, root fanout 1
+```
+
+That is the same layout a data-oriented C engine reaches for on purpose — one
+contiguous array, 8-byte indices instead of scattered pointers, traversal that
+walks cache lines instead of chasing them. Value semantics make it the default
+rather than the optimization you remember to apply.
+
+**And it has a measured price.** Pointer-shaped data stored by value costs more
+RAM than C: a recursive trie **~1.55×**, a fixed-capacity LRU **~2.8×**; the
+flat-pool idiom brings the graph analog to **~1.3×**. Arenas also reclaim at
+scope exit, not incrementally, so a long-lived scope holds its transients until
+it returns. The full loss column, with the measurements and the workloads that
+want a different tool, is
+**[docs/internals/value-semantics-limits.md](docs/internals/value-semantics-limits.md)**;
+[from `malloc` to arenas](docs/from-c-to-arenas.md) is the same ground from C.
+
+> **Status: 0.8.5 — pre-1.0. No stability guarantees yet.** The thesis is
+> proven and the work now is shipping a complete language, not defending an
+> idea. It is pre-1.0 because 1.0 is a promise not to break people, and nobody
+> outside this repo has written enough Tycho to know what that promise costs —
+> that, and an external security review, are the two remaining conditions, and
+> neither is engineering. The
 > engineering is not the open question — see
 > [Architecture](docs/architecture.md) for what each gate proves.
 >
@@ -157,6 +215,23 @@ language held: no compiler or runtime defect was filed by any of them.
 | `tycho-kvsrv` | a concurrent HTTP key-value server | a daemon gate: 4 parallel clients, every write intact; `make kvsrv-check` |
 | `tycho-sat` | a DPLL/CDCL SAT solver | the pigeonhole theorem (PHP(2..9) unsat) and planted instances whose models the runner verifies clause by clause; `make sat-check` |
 
+### Rigor and limits, in one place
+
+A memory model that argues with decades of practice carries an astronomical
+burden of proof, so the successes and the gaps belong on the same page rather
+than one at the top and the other in a build note. Everything below is measured
+on this tree; nothing is aspirational.
+
+| What is proved | How | What is NOT covered, and where |
+| --- | --- | --- |
+| The model survives hard allocation patterns | a Scheme interpreter, a DPLL/CDCL SAT solver and a B+ tree store all run differentially against a ground truth a bug cannot pass — zero compiler or runtime defects filed | these are programs by this project's author; no outside program has stressed generics, `subscript` or `bounded[N]` yet ([ROADMAP §1](ROADMAP.md#1-someone-other-than-the-author-has-written-a-real-program)) |
+| Emitted code is free of UB the optimizer and sanitizer disagree on | every fixture built twice, native `-O2` and `-fsanitize=address,undefined`, **byte-identical output required** between them, plus a golden | **macOS ships no LeakSanitizer**, so the leak lane and two sanitizer legs do not run there; Linux is the only host that scores leaks |
+| The compiler fails closed on malformed input | a differential fuzzer over random programs, plus a reject corpus of 621 fixtures each pinning one refusal | |
+| Five platforms execute, not just compile | `make platform-check` runs linux-x86_64, linux-arm64, macos-arm64, windows-x86_64 and windows-arm64 — 5 of 5 pass, 0 skipped, 0 uncovered | aarch64 Windows is a mingw target; a subnormal-literal defect there was a toolchain bug found by that lane and fixed |
+| Locale-dependent float formatting is correct | `tests/float_lit_locale` and `float_str_locale` | they need a comma-decimal locale, so a **minimal Linux image must generate one** before `make test` — the tests are precise enough to catch a C library variation most suites never look at |
+| Concurrency is sound | copy-in/copy-out semantics make data races inexpressible inside Tycho; TSan runs | a concurrent FFI call can still race — the FFI boundary is unsafe by design and **has had no external audit** ([SECURITY.md](SECURITY.md)) |
+| Native Windows works | MSYS2 + mingw-w64, gated | MSYS2's `kill` terminates rather than signals, so a server's **wind-down is slower** there; nothing is lost or corrupted |
+
 ## Performance
 
 On the allocation-heavy tree workloads Tycho uses the least memory of five
@@ -174,7 +249,9 @@ analysis exists to prevent can't be written. Memory frees per scope; values that
 outlive their scope are copied up. `Option` removes null, `Result` removes
 exceptions, indexing is bounds-checked, and copy-in/copy-out concurrency removes
 data races inside Tycho (concurrent FFI calls can still race). Every test runs
-under ASan + UBSan, plus LeakSanitizer and ThreadSanitizer.
+under ASan + UBSan, plus ThreadSanitizer; LeakSanitizer too **on Linux**, which
+is the only host that has it — Apple's ASan ships none, so macOS scores no
+leaks. See the rigor-and-limits table above.
 
 **"What does value semantics cost?"** No shared mutable references: you can't
 build a shared-mutable graph, doubly-linked list, or observer the pointer way —
