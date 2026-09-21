@@ -23,9 +23,26 @@ QUIET="${QUIET:-300}"     # seconds of zero CPU AND zero writes before we call i
 MAX="${MAX:-3600}"        # hard cap, whatever it is doing
 POLL="${POLL:-20}"
 
-# CPU time (ticks) and newest mtime under $1 -- the two quiescence signals.
-cputicks() { awk '{print $14 + $15}' "/proc/$1/stat" 2>/dev/null || echo -1; }
-newest()   { find "$1" -type f -newermt "@0" -printf '%T@\n' 2>/dev/null | sort -rn | head -1; }
+# CPU time and newest mtime under $1 -- the two quiescence signals.
+#
+# BOTH are spelled twice, because this script now runs on the Mac as well as on
+# Linux and the Linux spellings are silently WRONG there rather than absent:
+# /proc does not exist, so `awk` on it yielded nothing and cputicks returned -1
+# EVERY poll -- a constant, which reads as "zero CPU delta" forever -- and GNU
+# `find -printf` is not in BSD find, so newest() was empty every poll too. Two
+# constants satisfy the quiescence test on the first window, so the watchdog
+# would have killed every probe on this host after QUIET seconds and reported it
+# as finished. A watchdog that cannot tell working from wedged is worse than no
+# watchdog, because it prints a verdict.
+if [ -r /proc/self/stat ]; then
+    cputicks() { awk '{print $14 + $15}' "/proc/$1/stat" 2>/dev/null || echo -1; }
+    newest()   { find "$1" -type f -newermt "@0" -printf '%T@\n' 2>/dev/null | sort -rn | head -1; }
+else
+    # ps TIME is POSIX and counts user+sys for the process; its resolution is one
+    # second, which is finer than POLL. stat -f %m is the BSD mtime.
+    cputicks() { ps -o time= -p "$1" 2>/dev/null | tr -d ' ' || echo -1; }
+    newest()   { find "$1" -type f -exec stat -f '%m' {} + 2>/dev/null | sort -rn | head -1; }
+fi
 
 run_probe() {
     dir="$1"; prompt="$2"; model="$3"; log="$dir/pi-run.log"
