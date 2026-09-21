@@ -7,11 +7,12 @@
 
 # Tycho
 
-**A systems language with automatic memory management from lexical scope.**
-Tycho began as an experiment testing one idea — implicit hierarchical arenas
-under value semantics — and that idea now holds: it is evolving into a tool for
-**data-oriented programs that allocate hard and cannot afford a GC pause**:
-parsers, interpreters, solvers, batch CLIs and long-running services. Every
+**A general-purpose systems language with automatic memory management from
+lexical scope.** Tycho began as an experiment testing one idea — implicit
+hierarchical arenas under value semantics — and that idea now holds. Write
+anything with it; it is **particularly good at data-oriented programs that
+allocate hard and cannot afford a GC pause** — parsers, interpreters, solvers,
+batch CLIs and long-running services. Every
 scope owns a memory arena, freed when the scope exits; with no reference type in
 the language, the compiler sees every value's lifetime from the syntax alone and
 inserts every allocation and free itself. No garbage collector, no manual
@@ -67,6 +68,16 @@ pointer back at its subject — none of them can be written in Tycho at all. Not
 "discouraged": inexpressible. If your mental model is C's, the first complex
 data structure you reach for will not compile, and the compiler will look broken
 when it is the model that changed.
+
+**There is also no interface value.** A trait object is a pointer to someone
+else's value plus a vtable, and the pointer is exactly the aliasing this model
+forbids — so a Go or Java `interface` held in a struct field, and a
+heterogeneous list of implementors, can never exist here. That is a boundary of
+the model, not a feature still to come
+([architecture](docs/architecture.md#decided-non-goals)). Generics cover the
+static half: a generic body type-checks after substitution, so one function
+works over many types — it just cannot hold two different ones at the same time
+under one name.
 
 **The idiom that replaces them is a flat node pool.** Hold every node in one
 array; an edge is an integer index into it, not an address. Sharing is two
