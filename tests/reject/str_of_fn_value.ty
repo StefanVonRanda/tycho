@@ -1,4 +1,4 @@
-# src/tychoc.c:7248 -- a function value is not renderable.
+# src/tychoc.c:7270 -- a function value is not renderable.
 # expect: str(x) can't stringify a fn()
 fn g():
     println("g")

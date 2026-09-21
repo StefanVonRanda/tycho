@@ -72,7 +72,7 @@ tychoc1: tychoc $(TYCHOC1_SRC)
 # __STDC_VERSION__ 202311L, glibc redirects strtol to __isoc23_strtol@GLIBC_2.38,
 # and all three failed to start on Debian 12 / Ubuntu 22.04 / Rocky 9.
 # -std=gnu17 does NOT fix it here and the measurement is the reason: the emitted C
-# opens with runtime/tycho_rt.c's `#define _GNU_SOURCE` (runtime/tycho_rt.c:30-31),
+# opens with runtime/tycho_rt.c's `#define _GNU_SOURCE` (runtime/tycho_rt.c:42-43),
 # and glibc's features.h makes _GNU_SOURCE imply _ISOC23_SOURCE, so the C23
 # redirect survives the language level. Measured on a bare strtol program:
 # no flag 2.38, -std=gnu17 2.34, -D_GNU_SOURCE 2.38, both 2.38.

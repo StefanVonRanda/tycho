@@ -1,6 +1,6 @@
-# src/tychoc.c:6423. The TYPE rule is tests/reject/tuple_arity_min.ty; this is
+# src/tychoc.c:6445. The TYPE rule is tests/reject/tuple_arity_min.ty; this is
 # the LITERAL, and a trailing comma is the only spelling that reaches it --
-# `(1)` is a grouping, not a one-element tuple (src/tychoc.c:2921-2924).
+# `(1)` is a grouping, not a one-element tuple (src/tychoc.c:2943-2946).
 # expect: a tuple needs at least two elements
 fn main():
     t := (1,)

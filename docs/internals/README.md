@@ -21,10 +21,6 @@ measurements, and they assume you already know the codebase.
   threat model: two vulnerabilities found and fixed, and what it did not cover.
 - [`roadmap-closed-2026-08.md`](roadmap-closed-2026-08.md) — the 1.0 conditions
   closed in August 2026, moved out of `ROADMAP.md`.
-- [`probe-subnormal-literals-2026-09-20.md`](probe-subnormal-literals-2026-09-20.md)
-  — OPEN: a float literal below `DBL_MIN` reaches the program as `0.0` on
-  aarch64 Windows. Found by the first run of Tycho on Windows; the CRT, the
-  hardware FPCR and the runtime formatter are all ruled out by measurement.
 - [`windows-port.md`](windows-port.md) — the design record of the native
   Windows port. Cited by `tests/run.sh`, `scripts/ci.sh` and the wine lanes.
 

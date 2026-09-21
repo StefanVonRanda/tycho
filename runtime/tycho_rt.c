@@ -27,6 +27,18 @@
  * and uses values, as if the language were dynamically managed.
  */
 
+/* WINDOWS-ON-ARM: keep the CRT's printf, not mingw's. _GNU_SOURCE below makes
+ * _mingw.h set __USE_MINGW_ANSI_STDIO=1, and mingw's snprintf formats a double
+ * through the x87 80-bit extended layout -- right on x86_64 mingw, wrong on
+ * aarch64 Windows where long double is 64 bits. There a SUBNORMAL double's
+ * zero exponent field reads as the extended minimum exponent, so ty_fmt_shortest
+ * would print 5e-324 as 3.3621031431120935e-4932. UCRT's printf, which every
+ * Windows-on-ARM mingw links, is correct and still handles %zu/%lld/PRId64.
+ * Scoped to ARM: windows-x86_64 keeps the printf its green lane was measured
+ * with. See the longer note at the head of src/tychoc.c. */
+#if defined(_WIN32) && (defined(__aarch64__) || defined(_M_ARM64) || defined(__arm__) || defined(_M_ARM))
+#define __USE_MINGW_ANSI_STDIO 0
+#endif
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif

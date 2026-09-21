@@ -142,7 +142,7 @@ An arena returns memory at **scope exit**, not incrementally — but dead buffer
 incrementally. The compiler proves when a heap buffer is dead and uniquely owned (a
 reassigned loop-carried local; value semantics guarantees no aliasing) and hands it back to
 the arena via `arena_recycle` (`runtime/tycho_rt.c@arena_recycle`, emitted by the compiler at
-`src/tychoc.c:12469@arena_recycle`); the next same-or-smaller allocation in that arena reuses it instead
+`src/tychoc.c:12491@arena_recycle`); the next same-or-smaller allocation in that arena reuses it instead
 of bumping — the reuse analysis Perceus derives from runtime refcounts, derived here from
 static value semantics. So transient churn inside one scope recycles, and peak is bounded
 by the largest single transient rather than the sum — but the arena keeps its high-water
@@ -169,14 +169,14 @@ exactly how far it reaches before concluding that a workload is doomed. There ar
 two distinct paths:
 
 - **Loop-carried reassignment of a named array local** — `a = f(a)` inside a loop
-  (`src/tychoc.c:12457@do_recycle`). Narrow by design: it requires a *named
+  (`src/tychoc.c:12479@do_recycle`). Narrow by design: it requires a *named
   variable* (not an element or field store), a type for which `is_array` holds
-  (`src/tychoc.c:1182@is_array` — note a `string` is **not** an array here), a
+  (`src/tychoc.c:1204@is_array` — note a `string` is **not** an array here), a
   loop, a non-`inout` non-accumulator target, and at least two reads in the
   function (the soundness condition — a read-once variable may have been moved
   out from under it).
 - **Element overwrite of a `[string]`** — `xs[i] = v` recycles the *evicted*
-  element's bytes back to the arena (`runtime/tycho_rt.c:2220-2233@MM-9`), guarded by
+  element's bytes back to the arena (`runtime/tycho_rt.c:2232-2245@MM-9`), guarded by
   `arena_owns` so an interned literal or a cross-arena string is never recycled.
   This is the sliding-window-eviction case, and it is why a bounded ring buffer of
   strings does not grow without limit.

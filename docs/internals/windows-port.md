@@ -30,10 +30,10 @@
 ## Why it is feasible at all — the assessment in one screen
 
 - The **compiler** (`src/tychoc.c`) is mostly portable C. Its POSIX surface is
-  `dirent` (opendir/readdir/closedir, `src/tychoc.c:5318@opendir`), `popen`
-  (`src/tychoc.c:14978@popen`), `realpath`, `access`, `vasprintf`
-  (`src/tychoc.c:246@vasprintf`), and `newlocale/uselocale`
-  (`src/tychoc.c:318@uselocale`). mingw-w64 provides no POSIX
+  `dirent` (opendir/readdir/closedir, `src/tychoc.c:5340@opendir`), `popen`
+  (`src/tychoc.c:15000@popen`), `realpath`, `access`, `vasprintf`
+  (`src/tychoc.c:268@vasprintf`), and `newlocale/uselocale`
+  (`src/tychoc.c:340@uselocale`). mingw-w64 provides no POSIX
   `newlocale`/`uselocale`/`locale_t` at any version (checked against upstream
   master 2026-08-05: only the MSVC-style `_locale_t` API) -- the compiler and
   runtime already have localeconv-based fallback legs, so this costs a guard,
@@ -42,13 +42,13 @@
   Estimate: ~1 day.
 - The **runtime** (`runtime/tycho_rt.c`, embedded verbatim into every emitted
   program) needs: winpthreads for the whole concurrency model
-  (`runtime/tycho_rt.c:989@pthread_create` — free under `-pthread`),
+  (`runtime/tycho_rt.c:1001@pthread_create` — free under `-pthread`),
   `clock_gettime`/`nanosleep`/`sched_yield`/`sysconf`
-  (`runtime/tycho_rt.c:60@sysconf` — mingw shims, a few lines), and **the one
+  (`runtime/tycho_rt.c:72@sysconf` — mingw shims, a few lines), and **the one
   hard piece**: the deep-recursion stack-overflow guard built on
-  `sigaltstack`/`sigaction`/`ucontext` (`runtime/tycho_rt.c:52-57`,
-  `:212@sigaltstack`). The per-platform pattern already exists
-  (`runtime/tycho_rt.c:173@__APPLE__`); Windows gets a third branch via
+  `sigaltstack`/`sigaction`/`ucontext` (`runtime/tycho_rt.c:64-69`,
+  `:224@sigaltstack`). The per-platform pattern already exists
+  (`runtime/tycho_rt.c:185@__APPLE__`); Windows gets a third branch via
   `GetCurrentThreadStackLimits` + `AddVectoredExceptionHandler` catching
   `EXCEPTION_STACK_OVERFLOW` (~60-100 lines). Estimate: 2-3 days.
 - Two corelib shims are **already ported**: `core:os` has `_popen`/`_pclose`

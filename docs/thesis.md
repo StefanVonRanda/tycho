@@ -166,7 +166,7 @@ long-lived mutable structure that is *rebuilt* rather than *mutated* pays that
 copy on every single operation, however small the change.
 
 The bytes are usually not lost — the runtime recycles an overwritten
-`[string]` element back to its arena (`runtime/tycho_rt.c:2220-2233@MM-9`), so
+`[string]` element back to its arena (`runtime/tycho_rt.c:2232-2245@MM-9`), so
 this is not primarily a retention story. What it costs is *work*, per operation,
 scaling with the size of the whole value rather than the size of the edit.
 

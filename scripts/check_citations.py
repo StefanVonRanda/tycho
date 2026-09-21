@@ -368,13 +368,13 @@ def selfcheck():
     # clean tree is indistinguishable from one that stopped matching, so the
     # correct citation must NOT be flagged and the moved one MUST be. Both cite
     # a real file: `tycho_idiv` is defined at one line of runtime/tycho_rt.c and
-    # is nowhere near line 149.
+    # is nowhere near line 161.
     prov = [
-        ("> Provenance: `tycho_idiv` `runtime/tycho_rt.c:288-296`.", False,
+        ("> Provenance: `tycho_idiv` `runtime/tycho_rt.c:300-308`.", False,
          "range that holds its symbol"),
-        ("> Provenance: `tycho_idiv` `runtime/tycho_rt.c:149-161`.", True,
+        ("> Provenance: `tycho_idiv` `runtime/tycho_rt.c:161-173`.", True,
          "range the symbol has moved out of"),
-        ("Prose: `tycho_idiv` `runtime/tycho_rt.c:149-161`.", False,
+        ("Prose: `tycho_idiv` `runtime/tycho_rt.c:161-173`.", False,
          "same shape OUTSIDE a Provenance block"),
     ]
     for text, want, why in prov:
