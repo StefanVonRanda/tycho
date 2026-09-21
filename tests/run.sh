@@ -65,8 +65,8 @@ corpus_census() {
     # still prints `ok`. So the count is pinned to a literal here. 209 = the 82 at
     # R16c-4, plus 27 of the 29 R21d wrote for bootstrap rules no fixture reached,
     # plus 2 of the 3 R21d-2 added, plus 16 of the 18 R21e added, plus 23 of the
-    # 25 R21f added for the builtin-call block at src/tychoc.c:7212-7440, plus all
-    # 21 R21f-2 added for src/tychoc.c:7447-8049, plus all 11 R21f-3 added for
+    # 25 R21f added for the builtin-call block at src/tychoc.c:7212-7446, plus all
+    # 21 R21f-2 added for src/tychoc.c:7453-8078, plus all 11 R21f-3 added for
     # the parallel-for block and the 9k/12k tail, plus all 27 R21f-4 added for the
     # 8k match/destructuring/select block and the three infinite-type arms,
     # plus 23 of the 24 R21f-5 added for the 6k expression block
@@ -137,7 +137,11 @@ corpus_census() {
     # Plus the 2 lane-name fixtures (L4, 2026-09-06): a name past the last lane
     # and a lane name on a value wider than four -- both SEMANTIC (the element
     # type settles them) and word-for-word in both compilers.
-    [ "$cc_exp" -eq 617 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=617"
+    # Plus the 2 unbound-opener fixtures (2026-09-21): a handle-typed call as a
+    # bare statement and as an argument. Both SEMANTIC and word-for-word in both
+    # compilers. They come from the `handle` agent probe, which measured the leak
+    # they now refuse -- five unbound opens gave 15 opens / 5 closes.
+    [ "$cc_exp" -eq 619 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=619"
 
     cc_dirs=0
     for cc_d in $(git ls-files tests 2>/dev/null | grep '\.ty$' | sed 's|/[^/]*$||' | sort -u); do

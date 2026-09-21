@@ -92,10 +92,10 @@ rejects anything outside the scalar/string/`ptr` table, failing closed:
   (rejects composite params), `:3008` (rejects composite return).
 - Type table: `docs/reference/ffi.md:62-71`. `int/char/float/bool` → scalar long/double;
   `string` → `char *`; `ptr` → `void *`; void return allowed.
-- Link line assembled in one `cc` call: `src/tychoc.c:9953-9980`. Each
+- Link line assembled in one `cc` call: `src/tychoc.c:9987-10014`. Each
   `extern "Lib"` adds `-lLib` (`:6223` `add_link`). `--link/--shim/--pkg`
-  passthrough at `:10258-10262`. Auto-discovered `<pkg>_shim.c` + `deps`
-  pkg-config at `:10015-10018`, `:3474-3499`, `:10899-10901`.
+  passthrough at `:10292-10296`. Auto-discovered `<pkg>_shim.c` + `deps`
+  pkg-config at `:10049-10052`, `:3474-3499`, `:10933-10935`.
 - String return is arena-copied so Tycho never holds a foreign pointer
   (`src/tychoc.c:7175-7182`, `tycho_str_from_c`, NULL→`""`).
 
@@ -146,7 +146,7 @@ The rule (`docs/reference/ffi.md:89-106`): a returned `string` is copied into th
 caller's arena; `NULL` becomes `""`. An optimization — the **read-once
 borrow** — skips the copy when the result is the *direct* argument of
 `len()`/`print()`/`println()` (`src/tychoc.c@is_extern_str_call`, applied at
-`src/tychoc.c:11275` for `len`, `:11366` and `:11373` for print/println). Footguns:
+`src/tychoc.c:11309` for `len`, `:11400` and `:11407` for print/println). Footguns:
 
 - `NULL → ""` silently erases the C/Tycho distinction between "no value" and
   "empty string". A caller that needs to detect absence cannot (the crypto
@@ -207,7 +207,7 @@ Ranked by value / effort.
   compiler treats `Db` as distinct from `ptr` and from other handles (fixes the
   wrong-handle hazard, pain point 3a), and emits the named free at scope exit
   for an *owned* handle (fixes the leak, pain point 3b) — reusing the existing
-  task/channel finalizer mechanism (`src/tychoc.c:7541-7552`) that already runs
+  task/channel finalizer mechanism (`src/tychoc.c:7547-7558`) that already runs
   destructor calls at scope end.
 - *Why.* Turns the most dangerous FFI primitive into something the compiler can
   reason about. Most handle-based libs (SQLite, SDL, curl) become safe-by-default.
@@ -239,7 +239,7 @@ opt-out.**
   cannot express.
 - *Why.* Removes the most common reason a binding needs hand-written C.
 - *Incremental or fundamental.* Incremental, medium effort (codegen of a small
-  C wrapper, alongside the existing shim plumbing at `src/tychoc.c:9732-9735`).
+  C wrapper, alongside the existing shim plumbing at `src/tychoc.c:9766-9769`).
 - *Risk.* Low — generated C is mechanical; fail closed to `--shim` if the shape
   is anything non-trivial.
 

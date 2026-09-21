@@ -280,10 +280,16 @@ permitted to *return* a handle) and released without explicit calls.
   — block end, early `return`, `break`, `continue`, `or_return`.
 - **Borrow on pass.** Passing a handle passes the `void*`; the callee does **not**
   free it — only the owning scope does.
-- **Affine, exactly one owner.** A handle MUST NOT be copied; reassigning a handle
-  variable frees the previous handle first. It cannot be stored in an array, map,
-  struct, tuple, `Option`, or `Result`, captured by a closure or `parallel for`,
-  or returned from a Tycho function.
+- **Affine, exactly one owner.** A handle MUST NOT be copied, and a handle
+  variable MUST NOT be reassigned — both are compile errors. It cannot be stored
+  in an array, map, struct, tuple, `Option`, or `Result`, captured by a closure
+  or `parallel for`, or returned from a Tycho function.
+- **An opener's result MUST be bound.** A handle-typed call is legal only as the
+  direct right-hand side of a declaration (`d := open(p)`). As a bare statement,
+  as an argument (`use(open(p))`), or in any other position it is a compile
+  error: the scope-exit finalizer frees the owning *variable*, so a handle with
+  no variable is never freed. `close(open(p))` is refused by the `close` rule
+  below rather than by this one, because `close` does free it.
 - **Early `close(h)`.** `close(h)` runs the destructor immediately and sets the
   handle to null; the scope-exit finalizer is null-guarded, so the destructor
   runs **exactly once**. `close` requires a handle **variable** (a call result has

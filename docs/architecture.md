@@ -70,7 +70,7 @@ a standing tax into a procedure with a known shape:
   about it.
 - **`tychoc1` is the oracle.** Its value is being a second implementation that
   can disagree. It is what every suite here defaults to
-  (`tests/run.sh:168@TYCHOC`), so it is exercised far harder than a spare would
+  (`tests/run.sh:172@TYCHOC`), so it is exercised far harder than a spare would
   be.
 
 **When they disagree the question is "which is right", not "make `tychoc1`

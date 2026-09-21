@@ -31,7 +31,7 @@
 
 - The **compiler** (`src/tychoc.c`) is mostly portable C. Its POSIX surface is
   `dirent` (opendir/readdir/closedir, `src/tychoc.c:5340@opendir`), `popen`
-  (`src/tychoc.c:15000@popen`), `realpath`, `access`, `vasprintf`
+  (`src/tychoc.c:15034@popen`), `realpath`, `access`, `vasprintf`
   (`src/tychoc.c:268@vasprintf`), and `newlocale/uselocale`
   (`src/tychoc.c:340@uselocale`). mingw-w64 provides no POSIX
   `newlocale`/`uselocale`/`locale_t` at any version (checked against upstream
@@ -503,7 +503,7 @@ language surface. WSL2 stays a first-class supported path.
 > only `if [ ! -x ]`, so this box had been testing an **Aug 5 compiler**: 25 of
 > wine-test's 28 failures were features that postdated it. With that fixed, plus
 > the lane learning to link `<pkg>_shim.c` and to honour a sibling `.err` the way
-> `tests/run.sh:347` does, and one real port fix (`iox_set_mtime` could not touch
+> `tests/run.sh:351` does, and one real port fix (`iox_set_mtime` could not touch
 > a DIRECTORY on Windows — `_utime` fails EACCES, so the directory case now uses
 > `FILE_FLAG_BACKUP_SEMANTICS` + `SetFileTime`):
 >

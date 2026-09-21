@@ -64,16 +64,16 @@ def expect(lt, lform, op, rt, rform):
         return "accept" if rt in ("string", "char") else "reject"
     if op in ("<<", ">>"):                        # `src/tychoc.c:7273-7279`
         return "accept" if lt in INTEGER and rt in INTEGER else "reject"
-    if op in ("%", "&", "|", "^"):                # `src/tychoc.c:7384` -- two MATCHING integers
+    if op in ("%", "&", "|", "^"):                # `src/tychoc.c:7390` -- two MATCHING integers
         return "accept" if lt in INTEGER and lt == rt else "reject"
     # arithmetic `+ - * /`
-    if lt == rt and lt in ({"int", "float", "f32"} | SIZED):   # `src/tychoc.c:7394-7406`
+    if lt == rt and lt in ({"int", "float", "f32"} | SIZED):   # `src/tychoc.c:7400-7412`
         return "accept"
     if op in ("+", "-") and (lt == "char" or rt == "char") \
-       and lt in ("char", "int") and rt in ("char", "int"):    # `src/tychoc.c:7402-7405` -- char±int, int±char, char±char
+       and lt in ("char", "int") and rt in ("char", "int"):    # `src/tychoc.c:7408-7411` -- char±int, int±char, char±char
         return "accept"
-    if lt == "float" and rt == "int" and rl: return "accept"   # `src/tychoc.c:7411`
-    if rt == "float" and lt == "int" and ll: return "accept"   # `src/tychoc.c:7415`
+    if lt == "float" and rt == "int" and rl: return "accept"   # `src/tychoc.c:7417`
+    if rt == "float" and lt == "int" and ll: return "accept"   # `src/tychoc.c:7421`
     return "reject"
 
 def forms(t):

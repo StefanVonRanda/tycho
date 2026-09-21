@@ -1,0 +1,14 @@
+# src/tychoc.c@resolve_expr -- an opener's result must be BOUND. A handle is
+# freed by its owning variable's scope exit and by nothing else, so a
+# handle-typed call passed straight to a callee opens a resource with no owner.
+# Measured before the check existed: five such calls gave 10 opens / 5 closes.
+# The bare-statement form is tests/reject/handle_unbound_stmt.ty.
+# expect: is a handle and must be bound to a variable
+handle R:
+    free: hc
+extern fn ho(i: int) -> R
+extern fn hc(h: R) -> int
+extern fn hu(h: R) -> int
+
+fn main():
+    println(str(hu(ho(1))))

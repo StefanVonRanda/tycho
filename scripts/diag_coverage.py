@@ -117,8 +117,8 @@ REMOVED = ["map_set(m, key, value)", "map_set's first argument", "map_set key mu
            "map_del's first argument", "map_del key must be",
            "map keys must be string or int"]
 # DEAD: reserve's second array/map test repeats its first one verbatim --
-# `if (!is_array(arrt) && !is_map(arrt))` at src/tychoc.c:7485 dies, and
-# src/tychoc.c:7495 asks the identical question with `arrt` never reassigned in
+# `if (!is_array(arrt) && !is_map(arrt))` at src/tychoc.c:7491 dies, and
+# src/tychoc.c:7501 asks the identical question with `arrt` never reassigned in
 # between. Nothing can reach it, so no fixture can name it.
 # Two more, measured 2026-09-03 by probing both compilers. `a channel parameter
 # cannot be inout` (check_inout_param_type's IS_CHAN arm) has two call sites and
@@ -126,13 +126,13 @@ REMOVED = ["map_set(m, key, value)", "map_set's first argument", "map_set key mu
 # parameter is PARSED (src/tychoc.c:4622, the only place a param's type is
 # stored, and a variadic -- the one thing that rewrites it -- may not be inout),
 # and the generic-instance one is refused nine lines above its call
-# (src/tychoc.c:9520) on the same substituted type. `inout Channel(int)` and a
+# (src/tychoc.c:9554) on the same substituted type. `inout Channel(int)` and a
 # `inout $T` instantiated at a channel both died at those earlier guards.
 # `a newtype cannot wrap a channel` is dominated by the newtype's own
 # underlying-type rule (src/tychoc.c:5186), which admits only
 # int/float/string/bool/array/map/struct and runs at the ONE site that assigns
 # `.under`; `type Cn = Channel(int)` died there. Its `[$N]T` sibling at
-# src/tychoc.c:9767 is NOT dead -- `[$N]int` is an array, so it passes that rule
+# src/tychoc.c:9801 is NOT dead -- `[$N]int` is an array, so it passes that rule
 # -- and has a fixture.
 # Eleven more, measured 2026-09-03 by probing ./tychoc with the program each
 # rule names. SIX are the `void` bans in the type parser: g_void_ok is captured
@@ -157,20 +157,20 @@ REMOVED = ["map_set(m, key, value)", "map_set's first argument", "map_set key mu
 # `if (at(ps, TK_IF) || at(ps, TK_MATCH))`. It cannot be entered on any other
 # token.
 # Three more, measured 2026-09-03 by enumerating each site's producers rather
-# than by argument. `cannot infer the type of None` (src/tychoc.c:8839) is the
+# than by argument. `cannot infer the type of None` (src/tychoc.c:8868) is the
 # SELF-DEFEATING GUARD shape: T_NONE is produced at exactly ONE site
 # (src/tychoc.c:6429, `case E_NONE`), and the untyped-decl arm eighteen lines
-# above the guard (src/tychoc.c:8822) already diverts every `s->expr->kind ==
+# above the guard (src/tychoc.c:8851) already diverts every `s->expr->kind ==
 # E_NONE` into the pending-inference list -- so the guard is handed only the
 # thing it exists to reject, and never receives it. `x := None` and `x := (None)`
 # both died on the pending arm's own `could not infer the type of 'x'`.
-# `a counting `for` needs int bounds` (src/tychoc.c:9227) has three S_FORRANGE
+# `a counting `for` needs int bounds` (src/tychoc.c:9261) has three S_FORRANGE
 # producers (src/tychoc.c:4258, :4069, :4084) and no fourth: the first two are
 # the `parallel for` forms, whose `s->parallel` sends them to resolve_parfor and
 # breaks before this check, and the third is the foreach desugar, which writes a
 # literal `0` and a `len(...)` call into the bounds itself. No user-written
 # expression reaches them.
-# `a spawned task must be bound and waited` (src/tychoc.c:9311) needs an
+# `a spawned task must be bound and waited` (src/tychoc.c:9345) needs an
 # EXPRESSION STATEMENT of task type. task_of has one call site
 # (src/tychoc.c:6373, the E_SPAWN arm), and a bare `spawn f()` statement is
 # refused while it is PARSED (src/tychoc.c:4498) with the rule stated in full; a
@@ -233,9 +233,9 @@ DEAD = ["reserve only supports arrays of scalars",
 # same `import "core:strings"` that compiles here -- so no .ty file can reach it.
 # It is an fprintf+exit like every other entry below, not a die_at.
 # One more, measured 2026-09-03: `internal: spread ... reached codegen`
-# (src/tychoc.c:11443) is a compiler-bug assertion, not a rule about a program.
+# (src/tychoc.c:11477) is a compiler-bug assertion, not a rule about a program.
 # E_SPREAD has exactly two dispositions -- the variadic call arm UNWRAPS it
-# (src/tychoc.c:7526 takes args[nfixed]->lhs, so no E_SPREAD node survives), and
+# (src/tychoc.c:7532 takes args[nfixed]->lhs, so no E_SPREAD node survives), and
 # every other position dies at src/tychoc.c:6350. Four spread positions probed
 # (a decl rhs, an array literal, a len() argument, and a second variadic
 # argument beside a spread); all four were refused before codegen.

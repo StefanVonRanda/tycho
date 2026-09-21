@@ -297,7 +297,7 @@ fn _ends_ret(body: [ast.Stmt]) -> bool:
     return false
 
 fn _warn(rs: inout R, msg: string):
-    # A dependency under corelib is not the caller's to fix (src/tychoc.c:14781).
+    # A dependency under corelib is not the caller's to fix (src/tychoc.c:14815).
     if not rs.entry_in_corelib and strings.contains(rs.file, "corelib/"):
         return
     push(rs.warns, rs.file + ":" + str(rs.line) + ": warning: " + msg +
@@ -888,12 +888,12 @@ fn _call_bare(rs: inout R, bi: [string: bool], ctors: [string: bool], n: string)
     if _lookup(&rs, n) >= 0:
         _note(&rs, "callval")
         return
-    # src/tychoc.c:7579 special-cases this one by name; it is not a corelib
+    # src/tychoc.c:7585 special-cases this one by name; it is not a corelib
     # lookup, so it is a literal here too.
     if n == "eprintln":
         _err(&rs, "unknown procedure 'eprintln' -- stderr has no println; use `eprint(s + \"\\n\")`")
         return
-    # A high-confidence corelib match beats a weak local typo (src/tychoc.c:7576).
+    # A high-confidence corelib match beats a weak local typo (src/tychoc.c:7582).
     cl, strong := corelib_hint(rs.root, n)
     if len(cl) > 0 and strong:
         _err(&rs, "unknown procedure '" + n + "' -- " + cl)
@@ -911,7 +911,7 @@ fn _call_bare(rs: inout R, bi: [string: bool], ctors: [string: bool], n: string)
 
 # The three ways `x = ...` can fail on the NAME alone: no such binding, a
 # binding that is an immutable local const, and a top-level const of this
-# package (src/tychoc.c:8910 -- a const is folded at each use, so there is
+# package (src/tychoc.c:8944 -- a const is folded at each use, so there is
 # nothing to assign to).
 fn _assign_to(rs: inout R, name: string, multi: bool):
     i := _lookup(&rs, name)
@@ -1112,7 +1112,7 @@ fn _sig_sizeparams(ps: [ast.Param], ret: [ast.Ty]) -> [string]:
 
 fn resolve(p: Program) -> R:
     rs := build_table(p)
-    # src/tychoc.c:9808 -- a whole-PROGRAM rule, checked once the Sig table is
+    # src/tychoc.c:9842 -- a whole-PROGRAM rule, checked once the Sig table is
     # full and BEFORE any body is resolved, which is the order measured on
     # 2026-08-23: a table collision outranks it, a body error does not. It
     # carries the entry FILE and no line, exactly as `no 'main'` has none.

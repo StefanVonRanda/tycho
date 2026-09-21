@@ -7321,6 +7321,12 @@ static Type resolve_expr_inner(Expr *e) {
             }
             if (!strcmp(e->sval, "close")) {  /* close(ch): receivers drain then see None; close(h): free a handle early */
                 if (e->nargs != 1) die_at(e->line, "close takes one channel or handle");
+                /* FFI-H: close(open(...)) does NOT leak -- close frees it there
+                 * and then. It is refused one line below for a different reason
+                 * (close nulls the variable, so it needs one), and that is the
+                 * message worth printing. Sanction the position so the unbound-
+                 * opener check does not shadow the specific diagnostic. */
+                if (e->args[0]->kind == E_CALL) e->args[0]->op = TK_COLONEQ;
                 Type ct = resolve_expr(e->args[0]);
                 if (IS_HANDLE(ct)) {   /* FFI R2: early close -- run the destructor now, suppress the scope-exit free */
                     if (e->args[0]->kind != E_IDENT)
@@ -7770,6 +7776,29 @@ static Type resolve_expr_inner(Expr *e) {
                                "(the inout may reallocate the buffer the slice views)", si->sval, si->sval);
                 }
             }
+            /* FFI-H: an opener's result must be BOUND. A handle is freed by its
+             * owning variable's scope exit and by nothing else, so a handle-typed
+             * call in any other position -- a bare statement, an argument, an
+             * operand -- opens a resource with no owner and leaks it, silently,
+             * for the life of the process. Measured before this check existed:
+             * five `open()` calls bound gave 5 opens / 5 closes, five passed
+             * straight to a callee gave 10 / 5, and five as bare statements gave
+             * 15 / 5. Same marker discipline as channel(...) above: S_DECL marks
+             * the one sanctioned position and every other one lands here. The
+             * copy diagnostic already told people to "bind the opener directly
+             * (f := open(...))" -- this makes that the rule rather than advice. */
+            if (IS_HANDLE(s->ret) && e->op != TK_COLONEQ) {
+                int hid = HANDLE_ID(s->ret);
+                if (hid >= 0 && hid < g_nhandles && g_handles[hid].line)
+                    note_at(g_handles[hid].file, g_handles[hid].src, g_handles[hid].line,
+                            "`%s` is a handle, declared here -- `%s` frees it once at scope exit",
+                            g_handles[hid].name, g_handles[hid].free_fn);
+                die_at(e->line, "the result of '%s' is a handle and must be bound to a variable "
+                                "(d := %s(...)) -- a handle is freed when its owning variable's "
+                                "scope exits, so one that is never bound is never freed",
+                       e->sval, e->sval);
+            }
+            e->op = 0;   /* consume the marker */
             return e->type = s->ret;
         }
         case E_BINOP: {
@@ -8259,7 +8288,7 @@ static void pf_capture(Expr *id) {
 /* capture an outer local named by a STRING rather than by an E_IDENT node -- the
  * callee of `f(x)` and the receiver of `o.f(x)` live in E_CALL's sval/qual, not
  * in a child expr. The synthesized read is resolved in the enclosing scope with
- * every other capture (src/tychoc.c:8794). Non-locals (global fns, builtins,
+ * every other capture (src/tychoc.c:8823). Non-locals (global fns, builtins,
  * enum constructors, package qualifiers) fail vars_find and are dropped. */
 static void pf_capture_name(const char *n, int line) {
     Type vt;
@@ -8282,10 +8311,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:8142),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:8171),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:8416). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:8445). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
@@ -8890,6 +8919,11 @@ static void resolve_stmt(Stmt *s, Type ret) {
             /* channel creation is legal exactly here (CC-4); the marker lets
              * the channel(...) resolve case reject every other position */
             if (s->expr->kind == E_CALL && s->expr->sval && !strcmp(s->expr->sval, "channel") && !s->expr->qual)
+                s->expr->op = TK_COLONEQ;
+            /* FFI-H: the same marker for an opener. Set on the DIRECT RHS only,
+             * so `d := open(p)` passes and `d := use(open(p))` does not -- the
+             * inner call is not this expression. See the reject in E_CALL. */
+            if (s->expr->kind == E_CALL)
                 s->expr->op = TK_COLONEQ;
             /* B-3 (bidirectional inference): an UNTYPED decl from a bare [] / None
              * defers -- T_PENDING until the first grounding use in this block

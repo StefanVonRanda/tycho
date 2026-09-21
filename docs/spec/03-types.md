@@ -14,7 +14,7 @@ types differ (for example, a C backend MUST realize `int` as a 64-bit type even
 on a target where C `long` is 32 bits).
 
 > Provenance: scalar tags `src/tychoc.c:795-816`; C lowering `c_type`
-> `:1628-1668`; equality/ordering `:7459-7492`; newtype decl `parse_typedecl`
+> `:1628-1668`; equality/ordering `:7465-7498`; newtype decl `parse_typedecl`
 > `:4776-4795`.
 
 ## 5.1 The type-identity model
@@ -560,4 +560,4 @@ is not ordered. (`char` is comparable, ordered, and `str`-able — its `str` is 
 one-byte glyph.)
 
 > Provenance: `src/tychoc.c:7217-7250` (equality/ordering resolver); function-
-> value identity equality `:10849@identity equality`.
+> value identity equality `:10883@identity equality`.

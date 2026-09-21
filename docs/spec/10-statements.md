@@ -187,13 +187,13 @@ source instead of inferring them from the sign of a step expression.
 > Provenance: bare `for:` `src/tychoc.c:4164@TK_COLON`; the three-clause header
 > scan and its five required-clause refusals `src/tychoc.c:3785-3830`; `init`
 > parsed by `parse_stmt` itself `src/tychoc.c:4198@parse_stmt`; loop scoping and
-> the post clause resolved outside the body block `src/tychoc.c:8558-8563`;
-> `continue` emitted as `goto _post<id>` `src/tychoc.c:12099-12102` with the
-> label at `src/tychoc.c:13011@_post%d`; the `range()` refusal
+> the post clause resolved outside the body block `src/tychoc.c:8587-8592`;
+> `continue` emitted as `goto _post<id>` `src/tychoc.c:12133-12136` with the
+> label at `src/tychoc.c:13045@_post%d`; the `range()` refusal
 > `src/tychoc.c:4271@was removed: write`. There is no step in the implementation
 > at all: `Stmt` carries `r_start` and `r_stop` only (`src/tychoc.c:1739-1745`)
 > and every `S_FORRANGE` emits `h_i < _stopN; h_i += 1`
-> (`src/tychoc.c:12264-12268`).
+> (`src/tychoc.c:12298-12302`).
 
 ## 14.5 `return`
 

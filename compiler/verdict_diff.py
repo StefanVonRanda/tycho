@@ -49,7 +49,9 @@ ROOTS = ("tests", "corelib", "tools", "examples", "server", "bench")
 # function of fully known type. The 7 left are template BODIES walked with `$T`
 # genuinely unbound, which no amount of work grounds.
 SIXB = 7
-EXPECT = 1401          # a leg that scores 0 of 0 is green by accident
+EXPECT = 1403          # a leg that scores 0 of 0 is green by accident
+                       # 1401 -> 1403: the two unbound-opener reject fixtures
+                       # (2026-09-21) -- an opener's result must be bound.
                        # 1362 -> 1365: L4 -- tests/lane_names.ty and the two
                        # reject/lane_* fixtures.
                        # 1361 -> 1362: tests/warn/vector_over_wide.ty, the
@@ -64,7 +66,7 @@ EXPECT = 1401          # a leg that scores 0 of 0 is green by accident
                        # 1336 -> 1338: the two struct/enum `$Name` typaram fixtures
 
 # NAME fixtures whose diagnostic carries no file:line in EITHER compiler, because
-# merge_pkg (src/tychoc.c:14788, :14234) names the offending FILE and exits. Both
+# merge_pkg (src/tychoc.c:14822, :14234) names the offending FILE and exits. Both
 # are scored as agreeing that there is no location; anything else unlocated is a
 # skip and reddens the lane.
 NO_LINE = {

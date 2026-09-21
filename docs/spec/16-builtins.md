@@ -17,7 +17,7 @@ their own chapters and are out of scope here.
 > Provenance: `Sig` builtins `src/tychoc.c:5181-5305`; conversion magic
 > `:7030-7095`; `len` `:7097-7103`; `keys`/`push`/`pop`/`reserve` `:7155-7250`;
 > `m.get` sugar `:6521-6534`,`:6386-6401`; `zero$` `:6469-6495`; concurrency
-> magic `:6904-6987`; `map_*` removal `:2927-2928`; `die` codegen `:11482-11483`.
+> magic `:6904-6987`; `map_*` removal `:2927-2928`; `die` codegen `:11516-11517`.
 
 ## 29.1 Builtins are part of the language
 
@@ -82,8 +82,8 @@ numeric-polymorphic like `str`.
 `print`, `println`, and `eprint` accept a `string` only; they do not implicitly
 stringify. All nine are `Sig` builtins with fixed signatures.
 
-> Provenance: `src/tychoc.c:5312-5319`,`:5395-5396`,`:5405-5406`; `eprint` codegen `:11132@tycho_eprint`; `die` codegen
-> `:11482-11483`.
+> Provenance: `src/tychoc.c:5312-5319`,`:5395-5396`,`:5405-5406`; `eprint` codegen `:11166@tycho_eprint`; `die` codegen
+> `:11516-11517`.
 
 ## 29.4 Conversions
 
@@ -127,7 +127,7 @@ serves both), and `to_char` is not in the UFCS builtin set, so `to_char(n)` is t
 only spelling — `n.to_char()` is not.
 
 > Provenance: conversion magic `src/tychoc.c:6736-6813`; `chr` and `to_char` `Sig`
-> `:5868@.name="to_char"`, their shared codegen `:10808-10810`;
+> `:5868@.name="to_char"`, their shared codegen `:10842-10844`;
 > `is_null`/`to_ptr` `Sig` `:5407-5408`. `to_i32` (and the rest of
 > `to_u8`..`to_f32`) is **not** a `Sig`: it is `is_sized_conv` `:1324-1328` /
 > `sized_conv_target` `:1313-1323`, resolved inline at `:7055-7061`. The abort
@@ -171,8 +171,8 @@ rejected — so they may grow or shrink the value in the owning arena.
 | `pop(a)` | `[T] -> T` | magic | Remove and return the last element; aborts at run time if empty. `a` MUST be mutable. |
 | `reserve(a, n)` | `([T], int) -> void` | magic | Capacity hint: preallocate room for `n` elements. `len` is unchanged and pushing past `n` still grows; an unallocatable capacity aborts. Restricted to arrays of scalars, structs, tuples, or nested arrays (not `soa`), and to **maps** — `reserve(m, n)` pre-sizes a map's entry + index arrays, so a known-size workload skips the retained growth intermediates (the lru bench's one-line fix; entries survive a later re-size). |
 
-> Provenance: `len` `src/tychoc.c:7429@"len"`; `push` `src/tychoc.c:7492@"push"`;
-> `pop` `src/tychoc.c:7531@"pop"`; `reserve` `src/tychoc.c:7552@"reserve"`.
+> Provenance: `len` `src/tychoc.c:7435@"len"`; `push` `src/tychoc.c:7498@"push"`;
+> `pop` `src/tychoc.c:7537@"pop"`; `reserve` `src/tychoc.c:7558@"reserve"`.
 
 ## 29.7 Maps
 
@@ -245,7 +245,7 @@ There is **no** `empty$(T)` builtin. An `empty()` returning `[$T]` is an ordinar
 user-written generic, and `empty$(int)` is merely the `name$(…)` call form
 applied to it ([§7.5](05-generics.md)).
 
-> Provenance: `zero$` `src/tychoc.c:6496-6522`; `defaultable` predicate `:9519@"defaultable"`.
+> Provenance: `zero$` `src/tychoc.c:6496-6522`; `defaultable` predicate `:9553@"defaultable"`.
 
 ## 29.9 Concurrency
 
@@ -275,7 +275,7 @@ likewise as `t.wait()`. `close` is overloaded across a channel and an FFI handle
 > task/channel method sugar `:6496-6510`. `ncpu()`'s value is
 > `runtime/tycho_rt.c:1120-1135` (`TYCHO_THREADS` first, else
 > `sysconf(_SC_NPROCESSORS_ONLN)`); the fan-out that does **not** follow it above
-> 64 is `src/tychoc.c:12163@_pk > 64`.
+> 64 is `src/tychoc.c:12197@_pk > 64`.
 
 ## 29.10 Filesystem and time
 
@@ -370,10 +370,10 @@ and a conforming program cannot invoke them directly. This is the language's
 **fail-closed** posture ([§1.3](00-conventions.md#13-conformance)) — abnormal
 conditions terminate rather than proceed into undefined behavior.
 
-> Provenance: `die` `Sig` `src/tychoc.c:5869@.name="die"`, codegen `:11482-11483`; `exit` `Sig`
+> Provenance: `die` `Sig` `src/tychoc.c:5869@.name="die"`, codegen `:11516-11517`; `exit` `Sig`
 > beside it and codegen beside `die`'s; divergence `expr_diverges`, with the tail
 > skips in `ctrl_rewrite_tails` / `ctrl_collect_tails` and the all-diverge
 > rejection in the `S_DECL` value-`ctrl` arm of `resolve_stmt`; no
 > `assert`/`panic`/`abort` name in `register_builtins` `:5307-5414` or the
 > `resolve_expr` magic block (`case E_CALL:` `:6844@case E_CALL:`, running
-> through `reserve` at `:7552@"reserve"`).
+> through `reserve` at `:7558@"reserve"`).

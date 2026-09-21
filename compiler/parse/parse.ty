@@ -2001,7 +2001,7 @@ fn _wheres(toks: [lex.Tok], i0: int, tps: [string]) -> ([string], int):
             if nset > 16:
                 _die(toks, _at(toks, i0), "at most 16 types in a `where` type set")
             # The SET is kept, not just the parameter name: the checker needs it
-            # to refuse an instantiation outside it (src/tychoc.c:9507).
+            # to refuse an instantiation outside it (src/tychoc.c:9541).
             push(out, p + ":" + set)
         else:
             if not _is_where_pred(p):

@@ -34,7 +34,7 @@ elif	keyword	keyword.control.tycho	control-flow keyword
 else	keyword	keyword.control.tycho	control-flow keyword
 enum	keyword	keyword.other.tycho	declaration keyword
 eprint	builtin	support.function.builtin.tycho	built-in function; compiles under ./tychoc, measured 2026-09-04 -- added to both grammars by phase V2k
-eprintln	identifier	none	NOT a procedure: src/tychoc.c:7578 refuses it and names `eprint(s + "\n")`; highlighting it would paint a name the compiler rejects -- stays plain (phase V2k)
+eprintln	identifier	none	NOT a procedure: src/tychoc.c:7584 refuses it and names `eprint(s + "\n")`; highlighting it would paint a name the compiler rejects -- stays plain (phase V2k)
 exit	builtin	support.function.builtin.tycho	built-in function; compiles under ./tychoc, measured 2026-09-04 -- added to both grammars by phase V2k
 extern	keyword	keyword.other.tycho	declaration keyword
 f32	type	storage.type.tycho	hard-reserved sized type (TK_KW_F32 in src/tychoc.c@keyword) -- added to both grammars by phase V2l
