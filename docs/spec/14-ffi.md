@@ -254,9 +254,19 @@ compile flag) are always on this single `cc` command line.
 
 ## 25. Typed handles
 
-A `handle Name: free: c_free` declares a nominal, affine, opaque C resource — a
-`void*` whose destructor `c_free` runs automatically at scope exit (RAII). A
-handle is typically produced by an `extern` "opener" (the only kind of function
+A `handle` declaration is a **header over an indented `free:` line** — a block,
+not a one-liner. It declares a nominal, affine, opaque C resource: a `void*`
+whose destructor runs automatically at scope exit (RAII).
+
+```tycho
+handle File:
+    free: fh_close
+
+extern fn fh_open(path: string) -> File   # the opener
+extern fn fh_close(f: File) -> int        # the destructor, called at scope exit
+```
+
+A handle is typically produced by an `extern` "opener" (the only kind of function
 permitted to *return* a handle) and released without explicit calls.
 
 - **A handle name is a type name, and the collision rule is symmetric.** A

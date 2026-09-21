@@ -107,7 +107,7 @@ duplicated here; this section states only each builtin's kind and one-line role.
 | `to_char(n)` | `int -> char`: the byte value `n` (`0`–`255`) as a [`char`](03-types.md#524-char); a value outside `0..255` **aborts**, with `chr`'s message — it is the same conversion, differing only in whether the byte comes back as a `char` or as a one-byte `string`. | Sig |
 | `to_ptr(n)` | `int -> ptr`: an opaque FFI sentinel pointer, never dereferenced ([§24](14-ffi.md)). | Sig |
 | `to_u8`…`to_i64`, `to_f32` | numeric `-> ` the named fixed-width type ([§5.2.7](03-types.md#527-fixed-width-integers-u8u16u32u64-i8i16i32i64)); narrow/reinterpret, total. | Sig |
-| `is_null(p)` | `ptr -> bool`: test an opaque FFI pointer for `NULL` ([§24](14-ffi.md)). | Sig |
+| `is_null(p)` | `ptr -> bool`, and `handle -> bool`: test an opaque FFI pointer or a typed handle for `NULL` ([§24](14-ffi.md)). On a handle it is how an opener's failure is detected, and it reads true after `close(h)` ([§25](14-ffi.md)). | Sig |
 
 The base-specific `to_int`/`to_float`/`to_str`/`to_bool` and the generic
 `to_under` are the newtype unwrappers ([§8.3](06-conversions.md#83-newtype-unwrapping),

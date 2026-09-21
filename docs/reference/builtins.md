@@ -115,7 +115,7 @@ Supporting the [FFI boundary](ffi.md) and the sized numeric types; always availa
 | Builtin | Type | Meaning |
 | --- | --- | --- |
 | `eprint(s)` | `string -> void` | Write `s` to standard error (no newline, no exit). |
-| `is_null(p)` | `ptr -> bool` | Test an opaque FFI `ptr` for null. |
+| `is_null(p)` | `ptr -> bool`, `handle -> bool` | Test an opaque FFI `ptr`, or a typed handle, for null. On a handle: true when the opener failed, and true after `close(h)`. |
 | `to_ptr(n)` | `int -> ptr` | Make a sentinel `ptr` from an int (e.g. `(void*)-1`); Tycho never dereferences it. |
 | `to_i32(n)` | `int -> int` | Sign-extend the low 32 bits of `n` — for an `extern` that returns a 32-bit C `int`. |
 | `to_u32(x)` / `to_u64(x)` / `to_f32(x)` | numeric `-> u32`/`u64`/`f32` | Convert any numeric scalar to the sized type. |

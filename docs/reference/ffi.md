@@ -83,9 +83,11 @@ need to isolate such state per thread or serialize the calls. See [Concurrency](
 ## Linking
 
 Ergonomics live on the `tychoc` command line: `--link` (a raw linker flag), `--pkg`
-(pkg-config), and `--shim` (compile a companion `.c` alongside). For a complete worked binding,
-in-memory SQLite is at [`examples/sqlite/`](../../examples/sqlite), and the full rules are in
-[the FFI design note](../reference/ffi.md).
+(pkg-config), and `--shim` (compile a companion `.c` alongside). For a complete worked binding
+over a real library, in-memory SQLite is at [`examples/sqlite/`](../../examples/sqlite) — note
+that it drives the C API through raw `ptr`, not through a `handle`. For a worked **handle**,
+see [`tools/tycho-fh/`](../../tools/tycho-fh), the only program in the tree that declares one
+outside the test suite.
 
 ---
 
@@ -100,10 +102,9 @@ the Tycho side: no foreign pointer ever leaks into Tycho's owned world.
 The FFI is an *unsafe* boundary — you can still pass a bad handle to C and crash
 inside C. All I'm trying to do is keep the **Tycho side** sound and make the
 unsafe surface explicit, which is what the `extern` keyword marks. The
-[FFI reference](../reference/ffi.md) is the short version; this page is the
-full rule set. A complete binding lives in
+This page is the full rule set. A complete binding lives in
 [`examples/sqlite/`](../../examples/sqlite/) — in-memory SQLite driven through both
-transpilers.
+transpilers, over raw `ptr` rather than a `handle`.
 
 ### Quick start
 
@@ -359,9 +360,15 @@ round-trip, and a `--shim` build) run under `make ffi`,
 ASan-clean and output-identical.
 
 A worked binding lives in [`examples/sqlite/`](../../examples/sqlite/): opaque
-`db`/`stmt` handles, SQL string arguments, arena-copied column text, `--shim`
+`db`/`stmt` pointers, SQL string arguments, arena-copied column text, `--shim`
 for the out-parameter API, and `--pkg` for linking — against a library whose
-returned text pointer is genuinely transient.
+returned text pointer is genuinely transient. It carries **no `handle`
+declaration**: the db and statement are raw `ptr` and `sqlite3_close` is called
+by hand, so read it for the linking and out-parameter machinery, not for RAII.
+The worked `handle` is [`tools/tycho-fh/`](../../tools/tycho-fh) — `handle File:`
+over a hand-built static library — and `tests/ffi/main.ty` exercises one inside
+`make ffi`. Those two are the only `handle` declarations in the tree outside
+`tests/reject/`.
 
 ### Limitations (by design)
 
