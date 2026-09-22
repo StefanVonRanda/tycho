@@ -24,6 +24,13 @@ so every round before that ran with `compiler/parse/parse.ty` and the typechecke
 readable — a syntax oracle for whatever feature was under test. Checking only for
 `tychoc.c` is what let it through, which is why the verification names both.
 
+**The strip also guarantees one class of false finding, so discount it on
+sight.** `docs/internals`, `docs/rfc` and `tests` are gone, and the pages that
+survive link into all three, so every probe can truthfully report those links as
+dead. The 2026-09-21 `handle` round filed six that are not
+([record](probe-handle-2026-09-21.md)); `make check-links` is green on the real
+tree. A link finding counts only if the target is missing from a full checkout.
+
 **Build the compiler from `main`, not the release tarball.** The 2026-08-19 run
 used v0.7.0 and part of its report described diagnostics already improved since;
 that half was archaeology.
@@ -55,13 +62,13 @@ outside this repo has driven it.
 | generics, enums, Option/Result | [generics](probe-generics-2026-08-19.md), R4 `gen2`, R5 `state` |
 | newtypes, `subscript`, `bounded` | [record](probe-newtype-subscript-bounded-2026-08-19.md) |
 | `select`, channels, concurrency | [select](probe-select-2026-08-19.md), tycho-hash, R3 `conc` |
-| FFI, `handle`, `soa` | [ffi](probe-ffi-2026-08-19.md), R3–R5 `ffi2`/`ffi3`/`ffi4` |
+| FFI, `handle`, `soa` | [ffi](probe-ffi-2026-08-19.md), [handle](probe-handle-2026-09-21.md), R3–R5 `ffi2`/`ffi3`/`ffi4` |
 | value semantics, arenas | R1 `mem`, R3 `arena`, R7 `churn` |
 | packages, libraries, visibility | R1 `pkg`, R8 `lib` |
 | numerics, floats | R1 `num`, R6 `float` |
 | sockets, files, argv | R6 `net`, R4 `io2` |
 | unicode | R8 `uni` |
-| layout and SIMD — `packed`, `align(N)`, `vector[N]T`, swizzling | [simd](probe-simd-2026-09-07.md) |
+| layout and SIMD — `packed`, `align(N)`, `vector[N]T`, swizzling | [simd](probe-simd-2026-09-07.md), [layout](probe-layout-2026-09-21.md) |
 | **the compiler itself** | R8 `cli`, `huge`, `msgs` |
 
 **The last row paid best.** Rounds one to seven asked for programs and mostly
@@ -87,6 +94,11 @@ The weaker model did not behave more like a newcomer — it mostly produced
 expectation mismatches against Python and C, and one of its four runs died at
 `repetition_truncation` without writing a log at all. **A probe's value came
 from where it was aimed, not from which model held the pen.**
+
+**Write down which one you used.** Neither 2026-09-21 record can name its model:
+the directory's `pi-run.log` holds a failed launch (`Model "mimo-v2.5" is
+ambiguous across providers`) and nothing says what ran instead. The model belongs
+in the first paragraph of the record, beside the host and the `tychoc` version.
 
 ## Launching it
 

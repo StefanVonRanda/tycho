@@ -8380,3 +8380,309 @@ the pattern across 102, 108 and this one is worth stating: all three were writte
 as *orderings* — "read to EOF", "retry for arrival", "c2 before the level" — and
 all three were implemented as something that only *usually* observes the
 ordering. The property was right each time; the instrument was a stopwatch.
+
+## Found by two agent probes in one afternoon, 2026-09-21 (head `88b37681`)
+
+Two probes run back to back per
+[probe-procedure.md](probe-procedure.md), aimed at the two surfaces
+[ROADMAP §1](../../ROADMAP.md) had least outside contact with: `handle` as a
+subject in its own right, and the four layout/SIMD features. Records:
+[handle](probe-handle-2026-09-21.md), [layout](probe-layout-2026-09-21.md).
+
+**22 findings between them.** Nine were fixed the same day across four commits,
+a fifth commit fixed the watchdog defect the setup exposed, and one entry below is
+a probe's finding being **refuted** — the first time that has happened against a
+measurement rather than a citation, and the reason this section exists rather than
+five commit messages. The residue is [128](#128-the-residue-fourteen-findings-from-2026-09-21-that-nothing-has-acted-on--open).
+
+### 122. The probe watchdog scored every macOS probe as finished — **FIXED 2026-09-21**
+
+> Pinned-by: grep -q 'ps -o time=' scripts/probe_run.sh
+> Pinned-by: sh scripts/probe_run.sh --selfcheck
+
+`scripts/probe_run.sh` decides a probe is done on two signals — zero CPU-time
+delta **and** no write under the probe directory — and both were spelled for
+Linux only. On this Mac they do not fail loudly, they go **constant**:
+
+```text
+awk '{print $14 + $15}' /proc/$$/stat  -> -1     (no /proc, the || fires)
+find . -type f -newermt "@0" -printf   -> ""     (BSD find has neither)
+```
+
+A constant is a zero delta, so both halves of the quiescence test are satisfied
+on the first window: the watchdog kills the agent after `QUIET` seconds, prints
+*"quiet for 300s (no CPU, no writes) — treating as finished"*, and returns 0.
+**Every probe run on a Mac would have been truncated at five minutes and recorded
+as a clean exit.** The script's own header says the reason for scoring both
+signals is that either alone is "a false positive waiting to happen"; on this
+host both were the same false positive.
+
+The fix picks the spelling from the host: `/proc` where it exists, `ps -o time=`
+plus `stat -f %m` otherwise.
+
+**The defect was one command away the whole time.** `--selfcheck` builds a wedged
+process and a working one and requires the watchdog to tell them apart; it fails
+on the parent commit on this host. It is the same shape as
+[104](#104-the-executable-defect-log-is-executed-by-nobody--make-ci-has-never-called-friction-check--fixed-2026-09-19-option-1-the-fact-pins-as-lane-1d213)
+and [106](#106-parse-check-is-red-has-been-all-day-and-is-in-neither-make-ci-nor-the-hook--drift-cleared-and-corpus-check-gated-2026-09-19-the-divergence-inside-it-is-open-and-the-owners-call):
+a check that exists, works, and is attached to no verdict. The pin above is now
+that verdict. It was left out of `make ci` on the grounds that it sleeps through
+two controls; **measured here at 9.2s**, which is small enough that the cost
+argument no longer holds and wiring it is a one-line decision.
+
+### 123. An opener's result that is never bound was never freed — **FIXED 2026-09-21**
+
+> Pinned-by: test -f tests/reject/handle_unbound_stmt.ty
+> Pinned-by: test -f tests/reject/handle_unbound_arg.ty
+> Pinned-by: grep -q 'hdl_decl' compiler/types/tcheck.ty
+> Pinned-by: make test
+
+Tycho makes an unused `int` a hard compile error — `'x' declared and not used` —
+and an unused import an error too. **It accepted a leaked OS resource.** The
+probe reproduced it with a counting shim before anything was changed, five calls
+of each shape:
+
+```text
+h := open("a")          opens 5   closes 5
+use(open("a"))          opens 10  closes 5
+open("a")               opens 15  closes 5
+```
+
+A handle is freed by its owning **variable's** scope exit and by nothing else, so
+a handle-typed call in any other position — a bare statement, an argument, an
+operand — opens a resource with no owner and leaks it for the life of the
+process. No error, no warning, and **nothing in `docs/` said so**: the probe could
+only learn it by adding counters to its own shim and measuring. Its report lists
+this under *"what I could not learn from the documentation"* and calls it "the one
+thing about this feature I would most want written down".
+
+The rule is now what the existing copy diagnostic already advised — that message
+has always said *"bind the opener directly (f := open(...))"* — using the same
+marker discipline `channel(...)` has used since CC-4: `S_DECL` marks the one
+sanctioned position and every other position lands on the reject.
+
+`close(open(p))` is deliberately **not** caught: it does not leak, and it is
+already refused one line further on with a message that is the useful one there.
+Getting that wrong is what the check's first run did.
+
+**Both compilers, because they are held to agreeing**, and on first build they
+diverged — the reference rejected and the self-hosted one emitted C. The
+self-hosted rule is `hdl_decl` in `compiler/types/tcheck.ty`, the twin of the
+`chan_decl` flag beside it, captured and cleared at the top of `_ex2` so only the
+direct rhs of a declaration is sanctioned.
+
+The spec was wrong in a second place in the same area and is corrected in the
+same commit: §25 said *"reassigning a handle variable frees the previous handle
+first"*. It does not — `a handle variable cannot be reassigned` is a compile
+error, and `docs/reference/ffi.md` said so correctly all along. The probe had
+planned its walker around reassignment and backed it out.
+
+### 124. The over-wide vector lint named an ISA the host is not, and prescribed a flag `cc` rejects — **FIXED 2026-09-21**
+
+> Pinned-by: grep -q 'the baseline vector register' src/tychoc.c
+> Pinned-by: grep -q 'use a narrower vector, or on x86-64 build' compiler/types/zsema.ty
+> Pinned-by: make vector-check
+
+On the aarch64 Mac — a shipped platform, green in `make ci` since 2026-09-19 —
+declaring a wide vector said this:
+
+```text
+warning: `vector[4]int` is 32 bytes but x86-64 baseline holds 16, so every
+operation on it splits -- build with `--target x86-64-v3`
+```
+
+Taking its advice, on the machine it had just been printed on:
+
+```text
+tychoc: --target: cc does not accept -march=x86-64-v3
+```
+
+`--target`'s only values are `x86-64-v2/v3/v4` and `baseline`; there is no
+aarch64 spelling. So the lint fired on this host, **about a host this is not**,
+and named the one remedy that cannot be taken here. It fires on everything wider
+than 16 bytes, which is most of the reason to reach for a vector at all.
+
+**Two thirds of the message were right.** `target_vec_bytes()` never consults the
+host: 16 is a static assumption about a baseline, correct for SSE and for NEON
+alike, so the byte figures were never wrong. The defects were the **label**,
+which asserted a machine, and the **remedy**, which was ISA-specific and offered
+unconditionally. Narrowing now leads because it works on every target; a level
+the user actually asked for is still named as given. `--native` is deliberately
+not offered — it does not make the value fit, it makes the width unknowable and
+so turns the lint off.
+
+**The gate already knew.** `scripts/vector_check.sh:266` skips its leg [7] with
+the reason "x86-64 host only"; the diagnostic it was checking did not.
+
+### 125. Three things the handle documentation said that are not true — **FIXED 2026-09-21**
+
+> Pinned-by: grep -q 'header over an indented' docs/spec/14-ffi.md
+> Pinned-by: grep -q 'handle -> bool' docs/reference/builtins.md
+> Pinned-by: grep -q 'tycho-fh' docs/reference/ffi.md
+> Pinned-by: make docs-fences
+
+All three found by the `handle` probe, each measured before it was changed.
+
+**1. The spec's own spelling does not parse.** §25 opened with "A `handle Name:
+free: c_free` declares a nominal, affine, opaque C resource". Typed as written:
+
+```text
+p18.ty:1: error: expected newline
+     1 | handle Dir: free: dw_close
+       |             ^
+```
+
+It is a header over an indented `free:` line — a block — as
+`appendix-a-grammar.md:85` and `docs/reference/ffi.md` both say correctly. **This
+was the first thing the probe wrote and the first thing that failed.** The
+replacement is a **compiled fence**, not prose: `make docs-fences` builds and runs
+every Tycho fence, so the syntax cannot drift out of the spec again without
+reddening a lane. Prose is what let it drift.
+
+**2. The worked handle example contains no handle.** `docs/reference/ffi.md` sent
+the reader to `examples/sqlite/` three times for handles — "opaque `db`/`stmt`
+handles" — and `examples/sqlite/demo.ty` declares none: `db` and `stmt` are raw
+`ptr` and `sqlite3_close` is called by hand. `grep '^handle '` over every `.ty` in
+the distribution returns `tools/tycho-fh/main.ty`, which those pages never
+mentioned. **Nothing the FFI documentation pointed at demonstrated the feature it
+was pointing at it for.** Both sentences carrying this also linked
+`docs/reference/ffi.md` *from* `docs/reference/ffi.md` as though it were another
+document; the probe went looking for the other page.
+
+**3. `is_null` on a handle was undocumented where it counts, and the one shipped
+handle program said it was impossible.** The overload appeared in exactly one
+sentence of one page; both normative tables gave `ptr -> bool` only. Against that,
+`tools/tycho-fh/fh.c` ships `fh_ok` with the comment *"A handle cannot be tested
+against null in Tycho … so asking C is the only way"*. Measured: `is_null(h)` is
+false after a good open, true after a failed one **and** after `close(h)`. The
+probe believed the running code over the one true sentence, wrote a redundant
+`_ok` shim into its own binding, then measured and deleted it. The same file also
+claimed the destructor receives NULL; it does not — the compiler emits `if (h)
+fh_close(h);` and nulls the variable on an early close, and a failed open gives
+`opens=0 closes=0`.
+
+**The finding is not the three sentences.** It is that a first contact could not
+learn this feature from the documentation and had to learn it from generated C.
+
+### 126. Nothing ever checked that a handle's `free:` names its destructor — **FIXED 2026-09-21**
+
+> Pinned-by: test -f tests/reject/handle_free_undeclared.ty
+> Pinned-by: test -f tests/reject/handle_free_wrong_type.ty
+> Pinned-by: make test
+
+Two mistakes Tycho had no opinion about. **Misspell the destructor** and it
+reached `cc`:
+
+```text
+a.c:3224:14: error: call to undeclared function 'hv_shut'
+ 3224 |     if (h_h) hv_shut(h_h);
+tychoc: C compilation failed (cc -O3 -fwrapv ...)
+```
+
+A generated file, a generated line, and no mention of the `.ty` line where the
+handle is declared — while every other mistake in this compiler gets a Tycho line
+and a caret. **Declare it at the wrong type** — `extern fn hv_close(d: ptr)` for a
+`handle H` — and it compiled **silently**: nothing compared the destructor's
+parameter to the handle it frees, and the emitted `if (h_h) hv_close(h_h);`
+type-checks in C either way, because a handle is a `void*` down there. The type
+hole is invisible by construction — C cannot catch it and Tycho was not looking.
+
+The check runs in `resolve_program`, after every signature is registered rather
+than in `parse_handle`, because the destructor may be declared *below* the handle
+it frees — `tests/ffi/main.ty` does exactly that. `parse_handle`'s own comment has
+said since it was written that the free fn is "normally an `extern fn
+c_free_fn(h: Name)`"; these two checks are what turn "normally" into the rule.
+
+**The oracle earned its keep here, and the record is worth more than the fix.**
+The first `tychoc1` version compared the destructor's parameter against the bare
+handle name, but a nominal type is encoded with a leading `@`, so it refused
+**both** of the tree's own correct handle programs. Every check run by hand
+passed: the two new reject fixtures failed correctly and the positive case, written
+in one file with no package prefix, still built. `make parse-check` found it in
+one run, three ways at once — leg13 as `AFFINE-WRONGLY-REFUSED`, leg10 as two
+`TYPE-DISAGREE` rows naming `tychoc=ACCEPT tychoc1=reject`. That is the
+differential instrument `src/tychoc.c` is kept for, doing its job against a change
+whose own author had tested it.
+
+### 127. A probe measured its own transcription error and filed it as a layout defect — **CLOSED 2026-09-22: refuted by measurement**
+
+> Pinned-by: grep -q '__attribute__((packed))' src/tychoc.c
+> Pinned-by: grep -q '__attribute__((packed))' compiler/emit/emit.ty
+> Pinned-by: make test
+
+The layout probe's finding 2, which it introduced as "the finding I would most
+want a Tycho maintainer to see": §17.1a states a packed struct has no padding and
+each field at the sum of the sizes before it, and **the emitted C carries no
+`__attribute__((packed))`** — `cc` measuring it reports `sizeof=20 alignof=2` with
+`width` at 14, against the 18/12 the spec promises. A normative claim contradicted
+by the compiler's own output, with an FFI consequence: a packed struct handed to a
+C function expecting a packed layout.
+
+**It does not reproduce.** `tychoc --emit-c` on the probe's own `main.ty`, run
+here, ends that struct with `} __attribute__((packed));`, and `cc` measuring that
+definition verbatim reports:
+
+```text
+emitted-verbatim TgaHeader: sizeof=18 alignof=1 offsetof width=12 height=14 descriptor=17
+```
+
+which is §17.1a exactly — and exactly the figures the report called "byte-exact
+would be". The attribute has been emitted since `packed` shipped (`5fff6d5c`).
+
+**The defect is in the probe's apparatus.** `probe/layout.c`, whose header says
+the definitions were "copied VERBATIM out of `tychoc --emit-c`", carries the
+attribute on its `align(8)` struct and **not** on the packed one. The copy dropped
+one line, `cc` faithfully measured the mis-copy, and the number came back as a
+language defect. Every downstream sentence — the 20 bytes, "what `packed`
+actually buys is the side-table", the §14 worry — describes `probe/layout.c`.
+
+**Why this is an entry and not a deleted paragraph.**
+[probe-simd-2026-09-07.md](probe-simd-2026-09-07.md) already recorded that a
+report's citations must be opened rather than trusted, after an agent reported a
+doc as wrong that was right two lines from where it looked. This is the stronger
+form: **a report's own measurements have to be re-run**, because a probe that
+builds an independent instrument can be wrong about the instrument — and it will
+present that error in the most convincing format available, a number from a second
+toolchain against a quoted spec line. The procedure's "check each finding against
+`main` before acting" step is what caught it, one day late.
+
+### 128. The residue: fourteen findings from 2026-09-21 that nothing has acted on — **OPEN**
+
+Listed rather than fixed, because they are doc-layer and design questions and the
+surface is frozen. Each is checked against `main` as of 2026-09-22.
+
+| from | finding |
+|---|---|
+| handle 8 | `close(h)` on a handle is absent from `reference/builtins.md`, which lists only `close(ch)` for channels — and `docs/README.md` calls that page "the single answer layer" |
+| handle 9 | the reserved set includes the type keywords, so `bytes: int` is not a legal field name; documented only in appendix B, named on no entry-path page |
+| handle 10 | `expected an expression` on a nested value `if` never says the rule is *tail position only* |
+| handle 13 | correct but unfindable: `-> Option(string)` on an `extern`, `--print-shims`, and that `tychoc --help` beats both FFI pages on the command line |
+| handle 14 | §25's scope-exit list — "block end, early `return`, `break`, `continue`, `or_return`" — reads as though a `continue` frees a handle owned by the enclosing scope. It does not; the list is about the owning scope |
+| handle — | after `close(h)`, `is_null` cannot distinguish "closed" from "never opened", because `close` nulls the variable. Use-after-close is documented as permitted and is not compile-rejected, so the one remaining misuse of an exactly-once resource is undetectable in both directions. A design question |
+| layout 1 | `size_of$` requires a packed struct and `packed`/`align(N)` are mutually exclusive, so `align(N)` is **unobservable from inside the language**. The probe had to emit C and run `cc` to learn its `align(8)` did anything |
+| layout 3 | `vector[`, `align(`, swizzling and `packed` appear **nowhere** in `docs/reference/`. A reader following README → tutorial → reference finishes believing Tycho has no SIMD type, no layout control and no swizzling |
+| layout 4 | `vector[N]T`, `align(N)` and swizzling have **zero** users in `examples/` and `corelib/`; `packed` has four, and `corelib/raster/raster.ty` was singled out as the one teaching example any of the four has |
+| layout 6 | no lane-wise min/max, and `math.clamp` refuses a vector (`does not satisfy comparable(T)`), so the clamp — what a grading kernel does as often as the multiply — drops out of the vector unit |
+| layout 8a | §5.5 omits `u8` from the ordered scalars, the mixed-type diagnostic omits `char`/`u32`/`u64`/`f32`, and the compiler's real rule is in neither. Two documents, two different wrong answers |
+| layout 8b | `str()` on a vector works and is undocumented; a vector as a struct field works and is undocumented |
+| layout 8c | `bytes` `+` and `[a:b]` are in the spec and absent from `reference/types.md`'s `bytes` section — correct docs, wrong layer |
+| both | two `-Wunused-value` warnings out of `core:strings`' `slice_bytes`/`slice_str` land in **every** user's build, naming a generated line in a file that is then deleted. Both probes hit them independently and both spent time establishing they had not done something wrong |
+
+**The shape of the residue is one finding.** Nine of the fourteen are the same
+defect: the rule exists, the compiler is right, and the page a first contact
+actually reads does not carry it. `docs/README.md` promises `reference/` is "the
+single answer layer" and routes `spec/` for "the exact rule for an edge case";
+four shipped language features and two builtin overloads live only on the far side
+of that split. That is a documentation-architecture question, and it is the thing
+two independent strangers hit hardest on the same afternoon.
+
+**Two procedure defects found the same way**, and they belong here because they
+cost future rounds rather than this one:
+
+- The setup strip deletes `docs/internals`, `docs/rfc` and `tests`, so every probe
+  will report the links into them as dead. The `handle` round filed six that are
+  not. The deletion list should say so.
+- `pi-run.log` records only a failed launch (`Model "mimo-v2.5" is ambiguous
+  across providers`), so **which model wrote either report is not recorded
+  anywhere**. The procedure has a whole section on choosing a model and no step
+  that writes down the one used.
