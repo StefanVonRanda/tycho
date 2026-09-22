@@ -1,0 +1,281 @@
+# tycho-du -- where the disk went.
+#
+# Walks a directory tree through POSIX opendir/readdir/lstat and reports the
+# largest files, the heaviest file extensions, and everything it could not read.
+# The builtin `list_dir` cannot do this: it gives names with no sizes, no entry
+# kinds, and it returns an empty array both for an empty directory and for one
+# it could not open -- which is precisely the distinction a disk-usage tool has
+# to report.
+#
+# The open directory stream is a typed `handle Dir`: nominal, affine, opaque,
+# freed by the compiler at the exit of the scope that owns it. `walk` opens one
+# per directory and never closes it by hand, including on the three paths that
+# leave the body early -- `die`, a bare `return Err(...)`, and an `or_return`
+# out of a recursive call.
+#
+#   build: ./tychoc tools/tycho-du/main.ty -o tycho-du --shim tools/tycho-du/du.c
+#   run:   ./tycho-du [--top N] [--depth N] [--strict] PATH...
+#   gate:  make du-check
+
+package main
+
+import "core:cli"
+import "core:path"
+import "core:sort"
+import "core:strings"
+
+handle Dir:
+    free: dw_close
+
+extern fn dw_open(p: string) -> Dir         # the opener: the only kind of fn that may RETURN a handle
+extern fn dw_close(d: Dir) -> int           # the destructor the compiler calls at scope exit
+extern fn dw_next(d: Dir) -> Option(string) # NULL -> None, so "" is a real name, not an end marker
+extern fn dw_stat(p: string, size: inout int) -> int
+extern fn dw_errstr() -> string
+extern fn dw_live() -> int                  # open streams right now -- the leak detector
+extern fn dw_opens() -> int
+extern fn dw_closes() -> int
+
+const KIND_ERR = 0
+const KIND_FILE = 1
+const KIND_DIR = 2
+
+struct Stats:
+    files: int
+    dirs: int
+    nbytes: int          # `bytes` is a reserved word and cannot be a field name
+    skipped: int
+    ext_bytes: [string: int]
+    ext_count: [string: int]
+    top_path: [string]
+    top_size: [int]
+
+enum WalkErr:
+    OpenFailed(string, string)     # path, strerror
+    StatFailed(string, string)
+    TooDeep(string)
+
+fn err_str(e: WalkErr) -> string:
+    return match e:
+        OpenFailed(p, why):
+            "cannot open directory " + p + ": " + why
+        StatFailed(p, why):
+            "cannot stat " + p + ": " + why
+        TooDeep(p):
+            "depth limit reached at " + p
+
+fn new_stats() -> Stats:
+    return Stats(0, 0, 0, 0, [], [], [], [])
+
+# Keep the top-N largest files, largest first. Parallel arrays rather than an
+# array of structs so the report can print them without a second type.
+fn note_top(st: inout Stats, p: string, size: int, want: int):
+    at := len(st.top_size)
+    for i := 0; i < len(st.top_size); i += 1:
+        if size > st.top_size[i]:
+            at = i
+            break
+    if at >= want:
+        return
+    push(st.top_size, 0)
+    push(st.top_path, "")
+    for i := len(st.top_size) - 1; i > at; i -= 1:
+        st.top_size[i] = st.top_size[i - 1]
+        st.top_path[i] = st.top_path[i - 1]
+    st.top_size[at] = size
+    st.top_path[at] = p
+    if len(st.top_size) > want:
+        pop(st.top_size)
+        pop(st.top_path)
+
+fn ext_of(p: string) -> string:
+    e := path.ext(p)
+    if e == "":
+        return "(none)"
+    return strings.to_lower(e)
+
+# Walk one directory. Returns the byte total of the subtree, or the first error
+# if `strict`. The Dir handle lives for the whole body and is released by the
+# compiler on every exit from it.
+fn walk(dir: string, depth: int, maxdepth: int, strict: bool, top: int, st: inout Stats) -> Result(int, WalkErr):
+    d := dw_open(dir)
+    if is_null(d):
+        st.skipped += 1
+        if strict:
+            return Err(OpenFailed(dir, dw_errstr()))   # early return, handle still owned here
+        return Ok(0)
+    st.dirs += 1
+    total := 0
+    for:
+        name := ""
+        match dw_next(d):
+            Some(n):
+                name = n
+            None:
+                break
+        full := path.join(dir, name)
+        size := 0
+        kind := dw_stat(full, &size)
+        if kind == KIND_FILE:
+            st.files += 1
+            st.nbytes += size
+            total += size
+            e := ext_of(full)
+            st.ext_bytes[e] = st.ext_bytes.get(e, 0) + size
+            st.ext_count[e] = st.ext_count.get(e, 0) + 1
+            note_top(&st, full, size, top)
+        elif kind == KIND_DIR:
+            if depth + 1 > maxdepth:
+                if strict:
+                    return Err(TooDeep(full))          # early return from inside the loop
+                st.skipped += 1
+                continue                               # `continue` is a scope exit too
+            total += walk(full, depth + 1, maxdepth, strict, top, &st) or_return
+        elif kind == KIND_ERR:
+            st.skipped += 1
+            if strict:
+                return Err(StatFailed(full, dw_errstr()))
+    return Ok(total)
+
+fn human(n: int) -> string:
+    if n < 1024:
+        return str(n) + " B"
+    units := ["KiB", "MiB", "GiB", "TiB", "PiB"]
+    v := to_float(n)
+    u := 0
+    for v >= 1024.0 and u < len(units):
+        v = v / 1024.0
+        u += 1
+    scaled := to_int(v * 10.0 + 0.5)
+    return str(scaled / 10) + "." + str(scaled % 10) + " " + units[u - 1]
+
+fn report(st: Stats, top: int):
+    println("largest files")
+    if len(st.top_path) == 0:
+        println("  (none)")
+    for i := 0; i < len(st.top_path); i += 1:
+        println("  " + strings.pad_left(human(st.top_size[i]), 10, " ") + "  " + st.top_path[i])
+
+    println("")
+    println("by extension")
+    names := keys(st.ext_bytes)
+    weights := []int
+    for k in names:
+        push(weights, st.ext_bytes[k])
+    order := sort.argsort_desc(weights)
+    shown := 0
+    for i := 0; i < len(order); i += 1:
+        if shown >= top:
+            break
+        k := names[order[i]]
+        println("  " + strings.pad_left(human(st.ext_bytes[k]), 10, " ") +
+                strings.pad_left(str(st.ext_count[k]), 8, " ") + "  " + k)
+        shown += 1
+    if len(order) == 0:
+        println("  (none)")
+
+    println("")
+    tail := if st.skipped > 0:
+        ", " + str(st.skipped) + " skipped"
+    else:
+        ""
+    println("total " + human(st.nbytes) + " in " + str(st.files) + " files, " +
+            str(st.dirs) + " directories" + tail)
+
+# Proof, not assertion. Walk the tree `reps` times in strict mode so that every
+# unreadable entry propagates an Err out of a `walk` whose Dir handle is still
+# owned -- the `or_return` path. If the compiler's scope-exit free ever missed
+# one of those, `live` would climb with `reps` and the process would run out of
+# descriptors long before it finished.
+fn selftest(root: string, reps: int) -> int:
+    errs := 0
+    for i := 0; i < reps; i += 1:
+        st := new_stats()
+        match walk(root, 0, 64, true, 10, &st):
+            Ok(_):
+                pass
+            Err(_):
+                errs += 1
+    println("reps " + str(reps) + " errs " + str(errs))
+    println("opens " + str(dw_opens()) + " closes " + str(dw_closes()))
+    println("live " + str(dw_live()))
+    println("balance " + str(dw_opens() - dw_live()))
+    if dw_live() != 0:
+        println("LEAK")
+        return 1
+    println("ok")
+    return 0
+
+fn usage():
+    println("usage: tycho-du [--top N] [--depth N] [--strict] PATH...")
+    println("  --top N     how many files and extensions to list (default 10)")
+    println("  --depth N   how deep to descend (default 64)")
+    println("  --strict    stop at the first unreadable entry instead of counting it")
+    println("  --selftest N  walk PATH N times in strict mode and check that every")
+    println("                directory stream was released (prints live 0 / ok)")
+
+fn main():
+    c := cli.Cli([], [], [], [], [], [])
+    match cli.parse_checked(cli.argv(), ["top", "depth", "selftest"], ["strict", "help"]):
+        Ok(v):
+            c = v
+        Err(cli.Unknown(tok)):
+            die("tycho-du: unknown option " + tok)
+        Err(cli.NoValue(tok)):
+            die("tycho-du: " + tok + " needs a value")
+
+    if cli.flag(c, "help"):
+        usage()
+        exit(0)
+
+    top := 10
+    match strings.parse_int_checked(cli.get(c, "top", "10")):
+        Ok(n):
+            top = n
+        Err(_):
+            die("tycho-du: --top wants a number")
+    maxdepth := 64
+    match strings.parse_int_checked(cli.get(c, "depth", "64")):
+        Ok(n):
+            maxdepth = n
+        Err(_):
+            die("tycho-du: --depth wants a number")
+    if top < 1:
+        die("tycho-du: --top must be at least 1")
+
+    roots := cli.positionals(c)
+    if cli.has(c, "selftest"):
+        if len(roots) != 1:
+            die("tycho-du: --selftest N wants exactly one path")
+        n := 200
+        match strings.parse_int_checked(cli.get(c, "selftest", "200")):
+            Ok(v):
+                n = v
+            Err(_):
+                die("tycho-du: --selftest wants a number")
+        exit(selftest(roots[0], n))
+    if len(roots) == 0:
+        usage()
+        exit(2)
+
+    strict := cli.flag(c, "strict")
+    st := new_stats()
+    for r in roots:
+        size := 0
+        kind := dw_stat(r, &size)
+        if kind == KIND_FILE:
+            st.files += 1
+            st.nbytes += size
+            e := ext_of(r)
+            st.ext_bytes[e] = st.ext_bytes.get(e, 0) + size
+            st.ext_count[e] = st.ext_count.get(e, 0) + 1
+            note_top(&st, r, size, top)
+            continue
+        if kind != KIND_DIR:
+            die("tycho-du: not a readable file or directory: " + r)
+        match walk(r, 0, maxdepth, strict, top, &st):
+            Ok(_):
+                pass
+            Err(e):
+                die("tycho-du: " + err_str(e))
+    report(st, top)

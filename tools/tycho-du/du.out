@@ -1,0 +1,12 @@
+largest files
+       200 B  TMP/tree/b.md
+       100 B  TMP/tree/a.txt
+        50 B  TMP/tree/sub/c.txt
+         1 B  TMP/tree/sub/d.log
+
+by extension
+       200 B       1  .md
+       150 B       2  .txt
+         1 B       1  .log
+
+total 351 B in 4 files, 3 directories

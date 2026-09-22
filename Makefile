@@ -406,6 +406,16 @@ ledger-check: tychoc1
 fh-check: tychoc1
 	@sh tools/tycho-fh/run.sh
 
+# tycho-du: the only program in the tree that builds a `handle` with --shim,
+# which is the pair docs/reference/ffi.md recommends -- tycho-fh hand-builds a
+# static library instead, so until this landed the recommended spelling had no
+# worked user (the 2026-09-21 handle probe's finding 12). Its load-bearing leg is
+# the one no transcript shows: 200 strict walks over an unreadable directory,
+# each unwinding through or_return out of a frame that still owns its Dir, all
+# ending live=0 with opens==closes.
+du-check: tychoc1
+	@sh tools/tycho-du/run.sh
+
 grid-check: tychoc1
 	@sh tools/tycho-grid/run.sh
 

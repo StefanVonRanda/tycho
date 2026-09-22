@@ -234,6 +234,9 @@ dist/
 # the tycho-fh handle counter's golden
 # (tools/tycho-fh/fh.out), same line, same reason.
 !/tools/tycho-fh/*.out
+# the tycho-du disk-usage walker's report golden
+# (tools/tycho-du/du.out), same line, same reason.
+!/tools/tycho-du/*.out
 # the tycho-grid golden
 # (tools/tycho-grid/grid.out), same line, same reason.
 !/tools/tycho-grid/*.out

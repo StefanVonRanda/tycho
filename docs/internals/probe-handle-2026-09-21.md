@@ -112,9 +112,22 @@ The watchdog itself was defective on this host and was fixed first —
 
 ## Filing
 
-The program is kept out of tree for now. Its case for `tools/` is the strongest
-of any probe program so far: it would be the tree's **second** `handle` user and
-its **only** demonstration of `handle` plus `--shim` together, which finding 12
-shows nothing in the tree currently shows. That is a decision with a gate bill
-attached (`run.sh`, a lane, the reject-corpus counts), so it is left to the
-owner; this record is the artifact either way.
+**The program is in the tree** as [`tools/tycho-du/`](../../tools/tycho-du), with
+its report beside it as `FRICTION-OUTSIDE.md` — what
+[probe-procedure.md](probe-procedure.md) asks for when a probe program is worth
+keeping. The case was finding 12's: it is the tree's **second** `handle` user and
+its **only** demonstration of `handle` plus `--shim` together, which is the pairing
+`docs/reference/ffi.md` recommends and which nothing in the tree showed. Both FFI
+pages now point at it.
+
+`make du-check` is its gate, lane `[4c/35]`. The leg that earns it is the one no
+golden can show: 200 strict walks over a `chmod 000` directory, each unwinding
+through `or_return` out of a frame that still owns its `Dir`, all ending `live=0`
+with `opens == closes`. Both of the gate's load-bearing legs were run against
+deliberate breakage before being trusted — a corrupted golden reddens [1], and a
+destructor that does not decrement the live counter reddens [3a] and [3b] with
+`live 600` and `live 200`.
+
+The shim's comment claiming the destructor receives NULL was corrected on the way
+in: it is the same false claim `tools/tycho-fh/fh.c` carried, which is finding 5,
+and importing it unchanged would have re-seeded the defect this round closed.

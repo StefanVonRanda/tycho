@@ -7368,7 +7368,7 @@ run. `core.hooksPath` is unset on the machine this was found on. So this guard
 runs at push time for a developer who activated the hook, and not in the sweep.
 See 106.
 
-### 106. `parse-check` is RED, has been all day, and is in neither `make ci` nor the hook — **DRIFT CLEARED and `corpus-check` GATED 2026-09-19; the divergence inside it is OPEN and the owner's call**
+### 106. `parse-check` is RED, has been all day, and is in neither `make ci` nor the hook — **DRIFT CLEARED and `corpus-check` GATED 2026-09-19; the divergence CLOSED 2026-09-22; the lane's absence from the sweep is still the owner's call**
 
 > Pinned-by: grep -q 'make -s corpus-check' scripts/ci.sh
 > Pinned-by: make corpus-check
@@ -7482,15 +7482,23 @@ unexplained**, which is the only basis on which a census golden should move.
 `parse-check` sees — but it sees the one thing that broke it, for nothing, and it
 would have reddened at `f0078c52` on the day.
 
-**What is still red, deliberately:**
+**What was still red, deliberately, and is not any more:**
 
 ```text
 MSG-DISAGREE tests/reject/pkg/builtin_via_package/main.ty
 ```
 
-`make parse-check` now fails on **that and nothing else**. Which compiler is
-right is the owner's call under the recorded asymmetry, exactly as 87 was, and
-papering over it was the one thing this entry existed to prevent.
+`make parse-check` failed on **that and nothing else**, and which compiler was
+right was the owner's call under the recorded asymmetry, exactly as 87 was.
+It was settled by `91a2b294` (the wording) and the bookkeeping drift it left
+behind was cleared by `cf774335`. **Re-run 2026-09-22 after `tools/tycho-du`
+landed: `parse-check: all green` in 35.9s over 1406 files — leg5/6/8/10/11/15 all
+`disagreements=0`, and no `MSG-DISAGREE` line anywhere in the output.** The two
+compilers now agree on every file in the tree.
+
+**What is still the owner's call is only the cost question below**, and the
+cheaper half of it has moved: `parse-check` is 35.9s, not the 35s-plus-a-red-lane
+it was when this entry was written.
 
 **Still uncalled by any automatic run:** `parse-check` (35s) and `tychoc1-check`
 (188s). +223s on a ~290s sweep is the same cost argument as 104 and a much bigger
@@ -7501,7 +7509,7 @@ bill, so it stays a decision rather than a diff.
 > Pinned-by: sh scripts/builtin_qualified.sh
 > Pinned-by: grep -q 'is_builtin_name(nominal_name' src/tychoc.c
 
-The divergence [106](#106-parse-check-is-red-has-been-all-day-and-is-in-neither-make-ci-nor-the-hook--drift-cleared-and-corpus-check-gated-2026-09-19-the-divergence-inside-it-is-open-and-the-owners-call)
+The divergence [106](#106-parse-check-is-red-has-been-all-day-and-is-in-neither-make-ci-nor-the-hook--drift-cleared-and-corpus-check-gated-2026-09-19-the-divergence-closed-2026-09-22-the-lanes-absence-from-the-sweep-is-still-the-owners-call)
 left standing. `make parse-check` leg15 scores the two compilers' diagnostics
 against each other by MESSAGE, and it found this:
 
@@ -8262,7 +8270,7 @@ simply never a target.
 **Two are left out deliberately, and this is a decision rather than an
 oversight.** `typeparity` costs **65s** and `run_pkg.py` **143s** — +24% and +48%
 on the sweep. That is the same shape as `parse-check` in
-[106](#106-parse-check-is-red-has-been-all-day-and-is-in-neither-make-ci-nor-the-hook--drift-cleared-and-corpus-check-gated-2026-09-19-the-divergence-inside-it-is-open-and-the-owners-call)
+[106](#106-parse-check-is-red-has-been-all-day-and-is-in-neither-make-ci-nor-the-hook--drift-cleared-and-corpus-check-gated-2026-09-19-the-divergence-closed-2026-09-22-the-lanes-absence-from-the-sweep-is-still-the-owners-call)
 and gets the same treatment: measured, written down, and the owner's call.
 **§8.1's citation stays unbacked by any automatic run until that call is made**,
 which is the honest state and is said here rather than left implied.
@@ -8424,7 +8432,7 @@ plus `stat -f %m` otherwise.
 process and a working one and requires the watchdog to tell them apart; it fails
 on the parent commit on this host. It is the same shape as
 [104](#104-the-executable-defect-log-is-executed-by-nobody--make-ci-has-never-called-friction-check--fixed-2026-09-19-option-1-the-fact-pins-as-lane-1d213)
-and [106](#106-parse-check-is-red-has-been-all-day-and-is-in-neither-make-ci-nor-the-hook--drift-cleared-and-corpus-check-gated-2026-09-19-the-divergence-inside-it-is-open-and-the-owners-call):
+and [106](#106-parse-check-is-red-has-been-all-day-and-is-in-neither-make-ci-nor-the-hook--drift-cleared-and-corpus-check-gated-2026-09-19-the-divergence-closed-2026-09-22-the-lanes-absence-from-the-sweep-is-still-the-owners-call):
 a check that exists, works, and is attached to no verdict. The pin above is now
 that verdict. It was left out of `make ci` on the grounds that it sleeps through
 two controls; **measured here at 9.2s**, which is small enough that the cost

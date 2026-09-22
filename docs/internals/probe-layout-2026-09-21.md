@@ -115,8 +115,12 @@ these four features has.
 
 ## Filing
 
-The program is kept out of tree. If one of the two 2026-09-21 programs is brought
-in, this is the weaker candidate — its value is the harness, not the program — but
-finding 4 is the standing argument that `vector`, `align(N)` and swizzling have no
-worked user anywhere in the tree, and a probe cannot close that by being thrown
-away.
+The program is kept out of tree, and the afternoon's other one is not:
+`tydu` came in as [`tools/tycho-du/`](../../tools/tycho-du) because it closed a
+named gap (a `handle` built with `--shim`, which nothing demonstrated).
+`tgagrade` closes no gap that way — its value was the harness, not the program.
+
+But finding 4 is the standing argument on the other side: `vector[N]T`,
+`align(N)` and swizzling have **no worked user anywhere in the tree**, and a
+probe cannot close that by being thrown away. Whatever eventually does close it
+will need a program, and this record is what the next one should be aimed past.

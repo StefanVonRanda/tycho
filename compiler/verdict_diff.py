@@ -49,7 +49,9 @@ ROOTS = ("tests", "corelib", "tools", "examples", "server", "bench")
 # function of fully known type. The 7 left are template BODIES walked with `$T`
 # genuinely unbound, which no amount of work grounds.
 SIXB = 7
-EXPECT = 1405          # a leg that scores 0 of 0 is green by accident
+EXPECT = 1406          # a leg that scores 0 of 0 is green by accident
+                       # 1405 -> 1406: tools/tycho-du/main.ty, the handle
+                       # probe's program brought in tree (2026-09-22)
                        # 1401 -> 1403: the two unbound-opener reject fixtures
                        # (2026-09-21) -- an opener's result must be bound.
                        # 1362 -> 1365: L4 -- tests/lane_names.ty and the two

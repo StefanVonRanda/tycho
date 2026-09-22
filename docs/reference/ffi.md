@@ -85,9 +85,10 @@ need to isolate such state per thread or serialize the calls. See [Concurrency](
 Ergonomics live on the `tychoc` command line: `--link` (a raw linker flag), `--pkg`
 (pkg-config), and `--shim` (compile a companion `.c` alongside). For a complete worked binding
 over a real library, in-memory SQLite is at [`examples/sqlite/`](../../examples/sqlite) — note
-that it drives the C API through raw `ptr`, not through a `handle`. For a worked **handle**,
-see [`tools/tycho-fh/`](../../tools/tycho-fh), the only program in the tree that declares one
-outside the test suite.
+that it drives the C API through raw `ptr`, not through a `handle`. For a worked **handle**
+built the way this paragraph recommends — a `handle` plus `--shim` — see
+[`tools/tycho-du/`](../../tools/tycho-du); [`tools/tycho-fh/`](../../tools/tycho-fh)
+declares one too, over a hand-built static library.
 
 ---
 
@@ -365,10 +366,17 @@ for the out-parameter API, and `--pkg` for linking — against a library whose
 returned text pointer is genuinely transient. It carries **no `handle`
 declaration**: the db and statement are raw `ptr` and `sqlite3_close` is called
 by hand, so read it for the linking and out-parameter machinery, not for RAII.
-The worked `handle` is [`tools/tycho-fh/`](../../tools/tycho-fh) — `handle File:`
-over a hand-built static library — and `tests/ffi/main.ty` exercises one inside
-`make ffi`. Those two are the only `handle` declarations in the tree outside
-`tests/reject/`.
+The worked `handle` is [`tools/tycho-du/`](../../tools/tycho-du) — `handle Dir:`
+over an open POSIX directory stream, built with `--shim`, which is the pairing
+this page recommends and the one nothing in the tree demonstrated until 2026-09-22.
+[`tools/tycho-fh/`](../../tools/tycho-fh) declares one over a hand-built static
+library instead, and `tests/ffi/main.ty` exercises one inside `make ffi`. Those
+three are the only `handle` declarations in the tree outside `tests/reject/`.
+
+`tycho-du` is also the only program here written by someone who did not write the
+compiler; its first-contact report is
+[`FRICTION-OUTSIDE.md`](../../tools/tycho-du/FRICTION-OUTSIDE.md) beside it, and
+three of this page's own corrections came out of it.
 
 ### Limitations (by design)
 
