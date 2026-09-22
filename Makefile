@@ -571,6 +571,17 @@ friction-check:
 	@python3 scripts/friction_check.py --selfcheck
 	@python3 scripts/friction_check.py
 
+# The probe runner's own controls: a wedged process must be detected as quiet, a
+# working one must be left alone. Both were spelled for Linux (/proc, GNU find
+# -printf) and went CONSTANT on macOS, so the watchdog scored every probe on this
+# host as finished and truncated it at QUIET seconds -- and --selfcheck FAILED on
+# the parent commit the whole time, attached to no verdict (FRICTION 122). It was
+# left out of the sweep on the grounds that it sleeps through two controls;
+# measured at 9.2s, which is not a budget argument. ROADMAP.md 1 is the condition
+# this script exists to serve, so the instrument gets a lane like everything else.
+probe-selfcheck:
+	@sh scripts/probe_run.sh --selfcheck
+
 # The subset `make ci` runs: every pin that asserts a SPECIFIC FACT (a grep, a
 # test -f, an inline python3 -c), and none of the `make`/`sh scripts/` pins,
 # which re-run suites ci has just finished. That duplication is the whole reason
