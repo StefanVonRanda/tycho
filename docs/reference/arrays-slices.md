@@ -187,6 +187,51 @@ queue you can dequeue from the front.
 Reach for it when a count is small and bounded and you want the storage inline — no arena
 allocation, and the whole thing copies with its owner. `tools/tycho-grid/` uses one.
 
+## SIMD vectors (`vector[N]T`)
+
+`vector[N]T` is a `[N]T` whose arithmetic lowers to **one machine vector operation** instead
+of a loop over its lanes. Everything else is the same as `[N]T`: an inline value, copied with
+its owner, built from an array literal, indexed and index-assigned, `==` lane by lane, `len`
+is `N`, and `str` prints it like an array. It can be a struct field.
+
+```tycho
+struct Particle:
+    pos: vector[4]f32
+    id: int
+
+fn main():
+    a: vector[4]f32 = [1.0, 2.0, 3.0, 4.0]
+    b: vector[4]f32 = [10.0, 20.0, 30.0, 40.0]
+    c := a * to_f32(2.0) + b          # one vector multiply, one vector add
+    println(str(c))
+    c.(0, 1) = c.(1, 0)               # swizzle: swap two lanes at once
+    println(str(c.x) + " " + str(c.y) + " " + str(c.w))
+    p := Particle(c, 7)
+    p.pos.z = to_f32(0.5)
+    println(str(p.pos))
+```
+
+```output
+[12.0, 24.0, 36.0, 48.0]
+24.0 12.0 48.0
+[24.0, 12.0, 0.5, 48.0]
+```
+
+- `N` is a literal or an `int` `const`, a power of two from 2 to 64. `T` is `int`, `float`
+  or `f32`. The count is part of the type, and `vector[4]f32` is a different type from
+  `[4]f32`: the two cannot be mixed in one expression.
+- Arithmetic is element-wise with the same operators as `[N]T`, including a scalar on
+  either side. Integer `/` and `%` keep the divide-by-zero check and so run lane by lane.
+- **Swizzling:** `v.(i, j)` names several lanes at once and assigns them simultaneously.
+  A vector of up to four lanes also has `.x .y .z .w`, or `.r .g .b .a`.
+- A vector wider than the machine's register still works, split across registers, and the
+  compiler warns (`vector[4]float` is 32 bytes against a 16-byte baseline register).
+  `vector[4]f32` fits one.
+- There is no lane-wise `min`/`max`, and `math.clamp` refuses a vector (it is not
+  `comparable`). A clamp has to be written per lane.
+
+The exact rules are in [spec §5.3.11](../spec/03-types.md#5311-vectornt).
+
 ## Struct-of-arrays (`soa [T]`)
 
 `soa [Point]` stores a struct's fields as **parallel arrays** rather than an array of

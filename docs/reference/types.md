@@ -72,6 +72,20 @@ element `& 0xFF`) builds a binary buffer from computed bytes — the way to prod
 `bytes` with interior NULs in pure Tycho. `bytes` also crosses the [FFI](ffi.md)
 boundary as a `(pointer, length)` pair.
 
+It takes the same operators as `string`, with the same meanings:
+
+| Form | Result | Notes |
+| --- | --- | --- |
+| `len(b)` | `int` | byte count, O(1) |
+| `b[i]` | `int` | the byte as `0..255`; out of bounds aborts; not assignable |
+| `b[i:j]` | `bytes` | a fresh sub-buffer; out-of-range bounds **clamp silently**, like a string slice |
+| `a + b`, `b + 'c'` | `bytes` | concatenation; appending a char adds its one byte |
+| `a == b`, `a != b` | `bool` | byte-wise |
+
+Because the slice clamps, a slice that returned normally does not prove its range
+existed. When that is the thing being checked, use `strings.slice_bytes(b, start, stop)`,
+which returns an `Err` instead ([spec §5.2.6](../spec/03-types.md#526-bytes)).
+
 ## String escapes
 
 A string literal takes exactly five escapes; anything else is a compile error that

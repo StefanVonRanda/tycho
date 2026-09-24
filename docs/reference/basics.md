@@ -94,6 +94,12 @@ Compound assignment works for every binary operator (`+= -= *= /= %= &= |= ^= <<
 assignable place — a variable, an array element (`a[i] += 1`), a struct field (`p.x *= 2`), or a
 map entry (`m[k] += 1`).
 
+**Reserved words.** No name — variable, parameter, function or struct field — may be a keyword,
+and the type names are keywords: `int`, `float`, `bool`, `string`, `bytes`, `ptr`, `f32`, and
+the sized integers `u8`…`u64`, `i8`…`i64`. So `bytes: int` is not a legal field and `len := …`
+is (builtin names are not reserved). The full list of 42 is
+[appendix B](../spec/appendix-b-keywords.md#b1-reserved-words).
+
 ## Expressions
 
 - **Integers:** `+ - * / %` (`/` truncates toward zero, `%` is the remainder), unary `-`.
@@ -107,8 +113,9 @@ map entry (`m[k] += 1`).
 - **Strings:** `+` concatenates. `s[i]` reads the byte at index `i` as an `int` (`0`–`255`),
   bounds-checked; strings are immutable, so `s[i] = v` is a compile error.
 - **Comparisons:** `== != < > <= >=` produce `bool`. `==`/`!=` work on any matching pair
-  (recursing structurally through composites); ordering works on two `int`s or two `string`s
-  (strings compare lexicographically, by byte).
+  (recursing structurally through composites); ordering works on two values of one
+  numeric type (`int`, `float`, or a sized one like `u8`/`i32`/`f32`), two `char`s, or two
+  `string`s (strings compare lexicographically, by byte). `bool` is not ordered.
 - **Logic:** `and`, `or`, `not` on `bool`, producing `bool`. `and`/`or` short-circuit.
   Precedence, tightest first: comparisons, then `not`, `and`, `or` — so `a < b and not done` is
   `(a < b) and (not done)`.

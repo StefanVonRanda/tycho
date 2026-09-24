@@ -28,6 +28,10 @@ fn main():
     r.lo.x = 100               # nested field write, in place
 ```
 
+A field name follows the same rule as any other name: it may not be a
+[reserved word](basics.md#declarations-and-assignment), which includes the type names —
+`bytes: int` or `string: int` is refused.
+
 A field may be `int`, `float`, `bool`, `string`, an array (including an array of structs —
 even of the struct being defined, so `children: [Node]` builds a recursive tree), an
 `Option` (a nullable field, `age: Option(int)`), or another struct. A field that would make
@@ -54,6 +58,47 @@ a struct must be declared before it is used as a type. Two structs compare by va
 `==`/`!=` — field-wise, recursing into nested structs, arrays, and strings — so `a == b` is
 true exactly when `b` is an independent copy of `a`. A struct may be a "method" receiver; see
 [Functions](functions.md#methods-ufcs).
+
+### Layout: `packed` and `align(N)`
+
+An ordinary struct's layout is up to the implementation. Two declaration attributes pin it.
+
+**`packed struct`** removes all padding: its size is exactly the sum of its field sizes, each
+field sits right after the one before, and it is the one aggregate that converts to and from
+`bytes`, little-endian, for file formats and wire protocols.
+
+```tycho
+packed struct Ins:          # exactly 9 bytes: 1 + 4 + 4
+    op: u8
+    a: i32
+    b: i32
+
+fn main():
+    i := Ins(to_u8(3), to_i32(-1), to_i32(7))
+    raw := to_bytes(i)
+    back := from_bytes$(Ins)(raw)
+    println(str(size_of$(Ins)) + " " + str(len(raw)) + " " + str(back.a))
+```
+
+```output
+9 9 -1
+```
+
+Every field must be fixed-width: `int`, `float`, `bool`, `char`, a sized numeric
+(`u8`…`u64`, `i8`…`i64`, `f32`), a newtype over one, or another packed struct. A `string`,
+array, map, `Option` or other heap-owning field is refused. `from_bytes$` aborts unless the
+length is exactly `size_of$(T)`; see [builtins](builtins.md).
+
+**`align(N) struct`** raises the struct's alignment to `N` bytes (a power of two, at most 8,
+the arena's own alignment). Its size rounds up to a multiple of `N`, so every element of an
+array of it stays aligned. It never lowers alignment, and `packed` and `align` on one struct
+are refused.
+
+`align(N)` cannot be observed from inside Tycho: `size_of$` only accepts a packed struct.
+It matters at the C boundary, and checking it means reading the output of
+`tychoc --emit-c`.
+
+Rules: [spec §17.1a](../spec/12-aggregates.md#171a-packed-layout).
 
 ## Tuples and multiple return values
 

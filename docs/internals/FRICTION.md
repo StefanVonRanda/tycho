@@ -8656,24 +8656,28 @@ toolchain against a quoted spec line. The procedure's "check each finding agains
 
 ### 128. The residue: fourteen findings from 2026-09-21 that nothing has acted on — **OPEN**
 
+**2026-09-24: eleven acted on, marked in the table.** Open: the handle `close`/`is_null`
+design question, layout 4 (no `examples/` user of `vector`/`align`/swizzling), and the design
+halves of layouts 1 and 6.
+
 Listed rather than fixed, because they are doc-layer and design questions and the
 surface is frozen. Each is checked against `main` as of 2026-09-22.
 
 | from | finding |
 |---|---|
-| handle 8 | `close(h)` on a handle is absent from `reference/builtins.md`, which lists only `close(ch)` for channels — and `docs/README.md` calls that page "the single answer layer" |
-| handle 9 | the reserved set includes the type keywords, so `bytes: int` is not a legal field name; documented only in appendix B, named on no entry-path page |
-| handle 10 | `expected an expression` on a nested value `if` never says the rule is *tail position only* |
-| handle 13 | correct but unfindable: `-> Option(string)` on an `extern`, `--print-shims`, and that `tychoc --help` beats both FFI pages on the command line |
-| handle 14 | §25's scope-exit list — "block end, early `return`, `break`, `continue`, `or_return`" — reads as though a `continue` frees a handle owned by the enclosing scope. It does not; the list is about the owning scope |
+| handle 8 | **FIXED 2026-09-24:** a `close(h)` row in `reference/builtins.md`. `close(h)` on a handle is absent from `reference/builtins.md`, which lists only `close(ch)` for channels — and `docs/README.md` calls that page "the single answer layer" |
+| handle 9 | **FIXED 2026-09-24:** stated in `reference/basics.md` and `structs-tuples.md`. the reserved set includes the type keywords, so `bytes: int` is not a legal field name; documented only in appendix B, named on no entry-path page |
+| handle 10 | **FIXED 2026-09-24:** both compilers now name the tail-position rule; `tests/reject/value_if_nested.ty`. `expected an expression` on a nested value `if` never says the rule is *tail position only* |
+| handle 13 | **FIXED 2026-09-24:** `reference/ffi.md` Linking now tables every flag `--help` lists. correct but unfindable: `-> Option(string)` on an `extern`, `--print-shims`, and that `tychoc --help` beats both FFI pages on the command line |
+| handle 14 | **FIXED 2026-09-24:** reworded in spec §25 and `reference/ffi.md`. §25's scope-exit list — "block end, early `return`, `break`, `continue`, `or_return`" — reads as though a `continue` frees a handle owned by the enclosing scope. It does not; the list is about the owning scope |
 | handle — | after `close(h)`, `is_null` cannot distinguish "closed" from "never opened", because `close` nulls the variable. Use-after-close is documented as permitted and is not compile-rejected, so the one remaining misuse of an exactly-once resource is undetectable in both directions. A design question |
-| layout 1 | `size_of$` requires a packed struct and `packed`/`align(N)` are mutually exclusive, so `align(N)` is **unobservable from inside the language**. The probe had to emit C and run `cc` to learn its `align(8)` did anything |
-| layout 3 | `vector[`, `align(`, swizzling and `packed` appear **nowhere** in `docs/reference/`. A reader following README → tutorial → reference finishes believing Tycho has no SIMD type, no layout control and no swizzling |
+| layout 1 | **DOCUMENTED 2026-09-24** as a limitation in `reference/structs-tuples.md`; the design question stays open. `size_of$` requires a packed struct and `packed`/`align(N)` are mutually exclusive, so `align(N)` is **unobservable from inside the language**. The probe had to emit C and run `cc` to learn its `align(8)` did anything |
+| layout 3 | **FIXED 2026-09-24:** `vector`/swizzling in `reference/arrays-slices.md`, `packed`/`align` in `structs-tuples.md`, each with a run fence. `vector[`, `align(`, swizzling and `packed` appear **nowhere** in `docs/reference/`. A reader following README → tutorial → reference finishes believing Tycho has no SIMD type, no layout control and no swizzling |
 | layout 4 | `vector[N]T`, `align(N)` and swizzling have **zero** users in `examples/` and `corelib/`; `packed` has four, and `corelib/raster/raster.ty` was singled out as the one teaching example any of the four has |
-| layout 6 | no lane-wise min/max, and `math.clamp` refuses a vector (`does not satisfy comparable(T)`), so the clamp — what a grading kernel does as often as the multiply — drops out of the vector unit |
-| layout 8a | §5.5 omits `u8` from the ordered scalars, the mixed-type diagnostic omits `char`/`u32`/`u64`/`f32`, and the compiler's real rule is in neither. Two documents, two different wrong answers |
-| layout 8b | `str()` on a vector works and is undocumented; a vector as a struct field works and is undocumented |
-| layout 8c | `bytes` `+` and `[a:b]` are in the spec and absent from `reference/types.md`'s `bytes` section — correct docs, wrong layer |
+| layout 6 | **DOCUMENTED 2026-09-24** as a limitation beside `vector`; the feature stays open. no lane-wise min/max, and `math.clamp` refuses a vector (`does not satisfy comparable(T)`), so the clamp — what a grading kernel does as often as the multiply — drops out of the vector unit |
+| layout 8a | **FIXED 2026-09-24:** §5.5, `reference/basics.md` and the diagnostic (both compilers) now carry the compiler's real rule. §5.5 omits `u8` from the ordered scalars, the mixed-type diagnostic omits `char`/`u32`/`u64`/`f32`, and the compiler's real rule is in neither. Two documents, two different wrong answers |
+| layout 8b | **FIXED 2026-09-24:** both stated, and exercised by the `vector` fence. `str()` on a vector works and is undocumented; a vector as a struct field works and is undocumented |
+| layout 8c | **FIXED 2026-09-24:** an operator table in `reference/types.md`. `bytes` `+` and `[a:b]` are in the spec and absent from `reference/types.md`'s `bytes` section — correct docs, wrong layer |
 | both | **FIXED 2026-09-24, #129.** two `-Wunused-value` warnings out of `core:strings`' `slice_bytes`/`slice_str` land in **every** user's build, naming a generated line in a file that is then deleted. Both probes hit them independently and both spent time establishing they had not done something wrong |
 
 **The shape of the residue is one finding.** Nine of the fourteen are the same

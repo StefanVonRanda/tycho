@@ -286,8 +286,10 @@ permitted to *return* a handle) and released without explicit calls.
   above. Both were accepted and silently IGNORED until 2026-08-14 — a `sink`
   callee borrowed exactly like a default parameter — which is why they are now
   refused at the declaration. The same rule covers `Task(T)` and `Channel(T)`.
-- **Scope-exit free.** The owning variable's destructor runs at every scope exit
-  — block end, early `return`, `break`, `continue`, `or_return`.
+- **Scope-exit free.** The owning variable's destructor runs at every exit from
+  the **owning** scope — block end, early `return`, `break`, `continue`,
+  `or_return`. A `break` or `continue` leaves only the scopes inside its loop, so
+  it frees a handle declared in the loop body and not one owned outside the loop.
 - **Borrow on pass.** Passing a handle passes the `void*`; the callee does **not**
   free it — only the owning scope does.
 - **Affine, exactly one owner.** A handle MUST NOT be copied, and a handle

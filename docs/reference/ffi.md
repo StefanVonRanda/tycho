@@ -281,7 +281,9 @@ fn run():
 ```
 
 - **RAII.** The destructor `free:` runs at the owning variable's scope exit —
-  every exit (block end, early `return`, `break`/`continue`). Freed exactly once.
+  every way out of *that* scope (block end, early `return`, `break`/`continue`,
+  `or_return`). A `continue` frees a handle declared inside the loop body, not one
+  owned by a scope around the loop. Freed exactly once.
 - **Borrow on pass.** Passing a handle to a fn/extern passes the `void*`; the
   callee does not free it. Only the owning scope does.
 - **Affine, fail-closed.** A handle is opaque (no deref) and can't be copied,
@@ -342,6 +344,21 @@ A **shim** is the standard way to adapt a C API that the FFI can't express
 directly — for example an out-parameter constructor like `sqlite3_open(path,
 &db)`. Write a small C wrapper that returns the handle instead, declare the
 wrapper as an `extern fn`, and pass the C file with `--shim`.
+
+The flags, all on the `tychoc` command line (`tychoc --help` groups them the same way):
+
+| Flag | Does |
+| --- | --- |
+| `--link <lib>` | a bare `-l<lib>` for a library the source does not name |
+| `--pkg <name>` | add `pkg-config --cflags --libs <name>` |
+| `--shim <file.c>` | compile and link a companion C file |
+| `-L<dir>`, `-I<dir>` | library and include search paths |
+| `--cc <compiler>` | use another C compiler |
+| `--print-shims` | print the `<pkg>_shim.c` files the program needs, transitively, and exit: what a hand-written `cc` line must pass |
+| `--print-deps` | print the pkg-config names it needs, transitively, and exit |
+
+A C function that can return `NULL` for a string is declared `-> Option(string)`; see
+[nullable string return](#type-mapping).
 
 ### Capabilities
 
