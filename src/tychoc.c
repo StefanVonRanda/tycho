@@ -5860,7 +5860,7 @@ static const char *ufcs_generic(const char *name, const char *pkg, Type recv) {
  * independently with no shared/sticky resolved state (the source of the prior
  * multi-instantiation, typed-local, and nested-call bugs). */
 typedef struct { Proc *tmpl; char *name; Type params[16]; int nparams; Type ret; Type *binds; Stmt **body; int nbody;
-                 int64_t spvals[16]; int nsp; const char *cfile, *csrc; int cline; int parent; } GInst;   /* const generics 1.6B: this instance's `$N` size-param values (names from tmpl->sizeparams). cfile/csrc/cline: the call that chose these types, for a refusal raised in the substituted body */
+                 int64_t spvals[16]; int nsp; const char *cfile, *csrc; int cline; int parent; char vlane; } GInst; static char vlane_kind(Proc *gt, Type *binds); static void gen_vlane(FILE *o, Proc *pr, char k);   /* vlane: 'n'/'x'/'c' for a lane-wise core:math instance (both fns after main()). const generics 1.6B: this instance's `$N` size-param values (names from tmpl->sizeparams). cfile/csrc/cline: the call that chose these types, for a refusal raised in the substituted body */
 static GInst *g_ginsts; static int g_nginsts = 0, g_nginsts_cap = 0;
 static Stmt **clone_block(Stmt **body, int n, Type *binds);   /* per-instance body clone; defined near ginst_to_proc */
 static Proc **g_inst_procs; static int g_ninst_procs = 0, g_inst_procs_cap = 0;   /* resolved generic-instance Procs, shared by the prototype + body emit loops (Stage-2 #3) */
@@ -9617,9 +9617,9 @@ static void instantiate_generic(Proc *gt, Expr *e) {
                         "Give it explicitly: %s$(<the type for $%s>)(...)", gt->name, tn, gt->name, tn);
     }
 
-    /* generics: enforce `where` constraints up front -- a clear signature error
+    char vk = vlane_kind(gt, binds);   /* generics: enforce `where` constraints up front (not at a lane-wise core:math vector, spec 03 §5.3.11) -- a clear signature error
      * instead of a deep "cannot add string and int" inside the substituted body. */
-    for (int c = 0; c < gt->ncon; c++) {
+    for (int c = 0; c < gt->ncon && !vk; c++) {
         Type ct = binds[(int)(gt->con_tp[c] - T_TYPARAM_BASE)];
         if (ct == T_UNBOUND) continue;   /* this `where` names a parameter no argument fixed */
         if (gt->con_nset[c] > 0) {   /* type-set `T: a | b | ...`: ct's base must be one of the listed types */
@@ -9695,7 +9695,7 @@ static void instantiate_generic(Proc *gt, Expr *e) {
     gi.binds = (Type *)xmalloc((size_t)(g_ntyparams > 0 ? g_ntyparams : 1) * sizeof(Type));
     for (int i = 0; i < g_ntyparams; i++) gi.binds[i] = binds[i];
     gi.body = clone_block(gt->body, gt->nbody, gi.binds);   /* Stage-2: the instance's own `$T`-substituted body */
-    gi.nbody = gt->nbody;
+    gi.nbody = gt->nbody; gi.vlane = vk; if (vk) { gi.body = NULL; gi.nbody = 0; }   /* a vlane body is emitted by gen_vlane, not resolved */
     for (int j = 0; j < gt->nparams; j++) gi.params[j] = cparams[j];
     gi.nsp = gt->nsizeparams;   /* const generics 1.6B: record this instance's `$N` values, for the body's int consts */
     for (int i = 0; i < gt->nsizeparams; i++)
@@ -14697,7 +14697,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
      * up front (so a nested-generic instance already has its prototype above) and
      * gen_proc is self-contained, so this is emit-only. */
     for (int i = 0; i < g_nginsts; i++)
-        gen_proc(o, g_inst_procs[i]);
+        if (g_ginsts[i].vlane) gen_vlane(o, g_inst_procs[i], g_ginsts[i].vlane); else gen_proc(o, g_inst_procs[i]);
     fputs("int main(int argc, char **argv) {\n", o);
     fputs("    tycho_hash_seed_init();  /* random per-process map-hash seed, before any map use */\n", o);
     fputs("    tycho_argc = argc; tycho_argv = argv;  /* exposed to the program via args() */\n", o);
@@ -15453,4 +15453,47 @@ static void close_param_check(Expr *e) {
     if (v && v->param)
         die_at(e->line, "'%s' is a handle parameter -- the caller owns it and frees it at its scope exit; "
                         "`close` it there, not in the callee", e->sval);
+}
+
+/* core:math's min/max/clamp at a `vector[N]T` (spec 03 §5.3.11): lane-wise, and
+ * the same answer per lane as the scalar body -- min is `a < b ? a : b`, max
+ * `a > b ? a : b`, clamp tests `x < lo` first, then `x > hi`. Recognised by the
+ * template's name AND its file lying under the corelib root, so a user package
+ * that happens to be called `math` keeps its own body. The `where
+ * comparable(T)` stays as written: it describes the scalar domain, and every
+ * vector element type (int, float, f32) is ordered. Returns 'n'/'x'/'c' or 0. */
+static char vlane_kind(Proc *gt, Type *binds) {
+    if (gt->ntyparams != 1 || !gt->srcfile) return 0;
+    if (!IS_VEC(binds[(int)(gt->typarams[0] - T_TYPARAM_BASE)])) return 0;
+    char k = !strcmp(gt->name, "math__min") ? 'n' : !strcmp(gt->name, "math__max") ? 'x'
+           : !strcmp(gt->name, "math__clamp") ? 'c' : 0;
+    if (!k) return 0;
+    const char *cut = strrchr(gt->srcfile, '/');
+#ifdef _WIN32
+    const char *bs = strrchr(gt->srcfile, '\\');
+    if (bs && (!cut || bs > cut)) cut = bs;
+#endif
+    char *dir = cut ? xstrndup(gt->srcfile, (size_t)(cut - gt->srcfile)) : xstrndup(".", 1);
+    int in = under_corelib(dir);
+    free(dir);
+    return in ? k : 0;
+}
+
+/* The body of a vlane_kind instance. C has no vector `?:` (gcc and clang take
+ * it only in C++/OpenCL), so the select is the mask form: a vector compare
+ * yields all-ones/all-zeros lanes of the element's width, and a same-size
+ * vector cast is a bit reinterpretation in both compilers. One compare and one
+ * blend per select; scripts/vector_check.sh pins the text. */
+static void gen_vlane(FILE *o, Proc *pr, char k) {
+    gen_signature(o, pr);
+    fprintf(o, " {\n    (void)_parent;\n");
+    if (k == 'c') {
+        fprintf(o, "    __typeof__(h_x.v < h_lo.v) _ml = h_x.v < h_lo.v, _mh = h_x.v > h_hi.v;\n");
+        fprintf(o, "    __typeof__(_ml) _t = ((__typeof__(_ml))h_hi.v & _mh) | ((__typeof__(_ml))h_x.v & ~_mh);\n");
+        fprintf(o, "    %s_r;\n    _r.v = (__typeof__(h_x.v))(((__typeof__(_ml))h_lo.v & _ml) | (_t & ~_ml));\n", c_type(pr->ret));
+    } else {
+        fprintf(o, "    __typeof__(h_a.v < h_b.v) _m = h_a.v %c h_b.v;\n", k == 'n' ? '<' : '>');
+        fprintf(o, "    %s_r;\n    _r.v = (__typeof__(h_a.v))(((__typeof__(_m))h_a.v & _m) | ((__typeof__(_m))h_b.v & ~_m));\n", c_type(pr->ret));
+    }
+    fprintf(o, "    return _r;\n}\n\n");
 }

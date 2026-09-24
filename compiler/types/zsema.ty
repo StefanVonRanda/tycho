@@ -719,7 +719,16 @@ fn _generic_call2(cs: inout C, l: int, si: int, spelt: string, ts: [ast.Ty], arg
         if not (tp in b) and not _tp_in_params(&cs, cs.sg[si], tp):
             _cerr(&cs, "no argument fixes '" + spelt + "''s type parameter $" + tp + " -- it appears only in the return type. Give it explicitly: " + spelt + "$(<the type for $T>)(...)")
             return "?"
-    for w in cs.sg[si].whs:
+    # core:math's min/max/clamp at a vector are lane-wise (src/tychoc.c@vlane_kind):
+    # no `where` check and no body walk -- the emitter writes the body.
+    tp0 := ""
+    if len(cs.sg[si].tps) == 1:
+        tp0 = cs.sg[si].tps[0]
+    vl := cs.sg[si].name in cs.vmath and tp0 in b and _head(b[tp0]) == "vec"
+    whs := cs.sg[si].whs
+    if vl:
+        whs = []string
+    for w in whs:
         ci := 0
         for ci < len(w) and w[ci] != 58:
             ci += 1
@@ -779,7 +788,8 @@ fn _generic_call2(cs: inout C, l: int, si: int, spelt: string, ts: [ast.Ty], arg
         if k == "chan":
             _cerr(&cs, "a function cannot return a channel -- create it in the owning scope and pass it down")
             return "?"
-        _inst_body(&cs, cs.sg[si], b, l, spelt)
+        if not vl:
+            _inst_body(&cs, cs.sg[si], b, l, spelt)
         return r
     _inst_body(&cs, cs.sg[si], b, l, spelt)
     return "void"

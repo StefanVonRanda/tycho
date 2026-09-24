@@ -92,7 +92,8 @@ returns a fresh value (value semantics; §31.1).
 ### 32.1 `math`
 
 Scalar math (pure Tycho). Generic `min`/`max`/`clamp(x, lo, hi)` over any
-comparable type, `sign(x)` over any numeric (returns int −1/0/1); integer-specific
+comparable type, and lane-wise over a `vector[N]T` ([§5.3.11](03-types.md#5311-vectornt));
+`sign(x)` over any numeric (returns int −1/0/1); integer-specific
 `abs`, `gcd`, `ipow(base, exp)`. (`sqrt`/`pow`/`floor`/`fabs` are float builtins,
 not here.) `docs/reference/corelib.md:57-60`.
 

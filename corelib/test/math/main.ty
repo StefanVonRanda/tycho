@@ -31,3 +31,18 @@ fn main():
     # the finite cases, int and float, must be untouched by that edge
     println("sign(2.5)=" + str(math.sign(2.5)) + " sign(-2.5)=" + str(math.sign(0.0 - 2.5)))
     println("sign(7)=" + str(math.sign(7)) + " sign(-7)=" + str(math.sign(0 - 7)) + " sign(0)=" + str(math.sign(0)))
+    # min/max/clamp at a vector[N]T are LANE-WISE, one compare and one blend per
+    # lane set (spec 03 §5.3.11), and each lane gives the scalar body's answer:
+    # clamp tests x < lo before x > hi, so with lo > hi a lane below lo is lo.
+    a: vector[4]f32 = [1.0, 5.0, 0.5, 300.0]
+    b: vector[4]f32 = [2.0, 2.0, 2.0, 2.0]
+    lo: vector[4]f32 = [0.0, 0.0, 1.0, 0.0]
+    hi: vector[4]f32 = [255.0, 255.0, 255.0, 255.0]
+    println("vmin=" + str(math.min(a, b)) + " vmax=" + str(math.max(a, b)) + " vclamp=" + str(math.clamp(a, lo, hi)))
+    x: vector[2]float = [1.5, 0.0 - 2.5]
+    y: vector[2]float = [0.5, 0.5]
+    println("vmin2=" + str(math.min(x, y)) + " vmax2=" + str(math.max(x, y)))
+    i: vector[2]int = [9, 0 - 9]
+    lo2: vector[2]int = [5, 5]
+    hi2: vector[2]int = [0, 0]
+    println("vclamp_inverted=" + str(math.clamp(i, lo2, hi2)) + " scalar=" + str(math.clamp(9, 5, 0)) + "," + str(math.clamp(0 - 9, 5, 0)))

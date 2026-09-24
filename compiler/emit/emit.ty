@@ -132,9 +132,10 @@ struct C:
     dbgfile: string                    # -g: src/tychoc.c@g_line_file, empty when off
     fpath: [string]                    # unit i's path, for an f-string HOLE's lex error
     fsrc: [string]                     # unit i's text, so that error shows the real line
+    fcore: [bool]                      # unit i lies under the corelib root (_vmath_of)
 
 fn _new() -> C:
-    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt, [], [], [], false, []string: bool, []string: bool, []int, [], [], [], "", [], [])
+    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt, [], [], [], false, []string: bool, []string: bool, []int, [], [], [], "", [], [], [])
 
 fn _bad(msg: string):
     die("tychoc1: " + msg)
@@ -7670,6 +7671,39 @@ fn _ref_b(b: [ast.Stmt], m: inout [string: bool]):
     for s in b:
         _ref_s(s, &m)
 
+# src/tychoc.c@vlane_kind: core:math's min/max/clamp at a vector. "" when not.
+fn _vmath_of(cs: inout C, gi: int, tg: [string]) -> string:
+    if len(tg) == 0 or not _is_vec(tg[0]):
+        return ""
+    f := cs.gff[gi]
+    if f < 0 or f >= len(cs.fcore) or not cs.fcore[f]:
+        return ""
+    n := cs.gf[gi].name
+    if n == "math__min" or n == "math__max" or n == "math__clamp":
+        return n[6:]
+    return ""
+
+# src/tychoc.c@gen_vlane, the same text: C has no vector `?:`, so each select is
+# a lane mask from one vector compare and a blend through a same-size cast.
+fn _vlane_body(cs: inout C, fi: int, k: string) -> (string, string):
+    rt := _ctyz(&cs, cs.fds[fi].ret)
+    sig := rt + "h_" + cs.fds[fi].name + "(Arena *_parent"
+    for j := 0; j < len(cs.fds[fi].pnames); j += 1:
+        sig = sig + ", " + _ctyz(&cs, cs.fds[fi].ptypes[j]) + "h_" + cs.fds[fi].pnames[j]
+    sig = sig + ")"
+    b := sig + " {\n    (void)_parent;\n"
+    if k == "clamp":
+        b = b + "    __typeof__(h_x.v < h_lo.v) _ml = h_x.v < h_lo.v, _mh = h_x.v > h_hi.v;\n"
+        b = b + "    __typeof__(_ml) _t = ((__typeof__(_ml))h_hi.v & _mh) | ((__typeof__(_ml))h_x.v & ~_mh);\n"
+        b = b + "    " + rt + "_r;\n    _r.v = (__typeof__(h_x.v))(((__typeof__(_ml))h_lo.v & _ml) | (_t & ~_ml));\n"
+    else:
+        op := "<"
+        if k == "max":
+            op = ">"
+        b = b + "    __typeof__(h_a.v < h_b.v) _m = h_a.v " + op + " h_b.v;\n"
+        b = b + "    " + rt + "_r;\n    _r.v = (__typeof__(h_a.v))(((__typeof__(_m))h_a.v & _m) | ((__typeof__(_m))h_b.v & ~_m));\n"
+    return (sig + ";\n", b + "    return _r;\n}\n\n")
+
 fn _fnbody(cs: inout C, fi: int, body: [ast.Stmt]) -> (string, string):
     nm := cs.fds[fi].name
     rt := cs.fds[fi].ret
@@ -7840,9 +7874,10 @@ fn _ends_ret(b: [ast.Stmt]) -> bool:
 # f-string hole is re-tokenized here (@_fstr, @_fv), and a fragment carries no
 # name and numbers its own lines from 0, so a lex error inside one printed
 # `tychoc1: line 1: ...`. Empty arrays keep the old behaviour.
-fn program_in(pfx: [string], us: [ast.Unit], dbgf: string, fpath: [string], fsrc: [string]) -> string:
+fn program_in(pfx: [string], us: [ast.Unit], dbgf: string, fpath: [string], fsrc: [string], fcore: [bool]) -> string:
     cs := _new()
     cs.dbgfile = dbgf
+    cs.fcore = fcore
     for fp in fpath:
         push(cs.fpath, fp)
     for fsc in fsrc:
@@ -7928,7 +7963,13 @@ fn program_in(pfx: [string], us: [ast.Unit], dbgf: string, fpath: [string], fsrc
             push(tg, parts[q])
         mb := _bind(&cs, cs.gf[gi].typarams, tg)
         cs.cf = cs.gff[gi]
-        pc2, bc2 := _fnbody(&cs, fj, cs.gf[gi].body)
+        vk := _vmath_of(&cs, gi, tg)
+        pc2 := ""
+        bc2 := ""
+        if len(vk) > 0:
+            pc2, bc2 = _vlane_body(&cs, fj, vk)
+        else:
+            pc2, bc2 = _fnbody(&cs, fj, cs.gf[gi].body)
         _unbind(&cs, mb)
         protos = protos + pc2
         fns = fns + bc2

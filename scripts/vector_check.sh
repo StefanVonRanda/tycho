@@ -184,6 +184,36 @@ done
 "$CC" "$D/ps/s.ty" -o "$D/sb" > /dev/null || fail "$CC: the array control does not link"
 [ "$("$D/vb")" = "$("$D/sb")" ] || fail "$CC: the vector program and its scalar control disagree"
 
+# [3b] core:math's min/max/clamp at a vector are LANE-WISE, and whole-vector:
+#      a mask from one vector compare and a blend (C has no vector `?:`), never
+#      a per-lane loop. The C text is the claim both compilers must make; the
+#      packed compare in the assembly is what the text has to buy, at -O1.
+rm -rf "$D/pm"; mkdir -p "$D/pm"
+cat > "$D/pm/m.ty" <<'TY'
+package main
+import "core:math"
+
+fn main():
+    a: vector[4]f32 = [1.0, 300.0, 7.0, 0.5]
+    lo: vector[4]f32 = [0.0, 0.0, 0.0, 1.0]
+    hi: vector[4]f32 = [255.0, 255.0, 255.0, 255.0]
+    println(str(math.clamp(a, lo, hi)) + " " + str(math.min(a, hi)) + " " + str(math.max(a, lo)))
+TY
+"$CC" "$D/pm/m.ty" --emit-c -o "$D/m" > /dev/null || fail "$CC: the lane-wise math probe does not compile"
+grep -qF '_r.v = (__typeof__(h_a.v))(((__typeof__(_m))h_a.v & _m) | ((__typeof__(_m))h_b.v & ~_m));' "$D/m.c" \
+    || fail "$CC: math.min/max at a vector is not the whole-vector mask blend"
+grep -qF '_r.v = (__typeof__(h_x.v))(((__typeof__(_ml))h_lo.v & _ml) | (_t & ~_ml));' "$D/m.c" \
+    || fail "$CC: math.clamp at a vector is not the whole-vector mask blend"
+case "$(uname -m)" in
+    arm64|aarch64) CMP_RE='\bfcm(gt|ge|eq|lt|le)(\.4s\b|[[:space:]]+v[0-9]+\.4s\b)' ;;
+    *)             CMP_RE='\b(v?cmp[a-z]*ps|v?(min|max)ps)\b' ;;
+esac
+nc=$(cc -O1 -fwrapv -std=c11 -S "$D/m.c" -o - 2>/dev/null | grep -cE "$CMP_RE" || true)
+[ "$nc" -gt 0 ] || fail "$CC: at -O1 the lane-wise math probe emits no packed compare"
+"$CC" "$D/pm/m.ty" -o "$D/mb" > /dev/null || fail "$CC: the lane-wise math probe does not link"
+[ "$("$D/mb")" = "[1.0, 255.0, 7.0, 1.0] [1.0, 255.0, 7.0, 0.5] [1.0, 300.0, 7.0, 1.0]" ] \
+    || fail "$CC: the lane-wise math probe printed '$("$D/mb")'"
+
 # [4] behaviour, against the fixture's own golden
 "$CC" "$FIX" -o "$D/b" > /dev/null || fail "$CC cannot build $FIX"
 "$D/b" > "$D/b.out" || fail "$CC: $FIX died"
@@ -372,4 +402,4 @@ for CC in ./tychoc ./tychoc1; do
     done
 done
 
-echo "vector-check: ok (BOTH compilers emit a GCC vector; the aggregate wants 8-byte alignment and $ctl without the attribute; $L3; both agree on the golden and on all six refusals; a literal lane pays no bounds check and a runtime one still traps; $L7; an over-wide vector warns ONCE at the default and under x86-64-v2, is SILENT under x86-64-v3/v4/--native, and a 16-byte one is silent everywhere)"
+echo "vector-check: ok (BOTH compilers emit a GCC vector; the aggregate wants 8-byte alignment and $ctl without the attribute; $L3; both agree on the golden and on all six refusals; math.min/max/clamp at a vector are one mask blend with a packed compare; a literal lane pays no bounds check and a runtime one still traps; $L7; an over-wide vector warns ONCE at the default and under x86-64-v2, is SILENT under x86-64-v3/v4/--native, and a 16-byte one is silent everywhere)"

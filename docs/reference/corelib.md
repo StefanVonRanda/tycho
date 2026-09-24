@@ -54,9 +54,9 @@ element type instead of a family of per-type siblings.
 
 ## Packages
 
-- **`math`** — scalar math. `min`/`max`/`clamp(x, lo, hi)` are generic over any
-  comparable type (int/float/string/char) and `sign(x)` over any numeric type
-  (returns an int −1/0/1); `abs`, `gcd`, `ipow(base, exp)` (exp ≥ 0) are integer-
+- **`math`** — `min`/`max`/`clamp(x, lo, hi)` are generic over any comparable type
+  (int/float/string/char) and lane-wise at a `vector[N]T`; `sign(x)` over any numeric
+  type (returns an int −1/0/1); `abs`, `gcd`, `ipow(base, exp)` (exp ≥ 0) are integer-
   specific. (`sqrt`/`pow`/`floor`/`fabs` are float builtins.)
 - **`fmath`** — float-only helpers (scalar `min`/`max`/`clamp`/`sign` live in `math`):
   `pi`, `e`, `round` (half away from zero), `trunc`, `lerp(a, b, t)`,

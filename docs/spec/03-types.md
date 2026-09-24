@@ -484,6 +484,18 @@ Integer `/` and `%` keep the runtime divide guard of §16.8 and are therefore
 evaluated lane by lane; every other admitted operator is a single vector
 operation.
 
+`core:math`'s `min(a, b)`, `max(a, b)` and `clamp(x, lo, hi)` accept a vector
+in place of their scalar `$T`: every argument MUST be the same vector type, and
+the result is that type. They are **lane-wise**, and each lane is the value the
+scalar function gives for that lane: `min` is `a` where `a < b` and `b`
+otherwise, `max` is `a` where `a > b` and `b` otherwise, and `clamp` is `lo`
+where `x < lo`, else `hi` where `x > hi`, else `x` -- so with `lo > hi` a lane
+below `lo` is `lo`, exactly as the scalar is. Each is a whole-vector compare
+and select, not a loop over the lanes. Their `where comparable(T)` names the
+scalar domain and is not applied at a vector: every admitted element type is
+ordered. A vector is otherwise not `comparable`, so no other `comparable(T)`
+generic accepts one.
+
 Lanes MAY be swizzled: `v.(0, 1) = v.(1, 0)` names two of them at once and
 assigns simultaneously ([§17.5](12-aggregates.md#175-destructuring)). A vector of
 four lanes or fewer also names them `.x .y .z .w`, or `.r .g .b .a` for the same
@@ -502,7 +514,8 @@ fn main():
 ```
 
 > Provenance: `src/tychoc.c@vec_of`, and the lowering at
-> `src/tychoc.c@gen_ew_arith`. The alignment the emitted aggregate asks for is
+> `src/tychoc.c@gen_ew_arith`; the lane-wise `core:math` instances at
+> `src/tychoc.c@vlane_kind` and `src/tychoc.c@gen_vlane`. The alignment the emitted aggregate asks for is
 > pinned to the 8 bytes `runtime/tycho_rt.c@arena_alloc_slow` guarantees, so a
 > vector-holding value is never under-aligned in an arena. Gated by
 > `scripts/vector_check.sh`, which is the only lane in this tree whose subject

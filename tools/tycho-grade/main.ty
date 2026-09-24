@@ -2,6 +2,10 @@
 #
 #   out = clamp(in * gain + lift, 0, 255), rounded half up, per channel
 #
+# The multiply-add and the clamp are both whole-vector: math.clamp at a
+# vector[4]f32 is lane-wise (spec s5.3.11). Only the rounding and the clip count
+# are per lane.
+#
 # gain and lift are given in R,G,B,A order and in 0..255 units; the defaults
 # leave every channel alone. It reports how many pixels clipped in each channel,
 # which is the number a grade is tuned against, and the per-channel means.
@@ -29,6 +33,7 @@
 
 package main
 
+import "core:math"
 import "core:raster"
 import "core:strings"
 
@@ -167,8 +172,8 @@ fn main():
     src := load(files[0])
     s := to_str(src.pixels)
     npx := src.width * src.height
-    zero := to_f32(0.0)
-    top := to_f32(255.0)
+    zero: vector[4]f32 = [0.0, 0.0, 0.0, 0.0]
+    top: vector[4]f32 = [255.0, 255.0, 255.0, 255.0]
     half := to_f32(0.5)
     clip := [0, 0, 0, 0]
     sum_in := [0, 0, 0, 0]
@@ -181,18 +186,12 @@ fn main():
             px.(r, b) = px.(b, r)          # B,G,R,A -> R,G,B,A
         for c := 0; c < 4; c += 1:
             sum_in[c] += to_int(px[c])
-        q := px * gain + lift
-        # No lane-wise min/max exists, so the clamp is per lane (FRICTION 128, layout 6).
+        g := px * gain + lift
+        q := math.clamp(g, zero, top)      # lane-wise: one compare and blend per bound
         for c := 0; c < 4; c += 1:
-            v := q[c]
-            if v < zero:
+            if q[c] != g[c]:               # the lanes the clamp moved are the clipped ones
                 clip[c] += 1
-                v = zero
-            elif v > top:
-                clip[c] += 1
-                v = top
-            else:
-                v = to_f32(to_int(v + half))   # round half up; v >= 0 here
+            v := to_f32(to_int(q[c] + half))   # round half up; q >= 0 here, and 0/255 stay put
             q[c] = v
             sum_out[c] += to_int(v)
         if outk == "tga":

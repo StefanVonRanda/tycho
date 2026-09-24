@@ -244,6 +244,7 @@ struct C:
                                        # same type in five signatures is ONE decision
     shut: [int]                        # var indices a `close(h)` statement closed, for
     nshut: int                         # the rest of its block (src/tychoc.c@shut_mark)
+    vmath: [string: bool]              # core:math's min/max/clamp, lane-wise at a vector
 
 fn _cexcerpt(cs: inout C, file: string, line: int) -> string:
     if line <= 0:
@@ -3832,7 +3833,7 @@ fn check_on(p: Program, syms: bool) -> C:
     return check_on2(p, syms, "")
 
 fn check_on2(p: Program, syms: bool, tgt: string) -> C:
-    cs := C([]string, -1, []string: bool, []string: bool, 0, []string, []string, []TDecl, []string: int, []FSig, []string: int, []string: string, []string: string, []string: string, []string: int, []string: bool, []string: string, []string: bool, []VBind, 0, []string, []string, []string: int, "", 0, "", "?", false, false, []ast.ImportD, []ast.ImportD, false, 0, 0, false, false, 0, []string: int, []string: bool, []string: bool, 0, 0, false, []string, []string, false, 0, false, "", []string: bool, []string: bool, []Pend, 0, "", []Tail, 0, 0, "", []string: bool, []int, 0)
+    cs := C([]string, -1, []string: bool, []string: bool, 0, []string, []string, []TDecl, []string: int, []FSig, []string: int, []string: string, []string: string, []string: string, []string: int, []string: bool, []string: string, []string: bool, []VBind, 0, []string, []string, []string: int, "", 0, "", "?", false, false, []ast.ImportD, []ast.ImportD, false, 0, 0, false, false, 0, []string: int, []string: bool, []string: bool, 0, 0, false, []string, []string, false, 0, false, "", []string: bool, []string: bool, []Pend, 0, "", []Tail, 0, 0, "", []string: bool, []int, 0, []string: bool)
     cs.symon = syms
     cs.vtgt = tgt
     for f in p.files:
@@ -3842,6 +3843,12 @@ fn check_on2(p: Program, syms: bool, tgt: string) -> C:
             push(cs.all_imports, im)
     _builtin_sigs_t(&cs)
     _register(&cs, p)
+    # src/tychoc.c@vlane_kind: the three are recognised by name AND by lying
+    # under the corelib root, so a user package called `math` keeps its body.
+    for f in p.files:
+        if f.prefix == "math__" and from_corelib(p.root, f.dir):
+            for vn in ["min", "max", "clamp"]:
+                cs.vmath["math__" + vn] = true
     cs.ntd0 = len(cs.tds)
     _fill_decls(&cs, p)
     _infinite_check(&cs)

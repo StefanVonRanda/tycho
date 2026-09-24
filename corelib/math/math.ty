@@ -1,6 +1,10 @@
 # corelib: scalar math. Import with `import "core:math"`, use `math.min(a, b)`.
-# min/max/clamp are generic over any comparable type (int/float/string/char) and
-# sign over any numeric type; abs/gcd/ipow are integer-specific. (Float-only
+# min/max/clamp are generic over any comparable type (int/float/string/char), and
+# also take a vector[N]T, LANE-WISE: the compiler emits that instance as one
+# vector compare and blend per bound (spec 03 s5.3.11, src/tychoc.c@vlane_kind),
+# with each lane giving the answer the body below gives a scalar. The `where`
+# describes the scalar domain; every vector element type is ordered. sign is
+# generic over any numeric type; abs/gcd/ipow are integer-specific. (Float-only
 # helpers -- round/trunc/lerp/pi/e -- live in core:fmath.)
 package math
 

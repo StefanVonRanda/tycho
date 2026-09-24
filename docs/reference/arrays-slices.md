@@ -227,11 +227,14 @@ fn main():
 - A vector wider than the machine's register still works, split across registers, and the
   compiler warns (`vector[4]float` is 32 bytes against a 16-byte baseline register).
   `vector[4]f32` fits one.
-- There is no lane-wise `min`/`max`, and `math.clamp` refuses a vector (it is not
-  `comparable`). A clamp has to be written per lane.
+- `math.min`, `math.max` and `math.clamp` take a vector and work **lane-wise**, as one
+  vector compare and blend per bound: `math.clamp(v, lo, hi)` with three `vector[4]f32`
+  clamps all four lanes at once. All arguments are the same vector type; a scalar bound
+  is refused, so write `lo` as a vector.
 
 Worked example: [`tools/tycho-grade/`](../../tools/tycho-grade/main.ty) grades a TGA with one
-`vector[4]f32` multiply-add per pixel and swaps BGRA↔RGBA with `px.(r, b) = px.(b, r)`.
+`vector[4]f32` multiply-add and one `math.clamp` per pixel, and swaps BGRA↔RGBA with
+`px.(r, b) = px.(b, r)`.
 
 The exact rules are in [spec §5.3.11](../spec/03-types.md#5311-vectornt).
 

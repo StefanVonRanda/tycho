@@ -187,6 +187,18 @@ fn under_corelib(root: string, dir: string) -> bool:
             return true
     return false
 
+# A `core:` import's dir is built as root + "/" + name (@_resolve_pkg_dir), so a
+# textual prefix is exact for the files the loader pulled from the corelib.
+# under_corelib is looser on purpose (it re-roots a relative path and compares
+# LISTINGS), which also says yes to a user's own `math/math.ty` -- wrong for
+# emit.ty@_vmath_of, where a user package called `math` must keep its body.
+fn from_corelib(root: string, dir: string) -> bool:
+    if len(root) == 0:
+        return false
+    cr := norm(root)
+    cd := norm(dir)
+    return len(cd) > len(cr) and cd[0:len(cr)] == cr and cd[len(cr)] == 47
+
 fn _pkg_files(dir: string) -> [string]:
     out := []string
     for nm in list_dir(dir):
