@@ -537,7 +537,10 @@ fn _kmatch(cs: inout C, k: string, ek: string, q: string) -> string:
         # about one run in five. tycho_str_cmp carries the length.
         return "tycho_str_eq(" + ek + ", " + q + ")"
     if c == "int" or c == "enum":
-        return "(" + ek + " == " + q + ")"
+        # Bare, as src/tychoc.c's mapc_kmatch spells it: both call sites wrap it in
+        # `if (...)`, and the extra pair made clang warn -Wparentheses-equality in
+        # every build of a program with an int- or enum-keyed map.
+        return ek + " == " + q
     return _eq(&cs, ek, q, k)
 
 fn _kcopy(cs: inout C, k: string) -> string:
