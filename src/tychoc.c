@@ -12558,7 +12558,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
              * separate (partial reclaim), flat structs full. */
             int do_recycle = g_loop_depth > 0 && !is_accum(s->name)
                 && cv_arena(s->name) && !is_inout_param(s->name)
-                && is_array(s->expr->type) && !IS_BOUNDED(s->expr->type)   /* bounded has no .data spine to recycle */
+                && is_array(s->expr->type) && !IS_INLINE_ARR(s->expr->type)   /* [N]T, bounded and vector store inline: no .data spine to recycle */
                 && count_reads_b(g_proc_body, g_proc_nbody, s->name) >= 2;
             if (do_recycle) {
                 /* CRITICAL ORDER: evaluate the RHS into a temp FIRST (it may read a's

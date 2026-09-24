@@ -415,6 +415,11 @@ make -s du-check
 # marker -- the three features that had one real user each.
 step "[4d/36] make grid-check  (tycho-grid: run identical over 2 runs and equal to the golden; the subscript as a place and an rvalue against literals with two independently-computed totals agreeing; the deprecation warning emitted with its text, NOT emitted for prose that merely mentions the marker, and emitted for a fn taken as a value; a fifth mark past bounded[4] exits non-zero naming the limit; all five subscript rules plus the flat 2-D once-per-parameter limit still refused; a bounded struct field still copies by value)"
 make -s grid-check
+
+# tycho-grade: the worked user of vector[N]T and swizzling that FRICTION 128's
+# layout 4 found nowhere in the tree.
+step "[4e/37] make grade-check  (tycho-grade: a gain/lift colour grade for TGA/BMP/QOI whose per-pixel multiply-add is one vector[4]f32 operation and whose BGRA<->RGBA reorder is a swizzle in the same register, with a packed TgaHeader read and written through from_bytes\$/to_bytes. Built under the substituted compiler and under ./tychoc; two runs identical in stdout and in the file written, stdout equal to the golden; two pixels worked out by hand in run.sh (a high clip, a low clip, a half-up rounding) read back from the output bytes; every output byte, header included, against a python3 oracle for a 32bpp bottom-left and a 24bpp top-left input; a tga->bmp->tga and tga->qoi->tga round trip through core:raster, which only matches if both swizzle directions agree; a truncated TGA and a non-numeric gain refused by name, writing nothing)"
+make -s grade-check
 fi
 
 if [ "$LANE" = rest ]; then

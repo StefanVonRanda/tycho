@@ -230,6 +230,9 @@ fn main():
 - There is no lane-wise `min`/`max`, and `math.clamp` refuses a vector (it is not
   `comparable`). A clamp has to be written per lane.
 
+Worked example: [`tools/tycho-grade/`](../../tools/tycho-grade/main.ty) grades a TGA with one
+`vector[4]f32` multiply-add per pixel and swaps BGRA↔RGBA with `px.(r, b) = px.(b, r)`.
+
 The exact rules are in [spec §5.3.11](../spec/03-types.md#5311-vectornt).
 
 ## Struct-of-arrays (`soa [T]`)

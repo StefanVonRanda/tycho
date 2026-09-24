@@ -1,0 +1,6 @@
+read   tga 4x3 32bpp bottom-left
+gain   [1.5, 1.0, 0.5, 1.0]  lift [-40.0, 10.0, 16.0, 0.0]
+clipped r=4 g=1 b=0 a=0
+mean in r=120 g=133 b=139 a=136
+mean out r=139 g=143 b=86 a=136
+wrote  tga 4x3, 66 bytes

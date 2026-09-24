@@ -240,6 +240,9 @@ dist/
 # the tycho-grid golden
 # (tools/tycho-grid/grid.out), same line, same reason.
 !/tools/tycho-grid/*.out
+# the tycho-grade colour grader's report golden
+# (tools/tycho-grade/grade.out), same line, same reason.
+!/tools/tycho-grade/*.out
 # the tycho-agg group-and-count's report golden
 # (tools/tycho-agg/agg.out), same line, same reason.
 !/tools/tycho-agg/*.out

@@ -1,0 +1,227 @@
+# tycho-grade -- a per-channel gain/lift colour grade for TGA, BMP and QOI.
+#
+#   out = clamp(in * gain + lift, 0, 255), rounded half up, per channel
+#
+# gain and lift are given in R,G,B,A order and in 0..255 units; the defaults
+# leave every channel alone. It reports how many pixels clipped in each channel,
+# which is the number a grade is tuned against, and the per-channel means.
+#
+# Why the vector: a pixel is four channels that take the same multiply-add, so
+# the grade is one `vector[4]f32` multiply and one add per pixel. f32, not
+# float: `vector[4]float` is 32 bytes and overflows a 16-byte register.
+#
+# Why the swizzle: TGA stores its pixels B,G,R,A, while the gain the user types
+# and core:raster's Image (and so BMP/QOI) are R,G,B,A. The pixel is already in
+# a vector for the grade, so the reorder is one swizzle in the register --
+# `px.(r, b) = px.(b, r)` -- on the way in and again on the way out, instead of
+# a separate pass over the bytes.
+#
+# The TGA header is a `packed struct`, read and written with from_bytes$ /
+# to_bytes: its u16 fields start at odd offsets, which is what `packed` is for.
+#
+# No `align(N)`: it is unobservable from inside Tycho (size_of$ takes only a
+# packed struct) and this program has no C boundary for it to matter at.
+#
+#   build: ./tychoc tools/tycho-grade/main.ty -o tycho-grade
+#   run:   ./tycho-grade [--gain R,G,B,A] [--lift R,G,B,A] IN OUT
+#          the format of IN and OUT is chosen by extension: .tga .bmp .qoi
+#   gate:  make grade-check
+
+package main
+
+import "core:raster"
+import "core:strings"
+
+# TGA's 18-byte header (Truevision TGA 2.0, all fields little-endian, which is
+# the order to_bytes/from_bytes use on every host -- spec s17.1b).
+packed struct TgaHeader:
+    idlen: u8               # bytes of image ID after the header
+    cmaptype: u8            # 0: no colour map
+    imgtype: u8             # 2: uncompressed true-colour
+    cmapfirst: u16
+    cmaplen: u16
+    cmapbits: u8
+    xorig: u16
+    yorig: u16
+    width: u16
+    height: u16
+    bpp: u8                 # 24 or 32
+    desc: u8                # bits 0-3 alpha bits, bit 5 set = top-left origin
+
+# Pixels as they came off disk: top-to-bottom rows, 4 bytes each, in the file's
+# channel order. bgra says which order that is.
+struct Raw:
+    width: int
+    height: int
+    pixels: bytes
+    bgra: bool
+    what: string
+
+fn ext(p: string) -> string:
+    if strings.ends_with(p, ".tga"):
+        return "tga"
+    if strings.ends_with(p, ".bmp"):
+        return "bmp"
+    if strings.ends_with(p, ".qoi"):
+        return "qoi"
+    return ""
+
+fn decode_tga(data: bytes) -> Raw:
+    n := len(data)
+    if n < size_of$(TgaHeader):
+        die("tycho-grade: not a TGA: " + str(n) + " bytes is shorter than the 18-byte header")
+    hd := from_bytes$(TgaHeader)(data[0:size_of$(TgaHeader)])
+    if to_int(hd.imgtype) != 2 or to_int(hd.cmaptype) != 0:
+        die("tycho-grade: only uncompressed true-colour TGA (type 2, no colour map) is read")
+    bpp := to_int(hd.bpp)
+    if bpp != 24 and bpp != 32:
+        die("tycho-grade: TGA depth " + str(bpp) + " is not 24 or 32")
+    w := to_int(hd.width)
+    h := to_int(hd.height)
+    if raster.too_big(w, h):
+        die("tycho-grade: TGA dimensions " + str(w) + "x" + str(h) + " are empty or too large")
+    bpx := bpp / 8
+    off := size_of$(TgaHeader) + to_int(hd.idlen)
+    if off + w * h * bpx > n:
+        die("tycho-grade: TGA is truncated: " + str(w) + "x" + str(h) + "x" + str(bpx) + " pixel bytes do not fit in " + str(n))
+    topdown := (to_int(hd.desc) & 32) != 0
+    s := to_str(data)
+    px := []int
+    for y := 0; y < h; y += 1:
+        srcy := h - 1 - y
+        if topdown:
+            srcy = y
+        base := off + srcy * w * bpx
+        for x := 0; x < w; x += 1:
+            p := base + x * bpx
+            push(px, s[p])
+            push(px, s[p + 1])
+            push(px, s[p + 2])
+            if bpx == 4:
+                push(px, s[p + 3])
+            else:
+                push(px, 255)
+    origin := "bottom-left"
+    if topdown:
+        origin = "top-left"
+    return Raw(w, h, to_bytes(px), true, "tga " + str(w) + "x" + str(h) + " " + str(bpp) + "bpp " + origin)
+
+# Always 32bpp, top-left origin, so the rows go out in the order they are held.
+fn encode_tga(w: int, h: int, bgra: bytes) -> bytes:
+    hd := TgaHeader(to_u8(0), to_u8(0), to_u8(2), to_u16(0), to_u16(0), to_u8(0),
+        to_u16(0), to_u16(0), to_u16(w), to_u16(h), to_u8(32), to_u8(40))
+    return to_bytes(hd) + bgra
+
+fn load(path: string) -> Raw:
+    data := to_bytes(read_file(path))
+    k := ext(path)
+    if k == "tga":
+        return decode_tga(data)
+    img := raster.decode_bmp(data)
+    if k == "qoi":
+        img = raster.decode_qoi(data)
+    elif k != "bmp":
+        die("tycho-grade: unknown input format '" + path + "' (want .tga, .bmp or .qoi)")
+    if img.width == 0:
+        die("tycho-grade: cannot decode " + k + " from '" + path + "'")
+    return Raw(img.width, img.height, img.pixels, false, k + " " + str(img.width) + "x" + str(img.height))
+
+fn parse4(flag: string, v: string) -> vector[4]f32:
+    parts := split(v, ",")
+    if len(parts) != 4:
+        die(flag + " takes four comma-separated numbers R,G,B,A, got '" + v + "'")
+    out: vector[4]f32 = [0.0, 0.0, 0.0, 0.0]
+    for i := 0; i < 4; i += 1:
+        match strings.parse_float(parts[i]):
+            Ok(f): out[i] = to_f32(f)
+            Err(e): die(flag + ": '" + parts[i] + "' is not a number")
+    return out
+
+fn main():
+    av := args()
+    gain: vector[4]f32 = [1.0, 1.0, 1.0, 1.0]
+    lift: vector[4]f32 = [0.0, 0.0, 0.0, 0.0]
+    files := []string
+    i := 1
+    for i < len(av):
+        a := av[i]
+        if a == "--gain" or a == "--lift":
+            if i + 1 >= len(av):
+                die(a + " needs a value")
+            if a == "--gain":
+                gain = parse4(a, av[i + 1])
+            else:
+                lift = parse4(a, av[i + 1])
+            i += 2
+        elif strings.starts_with(a, "-"):
+            die("tycho-grade: unknown option '" + a + "'")
+        else:
+            push(files, a)
+            i += 1
+    if len(files) != 2:
+        die("tycho-grade: usage: tycho-grade [--gain R,G,B,A] [--lift R,G,B,A] IN OUT")
+    outk := ext(files[1])
+    if outk == "":
+        die("tycho-grade: unknown output format '" + files[1] + "' (want .tga, .bmp or .qoi)")
+
+    src := load(files[0])
+    s := to_str(src.pixels)
+    npx := src.width * src.height
+    zero := to_f32(0.0)
+    top := to_f32(255.0)
+    half := to_f32(0.5)
+    clip := [0, 0, 0, 0]
+    sum_in := [0, 0, 0, 0]
+    sum_out := [0, 0, 0, 0]
+    out := []int
+    for k := 0; k < npx; k += 1:
+        p := k * 4
+        px: vector[4]f32 = [to_f32(s[p]), to_f32(s[p + 1]), to_f32(s[p + 2]), to_f32(s[p + 3])]
+        if src.bgra:
+            px.(r, b) = px.(b, r)          # B,G,R,A -> R,G,B,A
+        for c := 0; c < 4; c += 1:
+            sum_in[c] += to_int(px[c])
+        q := px * gain + lift
+        # No lane-wise min/max exists, so the clamp is per lane (FRICTION 128, layout 6).
+        for c := 0; c < 4; c += 1:
+            v := q[c]
+            if v < zero:
+                clip[c] += 1
+                v = zero
+            elif v > top:
+                clip[c] += 1
+                v = top
+            else:
+                v = to_f32(to_int(v + half))   # round half up; v >= 0 here
+            q[c] = v
+            sum_out[c] += to_int(v)
+        if outk == "tga":
+            q.(r, b) = q.(b, r)            # R,G,B,A -> B,G,R,A for the file
+        push(out, to_int(q.x))
+        push(out, to_int(q.y))
+        push(out, to_int(q.z))
+        push(out, to_int(q.w))
+
+    ob := to_bytes(out)
+    enc := encode_tga(src.width, src.height, ob)
+    if outk == "bmp":
+        enc = raster.encode_bmp(raster.make(src.width, src.height, ob))
+    elif outk == "qoi":
+        enc = raster.encode_qoi(raster.make(src.width, src.height, ob))
+    if not write_file(files[1], to_str(enc)):
+        die("tycho-grade: cannot write '" + files[1] + "'")
+
+    println("read   " + src.what)
+    println("gain   " + str(gain) + "  lift " + str(lift))
+    names := ["r", "g", "b", "a"]
+    ln := "clipped"
+    mi := "mean in"
+    mo := "mean out"
+    for c := 0; c < 4; c += 1:
+        ln = ln + " " + names[c] + "=" + str(clip[c])
+        mi = mi + " " + names[c] + "=" + str(sum_in[c] / npx)
+        mo = mo + " " + names[c] + "=" + str(sum_out[c] / npx)
+    println(ln)
+    println(mi)
+    println(mo)
+    println("wrote  " + outk + " " + str(src.width) + "x" + str(src.height) + ", " + str(len(enc)) + " bytes")

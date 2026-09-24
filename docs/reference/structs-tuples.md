@@ -98,6 +98,10 @@ are refused.
 It matters at the C boundary, and checking it means reading the output of
 `tychoc --emit-c`.
 
+Worked examples: `BmpHeader` in [`corelib/raster/raster.ty`](../../corelib/raster/raster.ty) and
+`TgaHeader` in [`tools/tycho-grade/`](../../tools/tycho-grade/main.ty). Neither uses `align(N)`, for
+the reason above.
+
 Rules: [spec §17.1a](../spec/12-aggregates.md#171a-packed-layout).
 
 ## Tuples and multiple return values

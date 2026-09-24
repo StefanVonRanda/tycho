@@ -8657,8 +8657,8 @@ toolchain against a quoted spec line. The procedure's "check each finding agains
 ### 128. The residue: fourteen findings from 2026-09-21 that nothing has acted on — **OPEN**
 
 **2026-09-24: eleven acted on, marked in the table; the handle `close`/`is_null` row
-since, as #130.** Open: layout 4 (no `examples/` user of `vector`/`align`/swizzling), and the design
-halves of layouts 1 and 6.
+since, as #130; layout 4 by `tools/tycho-grade/`, which found #131 on the way in.** Open: the
+design halves of layouts 1 and 6.
 
 Listed rather than fixed, because they are doc-layer and design questions and the
 surface is frozen. Each is checked against `main` as of 2026-09-22.
@@ -8673,7 +8673,7 @@ surface is frozen. Each is checked against `main` as of 2026-09-22.
 | handle — | **FIXED 2026-09-24, #130:** a use after an unconditional `close(h)` is now a compile error in both compilers. after `close(h)`, `is_null` cannot distinguish "closed" from "never opened", because `close` nulls the variable. Use-after-close is documented as permitted and is not compile-rejected, so the one remaining misuse of an exactly-once resource is undetectable in both directions. A design question |
 | layout 1 | **DOCUMENTED 2026-09-24** as a limitation in `reference/structs-tuples.md`; the design question stays open. `size_of$` requires a packed struct and `packed`/`align(N)` are mutually exclusive, so `align(N)` is **unobservable from inside the language**. The probe had to emit C and run `cc` to learn its `align(8)` did anything |
 | layout 3 | **FIXED 2026-09-24:** `vector`/swizzling in `reference/arrays-slices.md`, `packed`/`align` in `structs-tuples.md`, each with a run fence. `vector[`, `align(`, swizzling and `packed` appear **nowhere** in `docs/reference/`. A reader following README → tutorial → reference finishes believing Tycho has no SIMD type, no layout control and no swizzling |
-| layout 4 | `vector[N]T`, `align(N)` and swizzling have **zero** users in `examples/` and `corelib/`; `packed` has four, and `corelib/raster/raster.ty` was singled out as the one teaching example any of the four has |
+| layout 4 | **FIXED 2026-09-24:** [`tools/tycho-grade/`](../../tools/tycho-grade/main.ty), a TGA/BMP/QOI colour grader gated by `make grade-check`, grades each pixel as one `vector[4]f32` multiply-add, reorders BGRA↔RGBA with `px.(r, b) = px.(b, r)` and reads its header through a `packed struct`. `align(N)` is deliberately not used: it is unobservable inside the language (layout 1) and the program has no C boundary for it to matter at. `vector[N]T`, `align(N)` and swizzling have **zero** users in `examples/` and `corelib/`; `packed` has four, and `corelib/raster/raster.ty` was singled out as the one teaching example any of the four has |
 | layout 6 | **DOCUMENTED 2026-09-24** as a limitation beside `vector`; the feature stays open. no lane-wise min/max, and `math.clamp` refuses a vector (`does not satisfy comparable(T)`), so the clamp — what a grading kernel does as often as the multiply — drops out of the vector unit |
 | layout 8a | **FIXED 2026-09-24:** §5.5, `reference/basics.md` and the diagnostic (both compilers) now carry the compiler's real rule. §5.5 omits `u8` from the ordered scalars, the mixed-type diagnostic omits `char`/`u32`/`u64`/`f32`, and the compiler's real rule is in neither. Two documents, two different wrong answers |
 | layout 8b | **FIXED 2026-09-24:** both stated, and exercised by the `vector` fence. `str()` on a vector works and is undocumented; a vector as a struct field works and is undocumented |
@@ -8763,3 +8763,19 @@ it pushes a parameter). Reproduced first with a destructor that counted its
 calls: two frees for one open. Function, lambda and generic parameters are all
 refused; `sink`/`inout` handle parameters were already refused at the
 declaration. Pinned by `tests/reject/handle_close_param.ty`.
+
+### 131. `tychoc` could not build an inline array reassigned from a call inside a loop — **FIXED 2026-09-24**
+
+> Pinned-by: ! ( ./tychoc --emit-c tests/inline_arr_reassign_loop.ty | grep -q 'arena_recycle(.*h_[hgb]\.data' )
+> Pinned-by: make -s grade-check
+
+Found by `tools/tycho-grade/` (#128, layout 4) on its first build: `gain =
+parse4(...)` inside the argument loop, with `gain` a `vector[4]f32` read more
+than once. The reference compiler's in-loop spine recycle
+(`src/tychoc.c@do_recycle`) frees a dynamic array's old buffer before the
+reassignment, and its guard excluded only `bounded[N]T` from the set of arrays.
+A `vector[N]T` and a plain `[N]T` also store their elements inline, with no
+`.data` or `.cap`, so the emitted recycle was a `cc` error in the generated
+file. The guard is now `IS_INLINE_ARR`, which covers all three. `tychoc1` never
+had it. The pin was run against the unfixed compiler first and goes red there;
+`tests/inline_arr_reassign_loop.ty` exercises all three kinds.
