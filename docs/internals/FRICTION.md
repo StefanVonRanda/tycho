@@ -8722,6 +8722,7 @@ and was run against the unfixed compiler first: it goes red there.
 > Pinned-by: ./tychoc --emit-c -o /dev/null tests/reject/handle_use_after_close.ty 2>&1 | grep -q 'is used after'
 > Pinned-by: ./tychoc1 --typecheck tests/reject/handle_close_twice.ty 2>&1 | grep -q 'is used after'
 > Pinned-by: sh tests/ffi/run.sh
+> Pinned-by: ./tychoc1 --typecheck tests/reject/handle_close_param.ty 2>&1 | grep -q 'is a handle parameter'
 
 The `handle —` row of #128. `close(h)` runs the destructor and nulls the
 variable, so every later use passed null to C, a second `close` was silently a
@@ -8756,3 +8757,9 @@ A finding made on the way, not fixed here: `close(h)` on a handle
 **parameter** compiles. The callee nulls only its own copy, so the caller's
 scope-exit free runs the destructor a second time. That is a double free, and
 it contradicts §25's "the callee does not free it".
+**FIXED 2026-09-24:** `close(h)` on a parameter is now a compile error in both
+compilers (`src/tychoc.c@close_param_check`; tychoc1 marks `VBind.param` where
+it pushes a parameter). Reproduced first with a destructor that counted its
+calls: two frees for one open. Function, lambda and generic parameters are all
+refused; `sink`/`inout` handle parameters were already refused at the
+declaration. Pinned by `tests/reject/handle_close_param.ty`.

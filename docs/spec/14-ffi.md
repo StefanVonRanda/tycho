@@ -305,7 +305,11 @@ permitted to *return* a handle) and released without explicit calls.
 - **Early `close(h)`.** `close(h)` runs the destructor immediately and sets the
   handle to null; the scope-exit finalizer is null-guarded, so the destructor
   runs **exactly once**. `close` requires a handle **variable** (a call result has
-  no owning scope); otherwise it is a compile error.
+  no owning scope); otherwise it is a compile error. A handle **parameter** cannot
+  be closed either, and that is a compile error too: the callee holds a borrowed
+  copy of the `void*`, so `close` would null only that copy and the caller's
+  scope-exit free would run the destructor a second time. Close it in the
+  owning scope.
 - **Use after `close`.** A `close(h)` **statement** closes `h` for the rest of
   the block it is written in, including every block nested after it. Any later
   mention of `h` there is a compile error — a call that passes it, a second

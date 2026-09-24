@@ -91,7 +91,7 @@ See [Concurrency](concurrency.md) for semantics.
 | `send(ch, v)` | `(Channel(T), T) -> void` | Deep-copy `v` in; blocks when full; aborts if closed. |
 | `recv(ch)` | `Channel(T) -> Option(T)` | Blocking receive (deep-copied out); `None` means closed **and** drained. |
 | `close(ch)` | `Channel(T) -> void` | Receivers drain then see `None`; a further send or second close aborts. |
-| `close(h)` | `handle -> void` | On a typed FFI handle **variable**: run its destructor now and null it, so the scope-exit free does not run it again. Any later mention of `h` in the same block (a second `close` included) is a compile error; a `close` inside an `if` or loop reaches only that block's end. See [typed handles](ffi.md#typed-handles-safe-by-default-resources). |
+| `close(h)` | `handle -> void` | On a typed FFI handle **variable**: run its destructor now and null it, so the scope-exit free does not run it again. A handle **parameter** is a borrow and cannot be closed (a compile error); close it in the scope that owns it. Any later mention of `h` in the same block (a second `close` included) is a compile error; a `close` inside an `if` or loop reaches only that block's end. See [typed handles](ffi.md#typed-handles-safe-by-default-resources). |
 
 ## Filesystem and time
 

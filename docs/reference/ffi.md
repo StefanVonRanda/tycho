@@ -65,7 +65,9 @@ Here's what can cross:
   an array, map, struct, tuple, `Option` or `Result`, captured by a closure or `parallel for`,
   or returned from a Tycho function. An `extern` opener is the only thing that may return one.
   Passing a handle **borrows** it — the callee does not free it — so passing is how you use it
-  somewhere else. `close(h)` runs the destructor early on a handle **variable** and nulls it;
+  somewhere else. `close(h)` runs the destructor early on a handle **variable** and nulls it
+  (never on a handle parameter: the callee's copy is a borrow, and closing it would make the
+  caller's scope-exit free run the destructor twice, so it is a compile error);
   the scope-exit free is null-guarded, so the destructor runs exactly once either way. After a
   `close(h)` statement, any later mention of `h` in the same block or a block nested after it
   (a second `close`, `is_null(h)` included) is a **compile error**. A `close` inside an `if` or

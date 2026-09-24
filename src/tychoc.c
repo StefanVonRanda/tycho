@@ -5905,9 +5905,9 @@ static void register_builtins(void) {
 
 /* can_mutate: may the variable's aggregate be mutated in place (push /
  * index-set)? Locals yes; parameters are immutable borrows (no). */
-typedef struct { char *name; Type type; int can_mutate; Expr *lit; int used; int line; int report; } Var;   /* lit != NULL: an immutable named literal (const) -- folded at each use */
+typedef struct { char *name; Type type; int can_mutate; Expr *lit; int used; int line; int report; int param; } Var;   /* lit != NULL: an immutable named literal (const) -- folded at each use */
 static Var *g_vars;
-static int g_nvars = 0, g_vars_cap = 0, g_shut[64], g_nshut = 0; static void shut_mark(Stmt *s); static void shut_check(Var *lv, Expr *e);   /* g_shut: see shut_mark, at the end of this file */
+static int g_nvars = 0, g_vars_cap = 0, g_shut[64], g_nshut = 0; static void shut_mark(Stmt *s); static void shut_check(Var *lv, Expr *e); static void close_param_check(Expr *e);   /* g_shut: see shut_mark, at the end of this file */
 static int g_unused_local = 0;
 /* >=0: the next resolve_block dup-checks declarations from this g_vars index
  * (a function's top block uses its param base, so a local `:=` colliding with a
@@ -6019,7 +6019,7 @@ static void vars_push(const char *name, Type t, int can_mutate, int line) {
     g_vars[g_nvars].lit = NULL;
     g_vars[g_nvars].used = 0;
     g_vars[g_nvars].line = line;
-    g_vars[g_nvars].report = 0;
+    g_vars[g_nvars].report = 0; g_vars[g_nvars].param = 0;
     g_nvars++;
 }
 /* a local const: immutable, folded at use (lit carries the literal Expr) */
@@ -6031,7 +6031,7 @@ static void vars_push_const(const char *name, Type t, Expr *lit) {
     g_vars[g_nvars].lit = lit;
     g_vars[g_nvars].used = 0;
     g_vars[g_nvars].line = 0;
-    g_vars[g_nvars].report = 0;
+    g_vars[g_nvars].report = 0; g_vars[g_nvars].param = 0;
     g_nvars++;
 }
 static Var *vars_lookup(const char *name) {   /* innermost binding, or NULL */
@@ -6493,7 +6493,7 @@ static Type resolve_expr_inner(Expr *e) {
             int mark = vars_mark();   /* resolve the body with caps + params (caps shadow the enclosing originals) */
             for (int i = 0; i < pr->nparams; i++) {
                 Type pt = pr->params[i].type;
-                vars_push(pr->params[i].name, pt, pr->params[i].is_sink || (!is_array(pt) && !is_map(pt) && !IS_SOA(pt)), pr->line);
+                vars_push(pr->params[i].name, pt, pr->params[i].is_sink || (!is_array(pt) && !is_map(pt) && !IS_SOA(pt)), pr->line); g_vars[g_nvars - 1].param = 1;
             }
             Type saved = g_fn_ret; g_fn_ret = pr->ret;
             g_dup_base = mark;   /* lambda body shares its caps+params scope (same lifted C function) */
@@ -7345,7 +7345,7 @@ static Type resolve_expr_inner(Expr *e) {
                 if (IS_HANDLE(ct)) {   /* FFI R2: early close -- run the destructor now, suppress the scope-exit free */
                     if (e->args[0]->kind != E_IDENT)
                         die_at(e->line, "close(h) takes a handle variable");
-                    return e->type = T_VOID;
+                    close_param_check(e->args[0]); return e->type = T_VOID;
                 }
                 if (!IS_CHAN(ct)) die_at(e->line, "close takes a channel or a handle, got %s", type_name(ct));
                 return e->type = T_VOID;
@@ -8687,7 +8687,7 @@ static void resolve_parfor(Stmt *s) {
     int mark = vars_mark();
     for (int i = 0; i < pr->nparams; i++) {
         Type pt = pr->params[i].type;
-        vars_push(pr->params[i].name, pt, !is_array(pt) && !is_map(pt) && !IS_SOA(pt), pr->line);
+        vars_push(pr->params[i].name, pt, !is_array(pt) && !is_map(pt) && !IS_SOA(pt), pr->line); g_vars[g_nvars - 1].param = 1;
     }
     Type saved = g_fn_ret; g_fn_ret = pr->ret;
     g_dup_base = mark;   /* parallel-for body shares its params scope (same lifted C function) */
@@ -9997,7 +9997,7 @@ static void resolve_program(ProcVec *prog) {
             for (int v = 0; v < g_nvars; v++)   /* fail-closed: a duplicate parameter emits a duplicate C param */
                 if (!strcmp(g_vars[v].name, pr->params[j].name))
                     die_at(pr->line, "duplicate parameter '%s'", pr->params[j].name);
-            vars_push(pr->params[j].name, pt, mutable, pr->line);
+            vars_push(pr->params[j].name, pt, mutable, pr->line); g_vars[g_nvars - 1].param = 1;
         }
         /* `fn main() -> Result(void, string)` is the second legal shape: it makes
          * or_return usable at the entry point, which is where a CLI wants it most.
@@ -13743,7 +13743,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
         for (int j = 0; j < p->nparams; j++) {
             Type pt = p->params[j].type;
             int mutable = (!is_array(pt) && !is_map(pt) && !IS_SOA(pt)) || p->params[j].is_inout || p->params[j].is_sink;
-            vars_push(p->params[j].name, pt, mutable, p->line);
+            vars_push(p->params[j].name, pt, mutable, p->line); g_vars[g_nvars - 1].param = 1;
         }
         for (int k = 0; k < g_ginsts[i].nsp; k++) {   /* const generics 1.6B: bind each `$N` as an int const so the body's `N` folds to the instance's length */
             Expr *lit = new_expr(E_INT, p->line);
@@ -15443,4 +15443,14 @@ static void shut_check(Var *lv, Expr *e) {
             die_at(e->line, "'%s' is used after `close(%s)` closed it, on every path to here -- "
                             "a closed handle is null. Close it after its last use, or let scope exit free it",
                    e->sval, e->sval);
+}
+/* close(h) on a PARAMETER (spec §25 "Borrow on pass", FRICTION 130). The callee
+ * receives a copy of the void*; close nulls only that copy, so the caller's
+ * scope-exit free runs the destructor a second time -- a double free. Only the
+ * owning scope may close. Var.param is set where each parameter is pushed. */
+static void close_param_check(Expr *e) {
+    Var *v = vars_lookup(e->sval);
+    if (v && v->param)
+        die_at(e->line, "'%s' is a handle parameter -- the caller owns it and frees it at its scope exit; "
+                        "`close` it there, not in the callee", e->sval);
 }

@@ -129,6 +129,7 @@ struct VBind:
     name: string
     ty: string
     mutable: bool
+    param: bool                        # a parameter: a borrow (src/tychoc.c@close_param_check)
 
 # src/tychoc.c@g_pend -- one entry per bare `xs := []` / `x := None` decl, kept
 # in DECLARATION order with a per-block mark so the audit at the end of a block
@@ -892,7 +893,7 @@ fn _vrestore(cs: inout C, m: int):
     cs.nvars = m
 
 fn _vpush(cs: inout C, name: string, ty: string, mutable: bool):
-    b := VBind(name, ty, mutable)
+    b := VBind(name, ty, mutable, false)
     if cs.nvars < len(cs.vars):
         cs.vars[cs.nvars] = b
     else:
@@ -1740,6 +1741,7 @@ fn _ex2(cs: inout C, e: ast.Expr, want0: string) -> string:
                 if len(ps[i].ty) == 0 and not known(pt):
                     _cerr(&cs, "lambda parameter '" + ps[i].name + "' needs a type here -- no expected fn type supplies it (annotate: fn(x: T))")
                 _vpush(&cs, ps[i].name, pt, false)
+                cs.vars[cs.nvars - 1].param = true
                 out = out + "," + pt
             # cs.loopd is deliberately NOT saved here: ast.Lambda's body is
             # [Expr] (compiler/ast/ast.ty@Lambda) and BreakS/ContinueS are Stmt,
@@ -2548,8 +2550,14 @@ fn _call_builtin(cs: inout C, l: int, n: string, args: [ast.Expr], want: string)
         if not _arity(&cs, n, args, 1, "close takes one channel or handle"):
             return "void"
         if _aff_kind(&cs, a0) == "handle":
-            if not (args[0] is ast.Name):
-                _cerr(&cs, "close(h) takes a handle variable")
+            match args[0]:
+                ast.Name(l1, hn):
+                    # src/tychoc.c@close_param_check -- the callee's close nulls
+                    # only its own copy; the caller's scope-exit free runs again.
+                    vi := _vfind(&cs, hn)
+                    if vi >= 0 and cs.vars[vi].param:
+                        _cerr(&cs, "'" + hn + "' is a handle parameter -- the caller owns it and frees it at its scope exit; `close` it there, not in the callee")
+                _: _cerr(&cs, "close(h) takes a handle variable")
             return "void"
         if known(b0) and _head(b0) != "chan":
             _cerr(&cs, "close takes a channel or a handle, got " + a0)
@@ -3849,6 +3857,7 @@ fn check_on2(p: Program, syms: bool, tgt: string) -> C:
                     t = "arr(" + t + ")"
                 _tnote(&cs, "p:" + t)
                 _vpush(&cs, fd.params[i].name, t, false)
+                cs.vars[cs.nvars - 1].param = true
             cs.ret = cs.sg[si].ret
             _tnote(&cs, "r:" + cs.ret)
             cs.paramset = []string: bool

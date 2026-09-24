@@ -848,6 +848,7 @@ fn _inst_body(cs: inout C, s: FSig, b: [string: string], l: int, spelt: string):
         if i < len(s.pflags) and s.pflags[i] == "var":
             pt9 = "arr(" + pt9 + ")"   # a variadic parameter IS the array
         _vpush(&cs, s.pnames[i], pt9, false)
+        cs.vars[cs.nvars - 1].param = true
     cs.ret = "void"
     if len(s.rty) == 1:
         cs.ret = _subst(&cs, s, s.rty[0], b)
