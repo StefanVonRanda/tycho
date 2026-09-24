@@ -31,8 +31,11 @@ fn sign(x: $T) -> int where numeric(T):  # -1 / 0 / 1; the zero is derived as x-
         return 0 - 1
     if x > z:
         return 1
-    if z == z:
-        return 0                     # a real zero -- and every int lands here
+    if x == z:
+        return 0                     # a real zero -- and every int lands here. NOT
+                                     # `z == z`: the same test for finite x, but at
+                                     # T = int it is a self-comparison and cc warns
+                                     # (-Wtautological-compare) in the caller's build
     if x == x * x:
         return 1                     # +inf is its own square; -inf and NaN are not
     if x < x * x:
