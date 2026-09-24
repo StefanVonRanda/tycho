@@ -19,8 +19,8 @@
 # The TGA header is a `packed struct`, read and written with from_bytes$ /
 # to_bytes: its u16 fields start at odd offsets, which is what `packed` is for.
 #
-# No `align(N)`: it is unobservable from inside Tycho (size_of$ takes only a
-# packed struct) and this program has no C boundary for it to matter at.
+# No `align(N)`: this program has no C boundary for it to matter at, and
+# nothing in it is laid out for another program to read.
 #
 #   build: ./tychoc tools/tycho-grade/main.ty -o tycho-grade
 #   run:   ./tycho-grade [--gain R,G,B,A] [--lift R,G,B,A] IN OUT

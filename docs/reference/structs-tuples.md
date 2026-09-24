@@ -94,9 +94,11 @@ the arena's own alignment). Its size rounds up to a multiple of `N`, so every el
 array of it stays aligned. It never lowers alignment, and `packed` and `align` on one struct
 are refused.
 
-`align(N)` cannot be observed from inside Tycho: `size_of$` only accepts a packed struct.
-It matters at the C boundary, and checking it means reading the output of
-`tychoc --emit-c`.
+`size_of$(T)` accepts an `align(N)` struct too, and is how you observe the attribute. The
+size is implementation-defined, like any unpacked struct's layout, but it is always a
+multiple of `N`: an `align(8)` struct of two `u8` fields is 8, two bytes rounded up. `to_bytes`
+and `from_bytes$` still take only a packed struct, because only a packed struct has a
+byte-exact layout.
 
 Worked examples: `BmpHeader` in [`corelib/raster/raster.ty`](../../corelib/raster/raster.ty) and
 `TgaHeader` in [`tools/tycho-grade/`](../../tools/tycho-grade/main.ty). Neither uses `align(N)`, for

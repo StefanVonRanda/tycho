@@ -98,6 +98,7 @@ struct TDecl:
     kind: string                       # struct enum newtype handle
     generic: bool
     packed: bool                       # a `packed struct`
+    aln: int                           # `align(N) struct`: 0 = unstated
     fnames: [string]                   # struct fields / enum variants
     ftypes: [string]                   # field type, or a variant's payload joined by "|"
     file: string
@@ -699,7 +700,7 @@ fn _addt(cs: inout C, name: string, kind: string, generic: bool, file: string, l
     if name in cs.tindex:
         return
     cs.tindex[name] = len(cs.tds)
-    push(cs.tds, TDecl(name, kind, generic, false, []string, []string, file, line, []ast.Ty, []int, []string, ""))
+    push(cs.tds, TDecl(name, kind, generic, false, 0, []string, []string, file, line, []ast.Ty, []int, []string, ""))
 
 fn _typarams_of(cs: inout C, names: [string]):
     cs.typarams = []string: bool
@@ -738,6 +739,7 @@ fn _register(cs: inout C, p: Program):
             _addt(&cs, f.prefix + sd.name, "struct", len(sd.typarams) > 0, f.path, sd.line)
             si2 := cs.tindex[f.prefix + sd.name]
             cs.tds[si2].packed = sd.packed
+            cs.tds[si2].aln = sd.aln
             for fl in sd.fields:
                 push(cs.tds[si2].fnames, fl.name)
             cs.tds[si2].tps = sd.typarams
@@ -967,6 +969,20 @@ fn _is_packed_struct(cs: inout C, t: string) -> bool:
             if d.kind == "newtype":
                 return _is_packed_struct(&cs, d.ftypes[0])
             return d.kind == "struct" and d.packed
+    return false
+
+# size_of$ also takes an `align(N) struct` (spec 12 §17.1b): its size is
+# implementation-defined but a multiple of N, which is what makes align visible.
+fn _is_sized_struct(cs: inout C, t: string) -> bool:
+    if _is_packed_struct(&cs, t):
+        return true
+    if len(t) > 1 and t[0] == 64:
+        m := t[1:]
+        if m in cs.tindex:
+            d := cs.tds[cs.tindex[m]]
+            if d.kind == "newtype":
+                return _is_sized_struct(&cs, d.ftypes[0])
+            return d.kind == "struct" and d.aln > 0
     return false
 
 fn _tdecl(cs: inout C, t: string) -> int:

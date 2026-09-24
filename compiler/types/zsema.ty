@@ -913,8 +913,8 @@ fn _explicit_call(cs: inout C, l: int, q: string, n: string, ts: [ast.Ty], args:
             _cerr(&cs, "size_of$(T) takes exactly one type argument")
             return "int"
         t4 := _enc(&cs, ts[0])
-        if known(t4) and not _is_packed_struct(&cs, t4):
-            _cerr(&cs, "size_of$(" + _show(&cs, t4) + "): only a packed struct has a stated byte size")
+        if known(t4) and not _is_sized_struct(&cs, t4):
+            _cerr(&cs, "size_of$(" + _show(&cs, t4) + "): only a packed or an align(N) struct has a byte size")
         return "int"
     si := -1
     spelt := n
@@ -1205,7 +1205,7 @@ fn _inst_agg(cs: inout C, ti: int, enc: [string]) -> string:
     for i := 0; i < len(cs.tds[ti].tps); i += 1:
         b[cs.tds[ti].tps[i]] = enc[i]
     cs.tindex[key] = len(cs.tds)
-    push(cs.tds, TDecl(key, cs.tds[ti].kind, false, cs.tds[ti].packed, cs.tds[ti].fnames, []string, cs.tds[ti].file, cs.tds[ti].line,
+    push(cs.tds, TDecl(key, cs.tds[ti].kind, false, cs.tds[ti].packed, cs.tds[ti].aln, cs.tds[ti].fnames, []string, cs.tds[ti].file, cs.tds[ti].line,
                        []ast.Ty, []int, []string, ""))
     ni := cs.tindex[key]
     keepb := cs.tbind

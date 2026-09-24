@@ -6896,8 +6896,8 @@ static Type resolve_expr_inner(Expr *e) {
                 if (e->nargs != 0) die_at(e->line, "size_of$(T) takes no value arguments");
                 if (e->ntypeargs != 1) die_at(e->line, "size_of$(T) takes exactly one type argument");
                 Type st = base_of(e->typeargs[0]);
-                if (!(IS_STRUCT(st) && g_structs[STRUCT_ID(st)].packed))
-                    die_at(e->line, "size_of$(%s): only a packed struct has a stated byte size", type_name(e->typeargs[0]));
+                if (!(IS_STRUCT(st) && (g_structs[STRUCT_ID(st)].packed || g_structs[STRUCT_ID(st)].aln)))   /* align(N): implementation-defined, a multiple of N (§17.1b) */
+                    die_at(e->line, "size_of$(%s): only a packed or an align(N) struct has a byte size", type_name(e->typeargs[0]));
                 return e->type = T_INT;
             }
             /* t.wait() / ch.send(v) / ch.recv() / ch.close() sugar on task- and

@@ -231,7 +231,7 @@ accumulator (`acc := zero$(T)`) that must work on an empty input.
 
 | Builtin | Signature | Kind | Semantics |
 |---|---|---|---|
-| `size_of$(T)` | `-> int` | magic | The size of the packed struct `T` in bytes. |
+| `size_of$(T)` | `-> int` | magic | The size of the packed or `align(N)` struct `T` in bytes (§17.1b). |
 | `from_bytes$(T)(b)` | `bytes -> T` | magic | Read a packed struct back out of exactly `size_of$(T)` bytes. |
 
 Both use the same explicit type-argument call form as `zero$(T)`, and both

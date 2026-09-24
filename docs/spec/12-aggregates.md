@@ -427,7 +427,7 @@ type constructor, and like `packed` it does not participate in type identity.
 
 `align(N)` RAISES the aggregate's alignment to `N` bytes: the declaration's size
 becomes a multiple of `N`, so consecutive elements of an array of it stay
-aligned. It never lowers alignment below what the fields already require.
+aligned. `size_of$(T)` reports that size ([§17.1b](#171b-the-bytes-bridge)). It never lowers alignment below what the fields already require.
 
 `N` MUST be a literal power of two, and it MUST NOT exceed **8**. The ceiling is
 the arena's: §22's allocator rounds every allocation to 8 bytes and guarantees
@@ -458,9 +458,13 @@ fn main():
 A packed struct is the only aggregate whose storage a program may move into or
 out of a `bytes` value. Three forms:
 
-- `size_of$(T)` is the size of the packed struct `T` in bytes, an `int`. `T`
-  MUST be a packed struct (or a newtype over one); every other type's layout is
-  implementation-defined and has no stated size.
+- `size_of$(T)` is the size of the struct `T` in bytes, an `int`. `T` MUST be a
+  packed struct or an `align(N)` struct (or a newtype over either). For a packed
+  struct the value is exact, the sum of its field sizes. For an `align(N)` struct
+  it is implementation-defined ([Appendix F](appendix-f-impl-defined.md)) but
+  always a multiple of `N`; this is the one place `align(N)` can be observed
+  from inside the language. Every other type's layout is implementation-defined
+  and has no size a program can ask for.
 - `to_bytes(v)`, where `v` is a packed struct, yields exactly `size_of$(T)`
   bytes.
 - `from_bytes$(T)(b)` reads a `bytes` value back into a `T`. `len(b)` MUST equal

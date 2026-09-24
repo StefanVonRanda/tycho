@@ -23,8 +23,8 @@ the sized conversions are total).
 
 ## F.2 Implementation-defined behavior
 
-An implementation MUST document its choice for each of these; none affects the
-value semantics of a program.
+An implementation MUST document its choice for each of these; none but the last
+affects the value semantics of a program.
 
 | Behavior | Reference |
 |---|---|
@@ -32,6 +32,7 @@ value semantics of a program.
 | **The concurrent-task ceiling** (default 1024) and whether it is overridable at run time. | [§21](13-concurrency.md#21-spawn-task-wait) |
 | **The `parallel for` worker count** (default: one per CPU), whether it is overridable, and **any fixed upper bound on it** (the reference caps the chunk count at 64, so `ncpu()` above 64 is not the width used). | [§22](13-concurrency.md#22-parallel-for) |
 | **Diagnostic message text** for all errors and aborts (this specification constrains the *presence* of an error/abort, never its wording). | [§1.1](00-conventions.md#11-scope) |
+| **An unpacked struct's layout**, and so the value `size_of$(T)` yields for an `align(N)` struct. The one guarantee is that the value is a multiple of `N`. The reference lays the fields out in declaration order at the host C compiler's natural alignment, then rounds the size up to `N`; on every target it builds for, two `u8` fields under `align(8)` are 8 bytes. This row is the one exception to the sentence above: `size_of$` makes it a value. | [§17.1a](12-aggregates.md#171a-packed-layout), [§17.1b](12-aggregates.md#171b-the-bytes-bridge) |
 
 ## F.3 Explicitly *not* implementation-defined
 

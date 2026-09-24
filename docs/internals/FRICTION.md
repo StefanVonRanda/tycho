@@ -8657,8 +8657,8 @@ toolchain against a quoted spec line. The procedure's "check each finding agains
 ### 128. The residue: fourteen findings from 2026-09-21 that nothing has acted on — **OPEN**
 
 **2026-09-24: eleven acted on, marked in the table; the handle `close`/`is_null` row
-since, as #130; layout 4 by `tools/tycho-grade/`, which found #131 on the way in.** Open: the
-design halves of layouts 1 and 6.
+since, as #130; layout 4 by `tools/tycho-grade/`, which found #131 on the way in; the design half of
+layout 1 by `size_of$` on an `align(N)` struct.** Open: the design half of layout 6.
 
 Listed rather than fixed, because they are doc-layer and design questions and the
 surface is frozen. Each is checked against `main` as of 2026-09-22.
@@ -8671,7 +8671,7 @@ surface is frozen. Each is checked against `main` as of 2026-09-22.
 | handle 13 | **FIXED 2026-09-24:** `reference/ffi.md` Linking now tables every flag `--help` lists. correct but unfindable: `-> Option(string)` on an `extern`, `--print-shims`, and that `tychoc --help` beats both FFI pages on the command line |
 | handle 14 | **FIXED 2026-09-24:** reworded in spec §25 and `reference/ffi.md`. §25's scope-exit list — "block end, early `return`, `break`, `continue`, `or_return`" — reads as though a `continue` frees a handle owned by the enclosing scope. It does not; the list is about the owning scope |
 | handle — | **FIXED 2026-09-24, #130:** a use after an unconditional `close(h)` is now a compile error in both compilers. after `close(h)`, `is_null` cannot distinguish "closed" from "never opened", because `close` nulls the variable. Use-after-close is documented as permitted and is not compile-rejected, so the one remaining misuse of an exactly-once resource is undetectable in both directions. A design question |
-| layout 1 | **DOCUMENTED 2026-09-24** as a limitation in `reference/structs-tuples.md`; the design question stays open. `size_of$` requires a packed struct and `packed`/`align(N)` are mutually exclusive, so `align(N)` is **unobservable from inside the language**. The probe had to emit C and run `cc` to learn its `align(8)` did anything |
+| layout 1 | **FIXED 2026-09-24:** `size_of$(T)` also takes an `align(N)` struct, in both compilers; the value is implementation-defined (Appendix F) but always a multiple of `N`, and `tests/align_struct.ty` pins `8 4`. No new name. `size_of$` requires a packed struct and `packed`/`align(N)` are mutually exclusive, so `align(N)` is **unobservable from inside the language**. The probe had to emit C and run `cc` to learn its `align(8)` did anything |
 | layout 3 | **FIXED 2026-09-24:** `vector`/swizzling in `reference/arrays-slices.md`, `packed`/`align` in `structs-tuples.md`, each with a run fence. `vector[`, `align(`, swizzling and `packed` appear **nowhere** in `docs/reference/`. A reader following README → tutorial → reference finishes believing Tycho has no SIMD type, no layout control and no swizzling |
 | layout 4 | **FIXED 2026-09-24:** [`tools/tycho-grade/`](../../tools/tycho-grade/main.ty), a TGA/BMP/QOI colour grader gated by `make grade-check`, grades each pixel as one `vector[4]f32` multiply-add, reorders BGRA↔RGBA with `px.(r, b) = px.(b, r)` and reads its header through a `packed struct`. `align(N)` is deliberately not used: it is unobservable inside the language (layout 1) and the program has no C boundary for it to matter at. `vector[N]T`, `align(N)` and swizzling have **zero** users in `examples/` and `corelib/`; `packed` has four, and `corelib/raster/raster.ty` was singled out as the one teaching example any of the four has |
 | layout 6 | **DOCUMENTED 2026-09-24** as a limitation beside `vector`; the feature stays open. no lane-wise min/max, and `math.clamp` refuses a vector (`does not satisfy comparable(T)`), so the clamp — what a grading kernel does as often as the multiply — drops out of the vector unit |

@@ -484,7 +484,7 @@ tests/reject/sink_consume_mentions.ty	SEMANTIC	10845	'w' is consumed by a `sink`
 tests/reject/sink_consume_param.ty	SEMANTIC	10836	'ys' is a `sink` parameter and cannot be handed to another `sink` parameter: a parameter's buffer is never adopted, however it was declared. Copy it first (`y := ys`) and consume `y`
 tests/reject/sink_match_binding.ty	SEMANTIC	10853	'v' cannot be consumed by a `sink` parameter here; copy it first (`y := v`) and consume `y`
 tests/reject/sink_use_after.ty	SEMANTIC	10845	'b' is consumed by a `sink` parameter but is mentioned 2 times in this function: a sink argument must be the variable's ONLY mention. One textual mention is how the compiler proves the consume is the last use on every path, with no dataflow analysis -- so `len(b)`, `b[0]`, `b[0] = ...` and passing `b` anywhere else all disqualify it, even before this line. Copy it first (`y := b`) and consume `y`
-tests/reject/size_of_not_packed.ty	SEMANTIC	6900	size_of$(int): only a packed struct has a stated byte size
+tests/reject/size_of_not_packed.ty	SEMANTIC	6900	size_of$(int): only a packed or an align(N) struct has a byte size
 tests/reject/size_of_two_typeargs.ty	SEMANTIC	6897	size_of$(T) takes exactly one type argument
 tests/reject/size_of_value_args.ty	SEMANTIC	6896	size_of$(T) takes no value arguments
 tests/reject/sized_conv_string.ty	TYPE	7410	to_u8(x) takes a numeric value

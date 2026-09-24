@@ -34,3 +34,6 @@ fn main():
     for k := 0; k < 4; k += 1:
         push(xs, Pair(to_u8(k), to_u8(k * 2)))
     println(str(len(xs)) + " " + str(xs[3].b))
+    # size_of$ is how align(N) is observed: implementation-defined, but always a
+    # multiple of N -- two u8 fields round up to 8, two u16 to 4 (spec §17.1b).
+    println(str(size_of$(Pair)) + " " + str(size_of$(Quad)))
