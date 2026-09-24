@@ -39,6 +39,12 @@ fn use_res_close():                                                # FFI R2: exp
     println(f"closeuse={u} live_after_close={ffi_res_live()}")     # 7, 0 (freed by close)
     # scope exit here: the null-guarded finalizer is a no-op -> no double free
 
+fn use_res_branch_close(c: bool):                                  # close in a branch: a later mention is a MAYBE
+    r := ffi_res_open(3)                                           # use-after-close, so it compiles (spec §25); a
+    if c:                                                          # close on every path to it would be rejected
+        close(r)                                                   # (tests/reject/handle_use_after_close.ty)
+    println(f"branchclose={b2i(c)} null_after={b2i(is_null(r))} live={ffi_res_live()}")
+
 fn opts(o: Option(string)) -> string:        # FFI R3a: render an Option(string) result
     match o:
         Some(v):
@@ -109,6 +115,9 @@ fn main():
     println(f"live1={ffi_res_live()}")          # 0 again -> destructor ran exactly once
     use_res_close()                             # opens a handle, closes it early (destructor at close)
     println(f"live2={ffi_res_live()}")          # 0 -> closed exactly once, scope-exit was a no-op
+    use_res_branch_close(true)                  # 1 1 0: closed in the branch
+    use_res_branch_close(false)                 # 0 0 1: not closed, freed at its scope exit
+    println(f"live3={ffi_res_live()}")          # 0
     # Stage R3a — `-> Option(string)`: a C NULL surfaces as None (not "")
     println(f"get1={opts(ffi_get(1))} get0={opts(ffi_get(0))}")   # hit -> Some, miss -> None
     # Stage R4 — out-param constructors: `ffi_mk(id, &db) -> rc` + a scalar out-param, no shim

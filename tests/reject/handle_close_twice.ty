@@ -1,0 +1,14 @@
+# src/tychoc.c@shut_mark -- a second `close(h)` is a use after the first. It
+# was harmless at run time (the destructor is null-guarded) but it is always a
+# mistake: the author believes the handle is still open.
+# expect: 'h' is used after `close(h)` closed it
+handle H:
+    free: hc
+
+extern fn ho(i: int) -> H
+extern fn hc(h: H) -> int
+
+fn main():
+    h := ho(1)
+    close(h)
+    close(h)

@@ -91,7 +91,7 @@ See [Concurrency](concurrency.md) for semantics.
 | `send(ch, v)` | `(Channel(T), T) -> void` | Deep-copy `v` in; blocks when full; aborts if closed. |
 | `recv(ch)` | `Channel(T) -> Option(T)` | Blocking receive (deep-copied out); `None` means closed **and** drained. |
 | `close(ch)` | `Channel(T) -> void` | Receivers drain then see `None`; a further send or second close aborts. |
-| `close(h)` | `handle -> void` | On a typed FFI handle **variable**: run its destructor now and null it, so the scope-exit free does not run it again. See [typed handles](ffi.md#typed-handles-safe-by-default-resources). |
+| `close(h)` | `handle -> void` | On a typed FFI handle **variable**: run its destructor now and null it, so the scope-exit free does not run it again. Any later mention of `h` in the same block (a second `close` included) is a compile error; a `close` inside an `if` or loop reaches only that block's end. See [typed handles](ffi.md#typed-handles-safe-by-default-resources). |
 
 ## Filesystem and time
 
@@ -116,7 +116,7 @@ Supporting the [FFI boundary](ffi.md) and the sized numeric types; always availa
 | Builtin | Type | Meaning |
 | --- | --- | --- |
 | `eprint(s)` | `string -> void` | Write `s` to standard error (no newline, no exit). |
-| `is_null(p)` | `ptr -> bool`, `handle -> bool` | Test an opaque FFI `ptr`, or a typed handle, for null. On a handle: true when the opener failed, and true after `close(h)`. |
+| `is_null(p)` | `ptr -> bool`, `handle -> bool` | Test an opaque FFI `ptr`, or a typed handle, for null. On a handle: true when the opener failed, and true after `close(h)`. After a `close(h)` statement in the same block it is a compile error (it could only be `true`); after a `close` in a branch it cannot tell "closed" from "never opened". |
 | `to_ptr(n)` | `int -> ptr` | Make a sentinel `ptr` from an int (e.g. `(void*)-1`); Tycho never dereferences it. |
 | `to_i32(n)` | `int -> int` | Sign-extend the low 32 bits of `n` — for an `extern` that returns a 32-bit C `int`. |
 | `to_u32(x)` / `to_u64(x)` / `to_f32(x)` | numeric `-> u32`/`u64`/`f32` | Convert any numeric scalar to the sized type. |

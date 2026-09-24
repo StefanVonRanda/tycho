@@ -13,7 +13,7 @@ program MUST NOT depend on anything in the "unspecified" list.
 |---|---|---|---|
 | 1 | **Argument / operand evaluation order** within one expression (order of side effects among a call's arguments or a binary operator's operands). *Exceptions:* a side-effecting **index in an assignment place** (`a[f()] = g()`) and the **holes of an f-string** (`f"{a()}{b()}"`) are sequenced **left-to-right** — specified, not in this list. | [§13.4](09-expressions.md#134-evaluation-order) | probed; arguments/operands inherited from the target, not sequenced by Tycho |
 | 2 | **Floating-point reduction reassociation** in `parallel for`: the result MAY differ across thread counts. (Integer reductions are deterministic and are **not** in this list.) | [§22](13-concurrency.md#22-parallel-for) | defined boundary |
-| 3 | **Using a typed handle after `close(h)`** — passes null to C; a logic bug, not memory corruption, not compile-rejected. | [§25](14-ffi.md#25-typed-handles) | defined boundary |
+| 3 | **Using a typed handle after a `close(h)` nested in a branch or loop** — passes null to C; a logic bug, not memory corruption. A use after a `close(h)` statement in the same block is compile-rejected. | [§25](14-ffi.md#25-typed-handles) | defined boundary |
 | 4 | **Behavior on the far side of the FFI boundary** — C-side global/`static` races and misuse. | [§26](14-ffi.md#26-ffi-and-concurrency) | outside all guarantees |
 
 Two items were formerly in this list and are now defined: an out-of-range **shift

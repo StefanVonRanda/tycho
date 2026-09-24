@@ -240,6 +240,8 @@ struct C:
                                        # not knowable here, so the lint is off
     vseen: [string: bool]              # vector spellings already warned about: the
                                        # same type in five signatures is ONE decision
+    shut: [int]                        # var indices a `close(h)` statement closed, for
+    nshut: int                         # the rest of its block (src/tychoc.c@shut_mark)
 
 fn _cexcerpt(cs: inout C, file: string, line: int) -> string:
     if line <= 0:
@@ -1182,6 +1184,12 @@ fn _ex2(cs: inout C, e: ast.Expr, want0: string) -> string:
                 _cerr(&cs, "'" + n + "' is used before its type can be inferred -- assign/push/pass it first, or annotate the declaration")   # src/tychoc.c:6509
                 return "?"
             if len(t) > 0:
+                vi := _vfind(&cs, n)
+                for k := 0; k < cs.nshut; k += 1:
+                    if cs.shut[k] == vi:
+                        cs.line = l
+                        _cerr(&cs, "'" + n + "' is used after `close(" + n + ")` closed it, on every path to here -- a closed handle is null. Close it after its last use, or let scope exit free it")
+                        return t
                 if cs.nlambda > 0 and _vfind(&cs, n) < cs.lam_mark and _head(t) == "chan":
                     cs.line = l
                     _cerr(&cs, "a closure cannot capture a channel handle -- take it as a parameter instead")
@@ -2909,8 +2917,35 @@ fn _const_int(cs: inout C, name: string) -> [int]:
 
 # ---------------------------------------------------------------- statements
 
+# src/tychoc.c@shut_mark -- `close(h)` as a statement of a block closes `h` for
+# the rest of that block: every later mention is on a path through the close.
+# A close nested in an `if`, loop or arm reaches no further than that block.
+fn _shut_mark(cs: inout C, s: ast.Stmt):
+    match s:
+        ast.ExprStmt(l, k):
+            if len(k) != 1:
+                return
+            match k[0]:
+                ast.Call(l2, q, n, ts, a):
+                    if len(q) > 0 or n != "close" or len(a) != 1:
+                        return
+                    match a[0]:
+                        ast.Name(l3, h):
+                            i := _vfind(&cs, h)
+                            if i < 0 or _aff_kind(&cs, cs.vars[i].ty) != "handle":
+                                return
+                            if cs.nshut < len(cs.shut):
+                                cs.shut[cs.nshut] = i
+                            else:
+                                push(cs.shut, i)
+                            cs.nshut += 1
+                        _: pass
+                _: pass
+        _: pass
+
 fn _tblock(cs: inout C, body: [ast.Stmt]):
     m := _vmark(&cs)
+    sm := cs.nshut
     pm := cs.npend
     _ix9 := 0
     for s in body:
@@ -2920,6 +2955,7 @@ fn _tblock(cs: inout C, body: [ast.Stmt]):
             cs.errbase = len(cs.errs)
         _tstmt(&cs, s)
         _copylive_stmt(&cs, body, _ix9)
+        _shut_mark(&cs, s)
         _ix9 += 1
     # src/tychoc.c:9406 -- a pending decl must ground in its OWN block.
     for pi := pm; pi < cs.npend; pi += 1:
@@ -2929,6 +2965,7 @@ fn _tblock(cs: inout C, body: [ast.Stmt]):
                 "' -- no grounding use in its block (annotate: " + cs.pend[pi].name +
                 " : [T] = [] / Option(T) = None)")
     cs.npend = pm
+    cs.nshut = sm
     _vrestore(&cs, m)
 
 fn _tail_add(cs: inout C, line: int, t: string):
@@ -2989,9 +3026,12 @@ fn _value_type(cs: inout C, body: [ast.Stmt], want: string) -> string:
     # -- reading their types as branch results reported `int and string` for a
     # program src/tychoc.c accepts.
     m := _vmark(&cs)
+    sm := cs.nshut
     for i := 0; i < len(body) - 1; i += 1:
         _tstmt(&cs, body[i])
+        _shut_mark(&cs, body[i])
     t := _tail_type(&cs, body[len(body) - 1], want)
+    cs.nshut = sm
     _vrestore(&cs, m)
     return t
 
@@ -3768,7 +3808,7 @@ fn check_on(p: Program, syms: bool) -> C:
     return check_on2(p, syms, "")
 
 fn check_on2(p: Program, syms: bool, tgt: string) -> C:
-    cs := C([]string, -1, []string: bool, []string: bool, 0, []string, []string, []TDecl, []string: int, []FSig, []string: int, []string: string, []string: string, []string: string, []string: int, []string: bool, []string: string, []string: bool, []VBind, 0, []string, []string, []string: int, "", 0, "", "?", false, false, []ast.ImportD, []ast.ImportD, false, 0, 0, false, false, 0, []string: int, []string: bool, []string: bool, 0, 0, false, []string, []string, false, 0, false, "", []string: bool, []string: bool, []Pend, 0, "", []Tail, 0, 0, "", []string: bool)
+    cs := C([]string, -1, []string: bool, []string: bool, 0, []string, []string, []TDecl, []string: int, []FSig, []string: int, []string: string, []string: string, []string: string, []string: int, []string: bool, []string: string, []string: bool, []VBind, 0, []string, []string, []string: int, "", 0, "", "?", false, false, []ast.ImportD, []ast.ImportD, false, 0, 0, false, false, 0, []string: int, []string: bool, []string: bool, 0, 0, false, []string, []string, false, 0, false, "", []string: bool, []string: bool, []Pend, 0, "", []Tail, 0, 0, "", []string: bool, []int, 0)
     cs.symon = syms
     cs.vtgt = tgt
     for f in p.files:

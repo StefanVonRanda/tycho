@@ -5907,7 +5907,7 @@ static void register_builtins(void) {
  * index-set)? Locals yes; parameters are immutable borrows (no). */
 typedef struct { char *name; Type type; int can_mutate; Expr *lit; int used; int line; int report; } Var;   /* lit != NULL: an immutable named literal (const) -- folded at each use */
 static Var *g_vars;
-static int g_nvars = 0, g_vars_cap = 0;
+static int g_nvars = 0, g_vars_cap = 0, g_shut[64], g_nshut = 0; static void shut_mark(Stmt *s); static void shut_check(Var *lv, Expr *e);   /* g_shut: see shut_mark, at the end of this file */
 static int g_unused_local = 0;
 /* >=0: the next resolve_block dup-checks declarations from this g_vars index
  * (a function's top block uses its param base, so a local `:=` colliding with a
@@ -6572,7 +6572,7 @@ static Type resolve_expr_inner(Expr *e) {
                 e->kind = k->kind; e->ival = k->ival; e->fval = k->fval; e->sval = k->sval;
                 return e->type = lit_type(k);
             }
-            if (lv) {
+            if (lv) { shut_check(lv, e);   /* a use after an unconditional close(h) */
                 if (lv->type == T_PENDING)        /* B-3: this use NEEDS the type; grounding hasn't happened */
                     die_at(e->line, "'%s' is used before its type can be inferred -- assign/push/pass it first, or annotate the declaration", nominal_name(e->sval));
                 return e->type = lv->type;
@@ -9445,7 +9445,7 @@ static void resolve_stmt(Stmt *s, Type ret) {
 }
 
 static void resolve_block(Stmt **body, int n, Type ret) {
-    int m = vars_mark();
+    int m = vars_mark(), sm = g_nshut;   /* sm: a close(h) in this block closes h only until its end */
     volatile int dbase = g_dup_base >= 0 ? g_dup_base : m;   /* read after longjmp */   /* fn top block: params included; nested block: own start */
     g_dup_base = -1;
     int pm = g_npend;
@@ -9466,10 +9466,10 @@ static void resolve_block(Stmt **body, int n, Type ret) {
          * body is resolved from gen_program, past the exit gate -- catching an
          * error there would drop it and emit C for an invalid program, which is
          * exactly the fail-open three reject fixtures caught. */
-        if (!outer_ok) { resolve_stmt(body[i], ret); continue; }
+        if (!outer_ok) { resolve_stmt(body[i], ret); shut_mark(body[i]); continue; }
         if (setjmp(g_recov) == 0) {
             g_can_recover = 1;
-            resolve_stmt(body[i], ret);
+            resolve_stmt(body[i], ret); shut_mark(body[i]);
         } else {
             g_nvars = smark;           /* drop anything the failed statement half-pushed */
             if (body[i]->name && g_npoison < (int)(sizeof g_poison / sizeof *g_poison))
@@ -9484,7 +9484,7 @@ static void resolve_block(Stmt **body, int n, Type ret) {
         if (!g_pend[i].done)
             die_at(g_pend[i].decl->line, "could not infer the type of '%s' -- no grounding use in its block (annotate: %s : [T] = [] / Option(T) = None)",
                    g_pend[i].name, g_pend[i].name);
-    g_npend = pm;
+    g_npend = pm; g_nshut = sm;
     vars_restore(m);
 }
 
@@ -15422,4 +15422,25 @@ int main(int argc, char **argv) {
     remove(c_path);
     printf("built %s\n", base);
     return 0;
+}
+
+/* Use after close (spec §25, FRICTION 130). `close(h)` as a STATEMENT of a block
+ * closes `h` for the rest of that block and every block nested after it: each
+ * later mention is on a path through the close, and a handle cannot be
+ * reassigned, so nothing reopens it. A close nested in an `if`, loop or arm
+ * reaches no further than that nested block -- a use after it is a maybe and is
+ * not rejected. g_shut holds the closed Var indices; resolve_block truncates it
+ * at its end. Kept here, below every cited line, so adding it moved no citation. */
+static void shut_mark(Stmt *s) {
+    Expr *e = s->kind == S_EXPR ? s->expr : NULL;
+    if (e && e->kind == E_CALL && e->sval && !strcmp(e->sval, "close") && e->nargs == 1
+        && e->args[0]->kind == E_IDENT && IS_HANDLE(e->args[0]->type) && g_nshut < 64)
+        g_shut[g_nshut++] = (int)(vars_lookup(e->args[0]->sval) - g_vars);
+}
+static void shut_check(Var *lv, Expr *e) {
+    for (int k = 0; k < g_nshut; k++)
+        if (g_shut[k] == lv - g_vars)
+            die_at(e->line, "'%s' is used after `close(%s)` closed it, on every path to here -- "
+                            "a closed handle is null. Close it after its last use, or let scope exit free it",
+                   e->sval, e->sval);
 }

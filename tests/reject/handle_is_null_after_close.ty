@@ -1,0 +1,15 @@
+# src/tychoc.c@shut_mark -- `is_null(h)` is a use too. After a close on every
+# path it is a constant `true`, so the test can only be dead code or a
+# misunderstanding. The closed range reaches into blocks nested after the close.
+# expect: 'h' is used after `close(h)` closed it
+handle H:
+    free: hc
+
+extern fn ho(i: int) -> H
+extern fn hc(h: H) -> int
+
+fn main():
+    h := ho(1)
+    close(h)
+    if len(args()) > 0:
+        println(str(is_null(h)))

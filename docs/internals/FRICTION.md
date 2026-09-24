@@ -8656,8 +8656,8 @@ toolchain against a quoted spec line. The procedure's "check each finding agains
 
 ### 128. The residue: fourteen findings from 2026-09-21 that nothing has acted on — **OPEN**
 
-**2026-09-24: eleven acted on, marked in the table.** Open: the handle `close`/`is_null`
-design question, layout 4 (no `examples/` user of `vector`/`align`/swizzling), and the design
+**2026-09-24: eleven acted on, marked in the table; the handle `close`/`is_null` row
+since, as #130.** Open: layout 4 (no `examples/` user of `vector`/`align`/swizzling), and the design
 halves of layouts 1 and 6.
 
 Listed rather than fixed, because they are doc-layer and design questions and the
@@ -8670,7 +8670,7 @@ surface is frozen. Each is checked against `main` as of 2026-09-22.
 | handle 10 | **FIXED 2026-09-24:** both compilers now name the tail-position rule; `tests/reject/value_if_nested.ty`. `expected an expression` on a nested value `if` never says the rule is *tail position only* |
 | handle 13 | **FIXED 2026-09-24:** `reference/ffi.md` Linking now tables every flag `--help` lists. correct but unfindable: `-> Option(string)` on an `extern`, `--print-shims`, and that `tychoc --help` beats both FFI pages on the command line |
 | handle 14 | **FIXED 2026-09-24:** reworded in spec §25 and `reference/ffi.md`. §25's scope-exit list — "block end, early `return`, `break`, `continue`, `or_return`" — reads as though a `continue` frees a handle owned by the enclosing scope. It does not; the list is about the owning scope |
-| handle — | after `close(h)`, `is_null` cannot distinguish "closed" from "never opened", because `close` nulls the variable. Use-after-close is documented as permitted and is not compile-rejected, so the one remaining misuse of an exactly-once resource is undetectable in both directions. A design question |
+| handle — | **FIXED 2026-09-24, #130:** a use after an unconditional `close(h)` is now a compile error in both compilers. after `close(h)`, `is_null` cannot distinguish "closed" from "never opened", because `close` nulls the variable. Use-after-close is documented as permitted and is not compile-rejected, so the one remaining misuse of an exactly-once resource is undetectable in both directions. A design question |
 | layout 1 | **DOCUMENTED 2026-09-24** as a limitation in `reference/structs-tuples.md`; the design question stays open. `size_of$` requires a packed struct and `packed`/`align(N)` are mutually exclusive, so `align(N)` is **unobservable from inside the language**. The probe had to emit C and run `cc` to learn its `align(8)` did anything |
 | layout 3 | **FIXED 2026-09-24:** `vector`/swizzling in `reference/arrays-slices.md`, `packed`/`align` in `structs-tuples.md`, each with a run fence. `vector[`, `align(`, swizzling and `packed` appear **nowhere** in `docs/reference/`. A reader following README → tutorial → reference finishes believing Tycho has no SIMD type, no layout control and no swizzling |
 | layout 4 | `vector[N]T`, `align(N)` and swizzling have **zero** users in `examples/` and `corelib/`; `packed` has four, and `corelib/raster/raster.ty` was singled out as the one teaching example any of the four has |
@@ -8716,3 +8716,43 @@ not theirs.
 payload with `((void)0)`. The reference compiler now does the same. The pin reads
 the emitted C for the two call sites rather than grepping the compiler source,
 and was run against the unfixed compiler first: it goes red there.
+
+### 130. A use after `close(h)` compiled, and `is_null` could not tell closed from never opened — **FIXED 2026-09-24**
+
+> Pinned-by: ./tychoc --emit-c -o /dev/null tests/reject/handle_use_after_close.ty 2>&1 | grep -q 'is used after'
+> Pinned-by: ./tychoc1 --typecheck tests/reject/handle_close_twice.ty 2>&1 | grep -q 'is used after'
+> Pinned-by: sh tests/ffi/run.sh
+
+The `handle —` row of #128. `close(h)` runs the destructor and nulls the
+variable, so every later use passed null to C, a second `close` was silently a
+no-op, and `is_null(h)` answered `true` for "closed" and for "the opener failed"
+alike. Spec §25 documented use-after-close as permitted. For the one resource
+kind whose whole point is *exactly once*, that left the remaining misuse
+undetectable both at compile time and at run time.
+
+Neither compiler has dataflow, and none was added. The rule leans on two
+properties handles already have: they are affine and they cannot be
+reassigned. A `close(h)` **statement** therefore closes `h` for the rest of
+its block, and blocks nested after it. Every later mention there is on a
+path through the close, so it is rejected: a call that passes `h`, a second
+`close(h)`, and `is_null(h)`, which could only be a constant `true`. A close
+inside an `if`, a loop body or an arm reaches only the end of that block, so
+a use after it is a maybe and still compiles. The rule claims only
+certainties, and the maybe case is exercised by
+`tests/ffi/main.ty@use_res_branch_close`. `src/tychoc.c@shut_mark` records the
+closed variable and `resolve_block` truncates the record at the block's end.
+The E_IDENT resolve refuses a closed variable, so shadowing is handled by the
+ordinary scope lookup. `compiler/types/tcheck.ty@_shut_mark` does the same in
+`_tblock` and in `_value_type`, whose value-arm statements bypass `_tblock`.
+A first cut missed that path and diverged on a close inside a value `if` arm.
+The message is word-for-word in both compilers.
+
+What stays open is the maybe path. There `is_null(h)` still cannot
+distinguish a branch that closed from an opener that failed. Answering that
+would need a second run-time state or a new builtin, and the surface is
+frozen. The spec says to keep a `bool` beside the handle.
+
+A finding made on the way, not fixed here: `close(h)` on a handle
+**parameter** compiles. The callee nulls only its own copy, so the caller's
+scope-exit free runs the destructor a second time. That is a double free, and
+it contradicts §25's "the callee does not free it".

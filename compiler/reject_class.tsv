@@ -245,9 +245,11 @@ tests/reject/generic_struct_field_task.ty	SEMANTIC	2314	a struct field cannot be
 tests/reject/generic_struct_tparam_unfixed.ty	SEMANTIC	7240	type parameter $U of Box is not fixed by any field value
 tests/reject/generic_typaram_max.ty	SEMANTIC	2468	too many type parameters (max 16)
 tests/reject/handle_body_not_free.ty	SYNTAX	4968	a handle body is exactly 'free: <c_free_fn>'
+tests/reject/handle_close_twice.ty	SEMANTIC	15443	'h' is used after `close(h)` closed it, on every path to here -- a closed handle is null. Close it after its last use, or let scope exit free it
 tests/reject/handle_dup_name.ty	NAME	4603	'H' is already defined
 tests/reject/handle_free_undeclared.ty	SEMANTIC	9952	the destructor 'hc2' of handle 'R' is not a declared `extern fn` -- add `extern fn hc2(h: R)`; without it the scope-exit free reaches cc with no prototype and the error names the generated C, not this line
 tests/reject/handle_free_wrong_type.ty	SEMANTIC	9959	the destructor 'hc' of handle 'R' must take exactly one parameter of type R -- that is what the scope-exit free passes it
+tests/reject/handle_is_null_after_close.ty	SEMANTIC	15443	'h' is used after `close(h)` closed it, on every path to here -- a closed handle is null. Close it after its last use, or let scope exit free it
 tests/reject/handle_named_some.ty	NAME	4603	'Some' is already defined
 tests/reject/handle_reassign.ty	SEMANTIC	9050	a handle variable cannot be reassigned -- it is freed once, at the end of its scope
 tests/reject/handle_then_enum.ty	NAME	4603	'H' is already defined
@@ -255,6 +257,7 @@ tests/reject/handle_then_newtype.ty	NAME	4603	'H' is already defined
 tests/reject/handle_then_struct.ty	NAME	4603	'H' is already defined
 tests/reject/handle_unbound_arg.ty	SEMANTIC	7810	the result of 'ho' is a handle and must be bound to a variable (d := ho(...)) -- a handle is freed when its owning variable's scope exits, so one that is never bound is never freed
 tests/reject/handle_unbound_stmt.ty	SEMANTIC	7810	the result of 'ho' is a handle and must be bound to a variable (d := ho(...)) -- a handle is freed when its owning variable's scope exits, so one that is never bound is never freed
+tests/reject/handle_use_after_close.ty	SEMANTIC	15443	'h' is used after `close(h)` closed it, on every path to here -- a closed handle is null. Close it after its last use, or let scope exit free it
 tests/reject/hash_float.ty	TYPE	7385	hash(x) can't hash a float (hashable = the map-key types: int, string, their newtypes, fieldless enums, and composites of those)
 tests/reject/hash_two_args.ty	SEMANTIC	7379	hash(x) takes one argument
 tests/reject/hex_escape_in_string.ty	SYNTAX	766	unsupported escape \x (use \n \t \r \\ \")

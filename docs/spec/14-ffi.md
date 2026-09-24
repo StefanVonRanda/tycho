@@ -306,10 +306,21 @@ permitted to *return* a handle) and released without explicit calls.
   handle to null; the scope-exit finalizer is null-guarded, so the destructor
   runs **exactly once**. `close` requires a handle **variable** (a call result has
   no owning scope); otherwise it is a compile error.
-- **Use after `close`.** Using a handle after `close(h)` passes null to C — a
-  logic bug, **not** memory corruption, and (in this version) **not**
-  compile-rejected (it mirrors the run-time-not-compile-time stance on a second
-  `wait`).
+- **Use after `close`.** A `close(h)` **statement** closes `h` for the rest of
+  the block it is written in, including every block nested after it. Any later
+  mention of `h` there is a compile error — a call that passes it, a second
+  `close(h)`, and `is_null(h)`, which could only be a constant `true`. Each such
+  mention is on every path through the close, and a handle cannot be
+  reassigned, so nothing can reopen it. The rule is lexical and claims only
+  certainties: a `close(h)` inside an `if`, a loop body or a `match` arm closes
+  `h` only until the end of *that* block. A mention after the `if` is a maybe
+  and compiles; so does the next loop iteration's use of a handle closed in the
+  body. On such a path the handle may be null, and passing it to C is a logic
+  bug, **not** memory corruption. There `is_null(h)` is true when the branch
+  closed it *or* the opener failed, and nothing distinguishes the two — keep a
+  `bool` beside it if the difference matters. Locked by
+  `tests/reject/handle_use_after_close.ty`, `handle_close_twice.ty` and
+  `handle_is_null_after_close.ty`; the branch case runs in `tests/ffi/main.ty`.
 
 ## 26. FFI and concurrency
 

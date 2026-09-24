@@ -1,0 +1,17 @@
+# src/tychoc.c@shut_mark -- `close(h)` as a statement closes `h` for the rest of
+# its block: the handle is null from here on, so this call can only pass null to
+# C. Handles cannot be reassigned, so no later statement can reopen `h`. The
+# branch twin (a close inside an `if`, then a use) is still accepted, because
+# that use is a maybe -- tests/ffi/main.ty@use_res_branch_close runs it.
+# expect: 'h' is used after `close(h)` closed it
+handle H:
+    free: hc
+
+extern fn ho(i: int) -> H
+extern fn hc(h: H) -> int
+extern fn hu(h: H) -> int
+
+fn main():
+    h := ho(1)
+    close(h)
+    println(str(hu(h)))
