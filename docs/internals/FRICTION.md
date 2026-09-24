@@ -8674,7 +8674,7 @@ surface is frozen. Each is checked against `main` as of 2026-09-22.
 | layout 8a | §5.5 omits `u8` from the ordered scalars, the mixed-type diagnostic omits `char`/`u32`/`u64`/`f32`, and the compiler's real rule is in neither. Two documents, two different wrong answers |
 | layout 8b | `str()` on a vector works and is undocumented; a vector as a struct field works and is undocumented |
 | layout 8c | `bytes` `+` and `[a:b]` are in the spec and absent from `reference/types.md`'s `bytes` section — correct docs, wrong layer |
-| both | two `-Wunused-value` warnings out of `core:strings`' `slice_bytes`/`slice_str` land in **every** user's build, naming a generated line in a file that is then deleted. Both probes hit them independently and both spent time establishing they had not done something wrong |
+| both | **FIXED 2026-09-24, #129.** two `-Wunused-value` warnings out of `core:strings`' `slice_bytes`/`slice_str` land in **every** user's build, naming a generated line in a file that is then deleted. Both probes hit them independently and both spent time establishing they had not done something wrong |
 
 **The shape of the residue is one finding.** Nine of the fourteen are the same
 defect: the rule exists, the compiler is right, and the page a first contact
@@ -8694,3 +8694,21 @@ cost future rounds rather than this one:
   across providers`), so **which model wrote either report is not recorded
   anywhere**. The procedure has a whole section on choosing a model and no step
   that writes down the one used.
+
+### 129. Every user's build drew two `-Wunused-value` warnings out of `core:strings` — **FIXED 2026-09-24**
+
+> Pinned-by: ! ( ./tychoc --emit-c tests/pkg/vendor_deps/main.ty | grep '= h_strings___slice_ok(' | grep -qv '((void)0); })' )
+
+The `both` row of #128. `slice_bytes` and `slice_str` each open with
+`_slice_ok(...) or_return` on a `Result(void, SliceErr)`, and `src/tychoc.c`
+emitted every `or_return` as a statement expression ending in `_orN.okv` —
+the ok payload — whether or not there was one. On a void result that tail is a
+placeholder nobody reads, so `cc` warned about it in every program that imported
+`core:strings`, naming a line in a generated file that is deleted after the build.
+Both probes hit it independently and both spent time establishing the warning was
+not theirs.
+
+`tychoc1` never had it: `_orret` in `compiler/emit/emit.ty` already ends a void
+payload with `((void)0)`. The reference compiler now does the same. The pin reads
+the emitted C for the two call sites rather than grepping the compiler source,
+and was run against the unfixed compiler first: it goes red there.

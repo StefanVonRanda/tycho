@@ -11661,10 +11661,10 @@ static char *gen_expr(Expr *e, const char *arena) {
                 return sfmt("({ %s_or%d = %s; if (!_or%d.has) { %s return (%s){0}; } _or%d.val; })",
                             c_type(e->lhs->type), id, v, id, rf, c_type(g_gen_ret), id);
             }
-            char *promote = copy_into(res_err(g_gen_ret), "_parent", sfmt("_or%d.errv", id));
-            return sfmt("({ %s_or%d = %s; if (!_or%d.ok) { %s_rr%d = (%s){ .ok = 0, .errv = %s }; %s return _rr%d; } _or%d.okv; })",
+            char *promote = copy_into(res_err(g_gen_ret), "_parent", sfmt("_or%d.errv", id));   /* tail: a void okv is no value, and naming it is -Wunused-value in every build (FRICTION 129; tychoc1 emits ((void)0) too) */
+            return sfmt("({ %s_or%d = %s; if (!_or%d.ok) { %s_rr%d = (%s){ .ok = 0, .errv = %s }; %s return _rr%d; } %s; })",
                         c_type(e->lhs->type), id, v, id,
-                        c_type(g_gen_ret), id, c_type(g_gen_ret), promote, rf, id, id);
+                        c_type(g_gen_ret), id, c_type(g_gen_ret), promote, rf, id, res_ok(e->lhs->type) == T_VOID ? "((void)0)" : sfmt("_or%d.okv", id));
         }
         case E_TUPLE: {   /* (e1, ..., en): positional struct literal; heap places deep-copied in */
             char *out = sfmt("(%s){ ", c_type(e->type));
