@@ -118,6 +118,7 @@ tests/reject/typeset_badtp.ty	ACCEPTED	`where Q: ...` parses; whether `Q` is a t
 tests/reject/upper_bind_local_used.ty	ACCEPTED	the grammar's identifier rule has no case classes, so `Ok` binds like any name
 tests/reject/upper_bind_param_used.ty	ACCEPTED	as upper_bind_local_used, in parameter position
 tests/reject/value_arm_no_tail.ty	ACCEPTED	a match arm ending in a statement parses; "must end in a value" needs the arm's position
+tests/reject/value_if_nested.ty	ACCEPTED	a value if in operand position parses; "tail position only" needs the expression's position, which is the compiler's rule, not the grammar's
 tests/reject/variadic_inout.ty	ACCEPTED	`inout ...int` is a well-formed parameter; that the two modifiers exclude each other is tychoc's
 tests/reject/variadic_not_last.ty	ACCEPTED	the parameter list parses in any order; "last" is a positional rule tychoc enforces
 tests/reject/variant_payload_max.ty	ACCEPTED	a ceiling (8 payload fields)

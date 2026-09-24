@@ -1,0 +1,12 @@
+# Said only "expected an expression", with the caret on a perfectly good `if`.
+# A value `if`/`match` is legal only as a whole right-hand side (spec 13.5), and
+# the message now says so and names the cure (FRICTION 128, handle probe 10).
+# expect: a value `if`/`match` may only be the whole right-hand side
+fn f(x: int) -> int:
+    return 1 + if x > 0:
+        x
+    else:
+        0
+
+fn main():
+    println(str(f(2)))

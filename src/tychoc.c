@@ -3200,10 +3200,10 @@ static Expr *parse_primary(Parser *ps) {
         return e;
     }
     g_err_col = t->col;
-    /* An INDENT here means the line is indented deeper than the block it is in,
-     * with no construct opening a body. In an indentation-significant language
-     * that is the commonest newcomer mistake, and "expected an expression" says
-     * nothing about it -- name the indentation instead. */
+    /* An INDENT here: a line indented deeper than its block with nothing opening a body --
+     * the commonest newcomer mistake in an indentation-significant language, and "expected
+     * an expression" says nothing about it. Likewise a value if/match off the tail (13.5). */
+    if (t->kind == TK_IF || t->kind == TK_MATCH) die_at(t->line, "expected an expression -- a value `if`/`match` may only be the whole right-hand side of `:=`, `=` or `return`; bind it to a variable first");
     if (t->kind == TK_INDENT)
         die_at(t->line, "unexpected indentation: this line is indented further "
                         "than the block it belongs to, and nothing above it opens "
@@ -7912,8 +7912,8 @@ static Type resolve_expr_inner(Expr *e) {
                     int ok = lt == rt && (b == T_INT || b == T_CHAR || b == T_FLOAT || b == T_STRING ||
                                           b == T_F32 || is_sized_int(b));
                     if (!ok)
-                        die_at(e->line, "ordering compares two ints, two floats, two strings, "
-                               "or two values of the same numeric newtype");
+                        die_at(e->line, "ordering compares two ints, two floats, two chars, two strings, two of one sized type "
+                               "(u8..u64, i8..i64, f32), or two of the same newtype over one of these");
                 }
                 return e->type = T_BOOL;
             }

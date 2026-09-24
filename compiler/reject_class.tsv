@@ -92,7 +92,7 @@ tests/reject/char_empty.ty	SYNTAX	854	empty or unterminated char literal
 tests/reject/char_escape_unsupported.ty	SYNTAX	850	unsupported char escape (use \n \t \r \0 \xNN \\ \')
 tests/reject/char_int_eq.ty	TYPE	7892	cannot compare char with int
 tests/reject/char_int_mul.ty	TYPE	8107	arithmetic requires two ints or two floats (got char, int) -- convert one side, e.g. to_float(x) to compute in floats, or to_int(x) in ints
-tests/reject/char_int_ord.ty	TYPE	7915	ordering compares two ints, two floats, two strings, or two values of the same numeric newtype
+tests/reject/char_int_ord.ty	TYPE	7915	ordering compares two ints, two floats, two chars, two strings, two of one sized type (u8..u64, i8..i64, f32), or two of the same newtype over one of these
 tests/reject/char_two_chars.ty	SYNTAX	855	char literal must be exactly one character
 tests/reject/char_unexpected.ty	SYNTAX	898	unexpected character '?'
 tests/reject/close_handle_nonvar.ty	SEMANTIC	7347	close(h) takes a handle variable
@@ -181,7 +181,7 @@ tests/reject/fixed_array_nonconst_size.ty	TYPE	2653	a fixed-size array length mu
 tests/reject/fixed_array_zero_size.ty	SYNTAX	2656	a fixed-size array length must be positive
 tests/reject/float_exp_bad.ty	SYNTAX	2143	expected newline
 tests/reject/float_int_eq.ty	TYPE	7892	cannot compare float with int
-tests/reject/float_int_var_ord.ty	TYPE	7915	ordering compares two ints, two floats, two strings, or two values of the same numeric newtype
+tests/reject/float_int_var_ord.ty	TYPE	7915	ordering compares two ints, two floats, two chars, two strings, two of one sized type (u8..u64, i8..i64, f32), or two of the same newtype over one of these
 tests/reject/float_lit_overflow_neg.ty	SYNTAX	686	float literal out of range: `1e400` exceeds the largest float (IEEE-754 binary64); write 1.0/0.0 for an infinity
 tests/reject/fn_eq.ty	TYPE	7899	functions are not comparable -- closures have no structural equality; compare the values they produce instead
 tests/reject/fn_named_ok.ty	NAME	4603	'Ok' is already defined
@@ -583,6 +583,7 @@ tests/reject/value_ctrl_all_diverge.ty	SEMANTIC	8907	every branch of this value 
 tests/reject/value_ctrl_bare_none.ty	SEMANTIC	8912	cannot infer the type of this branch — a bare Ok/Err/None is fixed only by a destination type, and neither := nor x : T = flows one in; write the branch with a concrete type, or bind it via an assignment/return
 tests/reject/value_ctrl_task.ty	SEMANTIC	8926	a value if/match cannot produce a task handle
 tests/reject/value_ctrl_void_branch.ty	SEMANTIC	8914	a value if/match branch must produce a value, not void
+tests/reject/value_if_nested.ty	SYNTAX	3206	expected an expression -- a value `if`/`match` may only be the whole right-hand side of `:=`, `=` or `return`; bind it to a variable first
 tests/reject/variadic_empty_generic.ty	SEMANTIC	7640	cannot infer the element type of an empty variadic call to generic 'count'; pass at least one argument, or name the type: count$(<type>)()
 tests/reject/variadic_empty_untyped.ty	SEMANTIC	7640	cannot infer the element type of an empty variadic call to generic 'count'; pass at least one argument, or name the type: count$(<type>)()
 tests/reject/variadic_generic_no_args.ty	SEMANTIC	7640	cannot infer the element type of an empty variadic call to generic 'pack'; pass at least one argument, or name the type: pack$(<type>)()

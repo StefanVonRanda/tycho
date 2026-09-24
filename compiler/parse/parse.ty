@@ -773,6 +773,8 @@ fn _primary_into(toks: [lex.Tok], i0: int, out: inout ast.Expr) -> int:
 
     if toks[ti].k == lex.K_INDENT:
         _die(toks, _at(toks, i0), "unexpected indentation: this line is indented further than the block it belongs to, and nothing above it opens a new block")
+    if _iskw(toks, i0, lex.KW_IF) or _iskw(toks, i0, lex.KW_MATCH):
+        _diec(toks, _at(toks, i0), "expected an expression -- a value `if`/`match` may only be the whole right-hand side of `:=`, `=` or `return`; bind it to a variable first")
     _diec(toks, _at(toks, i0), "expected an expression")
     out = ast.IntLit(toks[ti].line, 0)
     return i0

@@ -1860,7 +1860,7 @@ fn _binop(cs: inout C, op: string, k: [ast.Expr]) -> string:
             lt = "float"
         b := _base(&cs, lt)
         if lt != rt or not (_is_num(b) or b == "char" or b == "string"):
-            _cerr(&cs, "ordering compares two ints, two floats, two strings, or two values of the same numeric newtype")
+            _cerr(&cs, "ordering compares two ints, two floats, two chars, two strings, two of one sized type (u8..u64, i8..i64, f32), or two of the same newtype over one of these")
         return "bool"
     if op == "+" and lt == "string":
         if rt != "string" and rt != "char":

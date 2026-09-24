@@ -550,8 +550,9 @@ it compares by identity. Comparing values of two different types is a compile
 error.
 
 **Ordering (`<`, `>`, `<=`, `>=`).** Both operands MUST have the same type, and
-that type's underlying scalar MUST be one of `int`, `char`, `float`, `string`,
-`u32`, `u64`, or `f32` (or a newtype over one of these). Structs, tuples,
+that type's underlying scalar MUST be `int`, `float`, `char`, `string`, or a
+sized numeric (`u8`, `u16`, `u32`, `u64`, `i8`, `i16`, `i32`, `i64`, `f32`) — or a
+newtype over one of these. Structs, tuples,
 arrays, maps, enums, and `bool` are **not** ordered. String ordering is
 byte-lexicographic.
 
