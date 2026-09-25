@@ -1240,11 +1240,12 @@ fn handle_inlay(id: Json, uris: [string], texts: [string], syms: [string], param
 # the tree-sitter grammar painted it a keyword, in the same buffer
 # (the loops-cleanup plan). All three are hard
 # tokens in the compiler's lexer:
-# src/tychoc.c:322 (or_return), :181 (parallel), :182 (select).
+# src/tychoc.c:493@or_return, src/tychoc.c:501@parallel, src/tychoc.c:502@select.
 # The four soft ones already here are NOT drift and stay: `handle` is a hard
-# token too (src/tychoc.c:335), while `const`, `sink`, `where` and `soa` are
-# TK_IDENT matched by text in the parser (src/tychoc.c:3646, :3681, :3715,
-# :1911) -- keywords to a reader, contextual to the lexer, and both grammars
+# token too (src/tychoc.c:508@handle), while `const`, `sink`, `where` and `soa` are
+# TK_IDENT matched by text in the parser (src/tychoc.c:4038@const,
+# src/tychoc.c:4648@sink, src/tychoc.c:4684@where, src/tychoc.c:2476@soa) --
+# keywords to a reader, contextual to the lexer, and both grammars
 # highlight them.
 fn sem_is_keyword(w: string) -> bool:
     return w == "fn" or w == "struct" or w == "enum" or w == "type" or w == "import" or w == "package" or w == "const" or w == "extern" or w == "handle" or w == "return" or w == "if" or w == "elif" or w == "else" or w == "for" or w == "in" or w == "while" or w == "match" or w == "break" or w == "continue" or w == "and" or w == "or" or w == "not" or w == "true" or w == "false" or w == "null" or w == "inout" or w == "sink" or w == "where" or w == "spawn" or w == "soa" or w == "pass" or w == "parallel" or w == "select" or w == "or_return" or w == "or_else" or w == "is"

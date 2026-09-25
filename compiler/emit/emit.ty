@@ -1001,7 +1001,7 @@ fn _tmang(cs: inout C, t: string) -> string:
         return _tname(t)
     return ""
 
-# src/tychoc.c:2322 and :2273 append one `__<type>` per type PARAMETER.
+# src/tychoc.c:2336@g_structs and src/tychoc.c:2381@g_enums append one `__<type>` per type PARAMETER.
 fn _instname(cs: inout C, gn: string, targs: [string]) -> string:
     out := gn
     for i := 0; i < len(targs); i += 1:

@@ -1,5 +1,5 @@
-# src/tychoc.c:6780 -- a nullary variant of a generic enum fixes no $T, and the
-# qualified spelling has its own message (the bare one at :6130 names the enum).
+# src/tychoc.c:6848@generic -- a nullary variant of a generic enum fixes no $T, and the
+# qualified spelling has its own message (the bare one at src/tychoc.c:6644@generic names the enum).
 # expect: lib.Empty is a variant of a generic enum; supply the type explicitly, e.g. lib.Empty$(int)
 package main
 import "lib"

@@ -44,16 +44,11 @@ bare `path:N` has no such protection. That is a reason to anchor, and a reason
 to run check_citations.py after every `--apply` rather than trusting this
 script's own report.
 
-WHAT IT DOES NOT REACH, so check these by hand afterwards (none is policed by
-check_citations.py either, which is why they drift silently):
-
-  1. a bare `:N` continuation after a real citation on the same line of a
-     SOURCE file -- `src/tychoc.c:10987, :9666`. The checker's SRCCITE pattern
-     requires a path, so the second ref is unchecked.
-  2. the same inside `.ty` fixture comments.
-  3. a file's own `(:4592)`-style self-references.
-
-  Find them with:  git grep -nE '[ (]:[0-9]{3,5}\\b' -- <path>
+WHAT IT DOES NOT REACH: a bare `:N` in a SOURCE file -- a continuation after a
+real citation on the same line (`src/tychoc.c:N, :M`), the same inside a `.ty`
+fixture comment, or a file's own self-reference. None names a file, so there is
+nothing to remap. check_citations.py now FAILS on that shape (BARE_SRC), so
+write every source-file ref as `path:N@token` and this script reaches it.
 
 WHICH FILES IT RE-ANCHORS. With no positional argument it takes EVERY file the
 diff against <ref> moved that something else in the tree cites, and re-anchors

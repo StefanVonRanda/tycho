@@ -6763,7 +6763,7 @@ static Type resolve_expr_inner(Expr *e) {
             if (is_array(bt)) return e->type = arr_elem(bt);   /* array element */
             if (IS_SOA(bt)) return e->type = soa_struct(bt);   /* soa element (only valid under .field) */
             /* A string byte and a bytes byte are the SAME read: both are the
-             * length-headered char* buffer (T_BYTES at :505), so both lower to
+             * length-headered char* buffer (T_BYTES, src/tychoc.c:947@T_BYTES), so both lower to
              * tycho_str_get. The result is the byte VALUE as an int (0..255),
              * not a 1-length buffer: that is what a byte-classifying loop
              * (`if is_ctl(b[i])`) wants, it needs no allocation, and it keeps
@@ -7973,7 +7973,7 @@ static Type resolve_expr_inner(Expr *e) {
                 return e->type = T_STRING;   /* string + char appends one byte (no alloc) */
             }
             /* bytes + bytes / bytes + char: the same two concats, because bytes IS
-             * string's buffer (:505). No implicit widening from string: crossing
+             * string's buffer (src/tychoc.c:947@T_BYTES). No implicit widening from string: crossing
              * the intent boundary stays explicit (to_bytes/to_str). */
             if (e->op == TK_PLUS && lt == T_BYTES) {
                 if (rt != T_BYTES && rt != T_CHAR)
@@ -8255,7 +8255,7 @@ static Type resolve_exp(Expr *e, Type want) {
     /* AUDIT: Some(x)/Ok(x)/Err(x) checked against a matching Option/Result — push the
      * expected inner type into the payload so a bare None/Ok/Err at ANY nesting depth
      * is fixed from context (Some(None) : Option(Option(int)), Ok(None), Some(Ok(1))).
-     * Without this the synthesis-only E_SOME (:4403) dies on a bare payload. Swift. */
+     * Without this the synthesis-only E_SOME dies on a bare payload. Swift. */
     if (e->kind == E_SOME && IS_OPT(want)) {
         Type in = resolve_exp(e->lhs, opt_inner(want));
         if (in != opt_inner(want)) {
@@ -8677,10 +8677,10 @@ static void resolve_parfor(Stmt *s) {
      * here and forces a decision, instead of silently defaulting.
      * is_sink MUST be 0, and not merely by accident: `sink` means an OWNED
      * value the callee may consume once (is_sink_param -> can_move_from,
-     * :7311/:7865). Every chunk proc is handed the SAME capture values, and the
+     * src/tychoc.c:10479@can_move_from). Every chunk proc is handed the SAME capture values, and the
      * bounds/captures are borrows of the enclosing scope, so consuming one in
      * any chunk would hand off a buffer another chunk still reads. 0 is the
-     * required value, and it matches the lambda-lift twin at :4565 which sets
+     * required value, and it matches the lambda-lift twin at src/tychoc.c:6499@is_sink which sets
      * `caps[ncap].is_sink = 0` explicitly. is_variadic is 0 (a synthesized
      * chunk proc has a fixed arity) and ffi_ct is NULL (no FFI boundary). */
     pr->params[0] = (Param){ "__plo", T_INT, 0, 0, 0, NULL };
@@ -9719,7 +9719,7 @@ static void instantiate_generic(Proc *gt, Expr *e) {
             nm = sfmt("%s__%s", nm, type_mangle_ident(binds[(int)(gt->typarams[i] - T_TYPARAM_BASE)]));
     }
     cret = subst_type(gt->ret, binds);
-    if (IS_HANDLE(cret))   /* the instance half of :4429. A channel and a task are refused returning out of a generic by their own guards; a handle was not, and `g := ident(f)` DOUBLE FREED -- the callee frees at its scope exit and the caller frees the copy again (glibc "double free detected in tcache 2", observed 2026-08-14) */
+    if (IS_HANDLE(cret))   /* the instance half of src/tychoc.c:4675@handle. A channel and a task are refused returning out of a generic by their own guards; a handle was not, and `g := ident(f)` DOUBLE FREED -- the callee frees at its scope exit and the caller frees the copy again (glibc "double free detected in tcache 2", observed 2026-08-14) */
         die_at(e->line, "a Tycho fn cannot return a handle -- '%s' was instantiated at one; only an `extern fn` opener may, because a handle is freed at the end of its scope",
                gt->name);
     if (has_typaram(cret))

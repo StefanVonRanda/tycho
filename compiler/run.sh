@@ -149,7 +149,7 @@ tr=0; tm=0; ta=0; tw=0
 # B-3 grounding analysis was ported into compiler/types/tcheck.ty@_pend_ground:
 # both are refused by their OWN rule now, byte for byte with ./tychoc.
 # infer_bare_empty LEFT it earlier, when `declared and not used` became fatal --
-# by THAT rule, not by grounding; it is the :8909 audit that refuses it today.
+# by THAT rule, not by grounding; it is the B-3 audit (src/tychoc.c:9545@grounding) that refuses it today.
 # len_scalar LEFT it too, when the f-string interpolation holes became real
 # expressions: the `len` rule was always here, the hole was simply never walked.
 KNOWN_TYPE_MISS=""

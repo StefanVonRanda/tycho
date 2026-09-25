@@ -219,7 +219,8 @@ fn _vec_width(cs: inout C, n: string, el: string):
 
 # ------------------------------------------------------------------- the FFI
 #
-# src/tychoc.c:4848-4867 and the two die sites at :4585 / :4611. The sized
+# src/tychoc.c:4848-4867@ffi_scalar_type and the two die sites at
+# src/tychoc.c:4929@parameter / src/tychoc.c:4955@ret_opt_str. The sized
 # numerics are accepted because parse_type consumes the sized-type NAME in an
 # extern signature and hands back `int`; tychoc1 keeps the spelling, so the
 # names are listed.
@@ -270,12 +271,12 @@ fn _aff_param_check(cs: inout C, name: string, t: string, flag: string):
 # ------------------------------------------- declaration-shape rules (6b)
 #
 # Each of these is a whole-declaration rule src/tychoc.c runs once, in
-# resolve_program (:9196-9235) or while the declaration is parsed. They are
+# resolve_program (src/tychoc.c:9922-9961@resolve_program) or while the declaration is parsed. They are
 # `_cperr`s for the same reason Phase 6a's parse_type rules are: they precede
 # every body diagnostic in the build.
 
 # A `[$N]T` size parameter is meaningful only in a generic fn parameter, where
-# the argument fixes N. src/tychoc.c:9862 / :9219 / :9226.
+# the argument fixes N. src/tychoc.c:9944@struct / src/tychoc.c:9949@enum / src/tychoc.c:9952@newtype.
 fn _has_sizeparam(t: ast.Ty) -> bool:
     match t:
         ast.TFix(sz, k):
@@ -309,8 +310,8 @@ fn _has_sizeparam(t: ast.Ty) -> bool:
         _: return false
     return false
 
-# A struct FIELD may not be a channel (src/tychoc.c:9852) nor a handle
-# (:4697); a task has no type syntax and cannot be written in one.
+# A struct FIELD may not be a channel (src/tychoc.c:9929@channel) nor a handle
+# (src/tychoc.c:5123@handle_container_err); a task has no type syntax and cannot be written in one.
 fn _field_aff(cs: inout C, dline: int, t: string):
     k := _aff_kind(&cs, t)
     if len(k) == 0:
@@ -389,8 +390,8 @@ fn _aff_reassign_check(cs: inout C, name: string, vt: string):
 
 # ------------------------------------------------------- generic instantiation
 #
-# src/tychoc.c@instantiate_generic (:8940-9040) and the Stage-2 deep clone at
-# :12773. What is reproduced here is the INFERENCE, not the clone: a call to a
+# src/tychoc.c@instantiate_generic and the Stage-2 deep clone at
+# src/tychoc.c:13642@Stage. What is reproduced here is the INFERENCE, not the clone: a call to a
 # generic binds each `$T` by unifying the written parameter pattern against the
 # argument's type, checks the `where` predicates against the bindings, and
 # answers the SUBSTITUTED return type instead of `?`.
@@ -1072,7 +1073,7 @@ fn _place_root(e: ast.Expr) -> string:
 # ------------------------------------------------- generic AGGREGATE instances
 #
 # src/tychoc.c@struct_instantiate / enum_instantiate, and the Stage-2 deep clone
-# at :12773. `subst_type` there rebuilds every field type FROM SCRATCH, which is
+# at src/tychoc.c:13642@Stage. `subst_type` there rebuilds every field type FROM SCRATCH, which is
 # the seam that lost `bounded` once (FRICTION #51-54): the instance is not the
 # template, and a rule checked on the template sees `$T`, never the type it was
 # bound to. So an instance here is stamped as a real TDecl whose field types are
@@ -1087,7 +1088,7 @@ fn _inst_key(m: string, enc: [string]) -> string:
         k = k + enc[i]
     return k
 
-# `Box(int)` written as a TYPE. src/tychoc.c:2755 / :2616: the arguments must be
+# `Box(int)` written as a TYPE. src/tychoc.c:2757@struct / src/tychoc.c:2786@enum: the arguments must be
 # EITHER exactly the declaration's own parameters, in order (a recursive
 # reference from inside the template), OR all concrete. A list mixing the two --
 # `Box([$T])` -- is refused, and that is generic_partial_struct/_enum.
@@ -1288,7 +1289,7 @@ fn _inst_ctor(cs: inout C, l: int, ti: int, args: [ast.Expr], at0: int, npay: in
     cs.in_arg = keep
     cs.line = l
     if len(args) != npay:
-        # src/tychoc.c:7199 / :6744 -- the arity, which used to be passed as
+        # src/tychoc.c:7276@field / src/tychoc.c:7319@payload -- the arity, which used to be passed as
         # len(args) by the struct caller and so could never disagree.
         if len(vn) > 0:
             _cerr(&cs, vn + " takes " + str(npay) + " payload value(s), got " + str(len(args)))
@@ -1316,7 +1317,7 @@ fn _inst_ctor(cs: inout C, l: int, ti: int, args: [ast.Expr], at0: int, npay: in
     cs.line = l
     if bad >= 0:
         if len(badb) > 0:
-            # src/tychoc.c:7221 / :6763 -- stage two, after instantiation. The
+            # src/tychoc.c:7298@mismatch / src/tychoc.c:7338@mismatch -- stage two, after instantiation. The
             # subject is the TEMPLATE's name here; the bootstrap names the
             # instance (`Box__int`), which tychoc1 does not materialise.
             if len(vn) > 0:
@@ -1325,14 +1326,14 @@ fn _inst_ctor(cs: inout C, l: int, ti: int, args: [ast.Expr], at0: int, npay: in
                 _cerr(&cs, "field type mismatch: field '" + cs.tds[ti].fnames[bad] + "' of " + _short(cs.tds[ti].name) +
                     " is " + _show(&cs, badb) + ", got " + _show(&cs, ats[bad]))
             return "?"
-        # src/tychoc.c:7204 / :6748 -- name the argument that failed, not "1"
+        # src/tychoc.c:7281@fit / src/tychoc.c:7323@fit -- name the argument that failed, not "1"
         if len(vn) > 0:
             _cerr(&cs, vn + " payload " + str(bad + 1) + " does not fit a " + _show(&cs, ats[bad]) + " argument")
         else:
             _cerr(&cs, "field '" + cs.tds[ti].fnames[bad] + "' of " + _short(cs.tds[ti].name) +
                 " does not fit a " + _show(&cs, ats[bad]) + " argument")
         return "?"
-    # src/tychoc.c:7209 / :6752 -- a type parameter no value fixes. Guarded on
+    # src/tychoc.c:7286@fixed / src/tychoc.c:7327@fixed -- a type parameter no value fixes. Guarded on
     # every argument type being KNOWN: an unresolved argument leaves the same
     # binding empty, and refusing there would reject a program ./tychoc accepts.
     allk := true

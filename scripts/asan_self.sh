@@ -36,7 +36,7 @@ check_one() {
     rc=$?
     # The sanitizer's own voice. tychoc's diagnostics are `file:LINE: error: MSG`
     # (lowercase), so they cannot collide with `ERROR: ` here; the only
-    # "runtime error" string in src/tychoc.c is a comment (:8320), never output.
+    # "runtime error" string in src/tychoc.c is a comment (src/tychoc.c:11309@defined), never output.
     if grep -qE 'AddressSanitizer|LeakSanitizer|UndefinedBehaviorSanitizer|runtime error:|ERROR: ' "$TMP/log"; then
         echo "FAIL  $name  (sanitizer report)"
         sed 's/^/      /' "$TMP/log"

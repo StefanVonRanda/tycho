@@ -152,20 +152,23 @@ REMOVED = ["map_set(m, key, value)", "map_set's first argument", "map_set key mu
 # (`expected indented match arms`, `... select arms`, `an indented field list`,
 # `an indented variant list`).
 # The last is the SELF-DEFEATING GUARD shape: `expected `if` or `match`` at
-# src/tychoc.c:3792 is the fall-through of parse_value_ctrl, and all FIVE of its
-# call sites (src/tychoc.c:4088, :4138, :4152, :4161, :4183) are inside an
+# src/tychoc.c:3794@expected is the fall-through of parse_value_ctrl, and all FIVE of its
+# call sites (src/tychoc.c:4090@parse_value_ctrl,
+# src/tychoc.c:4393@parse_value_ctrl, src/tychoc.c:4407@parse_value_ctrl,
+# src/tychoc.c:4416@parse_value_ctrl, src/tychoc.c:4484@parse_value_ctrl) are inside an
 # `if (at(ps, TK_IF) || at(ps, TK_MATCH))`. It cannot be entered on any other
 # token.
 # Three more, measured 2026-09-03 by enumerating each site's producers rather
-# than by argument. `cannot infer the type of None` (src/tychoc.c:8941) is the
+# than by argument. `cannot infer the type of None` (src/tychoc.c:9023@None) is the
 # SELF-DEFEATING GUARD shape: T_NONE is produced at exactly ONE site
-# (src/tychoc.c:6462, `case E_NONE`), and the untyped-decl arm eighteen lines
-# above the guard (src/tychoc.c:8924) already diverts every `s->expr->kind ==
+# (src/tychoc.c:6530@E_NONE, `case E_NONE`), and the untyped-decl arm eighteen lines
+# above the guard (src/tychoc.c:9007@E_NONE) already diverts every `s->expr->kind ==
 # E_NONE` into the pending-inference list -- so the guard is handed only the
 # thing it exists to reject, and never receives it. `x := None` and `x := (None)`
 # both died on the pending arm's own `could not infer the type of 'x'`.
-# `a counting `for` needs int bounds` (src/tychoc.c:9334) has three S_FORRANGE
-# producers (src/tychoc.c:4288, :4069, :4084) and no fourth: the first two are
+# `a counting `for` needs int bounds` (src/tychoc.c:9411@bounds) has three S_FORRANGE
+# producers (src/tychoc.c:4290@S_FORRANGE, src/tychoc.c:4324@S_FORRANGE,
+# src/tychoc.c:4339@S_FORRANGE) and no fourth: the first two are
 # the `parallel for` forms, whose `s->parallel` sends them to resolve_parfor and
 # breaks before this check, and the third is the foreach desugar, which writes a
 # literal `0` and a `len(...)` call into the bounds itself. No user-written
@@ -285,7 +288,7 @@ def snprintf_rule(text, code):
     buffer and handed to diag_push, so neither the call name nor the literal sits
     where the die_at/fprintf sweep looks.
 
-    DERIVED, never typed -- line AND format both. It was the pair `538, :563`
+    DERIVED, never typed -- line AND format both. It was the pair 538 and 563
     typed into this file, then moved by hand to 541 while re-anchoring; a bare
     Python integer is not a `path:line`, so check_citations.py cannot see one go
     stale. Same blindness classify_rejects.find_parse_end closed on 2026-09-04,

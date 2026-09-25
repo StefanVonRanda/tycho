@@ -17,6 +17,8 @@ The rules, in brief:
     inside a document is checked by nothing. A `> Provenance:` ref that
     inherits no path is a failure, and a single-line ref inside a
     `> Provenance:` block must carry `@token`, with the token on that line.
+    That inheritance is Markdown's only: in a SOURCE file a bare `:N` names no
+    file and is a failure (BARE_SRC) -- write `path:N@token`.
   * An anchored `path:N@token` must contain `token` on exactly one line of the
     range (a token on several lines names none of them). An absolute path is a
     failure: write it repo-relative.
@@ -83,6 +85,14 @@ DOCCITE = re.compile(r'(docs/[A-Za-z0-9_./-]*\.md)(?::(\d+)(?:-(\d+))?)?')
 
 SRCCITE = re.compile(r'((?:[A-Za-z0-9_][A-Za-z0-9_./-]*\.[A-Za-z0-9]+)|Makefile)'
                      r':(\d+)(?:-(\d+))?(?:@([A-Za-z0-9_]+))?')
+
+# A BARE `:N` IN A SOURCE FILE -- a continuation after a real citation, or a
+# file's own self-reference -- names no file, so SRCCITE (which needs a path)
+# never sees it and it drifts in silence. 75 of them had, most already pointing
+# at unrelated lines, before this rule (see commit 254bbf25). The shape is only
+# a colon-number at a token start: a slice `[:3]`, a time `12:30` or a
+# `host:8080` is glued to what precedes it and does not match.
+BARE_SRC = re.compile(r'(?:^|(?<=[\s(,/])):\d+(?:-\d+)?(?![\d:])')
 
 PATHREF = re.compile(r'`([A-Za-z0-9_][A-Za-z0-9_.-]*(?:/[A-Za-z0-9_.-]+)+'
                      r'\.[a-z]{1,4})`')
@@ -251,7 +261,8 @@ def anchored_lines(src, a, b, tok):
 
 
 def where_at(on):
-    """-> ':3, :4, :12, :35, ...' -- elided, not silently truncated."""
+    """-> the first four as colon-prefixed line numbers, then ', ...' -- elided,
+    not silently truncated."""
     return ", ".join(":%d" % i for i in on[:4]) + (", ..." if len(on) > 4 else "")
 
 
@@ -352,6 +363,23 @@ def selfcheck():
         got = bool(PATHREF.search(text))
         if got != want:
             print("selfcheck: PATHREF %s -- expected %s, got %s" % (why, want, got))
+            return 1
+
+    # BARE_SRC's shapes. ASSEMBLED: a colon-number spelled here is one this
+    # gate then fails this file for.
+    N = ":" + "4592"
+    for text, want, why in [
+        ("see %s:100, %s here" % (A, N),  True,  "a continuation after a ref"),
+        ("# the twin at %s." % N,         True,  "a bare self-reference"),
+        ("(%s)" % N,                      True,  "a parenthesised one"),
+        ("see %s:100 here" % A,           False, "a ref WITH its path"),
+        ("xs[%s]" % N,                    False, "a slice"),
+        ("at 12%s today" % N[:3],         False, "a time"),
+        ("http://localhost%s/x" % N,      False, "a host and a port"),
+    ]:
+        got = bool(BARE_SRC.search(text))
+        if got != want:
+            print("selfcheck: BARE_SRC %s -- expected %s, got %s" % (why, want, got))
             return 1
 
     claimers = (CITE, SYMCITE, SYMCITE_ANY, DOCCITE, SRCCITE, SYMCITE_SRC)
@@ -583,8 +611,16 @@ def main():
         # SOURCE -> SOURCE is policed everywhere except the frozen compiler and
         # golden/error transcript files, which are not hand-edited.
         cites_src = not (sf in SKIP_CITER or sf.endswith(SKIP_SUFFIX))
+        binary = any("\0" in l for l in text)   # a font has no comments to cite from
         for ln, line in enumerate(text, 1):
             if cites_src:
+                for m in ([] if binary else BARE_SRC.finditer(line)):
+                    fails.append(
+                        "%s:%d  `%s` -> BARE LINE REF: a source-file `:N` names "
+                        "no file, so nothing checks it and it drifts silently. "
+                        "Write the path and anchor it: `<path>:N@token`, the "
+                        "token being a word on that line."
+                        % (sf, ln, m.group(0)))
                 for m in SYMCITE_SRC.finditer(line):
                     sp, sym = m.group(1), m.group(2)
                     if sp.endswith(".md") or sp not in tracked:

@@ -71,7 +71,9 @@ RUNTIME = os.path.join(ROOT, "runtime", "tycho_rt.c")
 # capability disappearing, an entry appearing unlisted is a capability nobody
 # wrote down.
 
-# runtime/tycho_rt.c:440, :567, :848 -- the only literal getenv() names in the
+# runtime/tycho_rt.c:613@TYCHO_ARENA_STATS, runtime/tycho_rt.c:618@TYCHO_BLOCK,
+# runtime/tycho_rt.c:971@TYCHO_MAX_TASKS, runtime/tycho_rt.c:1263@TYCHO_THREADS --
+# the only literal getenv() names in the
 # runtime. The wrapper Tycho code calls takes a runtime string (getenv(name)), so
 # a user program's own env reads cannot land here.
 EXPECT_ENV = {
@@ -103,7 +105,7 @@ EXPECT_MSG_RUNTIME = {
     r"tycho: [string:float] map exceeds 2^31 entries\n",
     r"tycho: [string:int] map exceeds 2^31 entries\n",
     # Both from `51dcb45b` (packed): from_bytes() validates the layout at RUN
-    # time rather than reinterpreting the bytes. runtime/tycho_rt.c:1917, :1909.
+    # time rather than reinterpreting the bytes. runtime/tycho_rt.c:1920@width, runtime/tycho_rt.c:1924@sum.
     r"tycho: a packed field width is not 1, 2, 4 or 8",
     r"tycho: a packed struct's field widths do not sum to its size",
     r"tycho: channel already closed\n",
@@ -134,9 +136,12 @@ EXPECT_MSG_RUNTIME = {
 # that triggers it. These are the entries the lane earns its keep on -- a codegen
 # arm that stops emitting its guard reddens here and nowhere else.
 EXPECT_MSG_CODEGEN = {
-    r"tycho: non-exhaustive match\n",     # src/tychoc.c:12239, :10782
-    r"tycho: push to a full bounded[4]\n",  # src/tychoc.c:14095 (the [4] is surface.ty's Inline.slots)
-    r"tycho: slice [%",                   # src/tychoc.c:11862, :9711
+    # src/tychoc.c:12293@exhaustive, src/tychoc.c:12981@exhaustive,
+    # src/tychoc.c:13033@exhaustive, src/tychoc.c:13087@exhaustive
+    r"tycho: non-exhaustive match\n",
+    r"tycho: push to a full bounded[4]\n",  # src/tychoc.c:14185@bounded (the [4] is surface.ty's Inline.slots)
+    # src/tychoc.c:11868@slice, src/tychoc.c:11887@slice
+    r"tycho: slice [%",
 }
 # REMOVED 2026-07-30 (the loops-cleanup plan): r"tycho: range step is zero\n".
 # The oracle was out of date, not the codegen. `range(a, b, step)` went on

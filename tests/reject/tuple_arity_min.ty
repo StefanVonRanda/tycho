@@ -1,5 +1,5 @@
-# 02-grammar.md:137,:170 / 03-types.md:193: a tuple type has 2-8 elements.
-# src/tychoc.c:2178. This one has 1.
+# docs/spec/02-grammar.md:138, docs/spec/02-grammar.md:177 / docs/spec/03-types.md:249: a tuple type has 2-8 elements.
+# src/tychoc.c:2585@least. This one has 1.
 # expect: a tuple type needs at least two elements
 fn mk() -> (int):
     return 1

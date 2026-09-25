@@ -392,7 +392,7 @@ fn _addl(rs: inout R, name: string, kind: string, file: string, pkg: string, dn:
     # src/tychoc.c:4618 makes a builtin collision a WARNING, not an error: the
     # builtin wins every unqualified call, so the procedure is merely
     # unreachable by that name. A CONSTRUCTOR collision stays fatal there
-    # (is_builtin_ctor, :4275), which is the branch below.
+    # (is_builtin_ctor, src/tychoc.c:4619@is_builtin_ctor), which is the branch below.
     # ORDER MATTERS. A name with a builtin SIGNATURE (rs.bsigs -- die, pow,
     # find, ...) stays a hard error, which is what ./tychoc does: measured as
     # leg8 disagreements on corelib/bignum.ty@pow, corelib/regex.ty@find and
