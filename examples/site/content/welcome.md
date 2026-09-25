@@ -4,7 +4,7 @@ author: zinc
 ---
 # Welcome
 
-Tycho is a systems language with value semantics and implicit arenas.
+Tycho is a data-oriented systems language with value semantics and implicit arenas.
 
 ## Why it is different
 

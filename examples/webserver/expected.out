@@ -5,7 +5,7 @@
 <nav><a href="/">Home</a> &middot; <a href="/blog">Blog</a> &middot; <a href="/wiki/getting-started">Wiki</a></nav>
 <main>
 <h1>Tycho</h1>
-<p>Tycho is a small systems language with <strong>value semantics</strong> and an <strong>implicit
+<p>Tycho is a small data-oriented systems language with <strong>value semantics</strong> and an <strong>implicit
 arena</strong> memory model — no garbage collector, no manual <code>free</code>, and memory that's
 competitive with C.</p>
 <ul>
