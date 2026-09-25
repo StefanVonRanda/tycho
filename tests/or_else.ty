@@ -1,0 +1,106 @@
+# `e or_else x: h` -- unwrap Ok/Some, else return h from the enclosing function.
+enum IoErr:
+    Missing(string)
+    Denied
+
+enum AppErr:
+    Storage(IoErr)
+    Listen(string, int)
+    Empty
+
+fn read(path: string) -> Result(string, IoErr):
+    if path == "":
+        return Err(Missing("no path"))
+    if path == "/root":
+        return Err(Denied)
+    return Ok("data:" + path)
+
+fn write(path: string) -> Result(void, IoErr):
+    if path == "/root":
+        return Err(Denied)
+    return Ok()
+
+fn first(xs: [int]) -> Option(int):
+    if len(xs) == 0:
+        return None
+    return Some(xs[0])
+
+fn show(e: AppErr) -> string:
+    match e:
+        Storage(io):
+            match io:
+                Missing(m): return "storage/missing(" + m + ")"
+                Denied: return "storage/denied"
+        Listen(h, p): return "listen(" + h + ":" + str(p) + ")"
+        Empty: return "empty"
+
+# a Result wrapped: the callee's error becomes a payload of the caller's
+fn load(path: string) -> Result(int, AppErr):
+    s := read(path) or_else e: Err(Storage(e))
+    return Ok(len(s))
+
+# a Result replaced: `_` ignores the error and builds a fresh one
+fn serve(host: string, port: int) -> Result(string, AppErr):
+    s := read(host) or_else _: Err(Listen(host, port))
+    return Ok(s)
+
+# an Option: only `_`, since None has no payload
+fn head_plus(xs: [int]) -> Option(int):
+    v := first(xs) or_else _: Some(-1)
+    return Some(v + 100)
+
+# a fn that returns neither Result nor Option
+fn exists(path: string) -> bool:
+    _ := read(path) or_else _: false
+    return true
+
+fn size_or(path: string, dflt: int) -> int:
+    s := read(path) or_else _: dflt * 2
+    return len(s)
+
+# the statement form over a void payload
+fn save(path: string) -> Result(void, AppErr):
+    write(path) or_else e: Err(Storage(e))
+    return Ok()
+
+# inside a loop: the first failure leaves the function
+fn total(paths: [string]) -> Result(int, AppErr):
+    n := 0
+    for p in paths:
+        s := read(p) or_else e: Err(Storage(e))
+        n += len(s)
+    return Ok(n)
+
+# nested in an expression, where or_return may also sit
+fn doubled(path: string) -> int:
+    return 2 * len(read(path) or_else _: -1) + 1
+
+fn report(r: Result(int, AppErr)):
+    match r:
+        Ok(v): println("ok " + str(v))
+        Err(e): println("err " + show(e))
+
+fn main():
+    report(load("/etc"))
+    report(load(""))
+    report(load("/root"))
+    match serve("/root", 80):
+        Ok(s): println("ok " + s)
+        Err(e): println("err " + show(e))
+    match head_plus([7, 8]):
+        Some(v): println("some " + str(v))
+        None: println("none")
+    match head_plus([]int):
+        Some(v): println("some " + str(v))
+        None: println("none")
+    println(str(exists("/a")) + " " + str(exists("")))
+    println(str(size_or("/ab", 5)) + " " + str(size_or("", 5)))
+    match save("/tmp"):
+        Ok: println("saved")
+        Err(e): println("err " + show(e))
+    match save("/root"):
+        Ok: println("saved")
+        Err(e): println("err " + show(e))
+    report(total(["/a", "/bb"]))
+    report(total(["/a", "/root", "/bb"]))
+    println(str(doubled("/abc")) + " " + str(doubled("")))

@@ -1,0 +1,12 @@
+# The `or_else` value is RETURNED from the enclosing function, so it must be
+# that function's return type -- here an Err(string) where Result(int, int) is.
+# expect: or_else returns its value from the enclosing function, which returns Result(int, int), but this value is Err(string)
+fn g() -> Result(int, string):
+    return Ok(1)
+
+fn f() -> Result(int, int):
+    v := g() or_else e: Err(e)
+    return Ok(v)
+
+fn main():
+    println("x")

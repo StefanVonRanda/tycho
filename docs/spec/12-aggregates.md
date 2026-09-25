@@ -1082,6 +1082,9 @@ context ([§6.4](04-inference.md)), and a bare `x := Ok(1)` is a compile error.
 `or_return` is a postfix operator that propagates a failure without a `match`. It
 binds tighter than any arithmetic, so it is valid anywhere the unwrapped value is
 wanted (`foo(parse(s) or_return)`, `return Ok(parse(s) or_return + 1)`).
+To return something other than the unchanged failure — a wrapped error, a fresh
+one, or a plain `false` — use `or_else`
+([§14.6.1](10-statements.md#1461-or_else)).
 
 On a **`Result`**, `v := expr or_return`:
 

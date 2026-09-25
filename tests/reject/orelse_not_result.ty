@@ -1,0 +1,9 @@
+# or_else unwraps a Result or an Option and nothing else.
+# expect: or_else applies to a Result or Option value, got int
+fn f() -> int:
+    x := 5
+    v := x or_else _: 0
+    return v
+
+fn main():
+    println(str(f()))

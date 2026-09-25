@@ -275,5 +275,8 @@ call site, so `$T` binds there as usual.
   a type `str` accepts ([§8.2](06-conversions.md#82-explicit-conversion-builtins)).
 - **`or_return`** is a postfix operator that unwraps an `Option`/`Result` or
   short-circuits out of the enclosing function ([§19](12-aggregates.md)); it binds tighter than any binary operator.
+- **`or_else x: h`** is the same postfix unwrap, but on failure it returns `h`
+  from the enclosing function, with the error bound to `x`
+  ([§14.6.1](10-statements.md#1461-or_else)).
 - **`spawn`**, **`channel(…)`**, and the concurrency operators are specified in
   [§20](13-concurrency.md); each has grammar restrictions noted in §4.4.

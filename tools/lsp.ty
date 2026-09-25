@@ -1079,7 +1079,7 @@ fn handle_completion(id: Json, uris: [string], texts: [string], syms: [string], 
             out = out + comp_item(f[2], 20, "variant of " + f[1])   # EnumMember
             nd = nd + 1
     add_items_from("print println eprint input read_all read_file write_file list_dir args getenv len push pop range str substr find split chr sqrt pow floor fabs clock now is_null Some Ok Err None", 3, &out, &nd)
-    add_items_from("fn struct enum type import package extern inout if elif else for match return break continue and or not in is or_return spawn wait true false soa select", 14, &out, &nd)
+    add_items_from("fn struct enum type import package extern inout if elif else for match return break continue and or not in is or_return or_else spawn wait true false soa select", 14, &out, &nd)
     send_result(id, "{\"isIncomplete\":false,\"items\":[" + out + "]}")
 
 # references: every whole-word use in the buffer (string/comment-aware).
@@ -1247,7 +1247,7 @@ fn handle_inlay(id: Json, uris: [string], texts: [string], syms: [string], param
 # :1911) -- keywords to a reader, contextual to the lexer, and both grammars
 # highlight them.
 fn sem_is_keyword(w: string) -> bool:
-    return w == "fn" or w == "struct" or w == "enum" or w == "type" or w == "import" or w == "package" or w == "const" or w == "extern" or w == "handle" or w == "return" or w == "if" or w == "elif" or w == "else" or w == "for" or w == "in" or w == "while" or w == "match" or w == "break" or w == "continue" or w == "and" or w == "or" or w == "not" or w == "true" or w == "false" or w == "null" or w == "inout" or w == "sink" or w == "where" or w == "spawn" or w == "soa" or w == "pass" or w == "parallel" or w == "select" or w == "or_return" or w == "is"
+    return w == "fn" or w == "struct" or w == "enum" or w == "type" or w == "import" or w == "package" or w == "const" or w == "extern" or w == "handle" or w == "return" or w == "if" or w == "elif" or w == "else" or w == "for" or w == "in" or w == "while" or w == "match" or w == "break" or w == "continue" or w == "and" or w == "or" or w == "not" or w == "true" or w == "false" or w == "null" or w == "inout" or w == "sink" or w == "where" or w == "spawn" or w == "soa" or w == "pass" or w == "parallel" or w == "select" or w == "or_return" or w == "or_else" or w == "is"
 
 fn sem_is_type(w: string) -> bool:
     return w == "int" or w == "float" or w == "string" or w == "bool" or w == "char" or w == "bytes" or w == "ptr" or w == "void" or w == "u8" or w == "u16" or w == "u32" or w == "u64" or w == "i8" or w == "i16" or w == "i32" or w == "i64" or w == "f32"

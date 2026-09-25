@@ -1,0 +1,37 @@
+# or_else's early return frees every live scope, like or_return
+# (tests/or_return_frees.ty); the handler's heap value is promoted first.
+fn boom(i: int) -> Result(int, string):
+    if i >= 0:
+        return Err("nope" + str(i))
+    return Ok(i)
+
+fn step(i: int) -> Result(int, string):
+    pad := "x" + str(i)
+    v := boom(i) or_else e: Err(e + pad)
+    return Ok(v + len(pad))
+
+fn opt_get(i: int) -> Option(int):
+    if i >= 0:
+        return None
+    return Some(i)
+
+fn ostep(i: int) -> string:
+    pad := "y" + str(i)
+    v := opt_get(i) or_else _: "none-" + pad
+    return str(v) + pad
+
+fn main():
+    n := 0
+    last := ""
+    lasto := ""
+    for i := 0; i < 100000; i += 1:
+        match step(i):
+            Ok(v):
+                n = n + v
+            Err(e):
+                n = n + 1
+                last = e
+        lasto = ostep(i)
+    print(str(n))
+    print(last)
+    print(lasto)

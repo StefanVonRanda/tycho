@@ -35,7 +35,7 @@ module.exports = grammar({
     keyword: ($) =>
       choice(
         "fn", "if", "elif", "else", "for", "while", "in", "match", "select",
-        "parallel", "spawn", "return", "break", "continue", "or_return", "pass",
+        "parallel", "spawn", "return", "break", "continue", "or_return", "or_else", "pass",
         // `packed` is the struct layout modifier (spec §17.1b). It is a keyword
         // in the lexer's word set (surface.lock), and without this line
         // it lexed as an ordinary identifier — the corpus still parsed, so no lane

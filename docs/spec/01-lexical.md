@@ -168,18 +168,18 @@ using one where a name is expected is a syntax error.
 and     bool    break   bytes   continue elif    else    enum
 f32     false   float   fn      for      handle  i8      i16
 i32     i64     if      in      inout    int     is      match
-not     null    or      or_return parallel ptr    return  select
-spawn   string  struct  true    type     u8      u16     u32
-u64
+not     null    or      or_else  or_return parallel ptr  return
+select  spawn   string  struct  true     type    u8      u16
+u32     u64
 ```
 
-Those 41 are the whole of `keyword()`; the same list is tabulated in
+Those 42 are the whole of `keyword()`; the same list is tabulated in
 [Appendix B](appendix-b-keywords.md#b1-reserved-words). The words `int`, `bool`,
 `string`, `float`, `ptr`, `bytes`, `f32`, and the fixed-width integers `u8`,
 `u16`, `u32`, `u64`, `i8`, `i16`, `i32`, `i64` are the primitive **type
 keywords**; the rest are declaration, control-flow, operator, or literal
-keywords. `or_return` is matched as a single word (it is not `or` followed by
-`_return`).
+keywords. `or_return` and `or_else` are each matched as a single word (neither
+is `or` followed by `_return` or `_else`).
 
 `soa` is reserved too, but by the parser rather than the lexer: it lexes as an
 ordinary identifier and every expression position that sees it demands a `[`

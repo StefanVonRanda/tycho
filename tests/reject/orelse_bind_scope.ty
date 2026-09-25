@@ -1,0 +1,13 @@
+# The `or_else` binding is scoped to its value expression, not the rest of the
+# function.
+# expect: unknown variable 'e'
+fn g() -> Result(int, string):
+    return Ok(1)
+
+fn f() -> Result(int, string):
+    v := g() or_else e: Err(e)
+    println(e)
+    return Ok(v)
+
+fn main():
+    println("x")

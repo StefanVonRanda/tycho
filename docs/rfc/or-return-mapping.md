@@ -1,7 +1,29 @@
 # `or_return` with a mapping expression
 
-> **Status: proposal, measured, not built.** Reaches a decision for the
-> maintainer. The measurement is done; the spelling is not chosen.
+> **Status: decided 2026-09-25 — `or_else`, not the `or_return <fn>` form below.**
+> Built in `src/tychoc.c` and specified in
+> [§14.6.1](../spec/10-statements.md#1461-or_else); the tychoc1 port and the
+> call-site migration are the next phase. The body below is the proposal as
+> measured, kept for the reasoning.
+
+## The decision
+
+```text
+x := store.scan(db, t) or_else e: Err(Storage(e))
+r := fetch(u) or_else _: false              # in a fn that returns bool
+```
+
+On failure `or_else` binds the error and **returns** the value after the `:`
+from the enclosing function; on success it is the payload, like `or_return`.
+It won over `or_return <fn>` because the returned value is any expression of
+the function's return type, not only a mapped `Err`: the same form covers the
+~40 sites that return `false`, `-1` or `None` on failure from a function that
+does not return a `Result`, which a mapping function cannot. The binding is
+named in place, so the replace shape needs no lambda. It costs one keyword.
+
+**Counts, corrected:** after `fdda3c5a` migrated the last 11 forwarding
+matches, **54** unwrap-and-leave `match` sites remain, **43** of them mapping
+the error (wrap or replace). The 34/25/17 split below predates that commit.
 
 ## The measurement
 

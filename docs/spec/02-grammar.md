@@ -215,7 +215,7 @@ SimulAssign    ::= "(" Place ( "," Place )+ ")" "=" Expr NEWLINE
 PlaceAssign    ::= Place "=" ( Expr | ValueCtrl ) NEWLINE
 CompoundAssign ::= Place CompoundOp "=" Expr NEWLINE
 CompoundOp     ::= "+" | "-" | "*" | "/" | "%" | "&" | "|" | "^" | "<<" | ">>"
-ExprStmt       ::= ( Call | Call "or_return" ) NEWLINE   /* or_return form: ok payload must be void */
+ExprStmt       ::= ( Call | Call "or_return" | Call OrElse ) NEWLINE   /* or_return/or_else form: ok payload must be void */
 ```
 
 - `Decl` (`x := e`) declares a variable and infers its type; `TypedDecl`
@@ -233,7 +233,7 @@ ExprStmt       ::= ( Call | Call "or_return" ) NEWLINE   /* or_return form: ok p
   (this single-vs-double evaluation is pinned in §13).
 - `DeleteStmt` removes a map element; the `Postfix` MUST be an index `m[k]`.
 - The valid bare-expression statements are a call, and a call followed by
-  `or_return` when the callee's ok payload is `void`
+  `or_return` or an `or_else` clause when the callee's ok payload is `void`
   ([§5.3.6](03-types.md#536-enums-option-result)). A bare variable, index or
   field expression is rejected as having no effect, and so is an `or_return`
   over any other payload type — that one would silently drop the value. The
@@ -336,7 +336,8 @@ IsExpr    ::= AddExpr ( "is" VariantName )?             /* variant test; does NO
 AddExpr   ::= MulExpr ( ( "+" | "-" | "|" | "^" ) MulExpr )*
 MulExpr   ::= UnaryExpr ( ( "*" | "/" | "%" | "<<" | ">>" | "&" ) UnaryExpr )*
 UnaryExpr ::= ( "-" | "&" | "~" ) UnaryExpr | Postfix
-Postfix   ::= Primary PostfixOp* "or_return"? "..."?
+Postfix   ::= Primary PostfixOp* ( "or_return" | OrElse )? "..."?
+OrElse    ::= "or_else" IDENT ":" Expr                  /* IDENT or `_`; returns Expr on failure (§14.6.1) */
 PostfixOp ::= "[" Expr "]"                              /* index */
             | "[" Expr? ":" Expr? "]"                   /* slice (either bound optional) */
             | "." IDENT                                 /* field access */
@@ -408,7 +409,7 @@ prefix levels are right-associative.
 
 | Precedence | Operators | Kind | Assoc |
 |---|---|---|---|
-| 1 (tightest) | `[]` index/slice · `.` field/tuple-index · `()` call · `or_return` · `...` | postfix | left |
+| 1 (tightest) | `[]` index/slice · `.` field/tuple-index · `()` call · `or_return` · `or_else` · `...` | postfix | left |
 | 2 | `-` `&` `~` | unary prefix | right |
 | 3 | `*` `/` `%` `<<` `>>` `&` | binary | left |
 | 4 | `+` `-` `\|` `^` | binary | left |

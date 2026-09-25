@@ -1,0 +1,11 @@
+# None carries no value, so `or_else` on an Option may only write `_`.
+# expect: or_else on an Option binds nothing -- None carries no value; write `or_else _: ...`
+fn g() -> Option(int):
+    return Some(1)
+
+fn f() -> Option(int):
+    v := g() or_else e: None
+    return Some(v)
+
+fn main():
+    println("x")

@@ -1,0 +1,12 @@
+# A function that returns nothing has no value for `or_else` to return; the
+# message points at or_return and match.
+# expect: or_else returns its value from the enclosing function, which returns nothing -- use `or_return` or a `match` here
+fn g() -> Result(int, string):
+    return Ok(1)
+
+fn f():
+    v := g() or_else _: 0
+    println(str(v))
+
+fn main():
+    f()

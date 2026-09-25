@@ -15,10 +15,11 @@ A block is an indentation-delimited sequence of one or more statements
 ([§3.4](01-lexical.md#34-indentation-indent--dedent)). Each block is a scope
 ([§12.3](08-declarations.md#123-scope-and-shadowing)). A block cannot be empty;
 `pass` is the no-op that gives one a body (§14.1.1). The bare-expression
-statements permitted are a call, and a call followed by `or_return` when the
-callee's ok payload is `void` ([§5.3.6](03-types.md#536-enums-option-result));
-a bare variable, index or field expression is rejected as having no effect, and
-so is an `or_return` over any other payload type, which would drop a value.
+statements permitted are a call, and a call followed by `or_return` or an
+`or_else` clause when the callee's ok payload is `void`
+([§5.3.6](03-types.md#536-enums-option-result)); a bare variable, index or
+field expression is rejected as having no effect, and so is an `or_return` or
+`or_else` over any other payload type, which would drop a value.
 
 ### 14.1.1 `pass`
 
@@ -212,6 +213,44 @@ a `Result(_, E)` with the same error type `E`. For an `Option`, `Some(x)` binds
 `v := x` and `None` causes the enclosing function to `return None`. The
 short-circuited `Err`/`None` payload is promoted into the caller's storage so it
 outlives the return. `or_return` binds tighter than any binary operator.
+
+### 14.6.1 `or_else`
+
+```text
+OrElse ::= "or_else" IDENT ":" Expr      /* IDENT is a name, or `_` to bind nothing */
+```
+
+`v := e or_else x: h` is `or_return` with a chosen return value. `e` MUST be an
+`Option` or a `Result`. On `Ok(v)`/`Some(v)` the expression is the payload, of
+the payload's type, exactly as for `or_return`. On `Err(err)`, `err` is bound to
+`x`, `h` is evaluated and the enclosing function **returns** `h`. It never falls
+through as a fallback value — that is `result.unwrap_or`.
+
+- `h` MUST have the enclosing function's return type, which need not be a
+  `Result` or an `Option`: `or_else _: false` in a `bool` function returns
+  `false`. A mismatch is a compile error that names both types.
+- On an `Option` the binding MUST be `_`, since `None` carries no value.
+- `x` is in scope in `h` only. `_` binds nothing. An unused `x` is not an
+  error, as for a `match`-arm binding.
+- `or_else` in a function that returns nothing is a compile error; use
+  `or_return` or a `match` there.
+- `h` is a whole `Expr`, so it runs to the end of the line, or to the `)`, `]`
+  or `,` that closes the surrounding bracket. A block after the `:` is a syntax
+  error.
+
+In every other respect `or_else` follows `or_return`: the operand binds tighter
+than any binary operator; the statement form `f() or_else x: h` is legal exactly
+when the ok payload is `void`; `h` is promoted into the caller's storage before
+the function's scopes are freed; and `or_else` MUST NOT appear in a `parallel
+for` body.
+
+```text
+fn load(path: string) -> Result(int, AppErr):
+    s := store.read(path) or_else e: Err(Storage(e))    # wrap the error
+    fd := net.listen(h, p) or_else _: Err(Listen(h, p)) # replace it
+    io.write_at(f, b, o) or_else e: Err(Wal(e))         # Result(void, E): statement
+    return Ok(len(s))
+```
 
 ## 14.7 `delete`
 

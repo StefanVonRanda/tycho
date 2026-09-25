@@ -1,0 +1,13 @@
+ok 9
+err storage/missing(no path)
+err storage/denied
+err listen(/root:80)
+some 107
+some -1
+true false
+8 10
+saved
+err storage/denied
+ok 15
+err storage/denied
+19 -1

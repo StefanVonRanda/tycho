@@ -131,7 +131,7 @@ SimulAssign    ::= "(" Place ( "," Place )+ ")" "=" Expr NEWLINE
 PlaceAssign    ::= Place "=" ( Expr | ValueCtrl ) NEWLINE
 CompoundAssign ::= Place CompoundOp "=" Expr NEWLINE
 CompoundOp     ::= "+" | "-" | "*" | "/" | "%" | "&" | "|" | "^" | "<<" | ">>"
-ExprStmt       ::= ( Call | Call "or_return" ) NEWLINE   /* or_return form: ok payload must be void */
+ExprStmt       ::= ( Call | Call "or_return" | Call OrElse ) NEWLINE   /* or_return/or_else form: ok payload must be void */
 If          ::= "if" Expr ":" NEWLINE Block
                 ( "elif" Expr ":" NEWLINE Block )*
                 ( "else" ":" NEWLINE Block )?
@@ -168,7 +168,8 @@ IsExpr    ::= AddExpr ( "is" VariantName )?             /* variant test; does NO
 AddExpr   ::= MulExpr ( ( "+" | "-" | "|" | "^" ) MulExpr )*
 MulExpr   ::= UnaryExpr ( ( "*" | "/" | "%" | "<<" | ">>" | "&" ) UnaryExpr )*
 UnaryExpr ::= ( "-" | "&" | "~" ) UnaryExpr | Postfix
-Postfix   ::= Primary PostfixOp* "or_return"? "..."?
+Postfix   ::= Primary PostfixOp* ( "or_return" | OrElse )? "..."?
+OrElse    ::= "or_else" IDENT ":" Expr                  /* IDENT or `_`; returns Expr on failure (§14.6.1) */
 PostfixOp ::= "[" Expr "]"                              /* index */
             | "[" Expr? ":" Expr? "]"                   /* slice (either bound optional) */
             | "." IDENT                                 /* field access */

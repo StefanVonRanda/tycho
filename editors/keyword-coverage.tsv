@@ -75,6 +75,7 @@ not	keyword	keyword.operator.word.tycho	word operator
 now	builtin	support.function.builtin.tycho	built-in function; compiles under ./tychoc, measured 2026-09-04 -- added to both grammars by phase V2k
 null	constant	constant.language.tycho	literal constant
 or	keyword	keyword.operator.word.tycho	word operator
+or_else	keyword	keyword.control.tycho	control-flow keyword (early return with a mapped value, spec 14.6)
 or_return	keyword	keyword.control.tycho	control-flow keyword
 package	keyword	keyword.other.tycho	declaration keyword
 packed	keyword	keyword.other.tycho	struct layout modifier (spec 17.1b); added to both grammars 2026-09-04, phase V2d

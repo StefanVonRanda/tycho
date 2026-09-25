@@ -410,7 +410,7 @@ typedef enum {
     TK_PIPE, TK_CARET, TK_TILDE, TK_SHL, TK_SHR,
     TK_LPAREN, TK_RPAREN, TK_LBRACKET, TK_RBRACKET, TK_COMMA, TK_ARROW, TK_SEMI,
     TK_FN, TK_RETURN, TK_IF, TK_ELIF, TK_ELSE, TK_FOR, TK_IN, TK_TRUE, TK_FALSE, TK_NULL, TK_STRUCT,
-    TK_INOUT, TK_AMP, TK_AND, TK_OR, TK_NOT, TK_MATCH, TK_ENUM, TK_ORRETURN, TK_TYPE, TK_HANDLE,
+    TK_INOUT, TK_AMP, TK_AND, TK_OR, TK_NOT, TK_MATCH, TK_ENUM, TK_ORRETURN, TK_ORELSE, TK_TYPE, TK_HANDLE,
     TK_BREAK, TK_CONTINUE, TK_IS,
     TK_SPAWN, TK_PARALLEL, TK_SELECT,
     TK_DOT, TK_ELLIPSIS, TK_DOTLT, TK_DOTDOT, TK_DOLLAR,
@@ -491,6 +491,7 @@ static TokKind keyword(const char *s) {
     if (!strcmp(s, "else"))   return TK_ELSE;
     if (!strcmp(s, "and"))    return TK_AND;
     if (!strcmp(s, "or_return")) return TK_ORRETURN;   /* before "or": longer match wins anyway, but explicit */
+    if (!strcmp(s, "or_else"))   return TK_ORELSE;
     if (!strcmp(s, "or"))     return TK_OR;
     if (!strcmp(s, "not"))    return TK_NOT;
     if (!strcmp(s, "match"))  return TK_MATCH;
@@ -1964,7 +1965,9 @@ static Type arr_of(Type elem) {
 
 typedef enum { E_INT, E_FLOAT, E_STR, E_CHAR, E_BOOL, E_IDENT, E_BINOP, E_CALL, E_ARRLIT, E_INDEX,
                E_STRUCTLIT, E_FIELD, E_ADDR, E_SOME, E_NONE, E_OK, E_ERR,
-               E_ORRETURN, /* `e or_return`: unwrap Ok, else propagate Err from the enclosing fn */
+               E_ORRETURN, /* `e or_return`: unwrap Ok, else propagate Err from the enclosing fn.
+                            * `e or_else x: h` is the same node with rhs = h (the value returned on
+                            * failure) and sval = the error binding (NULL for `_`) */
                E_TUPLE,    /* (e1, ..., en): a tuple literal (also what `return a, b` builds) */
                E_TUPIDX,   /* t.0 / t.1: a tuple element by integer index (in ival) */
                E_SPREAD,   /* x... : spread an array into a variadic parameter (lhs=the array); rejected elsewhere */
@@ -3370,6 +3373,19 @@ static Expr *parse_postfix(Parser *ps) {
         Tok *t = cur(ps); ps->p++;
         Expr *o = new_expr(E_ORRETURN, t->line);
         o->lhs = e;
+        e = o;
+    } else if (at(ps, TK_ORELSE)) {   /* `e or_else x: h`: the or_return node with a handler */
+        Tok *t = cur(ps); ps->p++;
+        Expr *o = new_expr(E_ORRETURN, t->line);
+        o->lhs = e;
+        if (!at(ps, TK_IDENT))
+            die_at(t->line, "expected a binding after `or_else` -- a name for the error, or `_` (e.g. `or_else e: Err(Wrap(e))`)");
+        Tok *b = cur(ps); ps->p++;
+        if (strcmp(b->text, "_")) o->sval = b->text;   /* `_` binds nothing */
+        eat(ps, TK_COLON, "':' after the `or_else` binding");
+        if (at(ps, TK_NEWLINE))
+            die_at(t->line, "`or_else` takes one expression on the same line, not a block -- write the value to return after the ':'");
+        o->rhs = parse_expr(ps);
         e = o;
     }
     if (at(ps, TK_ELLIPSIS)) {   /* x... : spread into a variadic parameter (validated at the call site) */
@@ -6197,6 +6213,9 @@ static int is_cmp(TokKind op) {
 }
 
 static Type resolve_exp(Expr *e, Type want);   /* defined below; fixes a None's type */
+/* The handler of the `or_else` being resolved: its Some/Ok/Err mismatch is worded
+ * as a RETURN, since that is where the value goes. */
+static Expr *g_orelse_rhs = NULL;
 
 static int g_place = 0;
 static int g_in_arg = 0;   /* set while resolving a call argument: the one place `&` is legal */
@@ -6546,6 +6565,33 @@ static Type resolve_expr_inner(Expr *e) {
         }
         case E_ORRETURN: {   /* unwrap Ok(v)/Some(v) to v, or short-circuit the enclosing fn with Err(e)/None */
             Type rt = resolve_expr(e->lhs);
+            if (e->rhs) {   /* or_else: the same unwrap, but on failure return the handler's value */
+                Type okt;
+                if (IS_OPT(rt)) {
+                    if (e->sval)
+                        die_at(e->line, "or_else on an Option binds nothing -- None carries no value; write `or_else _: ...`");
+                    okt = opt_inner(rt);
+                } else if (IS_RES(rt)) {
+                    okt = res_ok(rt);
+                } else {
+                    die_at(e->line, "or_else applies to a Result or Option value, got %s", type_name(rt));
+                }
+                /* ponytail: a void fn has no value to return, so or_else is refused there
+                 * rather than given a statement form; lift this if a real program wants it */
+                if (g_fn_ret == T_VOID)
+                    die_at(e->line, "or_else returns its value from the enclosing function, which returns nothing -- "
+                           "use `or_return` or a `match` here");
+                int m = vars_mark();   /* the binding is scoped to the handler, like a match-arm bind */
+                if (e->sval) vars_push(e->sval, res_err(rt), 1, e->line);
+                Expr *so = g_orelse_rhs; g_orelse_rhs = e->rhs;
+                Type ht = resolve_exp(e->rhs, g_fn_ret);
+                g_orelse_rhs = so;
+                vars_restore(m);
+                if (ht != g_fn_ret)
+                    die_at(e->line, "or_else returns its value from the enclosing function, which returns %s, "
+                           "but this value is %s", type_name(g_fn_ret), type_name(ht));
+                return e->type = okt;
+            }
             if (IS_OPT(rt)) {   /* Option: unwrap Some, else propagate None from an Option-returning fn */
                 if (!IS_OPT(g_fn_ret))
                     die_at(e->line, "or_return on an Option requires the enclosing function to return "
@@ -8120,6 +8166,11 @@ static Type resolve_expr_inner(Expr *e) {
  * the context (a decl annotation, return type, assignment target, or param) —
  * the one place None can learn which Option it is. The chosen type is written
  * back onto the E_NONE node so codegen emits the right TychoOpt. */
+static void orelse_mismatch(Expr *e, Type want, const char *got) {
+    if (e == g_orelse_rhs)
+        die_at(e->line, "or_else returns its value from the enclosing function, which returns %s, "
+               "but this value is %s", type_name(want), got);
+}
 static Type resolve_exp(Expr *e, Type want) {
     /* Pierce-Turner checking mode (bidirectional inference): a known destination
      * type flows INTO the few expressions that can consume one, before
@@ -8207,8 +8258,10 @@ static Type resolve_exp(Expr *e, Type want) {
      * Without this the synthesis-only E_SOME (:4403) dies on a bare payload. Swift. */
     if (e->kind == E_SOME && IS_OPT(want)) {
         Type in = resolve_exp(e->lhs, opt_inner(want));
-        if (in != opt_inner(want))
+        if (in != opt_inner(want)) {
+            orelse_mismatch(e, want, sfmt("Some(%s)", type_name(in)));
             die_at(e->line, "declared type %s but value is Some(%s)", type_name(want), type_name(in));
+        }
         return e->type = want;
     }
     if ((e->kind == E_OK || e->kind == E_ERR) && IS_RES(want)) {
@@ -8221,9 +8274,11 @@ static Type resolve_exp(Expr *e, Type want) {
         if (half == T_VOID && e->kind == E_OK)
             die_at(e->line, "%s carries no ok value -- write Ok(), not Ok(x)", type_name(want));
         Type in = resolve_exp(e->lhs, half);
-        if (in != half)
+        if (in != half) {
+            orelse_mismatch(e, want, sfmt("%s(%s)", e->kind == E_OK ? "Ok" : "Err", type_name(in)));
             die_at(e->line, "declared type %s but value is %s(%s)", type_name(want),
                    e->kind == E_OK ? "Ok" : "Err", type_name(in));
+        }
         return e->type = want;
     }
     if (e->kind == E_TUPLE && IS_TUP(want) && e->nargs == tup_n(want) &&
@@ -8320,7 +8375,7 @@ static void pf_capture_name(const char *n, int line) {
 static void pf_scan_expr(Expr *e) {
     if (!e) return;
     if (e->kind == E_ORRETURN)
-        die_at(e->line, "or_return cannot cross a parallel for (no early exit from a chunk)");
+        die_at(e->line, "%s cannot cross a parallel for (no early exit from a chunk)", e->rhs ? "or_else" : "or_return");
     if (e->kind == E_ADDR) {
         Expr *root = e->lhs;
         while (root && (root->kind == E_FIELD || root->kind == E_INDEX || root->kind == E_TUPIDX))
@@ -9435,7 +9490,8 @@ static void resolve_stmt(Stmt *s, Type ret) {
             /* the other half of the parser's or_return-statement shape check: the payload
              * must really be void, or the statement silently drops a value the caller asked for */
             if (!g_value_ctrl && s->expr && s->expr->kind == E_ORRETURN && et != T_VOID)
-                die_at(s->line, "`or_return` here produces %s, which this statement discards -- bind it (x := ... or_return)", type_name(et));
+                die_at(s->line, "`%s` here produces %s, which this statement discards -- bind it (x := ... %s)",
+                       s->expr->rhs ? "or_else" : "or_return", type_name(et), s->expr->rhs ? "or_else ..." : "or_return");
             if (!g_value_ctrl && IS_TASK(et))   /* CC-2: a discarded handle could never be waited */
                 die_at(s->line, "a spawned task must be bound and waited (t := spawn f(...); ... wait(t))");
             /* A discarded Result silently swallows the error path. Not fatal (the no-side-effects
@@ -11661,6 +11717,23 @@ static char *gen_expr(Expr *e, const char *arena) {
             int id = g_blk++;
             char *v = gen_expr(e->lhs, arena);
             char *rf = return_frees();
+            if (e->rhs) {   /* or_else: on failure bind the error, build the handler here, promote it to
+                             * _parent BEFORE the frees (it may point into this scope), then return it */
+                int opt = IS_OPT(e->lhs->type);
+                int m = cv_mark();
+                char *bind = "";
+                if (e->sval) {   /* borrowed: the err lives in this scope until the frees below */
+                    bind = sfmt("%sh_%s = _or%d.errv; ", c_type(res_err(e->lhs->type)), e->sval, id);
+                    cv_push(e->sval, NULL);
+                }
+                char *h = copy_into(g_gen_ret, "_parent", gen_expr(e->rhs, arena));
+                cv_restore(m);
+                char *okv = opt ? sfmt("_or%d.val", id)
+                          : res_ok(e->lhs->type) == T_VOID ? "((void)0)" : sfmt("_or%d.okv", id);
+                return sfmt("({ %s_or%d = %s; if (!_or%d.%s) { %s%s_rr%d = %s; %s return _rr%d; } %s; })",
+                            c_type(e->lhs->type), id, v, id, opt ? "has" : "ok",
+                            bind, c_type(g_gen_ret), id, h, rf, id, okv);
+            }
             if (IS_OPT(e->lhs->type)) {   /* unwrap Some(x) to x, else return None from the enclosing fn */
                 return sfmt("({ %s_or%d = %s; if (!_or%d.has) { %s return (%s){0}; } _or%d.val; })",
                             c_type(e->lhs->type), id, v, id, rf, c_type(g_gen_ret), id);

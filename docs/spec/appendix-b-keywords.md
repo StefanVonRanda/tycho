@@ -5,18 +5,18 @@ for the normative definitions.
 
 ## B.1 Reserved words
 
-These 42 words are reserved; none may be used as an identifier.
+These 43 words are reserved; none may be used as an identifier.
 
 ```text
 and     bool    break   bytes   continue elif    else    enum
 f32     false   float   fn      for      handle  i8      i16
 i32     i64     if      in      inout    int     is      match
-not     null    or      or_return parallel ptr    return  select
-soa     spawn   string  struct  true     type    u8      u16
-u32     u64
+not     null    or      or_else  or_return parallel ptr  return
+select  soa     spawn   string  struct   true    type    u8
+u16     u32     u64
 ```
 
-41 of the 42 are **lexer** keywords: the set is exactly `keyword()`
+42 of the 43 are **lexer** keywords: the set is exactly `keyword()`
 (`src/tychoc.c@keyword`), which never hands back an identifier token for one.
 `soa` is the exception — it lexes as an ordinary identifier and is reserved by
 the **parser**, which requires a `[` after it in every expression position
