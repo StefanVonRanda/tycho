@@ -1,4 +1,4 @@
-# expect: Option(void) is not a type
+# expect: 'void' is a type only as a Result's ok payload, as in Result(void, string)
 # `void` is a type only as a Result's ok payload, so Option(void) is refused --
 # it would be a two-state type with no value in either state.
 fn main():

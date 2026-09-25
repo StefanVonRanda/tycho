@@ -1,4 +1,4 @@
-# expect: an array element type cannot be void
+# expect: 'void' is a type only as a Result's ok payload, as in Result(void, string)
 # An array of void would have a length and no storage; the element type is
 # refused.
 fn f(xs: [void]) -> int:
