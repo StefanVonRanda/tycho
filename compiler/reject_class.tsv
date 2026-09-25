@@ -169,10 +169,10 @@ tests/reject/field_on_non_struct.ty	SEMANTIC	6884	'.foo' on a non-struct value
 tests/reject/fixarr_elem_bool.ty	TYPE	2622	a fixed-size array element cannot be bool or void -- a dynamic [bool] is legal
 tests/reject/fixarr_into_bounded_arg.ty	TYPE	7788	argument type mismatch: argument 1 of 'take' is [3]int, expected bounded[4]int
 tests/reject/fixarr_into_dynamic_arg.ty	TYPE	7788	argument type mismatch: argument 1 of 'take' is [3]int, expected [int]
-tests/reject/fixarr_pop.ty	SEMANTIC	7611	pop does not apply to a [4]int — its size is fixed
+tests/reject/fixarr_pop.ty	SEMANTIC	7611	pop does not apply to a [4]int — its length is fixed
 tests/reject/fixarr_push.ty	SEMANTIC	7579	cannot push to a [4]int -- its length is fixed; use a bounded[4]int or a [int]
 tests/reject/fixarr_qualified_const.ty	SYNTAX	2634	a fixed-size array length cannot be an imported const ('lim.MAX') -- its value is not known at parse time. Use an unqualified `const` declared in this file, or a dynamic [T]
-tests/reject/fixarr_reserve.ty	SEMANTIC	7634	reserve does not apply to a [4]int — its size is fixed
+tests/reject/fixarr_reserve.ty	SEMANTIC	7634	reserve does not apply to a [4]int — its length is fixed
 tests/reject/fixarr_size_arg.ty	TYPE	7788	argument type mismatch: argument 1 of 'take' is [3]int, expected [4]int
 tests/reject/fixarr_size_decl.ty	TYPE	8981	declared type [4]int but value is [3]int
 tests/reject/fixarr_size_field.ty	TYPE	7298	field type mismatch: field 'v' of S is [4]int, got [3]int
@@ -612,9 +612,9 @@ tests/reject/vector_count_one.ty	SYNTAX	2519	a vector count must be a power of t
 tests/reject/vector_elem_bool.ty	SEMANTIC	2527	a vector element must be int, float or f32 -- bool is not
 tests/reject/vector_no_count.ty	SYNTAX	2512	vector needs a count: vector[N]T
 tests/reject/vector_nonconst_count.ty	SEMANTIC	2510	a vector count must be an integer literal or an int `const` -- 'NOPE' is not
-tests/reject/vector_pop.ty	SEMANTIC	7611	pop does not apply to a vector[2]int — its size is fixed
+tests/reject/vector_pop.ty	SEMANTIC	7611	pop does not apply to a vector[2]int — its length is fixed
 tests/reject/vector_push.ty	SEMANTIC	7579	cannot push to a vector[4]int -- its length is fixed; use a bounded[4]int or a [int]
-tests/reject/vector_reserve.ty	SEMANTIC	7634	reserve does not apply to a vector[2]int — its size is fixed
+tests/reject/vector_reserve.ty	SEMANTIC	7634	reserve does not apply to a vector[2]int — its length is fixed
 tests/reject/vector_slice.ty	SEMANTIC	6795	cannot slice a vector[4]float value; copy it into a [float] first
 tests/reject/void_as_type.ty	TYPE	2685	'void' is a type only as a Result's ok payload, as in Result(void, string)
 tests/reject/void_bound_to_decl.ty	TYPE	9016	cannot bind a void value

@@ -1,4 +1,4 @@
-# expect: pop does not apply to a [4]int — its size is fixed
+# expect: pop does not apply to a [4]int — its length is fixed
 # The length IS the type; the reference once emitted a call to an undeclared
 # tycho_arr_C0_pop here and the C compiler refused it.
 fn main():
