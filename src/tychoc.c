@@ -2676,7 +2676,7 @@ static Type parse_type_inner(Parser *ps) {
             return mt;
         }
         eat(ps, TK_RBRACKET, "']'");
-        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2615) sits after a die_at */
+        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2618) sits after a die_at */
             die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
         return arr_of(elem);   /* fixed [int]/[float]/[string] or a composite */
     }
@@ -3040,7 +3040,7 @@ static Expr *parse_primary(Parser *ps) {
                 e->ival = mt; e->op = TK_COLON;
                 return e;
             }
-            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2372): parse_type never yields T_VOID */
+            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2375): parse_type never yields T_VOID */
                 die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
             e->ival = arr_of(elem);   /* type carried to the resolver */
             return e;
@@ -6269,7 +6269,7 @@ static void collect_idents(Expr *e, const char **out, int *n, int cap) {
     }
     if (e->kind == E_CALL) {   /* Neither name on a call is a child expr: the callee lives in
                                 * sval (`g(x)` where g is a closure) and a method call's RECEIVER
-                                * lives in qual (`m.get(k)`, src/tychoc.c:3461), because the parser
+                                * lives in qual (`m.get(k)`, src/tychoc.c:3477), because the parser
                                 * cannot tell it from a package call. Both are outer reads; missing
                                 * qual let `m` reach the lifted body uncaptured and the C compiler,
                                 * not tychoc, reported `h_m undeclared`. pf_scan_expr already does
@@ -7731,7 +7731,7 @@ static Type resolve_expr_inner(Expr *e) {
             if (e->nargs != s->nparams)
                 die_at(e->line, "'%s' takes %d argument(s), got %d",
                        nominal_name(e->sval), s->nparams, e->nargs);
-            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:7060 */
+            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:7106 */
             for (int i = 0; i < e->nargs; i++) {
                 g_in_arg++;
                 Type at_ = resolve_exp(e->args[i], s->params[i]);   /* fixes a None arg */
@@ -8361,7 +8361,7 @@ static void pf_capture(Expr *id) {
 /* capture an outer local named by a STRING rather than by an E_IDENT node -- the
  * callee of `f(x)` and the receiver of `o.f(x)` live in E_CALL's sval/qual, not
  * in a child expr. The synthesized read is resolved in the enclosing scope with
- * every other capture (src/tychoc.c:8837). Non-locals (global fns, builtins,
+ * every other capture (src/tychoc.c:8896). Non-locals (global fns, builtins,
  * enum constructors, package qualifiers) fail vars_find and are dropped. */
 static void pf_capture_name(const char *n, int line) {
     Type vt;
@@ -8384,10 +8384,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:8185),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:8240),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:8459). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:8518). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
@@ -8408,7 +8408,7 @@ static void pf_scan_expr(Expr *e) {
     }
     /* A call's callee is NOT an E_IDENT child of the node: `f(x)` keeps the name
      * in sval, and `o.f(x)` keeps the receiver in qual because the parser cannot
-     * tell it from a package call (src/tychoc.c:3455). The generic descent below
+     * tell it from a package call (src/tychoc.c:3471). The generic descent below
      * visits lhs/rhs/args only, so a fn-typed local reached the lifted chunk proc
      * uncaptured and the C compiler -- not tychoc -- reported the undeclared name.
      * The lambda capture analysis already does the sval half (src/tychoc.c@collect_idents). */
@@ -10192,7 +10192,7 @@ static const char *for3_elidable_arr(Stmt *s) {
     if (!bound || bound->kind != E_CALL || !bound->sval || strcmp(bound->sval, "len") ||
         bound->nargs != 1 || !bound->args[0] || bound->args[0]->kind != E_IDENT) return NULL;
     if (IS_INLINE_ARR(bound->args[0]->type)) return NULL;   /* [N]T / bounded / vector store in .v, not .data — elision emits .data[i], so never elide it */
-    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:4278-4283) */
+    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:4294-4299) */
     if (!post || post->kind != S_ASSIGN || !post->name || strcmp(post->name, iv)) return NULL;
     Expr *inc = post->expr;
     if (!inc || inc->kind != E_BINOP || inc->op != TK_PLUS) return NULL;

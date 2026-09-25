@@ -370,7 +370,7 @@ element type instead of a family of per-type siblings.
   `map_err(r, replacement)`, `map_err_with(r, f)`, and
   `some_or(o, fallback)` / `is_some(o)` for the `Option` half. `or_return` unwraps a
   `Result` only inside a function that itself returns a compatible `Result`
-  (`docs/spec/10-statements.md:75`), so a `main()`, or a handler that returns a
+  (`docs/spec/10-statements.md:76`), so a `main()`, or a handler that returns a
   `Response`, needs another way — and before this package the only one was a four-line
   `match` per call site (three copies of it existed in this tree). `err_or` plus `==` is
   how a caller asks *which* failure happened **without writing a `match` at all** — a

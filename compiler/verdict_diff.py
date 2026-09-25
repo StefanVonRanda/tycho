@@ -69,7 +69,7 @@ EXPECT = 1427          # a leg that scores 0 of 0 is green by accident
                        # 1336 -> 1338: the two struct/enum `$Name` typaram fixtures
 
 # NAME fixtures whose diagnostic carries no file:line in EITHER compiler, because
-# merge_pkg (src/tychoc.c:14868, :14234) names the offending FILE and exits. Both
+# merge_pkg (src/tychoc.c:14945, :14234) names the offending FILE and exits. Both
 # are scored as agreeing that there is no location; anything else unlocated is a
 # skip and reddens the lane.
 NO_LINE = {
@@ -97,7 +97,7 @@ KNOWN_TYPE_MISS = set()
 # `pend` LIST with a line, a done flag and a per-block mark -- the `pendarr`
 # SET R21f-11 built could carry none of the three.
 # THE CONCURRENCY RULES left this list under R21c, which ported the five
-# spawn legs (src/tychoc.c:6372-6383) and wait's argument (:6776) into
+# spawn legs (src/tychoc.c:6391-6402) and wait's argument (:6776) into
 # compiler/types/tcheck.ty in the bootstrap's own order.
 LIT = lambda f: len(re.sub(r"%[-0-9.*]*(?:ll)?[a-zA-Z]", "", f))
 

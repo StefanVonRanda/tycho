@@ -72,7 +72,7 @@ module.exports = grammar({
         "substr", "find", "read_file", "write_file", "read_all", "list_dir",
         "args", "getenv", "input", "chr", "die", "is_null", "sqrt", "pow",
         "floor", "fabs", "reserve",
-        // `map_get`/`map_set` were here and are NOT builtins: src/tychoc.c:3163-3166
+        // `map_get`/`map_set` were here and are NOT builtins: src/tychoc.c:3166-3169
         // rejects a user-typed call outright, so this painted names the compiler
         // refuses -- the same defect the `range` note above records.
         "channel", "char_at", "clock", "close", "eprint", "exit", "from_bytes",
@@ -96,7 +96,7 @@ module.exports = grammar({
     // covers the raw form with no query change. The backtick form interprets no
     // escapes (hence no /\\./ alternative — a backslash is an ordinary byte) and
     // /[^`]/ matches a newline, so it spans lines like the compiler's scanner
-    // (src/tychoc.c:557-608).
+    // (src/tychoc.c:558-609).
     string: ($) =>
       token(
         choice(
@@ -142,7 +142,7 @@ module.exports = grammar({
     char: ($) => token(seq("'", choice(/\\x[0-9a-fA-F]{2}/, /[^'\\]/, /\\./), "'")),
 
     // `..<` is the half-open counting range of `parallel for i in 0..<N:`
-    // (src/tychoc.c:745). It is listed even though `.` `.` `<` would already
+    // (src/tychoc.c:746). It is listed even though `.` `.` `<` would already
     // lex: tree-sitter takes the longest match, so naming it makes the range one
     // `operator` node instead of three, which is what highlights.scm colours.
     operator: ($) =>
@@ -154,7 +154,7 @@ module.exports = grammar({
       ),
 
     // `;` separates the three clauses of `for init; cond; post:`
-    // (src/tychoc.c:660). Without it 204 corpus files failed to lex.
+    // (src/tychoc.c:661). Without it 204 corpus files failed to lex.
     punctuation: ($) => choice("(", ")", "[", "]", "{", "}", ",", ":", ";"),
   },
 });

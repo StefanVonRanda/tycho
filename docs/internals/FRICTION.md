@@ -36,7 +36,7 @@ it, not imagined about it.
 
 **The language has a good answer for fallible calls and the standard library
 does not use it.** `Option`/`Result` are real types and `or_return` is a real
-postfix operator that unwraps or short-circuits (`docs/spec/10-statements.md:75`).
+postfix operator that unwraps or short-circuits (`docs/spec/10-statements.md:76`).
 Exactly **1 of the corelib's 386 functions returns an `Option`** —
 `io.read_line` (`corelib/io/io.ty:17`). Every other fallible call in this server
 reports failure with a sentinel, and the sentinel is different each time:
@@ -344,7 +344,7 @@ pick-up order is written out in full under "What moved this pass" below.
    (*Earlier phases*) — reproduced verbatim again at
    `3ddc8fd` with a scratch program: `spawn work(1)` gives `error: a statement must be a
    declaration, assignment, or call -- a bare expression has no effect`
-   (`src/tychoc.c:4148`, unmoved since the previous pass), which still never states the
+   (`src/tychoc.c:4164`, unmoved since the previous pass), which still never states the
    real rule — a task handle must be *bound* so the compiler can hang the implicit join on
    it. **One line of diagnostic text at a known line.** Open only because nobody has spent
    it, through two re-scores.
@@ -378,15 +378,15 @@ pick-up order is written out in full under "What moved this pass" below.
    rejected at the *definition* with `error: 'die' is already defined`. **The reason is
    pinned:** the definition-time duplicate check is
    `if (sig_find(pr->name) || consts_find(pr->name)) die_dup_proc(...)`
-   (`src/tychoc.c:9234`), and `sig_find` searches `g_sigs` — which holds `die` and `exit`
-   as real entries (`src/tychoc.c:5302-5303`, inside `src/tychoc.c@register_builtins`)
+   (`src/tychoc.c:9293`), and `sig_find` searches `g_sigs` — which holds `die` and `exit`
+   as real entries (`src/tychoc.c:5318-5319`, inside `src/tychoc.c@register_builtins`)
    but **holds no entry for `send`, `recv` or `close` at all**; those three are recognised
-   ad hoc during resolution (`src/tychoc.c:6672`, `src/tychoc.c:6681`,
-   `src/tychoc.c:6700`). So it is not a table that omits three rows, it is three builtins
-   that were never in the table. **The code is ~1 line** at `src/tychoc.c:9234`; the open
+   ad hoc during resolution (`src/tychoc.c:6718`, `src/tychoc.c:6727`,
+   `src/tychoc.c:6746`). So it is not a table that omits three rows, it is three builtins
+   that were never in the table. **The code is ~1 line** at `src/tychoc.c:9293`; the open
    part is the decision — which builtin names are shadowable — because landing it newly
    rejects any program defining `send`/`recv`/`close`. Note the generic path a line above
-   (`src/tychoc.c:9228`) consults the same two tables plus `generic_find`, so whatever is
+   (`src/tychoc.c:9287`) consults the same two tables plus `generic_find`, so whatever is
    decided has to be written twice.
 
    And the "corelib layering decision" this item wanted taken **was already
@@ -416,7 +416,7 @@ pick-up order is written out in full under "What moved this pass" below.
      the reference bounds it at **64**, so above 64 the fan-out is narrower than `ncpu()`
      reports". The old text's "uses `ncpu()` chunks" — false on both counts, the `min`
      and the cap — is gone. The compiler side is cited anchored from the spec's own
-     provenance block, `src/tychoc.c:12243@_pk > 64`, so the gate now polices it.
+     provenance block, `src/tychoc.c:12320@_pk > 64`, so the gate now polices it.
    - **`ncpu()`'s false definition is corrected**, which was the other half:
      `docs/spec/16-builtins.md:248` states outright that it is "the *requested* worker
      count, **not** the width a `parallel for` will actually use" and that "a program that
@@ -440,10 +440,10 @@ pick-up order is written out in full under "What moved this pass" below.
      on 2026-07-30; `docs/spec/13-concurrency.md:81-83` is the corrected text and no
      longer says this.)*
    - The width is now **readable from Tycho**: `ncpu()` is a registered builtin
-     (`src/tychoc.c:5881@ncpu`, lowering at `src/tychoc.c:11227@tycho_ncpu`), so a program can at least
+     (`src/tychoc.c:5897@ncpu`, lowering at `src/tychoc.c:11287@tycho_ncpu`), so a program can at least
      ask. Measured on this box: `ncpu()` → 16.
    - There was an **undocumented hard ceiling of 64 chunks** — `if (_pk < 1) _pk = 1; if
-     (_pk > 64) _pk = 64;` (`src/tychoc.c:11433`, inside `src/tychoc.c@gen_parfor`) —
+     (_pk > 64) _pk = 64;` (`src/tychoc.c:11493`, inside `src/tychoc.c@gen_parfor`) —
      which `docs/spec/13-concurrency.md` did not mention, so on a box with more than 64
      CPUs the spec's "uses `ncpu()` chunks" was false. **That half is a ~1-line spec fix
      and should be split out and taken** — *it was, and closing it is what closed this
@@ -504,7 +504,7 @@ pick-up order is written out in full under "What moved this pass" below.
    recursive fan-out — worker k spawns worker k+1 into a frame-local, then runs its own
    accept loop. **An array of handles is a type-system change, not an item-sized fix.
    Uncosted, and still the honest core of what is left.** *(This entry cited
-   `src/tychoc.c:902` and `server/main.ty:563-565` at the previous pass; the first drifted
+   `src/tychoc.c:903` and `server/main.ty:560-562` at the previous pass; the first drifted
    by one line and the second by 440, because `server/main.ty` roughly doubled — 1088 lines
    now. Both are `path@SYMBOL` here, which is why they will not drift again.)*
    **NARROWED, 2026-07-31, and the item reads stronger than it is** (the prunner plan).
@@ -575,7 +575,7 @@ pick-up order is written out in full under "What moved this pass" below.
     the `bytes` representation and the channel-handle type syntax — because every compiler
     phase shifts everything below it, and `src/tychoc.c` is now 754 KB. The four that
     survived are all into files that barely moved (`corelib/httpd/httpd.ty:376`,
-    `corelib/httpd/httpd.ty:229`, `server/main.ty:628`, `runtime/tycho_rt.c:639`) — which
+    `corelib/httpd/httpd.ty:229`, `server/main.ty:625`, `runtime/tycho_rt.c:639`) — which
     is the shape of the problem: **the citations that matter most are the ones most likely
     to be wrong.** `scripts/check_citations.py` cannot catch it by construction; it
     verifies anchored `path:line@token` refs against the token and only bounds-checks bare
@@ -825,7 +825,7 @@ shape: a bounded pool over a channel with a fan-in, over jobs that all terminate
   continuously; the results channel filling and parking a worker did not happen, or at
   least was not measured.
 - **Nothing above 64 workers as a real workload.** The 64-chunk probe used synthetic 50 ms
-  sleeps; the real corpus ran at `ncpu()` = 16, nowhere near `src/tychoc.c:11433`.
+  sleeps; the real corpus ran at `ncpu()` = 16, nowhere near `src/tychoc.c:11493`.
 - **No nested parallelism** — no `parallel for` inside a spawned task, and no pool inside
   a pool.
 
@@ -850,7 +850,7 @@ stop reimplementing the read loop.
 Found while writing `io.is_dir` and its test.
 
 - ~~**`Option`/`Result` phase 4** — **nothing in Tycho can create a directory.** Verified absent, not assumed: `docs/spec/16-builtins.md` §29.10 lists five filesystem/time builtins (`read_file`, `write_file`, `list_dir`, `clock`, `now`) and none of them makes a directory, and `mkdir`/`make_dir`/`create_dir` return zero hits across `corelib/`, `src/tychoc.c` and `runtime/`. There is no remove either. So `corelib/test/io` — the test for a `stat(2)` wrapper — has to build its empty directory with `os.system("rm -rf … && mkdir -p …")`: a corelib test depending on `/bin/sh` to set up a filesystem state the corelib itself cannot reach. The asymmetry is the finding: the library can now *classify* a directory but not *make* one.~~ **CLOSED, the option-result plan.** `io.make_dir(p)` (`mkdir(2)`, no `-p`) and `io.remove(p)` (`remove(3)`, one entry, **never recursive**) both return `Result(bool, IoErr)` where `Ok(true)` is "changed it" and `Ok(false)` is "already how you asked" — `make_dir` splits `EEXIST` into `Ok(false)` (already a directory: goal met) and `Err(Exists)` (a file is in the way: goal unreachable), which is exactly the ambiguity test this plan was built on. `corelib/test/io` no longer imports `core:os` and the `rm -rf && mkdir -p` line is gone. A non-empty directory is `Err(Failed)`, which is the property that keeps `io.remove` from being `rm -rf` behind a corelib name.
-- ~~**`Option`/`Result` phase 4** — `io.exists` and `io.is_dir` now answer overlapping questions by different means, and the cheaper one is the newer one: `exists` lists the whole parent directory (O(entries), and it cannot see a `.`/`..`-only leaf) where `is_dir` is one `stat`. `resolve()` ends up calling both on the same path. A `stat`-backed `exists` is the obvious follow-on and was refused on scope, but the general shape is worth recording — a missing syscall does not just block the question it names, it leaves *neighbouring* answers implemented the long way round.~~ **CLOSED, the friction plan, and the follow-on was bigger than the swap.** `exists` is now `iox_stat_kind(p)` and two comparisons (`corelib/io/io.ty:509-513`), the same shim call `is_dir` uses; it still fails closed, so `false` means "`stat` could not say yes" — the old behaviour too, since an unlistable parent yielded no entries. `corelib/test/io.out` is **byte-identical** before and after, which is the proof the swap changed the means and not the meaning. **Two things the entry did not predict.** (1) **`core:io` lost a dependency**: `path.base`/`path.dir` were needed *only* by the old `exists`, so `import "core:path"` is gone and the module written up as "the first corelib module to COMPOSE other core modules" now composes one, not two — a stale claim in three places, all corrected. (2) **`resolve()`'s double call did not just halve, it collapsed**: making the second call a `stat` is what made the pair visibly redundant rather than merely ugly, and the two calls are now ONE `match io.is_dir(fsp)` reading all three answers off the Result (`server/main.ty:393-401`) — `Ok(true)` → `301` (or `404` when `dir_form` already appended `index.html`, i.e. a directory *named* `index.html`, which used to be a `200` → `read_bytes` → `Err(IsDir)` → `404`: same status, one syscall fewer, no wrong intermediate), `Ok(false)` → `200`, `Err(_)` → `404`. Per request for a real file: **2 syscalls (an opendir/readdir walk plus a stat) → 1 stat**. `corelib/io/io.ty` **98 → 93 code lines**, `server/main.ty` shorter as well. The entry's own closing sentence turned out to be the useful half and to run both ways: a missing syscall leaves neighbouring answers implemented the long way round, **and adding it does not fix them — someone has to go back and delete the long way round**, which is a second, separately-scoped piece of work that is easy to leave undone because nothing is red.
+- ~~**`Option`/`Result` phase 4** — `io.exists` and `io.is_dir` now answer overlapping questions by different means, and the cheaper one is the newer one: `exists` lists the whole parent directory (O(entries), and it cannot see a `.`/`..`-only leaf) where `is_dir` is one `stat`. `resolve()` ends up calling both on the same path. A `stat`-backed `exists` is the obvious follow-on and was refused on scope, but the general shape is worth recording — a missing syscall does not just block the question it names, it leaves *neighbouring* answers implemented the long way round.~~ **CLOSED, the friction plan, and the follow-on was bigger than the swap.** `exists` is now `iox_stat_kind(p)` and two comparisons (`corelib/io/io.ty:507-511`), the same shim call `is_dir` uses; it still fails closed, so `false` means "`stat` could not say yes" — the old behaviour too, since an unlistable parent yielded no entries. `corelib/test/io.out` is **byte-identical** before and after, which is the proof the swap changed the means and not the meaning. **Two things the entry did not predict.** (1) **`core:io` lost a dependency**: `path.base`/`path.dir` were needed *only* by the old `exists`, so `import "core:path"` is gone and the module written up as "the first corelib module to COMPOSE other core modules" now composes one, not two — a stale claim in three places, all corrected. (2) **`resolve()`'s double call did not just halve, it collapsed**: making the second call a `stat` is what made the pair visibly redundant rather than merely ugly, and the two calls are now ONE `match io.is_dir(fsp)` reading all three answers off the Result (`server/main.ty:393-398`) — `Ok(true)` → `301` (or `404` when `dir_form` already appended `index.html`, i.e. a directory *named* `index.html`, which used to be a `200` → `read_bytes` → `Err(IsDir)` → `404`: same status, one syscall fewer, no wrong intermediate), `Ok(false)` → `200`, `Err(_)` → `404`. Per request for a real file: **2 syscalls (an opendir/readdir walk plus a stat) → 1 stat**. `corelib/io/io.ty` **98 → 93 code lines**, `server/main.ty` shorter as well. The entry's own closing sentence turned out to be the useful half and to run both ways: a missing syscall leaves neighbouring answers implemented the long way round, **and adding it does not fix them — someone has to go back and delete the long way round**, which is a second, separately-scoped piece of work that is easy to leave undone because nothing is red.
 - **`Option`/`Result` phase 4** — reordering two guards to make room for a new one silently changed a security answer: hoisting `hidden_segment(path.clean(rel))` above the `index.html` append made `GET /` return **403**, because for the root target `rel` is `""` and `path.clean("")` returns `"."` (`corelib/path/path.ty:98-99`), which `hidden_segment` reads as a dotfile. Nothing in the compiler or the corelib could have caught it — `clean("")` returning `"."` is documented POSIX behaviour and both spellings type-check identically. It was caught by the live matrix (`50-request flood 0/50 200`), which is the argument for keeping that matrix.
 
 ### Two defects that were not expressible in Tycho at all
@@ -1026,7 +1026,7 @@ swept. Recorded so the next reader knows they exist and why nobody fixed them:
   §22.1 and the `ncpu()` correction. The shift bands are mechanical and were
   written down at the time (`docs/reference/concurrency.md` old ≥105 → +13;
   `docs/spec/13-concurrency.md` old 83..112 → +8, and so on).
-- **`src/tychoc.c:3855`** points at `gen_parfor` 98 lines short of where it is.
+- **`src/tychoc.c:3871`** points at `gen_parfor` 98 lines short of where it is.
 - **The package-mode comment above `dup_other_file`** cites two sites and both
   are wrong — one lands in array-copy codegen, the other in an enum comment.
 
@@ -1378,9 +1378,9 @@ confirmed, not a divergence between them. An array aborts on all four, and the
 check is **purely a runtime one**: `a[2:10]` on a 5-element array compiles
 cleanly (exit 0 from tychoc) and dies only when run, so there is no
 compile-time arm to strengthen. The array check is emitted inline into the
-generated C by the compiler — `src/tychoc.c:11737-11739` for an ordinary array
+generated C by the compiler — `src/tychoc.c:11814-11816` for an ordinary array
 (the path the probe above took) and the same test again at
-`src/tychoc.c:11716-11718` for the SoA variant, both spelling it
+`src/tychoc.c:11793-11795` for the SoA variant, both spelling it
 `_lo < 0 || _hi > len || _lo > _hi`, which is why all four shapes abort and not
 just the two that overrun. The clamp is `runtime/tycho_rt.c@tycho_str_substr`,
 whose three lines are exactly `start<0 -> 0`, `end>n -> n`, `end<start -> start`.
@@ -1495,7 +1495,7 @@ an array slice that ABORTS, the MUST NOT infer-from-return rule, and
 The entry's load-bearing sentence — "the builtins are `println`, `die` (stderr,
 then exit 1) and `exit(n)`", so "**a non-fatal warning is inexpressible**" — is
 **false, and was false when it was written**. `eprint(s)` is a builtin: registered
-at `src/tychoc.c:5876@eprint`, emitted as `tycho_eprint`, and defined as
+at `src/tychoc.c:5892@eprint`, emitted as `tycho_eprint`, and defined as
 `fputs(s, stderr)` in `runtime/tycho_rt.c@tycho_eprint`. It is specified —
 `docs/spec/16-builtins.md:74@eprint` says "Write `s`'s bytes to stderr; no
 newline, **no exit**" — and it was added on 2026-06-14 in `61fa0dc`
@@ -1940,7 +1940,7 @@ programmer; this one is paid by the person reading the output.**
 > "not an error message"; a negative scale and an unknown mode are errors too.
 > One bignum long division does the work, so no float touches the path.
 >
-> **`tycho-q`'s exact-only `/` is gone with it.** `tools/tycho-q/main.ty:240-253`
+> **`tycho-q`'s exact-only `/` is gone with it.** `tools/tycho-q/main.ty:240-252`
 > records the change: the query the finding said had no answer now has one, and
 > the zero divisor it had to pre-check is an `Err` it can attribute to a row.
 >
@@ -2116,12 +2116,12 @@ language changes, which is why this ranks below three corelib items that are not
 >    and runs. The decoration is one underscore per arm, not an invented
 >    identifier. What is refused is dropping the parens entirely —
 >    `VInt: return 1` → `error: VInt binds 1 value(s), got 0`
->    (`src/tychoc.c:9100`).
+>    (`src/tychoc.c:9159`).
 > 2. *"without binding a payload"* — a **nullary** variant needs no match at
 >    all: `if v == VNull:` compiles and runs. `==` is a working discriminator
 >    for the payload-free half of an enum. It stops at the other half:
 >    `if v == VInt:` → `error: VInt carries a payload — write VInt(...)`
->    (`src/tychoc.c:6503`).
+>    (`src/tychoc.c:6522`).
 >
 > So the real gap is narrower than the heading: **a payload-carrying variant
 > has no value-level discriminator**, and `match` is the only test for it.
@@ -2168,7 +2168,7 @@ which arms actually use their payloads.
 > error: or_return propagates a PErr error, but the function's error type is RErr
 > ```
 >
-> — `src/tychoc.c:6489-6491`. So the rule is "no *implicit* conversion", not
+> — `src/tychoc.c:6508-6510`. So the rule is "no *implicit* conversion", not
 > "no conversion".
 >
 > The second, smaller true claim: `map_err` takes a **constant** replacement
@@ -2871,7 +2871,7 @@ records the toll, which is one copied block per shim and is paid once.
   `grep -E '^fn .*-> \[string\]' corelib/strings/strings.ty` returned only
   `lines`. That grep cannot find it: `split(s, sep) -> [string]` is a **language
   builtin**, specified at `docs/spec/16-builtins.md:150` and registered at
-  `src/tychoc.c:5889@.name="split"`, so it is in no package at all.
+  `src/tychoc.c:5905@.name="split"`, so it is in no package at all.
   `corelib/strings/strings.ty:170` says so in a comment one line above `lines`
   — "(split(s, sep) and find(s, sub) are language builtins -- not duplicated
   here.)" — and `corelib/test/wordfreq/main.ty:22` is a word-frequency program
@@ -3085,7 +3085,7 @@ documentation placement, not syntax.
 reference for statement positions is not where `pass` is introduced" was half
 wrong, and the true half is worse. `pass` WAS in the statements chapter — as a
 subordinate clause of one sentence about blocks not being empty
-(`docs/spec/10-statements.md:12-21`), with no heading, no example and no entry in
+(`docs/spec/10-statements.md:12-22`), with no heading, no example and no entry in
 any list of statement forms. A reader scanning §14's headings for what they may
 write saw `if`, `match`, `for`, `break`, `continue` and `return`, and never saw
 `pass`. Its only other homes were `docs/spec/appendix-b-keywords.md` (a
@@ -3303,7 +3303,7 @@ struct Plan($T):
 ```
 
 **The asymmetry, in one line.** A `fn($T) -> $T` typedef is deliberately NOT
-emitted — `src/tychoc.c:13724` skips any function type mentioning a type
+emitted — `src/tychoc.c:13801` skips any function type mentioning a type
 parameter, because `$T` lowers to `void` and a `void` parameter is invalid C.
 But the composite-array BODY loop emitted `struct TychoArrC0_ { FnC0 *data; }`
 for the template's dead `[fn($T)->$T]` anyway, naming the typedef that was just
@@ -3948,8 +3948,8 @@ that there is no element-wise `+` for `string` elements. The message was built
 from the element type at two sites, where `arr_elem(lt)` was spelled into a
 sentence that reads as a claim about the language.
 
-**FIXED 2026-08-13, both sites** (`src/tychoc.c:7999@element-wise` and
-`src/tychoc.c:8054@element-wise`, anchored per this file's header rule). The
+**FIXED 2026-08-13, both sites** (`src/tychoc.c:8049@element-wise` and
+`src/tychoc.c:8104@element-wise`, anchored per this file's header rule). The
 false clause is gone and `+` now names the operation the caller actually wanted:
 
 ```
@@ -6160,7 +6160,7 @@ reader needs to find the mistake. Deciding it means changing the other compiler
 to match, then a nested fixture can land with the fix.
 
 **How it was fixed, and the one thing the sizing got wrong.**
-`diag_flush` (`src/tychoc.c:1025@diag_flush`) runs some 4,800 lines BEFORE `GInst`
+`diag_flush` (`src/tychoc.c:1026@diag_flush`) runs some 4,800 lines BEFORE `GInst`
 is declared, so it cannot walk `g_ginsts` at print time — the sizing below
 assumed it could. Instead `GInst` gained a `parent` index, a new `g_inst_cur`
 tracks which instance's body is being resolved (so a nested instantiation records
@@ -6179,10 +6179,10 @@ wording slip: `tychoc`'s `Diag` carries a *single* instantiation site
 (`src/tychoc.c:105@inst_file` — one `inst_file`/`inst_line`/`inst_src`, not a
 stack), filled from one global pair (`src/tychoc.c:80@g_inst_from`) that
 `gen_program`'s instance loop retargets per instance
-(`src/tychoc.c:13733@g_inst_from`). So it can only ever name the innermost
+(`src/tychoc.c:13810@g_inst_from`). So it can only ever name the innermost
 frame; it is not dropping the outer one, it never had it. Making it match means
 giving `GInst` a link to the instance that instantiated it and walking that
-chain in `diag_flush` (`src/tychoc.c:1025@diag_flush`) — bounded work, but it
+chain in `diag_flush` (`src/tychoc.c:1026@diag_flush`) — bounded work, but it
 touches a user-facing diagnostic for every nested generic in the corpus, so it
 is a golden-churn change and wants to be one deliberate commit. The cheaper
 direction, capping `tychoc1` at one frame to match `tychoc`, is smaller and
@@ -6719,7 +6719,7 @@ answers below; the method was to read `surface.lock` and grep the 1,389 tracked
 Of 41 builtins and 115 keywords, exactly one entry appeared in **no** test or
 example: `floor`. It is not a stub — `float -> float`, specified at spec 29 and
 [appendix D](../spec/appendix-d-builtins.md), implemented in both compilers
-(`src/tychoc.c:5900@floor`) — it simply had no fixture.
+(`src/tychoc.c:5916@floor`) — it simply had no fixture.
 
 **It was correct.** Checked against C's libm on the six values a test would have
 pinned, all six identical:

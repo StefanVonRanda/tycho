@@ -2,7 +2,7 @@
 # here from the gate. These catch the manual form: the README's
 # `tychoc examples/weblog/main.ty -o weblog` run from inside this directory, and
 # the mechanical `-o examples/weblog/main` (plus main.c with --emit-c).
-# The demo log goes to an absolute /tmp path (examples/weblog/main.ty:116), not here.
+# The demo log goes to an absolute /tmp path (examples/weblog/main.ty:114), not here.
 # (expected.out is un-ignored in the root .gitignore; access.log IS tracked input.)
 /main
 /main.c
