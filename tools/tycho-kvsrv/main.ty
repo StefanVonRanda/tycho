@@ -38,21 +38,18 @@ fn store_reply(r0: Channel(Res), r1: Channel(Res), r2: Channel(Res), r3: Channel
 fn store(cmd: Channel(Cmd), r0: Channel(Res), r1: Channel(Res), r2: Channel(Res), r3: Channel(Res)) -> int:
     m := []string: string
     for true:
-        match recv(cmd):
-            Some(c):
-                if c.op == 0:                        # GET
-                    if c.key in m:
-                        store_reply(r0, r1, r2, r3, c.wid, Res(200, m[c.key]))
-                    else:
-                        store_reply(r0, r1, r2, r3, c.wid, Res(404, ""))
-                elif c.op == 1:                      # PUT
-                    m[c.key] = c.value
-                    store_reply(r0, r1, r2, r3, c.wid, Res(200, "ok"))
-                else:                                # DELETE (idempotent)
-                    delete m[c.key]
-                    store_reply(r0, r1, r2, r3, c.wid, Res(200, "ok"))
-            None:
-                return 0
+        c := recv(cmd) or_else _: 0
+        if c.op == 0:                        # GET
+            if c.key in m:
+                store_reply(r0, r1, r2, r3, c.wid, Res(200, m[c.key]))
+            else:
+                store_reply(r0, r1, r2, r3, c.wid, Res(404, ""))
+        elif c.op == 1:                      # PUT
+            m[c.key] = c.value
+            store_reply(r0, r1, r2, r3, c.wid, Res(200, "ok"))
+        else:                                # DELETE (idempotent)
+            delete m[c.key]
+            store_reply(r0, r1, r2, r3, c.wid, Res(200, "ok"))
     return 0
 
 # ---- the worker pool -----------------------------------------------------------------

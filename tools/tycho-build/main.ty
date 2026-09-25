@@ -89,11 +89,7 @@ fn parse(text: string) -> Result([Rule], string):
 # --- filesystem -------------------------------------------------------------
 
 fn mtime_or(p: string) -> int:            # st_mtime seconds, -1 if missing
-    match io.mtime(p):
-        Ok(t):
-            return t
-        Err(_):
-            return -1
+    return io.mtime(p) or_else _: -1
 
 fn run_rule(r: Rule) -> int:              # run a rule's recipes; first non-zero wins
     for line in r.recipes:
@@ -214,18 +210,15 @@ fn scheduler(jobs: Channel(int), done: Channel(Done), rules: [Rule], by_name: [s
             for i := 0; i < nworkers; i += 1:      # retire the pool so the parallel for can end
                 send(jobs, -1)
             return 1
-        match recv(done):
-            Some(d):
-                in_flight -= 1
-                if d.code == 0:
-                    st[d.idx] = 2
-                    rebuilt[d.idx] = true
-                else:
-                    st[d.idx] = 3
-                    println("FAILED " + rules[d.idx].target + " (exit " + str(d.code) + ")")
-                remaining -= 1
-            None:
-                return 1                   # done channel closed prematurely
+        d := recv(done) or_else _: 1       # done channel closed prematurely
+        in_flight -= 1
+        if d.code == 0:
+            st[d.idx] = 2
+            rebuilt[d.idx] = true
+        else:
+            st[d.idx] = 3
+            println("FAILED " + rules[d.idx].target + " (exit " + str(d.code) + ")")
+        remaining -= 1
     for i := 0; i < nworkers; i += 1:      # retire the pool
         send(jobs, -1)
     for k := 0; k < len(topo); k += 1:

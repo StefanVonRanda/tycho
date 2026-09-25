@@ -71,22 +71,20 @@ fn worker(id: int, live: int, jobs: Channel(Job), out: Channel(Res)) -> int:
         return 0
     did := 0
     for true:
-        match recv(jobs):
-            Some(j):
-                h := ""
-                n := 0
-                match io.read_bytes(j.abs):
-                    Ok(b):
-                        st := sha256.init()
-                        sha256.update(&st, b)
-                        h = sha256.final_hex(&st)
-                        n = len(b)
-                    Err(e):
-                        h = "unreadable"
-                        n = 0 - 1
-                send(out, Res(j.idx, j.rel, h, n))
-                did = did + 1
-            None: return did
+        j := recv(jobs) or_else _: did
+        h := ""
+        n := 0
+        match io.read_bytes(j.abs):
+            Ok(b):
+                st := sha256.init()
+                sha256.update(&st, b)
+                h = sha256.final_hex(&st)
+                n = len(b)
+            Err(e):
+                h = "unreadable"
+                n = 0 - 1
+        send(out, Res(j.idx, j.rel, h, n))
+        did = did + 1
     return did
 
 fn main():

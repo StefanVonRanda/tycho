@@ -76,9 +76,7 @@ fn parse_line(line: string) -> Rec:
     # distinction the bare parse could not make.
     nbytes := 0
     if bytes_s != "-":
-        match strings.parse_int_checked(bytes_s):
-            Ok(v): nbytes = v
-            Err(e): return bad
+        nbytes = strings.parse_int_checked(bytes_s) or_else _: bad
     return Rec(true, ip, datehour, path, sclass, nbytes)
 
 # keys of a [string:int] map ordered by value descending (stable -> deterministic)

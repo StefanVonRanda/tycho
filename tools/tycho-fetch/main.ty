@@ -106,15 +106,8 @@ fn safe_name(name: string) -> bool:
     return true
 
 fn mkdir(p: string) -> bool:
-    match io.make_dir(p):
-        Ok(ok):
-            return ok
-        Err(_):
-            return false
+    return io.make_dir(p) or_else _: false
 
 fn write_bin(p: string, b: bytes) -> bool:
-    match io.write_bytes(p, b):
-        Ok():
-            return true
-        Err(_):
-            return false
+    io.write_bytes(p, b) or_else _: false
+    return true

@@ -390,15 +390,12 @@ fn resolve(root: string, target: string) -> Route:
         return Route(403, "", "")                  # absolute, escaping, or resolving outside root
     if hidden_answer(root, fsp):
         return Route(403, "", "")
-    match io.is_dir(fsp):
-        Ok(isdir):
-            if not isdir:
-                return Route(200, fsp, "")
-            if dir_form:
-                return Route(404, "", "")
-            return Route(301, "", p + "/")         # /dir -> /dir/, index or not
-        Err(e):
-            return Route(404, "", "")
+    isdir := io.is_dir(fsp) or_else _: Route(404, "", "")
+    if not isdir:
+        return Route(200, fsp, "")
+    if dir_form:
+        return Route(404, "", "")
+    return Route(301, "", p + "/")         # /dir -> /dir/, index or not
 
 # ---- the connection loop ---------------------------------------------------
 
