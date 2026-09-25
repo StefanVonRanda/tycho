@@ -57,24 +57,14 @@ fn main() -> Result(void, string):
         av = [av[1]]
     if len(av) != 1:
         return Err("usage: tycho-make [--graph] <rulefile>")
-    text := ""
-    match io.read_text(av[0]):
-        Ok(s): text = s
-        Err(e): return Err("rulefile: " + io_str(e))
-    g := graph.Graph([], []string: int, 0, 0)
-    match graph.parse(text):
-        Ok(p): g = p
-        Err(e): return Err(graph.err_str(e))
-    ord := []int
-    match graph.order_idx(g):
-        Ok(o): ord = o
-        Err(e): return Err(graph.err_str(e))
+    text := io.read_text(av[0]) or_else e: Err("rulefile: " + io_str(e))
+    g := graph.parse(text) or_else e: Err(graph.err_str(e))
+    ord := graph.order_idx(g) or_else e: Err(graph.err_str(e))
     if show:
         report(g, graph.names_at(g, ord))
         return Ok()
-    match build.build(g, ord, ".tycho-make.stamp"):
-        Ok(log): print_all(log)
-        Err(e): return Err(build.err_str(e))
+    log := build.build(g, ord, ".tycho-make.stamp") or_else e: Err(build.err_str(e))
+    print_all(log)
     return Ok()
 
 fn print_all(ls: [string]):

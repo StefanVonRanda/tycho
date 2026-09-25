@@ -85,10 +85,7 @@ fn cut(s: string, at: int) -> (string, string):
 # parser splits targets on whitespace, so two cuts are unambiguous.
 fn stamps_read(path: string) -> Result([string: Stamp], BuildErr):
     m := []string: Stamp
-    text := ""
-    match io.read_text(path):
-        Ok(s): text = s
-        Err(e): return Ok(m)
+    text := io.read_text(path) or_else _: Ok(m)
     ls := strings.lines(text)
     for i := 0; i < len(ls); i += 1:
         if len(ls[i]) == 0:
@@ -130,17 +127,12 @@ fn stamps_write(path: string, g: graph.Graph, now: [Stat]) -> bool:
 # mtime when it is there but could not be read -- a directory named as a source
 # is the case that matters, and the two deserve different messages.
 fn probe(name: string, prev: [string: Stamp], racy: int) -> Stat:
-    mt := 0
-    match io.mtime(name):
-        Ok(v): mt = v
-        Err(e): return Stat(false, -1, "", SABSENT)
+    mt := io.mtime(name) or_else _: Stat(false, -1, "", SABSENT)
     known := name in prev
     if known and prev[name].mtime == mt and mt < racy:
         return Stat(true, mt, prev[name].hash, SUNCHANGED)
-    h := ""
-    match io.read_text(name):
-        Ok(s): h = sha256.hex(s)
-        Err(e): return Stat(false, mt, "", SABSENT)
+    s := io.read_text(name) or_else _: Stat(false, mt, "", SABSENT)
+    h := sha256.hex(s)
     if not known:
         return Stat(true, mt, h, SNEW)
     if h != prev[name].hash:
