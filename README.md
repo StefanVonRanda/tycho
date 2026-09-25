@@ -124,7 +124,7 @@ want a different tool, is
 **[docs/internals/value-semantics-limits.md](docs/internals/value-semantics-limits.md)**;
 [from `malloc` to arenas](docs/from-c-to-arenas.md) is the same ground from C.
 
-> **Status: 0.8.5 — pre-1.0. No stability guarantees yet.** The thesis is
+> **Status: 0.8.6 — pre-1.0. No stability guarantees yet.** The thesis is
 > proven and the work now is shipping a complete language, not defending an
 > idea. It is pre-1.0 because 1.0 is a promise not to break people, and nobody
 > outside this repo has written enough Tycho to know what that promise costs —

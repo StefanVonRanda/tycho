@@ -5,7 +5,114 @@ The version constant lives in `src/tychoc.c` (`TYCHO_VERSION`, printed by
 `tychoc --version`); bump both together. Per-release publishing notes stay in
 `RELEASE_NOTES.md`; this file is the accumulating record.
 
-## [Unreleased]
+## [0.8.6] — 2026-09-25
+
+### Breaking
+
+Every item here makes a program that 0.8.5 accepted stop compiling. Each one
+names its rule in the diagnostic.
+
+- **`or_else` is a keyword** (`529fe940`). An identifier spelled `or_else`
+  must be renamed. `surface.lock` records it: 116 keywords, from 115.
+- **136 corelib functions left the public surface** (`f6f1025a`, `37a2c54b`).
+  They were internal helpers — `json.parse_value`, `bignum.mag_cmp`,
+  `csv.quote_field` and the like — that were frozen as public API only because
+  their names lacked a leading underscore. They are `_`-prefixed now, which is
+  the language's package-private spelling, and a call from outside the package
+  says so: `package 'bignum' has no symbol 'mag_cmp'; did you mean '_mag_cmp'?`.
+  Every function a program outside its package was found calling stayed public
+  and is now documented. `surface.lock` goes from 559 to 423 corelib functions.
+- **`io.open_lines` returns `Result(LineReader, IoErr)`**, and `io.read_line` /
+  `io.close_lines` take a `LineReader` (`44b02447`). See *Core library* below
+  for the migration.
+- **`reserve` and `pop` on a fixed-size `[N]T` or `vector[N]T` are refused**
+  (`79eb8bbf`, `9b319cc4`): `reserve does not apply to a [4]int — its length is
+  fixed`, the same wording `push` already used. Before this the reference
+  compiler emitted C that did not build, and the self-hosted compiler accepted
+  `pop` on a `[4]int` and silently shortened it.
+- **Handles: four misuses are compile errors** (`ffi`, spec §25):
+  - a use of `h` after a `close(h)` statement that closes it on every path —
+    later uses passed null to C, and a second close was a silent no-op
+    (`e98238be`);
+  - `close(h)` on a handle *parameter* — the caller's scope exit then ran the
+    destructor a second time (`20038444`);
+  - an opener whose result is not bound directly to a variable (`use(open(p))`,
+    or `open(p)` as a bare statement) — the resource had no owner and leaked for
+    the life of the process (`4fa16643`);
+  - a handle whose `free:` does not name an `extern fn` taking that handle
+    type — a misspelling failed later inside `cc` with no Tycho line, and a
+    destructor declared at the wrong type compiled silently (`17ddcbde`).
+- **A dead import is reported per file** (`f53ff8f8`). An import one file of a
+  package declares and only a sibling uses is now an unused import, and a type
+  named through a package that only a sibling imports is refused whatever order
+  the files are parsed in.
+
+### Language
+
+- **`or_else` — an early return that maps the error** (`529fe940`, `4cb884a9`,
+  spec §14.6.1). `x := f() or_else e: h` unwraps `Ok`/`Some` like `or_return`;
+  on `Err(e)` it binds the error to `e` and **returns** `h` from the enclosing
+  function. `h` has the function's return type, which need not be a `Result`:
+  `or_else _: false` in a `bool` function returns `false`. It replaces the
+  four-line `match f(): Ok(v): x = v / Err(e): return Err(Wrap(e))`. Refused: a
+  non-`Result`/`Option` operand, a named binding on an `Option` (it carries no
+  error), a handler of the wrong type, a block after the `:`, and `or_else` in
+  a function that returns nothing — use `or_return` or a `match` there. Both
+  compilers implement it and agree. 79 call sites in the tree were migrated to
+  it, beside 45 forwarding matches moved to `or_return` (`f6f1025a`,
+  `fdda3c5a`).
+- **`size_of$(T)` accepts an `align(N)` struct** (`09e85894`), so `align` can be
+  observed from inside the language. The value is implementation-defined, with
+  one guarantee: it is a multiple of `N`. A `packed` struct's size is exact, as
+  before.
+- **`math.min`, `math.max` and `math.clamp` work lane-wise on a `vector[N]T`**
+  (`2b44b3e5`), one compare-and-blend per call. Every argument is the same vector
+  type. No signature in `surface.lock` moved.
+- **Floating point is no longer contracted into FMA** (`f10b8bec`). The emitted
+  C is compiled with `-ffp-contract=off`, in both compilers. On aarch64 — where
+  FMA always exists and `cc` fused `a*b + c` by default — results could differ
+  from x86-64 in the last bit: `tycho-sheet`'s shortest-decimal render printed
+  `0.30000000000000006` for `0.1+0.2` on aarch64 Linux. A program that relied on fused rounding on
+  an ARM host now rounds twice, as its source says.
+
+### Compiler
+
+- **A generic instantiation error names the whole chain** (`c97bc5b8`), from the
+  outermost call — the only line the reader is sure to own — inward, capped at
+  eight frames. The reference compiler used to name only the innermost call.
+- **Diagnostics that did not state their rule now do** (`571ba19d`, `91a2b294`):
+  a value `if`/`match` used as an operand says it is allowed only as the whole
+  right-hand side of `:=`, `=` or `return`; the ordering error lists the types
+  that order (every sized integer, `f32`, `char`); `strings.len(...)` says `len`
+  is a builtin.
+- **The over-wide vector lint gave x86-64 advice on ARM** (`e99b8484`). On an
+  aarch64 host it told the reader to pass `--target x86-64-v3`, which `cc` then
+  refused. It now leads with the remedy that works everywhere — a narrower
+  vector — and names the x86-64 flag as x86-64's.
+- **Every build importing `core:strings` drew two `-Wunused-value` warnings**
+  from the reference compiler (`4e1cfe23`), pointing at a generated file that is
+  deleted after the build.
+- **A lex error inside an f-string hole named line 1 of no file** (`5f70aa1f`);
+  it names the owning file and line now. The self-hosted compiler's parser also
+  reports more than one error per file in three more shapes, and every
+  parse-only path names the file (`c54bf04d`).
+- **The self-hosted compiler (the one that ships) had these defects fixed:**
+  - `x[a:b]` on a named struct or enum crashed in emit with an internal message
+    and no line; it is a checker error now (`00bed88e`).
+  - An `or_return` / `or_else` payload returned straight to the caller was built
+    in the function's own arena, which the return had just freed — the caller
+    read garbage (`da3f0fa9`).
+  - `to_bytes(local)` kept inside a returned value pointed into the freed scope
+    (`5c6ad957`). It surfaced as `core:httpd` returning a corrupted request
+    body.
+  - A local `bounded[N]T` grew past its capacity instead of trapping on the
+    `push` that overflowed it; a `parallel for` over a channel with more than one
+    reduction is supported (`9a53576d`).
+  - Indentation depth is capped at 256, as the reference compiler has always
+    done — the verdict on a deeply nested file used to depend on the process's
+    stack limit (`85427292`).
+  - A pkg-config flag containing a space survives into the C build
+    (`0ac392ea`).
 
 ### Core library
 
@@ -61,6 +168,100 @@ The version constant lives in `src/tychoc.c` (`TYCHO_VERSION`, printed by
           # ... io.read_line(r) ...
           io.close_lines(r)
   ```
+
+- **`net.listen` used a backlog of 16** (`95b54149`). Linux drops a SYN when
+  the accept queue is full and the client retries; macOS and the BSDs reset the
+  connection. Under a burst on macOS every Tycho server refused connections. It
+  is `SOMAXCONN` now.
+- **A server worker could block in `accept()` forever and never see SIGTERM**
+  (`c845dcdf`) — about one shutdown in eight on macOS. Several workers polling
+  one listener raced on its shared non-blocking flag.
+- **`TYCHO_BLOCK`'s guard was undefined behaviour on Windows**, where `long` is
+  32 bits (`fc003e91`).
+- **Subnormal float literals became `0.0` on aarch64 Windows** (`55d3abfd`).
+  The reference compiler's `_GNU_SOURCE` switched mingw to its own `printf`,
+  which formats a subnormal through the x87 80-bit layout.
+- **`core:os` refuses to spawn a `.bat` or `.cmd` on Windows** (`b1b71c27`).
+  `cmd.exe` re-parses the command line and defeats the quoting the spawn builds.
+  A PATH-resolved name with no extension is not caught.
+
+### Security
+
+- **`core:tls` did not guard an interior NUL in `host`** (`8e1208f5`).
+  `"good.example.com\0anything"` connected to, announced (SNI) and verified
+  `good.example.com` while the caller's own checks saw the whole string. It
+  fails closed now, like every other corelib package that hands a string to C.
+- **The weblog example parsed an untrusted byte count without checking it**
+  (`63ac1f42`) — the fourth parser of the fail-open sweep, which had fixed three.
+
+### Fixed
+
+- **The HTTP round-trip tests and example read one segment and called it the
+  response** (`0d8a76df`, `95b54149`). Under load the body arrived separately and
+  came back empty, or indexed an empty string and aborted. They read to EOF.
+- **`tycho-sim` built a different world from the same seed on gcc and clang**
+  (`86c362e9`). Three draws in one argument list are three unspecified side
+  effects (spec §13.4); each is its own statement now.
+- **`tycho-make` misreported an assignment whose value holds a `:`**
+  (`b830bb47`), and refuses the makefile features it does not implement by name
+  rather than misreading them (`5ace4f42`).
+- **Building on Fedora with gcc 16 failed to link** `tychoc1` and the shipped
+  tools: `-static-pie` needs `-fPIE` beside it (`3b8fc954`, `3310a50f`).
+- `tycho-debug` treats `C:` and `c:` as the same drive; `tycho-httpd` names its
+  15-digit `Content-Length` ceiling (`ece2797b`).
+
+### Release and platforms
+
+- **A `darwin-arm64` archive** (`a90eec42`). Both compilers build native Mach-O
+  arm64 with no source change, and `make ci` runs green on macOS arm64 — first
+  run 2026-09-19 (`95b54149`). `make release-content` checked nothing on a Mac
+  until then: it exited on the first missing *Windows* tool before reaching the
+  native archive. Each leg now states its own prerequisites.
+- **`make platform-check`** executes the toolchain on every target
+  `scripts/release_cross.sh` builds and records the verdicts, and the cross build
+  writes `UNTESTED-PLATFORM.txt` from those verdicts instead of from a hardcoded
+  list (`7eeb1763`, `506b5d79`). Measured once each: linux-x86_64, linux-arm64
+  and macos-arm64 1065/1065, windows-x86_64 289/289, windows-arm64 288/289 and
+  then 289/289 after `55d3abfd`.
+- **`make preflight`** reports what the current machine can run — sanitizer
+  runtimes, static libc, the 32-bit toolchain, optional tools — before `make ci`
+  fails on one of them (`63b87529`).
+
+### Tools
+
+- `tools/tycho-du`, a disk-usage reporter over a typed `handle Dir`, written
+  against the docs alone by an outside probe; the tree's worked example of
+  `handle` with `--shim` (`5071b61f`).
+- `tools/tycho-grade`, a gain/lift colour grader for TGA, BMP and QOI; the
+  tree's first user of `vector[N]T`, swizzling and lane names (`2a878a94`).
+
+### Documentation
+
+- Tycho is described as a **data-oriented systems language**, not a
+  general-purpose one (`d74577da`, `d624c6dc`).
+- `STATUS.md` states where the project is, with every number reproducible by a
+  command (`2e561727`). The README leads with the one idea, the costs and the
+  limits (`f8a4c4c1`, `e8d7ce1b`).
+- The reference pages carry nine rules the compiler enforces and did not
+  document (`a3570400`); the handle documentation had three statements that were
+  not true (`36fe264d`).
+- The citation checker fails on a bare `:N` line reference, which no gate
+  policed (`89d1ec3d`).
+
+### Verification
+
+- The fixture corpus is 1156 `.ty` files under `tests/`, from 1096; 686 are
+  rejection fixtures, from 638.
+- New lanes: the bootstrap fixpoint — one more generation of the self-hosted
+  compiler emits byte-identical C (`3d5046b5`); the three parity fuzzers the spec
+  cites (`38eacd25`); every public corelib function named in the catalogue
+  (`1a1afa3a`, `37a2c54b`); the probe watchdog's own controls (`efb52c5e`).
+- `make ci` runs under clang as well as gcc, on macOS as well as Linux, and
+  honours a `TYCHOC` override that five gates ignored (`9458575f`, `480eaedd`,
+  `ca974029`). Its steps are timed and its lanes repacked (`26040420`,
+  `5b333977`).
+- The uninitialised-arena sweep, the one class no sanitizer lane sees, covered
+  corelib, the examples and 27 tools: 972 runs, 0 reads (`599ab843`).
 
 ## [0.8.5] — 2026-09-06
 

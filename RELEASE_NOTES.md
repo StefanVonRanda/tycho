@@ -3,52 +3,127 @@ Draft release notes. Edit this before publishing, then:
   make ci
   make release-check                    # builds twice; smoke-tests and compares the native tarballs
   scripts/release.sh <version> --mingw  # builds and smoke-tests the Windows tarball
-  gh release create <version> dist/tycho-*.tar.gz dist/*.sha256 --notes-file RELEASE_NOTES.md
+  gh release create <version> dist/tycho-<version>-*.tar.gz dist/tycho-<version>-*.sha256 --notes-file RELEASE_NOTES.md
   gh release edit <version> --prerelease
 Build one tarball per platform (there is no hosted CI); attach them all to the release.
+Name the version in the globs: dist/ still holds the previous release's tarballs.
 -->
 
-Tycho 0.8.5 — pre-1.0, no stability guarantees (see the [README](README.md) for
+Tycho 0.8.6 — pre-1.0, no stability guarantees (see the [README](README.md) for
 what that means in practice). Prebuilt binaries are attached, so you can try the
 language without building from source.
 
-**This release refuses programs 0.8.0 accepted.** Not a change of intent — those
-programs were always invalid, and the shipped compiler failed to say so. A
-survey of the C bootstrap found 495 user-facing rules, 262 of which no test in
-the tree reached; the self-hosted compiler was missing a share of the rules it
-had never been asked about. Around 270 rejection fixtures were written and the
-gaps behind them closed. If your program stops compiling, the diagnostic names
-the rule it broke. The two compilers now agree on every accept/reject verdict
-across the whole corpus, and on which rule fired; the exact message text still
-differs on 14 of 593 rejection fixtures.
+**This release refuses programs 0.8.5 accepted, and removes 136 functions from
+the public corelib surface.** The list is below under *Programs now refused*.
+Every refusal names the rule it enforces. Most of them are programs that were
+already wrong: they failed later inside `cc`, leaked or double-freed a resource,
+or read freed memory. Three are plain API changes: `or_else` is now a keyword,
+the corelib helpers are private, and `io.open_lines` returns a `Result`.
 
-Measured, not assumed: the 0.8.0 compiler was rebuilt and run beside this one
-over the whole accept corpus — 420 programs, all 420 of which 0.8.0 compiled,
-and all 420 still compile. Outside that corpus, three patterns 0.8.0 accepted
-are now refused, and 0.8.0 did not merely accept them — it built and ran them:
-`push` on a fixed-size array wrote past its storage, a slice of one read
-storage that has no backing pointer, and an out-of-range `u32` literal was
-truncated to `0` in silence. A constant division overflow crashed the 0.8.0
-compiler outright; it is a diagnostic now.
+## macOS on Apple silicon
 
-## Windows finally works
+**A `darwin-arm64` archive is attached for the first time.** Both compilers
+build native Mach-O arm64 with no source change. The full `make ci` gate has
+been green on macOS arm64 since 2026-09-19, and this archive is built twice and
+compared byte for byte (`make release-check`), then extracted and checked
+(`make release-content`).
 
-**Every executable in the 0.8.0 Windows archive fails to start.** All four were
-linked `-pthread` without `-static` and import a `libwinpthread-1.dll` the
-archive does not carry. That archive is unusable and always was; this release is
-the fix. The Windows tarball also now contains the **self-hosted** compiler
-rather than the C bootstrap, which it shipped through 0.8.0 — worth about 3x
-on a tree-walking benchmark. And `tychoc.exe` can be run from any directory: the
-lookup for its own corelib split paths on `/` only, so with tycho on `PATH`
-every build outside the archive directory failed.
+Running the gate on macOS for the first time found defects that were not
+specific to macOS. It was simply the first platform to show them:
 
-The archive's contents are now gated, not just its bytes: it is extracted and
-read on every check — the right compiler, the runtime present, no missing DLL
-imports, every `.exe` starting, and a real program compiled and run from a
-foreign directory.
+- **Every Tycho server refused connections under a burst on macOS.**
+  `net.listen` asked for a backlog of 16. When the accept queue is full, Linux
+  drops the SYN and the client retries, while macOS and the BSDs reset the
+  connection. The backlog is `SOMAXCONN` now.
+- **A server could hang on shutdown**, about one run in eight, because a worker
+  blocked in `accept()` never saw SIGTERM.
+- **Floating point could round differently on ARM.** The emitted C left FMA
+  contraction to the C compiler. It fuses `a*b + c` on aarch64 and cannot on
+  baseline x86-64, so the same program printed `0.30000000000000006` on one and
+  `...004` on the other. Contraction is off now, so a program rounds as its
+  source says on every host.
 
-**All of that ran under Wine on Linux, not on Windows.** No binary in this
-release has been started on a real Windows kernel by anyone here.
+The binaries are **not notarized** by Apple. If macOS refuses to start them
+after a browser download, clear the quarantine flag on the unpacked directory
+with `xattr -dr com.apple.quarantine tycho-v0.8.6-darwin-arm64`.
+
+## New in the language
+
+- **`or_else`: an early return that maps the error.**
+
+  ```text
+  cfg := load(path) or_else e: Err(ConfigErr(e))
+  ok := parse(s) or_else _: false
+  ```
+
+  On `Ok`/`Some` the expression is the payload, as with `or_return`. On `Err(e)`
+  the function **returns** the handler. The handler has the enclosing
+  function's return type, which need not be a `Result`. It replaces the
+  four-line `match` that unwraps a value or returns a wrapped error. It is
+  refused in a function that returns nothing, because there is no value to
+  return; use `or_return` or a `match` there. Spec §14.6.1. The tree's own code
+  moved to it at 79 call sites.
+- **`size_of$(T)` accepts an `align(N)` struct**, so `align` can be observed
+  from inside the language. The size is implementation-defined and is
+  guaranteed to be a multiple of `N`.
+- **`math.min`, `math.max` and `math.clamp` work lane by lane on a
+  `vector[N]T`**, as one compare and blend.
+
+The layout and SIMD surface itself (`vector[N]T`, `align(N)`, `packed`,
+swizzling) shipped in 0.8.5. This release adds its first in-tree user,
+`tools/tycho-grade`.
+
+## Programs now refused
+
+- **`or_else` as an identifier.** It is a keyword.
+- **A call to a corelib internal helper.** 136 functions such as
+  `json.parse_value` and `bignum.mag_cmp` were public only because their names
+  lacked a leading underscore. They are package-private now, and the error
+  names the private spelling. Every function found being called from outside its
+  package stayed public. The corelib surface is 423 functions, down from 559.
+- **`io.open_lines` returning a nullable `ptr`.** It returns
+  `Result(LineReader, IoErr)`. The null check becomes the `Err` arm.
+  `CHANGELOG.md` shows the migration.
+- **`reserve` or `pop` on a fixed-size `[N]T` or `vector[N]T`.** The reference
+  compiler emitted C that did not build. The shipped compiler accepted `pop` on
+  a `[4]int` and silently shortened it.
+- **Four misuses of a `handle`:**
+  - a use after a `close(h)` that closes it on every path;
+  - `close(h)` on a handle parameter, which freed the resource twice;
+  - an opener whose result is not bound directly to a variable, which leaked it
+    for the life of the process;
+  - a `free:` that does not name an `extern fn` taking that handle type.
+- **An import one file declares and only a sibling file uses.** It is reported
+  as unused in the file that declares it.
+
+## Fixed
+
+- **The shipped compiler returned freed memory** in two shapes. An
+  `or_return`/`or_else` payload returned straight to the caller was built in an
+  arena the return had just freed. `to_bytes(local)` kept inside a returned
+  value pointed into the freed scope; in `core:httpd` this corrupted a request
+  body.
+- **The shipped compiler crashed on `x[a:b]` over a struct or enum**, with an
+  internal message and no line. It is a type error now.
+- **A local `bounded[N]T` grew past its capacity.** It now traps on the push
+  that overflows it.
+- **`core:tls` did not guard an interior NUL in the host name.** A string like
+  `"good.example.com\0anything"` connected to, announced and verified
+  `good.example.com`, while the caller's own checks saw the whole string. It
+  fails closed now.
+- **`core:os` refuses to spawn a `.bat` or `.cmd` on Windows.** `cmd.exe`
+  re-parses the command line and defeats the argument quoting. A PATH-resolved
+  name with no extension is not caught.
+- **Subnormal float literals became `0.0` on aarch64 Windows**, through mingw's
+  `printf`.
+- **The vector-width lint gave x86-64 advice on ARM**, a flag `cc` then refused.
+  It now suggests a narrower vector first.
+- **A generic instantiation error names the whole chain of calls**, starting
+  from the outermost one, which is the line you own.
+- Every build importing `core:strings` drew two `-Wunused-value` warnings from
+  the reference compiler.
+- The build failed to link on Fedora with gcc 16: `-static-pie` needs `-fPIE`
+  beside it.
 
 ## Install
 
@@ -64,112 +139,36 @@ cd tycho-<version>-<os>-<arch>
 program built from `examples/hello.ty` is `examples/hello`.
 
 The core library ships inside the tarball, beside the compiler, so there is
-nothing to configure. You still need a C compiler (`cc`) on your `PATH` — Tycho
-transpiles to C. Each tarball's SHA-256 is published alongside it.
-
-## New in the language
-
-- **`vector[N]T`** — a fixed array whose arithmetic is one machine instruction.
-  A power-of-two count from 2 to 64, `int`/`float`/`f32` elements. In 0.8.0 this
-  type existed in the documentation and not in the compiler that shipped: the
-  self-hosted compiler lowered it to a dynamic array and emitted no vector
-  instructions at all. It emits real ones now.
-- **`--target <level>`** — raise the x86-64 baseline: `x86-64-v2`, `-v3`, `-v4`.
-  Worth knowing, because plain x86-64 is SSE2 and a register is 16 bytes, so a
-  32-byte `vector[4]float` is split in half in every operation and can be slower
-  than the plain array it replaced. The compiler warns when that happens and
-  says which flag fixes it. Without the flag nothing changes: an unflagged build
-  is byte-identical to one made before the flag existed.
-- **`align(N)` and `packed`** — state a struct's layout. `packed` is byte-exact
-  with no padding; `align(N)` raises alignment, capped at 8 because that is what
-  the arena guarantees. A request the allocator cannot honour is refused at
-  compile time rather than rounded down in silence.
-- **Simultaneous assignment** — `(x, y) = (y, x)`. Targets are places, so a
-  field, an array element or a map value may stand on the left, and every
-  right-hand side is evaluated before any target is written. `(a, b) = (b, a+b)`
-  is one Fibonacci step.
-- **Swizzling** — `v.(x, y)` is a tuple of two components of one value, and it
-  reads, binds and assigns. Fixed arrays and vectors of four lanes or fewer name
-  them `.x .y .z .w`, or `.r .g .b .a` for the same four, wherever a field
-  access is accepted.
-- **A byte bridge** — `to_bytes`, `from_bytes$(T)` and `size_of$(T)` over a
-  packed struct, little-endian on every host.
-
-## Fixed
-
-- **The example server starved under load.** A worker served one connection
-  start to finish, so 64 idle peers delayed a request by 2080 ms, and 64 parked
-  keep-alive peers meant only four requests — the worker count — could be
-  answered at all. Rewritten around one `poll(2)` per worker: 21–33 ms with all
-  64 answered, unchanged at 256.
-- **A double free of a `core:crypto`, `core:tls`, `core:http` or `core:image`
-  handle** segfaulted, and using one after free returned a garbage number and
-  exited 0. Both die by name now.
-- **Float-to-integer conversions were undefined** for a NaN, an infinity or an
-  out-of-range value. They are checked at run time.
-- **The format parsers stopped failing open** — `core:csv`, `core:json`,
-  `core:toml`, `core:cli` and `core:markdown`.
-- **`make` failed on a fresh clone under Debian and Ubuntu.** The runtime is
-  escaped into a C string literal by an `awk` rule, and mawk — the default `awk`
-  on both — halves a backslash where every other awk doubles it, so all 89
-  backslashes in the runtime reached `cc` unescaped and the build died at
-  `\x used with no following hex digits`. The rule no longer depends on which
-  awk is installed. Present since 0.5.0.
-- **`vector[N]T` and swizzling did not compile under any clang.** The lowering
-  took the address of a vector lane, which gcc permits and clang refuses in
-  every version. Five fixtures failed; the whole corpus now agrees between gcc
-  and clang 19. **clang 15 or newer** — clang 14 miscompiles the emitted C and
-  is not supported.
-- **`--print-deps` reported nothing for `core:sqlite`**, so `make corelib`
-  failed rather than skipped where libsqlite3 is absent. A package's `deps` file
-  is now read whether or not it also ships a C shim.
-
-## Security
-
-- `core:http` refuses `file://` URLs — a URL from anywhere untrusted could read
-  a local file through the HTTP client.
-- `tycho-httpd` refuses ambiguous request framing (request smuggling), and the
-  example server refuses a symlink escape out of its document root.
-- Three sites interpolated attacker-shaped text into a shell command line; all
-  are quoted now.
-- **`tycho-rsa` is gone.** A pure-Tycho RSA cannot be constant-time — the
-  modular exponentiation leaks the key through timing — and padding it did not
-  change that. Use `core:crypto`, which is OpenSSL.
-
-## The surface moved, deliberately
-
-0.8.0 froze the keyword set, the builtin set and every corelib signature, and
-said no new language features before 1.0. This release breaks that: the layout and
-SIMD work above needed surface, and it was judged worth taking now rather than
-after 1.0, when it could not be taken at all. The lock still exists and still
-gates — 115 keywords, 41 builtins, 559 corelib functions — but it records what
-was added instead of forbidding additions. Corelib may still gain a function and
-may not lose one or change a signature.
+nothing to configure. You still need a C compiler (`cc`) on your `PATH`, because
+Tycho transpiles to C: gcc, or clang 15 or newer. On macOS that is the Xcode
+command line tools. Each tarball's SHA-256 is published alongside it.
 
 ## What this release does not have
 
 There has been **no third-party security review**, and the FFI boundary is
-unsafe by design — see [SECURITY.md](SECURITY.md), and
+unsafe by design. See [SECURITY.md](SECURITY.md), and
 [docs/internals/audit-brief.md](docs/internals/audit-brief.md) if you are
 willing to be one.
 
-One thing is unverified rather than known, because you may hit it:
+Two things are unverified rather than known, because you may hit them:
 
+- **This Windows archive has been run under Wine, not on Windows.** Its
+  content gate passed under Wine 10 on x86-64 Linux: every `.exe` starts, and a
+  real program is emitted, linked and run from a foreign directory. The
+  toolchain itself has passed its suite on real Windows guests, 289/289 on both
+  windows-x86_64 and windows-arm64 (`make platform-check`), but that was an
+  earlier build, not this tarball.
 - **Server shutdown on Windows has never been observed on Windows.** The code
-  reads sound in both halves: a worker parks in `net.wait_readable` with a tick
-  of at most 100 ms (`server/main.ty@POLL_TICK_MS`), so it re-reads the
-  shutdown flag ten times a second whether or not anything wakes it, and the
-  console handler shuts down the listener and every registered connection
-  (`corelib/signal/signal_shim.c@sigx_ctrl_handler`). What is untested is
-  whether `WSAPoll` returns early on a socket that has been shut down, and
-  whether a blocked `accept` is released; both are Windows-version dependent
-  and no lane here can reach a real Windows kernel. Expect wind-down within the
-  poll tick; treat anything faster as unproven.
+  reads sound: a worker re-reads the shutdown flag at least ten times a second,
+  and the console handler shuts down the listener and every registered
+  connection. What is untested is whether `WSAPoll` returns early on a socket
+  that has been shut down, and whether a blocked `accept` is released. Expect
+  wind-down within the 100 ms poll tick. Treat anything faster as unproven.
 
 ## Status
 
-0.8.5 is pre-1.0 and there are **no stability guarantees**: anything here may
+0.8.6 is pre-1.0 and there are **no stability guarantees**: anything here may
 change. [ROADMAP.md](ROADMAP.md#what-10-requires) lists what 1.0 requires, and
-the blocking item is not engineering — it is that nobody outside this repo has
-written a real program in Tycho yet. If you write one, the friction you hit is
-the most useful thing you can send back.
+the blocking item is not engineering. Nobody outside this repo has written a
+real program in Tycho yet. If you write one, the friction you hit is the most
+useful thing you can send back.
