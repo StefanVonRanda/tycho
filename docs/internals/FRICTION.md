@@ -8679,7 +8679,7 @@ surface is frozen. Each is checked against `main` as of 2026-09-22.
 | layout 8a | **FIXED 2026-09-24:** §5.5, `reference/basics.md` and the diagnostic (both compilers) now carry the compiler's real rule. §5.5 omits `u8` from the ordered scalars, the mixed-type diagnostic omits `char`/`u32`/`u64`/`f32`, and the compiler's real rule is in neither. Two documents, two different wrong answers |
 | layout 8b | **FIXED 2026-09-24:** both stated, and exercised by the `vector` fence. `str()` on a vector works and is undocumented; a vector as a struct field works and is undocumented |
 | layout 8c | **FIXED 2026-09-24:** an operator table in `reference/types.md`. `bytes` `+` and `[a:b]` are in the spec and absent from `reference/types.md`'s `bytes` section — correct docs, wrong layer |
-| both | **FIXED 2026-09-24, #129.** two `-Wunused-value` warnings out of `core:strings`' `slice_bytes`/`slice_str` land in **every** user's build, naming a generated line in a file that is then deleted. Both probes hit them independently and both spent time establishing they had not done something wrong |
+| both | **FIXED 2026-09-24, #129.** two `-Wunused-value` warnings out of `core:strings`' `slice_bytes`/`slice_str` land in **every** user's build, naming a generated line in a file that is then deleted. Both probes hit them independently and both spent time establishing they had not done something wrong; `make emit-warn` now fails on it, and on the two siblings the same sweep found (`math.sign`'s `z == z` at `T = int`, `./tychoc1`'s `((k == q))` map probe) |
 
 **The shape of the residue is one finding.** Nine of the fourteen are the same
 defect: the rule exists, the compiler is right, and the page a first contact

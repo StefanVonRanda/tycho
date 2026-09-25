@@ -261,6 +261,9 @@ make -s align-probe
 step "[3d2/13] make shim-warn  (the shims' warnings, against a locked baseline)"
 make -s shim-warn
 
+step "[3d2b/13] make emit-warn  (the warnings EMITTED C raises in a user's build -- both compilers over every corelib test and positive fixture, -fsyntax-only under named -Werror= flags probed against the host cc. core:strings put two -Wunused-value warnings into every tychoc build on clang and no lane saw them, because every suite discards cc's stderr unless the build fails; gcc keeps -Wunused-value out of its defaults, so the flag is named rather than inherited -- FRICTION 128)"
+make -s emit-warn
+
 step "[3d2/13] make source-bytes  (CRLF line endings and a NUL byte, both compilers, no fixture can carry them)"
 make -s source-bytes
 
