@@ -19,12 +19,10 @@ struct Manifest:
 # TOML string out of a dotted path, or the default. `toml.get` answers
 # Option(Value) and the Value is still an enum, so every read is two steps.
 fn tstr(root: toml.Value, key: string, dflt: string) -> string:
-    match toml.get(root, key):
-        Some(v):
-            match v:
-                toml.TStr(s): return s
-                _: return dflt
-        None: return dflt
+    v := toml.get(root, key) or_else _: dflt
+    match v:
+        toml.TStr(s): return s
+        _: return dflt
 
 # Same for an array of strings. A non-string element is skipped rather than
 # failing the parse: the manifest is a user file, not a wire format.
@@ -43,10 +41,7 @@ fn tstrs(root: toml.Value, key: string) -> [string]:
     return out
 
 fn read_manifest(p: string) -> Result(Manifest, string):
-    txt := ""
-    match io.read_text(p):
-        Ok(t): txt = t
-        Err(e): return Err("cannot read manifest " + p)
+    txt := io.read_text(p) or_else _: Err("cannot read manifest " + p)
     root := toml.parse(txt) or_return
     return Ok(Manifest(tstr(root, "snapshot.name", "snapshot"),
                        tstr(root, "snapshot.root", "."),
