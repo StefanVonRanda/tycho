@@ -149,11 +149,14 @@ The roadmap is explicit that neither is a task the roadmap can complete. Both
 need a person. No amount of further work alone moves either one.
 
 **Ergonomics.** The language is correct and the surface is frozen, but it has not
-been tuned for the experience of using it daily. One measured example: 76 sites
-across 17 files are a four-line `match` whose entire content is "bind on ok,
-return a domain error on failure" — 34 of them the trivial `return Err(e)`. One
-construct removes all 76. That is a design backlog derived from real code, and
-nothing more of it has been mined yet.
+been tuned for the experience of using it daily. One measured example: the
+four-line "bind on ok, leave on failure" `match`. The trivial `return Err(e)`
+half went to `or_return`; `or_else` (§14.6.1, shipped 2026-09-25) took 75 more,
+45 mapping the error and 30 returning a plain value. 17 remain on purpose: test
+fixtures and benchmarks (11), two that would bind a payload only to drop it, and
+four whose heap payload is returned straight to the caller, which
+tychoc1 does not yet promote out of the callee's scope. Nothing more of the
+backlog has been mined yet.
 
 **A structural limit, already decided.** Pointer-shaped and structurally-shared
 data (tries, graphs, DAGs) cost more here than in C or Go, because value
