@@ -127,7 +127,7 @@ fn _isid(toks: [lex.Tok], i: int, s: string) -> bool:
 fn _where(toks: [lex.Tok], t: lex.Tok, msg: string, caret: bool) -> string:
     fl := lex.file_of(toks)
     if len(fl) == 0:
-        return "tychoc1: line " + str(t.line) + ": " + msg
+        return "tychoc: line " + str(t.line) + ": " + msg
     out := fl + ":" + str(t.line) + ": error: " + msg
     if t.line <= 0:
         return out

@@ -138,7 +138,7 @@ fn _new() -> C:
     return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt, [], [], [], false, []string: bool, []string: bool, []int, [], [], [], "", [], [], [])
 
 fn _bad(msg: string):
-    die("tychoc1: " + msg)
+    die("tychoc: " + msg)
 
 # --- package mangling -------------------------------------------------------
 # src/tychoc.c@pkg_prefix_for: a name declared in package `geom` is emitted as

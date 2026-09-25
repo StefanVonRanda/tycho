@@ -131,15 +131,15 @@ err1 = lambda r: next((l.strip() for l in r.stderr.split("\n") if ": error: " in
 def msg1(r):
     """tychoc1's first diagnostic MESSAGE, stripped of location and driver prefix
     exactly as tychoc_verdict strips tychoc's -- so the two are comparable. The
-    `tychoc1: <msg>` form with no `error:` is merge_pkg's, and it is a message
+    `tychoc: <msg>` form with no `error:` is merge_pkg's, and it is a message
     like any other; matching only the located form scored those two as an empty
     string and made a byte-identical pair look like a divergence."""
     for ln in r.stderr.split("\n"):
-        m = re.match(r"^(?:tychoc1: )?(?:(?:\S+?(?::\d+)?): )?error: (.*)$", ln)
+        m = re.match(r"^(?:tychoc: )?(?:(?:\S+?(?::\d+)?): )?error: (.*)$", ln)
         if m:
             return m.group(1).strip()
-        if ln.startswith("tychoc1: ") and ": error:" not in ln:
-            return ln[9:].strip()
+        if ln.startswith("tychoc: ") and ": error:" not in ln:
+            return ln[8:].strip()
     return ""
 
 

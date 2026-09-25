@@ -1,5 +1,6 @@
 package types
 
+import "core:io"
 import "core:sort"
 import "core:os"
 import "../ast"
@@ -143,7 +144,7 @@ fn pkg_basename(p: string) -> string:
 fn _resolve_pkg_dir(ld: inout Loader, importer_dir: string, path: string) -> string:
     if len(path) > 5 and path[0:5] == "core:":
         if len(ld.root) == 0:
-            die("tychoc1: cannot find the corelib for import \"" + path + "\"")
+            die("tychoc: cannot find the corelib for import \"" + path + "\"")
         return ld.root + "/" + path[5:]
     return importer_dir + "/" + path
 
@@ -215,16 +216,16 @@ fn _merge(ld: inout Loader, dir: string, pkgname: string, prefix: string):
     key := norm(dir)
     for a in ld.active:
         if a == key:
-            die("tychoc1: import cycle through package `" + pkgname + "` (" + dir + ")")
+            die("tychoc: import cycle through package `" + pkgname + "` (" + dir + ")")
     if key in ld.seen:
         return
     if len(ld.active) >= 64:
-        die("tychoc1: package nesting too deep")
+        die("tychoc: package nesting too deep")
     push(ld.active, key)
 
     files := _pkg_files(dir)
     if len(files) == 0:
-        die("tychoc1: package directory " + dir + " has no .ty files")
+        die("tychoc: package directory " + dir + " has no .ty files")
 
     # The File goes into ld.files' arena FIRST and the tree is parsed straight
     # into it. Parsing into a local array and assigning the unit across cost a
@@ -244,8 +245,8 @@ fn _merge(ld: inout Loader, dir: string, pkgname: string, prefix: string):
     for i := lo; i < hi; i += 1:
         if ld.files[i].unit.pkg != pkgname:
             if len(ld.files[i].unit.pkg) == 0:
-                die("tychoc1: " + ld.files[i].path + " is in package `" + pkgname + "` but has no `package` declaration")
-            die("tychoc1: " + ld.files[i].path + " declares `package " + ld.files[i].unit.pkg + "` but is in package `" + pkgname + "`")
+                die("tychoc: " + ld.files[i].path + " is in package `" + pkgname + "` but has no `package` declaration")
+            die("tychoc: " + ld.files[i].path + " declares `package " + ld.files[i].unit.pkg + "` but is in package `" + pkgname + "`")
         for im in ld.files[i].unit.imports:
             child := pkg_basename(im.path)
             _merge(&ld, _resolve_pkg_dir(&ld, dir, im.path), child, child + "__")
@@ -264,7 +265,13 @@ fn _merge(ld: inout Loader, dir: string, pkgname: string, prefix: string):
 # [File] array -- every unit, every function body -- once here and once more
 # at check_or_die's return.
 fn load_into(entry: string, argv0: string, outp: inout Program):
-    src := read_file(entry)
+    # read_file gives "" for a file it cannot open, and an empty entry parsed
+    # cleanly and died as "no 'main' procedure". src/tychoc.c@read_file
+    # says so.
+    src := ""
+    match io.read_text(entry):
+        Ok(t): src = t
+        Err(e): die("tychoc: cannot open " + entry)
     toks, notes := lex.tokenize_file(src, false, entry)
     root := corelib_root(argv0)
     dir := dir_of(entry)

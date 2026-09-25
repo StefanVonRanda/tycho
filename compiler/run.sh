@@ -438,7 +438,7 @@ echo "leg4c multi-error recovery: errors=$n_multi (expected >=2)"
 [ "$l4c" = 0 ] || { echo "parse-check: multi-error recovery broken"; rc=1; }
 
 # [4d] -- PARSE-ONLY DIAGNOSTIC FILE PATH. The --parse path must include the
-# source file in error diagnostics (not the bare `tychoc1: line N:` form).
+# source file in error diagnostics (not the bare `tychoc: line N:` form).
 # Before the fix, driver.ty used tokenize_all (no file) instead of tokenize_file.
 cat > "$T/r/filepath_err.ty" <<'EOF'
 fn f() -> :
@@ -453,6 +453,30 @@ else
 fi
 echo "leg4d parse-only file path in diagnostics: shown=$( [ $l4d = 0 ] && echo yes || echo no )"
 [ "$l4d" = 0 ] || { echo "parse-check: parse-only path lost file info in diagnostics"; rc=1; }
+
+# [4e] -- THE DRIVER'S OWN SURFACE, against ./tychoc. tychoc1 ships as `tychoc`,
+# and until 2026-09-25 it answered a missing source with "no 'main' procedure"
+# (read_file's "" parsed as an empty program), called itself tychoc1 in every
+# driver message, printed its internal flag list as the help, and ended
+# `--emit-c`'s "wrote" line with no newline. A probe's setup found all four in
+# the 0.8.6 archive; no leg ran the binary without a program.
+l4e=0
+e1=$("$TYCHOC1" "$T/r/no_such_file.ty" 2>&1); x1=$?
+e0=$(./tychoc "$T/r/no_such_file.ty" 2>&1)
+[ "$x1" = 1 ] && [ "$e1" = "$e0" ] || { echo "  MISSING-SOURCE :: exit=$x1 tychoc1: $e1 | tychoc: $e0"; l4e=1; }
+b_out=$("$TYCHOC1" 2>/dev/null); b_err=$("$TYCHOC1" 2>&1 >/dev/null); bx=$?
+[ "$bx" = 1 ] && [ -z "$b_out" ] && echo "$b_err" | grep -q '^usage: tychoc <file.ty>' \
+    || { echo "  BARE-RUN :: exit=$bx stdout=$(echo "$b_out" | head -1) stderr=$(echo "$b_err" | head -1)"; l4e=1; }
+"$TYCHOC1" --help > "$T/h1" 2>&1; hx=$?; ./tychoc --help > "$T/h0" 2>&1
+# The one line that may differ: --emit-c with no -o is stdout in ./tychoc only.
+hd=$(diff "$T/h0" "$T/h1" | grep '^[<>]' | grep -v -- '--emit-c ' | head -3)
+[ "$hx" = 0 ] && [ -z "$hd" ] || { echo "  HELP :: exit=$hx differs: $hd"; l4e=1; }
+printf 'fn main():\n    pass\n' > "$T/r/wrote.ty"
+"$TYCHOC1" "$T/r/wrote.ty" --emit-c -o "$T/r/wrote" > "$T/wrote.out" 2>&1
+[ "$(tail -c 1 "$T/wrote.out" | od -An -c | tr -d ' ')" = '\n' ] || { echo "  WROTE-NO-NEWLINE"; l4e=1; }
+"$TYCHOC1" --nope 2>&1 | grep -q '^tychoc1' && { echo "  SELF-NAMED-TYCHOC1 on an unknown flag"; l4e=1; }
+echo "leg4e driver surface vs ./tychoc (missing source, bare run, --help, wrote, self-name): $( [ $l4e = 0 ] && echo ok || echo FAILED )"
+[ "$l4e" = 0 ] || { echo "parse-check: tychoc1's driver surface moved away from ./tychoc"; rc=1; }
 
 # [13] -- THE AFFINE RULES, ONE PROBE EACH, EVERY REFUSAL PAIRED WITH AN
 # ACCEPTING TWIN. This leg is written this way because a checker that refuses

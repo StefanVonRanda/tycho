@@ -434,7 +434,7 @@ fn _at_line_in(file: string, src: string, line: int, msg: string, osrc: string, 
         line = oline
         src = osrc
     if len(file) == 0:
-        return "tychoc1: line " + str(line) + ": " + msg
+        return "tychoc: line " + str(line) + ": " + msg
     out := file + ":" + str(line) + ": error: " + msg
     ls := split(src, "\n")
     if line >= 1 and line <= len(ls):

@@ -35,7 +35,7 @@ fn write_runtime(path: string, argv0: string, dst: string):
         match io.copy(c, dst):
             Ok: return
             Err(e): pass
-    die("tychoc1: cannot read runtime '" + path + "'")
+    die("tychoc: cannot read runtime '" + path + "'")
     return
 
 # The whole loaded program, not just the entry file. `types.load` already walks
@@ -57,7 +57,7 @@ fn emit_to(p: types.Program, runtime_path: string, argv0: string, out_c: string,
         push(fcore, types.from_corelib(p.root, f.dir))   # emit.ty@_vmath_of
     match io.append_text(out_c, emit.program_in(pfx, us, dbgf, fpath, fsrc, fcore)):
         Ok: return
-        Err(e): die("tychoc1: cannot write '" + out_c + "'")
+        Err(e): die("tychoc: cannot write '" + out_c + "'")
     return
 
 # Refuse what the front end refuses, before emitting anything. Until Phase 7d
@@ -133,12 +133,12 @@ fn _shims(p: types.Program) -> [string]:
 # on anything outside the conservative cc-token charset.
 fn cc_safe(s: string, what: string) -> string:
     if len(s) == 0:
-        die("tychoc1: empty " + what + " name")
+        die("tychoc: empty " + what + " name")
     for i9 := 0; i9 < len(s); i9 += 1:
         c9 := s[i9]
         ok9 := (c9 >= 65 and c9 <= 90) or (c9 >= 97 and c9 <= 122) or (c9 >= 48 and c9 <= 57)
         if not (ok9 or c9 == 46 or c9 == 95 or c9 == 43 or c9 == 45):
-            die("tychoc1: illegal character in " + what + " name '" + s +
+            die("tychoc: illegal character in " + what + " name '" + s +
                 "' (only [A-Za-z0-9._+-] allowed)")
     return s
 
@@ -162,7 +162,7 @@ fn _guard_c(c_path: string):
             if len(head) > 79:
                 head = head[0:79]
             if not strings.contains(head, "Tycho runtime"):
-                eprint("tychoc1: " + c_path + " already exists and was not written by tychoc1 -- " +
+                eprint("tychoc: " + c_path + " already exists and was not written by tychoc -- " +
                     "the intermediate C would destroy it.\n" +
                     "  rename it, or build elsewhere with -o <dir>/<name>\n")
                 exit(1)
@@ -301,7 +301,7 @@ fn build(src_path: string, runtime_path: string, base: string, argv0: string,
     if len(tgt) > 0 and tgt != "baseline":
         pr := os.run(cc9 + " -march=" + tgt + " -E -x c /dev/null -o /dev/null 2>/dev/null")
         if pr.code != 0:
-            die("tychoc1: --target: " + cc9 + " does not accept -march=" + tgt)
+            die("tychoc: --target: " + cc9 + " does not accept -march=" + tgt)
         push(argv, "-march=" + tgt)
     if dbg:
         push(argv, "-g")
@@ -341,7 +341,7 @@ fn build(src_path: string, runtime_path: string, base: string, argv0: string,
     r9 := os.run(cmd)
     if r9.code != 0:
         # the .c SURVIVES a cc failure on purpose: it is the evidence
-        eprint("tychoc1: C compilation failed\n")
+        eprint("tychoc: C compilation failed\n")
         exit(1)
     match io.remove(c_path):
         Ok(b): pass
@@ -429,7 +429,7 @@ fn dump_tokens(src_path: string):
     src := ""
     match io.read_text(src_path):
         Ok(s): src = s
-        Err(e): die("tychoc1: cannot read '" + src_path + "'")
+        Err(e): die("tychoc: cannot read '" + src_path + "'")
     toks, _ := lex.tokenize_file(src, false, src_path)
     out := ""
     for k := 0; k < len(toks); k += 1:
@@ -443,7 +443,7 @@ fn dump_dnotes(src_path: string):
     src := ""
     match io.read_text(src_path):
         Ok(s): src = s
-        Err(e): die("tychoc1: cannot read '" + src_path + "'")
+        Err(e): die("tychoc: cannot read '" + src_path + "'")
     notes := lex.dnotes(src)
     toks, _ := lex.tokenize_file(src, false, src_path)
     out := ""
@@ -474,7 +474,7 @@ fn roundtrip(src_path: string):
     src := ""
     match io.read_text(src_path):
         Ok(s): src = s
-        Err(e): die("tychoc1: cannot read '" + src_path + "'")
+        Err(e): die("tychoc: cannot read '" + src_path + "'")
     toks, _ := lex.tokenize_file(src, true, src_path)
     joined := ""
     for k := 0; k < len(toks); k += 1:
@@ -498,7 +498,7 @@ fn roundtrip(src_path: string):
 fn _read(src_path: string) -> string:
     match io.read_text(src_path):
         Ok(s): return s
-        Err(e): die("tychoc1: cannot read '" + src_path + "'")
+        Err(e): die("tychoc: cannot read '" + src_path + "'")
     return ""
 
 fn parse_only(src_path: string):

@@ -5,7 +5,7 @@
 # A hole's text is re-tokenized as a FRAGMENT, and a fragment carries no name
 # and numbers its own lines from 0, so `f"{1 @ 2}"` used to die as
 #
-#     tychoc1: line 1: unexpected character '@'
+#     tychoc: line 1: unexpected character '@'
 #
 # -- no path, and line 1 of the fragment rather than the line the f-string is
 # on. Three sites re-tokenize hole text: parse/parse.ty@_hole, and emit's
@@ -40,7 +40,7 @@ echo "$out" | grep -q "unexpected character '@'" \
 echo "$out" | grep -q "a\.ty:5: error:" \
     || fail "[1] hole lex error does not name file:line -- got: $out"
 # The exact shape the fix removed. A fragment's own numbering starts at 1.
-echo "$out" | grep -q '^tychoc1: line 1:' \
+echo "$out" | grep -Eq '^tychoc1?: line 1:' \
     && fail "[1] still reporting the FRAGMENT's line with no path -- got: $out"
 
 # [2] the control: the same error OUTSIDE a hole was always located, so [1]
