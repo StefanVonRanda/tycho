@@ -6897,7 +6897,18 @@ refusals — means constructing a program that trips a rule the corpus does not
 otherwise exercise. The list is the work item; the count is the argument for
 doing it.
 
-### 98. 34 error-forwarding blocks predate `or_return`; the other 42 want a form that does not exist — **OPEN**
+### 98. 34 error-forwarding blocks predate `or_return`; the other 42 want a form that does not exist — **FIXED 2026-09-25: `or_else`**
+
+> Pinned-by: grep -q '"or_else"' surface.lock
+> Pinned-by: test -f tests/or_else.ty
+
+**2026-09-25: closed by `or_else`** ([§14.6.1](../spec/10-statements.md#1461-or_else),
+`529fe940`, tychoc1 `4cb884a9`), which returns any value of the enclosing
+function's type, so it also covers the sites returning `false`, `-1` or `None`.
+The 34 went to `or_return` in `f6f1025a`, 11 more it missed in `fdda3c5a`;
+`or_else` took 79 (45 mapping the error, 34 returning a plain value). 13 remain
+on purpose, listed in STATUS.md's Ergonomics paragraph. The decision and why it
+beat `or_return <fn>` are in [the RFC](../rfc/or-return-mapping.md).
 
 **This entry exists because a recommendation was made from a count without
 checking whether the feature already shipped.** An ergonomics sweep found 76
@@ -8401,7 +8412,7 @@ subject in its own right, and the four layout/SIMD features. Records:
 a fifth commit fixed the watchdog defect the setup exposed, and one entry below is
 a probe's finding being **refuted** — the first time that has happened against a
 measurement rather than a citation, and the reason this section exists rather than
-five commit messages. The residue is [128](#128-the-residue-fourteen-findings-from-2026-09-21-that-nothing-has-acted-on--open).
+five commit messages. The residue is [128](#128-the-residue-fourteen-findings-from-2026-09-21-that-nothing-has-acted-on--fixed-2026-09-24).
 
 ### 122. The probe watchdog scored every macOS probe as finished — **FIXED 2026-09-21**
 
@@ -8654,12 +8665,17 @@ present that error in the most convincing format available, a number from a seco
 toolchain against a quoted spec line. The procedure's "check each finding against
 `main` before acting" step is what caught it, one day late.
 
-### 128. The residue: fourteen findings from 2026-09-21 that nothing has acted on — **OPEN**
+### 128. The residue: fourteen findings from 2026-09-21 that nothing has acted on — **FIXED 2026-09-24**
+
+> Pinned-by: grep -q 'The strip also guarantees one class of false finding' docs/internals/probe-procedure.md
+> Pinned-by: grep -q 'Write down which one you used' docs/internals/probe-procedure.md
 
 **2026-09-24: eleven acted on, marked in the table; the handle `close`/`is_null` row
 since, as #130; layout 4 by `tools/tycho-grade/`, which found #131 on the way in; the design half of
 layout 1 by `size_of$` on an `align(N)` struct; that of layout 6 as #132.** Nothing in the
-table is open.
+table is open, and the two procedure defects at the end of this entry are
+fixed in [probe-procedure.md](probe-procedure.md); the rows with their own
+entries (#129-#132) carry their own pins.
 
 Listed rather than fixed, because they are doc-layer and design questions and the
 surface is frozen. Each is checked against `main` as of 2026-09-22.

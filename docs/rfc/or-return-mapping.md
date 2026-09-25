@@ -1,10 +1,9 @@
 # `or_return` with a mapping expression
 
 > **Status: decided 2026-09-25 — `or_else`, not the `or_return <fn>` form below.**
-> Built in `src/tychoc.c` and specified in
-> [§14.6.1](../spec/10-statements.md#1461-or_else); the tychoc1 port and the
-> call-site migration are the next phase. The body below is the proposal as
-> measured, kept for the reasoning.
+> Built in both compilers (`529fe940`, tychoc1 `4cb884a9`) and specified in
+> [§14.6.1](../spec/10-statements.md#1461-or_else); 79 call sites migrated, shipped
+> in 0.8.6. The body below is the proposal as measured, kept for the reasoning.
 
 ## The decision
 
