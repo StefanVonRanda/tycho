@@ -69,7 +69,7 @@ enum Expr:
     ErrE(int, [Expr])
     NoneE(int)                         # line only
     SpawnE(int, [Expr])
-    OrRet(int, [Expr])
+    OrRet(int, string, [Expr])        # x or_return; x or_else b: h (kids [x, h], b "" for `_`)
     Spread(int, [Expr])                # x...
     Addr(int, [Expr])                  # &place
     ChanE(int, [Ty], [Expr])           # channel(T, cap)
@@ -106,7 +106,7 @@ fn line_of(e: Expr) -> int:
         ErrE(l, k): return l
         NoneE(l): return l
         SpawnE(l, k): return l
-        OrRet(l, k): return l
+        OrRet(l, b, k): return l
         Spread(l, k): return l
         Addr(l, k): return l
         ChanE(l, t, k): return l
@@ -283,7 +283,7 @@ fn kids(e: Expr) -> [Expr]:
         OkE(l, k): return k
         ErrE(l, k): return k
         SpawnE(l, k): return k
-        OrRet(l, k): return k
+        OrRet(l, b, k): return k
         Spread(l, k): return k
         Addr(l, k): return k
         ChanE(l, t, k): return k

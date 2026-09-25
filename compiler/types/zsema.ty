@@ -1389,7 +1389,7 @@ fn _count_e(e: ast.Expr, m: inout [string: int]):
         ast.OkE(l, k): _count_es(k, &m)
         ast.ErrE(l, k): _count_es(k, &m)
         ast.SpawnE(l, k): _count_es(k, &m)
-        ast.OrRet(l, k): _count_es(k, &m)
+        ast.OrRet(l, b, k): _count_es(k, &m)
         ast.Spread(l, k): _count_es(k, &m)
         ast.Addr(l, k): _count_es(k, &m)
         ast.ChanE(l, t, k): _count_es(k, &m)
@@ -1972,9 +1972,12 @@ fn _pf_exprs(b: [ast.Stmt], out: inout [ast.Expr]):
 # loop boundary. Descends into a lambda body, as pf_scan_expr does.
 fn _pf_orret(cs: inout C, e: ast.Expr) -> bool:
     match e:
-        ast.OrRet(l, k):
+        ast.OrRet(l, b, k):
             cs.line = l
-            _cerr(&cs, "or_return cannot cross a parallel for (no early exit from a chunk)")
+            if len(k) > 1:
+                _cerr(&cs, "or_else cannot cross a parallel for (no early exit from a chunk)")
+            else:
+                _cerr(&cs, "or_return cannot cross a parallel for (no early exit from a chunk)")
             return true
         _: pass
     for c in ast.kids(e):

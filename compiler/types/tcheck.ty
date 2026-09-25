@@ -245,6 +245,9 @@ struct C:
     shut: [int]                        # var indices a `close(h)` statement closed, for
     nshut: int                         # the rest of its block (src/tychoc.c@shut_mark)
     vmath: [string: bool]              # core:math's min/max/clamp, lane-wise at a vector
+    orelse: bool                       # this expression is an `or_else` handler: its
+                                       # Some/Ok/Err mismatch is worded as a RETURN
+                                       # (src/tychoc.c@orelse_mismatch)
 
 fn _cexcerpt(cs: inout C, file: string, line: int) -> string:
     if line <= 0:
@@ -1157,6 +1160,8 @@ fn _ex2(cs: inout C, e: ast.Expr, want0: string) -> string:
     cs.hdl_decl = false
     callee_ok := cs.callee
     cs.callee = false
+    orelse_ok := cs.orelse
+    cs.orelse = false
     cs.line = ast.line_of(e)
     # src/tychoc.c@resolve_exp's literal adaptation, and the reason it has to be
     # here rather than only in _binop: a LITERAL takes the expected type's width
@@ -1612,7 +1617,7 @@ fn _ex2(cs: inout C, e: ast.Expr, want0: string) -> string:
             _nest_aff_e(&cs, it_)
             if known(w) and known(it_) and not compat(w, it_):
                 cs.line = l
-                _cerr(&cs, "declared type " + _show(&cs, want) + " but value is Some(" + _show(&cs, it_) + ")")
+                _cerr(&cs, _decl_or_else(&cs, orelse_ok, want) + "Some(" + _show(&cs, it_) + ")")
             return "opt(" + it_ + ")"
         ast.NoneE(l):
             if _head(_base(&cs, want)) == "opt":
@@ -1638,7 +1643,7 @@ fn _ex2(cs: inout C, e: ast.Expr, want0: string) -> string:
                 _cerr(&cs, "Ok(...) needs a concrete value")
             if known(w) and known(ot) and not compat(w, ot):
                 cs.line = l
-                _cerr(&cs, "declared type " + _show(&cs, want) + " but value is Ok(" + _show(&cs, ot) + ")")
+                _cerr(&cs, _decl_or_else(&cs, orelse_ok, want) + "Ok(" + _show(&cs, ot) + ")")
             return "res(" + ot + ",?)"
         ast.ErrE(l, k):
             wb := _base(&cs, want)
@@ -1651,7 +1656,7 @@ fn _ex2(cs: inout C, e: ast.Expr, want0: string) -> string:
                 _cerr(&cs, "Err(...) needs a concrete value")
             if known(w) and known(et) and not compat(w, et):
                 cs.line = l
-                _cerr(&cs, "declared type " + _show(&cs, want) + " but value is Err(" + _show(&cs, et) + ")")
+                _cerr(&cs, _decl_or_else(&cs, orelse_ok, want) + "Err(" + _show(&cs, et) + ")")
             return "res(?," + et + ")"
         ast.SpawnE(l, k):
             # `task(T)`, not a bare `task`: wait(t) has to know what it yields.
@@ -1688,10 +1693,12 @@ fn _ex2(cs: inout C, e: ast.Expr, want0: string) -> string:
                 elif _has_inout(cs.sg[si]):                         # :5982
                     _cerr(&cs, "cannot spawn a function with inout parameters (no shared state across threads)")
             return "task(" + rt + ")"
-        ast.OrRet(l, k):
+        ast.OrRet(l, b, k):
             # src/tychoc.c:6479-6495, leg for leg. Every one is guarded on the
             # types being KNOWN: an unresolved return type is `?` here.
             t := _base(&cs, _ex(&cs, k[0]))
+            if len(k) > 1:
+                return _or_else(&cs, l, b, t, k[1])
             rb := _base(&cs, cs.ret)
             if _head(t) == "opt":
                 if known(cs.ret) and _head(rb) != "opt":
@@ -1812,6 +1819,55 @@ fn _ex2(cs: inout C, e: ast.Expr, want0: string) -> string:
 # and a variable never widens -- so `f < 0` is legal and `f < n` is not, and a
 # checker that widened both would accept a program src/tychoc.c refuses (which
 # is safe) while one that widened neither would REFUSE `f < 0` (which is not).
+
+# The head of a Some/Ok/Err mismatch: a declaration's, or -- for an `or_else`
+# handler, whose value is RETURNED -- src/tychoc.c@orelse_mismatch's.
+fn _decl_or_else(cs: inout C, orelse: bool, want: string) -> string:
+    if orelse:
+        return "or_else returns its value from the enclosing function, which returns " +
+            _show(&cs, want) + ", but this value is "
+    return "declared type " + _show(&cs, want) + " but value is "
+
+# `e or_else b: h` -- src/tychoc.c@resolve_expr_inner's E_ORRETURN rhs leg, in
+# its order. `t` is the operand's base type; the unwrapped payload is returned.
+fn _or_else(cs: inout C, l: int, b: string, t: string, h: ast.Expr) -> string:
+    okt := "?"
+    errt := "?"
+    if _head(t) == "opt":
+        if len(b) > 0:
+            cs.line = l
+            _cerr(&cs, "or_else on an Option binds nothing -- None carries no value; write `or_else _: ...`")
+        okt = _targs(t)[0]
+    elif _head(t) == "res":
+        okt = _targs(t)[0]
+        errt = _targs(t)[1]
+    elif known(t):
+        cs.line = l
+        _cerr(&cs, "or_else applies to a Result or Option value, got " + _show(&cs, t))
+    # ponytail: a void fn has no value to return, so or_else is refused there
+    # (src/tychoc.c says the same; lift both if a real program wants it)
+    if cs.ret == "void":
+        cs.line = l
+        _cerr(&cs, "or_else returns its value from the enclosing function, which returns nothing -- " +
+            "use `or_return` or a `match` here")
+    m := _vmark(&cs)
+    if len(b) > 0:
+        _vpush(&cs, b, errt, true)
+        cs.mbind[b] = true              # borrows the error, as a match-arm bind does
+    cs.orelse = true
+    ht := _ex2(&cs, h, cs.ret)
+    cs.orelse = false
+    _vrestore(&cs, m)
+    if known(cs.ret) and known(ht) and not compat(cs.ret, ht):
+        cs.line = l
+        _cerr(&cs, "or_else returns its value from the enclosing function, which returns " +
+            _show(&cs, cs.ret) + ", but this value is " + _show(&cs, ht))
+    return okt
+
+fn _is_or_else(e: ast.Expr) -> bool:
+    match e:
+        ast.OrRet(l, b, k): return len(k) > 1
+        _: return false
 
 fn _is_intlit(e: ast.Expr) -> bool:
     return e is ast.IntLit
@@ -3330,7 +3386,10 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
                     " handle it with `match`, propagate with `or_return`, or bind it (x := ...)")
             if (k[0] is ast.OrRet) and t != "void" and known(t):
                 cs.line = l
-                _cerr(&cs, "`or_return` here produces " + t + ", which this statement discards -- bind it (x := ... or_return)")
+                if _is_or_else(k[0]):
+                    _cerr(&cs, "`or_else` here produces " + t + ", which this statement discards -- bind it (x := ... or_else ...)")
+                else:
+                    _cerr(&cs, "`or_return` here produces " + t + ", which this statement discards -- bind it (x := ... or_return)")
         ast.Decl(l, name, ty, rhs, vb):
             want := "?"
             if len(ty) == 1:
@@ -3839,7 +3898,7 @@ fn check_on(p: Program, syms: bool) -> C:
     return check_on2(p, syms, "")
 
 fn check_on2(p: Program, syms: bool, tgt: string) -> C:
-    cs := C([]string, -1, []string: bool, []string: bool, 0, []string, []string, []TDecl, []string: int, []FSig, []string: int, []string: string, []string: string, []string: string, []string: int, []string: bool, []string: string, []string: bool, []VBind, 0, []string, []string, []string: int, "", 0, "", "?", false, false, []ast.ImportD, []ast.ImportD, false, 0, 0, false, false, 0, []string: int, []string: bool, []string: bool, 0, 0, false, []string, []string, false, 0, false, "", []string: bool, []string: bool, []Pend, 0, "", []Tail, 0, 0, "", []string: bool, []int, 0, []string: bool)
+    cs := C([]string, -1, []string: bool, []string: bool, 0, []string, []string, []TDecl, []string: int, []FSig, []string: int, []string: string, []string: string, []string: string, []string: int, []string: bool, []string: string, []string: bool, []VBind, 0, []string, []string, []string: int, "", 0, "", "?", false, false, []ast.ImportD, []ast.ImportD, false, 0, 0, false, false, 0, []string: int, []string: bool, []string: bool, 0, 0, false, []string, []string, false, 0, false, "", []string: bool, []string: bool, []Pend, 0, "", []Tail, 0, 0, "", []string: bool, []int, 0, []string: bool, false)
     cs.symon = syms
     cs.vtgt = tgt
     for f in p.files:

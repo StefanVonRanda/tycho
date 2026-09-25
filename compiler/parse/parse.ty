@@ -898,8 +898,26 @@ fn _postfix_into(toks: [lex.Tok], i0: int, out: inout ast.Expr) -> int:
             continue
         break
     if _iskw(toks, i, lex.KW_OR_RETURN):
-        out = ast.OrRet(ast.line_of(out), [out])
+        out = ast.OrRet(ast.line_of(out), "", [out])
         i += 1
+    elif _iskw(toks, i, lex.KW_OR_ELSE):
+        # src/tychoc.c@parse_postfix: `e or_else x: h` is the or_return node with
+        # a handler (kids[1]) and a binding ("" for `_`).
+        t := _at(toks, i)
+        if not _kis(toks, i + 1, lex.K_IDENT):
+            _die(toks, t, "expected a binding after `or_else` -- a name for the error, or `_` (e.g. `or_else e: Err(Wrap(e))`)")
+        b := _x(toks, i + 1)
+        if b == "_":
+            b = ""
+        i += 2
+        if not _isop(toks, i, lex.OP_COLON):
+            _fail(toks, _at(toks, i), "':' after the `or_else` binding")
+        i += 1
+        if _kis(toks, i, lex.K_NEWLINE):
+            _die(toks, t, "`or_else` takes one expression on the same line, not a block -- write the value to return after the ':'")
+        h := ast.NullLit(0)
+        i = _expr_into(toks, i, &h)
+        out = ast.OrRet(t.line, b, [out, h])
     if _isop(toks, i, lex.OP_ELLIPSIS):
         out = ast.Spread(ast.line_of(out), [out])
         i += 1
@@ -1578,8 +1596,8 @@ fn _simple_into(toks: [lex.Tok], i0: int, out: inout ast.Stmt, pend: inout [ast.
     if e is ast.CallVal:
         ok = true
     match e:
-        ast.OrRet(l, k):
-            if len(k) == 1 and ((k[0] is ast.Call) or (k[0] is ast.CallVal)):
+        ast.OrRet(l, b, k):
+            if (k[0] is ast.Call) or (k[0] is ast.CallVal):
                 ok = true
         _: pass
     if not ok:
@@ -2375,7 +2393,7 @@ fn _kids(e: ast.Expr) -> [ast.Expr]:
         ast.OkE(l, k): return k
         ast.ErrE(l, k): return k
         ast.SpawnE(l, k): return k
-        ast.OrRet(l, k): return k
+        ast.OrRet(l, b, k): return k
         ast.Spread(l, k): return k
         ast.Addr(l, k): return k
         ast.ChanE(l, t, k): return k

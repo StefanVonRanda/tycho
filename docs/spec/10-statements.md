@@ -244,12 +244,29 @@ when the ok payload is `void`; `h` is promoted into the caller's storage before
 the function's scopes are freed; and `or_else` MUST NOT appear in a `parallel
 for` body.
 
-```text
-fn load(path: string) -> Result(int, AppErr):
-    s := store.read(path) or_else e: Err(Storage(e))    # wrap the error
-    fd := net.listen(h, p) or_else _: Err(Listen(h, p)) # replace it
-    io.write_at(f, b, o) or_else e: Err(Wal(e))         # Result(void, E): statement
-    return Ok(len(s))
+```tycho
+enum IoErr:
+    Denied
+
+enum AppErr:
+    Storage(IoErr)
+    Listen(string, int)
+    Wal(IoErr)
+
+fn read(path: string) -> Result(string, IoErr):
+    return Ok(path)
+
+fn listen(h: string, p: int) -> Result(int, IoErr):
+    return Ok(p)
+
+fn write_at(b: string) -> Result(void, IoErr):
+    return Ok()
+
+fn load(path: string, h: string, p: int) -> Result(int, AppErr):
+    s := read(path) or_else e: Err(Storage(e))      # wrap the error
+    fd := listen(h, p) or_else _: Err(Listen(h, p)) # replace it
+    write_at(s) or_else e: Err(Wal(e))              # Result(void, E): statement
+    return Ok(len(s) + fd)
 ```
 
 ## 14.7 `delete`

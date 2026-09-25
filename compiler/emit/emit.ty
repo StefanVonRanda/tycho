@@ -2441,8 +2441,8 @@ fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
             if not _is_resT(&cs, cs.want):
                 _bad("`Err` here has no Result type to belong to")
             return _variant(&cs, _eidx(&cs, _tname(cs.want)), "Err", k)
-        ast.OrRet(l, k):
-            return _orret(&cs, k[0])
+        ast.OrRet(l, b, k):
+            return _orret(&cs, b, k)
         ast.FStrLit(l, v, hs): return _fstr(&cs, v, l)
         ast.NullLit(l):
             # `null` is the ptr literal; ptr is void* in the ABI.
@@ -2757,7 +2757,14 @@ fn _fv(cs: inout C, e: ast.Expr, bs: [string], out: inout [string]):
         ast.OkE(l, k): _fvs(&cs, k, bs, &out)
         ast.ErrE(l, k): _fvs(&cs, k, bs, &out)
         ast.SpawnE(l, k): _fvs(&cs, k, bs, &out)
-        ast.OrRet(l, k): _fvs(&cs, k, bs, &out)
+        ast.OrRet(l, b9, k):
+            _fv(&cs, k[0], bs, &out)
+            if len(k) > 1:              # or_else: the binding is bound in the handler
+                bs2 := []string
+                for x in bs:
+                    push(bs2, x)
+                push(bs2, b9)
+                _fv(&cs, k[1], bs2, &out)
         ast.Spread(l, k): _fvs(&cs, k, bs, &out)
         ast.Addr(l, k): _fvs(&cs, k, bs, &out)
 
@@ -3153,18 +3160,68 @@ fn _variant(cs: inout C, ei: int, vn: string, args: [ast.Expr]) -> (string, stri
         out = out + v + "->u." + vn + ".f" + str(i) + " = " + ac + "; "
     return (out + v + "; })", "E~" + en)
 
+# The value a `return` hands back, homed in the caller's arena: shared by
+# `return e` and an `or_else` handler, which is returned the same way.
+fn _retval(cs: inout C, e: ast.Expr) -> string:
+    sw := cs.want
+    sa := cs.arena
+    # RETURN-SLOT MOVE: a returned TEMPORARY is built straight in the
+    # caller's arena, so it needs no copy on the way out. A place (a
+    # local, a field, an element) still copies -- it belongs to this
+    # scope and the scope is about to die. src/tychoc.c does the same;
+    # tychoc1 copied unconditionally, which allocated every returned
+    # value twice.
+    tmpret := not _place(e)
+    # _parent for a PLACE too. Its emission may insert a copy of its own
+    # (a map/array element does), and _shares then reads the SOURCE --
+    # which does live in the caller -- while the value actually returned
+    # is that copy, in a _scope this return is about to free.
+    if tmpret:
+        cs.arena = "_parent"
+    # An INDEX read is the exception among places: its emission copies
+    # the element into cs.arena, while _shares below reads the SOURCE --
+    # which does live in the caller -- and so suppresses the retention
+    # copy on a value sitting in the _scope this return then frees
+    # (cell/fold.ty@env_get, `return e.vals[k]`, read back after free).
+    match e:
+        ast.Index(li9, ki9): cs.arena = "_parent"
+        _: pass
+    cs.want = cs.cur_ret
+    srs := cs.retslot
+    match e:
+        ast.Tuple(l8, xs8): cs.retslot = tmpret
+        _: pass
+    c, t := _ex(&cs, e)
+    cs.retslot = srs
+    cs.want = sw
+    cs.arena = sa
+    rt := cs.cur_ret
+    if rt == "float" and t == "int":
+        c = "(double)(" + c + ")"
+    # src/tychoc.c:12792@cv_in_parent -- a return-slot local already
+    # lives in the caller's arena, so the copy would duplicate it.
+    if not tmpret and not _shares(&cs, e, rt, "_parent") and
+            not _inparent(&cs, e):
+        c = _copy(&cs, c, rt, "_parent")
+    return c
+
 # `x or_return` -- on the failing tag it returns the SAME failure from the
 # enclosing function, rebuilt in the caller's arena because this scope is freed
 # on the way out.
-fn _orret(cs: inout C, e: ast.Expr) -> (string, string):
+# `x or_else b: h` is the same node with k[1] = h: on the failing tag it binds
+# the error to b (a borrow of the operand, which lives in _scope), builds h as a
+# `return` would, runs the same frees and returns it (src/tychoc.c@gen_expr).
+fn _orret(cs: inout C, b: string, k: [ast.Expr]) -> (string, string):
     sw := cs.want
     cs.want = ""
-    c, t := _ex_scope(&cs, e)
+    c, t := _ex_scope(&cs, k[0])
     cs.want = sw
     if not (_is_optT(&cs, t) or _is_resT(&cs, t)):
         _bad("`or_return` on a value that is not an Option or a Result")
     ei := _eidx(&cs, _tname(t))
     rt := cs.cur_ret
+    if len(k) > 1:
+        return _orelse(&cs, b, k[1], c, t, ei)
     if not (_is_optT(&cs, rt) or _is_resT(&cs, rt)):
         _bad("`or_return` inside a function that returns neither Option nor Result")
     ri := _eidx(&cs, _tname(rt))
@@ -3197,6 +3254,32 @@ fn _orret(cs: inout C, e: ast.Expr) -> (string, string):
     return ("({ E_" + _tname(t) + " *" + v + " = " + c + "; if (" + v + "->tag == " +
         str(bad) + ") { E_" + rn + " *_orr = " + mk +
         "; " + _oneline(_finalizers(&cs, cs.fnbase, "")) + _scr_frees(&cs) +
+        "if (_scope.head) arena_free(&_scope); return _orr; } " +
+        got + "; })", gt)
+
+fn _orelse(cs: inout C, b: string, h: ast.Expr, c: string, t: string, ei: int) -> (string, string):
+    v := _fresh(&cs, "_or")
+    bad := 0
+    if _is_resT(&cs, t):
+        bad = 1
+    m := _mark(&cs)
+    bind := ""
+    if len(b) > 0:
+        et := cs.eds[ei].vpay[bad].ptypes[0]
+        bcn := _push(&cs, b, et)
+        cs.vown[len(cs.vown) - 1] = "&_scope"
+        bind = _ctyz(&cs, et) + "" + bcn + " = " + v + "->u." + cs.eds[ei].vnames[bad] + ".f0; "
+    hc := _retval(&cs, h)
+    _restore(&cs, m)
+    ok := cs.eds[ei].vpay[1 - bad].ptypes
+    got := "((void)0)"
+    gt := "void"
+    if len(ok) > 0:
+        got = "(" + v + "->u." + cs.eds[ei].vnames[1 - bad] + ".f0)"
+        gt = ok[0]
+    return ("({ E_" + _tname(t) + " *" + v + " = " + c + "; if (" + v + "->tag == " +
+        str(bad) + ") { " + bind + _ctyz(&cs, cs.cur_ret) + "_orr = " + hc + "; " +
+        _oneline(_finalizers(&cs, cs.fnbase, "")) + _scr_frees(&cs) +
         "if (_scope.head) arena_free(&_scope); return _orr; } " +
         got + "; })", gt)
 
@@ -4443,7 +4526,7 @@ fn _pass_e(e: ast.Expr, arr: string) -> bool:
         ast.OkE(l, k): return _pass_l(k, arr)
         ast.ErrE(l, k): return _pass_l(k, arr)
         ast.SpawnE(l, k): return _pass_l(k, arr)
-        ast.OrRet(l, k): return _pass_l(k, arr)
+        ast.OrRet(l, b9, k): return _pass_l(k, arr)
         ast.Spread(l, k): return _pass_l(k, arr)
         ast.Addr(l, k): return _pass_l(k, arr)
         ast.ChanE(l, t, k): return _pass_l(k, arr)
@@ -4610,7 +4693,7 @@ fn _creads_e(e: ast.Expr, nm: string) -> int:
         ast.OkE(l, k): return _creads_l(k, nm)
         ast.ErrE(l, k): return _creads_l(k, nm)
         ast.SpawnE(l, k): return _creads_l(k, nm)
-        ast.OrRet(l, k): return _creads_l(k, nm)
+        ast.OrRet(l, b9, k): return _creads_l(k, nm)
         ast.Spread(l, k): return _creads_l(k, nm)
         ast.Addr(l, k): return _creads_l(k, nm)
         ast.ChanE(l, t, k): return _creads_l(k, nm)
@@ -5439,7 +5522,7 @@ fn _select(cs: inout C, arms: [ast.Arm], ind: string) -> string:
 # src/tychoc.c@expr_has_orreturn
 fn _hasorr(e: ast.Expr) -> bool:
     match e:
-        ast.OrRet(l, k): return true
+        ast.OrRet(l, b9, k): return true
         _: pass
     for c in ast.kids(e):
         if _hasorr(c):
@@ -5837,46 +5920,8 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             if len(k) == 0:
                 return ind + "{ " + _oneline(fin) + _scr_frees(&cs) +
                     "if (_scope.head) arena_free(&_scope); return; }\n"
-            sw := cs.want
-            sa := cs.arena
-            # RETURN-SLOT MOVE: a returned TEMPORARY is built straight in the
-            # caller's arena, so it needs no copy on the way out. A place (a
-            # local, a field, an element) still copies -- it belongs to this
-            # scope and the scope is about to die. src/tychoc.c does the same;
-            # tychoc1 copied unconditionally, which allocated every returned
-            # value twice.
-            tmpret := not _place(k[0])
-            # _parent for a PLACE too. Its emission may insert a copy of its own
-            # (a map/array element does), and _shares then reads the SOURCE --
-            # which does live in the caller -- while the value actually returned
-            # is that copy, in a _scope this return is about to free.
-            if tmpret:
-                cs.arena = "_parent"
-            # An INDEX read is the exception among places: its emission copies
-            # the element into cs.arena, while _shares below reads the SOURCE --
-            # which does live in the caller -- and so suppresses the retention
-            # copy on a value sitting in the _scope this return then frees
-            # (cell/fold.ty@env_get, `return e.vals[k]`, read back after free).
-            match k[0]:
-                ast.Index(li9, ki9): cs.arena = "_parent"
-                _: pass
-            cs.want = cs.cur_ret
-            srs := cs.retslot
-            match k[0]:
-                ast.Tuple(l8, xs8): cs.retslot = tmpret
-                _: pass
-            c, t := _ex(&cs, k[0])
-            cs.retslot = srs
-            cs.want = sw
-            cs.arena = sa
+            c := _retval(&cs, k[0])
             rt := cs.cur_ret
-            if rt == "float" and t == "int":
-                c = "(double)(" + c + ")"
-            # src/tychoc.c:12792@cv_in_parent -- a return-slot local already
-            # lives in the caller's arena, so the copy would duplicate it.
-            if not tmpret and not _shares(&cs, k[0], rt, "_parent") and
-                    not _inparent(&cs, k[0]):
-                c = _copy(&cs, c, rt, "_parent")
             v := "_ret"
             return ind + "{ " + _ctyz(&cs, rt) + "" + v + " = " + c + "; " +
                 _oneline(fin) + _scr_frees(&cs) + "arena_free(&_scope); return " + v + "; }\n"
@@ -6268,7 +6313,7 @@ fn _mut_e(e: ast.Expr, nm: string) -> bool:
         ast.OkE(l, k): return _mut_es(k, nm)
         ast.ErrE(l, k): return _mut_es(k, nm)
         ast.SpawnE(l, k): return _mut_es(k, nm)
-        ast.OrRet(l, k): return _mut_es(k, nm)
+        ast.OrRet(l, b9, k): return _mut_es(k, nm)
         ast.Spread(l, k): return _mut_es(k, nm)
         ast.ChanE(l, t, k): return _mut_es(k, nm)
         ast.Lambda(l, pr, r, k): return _mut_es(k, nm)
@@ -7614,7 +7659,7 @@ fn _ref_e(e: ast.Expr, m: inout [string: bool]):
         ast.OkE(l, k): _ref_es(k, &m)
         ast.ErrE(l, k): _ref_es(k, &m)
         ast.SpawnE(l, k): _ref_es(k, &m)
-        ast.OrRet(l, k): _ref_es(k, &m)
+        ast.OrRet(l, b9, k): _ref_es(k, &m)
         ast.Spread(l, k): _ref_es(k, &m)
         ast.Addr(l, k): _ref_es(k, &m)
         ast.ChanE(l, t, k): _ref_es(k, &m)

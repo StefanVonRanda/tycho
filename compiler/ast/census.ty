@@ -147,7 +147,7 @@ fn _ce(e: Expr, acc: [string]) -> [string]:
         SpawnE(l, k):
             push(out, "e.SpawnE")
             out = _ces(k, out)
-        OrRet(l, k):
+        OrRet(l, b, k):
             push(out, "e.OrRet")
             out = _ces(k, out)
         Spread(l, k):

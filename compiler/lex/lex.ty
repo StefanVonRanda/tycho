@@ -274,6 +274,7 @@ const KW_SELECT     = 38
 const KW_CONTINUE   = 39
 const KW_PARALLEL   = 40
 const KW_OR_RETURN  = 41
+const KW_OR_ELSE    = 42
 
 # src/tychoc.c@keyword, verbatim. Every name here becomes kind "kw"; everything
 # else -- `soa`, `count`, `print`, `where`, `const`, `import`, `package`,
@@ -371,6 +372,10 @@ fn kwid(s: string) -> int:
             return KW_STRING
         if s == "select":
             return KW_SELECT
+        return 0
+    if n == 7:
+        if s == "or_else":
+            return KW_OR_ELSE
         return 0
     if n == 8:
         if s == "continue":
