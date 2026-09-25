@@ -614,7 +614,10 @@ element type instead of a family of per-type siblings.
   (getopt's rule, so `--root --port` sets root to `--port`) or lands in `missing(c)` if there
   is nothing after it; a `boolean` name spelled `--flag=v` sets the flag and **drops** `v`; a
   name in neither list, and a short cluster containing a letter in neither, land in
-  `unknown(c)` as written. No short option takes a value (`-p 80` is not a spelling this
+  `unknown(c)` as written. `parse_checked(argv, valued, boolean) -> Result(Cli, CliErr)` is
+  `parse_spec` that refuses instead of sorting: `Err(Unknown(tok))` or `Err(NoValue(name))`
+  on the first offending token, so a program cannot forget to look at `unknown`/`missing`.
+  No short option takes a value (`-p 80` is not a spelling this
   package has — it would make `-abc` ambiguous); use `--port 80`. Accessors:
   `get(c, key, default)`, `has(c, key)`, `flag(c, name)` (long or short), `positionals(c)`,
   `count(c)`, `missing(c)`, `unknown(c)`. Uses parallel arrays, not maps. `server/main.ty`

@@ -243,6 +243,43 @@ payload is promoted into the caller's arena, so it outlives the return.
 The same operator works on `Option`: inside a function that returns `Option(T)`,
 `v := opt or_return` binds `v` on `Some(v)` and returns `None` on `None`.
 
+## `or_else` — returning something else on failure
+
+`or_return` hands back the error it was given. When the caller should see a
+*different* value — your own error type wrapping a library's, or `false`/`None`
+from a function that does not return a `Result` at all — use `or_else`:
+`v := e or_else x: h` binds `v` on `Ok(v)`/`Some(v)`; on `Err(err)` it binds `err`
+to `x` and **returns** `h` from the enclosing function. `h` must have that
+function's return type. Write `_` to bind nothing, and on an `Option` you must,
+since `None` carries no value.
+
+```tycho
+enum ConfErr:
+    BadPort(string)
+
+fn port_of(s: string) -> Result(int, ConfErr):
+    n := parse_digit(s) or_else e: Err(BadPort(e))    # wrap the callee's error
+    return Ok(8000 + n)
+
+fn is_digit(s: string) -> bool:
+    n := parse_digit(s) or_else _: false              # a bool fn gives up with false
+    return n >= 0
+
+fn parse_digit(s: string) -> Result(int, string):
+    if len(s) == 1 and s >= "0" and s <= "9":
+        return Ok(to_int(to_float(s[0]) - to_float("0"[0])))
+    return Err("not a digit: " + s)
+
+fn main():
+    match port_of("7"):
+        Ok(p): println(str(p))
+        Err(BadPort(m)): println(m)
+    println(str(is_digit("x")))
+```
+
+`h` runs to the end of the line (or the closing bracket), so it is one
+expression, never a block. The full rules are [§14.6.1](../spec/10-statements.md#1461-or_else).
+
 ---
 
 *Design background:* why arena-allocated payloads keep recursive enums finite and copyable,
