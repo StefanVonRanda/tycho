@@ -109,9 +109,7 @@ fn run_script(script: string, db: inout store.Db, lg: inout wal.Log, crash_after
             if crash_after > 0 and done >= crash_after:
                 _crash()
 
-    match wal.checkpoint(&db, &lg):
-        Ok(x): pass
-        Err(e): return Err(wal.err_str(e))
+    _ck := wal.checkpoint(&db, &lg) or_else e: Err(wal.err_str(e))
     if bad > 0:
         return Err(str(bad) + " statement(s) failed")
     return Ok()
@@ -122,28 +120,21 @@ fn run_script(script: string, db: inout store.Db, lg: inout wal.Log, crash_after
 # in-memory database -- which is only sound because srv serialises sessions.
 # See the concurrency note in srv/srv.ty.
 fn serve(path: string, host: string, port: int) -> Result(void, string):
-    match wal.open_db(path):
-        Ok(s):
-            db := s.db
-            lg := s.log
-            fd := 0
-            real := 0
-            match srv.listen(host, port):
-                Ok(b):
-                    fd = b.fd
-                    real = b.port
-                Err(e): return Err(srv.err_str(e))
-            # The banner is the readiness signal, and its ORDER is load-bearing:
-            # printed after the socket is listening and before the first accept,
-            # so a client that connects on seeing it is queued by the kernel
-            # rather than refused. It carries the bound port because --port=0
-            # means the caller does not know it -- which is what lets a gate run
-            # without claiming a fixed port.
-            eprint("tycho-db: listening on " + host + ":" + str(real) + " store=" + db.path + "\n")
-            match srv.serve_forever(fd, &db, &lg):
-                Ok: return Ok()
-                Err(e): return Err(srv.err_str(e))
-        Err(e): return Err(wal.err_str(e))
+    s := wal.open_db(path) or_else e: Err(wal.err_str(e))
+    db := s.db
+    lg := s.log
+    b := srv.listen(host, port) or_else e: Err(srv.err_str(e))
+    fd := b.fd
+    real := b.port
+    # The banner is the readiness signal, and its ORDER is load-bearing:
+    # printed after the socket is listening and before the first accept,
+    # so a client that connects on seeing it is queued by the kernel
+    # rather than refused. It carries the bound port because --port=0
+    # means the caller does not know it -- which is what lets a gate run
+    # without claiming a fixed port.
+    eprint("tycho-db: listening on " + host + ":" + str(real) + " store=" + db.path + "\n")
+    srv.serve_forever(fd, &db, &lg) or_else e: Err(srv.err_str(e))
+    return Ok()
 
 # ---- client mode ----------------------------------------------------------
 #
@@ -155,10 +146,7 @@ fn client(addr: string, script: string) -> Result(void, string):
     host, ps := strings.split_once(addr, ":")
     if host == "" or ps == "":
         return Err("--client wants HOST:PORT, got " + addr)
-    fd := 0
-    match srv.connect(host, strings.parse_int(ps)):
-        Ok(f): fd = f
-        Err(e): return Err(srv.err_str(e))
+    fd := srv.connect(host, strings.parse_int(ps)) or_else e: Err(srv.err_str(e))
     buf := ""
     bad := 0
     for line in io.read_lines(script):
@@ -234,17 +222,14 @@ fn main() -> Result(void, string):
     if len(args) > 1:
         path = args[1]
 
-    match wal.open_db(path):
-        Ok(s):
-            db := s.db
-            lg := s.log
-            println("  db    " + db.path + " (" + str(len(db.tables)) + " table(s))")
-            if s.rebuilt:
-                println("  wal   store unreadable, rebuilt from the log")
-            if s.torn:
-                println("  wal   discarded a torn trailing record")
-            if s.replayed > 0:
-                println("  wal   replayed " + str(s.replayed) + " record(s)")
-            return run_script(args[0], &db, &lg, crash_after)
-        Err(e):
-            return Err(wal.err_str(e))
+    s := wal.open_db(path) or_else e: Err(wal.err_str(e))
+    db := s.db
+    lg := s.log
+    println("  db    " + db.path + " (" + str(len(db.tables)) + " table(s))")
+    if s.rebuilt:
+        println("  wal   store unreadable, rebuilt from the log")
+    if s.torn:
+        println("  wal   discarded a torn trailing record")
+    if s.replayed > 0:
+        println("  wal   replayed " + str(s.replayed) + " record(s)")
+    return run_script(args[0], &db, &lg, crash_after)

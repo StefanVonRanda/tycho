@@ -87,10 +87,7 @@ struct Bound:
 # what it bound to has not come up usable, and inventing a second variant for
 # it would be a variant no test could ever reach.
 fn listen(host: string, port: int) -> Result(Bound, SrvErr):
-    fd := 0
-    match net.listen(host, port):
-        Ok(f): fd = f
-        Err(e): return Err(Listen(host, port))
+    fd := net.listen(host, port) or_else _: Err(Listen(host, port))
     match net.port_of(fd):
         Ok(p): return Ok(Bound(fd, p))
         Err(e):
@@ -98,14 +95,12 @@ fn listen(host: string, port: int) -> Result(Bound, SrvErr):
             return Err(Listen(host, port))
 
 fn accept_one(fd: int) -> Result(int, SrvErr):
-    match net.accept(fd):
-        Ok(c): return Ok(c)
-        Err(e): return Err(Accept)
+    c := net.accept(fd) or_else _: Err(Accept)
+    return Ok(c)
 
 fn connect(host: string, port: int) -> Result(int, SrvErr):
-    match net.connect(host, port):
-        Ok(fd): return Ok(fd)
-        Err(e): return Err(Connect(host, port))
+    fd := net.connect(host, port) or_else _: Err(Connect(host, port))
+    return Ok(fd)
 
 fn close_conn(fd: int):
     net.close_fd(fd)
@@ -147,9 +142,8 @@ fn send_block(fd: int, lines: [string]) -> Result(bool, SrvErr):
     for l in lines:
         payload = payload + l + "\n"
     payload = payload + END + "\n"
-    match net.write(fd, to_bytes(payload)):
-        Ok(n): return Ok(true)
-        Err(e): return Err(Peer("write failed"))
+    _n := net.write(fd, to_bytes(payload)) or_else _: Err(Peer("write failed"))
+    return Ok(true)
 
 fn _one(s: string) -> [string]:
     out: [string] = []
@@ -239,9 +233,7 @@ fn serve_forever(fd: int, db: inout store.Db, lg: inout wal.Log) -> Result(void,
         # log, and doing that between two statements of one session would cost
         # a store rewrite per statement to shorten a log that is already bounded
         # by the session.
-        match wal.checkpoint(&db, &lg):
-            Ok(x): pass
-            Err(e): return Err(Checkpoint(e))
+        _ck := wal.checkpoint(&db, &lg) or_else e: Err(Checkpoint(e))
     return Ok()
 
 # ---- the client half ------------------------------------------------------
@@ -265,7 +257,5 @@ fn recv_response(fd: int, buf: inout string) -> Result([string], SrvErr):
 
 # Send one statement and read its response.
 fn request(fd: int, stmt: string, buf: inout string) -> Result([string], SrvErr):
-    match net.write(fd, to_bytes(stmt + "\n")):
-        Ok(n): pass
-        Err(e): return Err(Peer("write failed"))
+    _n := net.write(fd, to_bytes(stmt + "\n")) or_else _: Err(Peer("write failed"))
     return recv_response(fd, &buf)

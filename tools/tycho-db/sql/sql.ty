@@ -320,9 +320,8 @@ fn show(s: Stmt) -> string:
                         sel += ", "
                     sel += cols[k]
             out := "SELECT " + sel + " FROM " + tbl
-            match w:
-                Some(p): return out + " WHERE " + show_expr(p)
-                None: return out
+            p := w or_else _: out
+            return out + " WHERE " + show_expr(p)
         Explain(inner): return "EXPLAIN " + show(inner)
 
 fn err_str(e: SqlErr) -> string:

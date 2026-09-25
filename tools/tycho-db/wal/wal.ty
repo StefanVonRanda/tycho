@@ -149,10 +149,7 @@ fn scan(path: string) -> Result(Scan, WalErr):
     none: [Rec] = []
     if not io.exists(path):
         return Ok(Scan(false, 0, none, 0, false))
-    blob := to_bytes("")
-    match io.read_bytes(path):
-        Ok(x): blob = x
-        Err(e): return Err(BadLog(path))
+    blob := io.read_bytes(path) or_else _: Err(BadLog(path))
 
     # A zero-length log is a checkpoint that died between truncating the file
     # and writing the new header. It is not damage: there is simply nothing to
@@ -211,18 +208,14 @@ fn append(lg: inout Log, r: Rec) -> Result(int, WalErr):
     if lg.end == 0:
         # No header yet: lay one down whole, so magic and base_lsn land in a
         # single write rather than leaving a half-header behind.
-        match io.write_bytes(lg.path, _header(lg.base_lsn)):
-            Ok(): pass
-            Err(e): return Err(NotWritten(lg.path))
+        io.write_bytes(lg.path, _header(lg.base_lsn)) or_else _: Err(NotWritten(lg.path))
         lg.end = HDR
         created = true
     body := put_rec(r)
     frame := to_bytes(Frame(to_u32(len(body)), to_u32(checksum(body, 0, len(body))))) + body
     # Written AT lg.end, which is the end of the last VALID record -- so a torn
     # tail left by an earlier crash is overwritten rather than preserved.
-    match io.write_at(lg.path, lg.end, frame):
-        Ok(): pass
-        Err(e): return Err(NotWritten(lg.path))
+    io.write_at(lg.path, lg.end, frame) or_else _: Err(NotWritten(lg.path))
     # THE FLUSH IS THE POINT OF THE WHOLE FILE, so it happens before the lsn is
     # handed back and before any caller can take Ok as licence to touch the store.
     _hit := _sync(lg.path) or_return
@@ -241,9 +234,7 @@ fn append(lg: inout Log, r: Rec) -> Result(int, WalErr):
 
 fn checkpoint(db: inout store.Db, lg: inout Log) -> Result(bool, WalErr):
     db.applied_lsn = lg.next_lsn
-    match store.flush(db):
-        Ok(x): pass
-        Err(e): return Err(Storage(e))
+    _fl := store.flush(db) or_else e: Err(Storage(e))
     # STEP 1 IS NOT FINISHED UNTIL THE STORE IS ON THE DEVICE. The rewind below
     # destroys the only other copy of these rows, and it was already guarded by
     # flush's result; a flush that returned Ok with the bytes still in RAM makes
@@ -252,9 +243,7 @@ fn checkpoint(db: inout store.Db, lg: inout Log) -> Result(bool, WalErr):
     # this is the write that may have created it.
     _shit := _sync(db.path) or_return
     _sdhit := _sync(path.dir(db.path)) or_return
-    match io.write_bytes(lg.path, _header(lg.next_lsn)):
-        Ok(): pass
-        Err(e): return Err(NotWritten(lg.path))
+    io.write_bytes(lg.path, _header(lg.next_lsn)) or_else _: Err(NotWritten(lg.path))
     # And the rewound header itself, so a crash cannot resurrect the old records
     # from a stale page and replay them over a store that already has them.
     _lhit := _sync(lg.path) or_return
@@ -267,13 +256,11 @@ fn checkpoint(db: inout store.Db, lg: inout Log) -> Result(bool, WalErr):
 fn _apply(db: inout store.Db, r: Rec) -> Result(bool, WalErr):
     match r:
         RCreate(name, cols):
-            match store.create_table(&db, name, cols):
-                Ok(x): return Ok(true)
-                Err(e): return Err(Storage(e))
+            _ok := store.create_table(&db, name, cols) or_else e: Err(Storage(e))
+            return Ok(true)
         RInsert(name, vals):
-            match store.insert(&db, name, vals):
-                Ok(x): return Ok(true)
-                Err(e): return Err(Storage(e))
+            _ok := store.insert(&db, name, vals) or_else e: Err(Storage(e))
+            return Ok(true)
 
 # Open the store with its log applied. This, not store.open, is the entry
 # point a caller wants: it is the only one that returns a Db reflecting
@@ -323,9 +310,7 @@ fn open_db(store_path: string) -> Result(Session, WalErr):
         for r in sc.recs:
             body := put_rec(r)
             out = out + to_bytes(Frame(to_u32(len(body)), to_u32(checksum(body, 0, len(body))))) + body
-        match io.write_bytes(lp, out):
-            Ok(): pass
-            Err(e): return Err(NotWritten(lp))
+        io.write_bytes(lp, out) or_else _: Err(NotWritten(lp))
         # Flushed like any other log write: this one SHORTENS the file, and a
         # truncation left in the page cache can come back as the torn tail it
         # just removed.

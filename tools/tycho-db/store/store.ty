@@ -360,14 +360,12 @@ fn open(path: string) -> Result(Db, StoreErr):
     if not io.exists(path):
         empty: [Table] = []
         return Ok(Db(path, empty, 0))
-    match io.read_bytes(path):
-        Ok(blob): return decode(path, blob)
-        Err(e): return Err(Corrupt("cannot read " + path))
+    blob := io.read_bytes(path) or_else _: Err(Corrupt("cannot read " + path))
+    return decode(path, blob)
 
 fn flush(db: Db) -> Result(bool, StoreErr):
-    match io.write_bytes(db.path, encode(db)):
-        Ok(): return Ok(true)
-        Err(e): return Err(NotWritten(db.path))
+    io.write_bytes(db.path, encode(db)) or_else _: Err(NotWritten(db.path))
+    return Ok(true)
 
 fn _find(db: Db, name: string) -> int:
     for i := 0; i < len(db.tables); i += 1:

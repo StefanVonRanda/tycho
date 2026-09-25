@@ -97,9 +97,8 @@ fn _lit_cmp(l: sql.Expr, r: sql.Expr) -> Option(int):
 fn _fold(e: sql.Expr) -> Folded:
     match e:
         sql.Cmp(op, l, r):
-            match _lit_cmp(l, r):
-                Some(c): return Const(sql.holds(op, c))
-                None: return Keep(e)
+            c := _lit_cmp(l, r) or_else _: Keep(e)
+            return Const(sql.holds(op, c))
         sql.And(l, r):
             fl := _fold(l)
             fr := _fold(r)
@@ -181,27 +180,25 @@ fn _rejoin(cs: [sql.Expr], drop: int) -> Option(sql.Expr):
 fn build(st: sql.Stmt, indexed: [string]) -> Result(Plan, PlanErr):
     match st:
         sql.Select(cols, tbl, w):
-            match w:
-                None: return Ok(Plan(tbl, cols, Scan, None))
-                Some(p):
-                    match _fold(p):
-                        Const(v):
-                            # A constant-true WHERE leaves a scan with nothing
-                            # to check; a constant-false one leaves no work at
-                            # all, and NoRows is that stated rather than
-                            # discovered a row at a time.
-                            if not v:
-                                return Ok(Plan(tbl, cols, NoRows, None))
-                            return Ok(Plan(tbl, cols, Scan, None))
-                        Keep(kept):
-                            cs: [sql.Expr] = []
-                            _conjuncts(kept, &cs)
-                            for k := 0; k < len(cs); k += 1:
-                                match _eq_key(cs[k], indexed):
-                                    Some(ek):
-                                        return Ok(Plan(tbl, cols, IndexEq(ek.col, ek.key), _rejoin(cs, k)))
-                                    None: continue
-                            return Ok(Plan(tbl, cols, Scan, Some(kept)))
+            p := w or_else _: Ok(Plan(tbl, cols, Scan, None))
+            match _fold(p):
+                Const(v):
+                    # A constant-true WHERE leaves a scan with nothing
+                    # to check; a constant-false one leaves no work at
+                    # all, and NoRows is that stated rather than
+                    # discovered a row at a time.
+                    if not v:
+                        return Ok(Plan(tbl, cols, NoRows, None))
+                    return Ok(Plan(tbl, cols, Scan, None))
+                Keep(kept):
+                    cs: [sql.Expr] = []
+                    _conjuncts(kept, &cs)
+                    for k := 0; k < len(cs); k += 1:
+                        match _eq_key(cs[k], indexed):
+                            Some(ek):
+                                return Ok(Plan(tbl, cols, IndexEq(ek.col, ek.key), _rejoin(cs, k)))
+                            None: continue
+                    return Ok(Plan(tbl, cols, Scan, Some(kept)))
         _: return Err(NotSelect(sql.show(st)))
 
 # ---- EXPLAIN --------------------------------------------------------------

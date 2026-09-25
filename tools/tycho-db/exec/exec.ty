@@ -97,38 +97,28 @@ fn _create(db: inout store.Db, lg: inout wal.Log, name: string, defs: [sql.ColDe
         if sql.ty_name(defs[k].ty) == "text":
             t = store.ColText
         push(cols, store.Col(defs[k].name, t, defs[k].key))
-    match store.create_table(&db, name, cols):
-        Ok(x): pass
-        Err(e): return Err(Storage(e))
+    _ok := store.create_table(&db, name, cols) or_else e: Err(Storage(e))
     # Logged after the apply, not before: the apply is in MEMORY and the store
     # file is untouched until checkpoint, so the record still reaches disk
     # first -- and a statement the store rejected never enters the log, which
     # keeps replay from re-running a failure.
-    match wal.append(&lg, wal.RCreate(name, cols)):
-        Ok(n): return Ok(Created(name))
-        Err(e): return Err(Wal(e))
+    _lsn := wal.append(&lg, wal.RCreate(name, cols)) or_else e: Err(Wal(e))
+    return Ok(Created(name))
 
 fn _insert(db: inout store.Db, lg: inout wal.Log, name: string, exprs: [sql.Expr]) -> Result(Outcome, ExecErr):
     vals: [store.Val] = []
     for k := 0; k < len(exprs); k += 1:
         v := _lit(exprs[k]) or_return
         push(vals, v)
-    match store.insert(&db, name, vals):
-        Ok(x): pass
-        Err(e): return Err(Storage(e))
-    match wal.append(&lg, wal.RInsert(name, vals)):
-        Ok(n): return Ok(Inserted(name))
-        Err(e): return Err(Wal(e))
+    _ok := store.insert(&db, name, vals) or_else e: Err(Storage(e))
+    _lsn := wal.append(&lg, wal.RInsert(name, vals)) or_else e: Err(Wal(e))
+    return Ok(Inserted(name))
 
 # The planner's inputs that only the catalogue can supply.
 fn _plan_for(db: store.Db, st: sql.Stmt, tbl: string) -> Result(plan.Plan, ExecErr):
-    ix: [string] = []
-    match store.indexed_cols(db, tbl):
-        Ok(cs): ix = cs
-        Err(e): return Err(Storage(e))
-    match plan.build(st, ix):
-        Ok(p): return Ok(p)
-        Err(e): return Err(Plan(e))
+    ix := store.indexed_cols(db, tbl) or_else e: Err(Storage(e))
+    p := plan.build(st, ix) or_else e: Err(Plan(e))
+    return Ok(p)
 
 # Open the access path the plan chose. This is the ONE place the two paths are
 # distinguished, and what it returns is the `examined` set -- the rows the
@@ -142,20 +132,15 @@ fn _open(db: store.Db, p: plan.Plan) -> Result([[store.Val]], ExecErr):
             none: [[store.Val]] = []
             return Ok(none)
         plan.Scan:
-            match store.scan(db, p.table):
-                Ok(rs): return Ok(rs)
-                Err(e): return Err(Storage(e))
+            rs := store.scan(db, p.table) or_else e: Err(Storage(e))
+            return Ok(rs)
         plan.IndexEq(col, key):
             k := _lit(key) or_return
-            match store.probe(db, p.table, col, k):
-                Ok(rs): return Ok(rs)
-                Err(e): return Err(Storage(e))
+            rs := store.probe(db, p.table, col, k) or_else e: Err(Storage(e))
+            return Ok(rs)
 
 fn _select(db: store.Db, st: sql.Stmt, want: [string], tbl: string) -> Result(Outcome, ExecErr):
-    cols: [store.Col] = []
-    match store.columns(db, tbl):
-        Ok(cs): cols = cs
-        Err(e): return Err(Storage(e))
+    cols := store.columns(db, tbl) or_else e: Err(Storage(e))
     p := _plan_for(db, st, tbl) or_return
     all := _open(db, p) or_return
 
@@ -198,9 +183,8 @@ fn _explain(db: store.Db, inner: sql.Stmt) -> Result(Outcome, ExecErr):
             # Routed through plan.build rather than refused here, so the rule
             # about what has a plan lives in exactly one file.
             empty: [string] = []
-            match plan.build(inner, empty):
-                Ok(p): return Ok(Explained(plan.show(p)))
-                Err(e): return Err(Plan(e))
+            p := plan.build(inner, empty) or_else e: Err(Plan(e))
+            return Ok(Explained(plan.show(p)))
 
 fn run(db: inout store.Db, lg: inout wal.Log, st: sql.Stmt) -> Result(Outcome, ExecErr):
     match st:
