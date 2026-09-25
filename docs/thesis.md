@@ -17,7 +17,7 @@ that. The claim is sharper:
 > while staying competitive on performance.**
 
 This is a proof-of-concept exploration of that claim, not a production system.
-It's general-purpose within a domain (see §6) and deliberately not beyond it.
+It's data-oriented: built for a domain (see §6) and deliberately not beyond it.
 
 ## 1. The idea
 
@@ -412,7 +412,7 @@ The honest verdict, backed by measurement rather than intuition:
   graphs, reference-cyclic structures) it is a poor fit, and no optimization
   changes that — it is the thesis's defining boundary, not a missing feature.
 
-So: not general-purpose, and not trying to be. Within its domain I think the
+So: data-oriented, not general-purpose, and not trying to be. Within its domain I think the
 wager holds — *value semantics is precisely the constraint that lets the arenas
 disappear* — and the domain is large and real.
 

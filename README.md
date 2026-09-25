@@ -7,12 +7,13 @@
 
 # Tycho
 
-**A general-purpose systems language with automatic memory management from
+**A data-oriented systems language with automatic memory management from
 lexical scope.** Tycho began as an experiment testing one idea — implicit
-hierarchical arenas under value semantics — and that idea now holds. Write
-anything with it; it is **particularly good at data-oriented programs that
-allocate hard and cannot afford a GC pause** — parsers, interpreters, solvers,
-batch CLIs and long-running services. Every
+hierarchical arenas under value semantics — and that idea now holds. It is built
+for **programs that allocate hard and cannot afford a GC pause** — parsers,
+interpreters, solvers, batch CLIs and long-running services — and its value
+semantics steer data into the flat, index-addressed layouts that data-oriented C
+reaches for on purpose. Every
 scope owns a memory arena, freed when the scope exits; with no reference type in
 the language, the compiler sees every value's lifetime from the syntax alone and
 inserts every allocation and free itself. No garbage collector, no manual
