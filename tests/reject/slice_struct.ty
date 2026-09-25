@@ -1,0 +1,10 @@
+# src/tychoc.c:6752 -- `x[a:b]` on a named struct is not a slice.
+# expect: can only slice an array, soa, a string, or bytes
+# tychoc1 once let this through the checker and died in emit ("slicing 'S~P'").
+struct P:
+    x: int
+
+fn main():
+    p := P(1)
+    ys := p[0:1]
+    println(str(ys.x))

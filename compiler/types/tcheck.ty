@@ -1382,7 +1382,7 @@ fn _ex2(cs: inout C, e: ast.Expr, want0: string) -> string:
                 cs.line = l                        # `[N]T` / `vector[N]T` store inline: no .data to view
                 _cerr(&cs, "cannot slice a " + _show(&cs, sb) + " value; copy it into a [" +
                     _show(&cs, _elem_of(&cs, sb)) + "] first")
-            elif _unindexable(sb) or _head(sb) == "map":   # src/tychoc.c:6684
+            elif _unindexable(sb) or _head(sb) == "map" or (len(sb) > 1 and sb[0] == 64):   # src/tychoc.c:6752; `@` = a named struct/enum
                 cs.line = l
                 _cerr(&cs, "can only slice an array, soa, a string, or bytes")
             return sb

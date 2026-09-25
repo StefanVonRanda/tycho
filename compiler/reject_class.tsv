@@ -495,6 +495,7 @@ tests/reject/slice_end_not_int.ty	SEMANTIC	6743	slice end must be int
 tests/reject/slice_inout_alias.ty	SEMANTIC	7789	cannot pass a slice of 'a' and an inout of 'a' in one call (the inout may reallocate the buffer the slice views)
 tests/reject/slice_not_sliceable.ty	SEMANTIC	6752	can only slice an array, soa, a string, or bytes
 tests/reject/slice_start_not_int.ty	SEMANTIC	6741	slice start must be int
+tests/reject/slice_struct.ty	SEMANTIC	6752	can only slice an array, soa, a string, or bytes
 tests/reject/soa_lit_elem_not_struct.ty	SEMANTIC	3091	soa requires a struct element type, e.g. soa []Point
 tests/reject/soa_type_elem_not_struct.ty	SEMANTIC	2478	soa requires a struct element type, e.g. soa [Point]
 tests/reject/some_needs_value.ty	SEMANTIC	6515	Some(...) needs a concrete value

@@ -49,8 +49,8 @@ ROOTS = ("tests", "corelib", "tools", "examples", "server", "bench")
 # function of fully known type. The 7 left are template BODIES walked with `$T`
 # genuinely unbound, which no amount of work grounds.
 SIXB = 7
-EXPECT = 1413          # a leg that scores 0 of 0 is green by accident
-                       # 1406 -> 1407: tests/reject/value_if_nested.ty (2026-09-24); -> 1410: three handle use-after-close fixtures; -> 1411: handle_close_param; -> 1413: tests/inline_arr_reassign_loop.ty and tools/tycho-grade/main.ty
+EXPECT = 1414          # a leg that scores 0 of 0 is green by accident
+                       # 1406 -> 1407: tests/reject/value_if_nested.ty (2026-09-24); -> 1410: three handle use-after-close fixtures; -> 1411: handle_close_param; -> 1413: tests/inline_arr_reassign_loop.ty and tools/tycho-grade/main.ty; -> 1414: tests/reject/slice_struct.ty
                        # 1405 -> 1406: tools/tycho-du/main.ty, the handle
                        # probe's program brought in tree (2026-09-22)
                        # 1401 -> 1403: the two unbound-opener reject fixtures
