@@ -1,6 +1,6 @@
 title: Welcome to Tycho
 date: 1690000000
-author: zinc
+author: tycho
 ---
 # Welcome
 

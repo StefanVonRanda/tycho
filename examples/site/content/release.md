@@ -1,6 +1,6 @@
 title: Release Notes
 date: 1695000000
-author: zinc
+author: tycho
 ---
 # Release 0.9
 
