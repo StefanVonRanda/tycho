@@ -229,12 +229,10 @@ fn _format(neg: bool, ds: [int], p: int, e: int) -> string:
 # Does `s` read back as exactly `v`? Bit equality, so -0.0 does not pass as 0.0
 # and a NaN never passes at all.
 fn _same(s: string, v: float) -> bool:
-    match strings.parse_float(s):
-        Ok(b):
-            if b != v:
-                return false
-            return is_neg_zero(b) == is_neg_zero(v)
-        Err(e): return false
+    b := strings.parse_float(s) or_else _: false
+    if b != v:
+        return false
+    return is_neg_zero(b) == is_neg_zero(v)
 
 # The shortest decimal string that parses back to exactly `v`.
 #
@@ -300,13 +298,11 @@ fn render(v: float) -> string:
                     if _same(cand, v):
                         return cand
         cur := _format(neg, _int_digits(b17, 17), 17, e)
-        match strings.parse_float(cur):
-            Ok(b):
-                step := to_int(_scale(_fabs(v) - _fabs(b), 16 - e))
-                if step == 0:
-                    return "#NUM!"
-                b17 += step
-            Err(er): return "#NUM!"
+        b := strings.parse_float(cur) or_else _: "#NUM!"
+        step := to_int(_scale(_fabs(v) - _fabs(b), 16 - e))
+        if step == 0:
+            return "#NUM!"
+        b17 += step
     # Nothing round-trips. Say so in the cell rather than print a number that is
     # not the one held: a silently wrong digit is the failure this file exists
     # to prevent.
@@ -315,6 +311,5 @@ fn render(v: float) -> string:
 # Text to float, for formula literals. strtod, so it is correctly rounded --
 # the round trip render() promises is only true against this parser.
 fn parse_num(s: string) -> Result(float, string):
-    match strings.parse_float(s):
-        Ok(v): return Ok(v)
-        Err(e): return Err("not a number: " + s)
+    v := strings.parse_float(s) or_else _: Err("not a number: " + s)
+    return Ok(v)

@@ -96,14 +96,8 @@ fn _cmp_vals(op: string, l: Value, r: Value) -> Value:
 fn _binary(op: string, l: Value, r: Value) -> Value:
     if op == "=" or op == "<>" or op == "<" or op == "<=" or op == ">" or op == ">=":
         return _cmp_vals(op, l, r)
-    a := 0.0
-    b := 0.0
-    match to_num(l):
-        Ok(x): a = x
-        Err(e): return Bad(e)
-    match to_num(r):
-        Ok(x): b = x
-        Err(e): return Bad(e)
+    a := to_num(l) or_else e: Bad(e)
+    b := to_num(r) or_else e: Bad(e)
     if op == "+":
         return Num(a + b)
     if op == "-":
@@ -117,9 +111,8 @@ fn _binary(op: string, l: Value, r: Value) -> Value:
             return Bad(DivZero)
         return Num(a / b)
     if op == "^":
-        match _pow(a, b):
-            Ok(x): return Num(x)
-            Err(e): return Bad(e)
+        x := _pow(a, b) or_else e: Bad(e)
+        return Num(x)
     return Bad(BadName(op))
 
 # Flatten one argument into values: a range contributes every cell in it, any
@@ -148,10 +141,8 @@ fn _call_fn(a: Ast, i: int, env: inout Env, depth: int) -> Value:
         if len(nd.kids) < 2 or len(nd.kids) > 3:
             return Bad(BadName("IF takes 2 or 3 arguments, got " + str(len(nd.kids))))
         cv := _ev(a, nd.kids[0], &env, depth + 1)
-        t := false
-        match to_num(cv):
-            Ok(x): t = x != 0.0
-            Err(e): return Bad(e)
+        x := to_num(cv) or_else e: Bad(e)
+        t := x != 0.0
         if t:
             return _ev(a, nd.kids[1], &env, depth + 1)
         if len(nd.kids) == 3:
@@ -196,10 +187,7 @@ fn _call_fn(a: Ast, i: int, env: inout Env, depth: int) -> Value:
                 Bad(er): return Bad(er)
             if skip:
                 continue
-            x := 0.0
-            match to_num(args[j]):
-                Ok(v): x = v
-                Err(er): return Bad(er)
+            x := to_num(args[j]) or_else er: Bad(er)
             total += x
             if seen == 0 or (name == "MIN" and x < best) or (name == "MAX" and x > best):
                 best = x
@@ -216,9 +204,8 @@ fn _call_fn(a: Ast, i: int, env: inout Env, depth: int) -> Value:
     if name == "ABS":
         if len(args) != 1:
             return Bad(BadName("ABS takes 1 argument, got " + str(len(args))))
-        match to_num(args[0]):
-            Ok(x): return Num(_fabs(x))
-            Err(e): return Bad(e)
+        x := to_num(args[0]) or_else e: Bad(e)
+        return Num(_fabs(x))
     return Bad(BadName(name))
 
 # The evaluator's own depth ceiling, which is NOT the parser's.
@@ -252,9 +239,8 @@ fn _ev(a: Ast, i: int, env: inout Env, depth: int) -> Value:
                           " is a range, not a single cell"))
     if nd.kind == K_UN():
         v := _ev(a, nd.a, &env, depth + 1)
-        match to_num(v):
-            Ok(x): return Num(-x)
-            Err(e): return Bad(e)
+        x := to_num(v) or_else e: Bad(e)
+        return Num(-x)
     if nd.kind == K_BIN():
         l := _ev(a, nd.a, &env, depth + 1)
         r := _ev(a, nd.b, &env, depth + 1)

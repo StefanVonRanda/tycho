@@ -35,14 +35,9 @@ fn _empty_ast() -> cell.Ast:
 fn set(sh: inout Sheet, row: int, col: int, src: string) -> Result(void, string):
     k := cell.key(row, col)
     if strings.starts_with(src, "="):
-        a := _empty_ast()
-        match cell.parse(src[1:len(src)]):
-            Ok(x): a = x
-            Err(e): return Err(cell.ref_name(row, col) + ": " + cell.parse_err_str(e))
+        a := cell.parse(src[1:len(src)]) or_else e: Err(cell.ref_name(row, col) + ": " + cell.parse_err_str(e))
         ds: [int] = []
-        match cell.deps_of(a, &ds):
-            Ok(): pass
-            Err(m): return Err(cell.ref_name(row, col) + ": " + m)
+        cell.deps_of(a, &ds) or_else m: Err(cell.ref_name(row, col) + ": " + m)
         if not (k in sh.recs):
             push(sh.keys, k)
         sh.recs[k] = Rec(src, true, a, cell.empty(), ds)

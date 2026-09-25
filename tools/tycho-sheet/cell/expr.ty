@@ -134,9 +134,8 @@ fn lex(s: string) -> Result([Tok], ParseErr):
             raw := s[start:i]
             # strtod, so the literal is correctly rounded -- the same parser
             # render() verifies against, which is what makes the round trip real.
-            match strings.parse_float(raw):
-                Ok(v): push(toks, Tok(T_NUM(), v, raw, start))
-                Err(pe): return Err(BadNumber(raw, start))
+            v := strings.parse_float(raw) or_else _: Err(BadNumber(raw, start))
+            push(toks, Tok(T_NUM(), v, raw, start))
             continue
         if _is_alpha(c) or c == 36:                          # letter or '$'
             for i < n and (_is_alpha(s[i]) or _is_digit(s[i]) or s[i] == 36 or s[i] == 95):
