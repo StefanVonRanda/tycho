@@ -144,7 +144,7 @@ corpus_census() {
     # Plus the 2 handle-destructor fixtures (2026-09-21): `free:` naming a
     # function that is not a declared `extern fn`, and one declared at the wrong
     # parameter type. Both SEMANTIC and word-for-word in both compilers.
-    [ "$cc_exp" -eq 636 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=636"   # +1: value_if_nested (2026-09-24); +3: handle use-after-close (2026-09-24); +1: handle_close_param (2026-09-24); +1: slice_struct (2026-09-25); +4: fixarr/vector pop and reserve (2026-09-25); +5: the or_else rejects (2026-09-25)
+    [ "$cc_exp" -eq 637 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=637"   # +1: value_if_nested (2026-09-24); +3: handle use-after-close (2026-09-24); +1: handle_close_param (2026-09-24); +1: slice_struct (2026-09-25); +4: fixarr/vector pop and reserve (2026-09-25); +5: the or_else rejects (2026-09-25); +1: sized_lit_binop_fit
 
     cc_dirs=0
     for cc_d in $(git ls-files tests 2>/dev/null | grep '\.ty$' | sed 's|/[^/]*$||' | sort -u); do

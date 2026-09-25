@@ -1167,11 +1167,12 @@ fn _ex2(cs: inout C, e: ast.Expr, want0: string) -> string:
     # here rather than only in _binop: a LITERAL takes the expected type's width
     # (`x: u32 = 1`, `scale(v, 2)` at a float parameter), a variable never does.
     if want != "?":
-        if (e is ast.IntLit) and (_is_int(want) or want == "float" or want == "f32"):
+        el := _neg_lit(e)
+        if (el is ast.IntLit) and (_is_int(want) or want == "float" or want == "f32"):
             if _is_int(want) and want != "int":
-                _sized_fits(&cs, e, want)
+                _sized_fits(&cs, el, want)
             return want
-        if (e is ast.FloatLit) and want == "f32":
+        if (el is ast.FloatLit) and want == "f32":
             return want
     # src/tychoc.c:8099 -- checking mode grounds a pending decl from the
     # destination type, and must run BEFORE the ast.Name arm below refuses the
@@ -1870,10 +1871,30 @@ fn _is_or_else(e: ast.Expr) -> bool:
         _: return false
 
 fn _is_intlit(e: ast.Expr) -> bool:
-    return e is ast.IntLit
+    return _neg_lit(e) is ast.IntLit
 
 fn _is_numlit(e: ast.Expr) -> bool:
-    return (e is ast.IntLit) or (e is ast.FloatLit)
+    f := _neg_lit(e)
+    return (f is ast.IntLit) or (f is ast.FloatLit)
+
+# src/tychoc.c@neg_lit_fold: `-1` parses as a unary minus over a literal, so a
+# rule that asks "is this a literal?" skipped it, and `x: f32 = -0.5`,
+# `x: float = -1`, `2.0 * -1` and `[-1, 2]` at [2]i8 were refused here while
+# ./tychoc -- which folds the sign into the literal before every such rule --
+# accepted them. Seen as the two compilers disagreeing on 2026-09-24 (FRICTION
+# 128's lane work); no fixture had a negative literal at an adapting type.
+fn _neg_lit(e: ast.Expr) -> ast.Expr:
+    match e:
+        ast.Unop(l, op, k):
+            if op == "-" and len(k) == 1:
+                match k[0]:
+                    ast.IntLit(l2, v):
+                        return ast.IntLit(l, 0 - v)
+                    ast.FloatLit(l2, v):
+                        return ast.FloatLit(l, 0.0 - v)
+                    _: pass
+        _: pass
+    return e
 
 fn _elem_arith_ok(op: string, et: string) -> bool:
     if et == "?":
@@ -1915,9 +1936,15 @@ fn _binop(cs: inout C, op: string, k: [ast.Expr]) -> string:
         return "bool"
     # literal adaptation, value-directional: a LITERAL takes the other side's
     # width, a variable never widens.
+    # The width check is src/tychoc.c@sized_lit's: `x + 300` at a u8 `x` is
+    # refused there and was accepted here, wrapping at run time.
     if _is_intlit(k[0]) and _is_int(rt):
+        if rt != "int":
+            _sized_fits(&cs, _neg_lit(k[0]), rt)
         lt = rt
     if _is_intlit(k[1]) and _is_int(lt):
+        if lt != "int":
+            _sized_fits(&cs, _neg_lit(k[1]), lt)
         rt = lt
     if rt == "f32" and _is_numlit(k[0]):
         lt = "f32"

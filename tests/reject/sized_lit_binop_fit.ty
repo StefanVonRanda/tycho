@@ -1,0 +1,7 @@
+# expect: 300 does not fit u8 (its range is 0..255)
+# An int literal beside a u8 takes the u8's width, and so must fit it. ./tychoc
+# refused this (src/tychoc.c@sized_lit); ./tychoc1 accepted it and wrapped at
+# run time (2026-09-24).
+fn main():
+    x: u8 = 3
+    println(str(x + 300))

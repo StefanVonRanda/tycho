@@ -495,6 +495,7 @@ tests/reject/size_of_not_packed.ty	SEMANTIC	6946	size_of$(int): only a packed or
 tests/reject/size_of_two_typeargs.ty	SEMANTIC	6943	size_of$(T) takes exactly one type argument
 tests/reject/size_of_value_args.ty	SEMANTIC	6942	size_of$(T) takes no value arguments
 tests/reject/sized_conv_string.ty	TYPE	7456	to_u8(x) takes a numeric value
+tests/reject/sized_lit_binop_fit.ty	SEMANTIC	6406	300 does not fit u8 (its range is 0..255) -- write to_u8(x) to convert with wraparound
 tests/reject/sized_lit_range.ty	SEMANTIC	6406	4294967296 does not fit u32 (its range is 0..4294967295) -- write to_u32(x) to convert with wraparound
 tests/reject/slice_and_inout_same_var.ty	SEMANTIC	7839	cannot pass a slice of 'a' and an inout of 'a' in one call (the inout may reallocate the buffer the slice views)
 tests/reject/slice_bounded_value.ty	SEMANTIC	6793	cannot slice a bounded[...] value; copy it into a [int] first

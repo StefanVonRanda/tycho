@@ -1,0 +1,15 @@
+# A negative LITERAL adapts to a float / f32 / sized-int destination exactly as
+# its positive twin does. ./tychoc folds the sign into the literal first
+# (src/tychoc.c@neg_lit_fold); ./tychoc1 did not, and refused every line below
+# while ./tychoc accepted it -- the two compilers disagreed with no fixture to
+# notice (2026-09-24).
+fn main():
+    a: float = -1
+    b: f32 = -0.5
+    c: i8 = -128
+    d: [2]i8 = [-1, 2]
+    e: vector[4]f32 = [-0.5, 0.25, 1.0, 7.0]
+    x: f32 = 2.0
+    y: i16 = 3
+    println(str(a) + " " + str(b) + " " + str(c) + " " + str(d) + " " + str(e))
+    println(str(2.0 * -1) + " " + str(2.5 < -1) + " " + str(x * -0.5) + " " + str(y * -2))

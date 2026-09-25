@@ -91,7 +91,7 @@ n_lib=$(find corelib -name '*.ty' | wc -l | tr -d ' ')
 n_rej=$(ls tests/reject/*.ty | wc -l | tr -d ' ')
 n_tsv=$(wc -l < "$TSV" | tr -d ' ')
 n_new=$(find tools examples server bench -name '*.ty' | wc -l | tr -d ' ')
-[ "$n_acc" = 294 ] || { echo "parse-check: tests/*.ty is $n_acc, expected 294"; rc=1; }   # +1 each: tests/packed_struct.ty (V2), tests/vector_type.ty (V3), tests/fixarr_iter.ty (V3a), tests/generic_recur_same.ty, tests/align_struct.ty (L1), tests/multi_assign.ty (L2), tests/swizzle.ty (L3), tests/vector_map_key.ty (composite map keys), tests/lane_names.ty (L4), tests/bounded_local_cap.ty (G9), tests/float_floor.ty (FRICTION 94, 0b385a24 -- the commit that turned this leg RED for a day because nothing runs parse-check; FRICTION 106), tests/inline_arr_reassign_loop.ty (tychoc emitted .data on an inline array reassigned in a loop, found by tools/tycho-grade, 2026-09-24), tests/or_else.ty and tests/or_else_frees.ty (2026-09-25), tests/or_else_escape.ty (tychoc1 returned an or_else payload from a freed arena, 2026-09-25), tests/to_bytes_escape.ty (tychoc1 read to_bytes(local) as fresh, 2026-09-25)
+[ "$n_acc" = 295 ] || { echo "parse-check: tests/*.ty is $n_acc, expected 295"; rc=1; }   # +1 each: tests/packed_struct.ty (V2), tests/vector_type.ty (V3), tests/fixarr_iter.ty (V3a), tests/generic_recur_same.ty, tests/align_struct.ty (L1), tests/multi_assign.ty (L2), tests/swizzle.ty (L3), tests/vector_map_key.ty (composite map keys), tests/lane_names.ty (L4), tests/bounded_local_cap.ty (G9), tests/float_floor.ty (FRICTION 94, 0b385a24 -- the commit that turned this leg RED for a day because nothing runs parse-check; FRICTION 106), tests/inline_arr_reassign_loop.ty (tychoc emitted .data on an inline array reassigned in a loop, found by tools/tycho-grade, 2026-09-24), tests/or_else.ty and tests/or_else_frees.ty (2026-09-25), tests/or_else_escape.ty (tychoc1 returned an or_else payload from a freed arena, 2026-09-25), tests/to_bytes_escape.ty (tychoc1 read to_bytes(local) as fresh, 2026-09-25), tests/neg_literal_adapt.ty (the two compilers disagreed on a negative literal at an adapting type)
 [ "$n_lib" = 91 ]  || { echo "parse-check: corelib/**.ty is $n_lib, expected 91"; rc=1; }
 [ "$n_new" = 180 ] || { echo "parse-check: tools+examples+server+bench .ty is $n_new, expected 180"; rc=1; }   # +1: tools/tycho-grade/main.ty, the worked vector/swizzle user FRICTION 128 layout 4 asked for (2026-09-24). +1: tools/tycho-du/main.ty, the handle probe's program brought in tree (2026-09-22). -1 before that: tools/tycho-rsa/ removed in 0888bf28, which left this literal at 179 and the lane red
 [ "$n_rej" = "$n_tsv" ] || { echo "parse-check: $n_rej reject fixtures but $n_tsv classified rows -- rerun scripts/classify_rejects.py"; rc=1; }
@@ -124,8 +124,8 @@ leg_accept() {
     echo "$1: files=$((ok+bad)) parse-ok=$ok fail=$bad"
     [ "$ok" = "$3" ] && [ "$bad" = 0 ] || { echo "parse-check: $1 expected $3 ok, 0 fail"; rc=1; }
 }
-# leg1 289 -> 290: tests/inline_arr_reassign_loop.ty; -> 292: tests/or_else{,_frees}.ty (2026-09-25); -> 293: tests/or_else_escape.ty; -> 294: tests/to_bytes_escape.ty; leg1c 179 -> 180: tools/tycho-grade/main.ty (2026-09-24)
-leg_accept "leg1  tests/*.ty" "$(ls tests/*.ty)" 294
+# leg1 289 -> 290: tests/inline_arr_reassign_loop.ty; -> 292: tests/or_else{,_frees}.ty (2026-09-25); -> 293: tests/or_else_escape.ty; -> 294: tests/to_bytes_escape.ty; -> 295: tests/neg_literal_adapt.ty; leg1c 179 -> 180: tools/tycho-grade/main.ty (2026-09-24)
+leg_accept "leg1  tests/*.ty" "$(ls tests/*.ty)" 295
 leg_accept "leg1b corelib/**.ty" "$(find corelib -name '*.ty' | sort)" 91
 leg_accept "leg1c tools+examples+server+bench" "$(find tools examples server bench -name '*.ty' | sort)" 180
 
@@ -207,7 +207,7 @@ echo "leg2c tests/reject/*.ty --typecheck: all=$((tr+tm)) rejected=$tr missed=$t
 # SEMANTIC 288 -> 290: the two unbound-opener fixtures (2026-09-21). The rule
 # needs the symbol table AND the callee's return type, so both are SEMANTIC.
 # SEMANTIC 290 -> 292: the two handle-destructor fixtures (2026-09-21).
-[ "$nsyn" = 120 ] && [ "$nname" = 36 ] && [ "$ntype" = 175 ] && [ "$nsem" = 305 ] || { echo "parse-check: the split moved -- expected SYNTAX=120 NAME=36 TYPE=175 SEMANTIC=305"; rc=1; }   # SYNTAX 119 -> 120: tests/reject/value_if_nested.ty (2026-09-24); SEMANTIC 292 -> 295: the three handle use-after-close fixtures (2026-09-24); -> 296: handle_close_param (2026-09-24); -> 297: slice_struct (2026-09-25); -> 301: fixarr/vector pop and reserve (2026-09-25); NAME 35 -> 36 and SEMANTIC -> 305: the five or_else rejects (2026-09-25)
+[ "$nsyn" = 120 ] && [ "$nname" = 36 ] && [ "$ntype" = 175 ] && [ "$nsem" = 306 ] || { echo "parse-check: the split moved -- expected SYNTAX=120 NAME=36 TYPE=175 SEMANTIC=306"; rc=1; }   # SYNTAX 119 -> 120: tests/reject/value_if_nested.ty (2026-09-24); SEMANTIC 292 -> 295: the three handle use-after-close fixtures (2026-09-24); -> 296: handle_close_param (2026-09-24); -> 297: slice_struct (2026-09-25); -> 301: fixarr/vector pop and reserve (2026-09-25); NAME 35 -> 36 and SEMANTIC -> 305: the five or_else rejects (2026-09-25); -> 306: sized_lit_binop_fit
 [ "$mr" = 0 ] || { echo "parse-check: a NAME or SEMANTIC fixture was rejected by --parse; a parser has no symbol table"; rc=1; }
 [ "$sa" = 0 ] || { echo "parse-check: a SYNTAX fixture was accepted; the parser must refuse it"; rc=1; }
 [ "$rm_" = 0 ] || { echo "parse-check: a NAME fixture resolved; the resolver must refuse it"; rc=1; }
@@ -217,7 +217,7 @@ echo "leg2c tests/reject/*.ty --typecheck: all=$((tr+tm)) rejected=$tr missed=$t
 got=$(echo $seen_miss | tr ' ' '\n' | LC_ALL=C sort | tr '\n' ' ')
 want=$(echo $KNOWN_TYPE_MISS | tr ' ' '\n' | LC_ALL=C sort | tr '\n' ' ')
 [ "$got" = "$want" ] || { echo "parse-check: the TYPE misses moved"; echo "    now:  $got"; echo "    was:  $want"; rc=1; }
-[ "$tr" = 636 ] || { echo "parse-check: --typecheck refused $tr of 636, expected 636"; rc=1; }   # +2 each: the unbound-opener and handle-destructor fixtures (2026-09-21); +1: value_if_nested (2026-09-24); +3: handle use-after-close (2026-09-24); +1: handle_close_param (2026-09-24); +1: slice_struct (2026-09-25); +4: fixarr/vector pop and reserve (2026-09-25); +5: the or_else rejects (2026-09-25)
+[ "$tr" = 637 ] || { echo "parse-check: --typecheck refused $tr of 637, expected 637"; rc=1; }   # +2 each: the unbound-opener and handle-destructor fixtures (2026-09-21); +1: value_if_nested (2026-09-24); +3: handle use-after-close (2026-09-24); +1: handle_close_param (2026-09-24); +1: slice_struct (2026-09-25); +4: fixarr/vector pop and reserve (2026-09-25); +5: the or_else rejects (2026-09-25); +1: sized_lit_binop_fit
 
 # [3] -- the census, against a recorded golden
 for f in $(ls tests/*.ty) $(find corelib -name '*.ty' | sort) $(find tools examples server bench -name '*.ty' | sort); do
