@@ -2143,7 +2143,13 @@ fn _place(e: ast.Expr) -> bool:
             # (`m := to_under(e); m[k] = ...` writes THROUGH to the argument).
             # Copying it there loses the update and reddens that fixture, so the
             # aliasing is the contract until the golden says otherwise.
-            if len(q) == 0 and len(k) == 1 and (n == "to_str" or n == "to_bool"):
+            # to_bytes of a string is the same kind of reinterpret (src/tychoc.c
+            # @is_reinterpret_of_place): `Ok(Req(to_bytes(body)))` in core:httpd
+            # returned a body left in the _scope parse_request frees.
+            # ponytail: no type here, so to_bytes of an [int] or a packed struct
+            # (a real, fresh conversion) also reads as a place and costs one
+            # extra copy when retained; thread the type in if that ever shows.
+            if len(q) == 0 and len(k) == 1 and (n == "to_str" or n == "to_bool" or n == "to_bytes"):
                 return _place(k[0])
             return false
         _: return false

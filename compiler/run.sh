@@ -91,7 +91,7 @@ n_lib=$(find corelib -name '*.ty' | wc -l | tr -d ' ')
 n_rej=$(ls tests/reject/*.ty | wc -l | tr -d ' ')
 n_tsv=$(wc -l < "$TSV" | tr -d ' ')
 n_new=$(find tools examples server bench -name '*.ty' | wc -l | tr -d ' ')
-[ "$n_acc" = 293 ] || { echo "parse-check: tests/*.ty is $n_acc, expected 293"; rc=1; }   # +1 each: tests/packed_struct.ty (V2), tests/vector_type.ty (V3), tests/fixarr_iter.ty (V3a), tests/generic_recur_same.ty, tests/align_struct.ty (L1), tests/multi_assign.ty (L2), tests/swizzle.ty (L3), tests/vector_map_key.ty (composite map keys), tests/lane_names.ty (L4), tests/bounded_local_cap.ty (G9), tests/float_floor.ty (FRICTION 94, 0b385a24 -- the commit that turned this leg RED for a day because nothing runs parse-check; FRICTION 106), tests/inline_arr_reassign_loop.ty (tychoc emitted .data on an inline array reassigned in a loop, found by tools/tycho-grade, 2026-09-24), tests/or_else.ty and tests/or_else_frees.ty (2026-09-25), tests/or_else_escape.ty (tychoc1 returned an or_else payload from a freed arena, 2026-09-25)
+[ "$n_acc" = 294 ] || { echo "parse-check: tests/*.ty is $n_acc, expected 294"; rc=1; }   # +1 each: tests/packed_struct.ty (V2), tests/vector_type.ty (V3), tests/fixarr_iter.ty (V3a), tests/generic_recur_same.ty, tests/align_struct.ty (L1), tests/multi_assign.ty (L2), tests/swizzle.ty (L3), tests/vector_map_key.ty (composite map keys), tests/lane_names.ty (L4), tests/bounded_local_cap.ty (G9), tests/float_floor.ty (FRICTION 94, 0b385a24 -- the commit that turned this leg RED for a day because nothing runs parse-check; FRICTION 106), tests/inline_arr_reassign_loop.ty (tychoc emitted .data on an inline array reassigned in a loop, found by tools/tycho-grade, 2026-09-24), tests/or_else.ty and tests/or_else_frees.ty (2026-09-25), tests/or_else_escape.ty (tychoc1 returned an or_else payload from a freed arena, 2026-09-25), tests/to_bytes_escape.ty (tychoc1 read to_bytes(local) as fresh, 2026-09-25)
 [ "$n_lib" = 91 ]  || { echo "parse-check: corelib/**.ty is $n_lib, expected 91"; rc=1; }
 [ "$n_new" = 180 ] || { echo "parse-check: tools+examples+server+bench .ty is $n_new, expected 180"; rc=1; }   # +1: tools/tycho-grade/main.ty, the worked vector/swizzle user FRICTION 128 layout 4 asked for (2026-09-24). +1: tools/tycho-du/main.ty, the handle probe's program brought in tree (2026-09-22). -1 before that: tools/tycho-rsa/ removed in 0888bf28, which left this literal at 179 and the lane red
 [ "$n_rej" = "$n_tsv" ] || { echo "parse-check: $n_rej reject fixtures but $n_tsv classified rows -- rerun scripts/classify_rejects.py"; rc=1; }
@@ -124,8 +124,8 @@ leg_accept() {
     echo "$1: files=$((ok+bad)) parse-ok=$ok fail=$bad"
     [ "$ok" = "$3" ] && [ "$bad" = 0 ] || { echo "parse-check: $1 expected $3 ok, 0 fail"; rc=1; }
 }
-# leg1 289 -> 290: tests/inline_arr_reassign_loop.ty; -> 292: tests/or_else{,_frees}.ty (2026-09-25); -> 293: tests/or_else_escape.ty; leg1c 179 -> 180: tools/tycho-grade/main.ty (2026-09-24)
-leg_accept "leg1  tests/*.ty" "$(ls tests/*.ty)" 293
+# leg1 289 -> 290: tests/inline_arr_reassign_loop.ty; -> 292: tests/or_else{,_frees}.ty (2026-09-25); -> 293: tests/or_else_escape.ty; -> 294: tests/to_bytes_escape.ty; leg1c 179 -> 180: tools/tycho-grade/main.ty (2026-09-24)
+leg_accept "leg1  tests/*.ty" "$(ls tests/*.ty)" 294
 leg_accept "leg1b corelib/**.ty" "$(find corelib -name '*.ty' | sort)" 91
 leg_accept "leg1c tools+examples+server+bench" "$(find tools examples server bench -name '*.ty' | sort)" 180
 

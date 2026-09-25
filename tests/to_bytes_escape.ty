@@ -1,0 +1,40 @@
+# to_bytes of a string is a reinterpret of its argument, not a fresh value, so a
+# to_bytes(local) retained in a returned aggregate must be copied out of the
+# callee's scope. tychoc1 once treated it as fresh: core:httpd's parse_request
+# returned a body pointing into the arena it had just freed.
+
+struct Req:
+    head: string
+    body: bytes
+
+fn parse(raw: string) -> Result(Req, string):
+    sep := find(raw, "|")
+    if sep < 0:
+        return Err("no sep")
+    head := raw[0:sep]
+    body := raw[sep + 1:len(raw)]
+    return Ok(Req(head, to_bytes(body)))
+
+fn direct(raw: string) -> bytes:
+    body := raw[1:len(raw)]
+    return to_bytes(body)
+
+fn req(raw: string) -> Req:
+    return parse(raw) or_else _: Req("bad", to_bytes(""))
+
+fn churn() -> int:
+    t := 0
+    for i := 0; i < 64; i += 1:
+        s := ""
+        for j := 0; j < 16; j += 1:
+            s = s + "zz"
+        t += len(s)
+    return t
+
+fn main():
+    r := req("GET /x|{\"a\":\"hello\"}")
+    d := direct("x" + "payload-bytes")
+    c := churn()
+    println(r.head + " " + to_str(r.body) + " " + str(len(r.body)))
+    println(to_str(d) + " " + str(len(d)))
+    println(req("nosep").head + " " + str(c))
