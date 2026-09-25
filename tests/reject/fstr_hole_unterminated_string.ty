@@ -3,6 +3,7 @@
 # opener that never closes -- two readings of the same bytes, filed as R21d-4.
 # Both compilers refuse it with this sentence. The supported spelling needs no
 # escape at all: `f"a{"b"}"`, which tests/fstring_braces.ty exercises.
-# expect: unterminated string in an interpolated hole
+# Since 2026-09-25 the `\"` itself is refused by name, before either reading runs.
+# expect: a `\"` inside an f-string hole
 fn main():
     print(f"a{\"b}\n")

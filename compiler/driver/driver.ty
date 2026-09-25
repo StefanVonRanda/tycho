@@ -23,27 +23,41 @@ import "../types"
 # spent compiling a two-line program. io.copy leaves `dst` untouched when a
 # candidate is not there, so the fallback list below cannot truncate the output.
 fn write_runtime(path: string, argv0: string, dst: string):
-    match io.copy(path, dst):
-        Ok: return
-        Err(e): pass
-    # The default path is relative to the CWD, which is only right when tychoc1
-    # is run from the repo root -- `cd tmp && tychoc1 x.ty` could not build at
-    # all. Fall back beside the binary, as corelib_root does.
-    d := types.exe_dir_of(argv0)
-    for c in [d + "/runtime/tycho_rt.c", d + "/../runtime/tycho_rt.c",
-              d + "/../share/tycho/runtime/tycho_rt.c"]:
+    for c in _runtime_candidates(path, argv0):
         match io.copy(c, dst):
             Ok: return
             Err(e): pass
     die("tychoc: cannot read runtime '" + path + "'")
     return
 
+# The default path is relative to the CWD, which is only right when tychoc1 is
+# run from the repo root -- `cd tmp && tychoc1 x.ty` could not build at all. Fall
+# back beside the binary, as corelib_root does. One list, so the file copy and
+# the stdout read below cannot look in different places.
+fn _runtime_candidates(path: string, argv0: string) -> [string]:
+    d := types.exe_dir_of(argv0)
+    return [path, d + "/runtime/tycho_rt.c", d + "/../runtime/tycho_rt.c",
+            d + "/../share/tycho/runtime/tycho_rt.c"]
+
+# The one path that reads the runtime into a STRING: `--emit-c` with no -o writes
+# to stdout, and there is no file to copy it into. It pays the copies the note
+# above measured, only when asked for.
+fn _read_runtime(path: string, argv0: string) -> string:
+    for c in _runtime_candidates(path, argv0):
+        match io.read_text(c):
+            Ok(t): return t
+            Err(e): pass
+    die("tychoc: cannot read runtime '" + path + "'")
+    return ""
+
 # The whole loaded program, not just the entry file. `types.load` already walks
 # the package graph -- corelib root, per-file imports, post-order, cycle
 # detection -- so emit is handed every file with the package prefix the loader
 # gave it, and mangles against that (src/tychoc.c@pkg_prefix_for).
+# An empty `out_c` is stdout -- `--emit-c` with no -o, as ./tychoc does it.
 fn emit_to(p: types.Program, runtime_path: string, argv0: string, out_c: string, dbgf: string):
-    write_runtime(runtime_path, argv0, out_c)
+    if len(out_c) > 0:
+        write_runtime(runtime_path, argv0, out_c)
     pfx := []string
     us := []ast.Unit
     fpath := []string
@@ -55,7 +69,11 @@ fn emit_to(p: types.Program, runtime_path: string, argv0: string, out_c: string,
         push(fpath, f.path)            # so an f-string HOLE's lex error can name its file
         push(fsrc, f.src)              # ...and show the enclosing source line
         push(fcore, types.from_corelib(p.root, f.dir))   # emit.ty@_vmath_of
-    match io.append_text(out_c, emit.program_in(pfx, us, dbgf, fpath, fsrc, fcore)):
+    prog := emit.program_in(pfx, us, dbgf, fpath, fsrc, fcore)
+    if len(out_c) == 0:
+        print(_read_runtime(runtime_path, argv0) + prog)
+        return
+    match io.append_text(out_c, prog):
         Ok: return
         Err(e): die("tychoc: cannot write '" + out_c + "'")
     return
@@ -152,7 +170,7 @@ fn _links(p: types.Program) -> [string]:
                 push(out, fd.lib)
     return out
 
-# NEVER eat a .c this compiler did not write (src/tychoc.c:15292). A file WE left
+# NEVER eat a .c this compiler did not write (src/tychoc.c:15308). A file WE left
 # behind starts with the runtime banner and is fair game; anything else is the
 # user's and the intermediate would destroy it.
 fn _guard_c(c_path: string):
@@ -205,7 +223,7 @@ fn _pkgflags(p: types.Program) -> [string]:
                     # Everything after `_WIN32:` is RAW linker flags for the
                     # Windows build (-lws2_32, -lpcre2-posix). They are not
                     # pkg-config names, and a non-Windows compiler skips the
-                    # whole section (src/tychoc.c:5777). Reading them as package
+                    # whole section (src/tychoc.c:5793). Reading them as package
                     # names made pkg-config fail and net/tls/httpd/regex SKIP.
                     if t == "_WIN32:":
                         win = true
@@ -254,7 +272,7 @@ fn build(src_path: string, runtime_path: string, base: string, argv0: string,
     _guard_c(c_path)
     p := types.Program([]types.File, "", "", "", "")
     check_into(src_path, argv0, &p, _vec_tgt(tgt, nat))
-    # -g: src/tychoc.c:15232 makes #line single-file only, and names the source
+    # -g: src/tychoc.c:15248 makes #line single-file only, and names the source
     # in every directive. A multi-file build has no single g_line_file to name.
     dbgf := ""
     if dbg and len(p.files) == 1:
@@ -622,7 +640,7 @@ fn _ty_src(t: ast.Ty, pk: string, own: [string: bool], imp: [string: string]) ->
                 # gates this on is_imported_pkg, which filters g_imports by
                 # g_srcname -- a global left pointing at whichever file the parser
                 # finished with (no assignment between parse and emit_symbols,
-                # src/tychoc.c:15285-15369). So the SAME type prints `graph.MakeErr`
+                # src/tychoc.c:15301-15385). So the SAME type prints `graph.MakeErr`
                 # and `build__BuildErr` in one run, and tools/tycho-make/main.ty
                 # imports build either way. Matching that means reproducing a load
                 # order, not a rule. Unconditional also scores better: tycho-make

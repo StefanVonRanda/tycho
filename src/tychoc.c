@@ -2851,6 +2851,12 @@ static Expr *desugar_interp(const char *s, int line) {
             i++; size_t start = i;
             int depth = 1;                       /* balance nested braces; skip nested string literals */
             while (s[i] && depth > 0) {
+                /* `\"` outside a nested literal is never Tycho source (no char escape
+                 * spells it), only the reflex of escaping a quote inside a string. It
+                 * used to open a literal whose close was escaped, and die "unterminated". */
+                if (s[i] == '\\' && s[i+1] == '"')
+                    die_at(line, "a `\\\"` inside an f-string hole: the hole is Tycho source, not string text, "
+                                 "so a string in it takes plain quotes -- f\"{g(\"x\")}\", not f\"{g(\\\"x\\\")}\"");
                 if (s[i] == '"') {               /* a string literal inside the hole — '}' within it is not a hole end */
                     i++;
                     while (s[i] && s[i] != '"') { if (s[i] == '\\' && s[i+1]) i++; i++; }
@@ -3635,10 +3641,19 @@ static Stmt **parse_value_block(Parser *ps, int *count) {
     return body;
 }
 
+/* A value on the same line as `if c:` or `else:` is the one-line conditional of
+ * Python/Rust, which this is not. "expected newline" named the token and not the
+ * form; an agent probe (2026-09-25) found the layout rule only by trial. */
+static void value_if_one_line(Parser *ps) {
+    if (!at(ps, TK_NEWLINE))
+        die_at(cur(ps)->line, "a value `if` puts each branch on its own line -- `x := if c:`, then the value indented on the next line, then `else:` and its value indented below it; a one-line `if c: a else: b` is not a form");
+}
+
 static Stmt *parse_value_if(Parser *ps, int line) {
     Stmt *s = new_stmt(S_IF, line);
     s->expr = parse_expr(ps);
     eat(ps, TK_COLON, "':' before the block");
+    value_if_one_line(ps);
     eat(ps, TK_NEWLINE, "newline");
     s->body = parse_value_block(ps, &s->nbody);
     if (at(ps, TK_ELIF)) {
@@ -3649,6 +3664,7 @@ static Stmt *parse_value_if(Parser *ps, int line) {
     } else if (at(ps, TK_ELSE)) {
         ps->p++;
         eat(ps, TK_COLON, "':' after else");
+        value_if_one_line(ps);
         eat(ps, TK_NEWLINE, "newline after else");
         s->els = parse_value_block(ps, &s->nels);
     } else {
@@ -6269,7 +6285,7 @@ static void collect_idents(Expr *e, const char **out, int *n, int cap) {
     }
     if (e->kind == E_CALL) {   /* Neither name on a call is a child expr: the callee lives in
                                 * sval (`g(x)` where g is a closure) and a method call's RECEIVER
-                                * lives in qual (`m.get(k)`, src/tychoc.c:3477), because the parser
+                                * lives in qual (`m.get(k)`, src/tychoc.c:3483), because the parser
                                 * cannot tell it from a package call. Both are outer reads; missing
                                 * qual let `m` reach the lifted body uncaptured and the C compiler,
                                 * not tychoc, reported `h_m undeclared`. pf_scan_expr already does
@@ -7731,7 +7747,7 @@ static Type resolve_expr_inner(Expr *e) {
             if (e->nargs != s->nparams)
                 die_at(e->line, "'%s' takes %d argument(s), got %d",
                        nominal_name(e->sval), s->nparams, e->nargs);
-            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:7106 */
+            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:7122 */
             for (int i = 0; i < e->nargs; i++) {
                 g_in_arg++;
                 Type at_ = resolve_exp(e->args[i], s->params[i]);   /* fixes a None arg */
@@ -8361,7 +8377,7 @@ static void pf_capture(Expr *id) {
 /* capture an outer local named by a STRING rather than by an E_IDENT node -- the
  * callee of `f(x)` and the receiver of `o.f(x)` live in E_CALL's sval/qual, not
  * in a child expr. The synthesized read is resolved in the enclosing scope with
- * every other capture (src/tychoc.c:8896). Non-locals (global fns, builtins,
+ * every other capture (src/tychoc.c:8912). Non-locals (global fns, builtins,
  * enum constructors, package qualifiers) fail vars_find and are dropped. */
 static void pf_capture_name(const char *n, int line) {
     Type vt;
@@ -8384,10 +8400,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:8240),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:8256),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:8518). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:8534). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
@@ -8408,7 +8424,7 @@ static void pf_scan_expr(Expr *e) {
     }
     /* A call's callee is NOT an E_IDENT child of the node: `f(x)` keeps the name
      * in sval, and `o.f(x)` keeps the receiver in qual because the parser cannot
-     * tell it from a package call (src/tychoc.c:3471). The generic descent below
+     * tell it from a package call (src/tychoc.c:3477). The generic descent below
      * visits lhs/rhs/args only, so a fn-typed local reached the lifted chunk proc
      * uncaptured and the C compiler -- not tychoc -- reported the undeclared name.
      * The lambda capture analysis already does the sval half (src/tychoc.c@collect_idents). */
@@ -8677,10 +8693,10 @@ static void resolve_parfor(Stmt *s) {
      * here and forces a decision, instead of silently defaulting.
      * is_sink MUST be 0, and not merely by accident: `sink` means an OWNED
      * value the callee may consume once (is_sink_param -> can_move_from,
-     * src/tychoc.c:10479@can_move_from). Every chunk proc is handed the SAME capture values, and the
+     * src/tychoc.c:10495@can_move_from). Every chunk proc is handed the SAME capture values, and the
      * bounds/captures are borrows of the enclosing scope, so consuming one in
      * any chunk would hand off a buffer another chunk still reads. 0 is the
-     * required value, and it matches the lambda-lift twin at src/tychoc.c:6499@is_sink which sets
+     * required value, and it matches the lambda-lift twin at src/tychoc.c:6515@is_sink which sets
      * `caps[ncap].is_sink = 0` explicitly. is_variadic is 0 (a synthesized
      * chunk proc has a fixed arity) and ffi_ct is NULL (no FFI boundary). */
     pr->params[0] = (Param){ "__plo", T_INT, 0, 0, 0, NULL };
@@ -9719,7 +9735,7 @@ static void instantiate_generic(Proc *gt, Expr *e) {
             nm = sfmt("%s__%s", nm, type_mangle_ident(binds[(int)(gt->typarams[i] - T_TYPARAM_BASE)]));
     }
     cret = subst_type(gt->ret, binds);
-    if (IS_HANDLE(cret))   /* the instance half of src/tychoc.c:4675@handle. A channel and a task are refused returning out of a generic by their own guards; a handle was not, and `g := ident(f)` DOUBLE FREED -- the callee frees at its scope exit and the caller frees the copy again (glibc "double free detected in tcache 2", observed 2026-08-14) */
+    if (IS_HANDLE(cret))   /* the instance half of src/tychoc.c:4691@handle. A channel and a task are refused returning out of a generic by their own guards; a handle was not, and `g := ident(f)` DOUBLE FREED -- the callee frees at its scope exit and the caller frees the copy again (glibc "double free detected in tcache 2", observed 2026-08-14) */
         die_at(e->line, "a Tycho fn cannot return a handle -- '%s' was instantiated at one; only an `extern fn` opener may, because a handle is freed at the end of its scope",
                gt->name);
     if (has_typaram(cret))
@@ -10192,7 +10208,7 @@ static const char *for3_elidable_arr(Stmt *s) {
     if (!bound || bound->kind != E_CALL || !bound->sval || strcmp(bound->sval, "len") ||
         bound->nargs != 1 || !bound->args[0] || bound->args[0]->kind != E_IDENT) return NULL;
     if (IS_INLINE_ARR(bound->args[0]->type)) return NULL;   /* [N]T / bounded / vector store in .v, not .data — elision emits .data[i], so never elide it */
-    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:4294-4299) */
+    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:4310-4315) */
     if (!post || post->kind != S_ASSIGN || !post->name || strcmp(post->name, iv)) return NULL;
     Expr *inc = post->expr;
     if (!inc || inc->kind != E_BINOP || inc->op != TK_PLUS) return NULL;

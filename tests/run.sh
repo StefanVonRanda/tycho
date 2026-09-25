@@ -65,15 +65,15 @@ corpus_census() {
     # still prints `ok`. So the count is pinned to a literal here. 209 = the 82 at
     # R16c-4, plus 27 of the 29 R21d wrote for bootstrap rules no fixture reached,
     # plus 2 of the 3 R21d-2 added, plus 16 of the 18 R21e added, plus 23 of the
-    # 25 R21f added for the builtin-call block at src/tychoc.c:7272-7506, plus all
-    # 21 R21f-2 added for src/tychoc.c:7513-8142, plus all 11 R21f-3 added for
+    # 25 R21f added for the builtin-call block at src/tychoc.c:7288-7522, plus all
+    # 21 R21f-2 added for src/tychoc.c:7529-8158, plus all 11 R21f-3 added for
     # the parallel-for block and the 9k/12k tail, plus all 27 R21f-4 added for the
     # 8k match/destructuring/select block and the three infinite-type arms,
     # plus 23 of the 24 R21f-5 added for the 6k expression block
-    # (src/tychoc.c:6466-7087), plus all 15 R21f-7 added for the 6k struct and
-    # enum CONSTRUCTION block (src/tychoc.c:7149-7261), plus all 6 flat ones
+    # (src/tychoc.c:6482-7103), plus all 15 R21f-7 added for the 6k struct and
+    # enum CONSTRUCTION block (src/tychoc.c:7165-7277), plus all 6 flat ones
     # R21f-8 added for the 6k field and variant ACCESS block
-    # (src/tychoc.c:6547-6908; its other 3 are package fixtures and are not in
+    # (src/tychoc.c:6563-6924; its other 3 are package fixtures and are not in
     # this count, which walks the flat lane only), plus all 6 R21f-9 added for
     # the 2k soa element bans, the fn-returns-a-handle rule, the closure handle
     # capture and the two spawn rules, plus 5 of the 10 R21f-10 added for the 8k
@@ -81,7 +81,7 @@ corpus_census() {
     # R21f-10's other 4 carry none for the same reason as the 1 below -- each
     # says in its own header which tychoc1 rule words the refusal differently.
     # (`pass_as_value` was the fifth and carries one now: R21a-3 moved tychoc1 to
-    # src/tychoc.c:6611's rule.)
+    # src/tychoc.c:6627's rule.)
     # `parfor_not_collection` carries one now: giving `ast.ForIn` the parser's
     # `parallel` flag let tychoc1 word the parallel refusal, so the two agree.
     # Its three former siblings -- `for3_two_clauses`, `match_range_no_high` and
@@ -144,7 +144,7 @@ corpus_census() {
     # Plus the 2 handle-destructor fixtures (2026-09-21): `free:` naming a
     # function that is not a declared `extern fn`, and one declared at the wrong
     # parameter type. Both SEMANTIC and word-for-word in both compilers.
-    [ "$cc_exp" -eq 637 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=637"   # +1: value_if_nested (2026-09-24); +3: handle use-after-close (2026-09-24); +1: handle_close_param (2026-09-24); +1: slice_struct (2026-09-25); +4: fixarr/vector pop and reserve (2026-09-25); +5: the or_else rejects (2026-09-25); +1: sized_lit_binop_fit
+    [ "$cc_exp" -eq 639 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=639"   # +1: value_if_nested (2026-09-24); +3: handle use-after-close (2026-09-24); +1: handle_close_param (2026-09-24); +1: slice_struct (2026-09-25); +4: fixarr/vector pop and reserve (2026-09-25); +5: the or_else rejects (2026-09-25); +1: sized_lit_binop_fit; +2: value_if_one_line, fstr_hole_escaped_quote
 
     cc_dirs=0
     for cc_d in $(git ls-files tests 2>/dev/null | grep '\.ty$' | sed 's|/[^/]*$||' | sort -u); do

@@ -5,8 +5,8 @@ scalar types never mix in an operation, and no value silently widens or narrows.
 The only implicit adaptation is of **literals** (§8.1); every value-level
 conversion is an explicit builtin call (§8.2).
 
-> Provenance: conversion builtins `src/tychoc.c:6796-6873`; literal adaptation
-> in the binary-op and checking paths `:7510-7524`,`:7814-7826`, and its array-literal element path `:7794-7803`.
+> Provenance: conversion builtins `src/tychoc.c:6812-6889`; literal adaptation
+> in the binary-op and checking paths `:7526-7540`,`:7830-7842`, and its array-literal element path `:7810-7819`.
 
 ## 8.1 Literal adaptation
 

@@ -19,9 +19,8 @@ fn _strip_ext(p: string) -> string:
             break
     return p
 
-# src/tychoc.c@tychoc_usage's text, so the binary that ships as `tychoc` answers
-# --help the same way. One line differs: --emit-c with no -o writes to stdout
-# there, and core:io has no stdout stream, so here -o is required.
+# src/tychoc.c@tychoc_usage's text, byte for byte, so the binary that ships as
+# `tychoc` answers --help the same way (parse-check leg [4e]).
 fn _help() -> string:
     return "tychoc " + VERSION() + " -- the Tycho compiler: transpiles .ty to C and compiles it.\n" +
         "\n" +
@@ -34,7 +33,7 @@ fn _help() -> string:
         "  -o <name>          name the output (with --emit-c, writes <name>.c)\n" +
         "  --                 end of flags: the next argument is the source, even if it\n" +
         "                     starts with '-' (put -o and other flags BEFORE it)\n" +
-        "  --emit-c           stop at the C; needs -o <name>\n" +
+        "  --emit-c           stop at the C; to stdout unless -o names a file\n" +
         "  -g                 build with debug information\n" +
         "  --native           tune the build for this machine\n" +
         "  --target <level>   raise the baseline for this build: x86-64-v2, x86-64-v3,\n" +
@@ -232,6 +231,7 @@ fn main():
         driver.build(src, rt, base, av[0], cc9, xtra, shim9, nat, dbg, tgt)
         return
     if len(out) == 0:
-        usage()
+        driver.compile(src, rt, "", av[0], dbg, tgt, nat)      # to stdout
+        return
     driver.compile(src, rt, out + ".c", av[0], dbg, tgt, nat)
     print("wrote " + out + ".c\n")

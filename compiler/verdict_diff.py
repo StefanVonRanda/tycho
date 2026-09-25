@@ -49,8 +49,8 @@ ROOTS = ("tests", "corelib", "tools", "examples", "server", "bench")
 # function of fully known type. The 7 left are template BODIES walked with `$T`
 # genuinely unbound, which no amount of work grounds.
 SIXB = 7
-EXPECT = 1429          # a leg that scores 0 of 0 is green by accident
-                       # 1406 -> 1407: tests/reject/value_if_nested.ty (2026-09-24); -> 1410: three handle use-after-close fixtures; -> 1411: handle_close_param; -> 1413: tests/inline_arr_reassign_loop.ty and tools/tycho-grade/main.ty; -> 1414: tests/reject/slice_struct.ty; -> 1418: tests/reject/{fixarr,vector}_{pop,reserve}.ty; -> 1425: tests/or_else{,_frees}.ty and the five tests/reject/orelse_*.ty; -> 1429: tests/neg_literal_adapt.ty and tests/reject/sized_lit_binop_fit.ty, where the two compilers disagreed with no fixture
+EXPECT = 1431          # a leg that scores 0 of 0 is green by accident
+                       # 1406 -> 1407: tests/reject/value_if_nested.ty (2026-09-24); -> 1410: three handle use-after-close fixtures; -> 1411: handle_close_param; -> 1413: tests/inline_arr_reassign_loop.ty and tools/tycho-grade/main.ty; -> 1414: tests/reject/slice_struct.ty; -> 1418: tests/reject/{fixarr,vector}_{pop,reserve}.ty; -> 1425: tests/or_else{,_frees}.ty and the five tests/reject/orelse_*.ty; -> 1429: tests/neg_literal_adapt.ty and tests/reject/sized_lit_binop_fit.ty, where the two compilers disagreed with no fixture; -> 1431: tests/reject/value_if_one_line.ty and fstr_hole_escaped_quote.ty
                        # 1405 -> 1406: tools/tycho-du/main.ty, the handle
                        # probe's program brought in tree (2026-09-22)
                        # 1401 -> 1403: the two unbound-opener reject fixtures
@@ -69,7 +69,7 @@ EXPECT = 1429          # a leg that scores 0 of 0 is green by accident
                        # 1336 -> 1338: the two struct/enum `$Name` typaram fixtures
 
 # NAME fixtures whose diagnostic carries no file:line in EITHER compiler, because
-# merge_pkg (src/tychoc.c:15022@declaration, src/tychoc.c:15026@declares) names the offending FILE and exits. Both
+# merge_pkg (src/tychoc.c:15038@declaration, src/tychoc.c:15042@declares) names the offending FILE and exits. Both
 # are scored as agreeing that there is no location; anything else unlocated is a
 # skip and reddens the lane.
 NO_LINE = {
@@ -93,11 +93,11 @@ KNOWN_TYPE_MISS = set()
 # GENERIC_RECUR_GROW left this list on 2026-09-05: `_inst_body`'s depth guard
 # bailed silently, so a recursion at a growing type was never reported.
 # THE PENDING-TYPE RULES left this list when src/tychoc.c's B-3 grounding
-# walk (src/tychoc.c:6325@use, src/tychoc.c:6623@inferred, src/tychoc.c:9545@grounding) was ported to compiler/types/tcheck.ty as a
+# walk (src/tychoc.c:6341@use, src/tychoc.c:6639@inferred, src/tychoc.c:9561@grounding) was ported to compiler/types/tcheck.ty as a
 # `pend` LIST with a line, a done flag and a per-block mark -- the `pendarr`
 # SET R21f-11 built could carry none of the three.
 # THE CONCURRENCY RULES left this list under R21c, which ported the five
-# spawn legs (src/tychoc.c:6460-6470) and wait's argument (src/tychoc.c:7351@wait) into
+# spawn legs (src/tychoc.c:6476-6486) and wait's argument (src/tychoc.c:7367@wait) into
 # compiler/types/tcheck.ty in the bootstrap's own order.
 LIT = lambda f: len(re.sub(r"%[-0-9.*]*(?:ll)?[a-zA-Z]", "", f))
 

@@ -1,0 +1,9 @@
+# Said "unterminated string in an interpolated hole": the `\"` opened a nested
+# literal whose closing quote was escaped. A hole is Tycho source, so a string
+# inside it takes plain quotes (error-handling probe, 2026-09-25).
+# expect: a `\"` inside an f-string hole
+fn g(s: string) -> string:
+    return s
+
+fn main():
+    println(f"{g(\"x\")}")

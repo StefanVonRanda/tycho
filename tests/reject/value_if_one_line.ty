@@ -1,0 +1,9 @@
+# Said "expected newline" (tychoc1: "..., found str 'a'"), naming the token and
+# not the form. A value `if` puts each branch value on its own indented line;
+# the one-line conditional of Python or Rust is not a form (error-handling
+# probe, 2026-09-25).
+# expect: a value `if` puts each branch on its own line
+fn main():
+    c := true
+    x := if c: "a" else: "b"
+    println(x)

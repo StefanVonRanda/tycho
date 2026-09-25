@@ -30,7 +30,7 @@ file containing a `NUL` byte MUST be rejected — silently truncating at it woul
 compile a program the file does not contain.
 
 > Provenance: `src/tychoc.c@AT_EOL`, and the reader's refusal at
-> `src/tychoc.c:14814@memchr`; the same rule in the self-hosted
+> `src/tychoc.c:14830@memchr`; the same rule in the self-hosted
 > lexer is `compiler/lex/lex.ty@_at_eol`. Gated by `scripts/source_bytes.sh`.
 
 ## 3.2 Logical lines and `NEWLINE`
@@ -183,7 +183,7 @@ is `or` followed by `_return` or `_else`).
 
 `soa` is reserved too, but by the parser rather than the lexer: it lexes as an
 ordinary identifier and every expression position that sees it demands a `[`
-(`src/tychoc.c:3086-3089`), so `soa := 5` is accepted and the next mention of the
+(`src/tychoc.c:3092-3095`), so `soa := 5` is accepted and the next mention of the
 name dies with `expected '[' after soa`. A binding of that name is declarable and
 permanently unusable, which is why [Appendix B](appendix-b-keywords.md#b1-reserved-words)
 lists it with the reserved words and not with the contextual ones.
@@ -266,9 +266,9 @@ bars an uppercase spelling from every run-time binding position. They are
   > implementation, not a conformance requirement; **selection** is the
   > normative part.
 
-> Provenance: contextual dispatch at `src/tychoc.c:5557-5566` (top level),
-> `:4038@"const"`/`:4061@"delete"` (`const`/`delete`),
-> `:4684@"where"` (`where`), `:4655@"sink"` (`sink`), `:4300@"range"` (`range`, refusal only).
+> Provenance: contextual dispatch at `src/tychoc.c:5573-5582` (top level),
+> `:4054@"const"`/`:4077@"delete"` (`const`/`delete`),
+> `:4700@"where"` (`where`), `:4671@"sink"` (`sink`), `:4316@"range"` (`range`, refusal only).
 
 ## 3.8 Operators and punctuation
 
@@ -310,7 +310,7 @@ chains) is limited to a fixed depth; a more deeply nested expression is rejected
 (`expression nesting too deep`) — a fail-closed guard, the expression-level
 counterpart to the indentation-depth bound (§3.4).
 
-> Provenance: `src/tychoc.c:2968-2974`.
+> Provenance: `src/tychoc.c:2974-2980`.
 
 ### 3.9.1 Integer literals
 
@@ -492,8 +492,8 @@ is a single four-byte literal and not a run-time concatenation.
 > raw piece `:564-688`, its re-escape table `:772-775`, its control-byte
 > rejection `:576-577`, its per-piece bound `:822@rn + 2 >= (int)sizeof rbuf`,`:825@rn + 1 >= (int)sizeof rbuf`,
 > its unterminated diagnostic `:829@unterminated raw string literal`; adjacent join `:2731-2754`; `const` string fold
-> `:5125-5129`; codegen pastes the escaped text into a C string literal
-> `:11699@TYCHO_LIT`; that literal's decoded length `runtime/tycho_rt.c:1481@sizeof s - 1`.
+> `:5141-5145`; codegen pastes the escaped text into a C string literal
+> `:11715@TYCHO_LIT`; that literal's decoded length `runtime/tycho_rt.c:1481@sizeof s - 1`.
 > Fixtures: `tests/rawstring.ty`,
 > `tests/reject/rawstring_unterminated.ty`.
 

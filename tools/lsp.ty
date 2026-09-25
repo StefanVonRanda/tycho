@@ -1243,8 +1243,8 @@ fn handle_inlay(id: Json, uris: [string], texts: [string], syms: [string], param
 # src/tychoc.c:493@or_return, src/tychoc.c:501@parallel, src/tychoc.c:502@select.
 # The four soft ones already here are NOT drift and stay: `handle` is a hard
 # token too (src/tychoc.c:508@handle), while `const`, `sink`, `where` and `soa` are
-# TK_IDENT matched by text in the parser (src/tychoc.c:4038@const,
-# src/tychoc.c:4648@sink, src/tychoc.c:4684@where, src/tychoc.c:2476@soa) --
+# TK_IDENT matched by text in the parser (src/tychoc.c:4054@const,
+# src/tychoc.c:4664@sink, src/tychoc.c:4700@where, src/tychoc.c:2476@soa) --
 # keywords to a reader, contextual to the lexer, and both grammars
 # highlight them.
 fn sem_is_keyword(w: string) -> bool:

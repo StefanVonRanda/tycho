@@ -7,6 +7,8 @@
 # splitter-string, hiding the `}` that the lexer used to return to depth 0 --
 # so the lexer ends the token with balanced braces and the splitter runs off
 # the end still inside the hole. tests/fstring_braces.ty is the accepting twin.
-# expect: unterminated '{' in an interpolated string
+# Since 2026-09-25 the `\"` itself is refused by name before the splitter runs,
+# so the divergence this witnessed can no longer reach the hole-end check.
+# expect: a `\"` inside an f-string hole
 fn main():
     print(f"{\""{\""}")

@@ -149,7 +149,7 @@ tr=0; tm=0; ta=0; tw=0
 # B-3 grounding analysis was ported into compiler/types/tcheck.ty@_pend_ground:
 # both are refused by their OWN rule now, byte for byte with ./tychoc.
 # infer_bare_empty LEFT it earlier, when `declared and not used` became fatal --
-# by THAT rule, not by grounding; it is the B-3 audit (src/tychoc.c:9545@grounding) that refuses it today.
+# by THAT rule, not by grounding; it is the B-3 audit (src/tychoc.c:9561@grounding) that refuses it today.
 # len_scalar LEFT it too, when the f-string interpolation holes became real
 # expressions: the `len` rule was always here, the hole was simply never walked.
 KNOWN_TYPE_MISS=""
@@ -207,7 +207,7 @@ echo "leg2c tests/reject/*.ty --typecheck: all=$((tr+tm)) rejected=$tr missed=$t
 # SEMANTIC 288 -> 290: the two unbound-opener fixtures (2026-09-21). The rule
 # needs the symbol table AND the callee's return type, so both are SEMANTIC.
 # SEMANTIC 290 -> 292: the two handle-destructor fixtures (2026-09-21).
-[ "$nsyn" = 120 ] && [ "$nname" = 36 ] && [ "$ntype" = 175 ] && [ "$nsem" = 306 ] || { echo "parse-check: the split moved -- expected SYNTAX=120 NAME=36 TYPE=175 SEMANTIC=306"; rc=1; }   # SYNTAX 119 -> 120: tests/reject/value_if_nested.ty (2026-09-24); SEMANTIC 292 -> 295: the three handle use-after-close fixtures (2026-09-24); -> 296: handle_close_param (2026-09-24); -> 297: slice_struct (2026-09-25); -> 301: fixarr/vector pop and reserve (2026-09-25); NAME 35 -> 36 and SEMANTIC -> 305: the five or_else rejects (2026-09-25); -> 306: sized_lit_binop_fit
+[ "$nsyn" = 122 ] && [ "$nname" = 36 ] && [ "$ntype" = 175 ] && [ "$nsem" = 306 ] || { echo "parse-check: the split moved -- expected SYNTAX=122 NAME=36 TYPE=175 SEMANTIC=306"; rc=1; }   # SYNTAX 119 -> 120: tests/reject/value_if_nested.ty (2026-09-24); SEMANTIC 292 -> 295: the three handle use-after-close fixtures (2026-09-24); -> 296: handle_close_param (2026-09-24); -> 297: slice_struct (2026-09-25); -> 301: fixarr/vector pop and reserve (2026-09-25); NAME 35 -> 36 and SEMANTIC -> 305: the five or_else rejects (2026-09-25); -> 306: sized_lit_binop_fit; SYNTAX 120 -> 122: value_if_one_line and fstr_hole_escaped_quote (2026-09-25)
 [ "$mr" = 0 ] || { echo "parse-check: a NAME or SEMANTIC fixture was rejected by --parse; a parser has no symbol table"; rc=1; }
 [ "$sa" = 0 ] || { echo "parse-check: a SYNTAX fixture was accepted; the parser must refuse it"; rc=1; }
 [ "$rm_" = 0 ] || { echo "parse-check: a NAME fixture resolved; the resolver must refuse it"; rc=1; }
@@ -217,7 +217,7 @@ echo "leg2c tests/reject/*.ty --typecheck: all=$((tr+tm)) rejected=$tr missed=$t
 got=$(echo $seen_miss | tr ' ' '\n' | LC_ALL=C sort | tr '\n' ' ')
 want=$(echo $KNOWN_TYPE_MISS | tr ' ' '\n' | LC_ALL=C sort | tr '\n' ' ')
 [ "$got" = "$want" ] || { echo "parse-check: the TYPE misses moved"; echo "    now:  $got"; echo "    was:  $want"; rc=1; }
-[ "$tr" = 637 ] || { echo "parse-check: --typecheck refused $tr of 637, expected 637"; rc=1; }   # +2 each: the unbound-opener and handle-destructor fixtures (2026-09-21); +1: value_if_nested (2026-09-24); +3: handle use-after-close (2026-09-24); +1: handle_close_param (2026-09-24); +1: slice_struct (2026-09-25); +4: fixarr/vector pop and reserve (2026-09-25); +5: the or_else rejects (2026-09-25); +1: sized_lit_binop_fit
+[ "$tr" = 639 ] || { echo "parse-check: --typecheck refused $tr of 639, expected 639"; rc=1; }   # +2 each: the unbound-opener and handle-destructor fixtures (2026-09-21); +1: value_if_nested (2026-09-24); +3: handle use-after-close (2026-09-24); +1: handle_close_param (2026-09-24); +1: slice_struct (2026-09-25); +4: fixarr/vector pop and reserve (2026-09-25); +5: the or_else rejects (2026-09-25); +1: sized_lit_binop_fit; +2: value_if_one_line, fstr_hole_escaped_quote
 
 # [3] -- the census, against a recorded golden
 for f in $(ls tests/*.ty) $(find corelib -name '*.ty' | sort) $(find tools examples server bench -name '*.ty' | sort); do
@@ -349,7 +349,7 @@ fn main():
     print(str(frexp(8.0, &n)))
 EOF
 # The accepting subscript twin is also the only place either corpus writes
-# THROUGH a subscript, which is the `g.at(0) = 5` place form (src/tychoc.c:4478).
+# THROUGH a subscript, which is the `g.at(0) = 5` place form (src/tychoc.c:4494).
 pr ok_subscript <<'EOF'
 package main
 struct G:
@@ -377,8 +377,8 @@ echo "leg4  declaration rules: refused=$nref/5 accepted=$nacc/5"
 
 # [4b] -- the two package-member formats, which NO verdict leg can see: both
 # spellings are a refusal, so leg2b/5/6/8 are green either way and the wording
-# is decoration until Phase 9 pins message text. src/tychoc.c:6774 answers
-# `pkg.Name` written with NO call; src/tychoc.c:7133 answers `pkg.name(...)`.
+# is decoration until Phase 9 pins message text. src/tychoc.c:6790 answers
+# `pkg.Name` written with NO call; src/tychoc.c:7149 answers `pkg.name(...)`.
 # Both measured against ./tychoc 2026-08-23. The accepting twin is required for
 # the usual reason: two refusals alone are satisfied by refusing everything.
 pr r3_field <<'EOF'
@@ -468,14 +468,15 @@ b_out=$("$TYCHOC1" 2>/dev/null); b_err=$("$TYCHOC1" 2>&1 >/dev/null); bx=$?
 [ "$bx" = 1 ] && [ -z "$b_out" ] && echo "$b_err" | grep -q '^usage: tychoc <file.ty>' \
     || { echo "  BARE-RUN :: exit=$bx stdout=$(echo "$b_out" | head -1) stderr=$(echo "$b_err" | head -1)"; l4e=1; }
 "$TYCHOC1" --help > "$T/h1" 2>&1; hx=$?; ./tychoc --help > "$T/h0" 2>&1
-# The one line that may differ: --emit-c with no -o is stdout in ./tychoc only.
-hd=$(diff "$T/h0" "$T/h1" | grep '^[<>]' | grep -v -- '--emit-c ' | head -3)
-[ "$hx" = 0 ] && [ -z "$hd" ] || { echo "  HELP :: exit=$hx differs: $hd"; l4e=1; }
+cmp -s "$T/h0" "$T/h1" && [ "$hx" = 0 ] || { echo "  HELP :: exit=$hx differs: $(diff "$T/h0" "$T/h1" | grep '^[<>]' | head -3)"; l4e=1; }
 printf 'fn main():\n    pass\n' > "$T/r/wrote.ty"
 "$TYCHOC1" "$T/r/wrote.ty" --emit-c -o "$T/r/wrote" > "$T/wrote.out" 2>&1
 [ "$(tail -c 1 "$T/wrote.out" | od -An -c | tr -d ' ')" = '\n' ] || { echo "  WROTE-NO-NEWLINE"; l4e=1; }
+# --emit-c with no -o is the same C on stdout, byte for byte, with no "wrote".
+"$TYCHOC1" "$T/r/wrote.ty" --emit-c > "$T/stdout.c" 2>/dev/null
+cmp -s "$T/stdout.c" "$T/r/wrote.c" || { echo "  EMIT-C-STDOUT differs from the -o file ($(wc -c < "$T/stdout.c") vs $(wc -c < "$T/r/wrote.c") bytes)"; l4e=1; }
 "$TYCHOC1" --nope 2>&1 | grep -q '^tychoc1' && { echo "  SELF-NAMED-TYCHOC1 on an unknown flag"; l4e=1; }
-echo "leg4e driver surface vs ./tychoc (missing source, bare run, --help, wrote, self-name): $( [ $l4e = 0 ] && echo ok || echo FAILED )"
+echo "leg4e driver surface vs ./tychoc (missing source, bare run, --help, wrote, --emit-c stdout, self-name): $( [ $l4e = 0 ] && echo ok || echo FAILED )"
 [ "$l4e" = 0 ] || { echo "parse-check: tychoc1's driver surface moved away from ./tychoc"; rc=1; }
 
 # [13] -- THE AFFINE RULES, ONE PROBE EACH, EVERY REFUSAL PAIRED WITH AN

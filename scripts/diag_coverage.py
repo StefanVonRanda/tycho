@@ -104,7 +104,7 @@ CAPACITY = ["too many ", "nesting too deep", "indentation too deep",
             # `has at most` entries above. ./tychoc1 --parse accepts each.
             "at most 16 explicit type arguments", "too deeply nested"]
 # REMOVED: the map_set/map_get/map_has/map_del builtins were taken OUT of the
-# language -- src/tychoc.c:3166-3169 turns every call into `map_set was removed;
+# language -- src/tychoc.c:3172-3175 turns every call into `map_set was removed;
 # use `m[k] = v`` (and its three siblings) at PARSE time, so nothing downstream
 # of that can ever run. Measured 2026-09-03 by probing all four in both
 # compilers: each died at the removal message, never at the rules below. Listed
@@ -117,22 +117,22 @@ REMOVED = ["map_set(m, key, value)", "map_set's first argument", "map_set key mu
            "map_del's first argument", "map_del key must be",
            "map keys must be string or int"]
 # DEAD: reserve's second array/map test repeats its first one verbatim --
-# `if (!is_array(arrt) && !is_map(arrt))` at src/tychoc.c:7551 dies, and
-# src/tychoc.c:7561 asks the identical question with `arrt` never reassigned in
+# `if (!is_array(arrt) && !is_map(arrt))` at src/tychoc.c:7567 dies, and
+# src/tychoc.c:7577 asks the identical question with `arrt` never reassigned in
 # between. Nothing can reach it, so no fixture can name it.
 # Two more, measured 2026-09-03 by probing both compilers. `a channel parameter
 # cannot be inout` (check_inout_param_type's IS_CHAN arm) has two call sites and
 # an IDENTICAL earlier guard dominates each: the direct one is refused while the
-# parameter is PARSED (src/tychoc.c:4652, the only place a param's type is
+# parameter is PARSED (src/tychoc.c:4668, the only place a param's type is
 # stored, and a variadic -- the one thing that rewrites it -- may not be inout),
 # and the generic-instance one is refused nine lines above its call
-# (src/tychoc.c:9628) on the same substituted type. `inout Channel(int)` and a
+# (src/tychoc.c:9644) on the same substituted type. `inout Channel(int)` and a
 # `inout $T` instantiated at a channel both died at those earlier guards.
 # `a newtype cannot wrap a channel` is dominated by the newtype's own
-# underlying-type rule (src/tychoc.c:5216), which admits only
+# underlying-type rule (src/tychoc.c:5232), which admits only
 # int/float/string/bool/array/map/struct and runs at the ONE site that assigns
 # `.under`; `type Cn = Channel(int)` died there. Its `[$N]T` sibling at
-# src/tychoc.c:9875 is NOT dead -- `[$N]int` is an array, so it passes that rule
+# src/tychoc.c:9891 is NOT dead -- `[$N]int` is an array, so it passes that rule
 # -- and has a fixture.
 # Eleven more, measured 2026-09-03 by probing ./tychoc with the program each
 # rule names. SIX are the `void` bans in the type parser: g_void_ok is captured
@@ -152,31 +152,31 @@ REMOVED = ["map_set(m, key, value)", "map_set's first argument", "map_set key mu
 # (`expected indented match arms`, `... select arms`, `an indented field list`,
 # `an indented variant list`).
 # The last is the SELF-DEFEATING GUARD shape: `expected `if` or `match`` at
-# src/tychoc.c:3794@expected is the fall-through of parse_value_ctrl, and all FIVE of its
-# call sites (src/tychoc.c:4090@parse_value_ctrl,
-# src/tychoc.c:4393@parse_value_ctrl, src/tychoc.c:4407@parse_value_ctrl,
-# src/tychoc.c:4416@parse_value_ctrl, src/tychoc.c:4484@parse_value_ctrl) are inside an
+# src/tychoc.c:3810@expected is the fall-through of parse_value_ctrl, and all FIVE of its
+# call sites (src/tychoc.c:4106@parse_value_ctrl,
+# src/tychoc.c:4409@parse_value_ctrl, src/tychoc.c:4423@parse_value_ctrl,
+# src/tychoc.c:4432@parse_value_ctrl, src/tychoc.c:4500@parse_value_ctrl) are inside an
 # `if (at(ps, TK_IF) || at(ps, TK_MATCH))`. It cannot be entered on any other
 # token.
 # Three more, measured 2026-09-03 by enumerating each site's producers rather
-# than by argument. `cannot infer the type of None` (src/tychoc.c:9023@None) is the
+# than by argument. `cannot infer the type of None` (src/tychoc.c:9039@None) is the
 # SELF-DEFEATING GUARD shape: T_NONE is produced at exactly ONE site
-# (src/tychoc.c:6530@E_NONE, `case E_NONE`), and the untyped-decl arm eighteen lines
-# above the guard (src/tychoc.c:9007@E_NONE) already diverts every `s->expr->kind ==
+# (src/tychoc.c:6546@E_NONE, `case E_NONE`), and the untyped-decl arm eighteen lines
+# above the guard (src/tychoc.c:9023@E_NONE) already diverts every `s->expr->kind ==
 # E_NONE` into the pending-inference list -- so the guard is handed only the
 # thing it exists to reject, and never receives it. `x := None` and `x := (None)`
 # both died on the pending arm's own `could not infer the type of 'x'`.
-# `a counting `for` needs int bounds` (src/tychoc.c:9411@bounds) has three S_FORRANGE
-# producers (src/tychoc.c:4290@S_FORRANGE, src/tychoc.c:4324@S_FORRANGE,
-# src/tychoc.c:4339@S_FORRANGE) and no fourth: the first two are
+# `a counting `for` needs int bounds` (src/tychoc.c:9427@bounds) has three S_FORRANGE
+# producers (src/tychoc.c:4306@S_FORRANGE, src/tychoc.c:4340@S_FORRANGE,
+# src/tychoc.c:4355@S_FORRANGE) and no fourth: the first two are
 # the `parallel for` forms, whose `s->parallel` sends them to resolve_parfor and
 # breaks before this check, and the third is the foreach desugar, which writes a
 # literal `0` and a `len(...)` call into the bounds itself. No user-written
 # expression reaches them.
-# `a spawned task must be bound and waited` (src/tychoc.c:9418) needs an
+# `a spawned task must be bound and waited` (src/tychoc.c:9434) needs an
 # EXPRESSION STATEMENT of task type. task_of has one call site
-# (src/tychoc.c:6406, the E_SPAWN arm), and a bare `spawn f()` statement is
-# refused while it is PARSED (src/tychoc.c:4528) with the rule stated in full; a
+# (src/tychoc.c:6422, the E_SPAWN arm), and a bare `spawn f()` statement is
+# refused while it is PARSED (src/tychoc.c:4544) with the rule stated in full; a
 # bare task VARIABLE is refused as `a bare expression has no effect`. Both probed.
 # One more, measured 2026-09-05 by six probes. The ARRC arm of the infinite-type
 # check needs to re-enter one fixed-size array type while emitting it, so the
@@ -200,7 +200,7 @@ DEAD = ["reserve only supports arrays of scalars",
         "an array element type cannot be void",
         "Option(void) is not a type",
         "Channel(void) is not a type",
-        # anchored on the tail: src/tychoc.c:3122's LIVE `Err() carries no value
+        # anchored on the tail: src/tychoc.c:3128's LIVE `Err() carries no value
         # -- a Result's error type cannot be void` contains the head verbatim
         "a Result's error type cannot be void -- Err always carries a value",
         "match needs at least one arm",
@@ -214,7 +214,7 @@ DEAD = ["reserve only supports arrays of scalars",
         # ONLY then call src/tychoc.c@is_lvalue. is_lvalue returns 0 in exactly two
         # ways: a root that is not a place (the root-strip guard already refused
         # it, and E_TUPIDX is not even walked, so `t.0` dies there too), or an
-        # E_INDEX whose base is not composite/soa/map. src/tychoc.c:6659 NORMALISES
+        # E_INDEX whose base is not composite/soa/map. src/tychoc.c:6675 NORMALISES
         # that base off any newtype first, so the only bases left are the three
         # scalar arrays plus string/bytes -- and every one of those yields an
         # int/float/string element, which the is_array guard above refuses first.
@@ -222,24 +222,24 @@ DEAD = ["reserve only supports arrays of scalars",
         "cannot push through this expression",
         "cannot pop through this expression",
         "cannot reserve through this expression",
-        # src/tychoc.c:7276 is dominated by the IS_TASK test one line above it.
-        # `task_of` is called at exactly ONE site, src/tychoc.c:6406 (the E_SPAWN
+        # src/tychoc.c:7292 is dominated by the IS_TASK test one line above it.
+        # `task_of` is called at exactly ONE site, src/tychoc.c:6422 (the E_SPAWN
         # arm), a Task has no type syntax so no signature, field or element can
         # carry one, and copying one is refused -- so a Task-typed expression is
         # an E_SPAWN or the E_IDENT it was bound to, and nothing else.
         "wait takes a task variable or a spawn expression"]
 # One more, measured 2026-09-03 by moving the BINARY rather than by argument.
-# `cannot find the corelib for import` (src/tychoc.c:5422) reports on the
+# `cannot find the corelib for import` (src/tychoc.c:5438) reports on the
 # INSTALLATION, not on the program: TYCHO_CORELIB is taken unchecked when set,
 # and with it unset the lookup finds `<exe_dir>/corelib`, which exists for every
 # compiler in this tree. Copied to a bare directory, ./tychoc emits it for the
 # same `import "core:strings"` that compiles here -- so no .ty file can reach it.
 # It is an fprintf+exit like every other entry below, not a die_at.
 # One more, measured 2026-09-03: `internal: spread ... reached codegen`
-# (src/tychoc.c:11583) is a compiler-bug assertion, not a rule about a program.
+# (src/tychoc.c:11599) is a compiler-bug assertion, not a rule about a program.
 # E_SPREAD has exactly two dispositions -- the variadic call arm UNWRAPS it
-# (src/tychoc.c:7592 takes args[nfixed]->lhs, so no E_SPREAD node survives), and
-# every other position dies at src/tychoc.c:6383. Four spread positions probed
+# (src/tychoc.c:7608 takes args[nfixed]->lhs, so no E_SPREAD node survives), and
+# every other position dies at src/tychoc.c:6399. Four spread positions probed
 # (a decl rhs, an array literal, a len() argument, and a second variadic
 # argument beside a spread); all four were refused before codegen.
 # `--target: ` is three more of the same family, added 2026-09-05: they are about
