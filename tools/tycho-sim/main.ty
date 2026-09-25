@@ -173,24 +173,21 @@ fn simulate(ticks: int, ord: [string], c: sys.Cfg) -> Result(void, string):
     println("sim seed: spawned=" + str(s) + " live=" + str(world.live(w)))
     tot := sys.Tally(s, 0, 0, 0, 0)
     for t := 0; t < ticks; t += 1:
-        match sys.tick(&w, &r, c, ord):
-            Ok(q):
-                tot.spawned = tot.spawned + q.spawned
-                tot.moved = tot.moved + q.moved
-                tot.hits = tot.hits + q.hits
-                tot.decayed = tot.decayed + q.decayed
-                tot.reaped = tot.reaped + q.reaped
-                println("tick " + str(t) +
-                        " spawned=" + str(q.spawned) +
-                        " moved=" + str(q.moved) +
-                        " hits=" + str(q.hits) +
-                        " decayed=" + str(q.decayed) +
-                        " reaped=" + str(q.reaped) +
-                        " live=" + str(world.live(w)) +
-                        " hp=" + str(world.total_hp(w)) +
-                        " sum=" + str(world.checksum(w)))
-            Err(m):
-                return Err(m)
+        q := sys.tick(&w, &r, c, ord) or_return
+        tot.spawned = tot.spawned + q.spawned
+        tot.moved = tot.moved + q.moved
+        tot.hits = tot.hits + q.hits
+        tot.decayed = tot.decayed + q.decayed
+        tot.reaped = tot.reaped + q.reaped
+        println("tick " + str(t) +
+                " spawned=" + str(q.spawned) +
+                " moved=" + str(q.moved) +
+                " hits=" + str(q.hits) +
+                " decayed=" + str(q.decayed) +
+                " reaped=" + str(q.reaped) +
+                " live=" + str(world.live(w)) +
+                " hp=" + str(world.total_hp(w)) +
+                " sum=" + str(world.checksum(w)))
     println("sim: spawned=" + str(tot.spawned) + " reaped=" + str(tot.reaped) +
             " live=" + str(world.live(w)) + " moved=" + str(tot.moved) +
             " hits=" + str(tot.hits) + " decayed=" + str(tot.decayed) +

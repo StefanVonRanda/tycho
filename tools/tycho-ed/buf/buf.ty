@@ -483,9 +483,7 @@ fn undo(b: inout Buf) -> Result(void, BufErr):
     if len(b.undos) == 0:
         return Err(NothingToUndo)
     e := pop(b.undos)
-    match _invert(&b, e.op):
-        Ok: pass
-        Err(x): return Err(x)
+    _invert(&b, e.op) or_return
     push(b.redos, e)
     b.cur = e.cur
     return Ok()
@@ -494,9 +492,7 @@ fn redo(b: inout Buf) -> Result(void, BufErr):
     if len(b.redos) == 0:
         return Err(NothingToRedo)
     e := pop(b.redos)
-    match _forward(&b, e.op):
-        Ok: pass
-        Err(x): return Err(x)
+    _forward(&b, e.op) or_return
     push(b.undos, e)
     # Forward again, so the cursor lands where the edit originally left it.
     match e.op:

@@ -113,10 +113,7 @@ fn dense_of(w: World, id: Id) -> Result(int, SimErr):
 # pool length stays right, every walk still sees the right number of entities,
 # and exactly one id quietly starts addressing somebody else.
 fn despawn(w: inout World, id: Id) -> Result(void, SimErr):
-    d := 0
-    match dense_of(w, id):
-        Ok(v): d = v
-        Err(er): return Err(er)
+    d := dense_of(w, id) or_return
     last := len(w.e) - 1
     if d != last:
         w.e[d] = w.e[last]
@@ -142,16 +139,13 @@ fn id_str(id: Id) -> string:
 # rather than through a dense index it remembered, which is the discipline the
 # generation counter exists to enforce.
 fn get(w: World, id: Id) -> Result(Ent, SimErr):
-    match dense_of(w, id):
-        Ok(d): return Ok(Ent(w.e[d].slot, w.hp(d), w.px(d), w.py(d)))
-        Err(er): return Err(er)
+    d := dense_of(w, id) or_return
+    return Ok(Ent(w.e[d].slot, w.hp(d), w.px(d), w.py(d)))
 
 fn damage(w: inout World, id: Id, n: int) -> Result(int, SimErr):
-    match dense_of(w, id):
-        Ok(d):
-            w.hp(d) = w.hp(d) - n
-            return Ok(w.hp(d))
-        Err(er): return Err(er)
+    d := dense_of(w, id) or_return
+    w.hp(d) = w.hp(d) - n
+    return Ok(w.hp(d))
 
 # Field-wise sums straight down the pool -- the access pattern soa is for, and
 # the cheapest whole-world invariant a transcript can carry.

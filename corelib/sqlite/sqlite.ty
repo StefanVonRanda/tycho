@@ -97,37 +97,34 @@ fn _query_null(d: inout Db, sql: string) -> Result([[Option(string)]], string):
     return _query_null_params(&d, sql, []string)
 
 fn _query_null_params(d: inout Db, sql: string, params: [string]) -> Result([[Option(string)]], string):
-    match _run_stmt(&d, sql, params):
-        Err(m):
-            return Err(m)
-        Ok(st):
-            rows := [][Option(string)]
-            ncols := sqlite3_column_count(st)
-            for:
-                r := sqlite3_step(st)
-                if r == 100:                 # SQLITE_ROW
-                    row := []Option(string)
-                    for c := 0; c < ncols; c += 1:
-                        if sqlite3_column_type(st, c) == 5:     # SQLITE_NULL
-                            push(row, None)
-                        else:
-                            t := sqlite3_column_text(st, c)
-                            # sqlite3_column_bytes AFTER column_text is the length of
-                            # that same UTF-8 text; a shorter `len(t)` means the value
-                            # holds an interior NUL and the tail would be dropped.
-                            if sqlite3_column_bytes(st, c) != len(t):
-                                sqlite3_finalize(st)
-                                return Err("column " + str(c) + " holds an interior NUL byte -- core:sqlite reads TEXT as a NUL-terminated string and cannot carry it")
-                            push(row, Some(t))
-                    push(rows, row)
-                elif r == 101:               # SQLITE_DONE
-                    break
+    st := _run_stmt(&d, sql, params) or_return
+    rows := [][Option(string)]
+    ncols := sqlite3_column_count(st)
+    for:
+        r := sqlite3_step(st)
+        if r == 100:                 # SQLITE_ROW
+            row := []Option(string)
+            for c := 0; c < ncols; c += 1:
+                if sqlite3_column_type(st, c) == 5:     # SQLITE_NULL
+                    push(row, None)
                 else:
-                    m := errmsg(d)
-                    sqlite3_finalize(st)
-                    return Err(m)
+                    t := sqlite3_column_text(st, c)
+                    # sqlite3_column_bytes AFTER column_text is the length of
+                    # that same UTF-8 text; a shorter `len(t)` means the value
+                    # holds an interior NUL and the tail would be dropped.
+                    if sqlite3_column_bytes(st, c) != len(t):
+                        sqlite3_finalize(st)
+                        return Err("column " + str(c) + " holds an interior NUL byte -- core:sqlite reads TEXT as a NUL-terminated string and cannot carry it")
+                    push(row, Some(t))
+            push(rows, row)
+        elif r == 101:               # SQLITE_DONE
+            break
+        else:
+            m := errmsg(d)
             sqlite3_finalize(st)
-            return Ok(rows)
+            return Err(m)
+    sqlite3_finalize(st)
+    return Ok(rows)
 
 # SELECT (or any statement producing rows): every column read as text,
 # returned as [[string]]. A SQL NULL flattens to "" -- use `query_null` when the
@@ -136,34 +133,28 @@ fn query(d: inout Db, sql: string) -> Result([[string]], string):
     return query_params(&d, sql, []string)
 
 fn query_params(d: inout Db, sql: string, params: [string]) -> Result([[string]], string):
-    match _query_null_params(&d, sql, params):
-        Err(m):
-            return Err(m)
-        Ok(rs):
-            rows := [][string]
-            for i := 0; i < len(rs); i += 1:
-                row := []string
-                for c := 0; c < len(rs[i]); c += 1:
-                    match rs[i][c]:
-                        Some(t):
-                            push(row, t)
-                        None:
-                            push(row, "")
-                push(rows, row)
-            return Ok(rows)
+    rs := _query_null_params(&d, sql, params) or_return
+    rows := [][string]
+    for i := 0; i < len(rs); i += 1:
+        row := []string
+        for c := 0; c < len(rs[i]); c += 1:
+            match rs[i][c]:
+                Some(t):
+                    push(row, t)
+                None:
+                    push(row, "")
+        push(rows, row)
+    return Ok(rows)
 
 # A parameterized statement with no result rows (INSERT/UPDATE with a ? or
 # :name placeholder); Ok(the change count).
 fn exec_params(d: inout Db, sql: string, params: [string]) -> Result(int, string):
-    match _run_stmt(&d, sql, params):
-        Err(m):
-            return Err(m)
-        Ok(st):
-            r := sqlite3_step(st)
-            sqlite3_finalize(st)
-            if r == 100:                     # SQLITE_ROW -- sqlite raised no error, so
-                                             # errmsg would say "not an error"
-                return Err("this statement produces rows -- use query_params")
-            if r != 101:                     # SQLITE_DONE
-                return Err(errmsg(d))
-            return Ok(sqlite3_changes(d.h))
+    st := _run_stmt(&d, sql, params) or_return
+    r := sqlite3_step(st)
+    sqlite3_finalize(st)
+    if r == 100:                     # SQLITE_ROW -- sqlite raised no error, so
+                                     # errmsg would say "not an error"
+        return Err("this statement produces rows -- use query_params")
+    if r != 101:                     # SQLITE_DONE
+        return Err(errmsg(d))
+    return Ok(sqlite3_changes(d.h))

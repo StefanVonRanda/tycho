@@ -493,11 +493,8 @@ fn _parse_array(t: string) -> Result(Value, string):
         it2 := strings.trim(it)
         if it2 == "":
             return Err("empty array element")
-        match _parse_value(it2):
-            Ok(v):
-                push(arr, v)
-            Err(m):
-                return Err(m)
+        v := _parse_value(it2) or_return
+        push(arr, v)
     return Ok(TArr(arr))
 
 # --- the document parser ----------------------------------------------------
@@ -617,12 +614,9 @@ fn parse(s: string) -> Result(Value, string):
         # single-segment keys ONLY, so `a.b = 1` then `a.b = 2` still overrode.
         if _has_path(cur, kp):
             return Err("duplicate key: " + key)
-        match _parse_value(val):
-            Ok(v):
-                cur = _assign(cur, kp, v)
-                cur_dirty = true
-            Err(m):
-                return Err(m)
+        v := _parse_value(val) or_return
+        cur = _assign(cur, kp, v)
+        cur_dirty = true
     if len(cur_path) == 0:
         root = cur
     else:
