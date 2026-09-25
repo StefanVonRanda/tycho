@@ -1,0 +1,112 @@
+# An or_else / or_return payload that flows straight back to the caller must be
+# built in the caller's arena. tychoc1 once built the operand in the function's
+# own _scope and returned its payload uncopied -- the caller read freed memory.
+
+struct Rec:
+    name: string
+    vals: [int]
+
+fn mk_arr(n: int) -> Result([int], string):
+    if n < 0:
+        return Err("neg")
+    xs := []int
+    for i := 0; i < n; i += 1:
+        push(xs, i * i)
+    return Ok(xs)
+
+fn mk_str(n: int) -> Result(string, string):
+    if n < 0:
+        return Err("neg")
+    s := ""
+    for i := 0; i < n; i += 1:
+        s = s + str(i)
+    return Ok(s)
+
+fn mk_rec(n: int) -> Option(Rec):
+    if n < 0:
+        return None
+    xs := []int
+    for i := 0; i < n; i += 1:
+        push(xs, i + 1)
+    return Some(Rec("rec" + str(n), xs))
+
+# payload returned directly
+fn arr_direct(n: int) -> [int]:
+    return mk_arr(n) or_else _: [-1]
+
+fn str_direct(n: int) -> string:
+    return mk_str(n) or_else e: "err:" + e
+
+fn rec_direct(n: int) -> Rec:
+    return mk_rec(n) or_else _: Rec("none", [0])
+
+# bound, then returned
+fn arr_bound(n: int) -> [int]:
+    v := mk_arr(n) or_else _: [-2]
+    return v
+
+fn str_bound(n: int) -> string:
+    v := mk_str(n) or_else e: "err:" + e
+    return v
+
+fn rec_bound(n: int) -> Rec:
+    v := mk_rec(n) or_else _: Rec("none", [0])
+    return v
+
+# nested: each layer returns the inner layer's payload
+fn arr_outer(n: int) -> [int]:
+    return arr_inner(n) or_else _: [-3]
+
+fn arr_inner(n: int) -> Result([int], string):
+    return Ok(mk_arr(n) or_return)
+
+fn str_outer(n: int) -> string:
+    return str_mid(n) or_else e: "outer:" + e
+
+fn str_mid(n: int) -> Result(string, string):
+    v := mk_str(n) or_else e: Err("mid:" + e)
+    return Ok(v)
+
+# allocate over whatever the freed arenas held
+fn churn() -> int:
+    t := 0
+    for i := 0; i < 64; i += 1:
+        ys := []int
+        for j := 0; j < 32; j += 1:
+            push(ys, 7777)
+        s := ""
+        for j := 0; j < 16; j += 1:
+            s = s + "zz"
+        t += len(ys) + len(s)
+    return t
+
+fn sum(xs: [int]) -> int:
+    s := 0
+    for x in xs:
+        s += x
+    return s
+
+fn main():
+    a1 := arr_direct(12)
+    s1 := str_direct(12)
+    r1 := rec_direct(9)
+    a2 := arr_bound(12)
+    s2 := str_bound(12)
+    r2 := rec_bound(9)
+    a3 := arr_outer(12)
+    s3 := str_outer(12)
+    a4 := arr_inner(12)
+    c := churn()
+    println("arr_direct " + str(len(a1)) + " " + str(sum(a1)))
+    println("str_direct " + s1)
+    println("rec_direct " + r1.name + " " + str(sum(r1.vals)))
+    println("arr_bound " + str(len(a2)) + " " + str(sum(a2)))
+    println("str_bound " + s2)
+    println("rec_bound " + r2.name + " " + str(sum(r2.vals)))
+    println("arr_outer " + str(len(a3)) + " " + str(sum(a3)))
+    println("str_outer " + s3)
+    match a4:
+        Ok(xs): println("arr_inner " + str(len(xs)) + " " + str(sum(xs)))
+        Err(e): println("arr_inner " + e)
+    println("fail " + str(sum(arr_direct(-1))) + " " + str_direct(-1) + " " + rec_direct(-1).name + " " + str_outer(-1))
+    println("churn " + str(c))

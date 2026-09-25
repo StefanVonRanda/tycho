@@ -1,0 +1,11 @@
+arr_direct 12 506
+str_direct 01234567891011
+rec_direct rec9 45
+arr_bound 12 506
+str_bound 01234567891011
+rec_bound rec9 45
+arr_outer 12 506
+str_outer 01234567891011
+arr_inner 12 506
+fail -1 err:neg none outer:mid:neg
+churn 4096

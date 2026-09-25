@@ -3214,7 +3214,11 @@ fn _retval(cs: inout C, e: ast.Expr) -> string:
 fn _orret(cs: inout C, b: string, k: [ast.Expr]) -> (string, string):
     sw := cs.want
     cs.want = ""
-    c, t := _ex_scope(&cs, k[0])
+    # The operand is built in the CURRENT arena, as src/tychoc.c@gen_expr does:
+    # its Ok/Some payload is the node's value, and under a `return` that arena
+    # is _parent, which _retval then hands back uncopied (a temporary). Forcing
+    # &_scope here returned a payload from the scope the return frees.
+    c, t := _ex(&cs, k[0])
     cs.want = sw
     if not (_is_optT(&cs, t) or _is_resT(&cs, t)):
         _bad("`or_return` on a value that is not an Option or a Result")
