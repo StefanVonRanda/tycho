@@ -7,9 +7,7 @@ package result
 # The Ok payload, or `fallback` if the Result is an Err. The workhorse: it turns
 # a Result back into the plain value a non-Result caller needs, in one line.
 fn unwrap_or(r: Result($T, $E), fallback: $T) -> $T:
-    match r:
-        Ok(v): return v
-        Err(e): return fallback
+    return r or_else _: fallback
 
 # True if the Result is Ok. Use it when only success/failure matters and the
 # payload does not -- `if not result.is_ok(pr)` in place of a sentinel test.
@@ -55,9 +53,7 @@ fn map_err_with(r: Result($T, $E), f: fn($E) -> $F) -> Result($T, $F):
 # some_or, not a match.
 
 fn some_or(o: Option($T), fallback: $T) -> $T:
-    match o:
-        Some(v): return v
-        None: return fallback
+    return o or_else _: fallback
 
 # `is` (§19.8), not a `match`, for the reason is_ok gives: it names no payload.
 fn is_some(o: Option($T)) -> bool:

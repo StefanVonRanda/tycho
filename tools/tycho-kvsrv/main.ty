@@ -55,11 +55,7 @@ fn store(cmd: Channel(Cmd), r0: Channel(Res), r1: Channel(Res), r2: Channel(Res)
 # ---- the worker pool -----------------------------------------------------------------
 
 fn recv_res(ch: Channel(Res)) -> Res:
-    match recv(ch):
-        Some(v):
-            return v
-        None:
-            return Res(500, "store closed")
+    return recv(ch) or_else _: Res(500, "store closed")
 
 fn worker_recv(r0: Channel(Res), r1: Channel(Res), r2: Channel(Res), r3: Channel(Res), wid: int) -> Res:
     if wid == 0:

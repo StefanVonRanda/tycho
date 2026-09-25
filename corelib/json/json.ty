@@ -656,11 +656,7 @@ fn parse_checked(s: string) -> Result(Json, JsonErr):
 # to JNull for the whole document rather than handing back a half-built tree.
 # Prefer `parse_checked`.
 fn parse(s: string) -> Json:
-    match parse_checked(s):
-        Ok(j):
-            return j
-        Err(e):
-            return JNull
+    return parse_checked(s) or_else _: JNull
 
 # ---- serializer (walk the tree, build a compact string) --------------------
 
