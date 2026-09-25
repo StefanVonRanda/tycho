@@ -34,9 +34,8 @@ fn err_or(r: Result($T, $E), fallback: $E) -> $E:
         _: return fallback
 
 fn map_err(r: Result($T, $E), replacement: $F) -> Result($T, $F):
-    match r:
-        Ok(v): return Ok(v)
-        Err(e): return Err(replacement)
+    v := r or_else _: Err(replacement)
+    return Ok(v)
 
 # map_err's sibling, for when the cause is worth keeping. Same job and the same
 # argument order, except `f` RECEIVES the Err payload and builds the replacement
@@ -47,9 +46,8 @@ fn map_err(r: Result($T, $E), replacement: $F) -> Result($T, $F):
 #
 #   n := result.map_err_with(parse(s), from_parse) or_return
 fn map_err_with(r: Result($T, $E), f: fn($E) -> $F) -> Result($T, $F):
-    match r:
-        Ok(v): return Ok(v)
-        Err(e): return Err(f(e))
+    v := r or_else e: Err(f(e))
+    return Ok(v)
 
 # ---- Option ----------------------------------------------------------------
 # The same collapse for the Option half. io.read_line is the corelib's one

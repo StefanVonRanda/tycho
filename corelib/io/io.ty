@@ -79,10 +79,8 @@ fn write(p: string, s: string) -> bool:
 # Append `s` to `p` (creating it if absent). O_APPEND, so nothing is read back
 # and the existing content is never held in memory.
 fn append(p: string, s: string) -> bool:
-    match append_text(p, s):
-        Ok: return true
-        Err(e): return false
-    return false
+    append_text(p, s) or_else _: false
+    return true
 
 # Append with the error channel append() lacks. The string is NOT copied on the
 # way to the shim -- it travels as a pointer and a length -- which is what makes
