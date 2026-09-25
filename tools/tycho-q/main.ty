@@ -244,9 +244,8 @@ fn parse_primary(ts: [Tok], p: inout int) -> Result(Expr, PErr):
         return Ok(ELit(VInt(strings.parse_int(t.text))))
     if t.kind == T_DEC:
         p = p + 1
-        match decimal.from_str_checked(t.text):
-            Ok(d): return Ok(ELit(VDec(d)))
-            Err(e): return Err(PErr("a decimal literal", t.text, t.off))
+        d := decimal.from_str_checked(t.text) or_else _: Err(PErr("a decimal literal", t.text, t.off))
+        return Ok(ELit(VDec(d)))
     if t.kind == T_STR:
         p = p + 1
         return Ok(ELit(VStr(t.text)))
@@ -482,18 +481,12 @@ fn show_item(it: Item) -> string:
             return "(as " + alias + " " + show_expr(e) + ")"
 
 fn where_line(o: Option(Expr)) -> string:
-    match o:
-        Some(e):
-            return "  (where " + show_expr(e) + ")"
-        None:
-            return ""
+    e := o or_else _: ""
+    return "  (where " + show_expr(e) + ")"
 
 fn limit_line(o: Option(int)) -> string:
-    match o:
-        Some(n):
-            return "  (limit " + str(n) + ")"
-        None:
-            return ""
+    n := o or_else _: ""
+    return "  (limit " + str(n) + ")"
 
 fn explain(q: Query):
     println("(query")
@@ -712,13 +705,9 @@ fn ord_cmp(a: Value, b: Value) -> int:
     # Equal rank means COMPATIBLE kinds, so `cmp_vals` -- the same function
     # `where` uses -- cannot fail here, and the within-kind order is therefore
     # the same one by construction rather than by a promise in a comment. The
-    # `Err` arm is unreachable for that reason and returns an inert 0, the same
+    # `or_else` is unreachable for that reason and returns an inert 0, the same
     # shape as the unreachable arms of `int_of` and friends above.
-    match cmp_vals(a, b):
-        Ok(c):
-            return c
-        Err(e):
-            return 0
+    return cmp_vals(a, b) or_else _: 0
 
 # Compare two rows of the precomputed key matrix, first key first, each key
 # NEGATED if that key is `desc`. Negating the comparison rather than reversing
@@ -924,12 +913,8 @@ fn json_err(path: string, e: json.JsonErr) -> RErr:
 
 # The parse, with the corelib's failure relabelled as one of ours.
 fn json_root(path: string, text: string) -> Result(json.Json, RErr):
-    r := json.parse_checked(text)
-    match r:
-        Ok(j):
-            return Ok(j)
-        Err(e):
-            return Err(json_err(path, e))
+    j := json.parse_checked(text) or_else e: Err(json_err(path, e))
+    return Ok(j)
 
 fn a_kind(k: string) -> string:
     if k == "arr":
@@ -1173,11 +1158,7 @@ fn has_limit(o: Option(int)) -> bool:
             return false
 
 fn limit_of(o: Option(int)) -> int:
-    match o:
-        Some(n):
-            return n
-        None:
-            return 0
+    return o or_else _: 0
 
 # `order by total` where `total` is an alias in the select list and not a
 # column of the source. The plan's own headline query is
@@ -1208,13 +1189,10 @@ fn resolve_key(q: Query, hdr: [string], k: OrdKey) -> Result(OrdKey, RErr):
     match k.expr:
         ECol(name):
             in_hdr := col_index(hdr, name) >= 0
-            match alias_expr(q, name):
-                Some(e):
-                    if in_hdr:
-                        return Err(RErr("`order by " + name + "` is ambiguous: `" + name + "` is both a column of " + q.src + " and an alias in the select list -- rename the alias"))
-                    return Ok(OrdKey(e, k.desc))
-                None:
-                    return Ok(k)
+            e := alias_expr(q, name) or_else _: Ok(k)
+            if in_hdr:
+                return Err(RErr("`order by " + name + "` is ambiguous: `" + name + "` is both a column of " + q.src + " and an alias in the select list -- rename the alias"))
+            return Ok(OrdKey(e, k.desc))
         _:
             return Ok(k)
 
