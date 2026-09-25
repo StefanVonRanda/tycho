@@ -2536,6 +2536,9 @@ fn _call_builtin(cs: inout C, l: int, n: string, args: [ast.Expr], want: string)
         if _head(b0) == "bnd":
             _cerr(&cs, "pop is not supported on a bounded[...] yet; read the last element via len()-1 and rebuild")
             return "?"
+        if (_head(b0) == "fix" or _head(b0) == "vec") and _capn(_targs(b0)[0]) >= 0:
+            _cerr(&cs, "pop does not apply to a " + _show(&cs, b0) + " — its size is fixed")
+            return "?"
         rp := _root_name(args[0])
         if _ro_param(&cs, rp):
             _cerr(&cs, "cannot mutate parameter '" + rp + "' (it is borrowed read-only; copy it with `y := " + rp + "` first)")
@@ -2552,6 +2555,9 @@ fn _call_builtin(cs: inout C, l: int, n: string, args: [ast.Expr], want: string)
             return "void"
         if _head(b0) == "bnd":
             _cerr(&cs, "reserve does not apply to a bounded[...] — its capacity is fixed")
+            return "void"
+        if (_head(b0) == "fix" or _head(b0) == "vec") and _capn(_targs(b0)[0]) >= 0:
+            _cerr(&cs, "reserve does not apply to a " + _show(&cs, b0) + " — its size is fixed")
             return "void"
         rr := _root_name(args[0])
         if _ro_param(&cs, rr):

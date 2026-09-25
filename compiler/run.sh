@@ -207,7 +207,7 @@ echo "leg2c tests/reject/*.ty --typecheck: all=$((tr+tm)) rejected=$tr missed=$t
 # SEMANTIC 288 -> 290: the two unbound-opener fixtures (2026-09-21). The rule
 # needs the symbol table AND the callee's return type, so both are SEMANTIC.
 # SEMANTIC 290 -> 292: the two handle-destructor fixtures (2026-09-21).
-[ "$nsyn" = 120 ] && [ "$nname" = 35 ] && [ "$ntype" = 175 ] && [ "$nsem" = 297 ] || { echo "parse-check: the split moved -- expected SYNTAX=120 NAME=35 TYPE=175 SEMANTIC=297"; rc=1; }   # SYNTAX 119 -> 120: tests/reject/value_if_nested.ty (2026-09-24); SEMANTIC 292 -> 295: the three handle use-after-close fixtures (2026-09-24); -> 296: handle_close_param (2026-09-24); -> 297: slice_struct (2026-09-25)
+[ "$nsyn" = 120 ] && [ "$nname" = 35 ] && [ "$ntype" = 175 ] && [ "$nsem" = 301 ] || { echo "parse-check: the split moved -- expected SYNTAX=120 NAME=35 TYPE=175 SEMANTIC=301"; rc=1; }   # SYNTAX 119 -> 120: tests/reject/value_if_nested.ty (2026-09-24); SEMANTIC 292 -> 295: the three handle use-after-close fixtures (2026-09-24); -> 296: handle_close_param (2026-09-24); -> 297: slice_struct (2026-09-25); -> 301: fixarr/vector pop and reserve (2026-09-25)
 [ "$mr" = 0 ] || { echo "parse-check: a NAME or SEMANTIC fixture was rejected by --parse; a parser has no symbol table"; rc=1; }
 [ "$sa" = 0 ] || { echo "parse-check: a SYNTAX fixture was accepted; the parser must refuse it"; rc=1; }
 [ "$rm_" = 0 ] || { echo "parse-check: a NAME fixture resolved; the resolver must refuse it"; rc=1; }
@@ -217,7 +217,7 @@ echo "leg2c tests/reject/*.ty --typecheck: all=$((tr+tm)) rejected=$tr missed=$t
 got=$(echo $seen_miss | tr ' ' '\n' | LC_ALL=C sort | tr '\n' ' ')
 want=$(echo $KNOWN_TYPE_MISS | tr ' ' '\n' | LC_ALL=C sort | tr '\n' ' ')
 [ "$got" = "$want" ] || { echo "parse-check: the TYPE misses moved"; echo "    now:  $got"; echo "    was:  $want"; rc=1; }
-[ "$tr" = 627 ] || { echo "parse-check: --typecheck refused $tr of 627, expected 627"; rc=1; }   # +2 each: the unbound-opener and handle-destructor fixtures (2026-09-21); +1: value_if_nested (2026-09-24); +3: handle use-after-close (2026-09-24); +1: handle_close_param (2026-09-24); +1: slice_struct (2026-09-25)
+[ "$tr" = 631 ] || { echo "parse-check: --typecheck refused $tr of 631, expected 631"; rc=1; }   # +2 each: the unbound-opener and handle-destructor fixtures (2026-09-21); +1: value_if_nested (2026-09-24); +3: handle use-after-close (2026-09-24); +1: handle_close_param (2026-09-24); +1: slice_struct (2026-09-25); +4: fixarr/vector pop and reserve (2026-09-25)
 
 # [3] -- the census, against a recorded golden
 for f in $(ls tests/*.ty) $(find corelib -name '*.ty' | sort) $(find tools examples server bench -name '*.ty' | sort); do

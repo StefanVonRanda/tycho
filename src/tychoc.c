@@ -7561,6 +7561,8 @@ static Type resolve_expr_inner(Expr *e) {
                     die_at(e->line, "pop's first argument must be an array or soa");
                 if (IS_BOUNDED(arrt))   /* v1: bounded supports push only; pop deferred */
                     die_at(e->line, "pop is not supported on a bounded[...] yet; read the last element via len()-1 and rebuild");
+                if (IS_FIXARR(arrt))   /* [N]T / vector[N]T: the length is the type */
+                    die_at(e->line, "pop does not apply to a %s — its size is fixed", type_name(arrt));
                 if (!is_lvalue(e->args[0]))
                     die_at(e->line, "cannot pop through this expression — the array must be a "
                                     "variable, field, or composite-array element");
@@ -7582,6 +7584,8 @@ static Type resolve_expr_inner(Expr *e) {
                     die_at(e->line, "reserve's first argument must be an array or a map");
                 if (IS_BOUNDED(arrt))   /* capacity is fixed at the type; reserve is meaningless */
                     die_at(e->line, "reserve does not apply to a bounded[...] — its capacity is fixed");
+                if (IS_FIXARR(arrt))   /* [N]T / vector[N]T: the length is the type */
+                    die_at(e->line, "reserve does not apply to a %s — its size is fixed", type_name(arrt));
                 /* reserve is a capacity hint: the scalar arrays have a runtime
                  * tycho_arr_{int,float,str}_reserve; composite-element arrays get a
                  * generated tycho_arr_C%d_reserve (emitted with the family). Maps get

@@ -1,0 +1,7 @@
+# expect: reserve does not apply to a vector[2]int — its size is fixed
+# The length IS the type; the reference once emitted a call to an undeclared
+# tycho_arr_C0_reserve here and the C compiler refused it.
+fn main():
+    v: vector[2]int = [1, 2]
+    reserve(v, 8)
+    println(str(v[0]))
