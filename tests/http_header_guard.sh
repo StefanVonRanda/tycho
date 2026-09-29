@@ -32,8 +32,8 @@ for compiler in ./tychoc ./tychoc1; do
         echo "http-header-guard: $compiler failed to build"; cat "$tmp/build.log"; exit 1;
     }
     got=$("$tmp/probe" "http://127.0.0.1:$port/")
-    [ "$got" = "clean=clean blocked=true bytes_blocked=true" ] || {
+    [ "$got" = "clean=clean blocked=true bytes_blocked=true long_blocked=true long_bytes_blocked=true" ] || {
         echo "http-header-guard: $compiler got '$got'"; exit 1;
     }
 done
-echo "http-header-guard: Content-Type CR/LF refused by both POST APIs in both compilers"
+echo "http-header-guard: Content-Type CR/LF and overlong values refused by both POST APIs in both compilers"

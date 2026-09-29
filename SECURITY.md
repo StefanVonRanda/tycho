@@ -22,9 +22,9 @@ A few sharp edges are inherent, by design:
 - **FFI (`extern fn`) is unsafe**, like any C interop — a wrong signature or a
   misbehaving C library can corrupt memory. The boundary is checked only at the
   type level (scalars / `string` / opaque `ptr`).
-- A few corelib codecs (`base64`, `hex`, `url`) note a **`0x00`-byte caveat** on
-  decode — a tycho string built with `chr()` can't hold an interior NUL, so a
-  decoded NUL byte is dropped. They are exact for text and non-NUL binary.
+- Corelib codecs (`base64`, `hex`, `url`) preserve decoded `0x00` bytes in
+  length-carrying Tycho strings. A NUL can still truncate at a C `char *`
+  boundary; wrappers reject it or use an explicit byte length where required.
 - The hashes in `core:hash` are **non-cryptographic**; `core:md5` is broken for
   security (use `core:sha256` or a real KDF where it matters).
 - **No constant-time code can be written in Tycho today**, so no pure-Tycho
@@ -109,8 +109,9 @@ they rely on are `docs/spec/14-ffi.md` §24.1 and the codegen they lower to.
   pointer it receives (the double-free this avoids is documented in the shim).
 - `core:tls` `read`, `core:compress`, `core:image`: malloc'd bytes out-params —
   rule 2, freed by the runtime. Correct.
-- The `-> string` truncation at NUL (a Tycho string limitation) is documented
-  per call site; the binary paths exist where it matters.
+- C-string truncation at NUL is a boundary limitation, not a Tycho string-storage
+  limitation. Call sites document it; binary paths use length-carrying `bytes`,
+  while string-only APIs either reject interior NULs or accept text input.
 
 **core:os shell-out — by design, caller-side, documented:**
 - `os.system` / `os.run` pass the command to `/bin/sh -c` **verbatim** — shell

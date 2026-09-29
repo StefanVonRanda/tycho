@@ -30,7 +30,7 @@ file containing a `NUL` byte MUST be rejected — silently truncating at it woul
 compile a program the file does not contain.
 
 > Provenance: `src/tychoc.c@AT_EOL`, and the reader's refusal at
-> `src/tychoc.c:15521@memchr`; the same rule in the self-hosted
+> `src/tychoc.c:15524@memchr`; the same rule in the self-hosted
 > lexer is `compiler/lex/lex.ty@_at_eol`. Gated by `scripts/source_bytes.sh`.
 
 ## 3.2 Logical lines and `NEWLINE`
@@ -267,9 +267,9 @@ bars an uppercase spelling from every run-time binding position. They are
   > implementation, not a conformance requirement; **selection** is the
   > normative part.
 
-> Provenance: contextual dispatch at `src/tychoc.c:5860-5869` (top level),
+> Provenance: contextual dispatch at `src/tychoc.c:5859-5868` (top level),
 > `:4322@"const"`/`:4345@"delete"` (`const`/`delete`),
-> `:4968@"where"` (`where`), `:4939@"sink"` (`sink`), `:4584@"range"` (`range`, refusal only).
+> `:4967@"where"` (`where`), `:4938@"sink"` (`sink`), `:4584@"range"` (`range`, refusal only).
 
 ## 3.8 Operators and punctuation
 
@@ -493,8 +493,8 @@ is a single four-byte literal and not a run-time concatenation.
 > raw piece `:591-715`, its re-escape table `:803-806`, its control-byte
 > rejection `:603-604`, its per-piece bound `:851@rn + 2 >= (int)sizeof rbuf`,`:854@rn + 1 >= (int)sizeof rbuf`,
 > its unterminated diagnostic `:858@unterminated raw string literal`; adjacent join `:2983-3006`; `const` string fold
-> `:5426-5430`; codegen pastes the escaped text into a C string literal
-> `:12181@TYCHO_LIT`; that literal's decoded length `runtime/tycho_rt.c:1499@sizeof s - 1`.
+> `:5425-5429`; codegen pastes the escaped text into a C string literal
+> `:12180@TYCHO_LIT`; that literal's decoded length `runtime/tycho_rt.c:1509@sizeof s - 1`.
 > Fixtures: `tests/rawstring.ty`,
 > `tests/reject/rawstring_unterminated.ty`.
 

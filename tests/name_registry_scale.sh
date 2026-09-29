@@ -25,15 +25,18 @@ out.write(f"    v := V{enums - 1:04d}\n    match v:\n")
 out.write(f"        V{enums - 1:04d}: println(str(g{generics - 1:05d}(C{constants - 1:05d})))\n")
 PY
 
-if (ulimit -v 1200000) 2>/dev/null; then
-    (ulimit -v 1200000 2>/dev/null || true
-     timeout 30s ./tychoc "$tmp/registries.ty" --emit-c -o "$tmp/registries" 2>"$tmp/warnings")
-else
-    timeout 30s ./tychoc "$tmp/registries.ty" --emit-c -o "$tmp/registries" 2>"$tmp/warnings"
-fi
-count=$(grep -c 'is never called' "$tmp/warnings" || true)
-if [ "$count" -ne 6000 ]; then
-    echo "expected 6000 dead-procedure warnings, got $count" >&2
-    exit 1
-fi
-echo "name-registry-scale: 12000 constants/generics, 1500 variants and 6000 indexed warning locations pass"
+for compiler in ./tychoc ./tychoc1; do
+    warnings="$tmp/$(basename "$compiler").warnings"
+    if (ulimit -v 1200000) 2>/dev/null; then
+        (ulimit -v 1200000 2>/dev/null || true
+         timeout 30s "$compiler" "$tmp/registries.ty" --emit-c -o "$tmp/registries-$(basename "$compiler")" 2>"$warnings")
+    else
+        timeout 30s "$compiler" "$tmp/registries.ty" --emit-c -o "$tmp/registries-$(basename "$compiler")" 2>"$warnings"
+    fi
+    count=$(grep -c 'is never called' "$warnings" || true)
+    if [ "$count" -ne 6000 ]; then
+        echo "$compiler: expected 6000 dead-procedure warnings, got $count" >&2
+        exit 1
+    fi
+done
+echo "name-registry-scale: both compilers pass 12000 constants/generics, 1500 variants and 6000 warning excerpts under 1.2 GiB"

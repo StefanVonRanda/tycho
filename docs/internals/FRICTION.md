@@ -378,15 +378,15 @@ pick-up order is written out in full under "What moved this pass" below.
    rejected at the *definition* with `error: 'die' is already defined`. **The reason is
    pinned:** the definition-time duplicate check is
    `if (sig_find(pr->name) || consts_find(pr->name)) die_dup_proc(...)`
-   (`src/tychoc.c:9712`), and `sig_find` searches `g_sigs` — which holds `die` and `exit`
-   as real entries (`src/tychoc.c:5620-5621`, inside `src/tychoc.c@register_builtins`)
+   (`src/tychoc.c:9711`), and `sig_find` searches `g_sigs` — which holds `die` and `exit`
+   as real entries (`src/tychoc.c:5619-5620`, inside `src/tychoc.c@register_builtins`)
    but **holds no entry for `send`, `recv` or `close` at all**; those three are recognised
-   ad hoc during resolution (`src/tychoc.c:7089`, `src/tychoc.c:7098`,
-   `src/tychoc.c:7117`). So it is not a table that omits three rows, it is three builtins
-   that were never in the table. **The code is ~1 line** at `src/tychoc.c:9712`; the open
+   ad hoc during resolution (`src/tychoc.c:7088`, `src/tychoc.c:7097`,
+   `src/tychoc.c:7116`). So it is not a table that omits three rows, it is three builtins
+   that were never in the table. **The code is ~1 line** at `src/tychoc.c:9711`; the open
    part is the decision — which builtin names are shadowable — because landing it newly
    rejects any program defining `send`/`recv`/`close`. Note the generic path a line above
-   (`src/tychoc.c:9706`) consults the same two tables plus `generic_find`, so whatever is
+   (`src/tychoc.c:9705`) consults the same two tables plus `generic_find`, so whatever is
    decided has to be written twice.
 
    And the "corelib layering decision" this item wanted taken **was already
@@ -416,7 +416,7 @@ pick-up order is written out in full under "What moved this pass" below.
      the reference bounds it at **64**, so above 64 the fan-out is narrower than `ncpu()`
      reports". The old text's "uses `ncpu()` chunks" — false on both counts, the `min`
      and the cap — is gone. The compiler side is cited anchored from the spec's own
-     provenance block, `src/tychoc.c:12892@_pk > 64`, so the gate now polices it.
+     provenance block, `src/tychoc.c:12891@_pk > 64`, so the gate now polices it.
    - **`ncpu()`'s false definition is corrected**, which was the other half:
      `docs/spec/16-builtins.md:248` states outright that it is "the *requested* worker
      count, **not** the width a `parallel for` will actually use" and that "a program that
@@ -440,10 +440,10 @@ pick-up order is written out in full under "What moved this pass" below.
      on 2026-07-30; `docs/spec/13-concurrency.md:81-83` is the corrected text and no
      longer says this.)*
    - The width is now **readable from Tycho**: `ncpu()` is a registered builtin
-     (`src/tychoc.c:6220@ncpu`, lowering at `src/tychoc.c:11718@tycho_ncpu`), so a program can at least
+     (`src/tychoc.c:6219@ncpu`, lowering at `src/tychoc.c:11717@tycho_ncpu`), so a program can at least
      ask. Measured on this box: `ncpu()` → 16.
    - There was an **undocumented hard ceiling of 64 chunks** — `if (_pk < 1) _pk = 1; if
-     (_pk > 64) _pk = 64;` (`src/tychoc.c:12103`, inside `src/tychoc.c@gen_parfor`) —
+     (_pk > 64) _pk = 64;` (`src/tychoc.c:12102`, inside `src/tychoc.c@gen_parfor`) —
      which `docs/spec/13-concurrency.md` did not mention, so on a box with more than 64
      CPUs the spec's "uses `ncpu()` chunks" was false. **That half is a ~1-line spec fix
      and should be split out and taken** — *it was, and closing it is what closed this
@@ -575,7 +575,7 @@ pick-up order is written out in full under "What moved this pass" below.
     the `bytes` representation and the channel-handle type syntax — because every compiler
     phase shifts everything below it, and `src/tychoc.c` is now 754 KB. The four that
     survived are all into files that barely moved (`corelib/httpd/httpd.ty:420`,
-    `corelib/httpd/httpd.ty:229`, `server/main.ty:634`, `runtime/tycho_rt.c:657`) — which
+    `corelib/httpd/httpd.ty:229`, `server/main.ty:634`, `runtime/tycho_rt.c:667`) — which
     is the shape of the problem: **the citations that matter most are the ones most likely
     to be wrong.** `scripts/check_citations.py` cannot catch it by construction; it
     verifies anchored `path:line@token` refs against the token and only bounds-checks bare
@@ -825,7 +825,7 @@ shape: a bounded pool over a channel with a fan-in, over jobs that all terminate
   continuously; the results channel filling and parking a worker did not happen, or at
   least was not measured.
 - **Nothing above 64 workers as a real workload.** The 64-chunk probe used synthetic 50 ms
-  sleeps; the real corpus ran at `ncpu()` = 16, nowhere near `src/tychoc.c:12103`.
+  sleeps; the real corpus ran at `ncpu()` = 16, nowhere near `src/tychoc.c:12102`.
 - **No nested parallelism** — no `parallel for` inside a spawned task, and no pool inside
   a pool.
 
@@ -949,7 +949,7 @@ handling, and the difference is deliberate rather than unfinished.
   , which the `register_conn` / `retire_conn` additions pushed down): calling a Tycho function from
   handler context is a *language* feature, because every Tycho value lives in a
   bump-allocated arena that is not re-entrant and channel operations park behind a mutex
-  (`runtime/tycho_rt.c:1134@mu`) — a handler that interrupts the allocator or the lock
+  (`runtime/tycho_rt.c:1144@mu`) — a handler that interrupts the allocator or the lock
   holder and then allocates or touches a channel deadlocks or corrupts the process it was
   invoked to shut down. **What a general version would need, so the next person costs it
   rather than rediscovers it:** (1) an async-signal-safe hand-off out of handler context —
@@ -1378,9 +1378,9 @@ confirmed, not a divergence between them. An array aborts on all four, and the
 check is **purely a runtime one**: `a[2:10]` on a 5-element array compiles
 cleanly (exit 0 from tychoc) and dies only when run, so there is no
 compile-time arm to strengthen. The array check is emitted inline into the
-generated C by the compiler — `src/tychoc.c:12460-12462` for an ordinary array
+generated C by the compiler — `src/tychoc.c:12459-12461` for an ordinary array
 (the path the probe above took) and the same test again at
-`src/tychoc.c:12439-12441` for the SoA variant, both spelling it
+`src/tychoc.c:12438-12440` for the SoA variant, both spelling it
 `_lo < 0 || _hi > len || _lo > _hi`, which is why all four shapes abort and not
 just the two that overrun. The clamp is `runtime/tycho_rt.c@tycho_str_substr`,
 whose three lines are exactly `start<0 -> 0`, `end>n -> n`, `end<start -> start`.
@@ -1495,7 +1495,7 @@ an array slice that ABORTS, the MUST NOT infer-from-return rule, and
 The entry's load-bearing sentence — "the builtins are `println`, `die` (stderr,
 then exit 1) and `exit(n)`", so "**a non-fatal warning is inexpressible**" — is
 **false, and was false when it was written**. `eprint(s)` is a builtin: registered
-at `src/tychoc.c:6215@eprint`, emitted as `tycho_eprint`, and defined as
+at `src/tychoc.c:6214@eprint`, emitted as `tycho_eprint`, and defined as
 `fputs(s, stderr)` in `runtime/tycho_rt.c@tycho_eprint`. It is specified —
 `docs/spec/16-builtins.md:74@eprint` says "Write `s`'s bytes to stderr; no
 newline, **no exit**" — and it was added on 2026-06-14 in `61fa0dc`
@@ -2116,12 +2116,12 @@ language changes, which is why this ranks below three corelib items that are not
 >    and runs. The decoration is one underscore per arm, not an invented
 >    identifier. What is refused is dropping the parens entirely —
 >    `VInt: return 1` → `error: VInt binds 1 value(s), got 0`
->    (`src/tychoc.c:9578`).
+>    (`src/tychoc.c:9577`).
 > 2. *"without binding a payload"* — a **nullary** variant needs no match at
 >    all: `if v == VNull:` compiles and runs. `==` is a working discriminator
 >    for the payload-free half of an enum. It stops at the other half:
 >    `if v == VInt:` → `error: VInt carries a payload — write VInt(...)`
->    (`src/tychoc.c:6893`).
+>    (`src/tychoc.c:6892`).
 >
 > So the real gap is narrower than the heading: **a payload-carrying variant
 > has no value-level discriminator**, and `match` is the only test for it.
@@ -2168,7 +2168,7 @@ which arms actually use their payloads.
 > error: or_return propagates a PErr error, but the function's error type is RErr
 > ```
 >
-> — `src/tychoc.c:6879-6881`. So the rule is "no *implicit* conversion", not
+> — `src/tychoc.c:6878-6880`. So the rule is "no *implicit* conversion", not
 > "no conversion".
 >
 > The second, smaller true claim: `map_err` takes a **constant** replacement
@@ -2871,7 +2871,7 @@ records the toll, which is one copied block per shim and is paid once.
   `grep -E '^fn .*-> \[string\]' corelib/strings/strings.ty` returned only
   `lines`. That grep cannot find it: `split(s, sep) -> [string]` is a **language
   builtin**, specified at `docs/spec/16-builtins.md:150` and registered at
-  `src/tychoc.c:6228@.name="split"`, so it is in no package at all.
+  `src/tychoc.c:6227@.name="split"`, so it is in no package at all.
   `corelib/strings/strings.ty:170` says so in a comment one line above `lines`
   — "(split(s, sep) and find(s, sub) are language builtins -- not duplicated
   here.)" — and `corelib/test/wordfreq/main.ty:22` is a word-frequency program
@@ -3303,7 +3303,7 @@ struct Plan($T):
 ```
 
 **The asymmetry, in one line.** A `fn($T) -> $T` typedef is deliberately NOT
-emitted — `src/tychoc.c:14737` skips any function type mentioning a type
+emitted — `src/tychoc.c:14736` skips any function type mentioning a type
 parameter, because `$T` lowers to `void` and a `void` parameter is invalid C.
 But the composite-array BODY loop emitted `struct TychoArrC0_ { FnC0 *data; }`
 for the template's dead `[fn($T)->$T]` anyway, naming the typedef that was just
@@ -3948,8 +3948,8 @@ that there is no element-wise `+` for `string` elements. The message was built
 from the element type at two sites, where `arr_elem(lt)` was spelled into a
 sentence that reads as a claim about the language.
 
-**FIXED 2026-08-13, both sites** (`src/tychoc.c:8460@element-wise` and
-`src/tychoc.c:8464@element-wise`, anchored per this file's header rule). The
+**FIXED 2026-08-13, both sites** (`src/tychoc.c:8459@element-wise` and
+`src/tychoc.c:8463@element-wise`, anchored per this file's header rule). The
 false clause is gone and `+` now names the operation the caller actually wanted:
 
 ```
@@ -6179,7 +6179,7 @@ wording slip: `tychoc`'s `Diag` carries a *single* instantiation site
 (`src/tychoc.c:105@inst_file` — one `inst_file`/`inst_line`/`inst_src`, not a
 stack), filled from one global pair (`src/tychoc.c:80@g_inst_from`) that
 `gen_program`'s instance loop retargets per instance
-(`src/tychoc.c:14477@g_inst_from`). So it can only ever name the innermost
+(`src/tychoc.c:14476@g_inst_from`). So it can only ever name the innermost
 frame; it is not dropping the outer one, it never had it. Making it match means
 giving `GInst` a link to the instance that instantiated it and walking that
 chain in `diag_flush` (`src/tychoc.c:1097@diag_flush`) — bounded work, but it
@@ -6507,7 +6507,7 @@ and the `osx_is_batch_ref` pointer deleted. The dodge converted an unused
 creates nothing for either compiler to warn about. It is harmless where the
 function IS used — the Windows spawn path at `:341`, and the unit gate. The
 tree already uses `__attribute__` (`runtime/tycho_rt.c:237@constructor`,
-`:896@noinline`), and the Windows build is mingw, which is gcc, so no target
+`:906@noinline`), and the Windows build is mingw, which is gcc, so no target
 loses it. Option 3 stays rejected for the reason given above.
 
 **Measured, both compilers, same tree:**
@@ -6719,7 +6719,7 @@ answers below; the method was to read `surface.lock` and grep the 1,389 tracked
 Of 41 builtins and 115 keywords, exactly one entry appeared in **no** test or
 example: `floor`. It is not a stub — `float -> float`, specified at spec 29 and
 [appendix D](../spec/appendix-d-builtins.md), implemented in both compilers
-(`src/tychoc.c:6239@floor`) — it simply had no fixture.
+(`src/tychoc.c:6238@floor`) — it simply had no fixture.
 
 **It was correct.** Checked against C's libm on the six values a test would have
 pinned, all six identical:
@@ -8935,7 +8935,9 @@ and the self-named function call.
 Audit D11 found that `ftell` returning -1 for a pipe became a `SIZE_MAX`-byte
 `fread` into an empty allocation. `tychoc` now reads sources into a growing
 buffer and checks read errors and size overflow. Both compilers accept source
-from `/dev/stdin` and a FIFO; the test is separate from program stdin.
+from `/dev/stdin` and a FIFO; they also refuse `/proc/self/cmdline`, whose
+procfs `st_size` is zero despite nonempty NUL-delimited content. The test is
+separate from program stdin.
 
 ### 142. Literal fit checks were skipped by several coercion paths — **FIXED 2026-09-27**
 
@@ -9348,12 +9350,18 @@ to repeated whole-value concatenation is caught as a scale regression.
 > Pinned-by: sh tests/audit_runtime_guards.sh
 > Pinned-by: sh tests/http_header_guard.sh
 
-Composite-array `reserve` and channel-cell sizing now check multiplication before
-allocation. Regex group indices are bounded before capture-vector allocation,
-and subjects are capped at 4,096 bytes to bound the pathological unanchored
-match. The HTTP client refuses control characters in `Content-Type`; the net
-shim refuses descriptors that do not fit its OS `int` descriptor type. Focused
-runtime and header gates exercise these guards under both compilers.
+Array `reserve` checks negative and excessive capacities before its no-op
+fast path, and composite-array multiplication is checked before allocation.
+Map reserve rejects negative/over-index-range capacities before doubling or
+rounding its entry/index sizes; focused fast- and composite-map cases exercise
+both compilers. Channel-cell sizing checks multiplication and each power-of-two
+doubling before allocation. Regex group indices are bounded before capture-vector
+allocation, and subjects are capped at 4,096 bytes; the runtime gate executes a
+failing `a+b` search at that inclusive limit under a 10-second timeout, then
+checks that over-limit subjects are refused. The HTTP client refuses control
+characters and values too long for its serialized `Content-Type` header; the
+net shim refuses descriptors that do not fit its OS `int` descriptor type.
+Runtime and header gates exercise these guards under both compilers.
 
 ### 179. TLS timeout wrappers existed only as package-private helpers — **FIXED 2026-09-27**
 
@@ -9472,8 +9480,9 @@ cover `Some(1) == None`, `opt == None` and bare `Ok`/`Err` comparison.
 > Pinned-by: make -s test
 
 Builtin-shadow warnings now use the declaring package prefix captured during
-global symbol registration, not the resolver's later current-file state. A
-subpackage `len` fixture checks that the package-qualified remedy is suggested.
+global symbol registration, not the resolver's later current-file state. The
+warning distinguishes package-local calls from external qualified calls. A
+subpackage `len` fixture checks the advice.
 
 ### 191. Self-hosted emitter could not construct generic enum variants through a package qualifier — **FIXED 2026-09-27**
 
@@ -9538,15 +9547,17 @@ Both package-symbol suggestion paths now omit `_`-prefixed functions and externs
 from edit-distance and prefix-related candidates. A package reject fixture with
 only `lib._helper` verifies that `lib.helper(...)` gets no unusable suggestion.
 
-### 197. Self-hosted CLI accepted empty output names, swallowed linker paths and indexed invalid programs — **FIXED 2026-09-27**
+### 197. Compiler CLIs accepted empty output names, swallowed linker paths and indexed invalid programs — **FIXED 2026-09-27**
 
 > Pinned-by: make -s test
 > Pinned-by: sh tests/cli_flags.sh
 
-`--symbols` now runs name resolution and exits nonzero on resolver errors. `-o ""`
-is rejected explicitly, and separated `-L`/`-I` require a non-option directory
-argument instead of consuming the next flag. The CLI regression checks these
-refusals under both compilers.
+`--symbols` now refuses both resolver and typechecker errors, and prints no
+partial index for ill-typed input. Both compilers explicitly reject `-o ""`
+before either a binary build or `--emit-c`, without leaving a stray `.c` file.
+Separated `-L`/`-I` require a non-option directory argument instead of consuming
+the next flag. The CLI regression checks these refusals under both compilers and
+both output modes.
 
 ### 198. Native procedure-signature lookup scaled quadratically — **FIXED 2026-09-29**
 
@@ -9589,10 +9600,12 @@ under both compilers, with a 1.2-GiB memory cap and a 20-second compile limit.
 
 The native compiler now uses first-match-preserving open-addressed indexes for
 constants, variants and generic procedures, alongside the procedure-signature
-index from #198. Warning source snippets use a lazily built line-start table
-instead of rescanning from byte zero for each warning. Stress coverage registers
-12,000 constants and generics, 1,500 variants, and emits 6,000 warnings; both
-this lane and the 40,000-procedure chain pass.
+index from #198. Both compiler pipelines pre-index source lines once instead of
+rescanning the source for every warning excerpt. The self-hosted declaration
+registration uses stable O(n log n) source-order sorting instead of selection
+sort. Stress coverage registers 12,000 constants and generics, 1,500 variants,
+and emits 6,000 warnings under both compilers; this lane and the 40,000-procedure
+chain pass.
 
 ### 202. Native codegen refused deeply nested loops that the self-hosted compiler accepted — **FIXED 2026-09-30**
 
@@ -9604,3 +9617,13 @@ hard-capped at 64, while tychoc1 accepted deeper nesting. Those stacks now hold
 program compiles and runs under both compilers with a 1.2-GiB cap. Extremely deep
 nesting remains intentionally bounded; the 250-level self-hosted compile's
 measured memory cost is not claimed to be constant.
+
+### 203. Package-local builtin names disagreed between compilers and produced false collision advice — **FIXED 2026-09-30**
+
+> Pinned-by: sh tests/package_builtin_shadow.sh
+
+A bare call inside a package now resolves that package's own declaration before
+falling back to a builtin, matching native resolution. Package-collision advice
+states that local calls select the package function and external calls should be
+qualified. The regression defines `lib.pow`, checks the warning and verifies the
+result is `3.0` under both compilers.

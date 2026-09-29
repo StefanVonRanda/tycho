@@ -4903,9 +4903,8 @@ static Proc *parse_fn(Parser *ps) {
     if (is_builtin_ctor(nameT->text)) die_at(nameT->line, "'%s' is already defined", nameT->text);
     if (shadows_builtin(nameT->text)) {
         if (g_cur_pkg_prefix[0])
-            warn_at(nameT->line, "`%s` collides with the builtin of the same name -- every unqualified "
-                                 "`%s(...)` calls the BUILTIN, so this procedure is unreachable by that "
-                                 "name (§3.7). Rename it, or call it qualified as `pkg.%s(...)`.", nameT->text, nameT->text, nameT->text);
+            warn_at(nameT->line, "`%s` collides with the builtin of the same name -- unqualified calls in this package select this procedure. "
+                                 "Rename it if this package needs the BUILTIN; external callers can use `pkg.%s(...)`.", nameT->text, nameT->text);
         else
             warn_at(nameT->line, "`%s` collides with the builtin of the same name -- every unqualified "
                                  "`%s(...)` calls the BUILTIN, so this procedure is unreachable by that "
@@ -8091,7 +8090,7 @@ static Type resolve_expr_inner(Expr *e) {
             if (e->nargs != s->nparams)
                 die_at(e->line, "'%s' takes %d argument(s), got %d",
                        nominal_name(e->sval), s->nparams, e->nargs);
-            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:7477 */
+            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:7476 */
             for (int i = 0; i < e->nargs; i++) {
                 g_in_arg++;
                 Type at_ = resolve_exp(e->args[i], s->params[i]);   /* fixes a None arg */
@@ -8733,7 +8732,7 @@ static void pf_capture(Expr *id) {
 /* capture an outer local named by a STRING rather than by an E_IDENT node -- the
  * callee of `f(x)` and the receiver of `o.f(x)` live in E_CALL's sval/qual, not
  * in a child expr. The synthesized read is resolved in the enclosing scope with
- * every other capture (src/tychoc.c:9315). Non-locals (global fns, builtins,
+ * every other capture (src/tychoc.c:9314). Non-locals (global fns, builtins,
  * enum constructors, package qualifiers) fail vars_find and are dropped. */
 static void pf_capture_name(const char *n, int line) {
     Type vt;
@@ -8756,10 +8755,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:8647),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:8646),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:8937). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:8936). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
@@ -9049,10 +9048,10 @@ static void resolve_parfor(Stmt *s) {
      * here and forces a decision, instead of silently defaulting.
      * is_sink MUST be 0, and not merely by accident: `sink` means an OWNED
      * value the callee may consume once (is_sink_param -> can_move_from,
-     * src/tychoc.c:10861@can_move_from). Every chunk proc is handed the SAME capture values, and the
+     * src/tychoc.c:10860@can_move_from). Every chunk proc is handed the SAME capture values, and the
      * bounds/captures are borrows of the enclosing scope, so consuming one in
      * any chunk would hand off a buffer another chunk still reads. 0 is the
-     * required value, and it matches the lambda-lift twin at src/tychoc.c:6853@is_sink which sets
+     * required value, and it matches the lambda-lift twin at src/tychoc.c:6852@is_sink which sets
      * `caps[ncap].is_sink = 0` explicitly. is_variadic is 0 (a synthesized
      * chunk proc has a fixed arity) and ffi_ct is NULL (no FFI boundary). */
     pr->params[0] = (Param){ "__plo", T_INT, 0, 0, 0, NULL };
@@ -10092,7 +10091,7 @@ static void instantiate_generic(Proc *gt, Expr *e) {
             nm = sfmt("%s__%s", nm, type_mangle_ident(binds[(int)(gt->typarams[i] - T_TYPARAM_BASE)]));
     }
     cret = subst_type(gt->ret, binds);
-    if (IS_HANDLE(cret))   /* the instance half of src/tychoc.c:4959@handle. A channel and a task are refused returning out of a generic by their own guards; a handle was not, and `g := ident(f)` DOUBLE FREED -- the callee frees at its scope exit and the caller frees the copy again (glibc "double free detected in tcache 2", observed 2026-08-14) */
+    if (IS_HANDLE(cret))   /* the instance half of src/tychoc.c:4958@handle. A channel and a task are refused returning out of a generic by their own guards; a handle was not, and `g := ident(f)` DOUBLE FREED -- the callee frees at its scope exit and the caller frees the copy again (glibc "double free detected in tcache 2", observed 2026-08-14) */
         die_at(e->line, "a Tycho fn cannot return a handle -- '%s' was instantiated at one; only an `extern fn` opener may, because a handle is freed at the end of its scope",
                gt->name);
     if (has_typaram(cret))
@@ -11776,7 +11775,7 @@ static char *gen_call(Expr *e, const char *arena) {
     if (!strcmp(e->sval, "args")) {
         return sfmt("tycho_args(%s)", arena);
     }
-    if (!strcmp(e->sval, "chr") || !strcmp(e->sval, "to_char")) {   /* int -> byte. Both route through tycho_chr so both inherit its 0..255 ABORT (`runtime/tycho_rt.c:1434`) rather than masking -- the established answer for an out-of-range conversion here, the same one to_int(float) takes at `runtime/tycho_rt.c:242-244`. to_char then reads the byte back out; the sized to_u8 family wraps instead, but those are documented as total reinterpretations (docs/spec/06-conversions.md:40), not conversions with a domain. */
+    if (!strcmp(e->sval, "chr") || !strcmp(e->sval, "to_char")) {   /* int -> byte. Both route through tycho_chr so both inherit its 0..255 ABORT (`runtime/tycho_rt.c:1444`) rather than masking -- the established answer for an out-of-range conversion here, the same one to_int(float) takes at `runtime/tycho_rt.c:242-244`. to_char then reads the byte back out; the sized to_u8 family wraps instead, but those are documented as total reinterpretations (docs/spec/06-conversions.md:40), not conversions with a domain. */
         return sfmt(e->sval[0] == 'c' ? "tycho_chr(%s, %s)" : "((tycho_int)(unsigned char)tycho_chr(%s, %s)[0])", arena, gen_expr(e->args[0], arena));
     }
     if (!strcmp(e->sval, "die")) {   /* print to stderr and exit(1); never returns */
@@ -14945,8 +14944,8 @@ static void gen_program(FILE *o, ProcVec *prog) {
             i, i, ct, ct, ct, ct, ct, copy_into(et, "a", "v"));
         fprintf(o,   /* capacity hint (reserve): grow the spine to n if larger; elements' heap lives on via nd (shallow spine copy, like push's regrow) */
             "static void tycho_arr_C%d_reserve(Arena *a, TychoArrC%d *xs, tycho_int n) {\n"
-            "    if (n <= xs->cap) return;\n"
             "    tycho_cap_check(n, sizeof(%s));\n"
+            "    if (n <= xs->cap) return;\n"
             "    %s*nd = (%s*)arena_alloc(a, (size_t)n * sizeof(%s));\n"
             "    for (tycho_int i = 0; i < xs->len; i++) nd[i] = xs->data[i];\n"
             "    if (xs->cap) arena_recycle(a, xs->data, (size_t)xs->cap * sizeof(%s));\n"
@@ -15034,8 +15033,10 @@ static void gen_program(FILE *o, ProcVec *prog) {
         fprintf(o,
             "static TychoMapC%d tycho_mapc%d_with_cap(Arena *a, tycho_int cap) {\n"
             "    TychoMapC%d m; m.len = 0; m.ecount = 0;\n"
+            "    tycho_map_cap_check(cap);\n"
             "    if (cap <= 0) { m.ekeys = 0; m.evals = 0; m.elive = 0; m.idx = 0; m.ecap = 0; m.icap = 0; return m; }\n"
             "    tycho_int ec = 4; while (ec < cap) ec *= 2; tycho_int ic = 8; while (ic < cap * 2) ic *= 2; m.ecap = ec; m.icap = ic;\n"
+            "    tycho_cap_check(ec, sizeof(*m.ekeys)); tycho_cap_check(ec, sizeof(*m.evals));\n"
             "    m.ekeys = (%s*)arena_alloc(a, (size_t)ec * sizeof(%s));\n"
             "    m.evals = (%s*)arena_alloc(a, (size_t)ec * sizeof(%s));\n"
             "    m.elive = (unsigned char *)arena_alloc(a, (size_t)ec);\n"
@@ -15043,9 +15044,11 @@ static void gen_program(FILE *o, ProcVec *prog) {
             "    for (tycho_int i = 0; i < ic; i++) m.idx[i] = 0; return m;\n}\n", i, i, i, ks, ks, ct, ct);
         fprintf(o,
             "static void tycho_mapc%d_reserve(Arena *a, TychoMapC%d *m, tycho_int cap) {\n"
+            "    tycho_map_cap_check(cap);\n"
+            "    if (cap == 0) return;\n"
             "    tycho_int ec = 4; while (ec < cap) ec *= 2; tycho_int ic = 8; while (ic < cap * 2) ic *= 2;\n"
-            "    if (cap <= 0) return;\n"
             "    if (m->ecap >= ec && m->icap >= ic) return;\n"
+            "    tycho_cap_check(ec, sizeof(*m->ekeys)); tycho_cap_check(ec, sizeof(*m->evals));\n"
             "    %s *nk = (%s *)arena_alloc(a, (size_t)ec * sizeof(%s));\n"
             "    %s *nv = (%s *)arena_alloc(a, (size_t)ec * sizeof(%s));\n"
             "    unsigned char *nl = (unsigned char *)arena_alloc(a, (size_t)ec);\n"
@@ -16091,6 +16094,10 @@ int main(int argc, char **argv) {
         }
         else if (argv[i][0] == '-') { fprintf(stderr, "tychoc: unknown flag %s\n", argv[i]); return 1; }
         else input = argv[i];
+    }
+    if (out && !out[0]) {
+        fprintf(stderr, "tychoc: -o needs a non-empty output name\n");
+        return 1;
     }
     if (!input) { tychoc_usage(stderr); return 1; }
     g_srcname = input;

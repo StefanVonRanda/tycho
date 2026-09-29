@@ -1,4 +1,4 @@
-# src/tychoc.c:7101 -- `x[a:b]` on a scalar.
+# src/tychoc.c:7100 -- `x[a:b]` on a scalar.
 # expect: can only slice an array, soa, a string, or bytes
 fn main():
     n := 5

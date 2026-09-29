@@ -11,7 +11,7 @@ a later static rule rejects (for example, a value `if` without an `else`, §4.4)
 Such forms are flagged here and constrained in the semantic chapters. A program
 is valid only if it parses **and** satisfies every static-semantic rule.
 
-> Provenance: parser entry `src/tychoc.c:5347-5393` (`parse_program`); the
+> Provenance: parser entry `src/tychoc.c:5346-5392` (`parse_program`); the
 > per-construct functions are cited at each section.
 
 ## 4.1 Program and top-level declarations
@@ -43,8 +43,8 @@ arithmetic, bitwise, unary, and backward references to earlier top-level
 constants); its rules are given in §8 and §13. Package resolution,
 visibility, and merging are specified in §28.
 
-> Provenance: `parse_package_decl` `src/tychoc.c:5609@parse_package_decl`, `parse_import_decl` `:5616@parse_import_decl`, `parse_const`
-> (`src/tychoc.c:5275-5294`).
+> Provenance: `parse_package_decl` `src/tychoc.c:5608@parse_package_decl`, `parse_import_decl` `:5615@parse_import_decl`, `parse_const`
+> (`src/tychoc.c:5274-5293`).
 
 ### 4.1.1 Functions
 
@@ -78,8 +78,8 @@ predicate is rejected) — this is the deliberate anti-traits stance (§7). The 
 set (up to 16 types). A `where` clause requires a generic function; at most 8
 constraints are allowed.
 
-> Provenance: `parse_fn`, `src/tychoc.c@parse_fn` (params `src/tychoc.c:5007-5046`,
-> variadic-last `src/tychoc.c:5033-5035`, `where` `src/tychoc.c:4984@where`).
+> Provenance: `parse_fn`, `src/tychoc.c@parse_fn` (params `src/tychoc.c:5006-5045`,
+> variadic-last `src/tychoc.c:5032-5034`, `where` `src/tychoc.c:4983@where`).
 
 ### 4.1.2 Structs, enums, newtypes, handles
 
@@ -102,7 +102,7 @@ only via a container (e.g. `[Node]`), never as a direct by-value self-field
 (§17).
 
 > Provenance: `parse_struct`/`parse_enum`/`parse_handle`/`parse_typedecl`,
-> `src/tychoc.c:4877-5026`.
+> `src/tychoc.c:4877-5025`.
 
 ### 4.1.3 Extern functions and subscripts
 

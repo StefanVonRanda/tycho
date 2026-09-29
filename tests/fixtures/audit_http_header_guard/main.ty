@@ -8,7 +8,15 @@ fn main():
     bad := "text/plain" + chr(13) + chr(10) + "X-Audit: injected"
     bad_string := http.post(url, "x", bad)
     bad_bytes := http.post_bytes(url, to_bytes("x"), bad)
-    println("clean=" + clean_body + " blocked=" + str(is_null(bad_string)) + " bytes_blocked=" + str(is_null(bad_bytes)))
+    long_type := ""
+    for i := 0; i < 600; i += 1:
+        long_type += "x"
+    long_string := http.post(url, "x", long_type)
+    long_bytes := http.post_bytes(url, to_bytes("x"), long_type)
+    println("clean=" + clean_body + " blocked=" + str(is_null(bad_string)) + " bytes_blocked=" + str(is_null(bad_bytes)) +
+        " long_blocked=" + str(is_null(long_string)) + " long_bytes_blocked=" + str(is_null(long_bytes)))
     http.release(clean)
     http.release(bad_string)
     http.release(bad_bytes)
+    http.release(long_string)
+    http.release(long_bytes)

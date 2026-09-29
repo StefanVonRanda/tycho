@@ -1,5 +1,5 @@
-# src/tychoc.c:9664@pcname -- a const NAME inside a pattern list, as opposed to the bare
-# `C:` arm shape at src/tychoc.c:9642@literals. tychoc1 reaches its own bare-arm wording, which
+# src/tychoc.c:9663@pcname -- a const NAME inside a pattern list, as opposed to the bare
+# `C:` arm shape at src/tychoc.c:9641@literals. tychoc1 reaches its own bare-arm wording, which
 # carries this message as a prefix, so the shared part is what is asserted.
 # expect: 'C' is not an int constant
 const C = "x"

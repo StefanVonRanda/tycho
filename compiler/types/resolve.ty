@@ -65,8 +65,6 @@ struct R:
     line: int                          # the line of the node being walked
     shadow: [string: bool]             # names the builtin wins an unqualified call for
     warns: [string]                    # deferred, printed to stderr, never fatal
-    srcp: [string]                     # file paths, parallel to srct
-    srct: [string]                     # their source, for the diagnostic excerpt
     prefix: string
     root: string
     entry_in_corelib: bool
@@ -77,6 +75,7 @@ struct R:
     perrs: [string]                    # parse-phase diagnostics; see _perr
     errs: [string]
     late: [string]
+    srclines: [string: [string]]       # split once per file, not once per warning
 
 # src/tychoc.c@register_builtins plus the shape-directed builtins resolve_expr
 # handles by name (len/push/keys/get/pop/reserve/hash/zero/to_*). Written out
@@ -152,29 +151,15 @@ fn _builtin_ctors() -> [string: bool]:
 fn _excerpt(rs: inout R, file: string, line: int) -> string:
     if line <= 0:
         return ""
-    for i := 0; i < len(rs.srcp); i += 1:
-        if rs.srcp[i] != file:
-            continue
-        # Scan to the line rather than splitting the whole file: a warning is
-        # one line of output and split() allocated an array of every line in a
-        # 130 KB source for each one.
-        src := rs.srct[i]
-        st := 0
-        ln := 1
-        for st < len(src) and ln < line:
-            if src[st] == 10:
-                ln += 1
-            st += 1
-        if ln != line or st >= len(src):
+    if file in rs.srclines:
+        ls := rs.srclines[file]
+        if line > len(ls):
             return ""
-        en := st
-        for en < len(src) and src[en] != 10:
-            en += 1
         num := str(line)
         pad := ""
         for k := len(num); k < 6; k += 1:
             pad = pad + " "
-        return "\n" + pad + num + " | " + src[st:en]
+        return "\n" + pad + num + " | " + ls[line - 1]
     return ""
 
 # Typo suggestions. src/tychoc.c:1634@edit_dist is a bounded Levenshtein and
@@ -305,7 +290,7 @@ fn _ends_ret(body: [ast.Stmt]) -> bool:
     return false
 
 fn _warn(rs: inout R, msg: string):
-    # A dependency under corelib is not the caller's to fix (src/tychoc.c:15973).
+    # A dependency under corelib is not the caller's to fix (src/tychoc.c:15976).
     if not rs.entry_in_corelib and strings.contains(rs.file, "corelib/"):
         return
     push(rs.warns, rs.file + ":" + str(rs.line) + ": warning: " + msg +
@@ -359,7 +344,7 @@ fn _err(rs: inout R, msg: string):
 # so it precedes every resolve-time diagnostic including the whole-program
 # `no 'main'` check. tychoc1 finds it during the walk instead, so it is banked
 # here and spliced in front at the end of resolve(). The same message from an
-# expression qualifier (src/tychoc.c:7473) IS resolve-time and stays in errs.
+# expression qualifier (src/tychoc.c:7472) IS resolve-time and stays in errs.
 fn _perr(rs: inout R, msg: string):
     push(rs.perrs, rs.file + ":" + str(rs.line) + ": error: " + msg)
 
@@ -386,9 +371,8 @@ fn _shadow_warn(rs: inout R, name: string, kind: string, file: string, pkg: stri
     rs.file = file
     rs.line = ln
     if pkg != "" and pkg != "main":
-        _warn(&rs, "`" + short + "` collides with the builtin of the same name -- every unqualified `" +
-            short + "(...)` calls the BUILTIN, so this procedure is unreachable by that name (§3.7)." +
-            " Rename it, or call it qualified as `pkg." + short + "(...)`.")
+        _warn(&rs, "`" + short + "` collides with the builtin of the same name -- unqualified calls in this package select this procedure. " +
+            "Rename it if this package needs the BUILTIN; external callers can use `pkg." + short + "(...)`.")
     else:
         _warn(&rs, "`" + short + "` collides with the builtin of the same name -- every unqualified `" +
             short + "(...)` calls the BUILTIN, so this procedure is unreachable by that name (§3.7)." +
@@ -397,7 +381,7 @@ fn _shadow_warn(rs: inout R, name: string, kind: string, file: string, pkg: stri
     rs.line = sl
 
 fn _addl(rs: inout R, name: string, kind: string, file: string, pkg: string, dn: string, ln: int):
-    # src/tychoc.c:4922 makes a builtin collision a WARNING, not an error: the
+    # src/tychoc.c:4921 makes a builtin collision a WARNING, not an error: the
     # builtin wins every unqualified call, so the procedure is merely
     # unreachable by that name. A CONSTRUCTOR collision stays fatal there
     # (is_builtin_ctor, src/tychoc.c:4903@is_builtin_ctor), which is the branch below.
@@ -431,10 +415,9 @@ fn _addl(rs: inout R, name: string, kind: string, file: string, pkg: string, dn:
 
 fn build_table(p: Program) -> R:
     rs := R([]Sym, []string: int, []Binding, 0, []string: int, []ast.ImportD, []string,
-            []ast.ImportD, []string: bool, "", 0, []string: bool, []string, []string, []string, "", p.root, false, false, false, -1, []string: bool, []string, []string, []string)
+            []ast.ImportD, []string: bool, "", 0, []string: bool, []string, "", p.root, false, false, false, -1, []string: bool, []string, []string, []string, []string: [string])
     for f in p.files:
-        push(rs.srcp, f.path)
-        push(rs.srct, f.src)
+        rs.srclines[f.path] = split(f.src, "\n")
     rs.bsigs = _builtin_sigs()
     rs.shadow = _shadowable()
     rs.entry_in_corelib = under_corelib(p.root, p.entry_dir)
@@ -545,7 +528,7 @@ fn _restore(rs: inout R, m: int):
 fn _push(rs: inout R, name: string, kind: string, report: bool):
     # A type/size parameter is not a runtime binding: `$T`/`$N` are uppercase by
     # convention and src/tychoc.c keeps them in their own table. Everything else
-    # goes through vars_push and its uppercase-namespace rule (src/tychoc.c:6331).
+    # goes through vars_push and its uppercase-namespace rule (src/tychoc.c:6330).
     # The lexically reserved `Ztycho_` prefix is the one compiler-only binding namespace.
     if kind != "typaram" and kind != "lconst" and len(name) > 0 and name[0] >= 65 and name[0] <= 90 and not strings.starts_with(name, "Ztycho_"):
         _err(&rs, "'" + name + "' cannot name a binding -- a local, parameter or pattern binding must start with a lowercase letter or '_'")
@@ -725,7 +708,7 @@ fn _expr(rs: inout R, bi: [string: bool], ctors: [string: bool], e: ast.Expr):
             if _lookup(&rs, n) >= 0:
                 _note(&rs, "local")
                 return
-            # src/tychoc.c:6908-6976: const (package-qualified) -> variant (own
+            # src/tychoc.c:6907-6975: const (package-qualified) -> variant (own
             # package, then bare) -> fn (bare, then own package) -> generic.
             if _kindof(&rs, rs.prefix + n) == "const":
                 _note(&rs, "const:" + rs.prefix + n)
@@ -751,7 +734,7 @@ fn _expr(rs: inout R, bi: [string: bool], ctors: [string: bool], e: ast.Expr):
                 _note(&rs, "fnval:" + n)
                 _dwarn(&rs, n)
                 return
-            # src/tychoc.c:6981 -- `pass` is a statement, so here it can only be
+            # src/tychoc.c:6980 -- `pass` is a statement, so here it can only be
             # a value branch's tail, and that rule outranks did-you-mean.
             if n == "pass":
                 _err(&rs, "`pass` is a statement and produces no value -- a value if/match needs one in every branch, so write this as a plain statement")
@@ -872,7 +855,7 @@ fn _expr(rs: inout R, bi: [string: bool], ctors: [string: bool], e: ast.Expr):
         ast.SoaLit(l, t): _tys(&rs, t)
         _: pass
 
-# An unqualified call. src/tychoc.c:7506-7513 tries the OWN package first and
+# An unqualified call. src/tychoc.c:7505-7512 tries the OWN package first and
 # falls through to the unprefixed name, then to the builtin table. The local
 # fallback is last and is a deferral: a local by this name is only callable when
 # it is fn-typed, which is a Phase 6 question -- resolving it here would refuse
@@ -890,15 +873,15 @@ fn _dwarn(rs: inout R, mangled: string):
     _dwarnq(&rs, mangled, _short(mangled))
 
 fn _call_bare(rs: inout R, bi: [string: bool], ctors: [string: bool], n: string):
-    # A shadowable name resolves to the BUILTIN, never to the user's fn of that
-    # name (src/tychoc.c:4922's whole premise). Checked before either package
-    # lookup, so the user's `len` stays unreachable and report_dead sees it.
-    if n in rs.shadow and (n in bi or n in ctors):
-        _note(&rs, "builtin:" + n)
-        return
+    # Like src/tychoc.c@resolve_exp, a package-local declaration wins inside
+    # its own package. The builtin precedence applies to the entry package, which
+    # has no mangled prefix and cannot qualify its local declaration.
     if len(rs.prefix) > 0 and _callable(_kindof(&rs, rs.prefix + n)):
         _dwarn(&rs, rs.prefix + n)
         _note(&rs, "call:" + rs.prefix + n)
+        return
+    if n in rs.shadow and (n in bi or n in ctors):
+        _note(&rs, "builtin:" + n)
         return
     if _callable(_kindof(&rs, n)):
         _dwarn(&rs, n)
@@ -910,12 +893,12 @@ fn _call_bare(rs: inout R, bi: [string: bool], ctors: [string: bool], n: string)
     if _lookup(&rs, n) >= 0:
         _note(&rs, "callval")
         return
-    # src/tychoc.c:8056 special-cases this one by name; it is not a corelib
+    # src/tychoc.c:8055 special-cases this one by name; it is not a corelib
     # lookup, so it is a literal here too.
     if n == "eprintln":
         _err(&rs, "unknown procedure 'eprintln' -- stderr has no println; use `eprint(s + \"\\n\")`")
         return
-    # A high-confidence corelib match beats a weak local typo (src/tychoc.c:8053).
+    # A high-confidence corelib match beats a weak local typo (src/tychoc.c:8052).
     cl, strong := corelib_hint(rs.root, n)
     if len(cl) > 0 and strong:
         _err(&rs, "unknown procedure '" + n + "' -- " + cl)
@@ -933,7 +916,7 @@ fn _call_bare(rs: inout R, bi: [string: bool], ctors: [string: bool], n: string)
 
 # The three ways `x = ...` can fail on the NAME alone: no such binding, a
 # binding that is an immutable local const, and a top-level const of this
-# package (src/tychoc.c:9436 -- a const is folded at each use, so there is
+# package (src/tychoc.c:9435 -- a const is folded at each use, so there is
 # nothing to assign to).
 fn _assign_to(rs: inout R, name: string, multi: bool):
     i := _lookup(&rs, name)
@@ -1135,7 +1118,7 @@ fn _sig_sizeparams(ps: [ast.Param], ret: [ast.Ty]) -> [string]:
 
 fn resolve(p: Program) -> R:
     rs := build_table(p)
-    # src/tychoc.c:10337 -- a whole-PROGRAM rule, checked once the Sig table is
+    # src/tychoc.c:10336 -- a whole-PROGRAM rule, checked once the Sig table is
     # full and BEFORE any body is resolved, which is the order measured on
     # 2026-08-23: a table collision outranks it, a body error does not. It
     # carries the entry FILE and no line, exactly as `no 'main'` has none.

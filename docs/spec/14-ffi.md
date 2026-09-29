@@ -6,7 +6,7 @@ crosses is copied so that Tycho never holds a pointer into C-owned memory nor
 exposes its own storage to C.
 
 > Provenance: `docs/reference/ffi.md`; `parse_extern_fn` `src/tychoc.c@parse_extern_fn`;
-> boundary copy routines `runtime/tycho_rt.c:1314-1374`,`:1991@tycho_arr_int_from_c`,`:2018-2029`.
+> boundary copy routines `runtime/tycho_rt.c:1324-1384`,`:2001@tycho_arr_int_from_c`,`:2028-2039`.
 
 ## 24. `extern` and the C boundary
 

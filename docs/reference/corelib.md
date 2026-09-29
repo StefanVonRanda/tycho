@@ -712,7 +712,8 @@ plus three more:
 
 - **`compress`** — gzip (RFC 1952) compress/decompress over **zlib** (`deps: zlib`).
   `compress(bytes) -> bytes`; `decompress(bytes) -> Result(bytes, ZErr)` and
-  `raw_decompress` likewise, where `ZErr` is `Corrupt` / `Truncated` / `Failed`.
+  `raw_decompress` likewise, where `ZErr` is `Corrupt` / `Truncated` / `Failed` /
+  `TooBig` (decompressed output exceeds its limit).
   **`Ok` with length 0 is a real empty payload**, distinct from every failure. With bare `bytes` a corrupt
   stream is indistinguishable from an empty one, which for a container format means a
   damaged member reads as a zero-byte file. On a RAW deflate stream `Truncated` also covers "not a deflate

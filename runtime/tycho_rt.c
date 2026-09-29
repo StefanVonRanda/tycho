@@ -421,6 +421,16 @@ static void tycho_cap_check(tycho_int n, size_t elem) {
         exit(1);
     }
 }
+/* Map index slots store entry numbers in `int`, and the open-addressed table
+ * keeps at least one slot per two requested entries. Bound `cap` before
+ * cap*2/next-power-of-two arithmetic, including on 32-bit size_t targets. */
+static void tycho_map_cap_check(tycho_int cap) {
+    if (cap < 0 || cap > 2147483000L ||
+        (uint64_t)cap > (size_t)-1 / (4 * sizeof(int))) {
+        fprintf(stderr, "tycho: map capacity %" TY_PRId " out of range\n", cap);
+        exit(1);
+    }
+}
 
 /* ---- arena stats (TYCHO_ARENA_STATS): opt-in memory observability ---------
  * The language whose thesis is "memory from structure" should be able to show
@@ -1996,8 +2006,8 @@ TychoArrInt tycho_arr_int_from_c(Arena *a, tycho_int *p, tycho_int n) {
 }
 
 void tycho_arr_int_reserve(Arena *a, TychoArrInt *xs, tycho_int n) {
-    if (n <= xs->cap) return;
     tycho_cap_check(n, sizeof(tycho_int));
+    if (n <= xs->cap) return;
     tycho_int *nd = (tycho_int *)arena_alloc(a, (size_t)n * sizeof(tycho_int));
     if (xs->len) memcpy(nd, xs->data, (size_t)xs->len * sizeof(tycho_int));
     if (xs->cap) arena_recycle(a, xs->data, (size_t)xs->cap * sizeof(tycho_int));
@@ -2095,8 +2105,8 @@ TychoArrFloat tycho_arr_float_from_c(Arena *a, double *p, tycho_int n) {
 }
 
 void tycho_arr_float_reserve(Arena *a, TychoArrFloat *xs, tycho_int n) {
-    if (n <= xs->cap) return;
     tycho_cap_check(n, sizeof(double));
+    if (n <= xs->cap) return;
     double *nd = (double *)arena_alloc(a, (size_t)n * sizeof(double));
     if (xs->len) memcpy(nd, xs->data, (size_t)xs->len * sizeof(double));
     if (xs->cap) arena_recycle(a, xs->data, (size_t)xs->cap * sizeof(double));
@@ -2179,8 +2189,8 @@ TychoArrStr tycho_arr_str_with_cap(Arena *a, tycho_int cap) {
 }
 
 void tycho_arr_str_reserve(Arena *a, TychoArrStr *xs, tycho_int n) {
-    if (n <= xs->cap) return;
     tycho_cap_check(n, sizeof(char *));
+    if (n <= xs->cap) return;
     char **nd = (char **)arena_alloc(a, (size_t)n * sizeof(char *));
     if (xs->len) memcpy(nd, xs->data, (size_t)xs->len * sizeof(char *));
     if (xs->cap) arena_recycle(a, xs->data, (size_t)xs->cap * sizeof(char *));
@@ -2483,6 +2493,7 @@ static uint64_t tycho_si_hash_det(const char *s) {
 }
 
 TychoMapSI tycho_map_si_with_cap(Arena *a, tycho_int cap) {
+    tycho_map_cap_check(cap);
     TychoMapSI m; m.len = 0; m.ecount = 0;
     if (cap <= 0) { m.ekeys = NULL; m.evals = NULL; m.elive = NULL; m.idx = NULL; m.ecap = 0; m.icap = 0; return m; }
     tycho_int ec = 8; while (ec < cap) ec *= 2;
@@ -2549,7 +2560,8 @@ static tycho_int tycho_map_si_append(Arena *a, TychoMapSI *m, char *k, tycho_int
 }
 /* reserve(m, n): pre-size for >= n entries, preserving live entries (see ii). */
 void tycho_map_si_reserve(Arena *a, TychoMapSI *m, tycho_int cap) {
-    if (cap <= 0) return;
+    tycho_map_cap_check(cap);
+    if (cap == 0) return;
     tycho_int ec = 8; while (ec < cap) ec *= 2;
     tycho_int ic = 8; while (ic < cap * 2) ic *= 2;
     if (m->ecap >= ec && m->icap >= ic) return;
@@ -2642,6 +2654,7 @@ int tycho_map_si_eq(TychoMapSI x, TychoMapSI y) {
 typedef struct { char **ekeys; double *evals; unsigned char *elive; int *idx; tycho_int len, ecount, ecap, icap; } TychoMapSF;
 
 TychoMapSF tycho_map_sf_with_cap(Arena *a, tycho_int cap) {
+    tycho_map_cap_check(cap);
     TychoMapSF m; m.len = 0; m.ecount = 0;
     if (cap <= 0) { m.ekeys = NULL; m.evals = NULL; m.elive = NULL; m.idx = NULL; m.ecap = 0; m.icap = 0; return m; }
     tycho_int ec = 8; while (ec < cap) ec *= 2;
@@ -2708,7 +2721,8 @@ static tycho_int tycho_map_sf_append(Arena *a, TychoMapSF *m, char *k, double v)
 }
 /* reserve(m, n): pre-size for >= n entries, preserving live entries (see ii). */
 void tycho_map_sf_reserve(Arena *a, TychoMapSF *m, tycho_int cap) {
-    if (cap <= 0) return;
+    tycho_map_cap_check(cap);
+    if (cap == 0) return;
     tycho_int ec = 8; while (ec < cap) ec *= 2;
     tycho_int ic = 8; while (ic < cap * 2) ic *= 2;
     if (m->ecap >= ec && m->icap >= ic) return;
@@ -2859,6 +2873,7 @@ typedef struct { tycho_int *ekeys; tycho_int *evals; unsigned char *elive; int *
 typedef struct { tycho_int *ekeys; double *evals; unsigned char *elive; int *idx; tycho_int len, ecount, ecap, icap; } TychoMapIF;
 
 TychoMapII tycho_map_ii_with_cap(Arena *a, tycho_int cap) {
+    tycho_map_cap_check(cap);
     TychoMapII m; m.len = 0; m.ecount = 0;
     if (cap <= 0) { m.ekeys = NULL; m.evals = NULL; m.elive = NULL; m.idx = NULL; m.ecap = 0; m.icap = 0; return m; }
     tycho_int ec = 8; while (ec < cap) ec *= 2;               /* entry capacity >= cap */
@@ -2925,7 +2940,8 @@ static tycho_int tycho_map_ii_append(Arena *a, TychoMapII *m, tycho_int k, tycho
     return e;
 }
 void tycho_map_ii_reserve(Arena *a, TychoMapII *m, tycho_int cap) {
-    if (cap <= 0) return;
+    tycho_map_cap_check(cap);
+    if (cap == 0) return;
     tycho_int ec = 8; while (ec < cap) ec *= 2;
     tycho_int ic = 8; while (ic < cap * 2) ic *= 2;
     if (m->ecap >= ec && m->icap >= ic) return;
@@ -3014,6 +3030,7 @@ int tycho_map_ii_eq(TychoMapII x, TychoMapII y) {
 
 /* TychoMapIF: identical table, double values. */
 TychoMapIF tycho_map_if_with_cap(Arena *a, tycho_int cap) {
+    tycho_map_cap_check(cap);
     TychoMapIF m; m.len = 0; m.ecount = 0;
     if (cap <= 0) { m.ekeys = NULL; m.evals = NULL; m.elive = NULL; m.idx = NULL; m.ecap = 0; m.icap = 0; return m; }
     tycho_int ec = 8; while (ec < cap) ec *= 2;
@@ -3080,7 +3097,8 @@ static tycho_int tycho_map_if_append(Arena *a, TychoMapIF *m, tycho_int k, doubl
 }
 /* reserve(m, n): pre-size for >= n entries, preserving live entries (see ii). */
 void tycho_map_if_reserve(Arena *a, TychoMapIF *m, tycho_int cap) {
-    if (cap <= 0) return;
+    tycho_map_cap_check(cap);
+    if (cap == 0) return;
     tycho_int ec = 8; while (ec < cap) ec *= 2;
     tycho_int ic = 8; while (ic < cap * 2) ic *= 2;
     if (m->ecap >= ec && m->icap >= ic) return;

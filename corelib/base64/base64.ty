@@ -8,8 +8,8 @@
 # and `len(s)` is exact, so any byte string -- including one read from a file with
 # high bytes -- encodes correctly. decode materializes its result through
 # `to_bytes([int])`, which PRESERVES interior 0x00, so decode is EXACT for text
-# and for arbitrary binary. (An earlier chr()-append implementation silently
-# dropped NUL bytes, since `chr(0)` appends nothing; that limitation is gone.)
+# and for arbitrary binary. The resulting Tycho string is length-carrying; use
+# `bytes` when crossing a binary C API.
 #
 # `decode` is lenient: it skips any byte that is not in the alphabet (so '=',
 # spaces, and newlines in wrapped Base64 are ignored) and accepts BOTH the
@@ -95,7 +95,7 @@ fn encode_url(s: string) -> string:
 # ---- decode ----------------------------------------------------------------
 
 # Decode either alphabet, skipping non-alphabet bytes (padding, whitespace).
-# See the BYTE-SAFETY CAVEAT above re: 0x00 in the decoded plaintext.
+# See the BYTE-SAFETY note above: decoded NUL bytes are preserved.
 fn decode(s: string) -> string:
     vals := []int                      # gather the 6-bit values
     for i := 0; i < len(s); i += 1:
@@ -103,10 +103,8 @@ fn decode(s: string) -> string:
         if v >= 0:
             push(vals, v)
     # Gather the decoded bytes in an int array, then materialize in ONE
-    # to_bytes/to_str pass. to_bytes PRESERVES interior 0x00, so decode is now
-    # exact for arbitrary binary -- the old chr()-per-byte append both cost ~28%
-    # CPU in tycho_str_append AND silently dropped NUL bytes (chr(0) appends
-    # nothing). Byte 0x00 now round-trips.
+    # to_bytes/to_str pass. to_bytes preserves interior 0x00, so decode is exact
+    # for arbitrary binary. Byte 0x00 round-trips in the length-carrying string.
     bs := []int
     m := len(vals)
     j := 0
