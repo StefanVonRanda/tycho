@@ -213,6 +213,37 @@ static const char *deprec_find(const char *name) {
  * author compiles from inside the tree, and there the warning is theirs to act
  * on -- see g_entry_in_corelib at compile_package. */
 static int g_mute_warn = 0, g_entry_in_corelib = 0;
+static const char *g_source_lines_src;
+static size_t *g_source_line_starts;
+static size_t g_source_line_count, g_source_line_cap;
+static int source_line_text(int line, const char **text, int *len) {
+    if (!g_src || line <= 0) return 0;
+    if (g_source_lines_src != g_src) {
+        free(g_source_line_starts);
+        g_source_line_starts = NULL;
+        g_source_line_count = g_source_line_cap = 0;
+        g_source_lines_src = g_src;
+        g_source_line_cap = 64;
+        g_source_line_starts = xrealloc(NULL, g_source_line_cap * sizeof *g_source_line_starts);
+        g_source_line_starts[g_source_line_count++] = 0;
+        for (size_t i = 0; g_src[i]; i++) if (g_src[i] == '\n') {
+            if (g_source_line_count == g_source_line_cap) {
+                g_source_line_cap *= 2;
+                g_source_line_starts = xrealloc(g_source_line_starts,
+                    g_source_line_cap * sizeof *g_source_line_starts);
+            }
+            g_source_line_starts[g_source_line_count++] = i + 1;
+        }
+    }
+    if ((size_t)line > g_source_line_count) return 0;
+    const char *p = g_src + g_source_line_starts[line - 1];
+    if (!*p || *p == '\n') return 0;
+    const char *end = p;
+    while (*end && *end != '\n') end++;
+    *text = p;
+    *len = (int)(end - p);
+    return 1;
+}
 
 /* The widest vector register each --target level HOLDS, in BYTES: SSE2 and
  * SSE4.2 are both 16, AVX2 32, AVX-512 64. A `vector[N]T` wider than this is
@@ -253,14 +284,10 @@ static void warn_at(int line, const char *fmt, ...) {
     vfprintf(stderr, fmt, ap);
     fputc('\n', stderr);
     va_end(ap);
-    if (g_src && line > 0) {
-        const char *p = g_src; int ln = 1;
-        while (ln < line && *p) { if (*p++ == '\n') ln++; }
-        if (ln == line && *p && *p != '\n') {
-            const char *eol = p; while (*eol && *eol != '\n') eol++;
-            fprintf(stderr, "  %4d | %.*s\n", line, (int)(eol - p), p);
-        }
-    }
+    const char *line_text;
+    int line_len;
+    if (source_line_text(line, &line_text, &line_len))
+        fprintf(stderr, "  %4d | %.*s\n", line, line_len, line_text);
 }
 
 /* Format-checked like die_at/warn_at above: sfmt is the helper that bakes
@@ -706,6 +733,8 @@ static TokVec lex(const char *src) {
                 const char *s = p;
                 while (isalnum((unsigned char)*p) || *p == '_') p++;
                 char *name = xstrndup(s, (size_t)(p - s));
+                if (!strncmp(name, "Ztycho_", 7))
+                    die_at(line, "identifier prefix 'Ztycho_' is reserved for compiler temporaries");
                 TokKind k = keyword(name);
                 tv_push(&out, (Tok){k, name, 0, line, 0, tcol});
                 continue;
@@ -977,6 +1006,48 @@ enum { T_VOID, T_INT, T_BOOL, T_STRING, T_ARRAY_INT, T_ARRAY_STRING, T_MAP_SI, T
     if ((n) >= (cap)) { (cap) = (cap) ? (cap) * 2 : 16; \
         (tbl) = xrealloc((tbl), (size_t)(cap) * sizeof *(tbl)); } \
 } while (0)
+
+typedef struct { const char *key; int value; } NameIndexSlot;
+typedef struct { NameIndexSlot *slots; size_t cap, used; } NameIndex;
+static uint64_t name_index_hash(const char *s) {
+    uint64_t h = UINT64_C(14695981039346656037);
+    for (; *s; s++) { h ^= (unsigned char)*s; h *= UINT64_C(1099511628211); }
+    return h;
+}
+static int name_index_get(const NameIndex *idx, const char *key, int *value) {
+    if (!idx->cap) return 0;
+    size_t p = (size_t)name_index_hash(key) & (idx->cap - 1);
+    while (idx->slots[p].key) {
+        if (!strcmp(idx->slots[p].key, key)) {
+            if (value) *value = idx->slots[p].value;
+            return 1;
+        }
+        p = (p + 1) & (idx->cap - 1);
+    }
+    return 0;
+}
+static void name_index_rehash(NameIndex *idx, size_t cap) {
+    NameIndexSlot *slots = calloc(cap, sizeof *slots);
+    if (!slots) { fprintf(stderr, "tychoc: out of memory building name index\n"); exit(1); }
+    for (size_t i = 0; i < idx->cap; i++) if (idx->slots[i].key) {
+        size_t p = (size_t)name_index_hash(idx->slots[i].key) & (cap - 1);
+        while (slots[p].key) p = (p + 1) & (cap - 1);
+        slots[p] = idx->slots[i];
+    }
+    free(idx->slots);
+    idx->slots = slots;
+    idx->cap = cap;
+}
+static void name_index_put_first(NameIndex *idx, const char *key, int value) {
+    if (name_index_get(idx, key, NULL)) return;  /* keep registry first-match semantics */
+    if (!idx->cap || (idx->used + 1) * 10 >= idx->cap * 7)
+        name_index_rehash(idx, idx->cap ? idx->cap * 2 : 16);
+    size_t p = (size_t)name_index_hash(key) & (idx->cap - 1);
+    while (idx->slots[p].key) p = (p + 1) & (idx->cap - 1);
+    idx->slots[p].key = key;
+    idx->slots[p].value = value;
+    idx->used++;
+}
 
 static void diag_push(int line, char *msg) {
     /* The same file is lexed more than once in a package build, so an identical
@@ -1386,11 +1457,21 @@ static void die_not_variant(int line, EnumDef *ed, const char *nm) {
                        (int)(pkg - ed->name), ed->name, bare);
     die_at(line, "'%s' is not a variant of %s", enum_shown(nm), enum_shown(ed->name));
 }
+typedef struct { int eid, vi; } VariantRef;
+static NameIndex g_variant_index;
+static VariantRef *g_variant_refs;
+static int g_nvariant_refs = 0, g_variant_refs_cap = 0;
+static void variant_index_add(int eid, int vi) {
+    TBL_ENSURE(g_variant_refs, g_nvariant_refs, g_variant_refs_cap);
+    int row = g_nvariant_refs++;
+    g_variant_refs[row] = (VariantRef){ eid, vi };
+    name_index_put_first(&g_variant_index, g_enums[eid].variants[vi].name, row);
+}
 static int variant_find(const char *vname, int *vi) {
-    for (int e = 0; e < g_nenums; e++)
-        for (int v = 0; v < g_enums[e].nvariants; v++)
-            if (!strcmp(g_enums[e].variants[v].name, vname)) { if (vi) *vi = v; return e; }
-    return -1;
+    int row;
+    if (!name_index_get(&g_variant_index, vname, &row)) return -1;
+    if (vi) *vi = g_variant_refs[row].vi;
+    return g_variant_refs[row].eid;
 }
 
 /* Tuples (T1, ..., Tn), n >= 2 — first-class anonymous product values, used for
@@ -1819,6 +1900,166 @@ static int type_is_heap(Type t) {
     return 0;
 }
 
+static Type *g_recycle_types;
+static int g_nrecycle_types = 0, g_recycle_types_cap = 0;
+static int has_typaram(Type t);
+static const char *c_type(Type t);
+static void recycle_type_add(Type t) {
+    t = base_of(t);
+    if (!type_is_heap(t) || has_typaram(t)) return;
+    for (int i = 0; i < g_nrecycle_types; i++) if (g_recycle_types[i] == t) return;
+    TBL_ENSURE(g_recycle_types, g_nrecycle_types, g_recycle_types_cap);
+    g_recycle_types[g_nrecycle_types++] = t;
+    if (IS_ARRC(t)) recycle_type_add(arr_elem(t));
+    else if (t == T_ARRAY_STRING) recycle_type_add(T_STRING);
+    else if (is_map(t)) {
+        Type key = map_key(t);
+        if (!IS_ENUM(key)) recycle_type_add(key);   /* fieldless enum keys are stored as integer tags */
+        recycle_type_add(map_val(t));
+    } else if (IS_OPT(t)) recycle_type_add(opt_inner(t));
+    else if (IS_RES(t)) { recycle_type_add(res_ok(t)); recycle_type_add(res_err(t)); }
+    else if (IS_TUP(t)) {
+        for (int i = 0; i < tup_n(t); i++) recycle_type_add(tup_elem(t, i));
+    } else if (IS_ENUM(t)) {
+        EnumDef *ed = &g_enums[ENUM_ID(t)];
+        for (int i = 0; i < ed->nvariants; i++)
+            for (int j = 0; j < ed->variants[i].npayload; j++) recycle_type_add(ed->variants[i].payload[j]);
+    } else if (IS_STRUCT(t)) {
+        StructDef *sd = &g_structs[STRUCT_ID(t)];
+        for (int i = 0; i < sd->nfields; i++) recycle_type_add(sd->fields[i].type);
+    } else if (IS_SOA(t)) {
+        StructDef *sd = &g_structs[STRUCT_ID(soa_struct(t))];
+        for (int i = 0; i < sd->nfields; i++) recycle_type_add(sd->fields[i].type);
+    }
+}
+
+static const char *recycle_name(Type t) {
+    t = base_of(t);
+    if (t == T_STRING || t == T_BYTES) return "tycho_str_recycle";
+    if (t == T_ARRAY_INT) return "tycho_arr_int_recycle";
+    if (t == T_ARRAY_FLOAT) return "tycho_arr_float_recycle";
+    if (t == T_ARRAY_STRING) return "tycho_arr_str_recycle";
+    if (t == T_MAP_SI) return "tycho_map_si_recycle";
+    if (t == T_MAP_SF) return "tycho_map_sf_recycle";
+    if (t == T_MAP_II) return "tycho_map_ii_recycle";
+    if (t == T_MAP_IF) return "tycho_map_if_recycle";
+    if (IS_ARRC(t)) return sfmt("tycho_recycle_A%d", ARRC_ID(t));
+    if (IS_MAPC(t)) return sfmt("tycho_recycle_M%d", MAPC_ID(t));
+    if (IS_STRUCT(t)) return sfmt("tycho_recycle_S_%s", g_structs[STRUCT_ID(t)].name);
+    if (IS_ENUM(t)) return sfmt("tycho_recycle_E_%s", g_enums[ENUM_ID(t)].name);
+    if (IS_OPT(t)) return sfmt("tycho_recycle_O%d", OPT_ID(t));
+    if (IS_RES(t)) return sfmt("tycho_recycle_R%d", RES_ID(t));
+    if (IS_TUP(t)) return sfmt("tycho_recycle_T%d", TUP_ID(t));
+    if (IS_SOA(t)) return sfmt("tycho_recycle_Soa%d", SOA_ID(t));
+    if (IS_FUNC(t)) return sfmt("tycho_recycle_FnC%d", FUNC_ID(t));
+    return "";
+}
+
+static void recycle_emit_proto(FILE *o, Type t) {
+    t = base_of(t);
+    fprintf(o, "static void %s(Arena *, %s);\n", recycle_name(t), c_type(t));
+}
+
+static void recycle_collect_lambdas(void);
+static void recycle_collect(void) {
+    g_nrecycle_types = 0;
+    for (int i = 0; i < g_nmaptypes; i++) {
+        Type k = g_maptypes[i].key, v = g_maptypes[i].val;
+        if (!IS_ENUM(k)) recycle_type_add(k);
+        recycle_type_add(v);
+    }
+    for (int i = 0; i < g_narrtypes; i++) recycle_type_add(g_arrtypes[i].elem);
+    for (int i = 0; i < g_nsoatypes; i++) {
+        if (has_typaram(g_soatypes[i].st)) continue;
+        StructDef *sd = &g_structs[STRUCT_ID(g_soatypes[i].st)];
+        for (int j = 0; j < sd->nfields; j++) recycle_type_add(sd->fields[j].type);
+    }
+    recycle_collect_lambdas();
+}
+
+static int recycle_is_runtime_type(Type t) {
+    return t == T_STRING || t == T_BYTES || t == T_ARRAY_INT || t == T_ARRAY_FLOAT ||
+           t == T_ARRAY_STRING || t == T_MAP_SI || t == T_MAP_SF || t == T_MAP_II || t == T_MAP_IF;
+}
+static void recycle_emit_body(FILE *o, Type t) {
+    t = base_of(t);
+    if (recycle_is_runtime_type(t)) return;
+    const char *nm = recycle_name(t), *ct = c_type(t);
+    fprintf(o, "static void %s(Arena *a, %s v) {\n", nm, ct);
+    if (IS_ARRC(t)) {
+        Type et = arr_elem(t);
+        int inl = IS_INLINE_ARR(t);
+        const char *seq = inl ? "v.v[i]" : "v.data[i]";
+        if (type_is_heap(et)) {
+            if (inl && !IS_BOUNDED(t))
+                fprintf(o, "    for (tycho_int i = 0; i < %lld; i++) %s(a, %s);\n",
+                        (long long)g_arrtypes[ARRC_ID(t)].size, recycle_name(et), seq);
+            else {
+                fprintf(o, "    for (tycho_int i = 0; i < %s; i++) %s(a, %s);\n",
+                        inl ? "v.len" : "v.len", recycle_name(et), seq);
+            }
+        }
+        if (!inl)
+            fprintf(o, "    if (v.cap > 0) arena_recycle(a, v.data, (size_t)v.cap * sizeof(*v.data));\n");
+    } else if (IS_MAPC(t)) {
+        Type kt = map_key(t), vt = map_val(t);
+        fprintf(o, "    for (tycho_int e = 0; e < v.ecount; e++) if (v.elive[e]) {\n");
+        if (!IS_ENUM(kt) && type_is_heap(kt))
+            fprintf(o, "        %s(a, v.ekeys[e]);\n", recycle_name(kt));
+        if (type_is_heap(vt)) fprintf(o, "        %s(a, v.evals[e]);\n", recycle_name(vt));
+        fprintf(o, "    }\n    if (v.ecap > 0) {\n"
+                   "        arena_recycle(a, v.ekeys, (size_t)v.ecap * sizeof(*v.ekeys));\n"
+                   "        arena_recycle(a, v.evals, (size_t)v.ecap * sizeof(*v.evals));\n"
+                   "        arena_recycle(a, v.elive, (size_t)v.ecap);\n    }\n"
+                   "    if (v.icap > 0) arena_recycle(a, v.idx, (size_t)v.icap * sizeof(*v.idx));\n");
+    } else if (IS_STRUCT(t)) {
+        StructDef *sd = &g_structs[STRUCT_ID(t)];
+        for (int i = 0; i < sd->nfields; i++) if (type_is_heap(sd->fields[i].type))
+            fprintf(o, "    %s(a, v.f_%s);\n", recycle_name(sd->fields[i].type), sd->fields[i].name);
+    } else if (IS_ENUM(t)) {
+        EnumDef *ed = &g_enums[ENUM_ID(t)];
+        fprintf(o, "    if (v && arena_owns(a, v)) {\n        switch (v->tag) {\n");
+        for (int i = 0; i < ed->nvariants; i++) {
+            Variant *var = &ed->variants[i];
+            if (var->npayload == 0) continue;
+            fprintf(o, "        case %d:\n", i);
+            for (int j = 0; j < var->npayload; j++) if (type_is_heap(var->payload[j]))
+                fprintf(o, "            %s(a, v->u.V_%s.f%d);\n", recycle_name(var->payload[j]), var->name, j);
+            fprintf(o, "            break;\n");
+        }
+        fprintf(o, "        default: break;\n        }\n        arena_recycle(a, v, sizeof(*v));\n    }\n");
+    } else if (IS_OPT(t)) {
+        Type it = opt_inner(t);
+        if (type_is_heap(it)) fprintf(o, "    if (v.has) %s(a, v.val);\n", recycle_name(it));
+    } else if (IS_RES(t)) {
+        Type ok = res_ok(t), err = res_err(t);
+        if (type_is_heap(ok)) fprintf(o, "    if (v.ok) %s(a, v.okv);\n", recycle_name(ok));
+        if (type_is_heap(err)) fprintf(o, "    else %s(a, v.errv);\n", recycle_name(err));
+    } else if (IS_TUP(t)) {
+        for (int i = 0; i < tup_n(t); i++) if (type_is_heap(tup_elem(t, i)))
+            fprintf(o, "    %s(a, v._%d);\n", recycle_name(tup_elem(t, i)), i);
+    } else if (IS_SOA(t)) {
+        StructDef *sd = &g_structs[STRUCT_ID(soa_struct(t))];
+        for (int i = 0; i < sd->nfields; i++) {
+            Type ft = sd->fields[i].type;
+            if (type_is_heap(ft)) fprintf(o, "    for (tycho_int i = 0; i < v.len; i++) %s(a, v.f%d[i]);\n", recycle_name(ft), i);
+            fprintf(o, "    if (v.cap > 0) arena_recycle(a, v.f%d, (size_t)v.cap * sizeof(*v.f%d));\n", i, i);
+        }
+    } else if (IS_FUNC(t)) {
+        fprintf(o, "    if (v.env && v.dropenv) v.dropenv(a, v.env);\n");
+    }
+    fprintf(o, "}\n");
+}
+
+static void recycle_emit_all(FILE *o) {
+    recycle_collect();
+    for (int i = 0; i < g_nrecycle_types; i++)
+        if (!recycle_is_runtime_type(g_recycle_types[i])) recycle_emit_proto(o, g_recycle_types[i]);
+    fputc('\n', o);
+    for (int i = 0; i < g_nrecycle_types; i++) recycle_emit_body(o, g_recycle_types[i]);
+    fputc('\n', o);
+}
+
 /* trailing space so "%sh_name" / "%s_ret" / signatures all read right;
  * "char *" needs none because "char *h_name" is already valid */
 static const char *c_type(Type t) {
@@ -2124,6 +2365,14 @@ static int g_laminfo_cap = 0;
 static int g_nlaminfo = 0;
 static ProcVec g_lambda_procs;   /* lifted lambda procs, emitted after the user procs */
 
+static void recycle_collect_lambdas(void) {
+    for (int i = 0; i < g_nlaminfo; i++) {
+        LamInfo *li = &g_laminfo[i];
+        if (li->ftype == T_VOID) continue;
+        for (int j = 0; j < li->ncap; j++) recycle_type_add(li->proc->params[j].type);
+    }
+}
+
 /* --------------------------------------------------------------- parser */
 
 #define TYCHO_MAX_PARSE_DEPTH 256
@@ -2416,6 +2665,7 @@ static int enum_instantiate(int tmpl, Type *binds) {
         dst->name = vname; dst->raw = vraw; dst->npayload = np;
         for (int f = 0; f < np; f++) dst->payload[f] = pl[f];
         e->nvariants++;
+        variant_index_add(id, e->nvariants - 1);
     }
     return id;
 }
@@ -2676,7 +2926,7 @@ static Type parse_type_inner(Parser *ps) {
             return mt;
         }
         eat(ps, TK_RBRACKET, "']'");
-        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2618) sits after a die_at */
+        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2870) sits after a die_at */
             die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
         return arr_of(elem);   /* fixed [int]/[float]/[string] or a composite */
     }
@@ -2857,10 +3107,10 @@ static Expr *desugar_interp(const char *s, int line) {
                 if (s[i] == '\\' && s[i+1] == '"')
                     die_at(line, "a `\\\"` inside an f-string hole: the hole is Tycho source, not string text, "
                                  "so a string in it takes plain quotes -- f\"{g(\"x\")}\", not f\"{g(\\\"x\\\")}\"");
-                if (s[i] == '"') {               /* a string literal inside the hole — '}' within it is not a hole end */
-                    i++;
-                    while (s[i] && s[i] != '"') { if (s[i] == '\\' && s[i+1]) i++; i++; }
-                    if (!s[i]) die_at(line, "unterminated string in an interpolated hole");
+                if (s[i] == '"' || s[i] == '\'') { /* string/char literal: braces inside are not hole delimiters */
+                    char quote = s[i++];
+                    while (s[i] && s[i] != quote) { if (s[i] == '\\' && s[i+1]) i++; i++; }
+                    if (!s[i]) die_at(line, "unterminated literal in an interpolated hole");
                     i++; continue;
                 }
                 if (s[i] == '{') depth++;
@@ -2868,8 +3118,11 @@ static Expr *desugar_interp(const char *s, int line) {
                 i++;
             }
             if (depth != 0) die_at(line, "unterminated '{' in an interpolated string");
-            if (i == start) die_at(line, "empty '{}' in an interpolated string");
-            char *sub = xstrndup(s + start, i - start); i++;     /* consume '}' */
+            size_t sub_lo = start, sub_hi = i;
+            while (sub_lo < sub_hi && isspace((unsigned char)s[sub_lo])) sub_lo++;
+            while (sub_hi > sub_lo && isspace((unsigned char)s[sub_hi - 1])) sub_hi--;
+            if (sub_lo == sub_hi) die_at(line, "empty '{}' in an interpolated string");
+            char *sub = xstrndup(s + sub_lo, sub_hi - sub_lo); i++; /* consume '}' */
             /* lex(sub) clobbers g_src (die_at's source-line snippet); restore it after
              * parsing the hole so later diagnostics in the file keep their snippet.
              * (die_at also reads g_srcname and g_err_col; lex touches neither on a
@@ -2885,6 +3138,8 @@ static Expr *desugar_interp(const char *s, int line) {
             for (int k = 0; k < tv.n; k++) { tv.v[k].line = line; tv.v[k].col = 0; }
             Parser sp = { tv.v, 0, 0 }; Expr *ex = parse_expr(&sp);
             g_src = save_src;
+            if (at(&sp, TK_NEWLINE)) sp.p++;
+            if (!at(&sp, TK_EOF)) die_at(line, "unexpected token after expression in an interpolated-string hole");
             Expr *call = new_expr(E_CALL, line); call->sval = "str";
             call->args = (Expr **)xmalloc(sizeof(Expr *)); call->args[0] = ex; call->nargs = 1;
             acc = interp_join(acc, call, line);
@@ -3046,7 +3301,7 @@ static Expr *parse_primary(Parser *ps) {
                 e->ival = mt; e->op = TK_COLON;
                 return e;
             }
-            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2375): parse_type never yields T_VOID */
+            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2626): parse_type never yields T_VOID */
                 die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
             e->ival = arr_of(elem);   /* type carried to the resolver */
             return e;
@@ -3929,12 +4184,25 @@ static int expr_refs_local(Expr *e, const char *name) {
     return 0;
 }
 
+/* Does an initializer call an unqualified function with the same C spelling
+ * as the new local? Its Tycho binding is resolved before the declaration, but
+ * C puts the local in scope for its own initializer and hides the function. */
+static int expr_calls_unqualified(Expr *e, const char *name) {
+    if (!e || e->kind == E_LAMBDA) return 0; /* lifted body has its own C scope */
+    if (e->kind == E_CALL && (!e->qual || !e->qual[0]) && e->sval
+        && !strcmp(e->sval, name)) return 1;
+    if (expr_calls_unqualified(e->lhs, name) || expr_calls_unqualified(e->rhs, name)) return 1;
+    for (int i = 0; i < e->nargs; i++)
+        if (expr_calls_unqualified(e->args[i], name)) return 1;
+    return 0;
+}
+
 /* Bind `sub` to a fresh temp queued in g_pending (emitted just before the
  * assignment) and return an ident that reads it. */
 static Expr *hoist_place_leg(Expr *sub, int line) {
     if (g_npending >= 64) die_at(line, "too many hoisted index expressions in one statement (max 64)");
     Stmt *d = new_stmt(S_DECL, line);
-    d->name = sfmt("_cx%d", g_forin_uid++);
+    d->name = sfmt("Ztycho_cx%d", g_forin_uid++);
     d->expr = sub;
     g_pending[g_npending++] = d;
     Expr *tv = new_expr(E_IDENT, line);
@@ -4344,7 +4612,7 @@ static Stmt *parse_stmt(Parser *ps) {
                 return fe;
             }
             int uid = g_forin_uid++;
-            char *cn = sfmt("_fc%d", uid), *iv = sfmt("_fi%d", uid);
+            char *cn = sfmt("Ztycho_fc%d", uid), *iv = sfmt("Ztycho_fi%d", uid);
             Stmt *tmp = new_stmt(S_DECL, t->line);   /* _fcN := COLL (the prelude) */
             tmp->name = cn; tmp->expr = coll; tmp->synth = 1;
             Expr *cref = new_expr(E_IDENT, t->line); cref->sval = cn; cref->pkg = g_cur_pkg_prefix;
@@ -4474,7 +4742,7 @@ static Stmt *parse_stmt(Parser *ps) {
             if (e->args[i]->kind != E_IDENT) hoist_place_indices(e->args[i], t->line);
         Stmt *td = new_stmt(S_MDECL, t->line);   /* _ms1, ..., _msn := rhs -- the entire right side, before any write */
         td->nnames = n;
-        for (int i = 0; i < n; i++) td->names[i] = sfmt("_ms%d", g_forin_uid++);
+        for (int i = 0; i < n; i++) td->names[i] = sfmt("Ztycho_ms%d", g_forin_uid++);
         td->expr = parse_expr(ps);
         eat(ps, TK_NEWLINE, "newline");
         if (g_npending + n + 1 > 64) die_at(t->line, "too many queued statements in one block (max 64)");
@@ -4885,13 +5153,10 @@ static const char *ffi_arg_arr_ptr_ctype(Type t) {
     return ffi_arr_ptr_ctype(t);
 }
 
-/* FFI boundary-only sized-integer types (u8/u16/i8/i16/i32/i64): recognized ONLY in
- * `extern fn` param/return positions (never a general Tycho type — `int` to Tycho, no
- * leak into arithmetic/printing). This string is the real C ABI type emitted in the
- * extern prototype so a call matches e.g. `int16_t f(uint8_t)`. (u32/u64/f32 are their
- * own first-class types — a real u32 already emits `unsigned int` via c_type — so they
- * are handled by parse_type, not here.) Built-in C types, ABI-compatible with the
- * uintN_t typedefs on every supported target (LP64 Linux/macOS, LLP64 Windows). */
+/* C ABI spellings for the first-class sized integers. `to_i32` and its siblings
+ * produce values of these types, and an extern parameter/return keeps that exact
+ * type rather than silently widening to `int`. These built-in C types have the
+ * fixed widths required by the FFI on LP64 Linux/macOS and LLP64 Windows. */
 static const char *ffi_sized_ctype(const char *n) {
     if (!strcmp(n, "u8"))  return "unsigned char ";
     if (!strcmp(n, "u16")) return "unsigned short ";
@@ -5209,6 +5474,7 @@ static void parse_enum(Parser *ps) {
             eat(ps, TK_RPAREN, "')'");
         }
         g_enums[my_eid].nvariants++;
+        variant_index_add(my_eid, g_enums[my_eid].nvariants - 1);
         eat(ps, TK_NEWLINE, "newline");
     }
     eat(ps, TK_DEDENT, "dedent");
@@ -5588,6 +5854,7 @@ static void check_pkg_private(const char *qualifier, const char *name, int line)
 typedef struct { char *name; Type type; Expr *lit; } ConstDef;
 static ConstDef *g_consts;
 static int g_nconsts = 0, g_consts_cap = 0;
+static NameIndex g_const_index;
 
 static Type lit_type(Expr *lit) {
     switch (lit->kind) {
@@ -5662,9 +5929,8 @@ static Expr *const_fold(Expr *e, int refs) {
     Expr *n = new_expr(E_INT, e->line); n->ival = r; return n;
 }
 static Expr *consts_find(const char *name) {
-    for (int i = 0; i < g_nconsts; i++)
-        if (!strcmp(g_consts[i].name, name)) return g_consts[i].lit;
-    return NULL;
+    int i;
+    return name_index_get(&g_const_index, name, &i) ? g_consts[i].lit : NULL;
 }
 /* `const NAME = <literal>` at module top level. Registered at parse time so any
  * function body (parsed later) can fold it. Collision with a function name is
@@ -5685,6 +5951,7 @@ static void parse_const(Parser *ps) {
     g_consts[g_nconsts].name = nm;
     g_consts[g_nconsts].type = lit_type(lit);
     g_consts[g_nconsts].lit  = lit;
+    name_index_put_first(&g_const_index, nm, g_nconsts);
     g_nconsts++;
 }
 
@@ -5768,6 +6035,8 @@ typedef struct {
 
 static Sig  *g_sigs;       /* dynamic (was fixed 512; outgrown once at 256) */
 static int  g_nsigs = 0, g_sigs_cap = 0;
+static int *g_sig_index;   /* open-addressed name -> g_sigs index+1 */
+static int g_sig_index_cap = 0, g_sig_indexed = 0;
 
 /* FFI: link libraries named by `extern "Lib" fn` — appended as -lLib to the cc
  * line. Deduped; -lm is always passed separately (covers bare `extern fn sqrt`). */
@@ -5854,15 +6123,53 @@ static void add_pkg_deps(const char *dir) {
     fclose(f);
 }
 
+static uint64_t sig_name_hash(const char *s) {
+    uint64_t h = UINT64_C(14695981039346656037);
+    for (; *s; s++) { h ^= (unsigned char)*s; h *= UINT64_C(1099511628211); }
+    return h;
+}
+static void sig_index_put(int *tab, int cap, int si) {
+    uint64_t mask = (uint64_t)cap - 1;
+    uint64_t p = sig_name_hash(g_sigs[si].name) & mask;
+    while (tab[p]) {
+        int old = tab[p] - 1;
+        if (!strcmp(g_sigs[old].name, g_sigs[si].name)) return; /* preserve first-match */
+        p = (p + 1) & mask;
+    }
+    tab[p] = si + 1;
+}
+static void sig_index_resize(int cap) {
+    int *tab = (int *)calloc((size_t)cap, sizeof(int));
+    if (!tab) { fprintf(stderr, "tychoc: out of memory indexing procedures\n"); exit(1); }
+    for (int i = 0; i < g_nsigs; i++) sig_index_put(tab, cap, i);
+    free(g_sig_index);
+    g_sig_index = tab;
+    g_sig_index_cap = cap;
+    g_sig_indexed = g_nsigs;
+}
+static void sig_index_ensure(void) {
+    int cap = g_sig_index_cap ? g_sig_index_cap : 16;
+    while ((uint64_t)(g_nsigs + 1) * 2 >= (uint64_t)cap) cap *= 2;
+    if (cap != g_sig_index_cap) sig_index_resize(cap);
+    for (int i = g_sig_indexed; i < g_nsigs; i++) sig_index_put(g_sig_index, g_sig_index_cap, i);
+    g_sig_indexed = g_nsigs;
+}
 static Sig *sig_find_quiet(const char *name) {   /* lookup that does not mark `used` */
-    for (int i = 0; i < g_nsigs; i++)
-        if (!strcmp(g_sigs[i].name, name)) return &g_sigs[i];
+    sig_index_ensure();
+    if (!name || !g_sig_index_cap) return NULL;
+    uint64_t mask = (uint64_t)g_sig_index_cap - 1;
+    uint64_t p = sig_name_hash(name) & mask;
+    while (g_sig_index[p]) {
+        Sig *s = &g_sigs[g_sig_index[p] - 1];
+        if (!strcmp(s->name, name)) return s;
+        p = (p + 1) & mask;
+    }
     return NULL;
 }
 static Sig *sig_find(const char *name) {
-    for (int i = 0; i < g_nsigs; i++)
-        if (!strcmp(g_sigs[i].name, name)) { g_sigs[i].used = 1; return &g_sigs[i]; }
-    return NULL;
+    Sig *s = sig_find_quiet(name);
+    if (s) s->used = 1;
+    return s;
 }
 
 /* Generics: generic function templates (a `$T` in the signature) are kept out of
@@ -5871,10 +6178,10 @@ static Sig *sig_find(const char *name) {
  * The instance body is resolved + emitted from the SHARED template body during
  * codegen, sequentially per instance (see gen_program). */
 static Proc **g_generics; static int g_ngenerics = 0, g_generics_cap = 0;
+static NameIndex g_generic_index;
 static Proc *generic_find(const char *name) {
-    for (int i = 0; i < g_ngenerics; i++)
-        if (!strcmp(g_generics[i]->name, name)) return g_generics[i];
-    return NULL;
+    int i;
+    return name_index_get(&g_generic_index, name, &i) ? g_generics[i] : NULL;
 }
 /* UFCS x generics: if `name` is a generic free fn whose first parameter PATTERN
  * accepts a by-value receiver of type `recv`, return its template name; else NULL.
@@ -6041,7 +6348,7 @@ static void report_unused_locals(void) {
  * binds -- and this runs AFTER match_arm_payload has promoted a bare `Err(A)`
  * to a pattern, so a nullary variant in a payload slot is still spelled `A`. */
 static void vars_push(const char *name, Type t, int can_mutate, int line) {
-    if (name[0] >= 'A' && name[0] <= 'Z')
+    if (name[0] >= 'A' && name[0] <= 'Z' && strncmp(name, "Ztycho_", 7))
         die_at(line, "'%s' cannot name a binding -- a local, parameter or pattern "
                      "binding must start with a lowercase letter or '_'", name);
     TBL_ENSURE(g_vars, g_nvars, g_vars_cap);
@@ -6105,6 +6412,7 @@ static const char *suggest_pkg_symbol(const char *qual, const char *name) {
     for (int i = 0; i < g_nsigs; i++) {
         if (strncmp(g_sigs[i].name, prefix, pl) || !g_sigs[i].name[pl]) continue;
         const char *s = g_sigs[i].name + pl;
+        if (s[0] == '_') continue;                    /* never suggest a package-private symbol */
         dym(name, s, &best, &bestd);
         size_t sl = strlen(s);
         if (!rel && sl >= 4 && nl >= 4 &&
@@ -6229,6 +6537,7 @@ static int is_cmp(TokKind op) {
 }
 
 static Type resolve_exp(Expr *e, Type want);   /* defined below; fixes a None's type */
+static Type resolve_cached_exp(Expr *e, Type want);
 /* The handler of the `or_else` being resolved: its Some/Ok/Err mismatch is worded
  * as a RETURN, since that is where the value goes. */
 static Expr *g_orelse_rhs = NULL;
@@ -6285,7 +6594,7 @@ static void collect_idents(Expr *e, const char **out, int *n, int cap) {
     }
     if (e->kind == E_CALL) {   /* Neither name on a call is a child expr: the callee lives in
                                 * sval (`g(x)` where g is a closure) and a method call's RECEIVER
-                                * lives in qual (`m.get(k)`, src/tychoc.c:3483), because the parser
+                                * lives in qual (`m.get(k)`, src/tychoc.c:3745), because the parser
                                 * cannot tell it from a package call. Both are outer reads; missing
                                 * qual let `m` reach the lifted body uncaptured and the C compiler,
                                 * not tychoc, reported `h_m undeclared`. pf_scan_expr already does
@@ -6358,12 +6667,22 @@ static void pend_ground(const char *name, Type t, int line) {
     g_pend[pi].done = 1;
 }
 
-/* A deep left-leaning chain (`1+1+...`) parses iteratively (shallow parser stack,
- * so the parse_unary depth cap never fires) but builds a tree as deep as the chain
- * is long, which resolve_expr then recurses through -- guard it so a pathological
- * tree fails closed here instead of overflowing the C stack (SIGSEGV). */
+/* Left-associative binary chains build deep trees even though parsing is iterative.
+ * `+` keeps its 2000-term limit; other left spines are refused at 1024 before
+ * recursive resolution reaches the C stack limit. */
 #define TYCHO_MAX_TREE_DEPTH 2000
+#define TYCHO_MAX_RESOLVE_DEPTH 2000
+#define TYCHO_MAX_BIN_SPINE 1024
 static int g_resolve_depth = 0;
+static int left_bin_spine(Expr *e, int plus_only) {
+    int n = 0;
+    while (e && e->kind == E_BINOP && e->lhs && e->rhs) {
+        if (plus_only && e->op != TK_PLUS) return 0;
+        n++;
+        e = e->lhs;
+    }
+    return n;
+}
 /* EVERY builtin, for one purpose: deciding whether a QUALIFIED name -- `strings.len`
  * -- is a builtin the writer reached for with a package prefix. The other builtin
  * tables here are narrower on purpose (is_ufcs_builtin is about method syntax,
@@ -6452,7 +6771,10 @@ static int lane_index(const char *s) {
 }
 static Type resolve_expr_inner(Expr *e);
 static Type resolve_expr(Expr *e) {
-    if (++g_resolve_depth > TYCHO_MAX_TREE_DEPTH) die_at(e->line, "expression too deeply nested to type-check (max %d)", TYCHO_MAX_TREE_DEPTH);
+    if (e && e->kind == E_BINOP && left_bin_spine(e, 0) > TYCHO_MAX_BIN_SPINE
+        && left_bin_spine(e, 1) == 0)
+        die_at(e->line, "expression too deeply nested to type-check (max %d)", TYCHO_MAX_BIN_SPINE);
+    if (++g_resolve_depth > TYCHO_MAX_RESOLVE_DEPTH) die_at(e->line, "expression too deeply nested to type-check (max %d)", TYCHO_MAX_RESOLVE_DEPTH);
     int sv = g_affine_line; g_affine_line = e->line;
     Type t = resolve_expr_inner(e);
     g_affine_line = sv;
@@ -6779,7 +7101,7 @@ static Type resolve_expr_inner(Expr *e) {
             if (is_array(bt)) return e->type = arr_elem(bt);   /* array element */
             if (IS_SOA(bt)) return e->type = soa_struct(bt);   /* soa element (only valid under .field) */
             /* A string byte and a bytes byte are the SAME read: both are the
-             * length-headered char* buffer (T_BYTES, src/tychoc.c:947@T_BYTES), so both lower to
+             * length-headered char* buffer (T_BYTES, src/tychoc.c:976@T_BYTES), so both lower to
              * tycho_str_get. The result is the byte VALUE as an int (0..255),
              * not a 1-length buffer: that is what a byte-classifying loop
              * (`if is_ctl(b[i])`) wants, it needs no allocation, and it keeps
@@ -7248,6 +7570,7 @@ static Type resolve_expr_inner(Expr *e) {
             }
             /* a call whose name is a struct is positional construction */
             int sid = struct_find(e->sval);
+            int inferred_generic_struct = 0;
             /* F4: named field construction `P(x: 1, y: 2)` -- validate and reorder
              * into positional field order; the positional binding below then
              * type-checks it exactly like `P(1, 2)`. Works for generic structs too
@@ -7287,33 +7610,44 @@ static Type resolve_expr_inner(Expr *e) {
                 }
             }
             if (sid >= 0 && g_structs[sid].generic) {   /* generic struct: infer the type args from the field values */
-                StructDef *t = &g_structs[sid];
-                if (e->nargs != t->nfields)
-                    die_at(e->line, "%s takes %d field value(s), got %d", t->name, t->nfields, e->nargs);
+                inferred_generic_struct = 1;
+                int nfields = g_structs[sid].nfields;
+                if (e->nargs != nfields)
+                    die_at(e->line, "%s takes %d field value(s), got %d", g_structs[sid].name, nfields, e->nargs);
                 Type *binds = new_binds();
                 for (int i = 0; i < e->nargs; i++) {
+                    /* resolve_expr may instantiate a nested generic and realloc
+                     * g_structs. Keep the stable index, and copy the Type before
+                     * recursing; never hold a StructDef * across this call. */
+                    Type pattern = g_structs[sid].fields[i].type;
                     Type at_ = resolve_expr(e->args[i]);
-                    if (!match_type(t->fields[i].type, at_, binds))
+                    if (!match_type(pattern, at_, binds))
                         die_at(e->line, "field '%s' of %s does not fit a %s argument",
-                               t->fields[i].name, t->name, type_name(at_));
+                               g_structs[sid].fields[i].name, g_structs[sid].name, type_name(at_));
                 }
-                for (int i = 0; i < t->ntyparams; i++)
-                    if (binds[(int)(t->typarams[i] - T_TYPARAM_BASE)] == T_UNBOUND)
+                for (int i = 0; i < g_structs[sid].ntyparams; i++)
+                    if (binds[(int)(g_structs[sid].typarams[i] - T_TYPARAM_BASE)] == T_UNBOUND)
                         die_at(e->line, "type parameter $%s of %s is not fixed by any field value",
-                               typaram_name(t->typarams[i]), t->name);
+                               typaram_name(g_structs[sid].typarams[i]), g_structs[sid].name);
                 sid = struct_instantiate(sid, binds);
             }
             if (sid >= 0) {
-                StructDef *sd = &g_structs[sid];
-                if (e->nargs != sd->nfields)
+                int nfields = g_structs[sid].nfields;
+                if (e->nargs != nfields)
                     die_at(e->line, "%s takes %d field value(s), got %d",
-                           sd->name, sd->nfields, e->nargs);
+                           g_structs[sid].name, nfields, e->nargs);
                 for (int i = 0; i < e->nargs; i++) {
-                    Type at_ = resolve_exp(e->args[i], sd->fields[i].type);   /* fixes a None field */
-                    if (at_ != sd->fields[i].type)
+                    Type expected = g_structs[sid].fields[i].type;
+                    Type at_ = inferred_generic_struct
+                        ? resolve_cached_exp(e->args[i], expected)
+                        : resolve_exp(e->args[i], expected);   /* fixes a None field */
+                    /* resolve_exp can also instantiate generics. Re-index the
+                     * table instead of using a potentially stale StructDef *. */
+                    expected = g_structs[sid].fields[i].type;
+                    if (at_ != expected)
                         die_at(e->line, "field type mismatch: field '%s' of %s is %s, got %s",
-                               sd->fields[i].name, sd->name,
-                               type_name(sd->fields[i].type), type_name(at_));
+                               g_structs[sid].fields[i].name, g_structs[sid].name,
+                               type_name(expected), type_name(at_));
                 }
                 e->kind = E_STRUCTLIT;          /* reinterpret for codegen */
                 return e->type = STRUCT_TYPE(sid);
@@ -7321,38 +7655,48 @@ static Type resolve_expr_inner(Expr *e) {
             /* a call whose name is an enum variant is a constructor */
             {
                 int evi, eid = variant_find(e->sval, &evi);
+                int inferred_generic_enum = 0;
                 if (eid >= 0 && g_enums[eid].generic) {   /* generic enum: fix $T from explicit type args and/or the payload values, then instantiate */
-                    EnumDef *gt = &g_enums[eid];
-                    Variant *gv = &gt->variants[evi];
+                    inferred_generic_enum = 1;
                     Type *binds = new_binds();
                     if (e->ntypeargs > 0) {        /* `Leaf$(int)`: explicit -- the only way to fix a nullary variant */
-                        if (e->ntypeargs != gt->ntyparams)
-                            die_at(e->line, "%s expects %d type argument(s), got %d", gt->name, gt->ntyparams, e->ntypeargs);
-                        for (int i = 0; i < gt->ntyparams; i++)
-                            binds[(int)(gt->typarams[i] - T_TYPARAM_BASE)] = e->typeargs[i];
+                        int ntyparams = g_enums[eid].ntyparams;
+                        if (e->ntypeargs != ntyparams)
+                            die_at(e->line, "%s expects %d type argument(s), got %d", g_enums[eid].name, ntyparams, e->ntypeargs);
+                        for (int i = 0; i < ntyparams; i++)
+                            binds[(int)(g_enums[eid].typarams[i] - T_TYPARAM_BASE)] = e->typeargs[i];
                     }
-                    if (e->nargs != gv->npayload)
-                        die_at(e->line, "%s takes %d payload value(s), got %d", gv->name, gv->npayload, e->nargs);
+                    int npayload = g_enums[eid].variants[evi].npayload;
+                    if (e->nargs != npayload)
+                        die_at(e->line, "%s takes %d payload value(s), got %d",
+                               g_enums[eid].variants[evi].name, npayload, e->nargs);
                     for (int i = 0; i < e->nargs; i++) {   /* infer $T by matching each payload pattern against the arg type */
+                        Type pattern = g_enums[eid].variants[evi].payload[i];
                         Type at_ = resolve_expr(e->args[i]);
-                        if (!match_type(gv->payload[i], at_, binds))
-                            die_at(e->line, "%s payload %d does not fit a %s argument", gv->name, i + 1, type_name(at_));
+                        if (!match_type(pattern, at_, binds))
+                            die_at(e->line, "%s payload %d does not fit a %s argument",
+                                   g_enums[eid].variants[evi].name, i + 1, type_name(at_));
                     }
-                    for (int i = 0; i < gt->ntyparams; i++)
-                        if (binds[(int)(gt->typarams[i] - T_TYPARAM_BASE)] == T_UNBOUND)
+                    for (int i = 0; i < g_enums[eid].ntyparams; i++)
+                        if (binds[(int)(g_enums[eid].typarams[i] - T_TYPARAM_BASE)] == T_UNBOUND)
                             die_at(e->line, "type parameter $%s of %s is not fixed by any payload value; supply it explicitly, e.g. %s$(int)",
-                                   typaram_name(gt->typarams[i]), gt->name, nominal_name(e->sval));
+                                   typaram_name(g_enums[eid].typarams[i]), g_enums[eid].name, nominal_name(e->sval));
                     eid = enum_instantiate(eid, binds);   /* eid now names the concrete instance; the tail below re-resolves against it */
                 }
                 if (eid >= 0) {
-                    Variant *var = &g_enums[eid].variants[evi];
-                    if (e->nargs != var->npayload)
-                        die_at(e->line, "%s takes %d payload value(s), got %d", var->name, var->npayload, e->nargs);
+                    int npayload = g_enums[eid].variants[evi].npayload;
+                    if (e->nargs != npayload)
+                        die_at(e->line, "%s takes %d payload value(s), got %d",
+                               g_enums[eid].variants[evi].name, npayload, e->nargs);
                     for (int i = 0; i < e->nargs; i++) {
-                        Type at_ = resolve_exp(e->args[i], var->payload[i]);   /* coerces a None */
-                        if (at_ != var->payload[i])
-                            die_at(e->line, "payload type mismatch: %s payload %d is %s, got %s", var->name, i + 1,
-                                   type_name(var->payload[i]), type_name(at_));
+                        Type expected = g_enums[eid].variants[evi].payload[i];
+                        Type at_ = inferred_generic_enum
+                            ? resolve_cached_exp(e->args[i], expected)
+                            : resolve_exp(e->args[i], expected);   /* coerces a None */
+                        expected = g_enums[eid].variants[evi].payload[i];
+                        if (at_ != expected)
+                            die_at(e->line, "payload type mismatch: %s payload %d is %s, got %s",
+                                   g_enums[eid].variants[evi].name, i + 1, type_name(expected), type_name(at_));
                     }
                     e->op = TK_ENUM; e->ival = evi;   /* mark as an enum ctor; carry the variant index */
                     return e->type = ENUM_TYPE(eid);
@@ -7747,7 +8091,7 @@ static Type resolve_expr_inner(Expr *e) {
             if (e->nargs != s->nparams)
                 die_at(e->line, "'%s' takes %d argument(s), got %d",
                        nominal_name(e->sval), s->nparams, e->nargs);
-            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:7122 */
+            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:7477 */
             for (int i = 0; i < e->nargs; i++) {
                 g_in_arg++;
                 Type at_ = resolve_exp(e->args[i], s->params[i]);   /* fixes a None arg */
@@ -7989,7 +8333,7 @@ static Type resolve_expr_inner(Expr *e) {
                 return e->type = T_STRING;   /* string + char appends one byte (no alloc) */
             }
             /* bytes + bytes / bytes + char: the same two concats, because bytes IS
-             * string's buffer (src/tychoc.c:947@T_BYTES). No implicit widening from string: crossing
+             * string's buffer (src/tychoc.c:976@T_BYTES). No implicit widening from string: crossing
              * the intent boundary stays explicit (to_bytes/to_str). */
             if (e->op == TK_PLUS && lt == T_BYTES) {
                 if (rt != T_BYTES && rt != T_CHAR)
@@ -8106,7 +8450,7 @@ static Type resolve_expr_inner(Expr *e) {
                     die_at(e->line, "element-wise `%s` is defined for [T] and [N]T only (got %s, %s)",
                            arith_op_spell(e->op), type_name(lt), type_name(rt));
                 Type et = arr_elem(at);
-                if (sc->kind == E_INT && is_sized_int(et)) { sc->type = et; st = et; }
+                if (sc->kind == E_INT && is_sized_int(et)) { sized_lit(sc, et); st = et; }
                 else if (et == T_F32 && (sc->kind == E_INT || sc->kind == E_FLOAT)) {
                     f32_lit(sc); st = T_F32;
                 } else if (et == T_FLOAT && st == T_INT && sc->kind == E_INT) {
@@ -8222,7 +8566,7 @@ static Type resolve_exp(Expr *e, Type want) {
             }
         }
     }
-    if (e->kind == E_ARRLIT && e->nargs > 0 && e->op != TK_COLON && is_array(want) && !IS_BOUNDED(want) && !IS_SIZEPARAM_ARR(want) && !has_typaram(want)) {
+    if (e->kind == E_ARRLIT && e->op != TK_COLON && is_array(want) && !IS_BOUNDED(want) && !IS_SIZEPARAM_ARR(want) && !has_typaram(want)) {
         int64_t n = IS_FIXARR(want) ? fixarr_size(want) : e->nargs;   /* a dynamic [T] accepts any count */
         if (e->nargs != n)
             die_at(e->line, "a fixed-size array of length %lld needs %lld elements, got %d", (long long)n, (long long)n, e->nargs);
@@ -8318,6 +8662,18 @@ static Type resolve_exp(Expr *e, Type want) {
     return t;
 }
 
+static Type resolve_cached_exp(Expr *e, Type want) {
+    /* Generic constructors first synthesize each payload to infer their type
+     * arguments, then check it against the instantiated payload type. Reuse a
+     * concrete result; only partial contextual values (None/Ok/Err) need a
+     * second, expected-type-directed walk. */
+    Type t = e->type;
+    if (t != T_NONE && t != T_OK_PARTIAL && t != T_ERR_PARTIAL &&
+        t != T_PENDING && t != T_UNBOUND)
+        return t;
+    return resolve_exp(e, want);
+}
+
 static void resolve_block(Stmt **body, int n, Type ret);
 
 /* ---- CC-3 `parallel for`: chunked fan-out with reduction merge -----------
@@ -8377,7 +8733,7 @@ static void pf_capture(Expr *id) {
 /* capture an outer local named by a STRING rather than by an E_IDENT node -- the
  * callee of `f(x)` and the receiver of `o.f(x)` live in E_CALL's sval/qual, not
  * in a child expr. The synthesized read is resolved in the enclosing scope with
- * every other capture (src/tychoc.c:8912). Non-locals (global fns, builtins,
+ * every other capture (src/tychoc.c:9315). Non-locals (global fns, builtins,
  * enum constructors, package qualifiers) fail vars_find and are dropped. */
 static void pf_capture_name(const char *n, int line) {
     Type vt;
@@ -8400,10 +8756,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:8256),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:8647),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:8534). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:8937). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
@@ -8424,7 +8780,7 @@ static void pf_scan_expr(Expr *e) {
     }
     /* A call's callee is NOT an E_IDENT child of the node: `f(x)` keeps the name
      * in sval, and `o.f(x)` keeps the receiver in qual because the parser cannot
-     * tell it from a package call (src/tychoc.c:3477). The generic descent below
+     * tell it from a package call (src/tychoc.c:3739). The generic descent below
      * visits lhs/rhs/args only, so a fn-typed local reached the lifted chunk proc
      * uncaptured and the C compiler -- not tychoc -- reported the undeclared name.
      * The lambda capture analysis already does the sval half (src/tychoc.c@collect_idents). */
@@ -8614,7 +8970,7 @@ static void resolve_parfor(Stmt *s) {
             } else {
                 nc = new_expr(E_CALL, s->line); nc->sval = "ncpu"; nc->pkg = "";
             }
-            s->name = "__pw"; s->r_start = z; s->r_stop = nc;
+            s->name = "Ztycho_pw"; s->r_start = z; s->r_stop = nc;
             Stmt *sel = new_stmt(S_SELECT, s->line);
             sel->arms = (MatchArm *)xmalloc(2 * sizeof(MatchArm));
             sel->sel_ch = (Expr **)xmalloc(2 * sizeof(Expr *));
@@ -8637,7 +8993,7 @@ static void resolve_parfor(Stmt *s) {
             s->body = (Stmt **)xmalloc(sizeof(Stmt *)); s->body[0] = whl; s->nbody = 1;
         } else if (is_array(src) || src == T_STRING) {
             /* parallel for __feN in range(0, len(coll)): x := coll[__feN] ; BODY */
-            char *iv = sfmt("__fe%d", g_forin_uid++);
+            char *iv = sfmt("Ztycho_fe%d", g_forin_uid++);
             Expr *z = new_expr(E_INT, s->line); z->ival = 0;
             Expr *lc = new_expr(E_CALL, s->line); lc->sval = "len"; lc->pkg = "";
             lc->args = (Expr **)xmalloc(sizeof(Expr *)); lc->args[0] = coll; lc->nargs = 1;
@@ -8693,10 +9049,10 @@ static void resolve_parfor(Stmt *s) {
      * here and forces a decision, instead of silently defaulting.
      * is_sink MUST be 0, and not merely by accident: `sink` means an OWNED
      * value the callee may consume once (is_sink_param -> can_move_from,
-     * src/tychoc.c:10495@can_move_from). Every chunk proc is handed the SAME capture values, and the
+     * src/tychoc.c:10861@can_move_from). Every chunk proc is handed the SAME capture values, and the
      * bounds/captures are borrows of the enclosing scope, so consuming one in
      * any chunk would hand off a buffer another chunk still reads. 0 is the
-     * required value, and it matches the lambda-lift twin at src/tychoc.c:6515@is_sink which sets
+     * required value, and it matches the lambda-lift twin at src/tychoc.c:6853@is_sink which sets
      * `caps[ncap].is_sink = 0` explicitly. is_variadic is 0 (a synthesized
      * chunk proc has a fixed arity) and ffi_ct is NULL (no FFI boundary). */
     pr->params[0] = (Param){ "__plo", T_INT, 0, 0, 0, NULL };
@@ -9547,6 +9903,7 @@ static void resolve_block(Stmt **body, int n, Type ret) {
             g_can_recover = 1;
             resolve_stmt(body[i], ret); shut_mark(body[i]);
         } else {
+            g_resolve_depth = 0;       /* longjmp skipped resolve_exp's recursive unwind */
             g_nvars = smark;           /* drop anything the failed statement half-pushed */
             if (body[i]->name && g_npoison < (int)(sizeof g_poison / sizeof *g_poison))
                 g_poison[g_npoison++] = body[i]->name;
@@ -9684,7 +10041,7 @@ static void instantiate_generic(Proc *gt, Expr *e) {
          * `$T` -- handles `$T`, `[$T]`, `Option($T)`, `Result($T,$E)` (Stage 3). */
         if (!match_type(gt->params[j].type, at_, binds))
             die_at(e->line, "argument %d of '%s' is %s, which does not fit the parameter pattern",
-                   j + 1, gt->name, type_name(at_));
+                   j + 1, nominal_name(gt->name), type_name(at_));
     }
     for (int i = 0; i < gt->ntyparams; i++) {
         if (binds[(int)(gt->typarams[i] - T_TYPARAM_BASE)] != T_UNBOUND) continue;
@@ -9735,7 +10092,7 @@ static void instantiate_generic(Proc *gt, Expr *e) {
             nm = sfmt("%s__%s", nm, type_mangle_ident(binds[(int)(gt->typarams[i] - T_TYPARAM_BASE)]));
     }
     cret = subst_type(gt->ret, binds);
-    if (IS_HANDLE(cret))   /* the instance half of src/tychoc.c:4691@handle. A channel and a task are refused returning out of a generic by their own guards; a handle was not, and `g := ident(f)` DOUBLE FREED -- the callee frees at its scope exit and the caller frees the copy again (glibc "double free detected in tcache 2", observed 2026-08-14) */
+    if (IS_HANDLE(cret))   /* the instance half of src/tychoc.c:4959@handle. A channel and a task are refused returning out of a generic by their own guards; a handle was not, and `g := ident(f)` DOUBLE FREED -- the callee frees at its scope exit and the caller frees the copy again (glibc "double free detected in tcache 2", observed 2026-08-14) */
         die_at(e->line, "a Tycho fn cannot return a handle -- '%s' was instantiated at one; only an `extern fn` opener may, because a handle is freed at the end of its scope",
                gt->name);
     if (has_typaram(cret))
@@ -9979,7 +10336,9 @@ static void resolve_program(ProcVec *prog) {
             if (sig_find(pr->name) || generic_find(pr->name) || consts_find(pr->name) || variant_find(pr->name, NULL) >= 0)
                 die_dup_proc(prog, i, pr->name);
             TBL_ENSURE(g_generics, g_ngenerics, g_generics_cap);
-            g_generics[g_ngenerics++] = pr;
+            g_generics[g_ngenerics] = pr;
+            name_index_put_first(&g_generic_index, pr->name, g_ngenerics);
+            g_ngenerics++;
             continue;
         }
         if (sig_find(pr->name) || consts_find(pr->name) || variant_find(pr->name, NULL) >= 0)
@@ -10036,6 +10395,11 @@ static void resolve_program(ProcVec *prog) {
                    "the destructor '%s' of handle '%s' must take exactly one parameter "
                    "of type %s -- that is what the scope-exit free passes it",
                    fname, hname, hname);
+        if (fs->ret == T_BYTES || ffi_arr_ptr_ctype(fs->ret))
+            die_at(g_handles[h].line,
+                   "the destructor '%s' of handle '%s' cannot return bytes or a scalar array -- "
+                   "scope-exit frees pass only the handle argument",
+                   fname, hname);
     }
     Sig *m = sig_find("main");
     if (!m) { fprintf(stderr, "%s: error: no 'main' procedure\n", g_entry_srcname ? g_entry_srcname : g_srcname); exit(1); }
@@ -10050,6 +10414,7 @@ static void resolve_program(ProcVec *prog) {
         if (pr->is_extern) continue;   /* FFI: no body to resolve */
         if (pr->generic) continue;     /* generics: the template body is resolved+emitted per instance (gen_program) */
         if (setjmp(g_recov)) {         /* this proc failed; its diagnostic is stored, try the next */
+            g_resolve_depth = 0;       /* longjmp skipped resolve_exp's recursive unwind */
             g_can_recover = 0; g_nvars = 0; g_ncur_typarams = 0;
             g_inst_from = NULL; g_dup_base = -1; g_npoison = 0;
             continue;
@@ -10208,7 +10573,7 @@ static const char *for3_elidable_arr(Stmt *s) {
     if (!bound || bound->kind != E_CALL || !bound->sval || strcmp(bound->sval, "len") ||
         bound->nargs != 1 || !bound->args[0] || bound->args[0]->kind != E_IDENT) return NULL;
     if (IS_INLINE_ARR(bound->args[0]->type)) return NULL;   /* [N]T / bounded / vector store in .v, not .data — elision emits .data[i], so never elide it */
-    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:4310-4315) */
+    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:4598-4603) */
     if (!post || post->kind != S_ASSIGN || !post->name || strcmp(post->name, iv)) return NULL;
     Expr *inc = post->expr;
     if (!inc || inc->kind != E_BINOP || inc->op != TK_PLUS) return NULL;
@@ -10250,6 +10615,7 @@ static int index_in_range(Expr *base, Expr *idx) {
 
 static char *gen_expr(Expr *e, const char *arena);
 static char *gen_lvalue(Expr *e, const char *arena);   /* C lvalue for a place (with array-element projection) */
+static char *packed_field_byteptr(Expr *e, const char *arena);
 static char *return_frees(void);                       /* arena_free()s for every live scope at a return */
 static Type g_gen_ret = T_VOID;                        /* return type of the proc being emitted (for or_return) */
 static const char *g_cur_proc_name = "?";
@@ -10961,8 +11327,8 @@ static int g_hash_det = 0;   /* deterministic mode for gen_hash / the dhash_* fa
 static char *gen_hash(Type t, const char *v) {
     t = base_of(t);
     if (t == T_STRING || t == T_BYTES) return sfmt(g_hash_det ? "tycho_si_hash_det(%s)" : "tycho_si_hash(%s)", v);
-    if (t == T_FLOAT)  return sfmt(g_hash_det ? "tycho_ik_hash_det((tycho_int)((union { double _d; tycho_int _l; }){ ._d = (%s) })._l)"
-                                                       : "tycho_ik_hash((tycho_int)((union { double _d; tycho_int _l; }){ ._d = (%s) })._l)", v);
+    if (t == T_FLOAT)  return sfmt(g_hash_det ? "tycho_ik_hash_det(tycho_float_hashbits(%s))"
+                                                       : "tycho_ik_hash(tycho_float_hashbits(%s))", v);
     if (enum_fieldless(t)) return sfmt(g_hash_det ? "tycho_ik_hash_det((tycho_int)((%s)->tag))" : "tycho_ik_hash((tycho_int)((%s)->tag))", v);
     if (IS_STRUCT(t))  return sfmt(g_hash_det ? "tycho_dhash_S_%s(%s)" : "tycho_hash_S_%s(%s)", g_structs[STRUCT_ID(t)].name, v);
     if (IS_TUP(t))     return sfmt(g_hash_det ? "tycho_dhash_T%d(%s)" : "tycho_hash_T%d(%s)", TUP_ID(t), v);
@@ -11082,16 +11448,35 @@ static char *cond_unwrap(char *s) {
  * read-once consumers below (len/print) use it directly, since the C-owned
  * pointer is read immediately and never held. */
 static char *gen_extern_raw(Expr *e) {
+    Sig *sig = sig_find(e->sval);
+    char *packed_pre = "", *packed_post = "";
+    int packed_count = 0;
     /* A `bytes` argument lowers to two C args (const unsigned char* ptr, long len).
      * Bind it to a temp first (single-eval: the arg may be a call). When there are
      * no bytes args, emit the plain `f(args)` unchanged (output-stable FFI). */
     char *decls = sfmt("%s", ""), *args = sfmt("%s", "");
     int emitted = 0, nb = 0;
     for (int i = 0; i < e->nargs; i++) {
-        char *a = gen_expr(e->args[i], g_cur_scope);
+        char *packed_place = NULL;
+        if (sig && i < sig->nparams && sig->inout[i] && e->args[i]->kind == E_ADDR)
+            packed_place = packed_field_byteptr(e->args[i]->lhs, g_cur_scope);
+        char *a;
+        if (packed_place) {
+            int id = g_blk++;
+            char *tmp = sfmt("_packed_v%d", id), *ptr = sfmt("_packed_p%d", id);
+            a = sfmt("&%s", tmp);
+            packed_pre = sfmt("%s%s %s; void *%s = %s; memcpy(&%s, %s, sizeof %s); ",
+                              packed_pre, c_type(sig->params[i]), tmp, ptr, packed_place, tmp, ptr, tmp);
+            packed_post = sfmt("%s memcpy(%s, &%s, sizeof %s);", packed_post, ptr, tmp, tmp);
+            packed_count++;
+        } else {
+            a = gen_expr(e->args[i], g_cur_scope);
+        }
         Type at = e->args[i]->type;
         const char *arrp = ffi_arg_arr_ptr_ctype(at);
-        if (at == T_BYTES) {
+        if (packed_place) {
+            args = sfmt("%s%s%s", args, emitted++ ? ", " : "", a);
+        } else if (at == T_BYTES) {
             char *tv = sfmt("_xb%d", nb++);
             decls = sfmt("%schar *%s = %s; ", decls, tv, a);
             args = sfmt("%s%s(const unsigned char *)%s, tycho_str_len(%s)", args, emitted++ ? ", " : "", tv, tv);
@@ -11104,6 +11489,14 @@ static char *gen_extern_raw(Expr *e) {
         }
     }
     char *call = sfmt("%s(%s)", e->sval, args);
+    if (packed_count) {
+        char *pre = sfmt("%s%s", packed_pre, decls);
+        if (sig->ret == T_VOID)
+            return sfmt("({ %s%s; %s; })", pre, call, packed_post);
+        int id = g_blk++;
+        return sfmt("({ %s%s _packed_r%d = %s; %s _packed_r%d; })",
+                    pre, c_type(sig->ret), id, call, packed_post, id);
+    }
     return decls[0] ? sfmt("({ %s%s; })", decls, call) : call;
 }
 /* Is e a DIRECT call to an extern fn returning string? (not an indirect/fn-value
@@ -11114,6 +11507,26 @@ static int is_extern_str_call(Expr *e) {
         return 0;
     Sig *cs = sig_find(e->sval);
     return cs && cs->is_extern && base_of(cs->ret) == T_STRING;
+}
+
+static char *c_enum_vfield(const char *name) { return sfmt("V_%s", name); }
+static char *c_enum_payload(const char *en, const char *variant) { return sfmt("TychoPayload_%s_%s", en, variant); }
+
+static char *packed_field_byteptr(Expr *e, const char *arena) {
+    if (!e) return NULL;
+    if (e->kind == E_FIELD) {
+        Type recv = base_of(e->lhs->type);
+        if (IS_STRUCT(recv) && g_structs[STRUCT_ID(recv)].packed) {
+            StructDef *sd = &g_structs[STRUCT_ID(recv)];
+            char *obj = gen_lvalue(e->lhs, arena);
+            return sfmt("(void *)((unsigned char *)&(%s) + offsetof(S_%s, f_%s))",
+                        obj, sd->name, e->sval);
+        }
+        return packed_field_byteptr(e->lhs, arena);
+    }
+    if (e->kind == E_INDEX || e->kind == E_TUPIDX)
+        return packed_field_byteptr(e->lhs, arena);
+    return NULL;
 }
 
 static char *gen_call(Expr *e, const char *arena) {
@@ -11145,10 +11558,12 @@ static char *gen_call(Expr *e, const char *arena) {
          * this variant's payload), not the union max -- a JNum node is 16B, not
          * sizeof(the widest variant). Reads dispatch on the tag, so the smaller
          * cell is never over-read; copies are field-wise (per variant). */
-        char *out = sfmt("({ E_%s *_p = (E_%s *)arena_alloc(%s, offsetof(E_%s, u) + sizeof(E_%s_%s)); _p->tag = %d;",
-                         en, en, arena, en, en, var->name, vi);
+        char *payload = c_enum_payload(en, var->name);
+        char *field = c_enum_vfield(var->name);
+        char *out = sfmt("({ E_%s *_p = (E_%s *)arena_alloc(%s, offsetof(E_%s, u) + sizeof(%s)); _p->tag = %d;",
+                         en, en, arena, en, payload, vi);
         for (int i = 0; i < var->npayload; i++)
-            out = sfmt("%s _p->u.%s.f%d = %s;", out, var->name, i,
+            out = sfmt("%s _p->u.%s.f%d = %s;", out, field, i,
                        alias_arg(var->payload[i], arena, e->args[i], e->args, e->nargs));
         return sfmt("%s _p; })", out);
     }
@@ -11361,7 +11776,7 @@ static char *gen_call(Expr *e, const char *arena) {
     if (!strcmp(e->sval, "args")) {
         return sfmt("tycho_args(%s)", arena);
     }
-    if (!strcmp(e->sval, "chr") || !strcmp(e->sval, "to_char")) {   /* int -> byte. Both route through tycho_chr so both inherit its 0..255 ABORT (`runtime/tycho_rt.c:1407`) rather than masking -- the established answer for an out-of-range conversion here, the same one to_int(float) takes at `runtime/tycho_rt.c:242-244`. to_char then reads the byte back out; the sized to_u8 family wraps instead, but those are documented as total reinterpretations (docs/spec/06-conversions.md:40), not conversions with a domain. */
+    if (!strcmp(e->sval, "chr") || !strcmp(e->sval, "to_char")) {   /* int -> byte. Both route through tycho_chr so both inherit its 0..255 ABORT (`runtime/tycho_rt.c:1434`) rather than masking -- the established answer for an out-of-range conversion here, the same one to_int(float) takes at `runtime/tycho_rt.c:242-244`. to_char then reads the byte back out; the sized to_u8 family wraps instead, but those are documented as total reinterpretations (docs/spec/06-conversions.md:40), not conversions with a domain. */
         return sfmt(e->sval[0] == 'c' ? "tycho_chr(%s, %s)" : "((tycho_int)(unsigned char)tycho_chr(%s, %s)[0])", arena, gen_expr(e->args[0], arena));
     }
     if (!strcmp(e->sval, "die")) {   /* print to stderr and exit(1); never returns */
@@ -11459,12 +11874,28 @@ static char *gen_call(Expr *e, const char *arena) {
              * C-owned buffer into an arena bytes/array and free it. The shim must
              * malloc(*out); tycho_{bytes,arr_int,arr_float}_from_c frees it after. */
             char *decls = sfmt("%s", ""), *args = sfmt("%s", "");
+            char *packed_pre = "", *packed_post = "";
             int emitted = 0, nb = 0;
             for (int i = 0; i < e->nargs; i++) {
-                char *a = gen_expr(e->args[i], g_cur_scope);
+                char *packed_place = NULL;
+                if (i < cs->nparams && cs->inout[i] && e->args[i]->kind == E_ADDR)
+                    packed_place = packed_field_byteptr(e->args[i]->lhs, g_cur_scope);
+                char *a;
+                if (packed_place) {
+                    int pid = g_blk++;
+                    char *tmp = sfmt("_packed_v%d", pid), *ptr = sfmt("_packed_p%d", pid);
+                    a = sfmt("&%s", tmp);
+                    packed_pre = sfmt("%s%s %s; void *%s = %s; memcpy(&%s, %s, sizeof %s); ",
+                                      packed_pre, c_type(cs->params[i]), tmp, ptr, packed_place, tmp, ptr, tmp);
+                    packed_post = sfmt("%s memcpy(%s, &%s, sizeof %s);", packed_post, ptr, tmp, tmp);
+                } else {
+                    a = gen_expr(e->args[i], g_cur_scope);
+                }
                 Type at = e->args[i]->type;
                 const char *arrp = ffi_arg_arr_ptr_ctype(at);
-                if (at == T_BYTES) {
+                if (packed_place) {
+                    args = sfmt("%s%s%s", args, emitted++ ? ", " : "", a);
+                } else if (at == T_BYTES) {
                     char *tv = sfmt("_xb%d", nb++);
                     decls = sfmt("%schar *%s = %s; ", decls, tv, a);
                     args = sfmt("%s%s(const unsigned char *)%s, tycho_str_len(%s)", args, emitted++ ? ", " : "", tv, tv);
@@ -11479,8 +11910,10 @@ static char *gen_call(Expr *e, const char *arena) {
             int id = g_blk++;
             const char *octype = _retb == T_BYTES ? "unsigned char" : _retb == T_ARRAY_INT ? "tycho_int" : "double";
             const char *fromc  = _retb == T_BYTES ? "tycho_bytes_from_c" : _retb == T_ARRAY_INT ? "tycho_arr_int_from_c" : "tycho_arr_float_from_c";
-            return sfmt("({ %s%s *_o%d = 0; tycho_int _ol%d = 0; %s(%s%s&_o%d, &_ol%d); %s(%s, _o%d, _ol%d); })",
-                        decls, octype, id, id, e->sval, args, emitted ? ", " : "", id, id, fromc, arena, id, id);
+            char *pre = sfmt("%s%s", packed_pre, decls);
+            return sfmt("({ %s%s *_o%d = 0; tycho_int _ol%d = 0; %s(%s%s&_o%d, &_ol%d); %s %s(%s, _o%d, _ol%d); })",
+                        pre, octype, id, id, e->sval, args, emitted ? ", " : "", id, id,
+                        packed_post, fromc, arena, id, id);
         }
         char *xc = gen_extern_raw(e);
         /* FFI R3a: `-> Option(string)` — NULL becomes None, a real pointer becomes
@@ -11492,6 +11925,8 @@ static char *gen_call(Expr *e, const char *arena) {
         return xc;
     }
     char *out = sfmt("h_%s(%s", e->sval, arena);
+    char *packed_pre = "", *packed_post = "";
+    int packed_count = 0;
     g_call_arg_depth++;
     for (int i = 0; i < e->nargs; i++) {
         /* arguments are transients (the callee's return value is independently
@@ -11502,8 +11937,24 @@ static char *gen_call(Expr *e, const char *arena) {
          * value (no copy) and copies an otherwise-live place — exactly move-on-last-use
          * applied to the call boundary. (A borrowed param below just shares the buffer.) */
         int sink_arg = cs && i < cs->nparams && cs->sink[i] && type_is_heap(cs->params[i]);
-        char *a = sink_arg ? sink_arg_into(cs->params[i], g_cur_scope, e->args[i])
-                           : gen_expr(e->args[i], g_cur_scope);
+        char *a;
+        char *packed_place = NULL;
+        if (cs && i < cs->nparams && cs->inout[i] && e->args[i]->kind == E_ADDR)
+            packed_place = packed_field_byteptr(e->args[i]->lhs, g_cur_scope);
+        if (packed_place) {
+            int pid = g_blk++;
+            Type pt = cs->params[i];
+            char *tmp = sfmt("_packed_v%d", pid);
+            char *ptr = sfmt("_packed_p%d", pid);
+            packed_pre = sfmt("%s%s %s; void *%s = %s; memcpy(&%s, %s, sizeof %s); ",
+                              packed_pre, c_type(pt), tmp, ptr, packed_place, tmp, ptr, tmp);
+            a = sfmt("&%s", tmp);
+            packed_post = sfmt("%s memcpy(%s, &%s, sizeof %s);", packed_post, ptr, tmp, tmp);
+            packed_count++;
+        } else {
+            a = sink_arg ? sink_arg_into(cs->params[i], g_cur_scope, e->args[i])
+                         : gen_expr(e->args[i], g_cur_scope);
+        }
         if (cs && i < cs->nparams && cs->inout[i] && type_is_heap(cs->params[i])
             && e->args[i]->kind == E_ADDR) {
             Expr *root = e->args[i]->lhs;
@@ -11515,7 +11966,13 @@ static char *gen_call(Expr *e, const char *arena) {
         }
     }
     g_call_arg_depth--;
-    return sfmt("%s)", out);
+    char *call = sfmt("%s)", out);
+    if (!packed_count) return call;
+    if (cs->ret == T_VOID)
+        return sfmt("({ %s%s; %s; })", packed_pre, call, packed_post);
+    int rid = g_blk++;
+    return sfmt("({ %s%s _packed_r%d = %s; %s _packed_r%d; })",
+                packed_pre, c_type(cs->ret), rid, call, packed_post, rid);
 }
 
 /* F: cast an operation's result back to its sized-int C type. Sub-int types
@@ -11563,7 +12020,7 @@ static const char *op_str(TokKind op) {
  * below (int `/` and `%` through tycho_idiv/imod, unsigned through udiv/umod,
  * shifts through the width guard, sized results truncated to their C width) are
  * exactly the ones a scalar gets, and an element must not silently get fewer. */
-static char *gen_arith_op(TokKind op, Type rt, char *l, char *r) {
+static char *gen_arith_op(TokKind op, Type rt, Type count_type, char *l, char *r) {
     /* integer division/modulo guard: -fwrapv (the int-overflow contract) makes
      * signed overflow wrap, but division is the one arithmetic op it does NOT
      * make total -- x/0, x%0, and LONG_MIN/-1 still trap (SIGFPE). Route int `/`
@@ -11588,12 +12045,13 @@ static char *gen_arith_op(TokKind op, Type rt, char *l, char *r) {
     if (op == TK_SHL || op == TK_SHR) {
         Type b = base_of(rt);
         char c = op == TK_SHL ? 'l' : 'r';
-        if (b == T_INT) return sfmt("tycho_sh%c_i(%s, %s)", c, l, r);
-        if (b == T_U32) return sfmt("tycho_sh%c_u32(%s, %s)", c, l, r);
-        if (b == T_U64) return sfmt("tycho_sh%c_u64(%s, %s)", c, l, r);
+        char *count = sfmt("tycho_shift_count((uint64_t)(%s), %d)", r, is_uint(base_of(count_type)));
+        if (b == T_INT) return sfmt("tycho_sh%c_i(%s, %s)", c, l, count);
+        if (b == T_U32) return sfmt("tycho_sh%c_u32(%s, %s)", c, l, count);
+        if (b == T_U64) return sfmt("tycho_sh%c_u64(%s, %s)", c, l, count);
         char *g = op == TK_SHL
-            ? sfmt("tycho_shln(%s, %s, %d)", l, r, int_width(b))
-            : sfmt("tycho_shrn(%s, %s, %d, %d)", l, r, int_width(b), !is_uint(b));
+            ? sfmt("tycho_shln(%s, %s, %d)", l, count, int_width(b))
+            : sfmt("tycho_shrn(%s, %s, %d, %d)", l, count, int_width(b), !is_uint(b));
         return trunc_result(rt, g);
     }
     return trunc_result(rt, sfmt("(%s %s %s)", l, op_str(op), r));
@@ -11626,7 +12084,8 @@ static char *gen_ew_arith(Expr *e, char *l, char *r, const char *arena) {
     int la = is_array(e->lhs->type), ra = is_array(e->rhs->type);
     const char *ax = la ? (IS_FIXARR(at) ? "_ewa.v[_ewi]" : "_ewa.data[_ewi]") : "_ewa";
     const char *bx = ra ? (IS_FIXARR(at) ? "_ewb.v[_ewi]" : "_ewb.data[_ewi]") : "_ewb";
-    char *body = gen_arith_op(e->op, et, (char *)ax, (char *)bx);
+    Type ct = ra ? arr_elem(e->rhs->type) : e->rhs->type;
+    char *body = gen_arith_op(e->op, et, ct, (char *)ax, (char *)bx);
     /* each local takes its own C type: the array side the array struct, the
      * scalar side the element type (so it is evaluated exactly once, like the
      * array operands, and a side-effecting scalar is not re-run per element). */
@@ -11668,6 +12127,13 @@ static char *gen_ew_arith(Expr *e, char *l, char *r, const char *arena) {
                 lct, l, rct, r,
                 (la && ra) ? "   if (_ewa.len != _ewb.len) tycho_ew_len(_ewa.len, _ewb.len);\n" : "",
                 act, src, src, ect, arena, ect, body);
+}
+
+static int static_scalar_expr(Expr *e) {
+    return e && (e->kind == E_INT || e->kind == E_FLOAT || e->kind == E_CHAR || e->kind == E_BOOL);
+}
+static int static_array_elem_type(Type t) {
+    return t == T_INT || t == T_FLOAT || t == T_CHAR || t == T_BOOL || is_sized_int(t);
 }
 
 static char *gen_expr(Expr *e, const char *arena) {
@@ -11773,7 +12239,7 @@ static char *gen_expr(Expr *e, const char *arena) {
             LamInfo *li = &g_laminfo[e->ival];
             int fid = FUNC_ID(li->ftype), id = (int)e->ival;
             if (li->ncap == 0)
-                return sfmt("(FnC%d){0, __lam%d__clo, 0}", fid, id);
+                return sfmt("(FnC%d){0, __lam%d__clo, 0, 0}", fid, id);
             /* env in the OWNER arena (where this closure value is stored) — so a
              * loop-local closure is reclaimed each iteration with the rest of its
              * block, not retained in the function arena for the whole call. Every
@@ -11787,11 +12253,11 @@ static char *gen_expr(Expr *e, const char *arena) {
                 if (type_is_heap(ct)) cv = copy_into(ct, arena, cv);   /* value semantics: own a deep copy in the env arena */
                 out = sfmt("%s _e->c%d = %s;", out, i, cv);
             }
-            return sfmt("%s (FnC%d){_e, __lam%d__clo, Env_%d_copy}; })", out, fid, id, id);
+            return sfmt("%s (FnC%d){_e, __lam%d__clo, Env_%d_copy, Env_%d_drop}; })", out, fid, id, id, id);
         }
         case E_IDENT:
             if (e->op == TK_FN)   /* a function reference -> the fat value {0, <name>__clo, 0} (no env to re-home) */
-                return sfmt("(FnC%d){0, %s__clo, 0}", FUNC_ID(e->type), e->sval);
+                return sfmt("(FnC%d){0, %s__clo, 0, 0}", FUNC_ID(e->type), e->sval);
             return is_inout_param(e->sval) ? sfmt("(*h_%s)", e->sval)
                                            : sfmt("h_%s", e->sval);
         case E_ADDR: /* &place as an inout arg: address of the underlying
@@ -11944,12 +12410,26 @@ static char *gen_expr(Expr *e, const char *arena) {
                 sb_addf(&sb, " _l%d.len = %dL; _l%d; })", id, e->nargs, id);
                 return sb_done(&sb);
             }
-            /* array literal: build with_cap, then store each element. copy_into
-             * deep-copies it into `arena` so the array owns its bytes — a plain
-             * assign for int/float, tycho_str_copy for string, the element's deep
-             * copy for a struct or nested array. */
+            /* Large constant scalar literals go through one static initializer
+             * and memcpy. A store per element inside this statement expression
+             * gives gcc -O3 one enormous block to optimize (audit D18). */
             Type elem = arr_elem(e->type);
+            int static_lit = e->nargs >= 64 && static_array_elem_type(elem);
+            for (int i = 0; static_lit && i < e->nargs; i++)
+                if (!static_scalar_expr(e->args[i])) static_lit = 0;
             SBuf sb; sb_init(&sb);
+            if (static_lit) {
+                sb_addf(&sb, "({ static const %s _lit%d[%d] = {", c_type(elem), id, e->nargs);
+                for (int i = 0; i < e->nargs; i++)
+                    sb_addf(&sb, "%s%s", i ? ", " : "", gen_expr(e->args[i], arena));
+                sb_addf(&sb, "}; %s_l%d = tycho_arr_%s_with_cap(%s, %dL); "
+                             "memcpy(_l%d.data, _lit%d, sizeof _lit%d); "
+                             "_l%d.len = %dL; _l%d; })",
+                        c_type(e->type), id, arr_fn(e->type), arena, e->nargs,
+                        id, id, id, id, e->nargs, id);
+                return sb_done(&sb);
+            }
+            /* Non-constant elements retain the per-element ownership copy. */
             sb_addf(&sb, "({ %s_l%d = tycho_arr_%s_with_cap(%s, %dL);",
                     c_type(e->type), id, arr_fn(e->type), arena, e->nargs);
             for (int i = 0; i < e->nargs; i++)
@@ -12017,6 +12497,42 @@ static char *gen_expr(Expr *e, const char *arena) {
              * a braced group, so each is sequenced before the next. Only a chain
              * that actually carries a call needs it; every other concat emits
              * byte-identically to before. */
+            /* An interpolated string is a left-to-right sequence. Keep its
+             * pieces in one statement expression rather than nesting one
+             * statement expression per hole (clang rejects ~130 bracket levels).
+             * The AST marks each desugared interpolation join with `fstr`. */
+            if (e->op == TK_PLUS && e->type == T_STRING) {
+                Expr **pieces = NULL; int np = 0, cp = 0, is_fstr = 0;
+                Expr *cur = e;
+                for (;;) {
+                    if (cur->kind == E_BINOP && cur->op == TK_PLUS && cur->type == T_STRING) {
+                        if (cur->fstr) is_fstr = 1;
+                        if (np == cp) { cp = cp ? cp * 2 : 8; pieces = (Expr **)xrealloc(pieces, (size_t)cp * sizeof(*pieces)); }
+                        pieces[np++] = cur->rhs;
+                        cur = cur->lhs;
+                    } else {
+                        if (np == cp) { cp = cp ? cp * 2 : 8; pieces = (Expr **)xrealloc(pieces, (size_t)cp * sizeof(*pieces)); }
+                        pieces[np++] = cur;
+                        break;
+                    }
+                }
+                if (is_fstr) {
+                    int id = g_forin_uid++;
+                    char *v = sfmt("_fi%d", id);
+                    char *out = sfmt("({ char *%s = %s; ", v, gen_expr(pieces[np - 1], arena));
+                    for (int i = np - 2; i >= 0; i--) {
+                        char *piece = gen_expr(pieces[i], arena);
+                        if (pieces[i]->type == T_CHAR)
+                            out = sfmt("%s%s = tycho_str_concat_char(%s, %s, %s); ", out, v, arena, v, piece);
+                        else
+                            out = sfmt("%s%s = tycho_str_concat(%s, %s, %s); ", out, v, arena, v, piece);
+                    }
+                    out = sfmt("%s%s; })", out, v);
+                    free(pieces);
+                    return out;
+                }
+                free(pieces);
+            }
             int fseq = 0;
             if (e->op == TK_PLUS && e->type == T_STRING && expr_has_call(e))
                 for (Expr *c = e; c && c->kind == E_BINOP && c->op == TK_PLUS && c->type == T_STRING; c = c->lhs)
@@ -12074,7 +12590,7 @@ static char *gen_expr(Expr *e, const char *arena) {
                 return gen_ew_arith(e, l, r, arena);
             /* every scalar arithmetic/bitwise/shift op, incl. the division and
              * shift runtime guards -- shared with the element-wise arm above. */
-            return gen_arith_op(e->op, e->type, l, r);
+            return gen_arith_op(e->op, e->type, e->rhs->type, l, r);
         }
     }
     return sfmt("0");
@@ -12115,10 +12631,10 @@ static int block_ends_in_return(Stmt **body, int n) {
  * (arena_child is a fresh block list, not physically nested in _scope), so an
  * early `return` must free them explicitly or they leak — this is the
  * loop-return scratch leak. Reset per proc; pushed around each block body. */
-static const char *g_ascope[64];
+static const char *g_ascope[256];
 static int g_nascope = 0;
 static void ascope_push(const char *a) {
-    if (g_nascope >= 64) { fprintf(stderr, "tychoc: block nesting too deep\n"); exit(1); }
+    if (g_nascope >= 256) { fprintf(stderr, "tychoc: block nesting too deep\n"); exit(1); }
     g_ascope[g_nascope++] = a;
 }
 
@@ -12132,14 +12648,14 @@ static void ascope_push(const char *a) {
 static const char **g_taskvars;   /* full finalizer calls, e.g. "tycho_task_finish(h_t)" */
 static int g_taskvars_cap = 0;
 static int g_ntaskvars = 0;
-static int g_loop_taskmark[64];   /* g_ntaskvars at each enclosing loop's body entry */
+static int g_loop_taskmark[256];  /* g_ntaskvars at each enclosing loop's body entry */
 /* Per enclosing loop: the block id of its post clause, or -1 if it has none.
  * A `continue` in a three-clause loop MUST run the post clause, so it is emitted
  * as `goto _post<id>` rather than a C `continue` (which jumps straight to the
  * condition and would skip it -- a loop that only advances in its post clause
  * would spin forever). Every loop writes its slot before g_loop_depth++, so a
  * plain loop's -1 always overwrites whatever a sibling three-clause loop left. */
-static int g_loop_post[64];
+static int g_loop_post[256];
 
 /* Does a `continue` in this body bind to THIS loop? Descends through if / match /
  * select bodies (a continue there escapes outward to the enclosing loop) but not
@@ -12237,6 +12753,46 @@ static char *gen_lvalue(Expr *e, const char *arena) {
     return gen_expr(e, arena);
 }
 
+typedef struct { Expr *node, *old_rhs; } PlaceIndexSave;
+
+/* A place's index/key expressions run before its RHS, but its address must be
+ * formed AFTER the RHS: an inout call can grow/re-hash the container. Stage
+ * non-literal legs in source order, substitute their names while rendering the
+ * eventual lvalue, then restore the AST. */
+static void stage_place_indices(Expr *e, FILE *o, int ind, const char *scope,
+                               PlaceIndexSave **saved, int *nsaved, int *csaved) {
+    if (!e) return;
+    if (e->kind == E_FIELD || e->kind == E_TUPIDX) {
+        stage_place_indices(e->lhs, o, ind, scope, saved, nsaved, csaved);
+        return;
+    }
+    if (e->kind != E_INDEX) return;
+    stage_place_indices(e->lhs, o, ind, scope, saved, nsaved, csaved);
+    Expr *ix = e->rhs;
+    if (!ix || ix->kind == E_INT || ix->kind == E_FLOAT || ix->kind == E_STR ||
+        ix->kind == E_CHAR || ix->kind == E_BOOL || ix->kind == E_NULL) return;
+    int id = g_blk++;
+    char *name = sfmt("_pidx%d", id);
+    indent(o, ind);
+    fprintf(o, "%s h_%s = %s;\n", c_type(ix->type), name, gen_expr(ix, scope));
+    Expr *tmp = new_expr(E_IDENT, ix->line);
+    tmp->sval = name;
+    tmp->type = ix->type;
+    if (*nsaved == *csaved) {
+        *csaved = *csaved ? *csaved * 2 : 4;
+        *saved = (PlaceIndexSave *)xrealloc(*saved, (size_t)*csaved * sizeof **saved);
+    }
+    (*saved)[*nsaved].node = e;
+    (*saved)[*nsaved].old_rhs = ix;
+    (*nsaved)++;
+    e->rhs = tmp;
+}
+
+static void restore_place_indices(PlaceIndexSave *saved, int nsaved) {
+    while (nsaved-- > 0) saved[nsaved].node->rhs = saved[nsaved].old_rhs;
+    free(saved);
+}
+
 /* Emit ONE side of an Option/Result match -- its Ok, Err or Some arms -- as an
  * ordered decision chain. `val` is the C expression for the payload (`_m3.errv`),
  * `pt` its Tycho type.
@@ -12267,7 +12823,7 @@ static void gen_match_side(FILE *o, Stmt *s, const char *tag, Type pt, char *val
         if (var->npayload > 0 && a->nsubbinds > 0) {
             int bid = g_blk++;
             indent(o, ind + 1);
-            fprintf(o, "E_%s_%s *_p%d = &%s->u.%s;\n", ed->name, var->name, bid, val, var->name);
+            fprintf(o, "%s *_p%d = &%s->u.%s;\n", c_enum_payload(ed->name, var->name), bid, val, c_enum_vfield(var->name));
             for (int b = 0; b < a->nsubbinds; b++) {
                 if (bind_is_discard(a->subbinds[b])) continue;   /* no binding, no local */
                 char *field = sfmt("_p%d->f%d", bid, b);
@@ -12385,6 +12941,8 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                 gen_stmt(o, s->ctrl, ind, scope, ret);
                 break;
             }
+            int rhs_shadows_binding = expr_refs_local(s->expr, s->name)
+                || expr_calls_unqualified(s->expr, s->name);
             if (IS_TASK(s->decl_type))   /* CC-2: track for implicit join at this var's scope exit */
                 taskvar_push(sfmt("tycho_task_finish(h_%s)", s->name));
             if (IS_CHAN(s->decl_type) && s->expr->kind == E_CALL
@@ -12411,7 +12969,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                  * be in scope while the transient RHS reads it. Land the result in
                  * a temp first, then bind -- so the RHS reads the enclosing binding
                  * (see the normal branch below for the full rationale). */
-                if (expr_refs_local(s->expr, s->name))
+                if (rhs_shadows_binding)
                     fprintf(o, "%s_sh_%s; { Arena _t = arena_new(0); _sh_%s = %s; arena_free(&_t); } %sh_%s = _sh_%s;\n",
                             c_type(s->decl_type), s->name, s->name, tv,
                             c_type(s->decl_type), s->name, s->name);
@@ -12438,7 +12996,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
              * binding -- not the uninitialized inner one (that was a use-before-init
              * UB: garbage on macOS, an accidental 0 on Linux). The temp name can't
              * collide: a second decl of `name` in one scope is rejected. */
-            if (expr_refs_local(s->expr, s->name))
+            if (rhs_shadows_binding)
                 fprintf(o, "%s_sh_%s = %s; %sh_%s = _sh_%s;\n",
                         c_type(s->decl_type), s->name, v,
                         c_type(s->decl_type), s->name, s->name);
@@ -12601,7 +13159,10 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                                                               : sfmt("&h_%s", s->name);
                 char *k = key_rt(s->expr->type, gen_expr(s->expr->args[1], mo));
                 indent(o, ind);
-                fprintf(o, "%s(%s, %s);\n", map_rt(s->expr->type, "del"), mp, k);
+                if (IS_MAPC(s->expr->type))
+                    fprintf(o, "%s(%s, %s, %s);\n", map_rt(s->expr->type, "del"), mo, mp, k);
+                else
+                    fprintf(o, "%s(%s, %s);\n", map_rt(s->expr->type, "del"), mp, k);
                 break;
             }
             /* a self-rebuild `t = C(..., t, ...)` hands off t's buffer into
@@ -12685,47 +13246,93 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
              * &(lvalue) gives a TychoArr* for both. */
             Expr *arrx = s->target->lhs;
             Expr *root = arrx;
-            while (root->kind == E_FIELD || root->kind == E_INDEX) root = root->lhs;
+            while (root->kind == E_FIELD || root->kind == E_INDEX || root->kind == E_TUPIDX) root = root->lhs;
+            PlaceIndexSave *saved = NULL;
+            int nsaved = 0, csaved = 0;
+            stage_place_indices(s->target, o, ind, scope, &saved, &nsaved, &csaved);
+            int compound = (s->expr->kind == E_BINOP && s->expr->lhs == s->target);
             if (is_map(arrx->type)) {   /* m[k] = v  or  m[k] op= v  (#2) */
                 Type vt = s->target->type;   /* the map value type */
                 const char *mowner = (root->kind == E_IDENT) ? owner_arena_of(root->sval) : scope;
-                int compound = (s->expr->kind == E_BINOP && s->expr->lhs == s->target);
                 if (compound) {
-                    /* single-eval the slot pointer: one find-or-insert, then read-modify-write
-                     * through it (no double lookup). Scalar value, so a plain C operator. */
+                    /* Snapshot the old value and RHS, then look the slot up again:
+                     * RHS may grow/re-hash the map, invalidating any old slot pointer. */
                     int id = g_blk++;
                     char *mb  = gen_lvalue(arrx, scope);
                     char *key = key_rt(arrx->type, gen_expr(s->target->rhs, scope));
                     char *rhs = gen_expr(s->expr->rhs, scope);
+                    char *slot = sfmt("%s(%s, &(%s), %s)", map_rt(arrx->type, "slotptr"), mowner, mb, key);
                     indent(o, ind);
                     /* int `/=`/`%=` route the read-modify-write through the same
                      * division guard as a plain int `/`/`%` (x/0, x%0, LONG_MIN/-1
                      * trap otherwise); other ops stay a plain C operator. */
                     if ((s->expr->op == TK_SLASH || s->expr->op == TK_PERCENT) && base_of(vt) == T_INT)
-                        fprintf(o, "{ %s*_mp%d = %s(%s, &(%s), %s); *_mp%d = %s(*_mp%d, %s); }\n",
-                                c_type(vt), id, map_rt(arrx->type, "slotptr"), mowner, mb, key,
-                                id, s->expr->op == TK_SLASH ? "tycho_idiv" : "tycho_imod", id, rhs);
+                        fprintf(o, "{ %s _old%d = *%s; %s _rhs%d = %s; %s*_mp%d = %s; *_mp%d = %s(_old%d, _rhs%d); }\n",
+                                c_type(vt), id, slot, c_type(vt), id, rhs, c_type(vt), id, slot, id,
+                                s->expr->op == TK_SLASH ? "tycho_idiv" : "tycho_imod", id, id);
                     else if ((s->expr->op == TK_SLASH || s->expr->op == TK_PERCENT) && (base_of(vt) == T_U32 || base_of(vt) == T_U64))
-                        fprintf(o, "{ %s*_mp%d = %s(%s, &(%s), %s); *_mp%d = %s(*_mp%d, %s); }\n",
-                                c_type(vt), id, map_rt(arrx->type, "slotptr"), mowner, mb, key,
-                                id, s->expr->op == TK_SLASH ? "tycho_udiv" : "tycho_umod", id, rhs);
+                        fprintf(o, "{ %s _old%d = *%s; %s _rhs%d = %s; %s*_mp%d = %s; *_mp%d = %s(_old%d, _rhs%d); }\n",
+                                c_type(vt), id, slot, c_type(vt), id, rhs, c_type(vt), id, slot, id,
+                                s->expr->op == TK_SLASH ? "tycho_udiv" : "tycho_umod", id, id);
                     else
-                        fprintf(o, "{ %s*_mp%d = %s(%s, &(%s), %s); *_mp%d = *_mp%d %s %s; }\n",
-                                c_type(vt), id, map_rt(arrx->type, "slotptr"), mowner, mb, key,
-                                id, id, op_str(s->expr->op), rhs);
+                        fprintf(o, "{ %s _old%d = *%s; %s _rhs%d = %s; %s*_mp%d = %s; *_mp%d = _old%d %s _rhs%d; }\n",
+                                c_type(vt), id, slot, c_type(vt), id, rhs, c_type(vt), id, slot, id,
+                                id, op_str(s->expr->op), id);
+                } else if (IS_MAPC(arrx->type)) {
+                    char *mb = gen_lvalue(arrx, scope);
+                    char *key = key_rt(arrx->type, gen_expr(s->target->rhs, scope));
+                    char *v = gen_expr(s->expr, scope);   /* mapc_put owns the deep copy */
+                    indent(o, ind);
+                    fprintf(o, "%s(%s, &(%s), %s, %s);\n", map_rt(arrx->type, "put"), mowner, mb, key, v);
                 } else {
                     char *lv = gen_lvalue(s->target, scope);   /* (*slotptr(owner, &m, k)) */
-                    char *v  = gen_expr(s->expr, mowner);
-                    if (type_is_heap(vt) && is_place(s->expr))   /* value semantics: own the bytes */
-                        v = copy_into(vt, mowner, v);
-                    indent(o, ind);
-                    fprintf(o, "%s = %s;\n", lv, v);
+                    int id = g_blk++;
+                    char *tmp = sfmt("_pval%d", id);
+                    if (vt == T_STRING) {
+                        /* Copy the new value into the map arena and recycle the
+                         * overwritten string. Build the RHS in the current
+                         * scope so transient strings do not accumulate there;
+                         * the helper copies before recycling, including aliasing. */
+                        char *v = gen_expr(s->expr, scope);
+                        indent(o, ind); fprintf(o, "char *%s = %s;\n", tmp, v);
+                        indent(o, ind); fprintf(o, "tycho_str_slot_set(%s, &(%s), %s);\n", mowner, lv, tmp);
+                    } else {
+                        char *v = gen_expr(s->expr, mowner);
+                        if (type_is_heap(vt) && is_place(s->expr))   /* value semantics: own the bytes */
+                            v = copy_into(vt, mowner, v);
+                        indent(o, ind); fprintf(o, "%s %s = %s;\n", c_type(vt), tmp, v);
+                        indent(o, ind); fprintf(o, "%s = %s;\n", lv, tmp);
+                    }
                 }
+                restore_place_indices(saved, nsaved);
+                break;
+            }
+            if (compound) {
+                Type vt = s->target->type;
+                int id = g_blk++;
+                char *old = sfmt("_pold%d", id);
+                char *old_c = sfmt("h_%s", old); /* gen_expr(E_IDENT) applies the source-local h_ prefix */
+                char *val = sfmt("_pval%d", id);
+                char *oldexpr = gen_expr(s->target, scope);
+                indent(o, ind); fprintf(o, "%s %s = %s;\n", c_type(vt), old_c, oldexpr);
+                Expr *lhs = s->expr->lhs;
+                Expr *tmp = new_expr(E_IDENT, lhs->line); tmp->sval = old; tmp->type = vt;
+                s->expr->lhs = tmp;
+                char *newexpr = gen_expr(s->expr, scope);
+                s->expr->lhs = lhs;
+                char *lv = gen_lvalue(s->target, scope);
+                indent(o, ind); fprintf(o, "%s %s = %s;\n", c_type(vt), val, newexpr);
+                indent(o, ind); fprintf(o, "%s = %s;\n", lv, val);
+                restore_place_indices(saved, nsaved);
                 break;
             }
             char *arr = gen_lvalue(arrx, scope);   /* lvalue so a nested `m[i][j]=v` indexes m's buffer */
             char *ix  = gen_expr(s->target->rhs, scope);
             char *v   = gen_expr(s->expr, scope);
+            int vid = g_blk++;
+            char *vtmp = sfmt("_pval%d", vid);
+            indent(o, ind); fprintf(o, "%s %s = %s;\n", c_type(s->target->type), vtmp, v);
+            v = vtmp;
             indent(o, ind);
             if (IS_SOA(arrx->type)) {
                 /* whole-element scatter: one bounds check, then each field
@@ -12748,6 +13355,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             } else {   /* [int] or [float]: value word, no arena, no byte copy */
                 fprintf(o, "tycho_arr_%s_set(&(%s), %s, %s);\n", arr_fn(arrx->type), arr, ix, v);
             }
+            restore_place_indices(saved, nsaved);
             break;
         }
         case S_FIELDSET: {
@@ -12760,12 +13368,18 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             /* heap field's new bytes go in the struct's owning arena — the
              * carried _ina_ arena if the root is a heap inout param. */
             const char *owner = (root->kind == E_IDENT) ? owner_arena_of(root->sval) : scope;
+            PlaceIndexSave *saved = NULL;
+            int nsaved = 0, csaved = 0;
+            stage_place_indices(s->target, o, ind, scope, &saved, &nsaved, &csaved);
             char *lv = gen_lvalue(s->target, scope);   /* projects `arr[i].f` to the element's buffer slot */
             char *v  = gen_expr(s->expr, owner);
             if (type_is_heap(s->target->type) && is_place(s->expr))
                 v = copy_into(s->target->type, owner, v);
-            indent(o, ind);
-            fprintf(o, "%s = %s;\n", lv, v);
+            int id = g_blk++;
+            char *tmp = sfmt("_pval%d", id);
+            indent(o, ind); fprintf(o, "%s %s = %s;\n", c_type(s->target->type), tmp, v);
+            indent(o, ind); fprintf(o, "%s = %s;\n", lv, tmp);
+            restore_place_indices(saved, nsaved);
             break;
         }
         case S_EXPR: {
@@ -12915,21 +13529,34 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             break;
         }
         case S_IF: {
-            /* prong-B: no child arena for if/else blocks. Block transients fall
-             * back to the enclosing `scope`, which always outlives the block, so
-             * this only lengthens their lifetime (no early-free). Escaping values
-             * already promote to _parent/target arena independent of any _bN.
-             * Eliminates ~70% of arena_child/free churn (the if/match blocks). */
-            char *c = cond_unwrap(gen_expr(s->expr, scope));
-            indent(o, ind); fprintf(o, "if (%s) {\n", c);
-            gen_block(o, s->body, s->nbody, ind + 1, scope, ret);
-            indent(o, ind); fprintf(o, "}");
-            if (s->els) {
-                fprintf(o, " else {\n");
-                gen_block(o, s->els, s->nels, ind + 1, scope, ret);
-                indent(o, ind); fprintf(o, "}\n");
-            } else {
-                fprintf(o, "\n");
+            /* Keep an elif chain at one C indentation/bracket depth. The AST
+             * still stores each elif as the sole statement in the prior arm's
+             * else block, so walk that shape iteratively rather than recursively
+             * emitting thousands of nested `else { if (...) { ... } }` blocks. */
+            Stmt *arm = s;
+            int first = 1;
+            for (;;) {
+                char *c = cond_unwrap(gen_expr(arm->expr, scope));
+                if (first) {
+                    indent(o, ind); fprintf(o, "if (%s) {\n", c);
+                    first = 0;
+                } else {
+                    fprintf(o, " else if (%s) {\n", c);
+                }
+                gen_block(o, arm->body, arm->nbody, ind + 1, scope, ret);
+                indent(o, ind); fprintf(o, "}");
+                if (arm->nels == 1 && arm->els[0]->kind == S_IF) {
+                    arm = arm->els[0];
+                    continue;
+                }
+                if (arm->nels > 0) {
+                    fprintf(o, " else {\n");
+                    gen_block(o, arm->els, arm->nels, ind + 1, scope, ret);
+                    indent(o, ind); fprintf(o, "}\n");
+                } else {
+                    fprintf(o, "\n");
+                }
+                break;
             }
             break;
         }
@@ -13065,8 +13692,8 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                     int m = cv_mark();
                     if (var->npayload > 0) {
                         indent(o, ind + 2);
-                        fprintf(o, "E_%s_%s *_p%d = &_m%d->u.%s;\n",
-                                en, var->name, bid, mid, var->name);
+                        fprintf(o, "%s *_p%d = &_m%d->u.%s;\n",
+                                c_enum_payload(en, var->name), bid, mid, c_enum_vfield(var->name));
                         for (int b = 0; b < arm->nbinds; b++) {
                             if (bind_is_discard(arm->binds[b])) continue;   /* no binding, no local */
                             char *field = sfmt("_p%d->f%d", bid, b);
@@ -13890,14 +14517,14 @@ static void gen_program(FILE *o, ProcVec *prog) {
     /* (2a') function-value typedefs FIRST — a container may now hold a fn value
      * (array elem / struct field / map value), so FnC<id> must be complete before
      * the composite-array/struct bodies that embed it. A fn(P...)->R value is a
-     * 3-word FAT POINTER {env, call, copyenv}; common param/ret types (scalars,
+     * 4-word FAT POINTER {env, call, copyenv, dropenv}; common param/ret types (scalars,
      * strings, scalar arrays) are complete here. */
     for (int i = 0; i < g_nfunctypes; i++) {
         if (has_typaram(T_FUNC_BASE + i)) continue;   /* a `fn($T)->...` lives only in a generic template; instances use a concrete fn type. Emitting it would be invalid C (a `void` param). */
         FuncTy *f = &g_functypes[i];
         fprintf(o, "typedef struct { void *env; %s(*call)(void*, Arena*", c_type(f->ret));
         for (int j = 0; j < f->n; j++) fprintf(o, ", %s", c_type(f->params[j]));
-        fprintf(o, "); void *(*copyenv)(Arena*, void*); } FnC%d;\n", i);   /* copyenv re-homes the captured env on return (0 for a plain ref) */
+        fprintf(o, "); void *(*copyenv)(Arena*, void*); void (*dropenv)(Arena*, void*); } FnC%d;\n", i);   /* copyenv re-homes captures and dropenv reclaims their owned graph */
     }
     if (g_nfunctypes) fputs("\n", o);
     for (int i = 0; i < g_narrtypes; i++) {         /* (2b) DYNAMIC composite-array bodies (tags forward-declared above). */
@@ -13962,7 +14589,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
             fprintf(o, "typedef struct {");
             for (int f = 0; f < var->npayload; f++)
                 fprintf(o, " %sf%d;", c_type(var->payload[f]), f);
-            fprintf(o, " } E_%s_%s;\n", g_enums[i].name, var->name);
+            fprintf(o, " } %s;\n", c_enum_payload(g_enums[i].name, var->name));
         }
     }
     /* (3c) enum cell bodies: a value is a pointer to { int tag; union of the
@@ -13980,7 +14607,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
             fprintf(o, " union {");
             for (int v = 0; v < ed->nvariants; v++)
                 if (ed->variants[v].npayload)
-                    fprintf(o, " E_%s_%s %s;", ed->name, ed->variants[v].name, ed->variants[v].name);
+                    fprintf(o, " %s %s;", c_enum_payload(ed->name, ed->variants[v].name), c_enum_vfield(ed->variants[v].name));
             fprintf(o, " } u;");
         }
         fprintf(o, " };\n");
@@ -14090,6 +14717,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
         fprintf(o, "static int tycho_mapc%d_eq(TychoMapC%d, TychoMapC%d);\n", i, i, i);
         fprintf(o, "static void tycho_mapc%d_idxput(TychoMapC%d*, tycho_int);\n", i, i);   /* the reserve body calls it */
     }
+    recycle_emit_all(o);                         /* map-value destruction helpers; prototypes first, then the recursive bodies */
     for (int i = 0; i < g_nstructs; i++)            /* (4) str() prototypes (F5): forward so recursive/mutual str refs resolve */
         if (!g_structs[i].generic)
             fprintf(o, "static char *tycho_str_S_%s(Arena*, S_%s);\n", g_structs[i].name, g_structs[i].name);
@@ -14208,10 +14836,17 @@ static void gen_program(FILE *o, ProcVec *prog) {
                 "static %s*tycho_arr_C%d_ptr(TychoArrC%d *xs, tycho_int i) {\n"
                 "    if (i < 0 || i >= xs->len) { fprintf(stderr, \"tycho: index %%\" TY_PRId \" out of bounds (len %%\" TY_PRId \")\\n\", i, xs->len); exit(1); }\n"
                 "    return &xs->v[i];\n}\n", ct, i, i);
-            fprintf(o,
-                "static void tycho_arr_C%d_set(Arena *a, TychoArrC%d *xs, tycho_int i, %sv) {\n"
-                "    if (i < 0 || i >= xs->len) { fprintf(stderr, \"tycho: index %%\" TY_PRId \" out of bounds (len %%\" TY_PRId \")\\n\", i, xs->len); exit(1); }\n"
-                "    xs->v[i] = %s;\n}\n", i, i, ct, copy_into(et, "a", "v"));
+            if (type_is_heap(et))
+                fprintf(o,
+                    "static void tycho_arr_C%d_set(Arena *a, TychoArrC%d *xs, tycho_int i, %sv) {\n"
+                    "    if (i < 0 || i >= xs->len) { fprintf(stderr, \"tycho: index %%\" TY_PRId \" out of bounds (len %%\" TY_PRId \")\\n\", i, xs->len); exit(1); }\n"
+                    "    %s _new = %s; %s _old = xs->v[i]; xs->v[i] = _new; %s(a, _old);\n}\n",
+                    i, i, ct, ct, copy_into(et, "a", "v"), ct, recycle_name(et));
+            else
+                fprintf(o,
+                    "static void tycho_arr_C%d_set(Arena *a, TychoArrC%d *xs, tycho_int i, %sv) {\n"
+                    "    if (i < 0 || i >= xs->len) { fprintf(stderr, \"tycho: index %%\" TY_PRId \" out of bounds (len %%\" TY_PRId \")\\n\", i, xs->len); exit(1); }\n"
+                    "    xs->v[i] = %s;\n}\n", i, i, ct, copy_into(et, "a", "v"));
             fprintf(o,   /* copy: struct assign carries v[] + len; deep-copy the live elements */
                 "static TychoArrC%d tycho_arr_C%d_copy(Arena *a, TychoArrC%d src) {\n"
                 "    TychoArrC%d r = src;\n"
@@ -14257,10 +14892,17 @@ static void gen_program(FILE *o, ProcVec *prog) {
                 "static %s*tycho_arr_C%d_ptr(TychoArrC%d *xs, tycho_int i) {\n"
                 "    if (i < 0 || i >= %lld) { fprintf(stderr, \"tycho: index %%\" TY_PRId \" out of bounds (len %lld)\\n\", i); exit(1); }\n"
                 "%s", ct, i, i, (long long)n, (long long)n, ptr_ret);
-            fprintf(o,
-                "static void tycho_arr_C%d_set(Arena *a, TychoArrC%d *xs, tycho_int i, %sv) {\n"
-                "    if (i < 0 || i >= %lld) { fprintf(stderr, \"tycho: index %%\" TY_PRId \" out of bounds (len %lld)\\n\", i); exit(1); }\n"
-                "    xs->v[i] = %s;\n}\n", i, i, ct, (long long)n, (long long)n, copy_into(et, "a", "v"));
+            if (type_is_heap(et))
+                fprintf(o,
+                    "static void tycho_arr_C%d_set(Arena *a, TychoArrC%d *xs, tycho_int i, %sv) {\n"
+                    "    if (i < 0 || i >= %lld) { fprintf(stderr, \"tycho: index %%\" TY_PRId \" out of bounds (len %lld)\\n\", i); exit(1); }\n"
+                    "    %s _new = %s; %s _old = xs->v[i]; xs->v[i] = _new; %s(a, _old);\n}\n",
+                    i, i, ct, (long long)n, (long long)n, ct, copy_into(et, "a", "v"), ct, recycle_name(et));
+            else
+                fprintf(o,
+                    "static void tycho_arr_C%d_set(Arena *a, TychoArrC%d *xs, tycho_int i, %sv) {\n"
+                    "    if (i < 0 || i >= %lld) { fprintf(stderr, \"tycho: index %%\" TY_PRId \" out of bounds (len %lld)\\n\", i); exit(1); }\n"
+                    "    xs->v[i] = %s;\n}\n", i, i, ct, (long long)n, (long long)n, copy_into(et, "a", "v"));
             fprintf(o,   /* copy: the struct copy memcpys the inline array; deep-copy each element for a heap element type */
                 "static TychoArrC%d tycho_arr_C%d_copy(Arena *a, TychoArrC%d src) {\n"
                 "    TychoArrC%d r = src;\n"
@@ -14304,10 +14946,11 @@ static void gen_program(FILE *o, ProcVec *prog) {
         fprintf(o,   /* capacity hint (reserve): grow the spine to n if larger; elements' heap lives on via nd (shallow spine copy, like push's regrow) */
             "static void tycho_arr_C%d_reserve(Arena *a, TychoArrC%d *xs, tycho_int n) {\n"
             "    if (n <= xs->cap) return;\n"
+            "    tycho_cap_check(n, sizeof(%s));\n"
             "    %s*nd = (%s*)arena_alloc(a, (size_t)n * sizeof(%s));\n"
             "    for (tycho_int i = 0; i < xs->len; i++) nd[i] = xs->data[i];\n"
             "    if (xs->cap) arena_recycle(a, xs->data, (size_t)xs->cap * sizeof(%s));\n"
-            "    xs->data = nd; xs->cap = n;\n}\n", i, i, ct, ct, ct, ct);
+            "    xs->data = nd; xs->cap = n;\n}\n", i, i, ct, ct, ct, ct, ct);
         fprintf(o,   /* push-loop fusion grow hook: regrow the spine (shallow copy); elements were already deep-copied into `a` at each fused store */
             "static void tycho_arr_C%d_grow(Arena *a, %s**data, tycho_int *cap, tycho_int len) {\n"
             "    tycho_int nc = *cap ? *cap * 2 : 4;\n"
@@ -14316,11 +14959,13 @@ static void gen_program(FILE *o, ProcVec *prog) {
             "    if (*cap) arena_recycle(a, *data, (size_t)*cap * sizeof(%s));\n"
             "    *data = nd; *cap = nc;\n}\n",
             i, ct, ct, ct, ct, ct);
-        fprintf(o,   /* pop: shrink + return the last element, deep-copied into `a` */
+        fprintf(o,   /* pop: deep-copy the result out, then release its former element payload */
             "static %stycho_arr_C%d_pop(Arena *a, TychoArrC%d *xs) {\n"
             "    if (xs->len == 0) { fprintf(stderr, \"tycho: pop from an empty array\\n\"); exit(1); }\n"
-            "    xs->len--;\n    return %s;\n}\n",
-            ct, i, i, copy_into(et, "a", "xs->data[xs->len]"));
+            "    xs->len--; %s _old = xs->data[xs->len]; %s _out = %s; %s\n"
+            "    return _out;\n}\n",
+            ct, i, i, ct, ct, copy_into(et, "a", "_old"),
+            type_is_heap(et) ? sfmt("%s(a, _old);", recycle_name(et)) : "");
         fprintf(o,
             "static %stycho_arr_C%d_get(TychoArrC%d xs, tycho_int i) {\n"
             "    if (i < 0 || i >= xs.len) { fprintf(stderr, \"tycho: index %%\" TY_PRId \" out of bounds (len %%\" TY_PRId \")\\n\", i, xs.len); exit(1); }\n"
@@ -14329,10 +14974,17 @@ static void gen_program(FILE *o, ProcVec *prog) {
             "static %s*tycho_arr_C%d_ptr(TychoArrC%d *xs, tycho_int i) {\n"   /* element is a mutable lvalue */
             "    if (i < 0 || i >= xs->len) { fprintf(stderr, \"tycho: index %%\" TY_PRId \" out of bounds (len %%\" TY_PRId \")\\n\", i, xs->len); exit(1); }\n"
             "    return &xs->data[i];\n}\n", ct, i, i);
-        fprintf(o,
-            "static void tycho_arr_C%d_set(Arena *a, TychoArrC%d *xs, tycho_int i, %sv) {\n"
-            "    if (i < 0 || i >= xs->len) { fprintf(stderr, \"tycho: index %%\" TY_PRId \" out of bounds (len %%\" TY_PRId \")\\n\", i, xs->len); exit(1); }\n"
-            "    xs->data[i] = %s;\n}\n", i, i, ct, copy_into(et, "a", "v"));
+        if (type_is_heap(et))
+            fprintf(o,
+                "static void tycho_arr_C%d_set(Arena *a, TychoArrC%d *xs, tycho_int i, %sv) {\n"
+                "    if (i < 0 || i >= xs->len) { fprintf(stderr, \"tycho: index %%\" TY_PRId \" out of bounds (len %%\" TY_PRId \")\\n\", i, xs->len); exit(1); }\n"
+                "    %s _new = %s; %s _old = xs->data[i]; xs->data[i] = _new; %s(a, _old);\n}\n",
+                i, i, ct, ct, copy_into(et, "a", "v"), ct, recycle_name(et));
+        else
+            fprintf(o,
+                "static void tycho_arr_C%d_set(Arena *a, TychoArrC%d *xs, tycho_int i, %sv) {\n"
+                "    if (i < 0 || i >= xs->len) { fprintf(stderr, \"tycho: index %%\" TY_PRId \" out of bounds (len %%\" TY_PRId \")\\n\", i, xs->len); exit(1); }\n"
+                "    xs->data[i] = %s;\n}\n", i, i, ct, copy_into(et, "a", "v"));
         fprintf(o,
             "static TychoArrC%d tycho_arr_C%d_copy(Arena *a, TychoArrC%d src) {\n"
             "    TychoArrC%d r = tycho_arr_C%d_with_cap(a, src.len); r.len = src.len;\n"
@@ -14433,30 +15085,36 @@ static void gen_program(FILE *o, ProcVec *prog) {
             "            m->ekeys = nk; m->evals = nv; m->elive = nl; m->ecap = nc; } }\n"
             "    tycho_int e = m->ecount++; m->ekeys[e] = k; m->evals[e] = v; m->elive[e] = 1; return e;\n}\n",
             i, i, kpo, ct, i, ks, ks, ks, ct, ct, ct);
+        Type valuet = g_maptypes[i].val;
+        char *vrec = type_is_heap(valuet) ? sfmt("%s(a, _old);", recycle_name(valuet)) : "";
         fprintf(o,
             "static void tycho_mapc%d_put(Arena *a, TychoMapC%d *m, %s, %sv) {\n"
-            "    tycho_int e = tycho_mapc%d_find(*m, k); if (e >= 0) { m->evals[e] = %s; return; }\n"
+            "    tycho_int e = tycho_mapc%d_find(*m, k); if (e >= 0) {\n"
+            "        %s _new = %s; %s _old = m->evals[e]; m->evals[e] = _new; %s return; }\n"
             "    if ((m->len + 1) * 2 > m->icap) tycho_mapc%d_idxgrow(a, m);\n"
             "    tycho_int ne = tycho_mapc%d_append(a, m, %s, %s); m->len++; tycho_mapc%d_idxput(m, ne);\n}\n",
-            i, i, kp, ct, i, vcopy, i, i, kcopy, vcopy, i);
+            i, i, kp, ct, i, ct, vcopy, ct, vrec, i, i, kcopy, vcopy, i);
         fprintf(o,
             "static inline %s*tycho_mapc%d_slotptr(Arena *a, TychoMapC%d *m, %s) {\n"
             "    tycho_int e = tycho_mapc%d_find(*m, k); if (e >= 0) return &m->evals[e];\n"
             "    if ((m->len + 1) * 2 > m->icap) tycho_mapc%d_idxgrow(a, m);\n"
             "    tycho_int ne = tycho_mapc%d_append(a, m, %s, (%s){0}); m->len++; tycho_mapc%d_idxput(m, ne);\n"
             "    return &m->evals[ne];\n}\n", ct, i, i, kp, i, i, i, kcopy, ct, i);
+        char *krec = (!IS_ENUM(keyt) && type_is_heap(keyt)) ? sfmt("%s(a, m->ekeys[ei]);", recycle_name(keyt)) : "";
+        char *vdelrec = type_is_heap(valuet) ? sfmt("%s(a, m->evals[ei]);", recycle_name(valuet)) : "";
         fprintf(o,
-            "static void tycho_mapc%d_del(TychoMapC%d *m, %s) {\n"
+            "static void tycho_mapc%d_del(Arena *a, TychoMapC%d *m, %s) {\n"
             "    if (m->icap == 0) return; uint64_t mask = (uint64_t)m->icap - 1; tycho_int i = (tycho_int)(%s & mask), found = -1;\n"
             "    while (m->idx[i] != 0) { if (%s) { found = i; break; } i = (tycho_int)((i + 1) & mask); }\n"
-            "    if (found < 0) return; tycho_int ei = m->idx[found] - 1; m->elive[ei] = 0; m->len--;\n"
+            "    if (found < 0) return; tycho_int ei = m->idx[found] - 1; %s %s m->elive[ei] = 0; m->len--;\n"
             "    tycho_int g = found;\n"
             "    for (;;) { m->idx[g] = 0; tycho_int j = g;\n"
             "        for (;;) { j = (tycho_int)((j + 1) & mask); if (m->idx[j] == 0) return;\n"
             "            tycho_int h = (tycho_int)(%s & mask);\n"
             "            if (g <= j) { if (g < h && h <= j) continue; } else { if (g < h || h <= j) continue; } break; }\n"
             "        m->idx[g] = m->idx[j]; g = j; }\n}\n",
-            i, i, kp, mapc_khash(keyt, "k"), mapc_kmatch(keyt, "m->ekeys[m->idx[i] - 1]", "k"), mapc_khash(keyt, "m->ekeys[m->idx[j] - 1]"));
+            i, i, kp, mapc_khash(keyt, "k"), mapc_kmatch(keyt, "m->ekeys[m->idx[i] - 1]", "k"),
+            krec, vdelrec, mapc_khash(keyt, "m->ekeys[m->idx[j] - 1]"));
         fprintf(o,
             "static TychoMapC%d tycho_mapc%d_copy(Arena *a, TychoMapC%d src) {\n"
             "    TychoMapC%d r = tycho_mapc%d_with_cap(a, src.len ? src.len : 0);\n"
@@ -14467,7 +15125,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
             "    TychoMapC%d r = tycho_mapc%d_copy(a, m); tycho_mapc%d_put(a, &r, k, v); return r;\n}\n", i, i, i, kp, ct, i, i, i);
         fprintf(o,
             "static TychoMapC%d tycho_mapc%d_del_pure(Arena *a, TychoMapC%d m, %s) {\n"
-            "    TychoMapC%d r = tycho_mapc%d_copy(a, m); tycho_mapc%d_del(&r, k); return r;\n}\n", i, i, i, kp, i, i, i);
+            "    TychoMapC%d r = tycho_mapc%d_copy(a, m); tycho_mapc%d_del(a, &r, k); return r;\n}\n", i, i, i, kp, i, i, i);
         fprintf(o,
             "static %stycho_mapc%d_get(TychoMapC%d m, %s, %sdflt) {\n"
             "    tycho_int e = tycho_mapc%d_find(m, k); return e < 0 ? dflt : m.evals[e];\n}\n", ct, i, i, kp, ct, i);
@@ -14511,9 +15169,17 @@ static void gen_program(FILE *o, ProcVec *prog) {
          * scattered element owns its heap bytes rather than aliasing the source. */
         fprintf(o, "static void Soa%d_set(Arena *a, Soa%d *s, tycho_int ix, S_%s v) {\n", i, i, sn);
         fprintf(o, "    tycho_int _si = Soa%d_bound(s, ix);\n", i);
-        for (int f = 0; f < sd->nfields; f++)
-            fprintf(o, "    s->f%d[_si] = %s;\n", f,
-                    copy_into(sd->fields[f].type, "a", sfmt("v.f_%s", sd->fields[f].name)));
+        for (int f = 0; f < sd->nfields; f++) {
+            Type ft = sd->fields[f].type;
+            if (type_is_heap(ft)) {
+                fprintf(o, "    %s _new%d = %s; %s _old%d = s->f%d[_si]; s->f%d[_si] = _new%d; %s(a, _old%d);\n",
+                        c_type(ft), f, copy_into(ft, "a", sfmt("v.f_%s", sd->fields[f].name)),
+                        c_type(ft), f, f, f, f, recycle_name(ft), f);
+            } else {
+                fprintf(o, "    s->f%d[_si] = %s;\n", f,
+                        copy_into(ft, "a", sfmt("v.f_%s", sd->fields[f].name)));
+            }
+        }
         fprintf(o, "}\n");
         /* pop: shrink len, then gather the (new) last element as a struct value */
         fprintf(o, "static S_%s Soa%d_pop(Soa%d *s) {\n", sn, i, i);
@@ -14593,10 +15259,10 @@ static void gen_program(FILE *o, ProcVec *prog) {
                 Variant *var = &ed->variants[v2];
                 if (var->npayload == 0) continue;
                 fprintf(o, "    if (v->tag == %d) {\n", v2);
-                fprintf(o, "        E_%s *d = (E_%s *)arena_alloc(a, offsetof(E_%s, u) + sizeof(E_%s_%s)); d->tag = %d;\n", en, en, en, en, var->name, v2);
+                fprintf(o, "        E_%s *d = (E_%s *)arena_alloc(a, offsetof(E_%s, u) + sizeof(%s)); d->tag = %d;\n", en, en, en, c_enum_payload(en, var->name), v2);
                 for (int f = 0; f < var->npayload; f++)
-                    fprintf(o, "        d->u.%s.f%d = %s;\n", var->name, f,
-                            copy_into(var->payload[f], "a", sfmt("v->u.%s.f%d", var->name, f)));
+                    fprintf(o, "        d->u.%s.f%d = %s;\n", c_enum_vfield(var->name), f,
+                            copy_into(var->payload[f], "a", sfmt("v->u.%s.f%d", c_enum_vfield(var->name), f)));
                 fprintf(o, "        return d;\n    }\n");
             }
             fprintf(o, "    return v;\n}\n");   /* nullary variant: shared static singleton, immutable */
@@ -14608,7 +15274,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
             if (var->npayload == 0) continue;
             fprintf(o, "    if (a->tag == %d) { return ", v2);
             for (int f = 0; f < var->npayload; f++)
-                fprintf(o, "%s%s", gen_eq(var->payload[f], sfmt("a->u.%s.f%d", var->name, f), sfmt("b->u.%s.f%d", var->name, f)),
+                fprintf(o, "%s%s", gen_eq(var->payload[f], sfmt("a->u.%s.f%d", c_enum_vfield(var->name), f), sfmt("b->u.%s.f%d", c_enum_vfield(var->name), f)),
                         f + 1 < var->npayload ? " && " : "");
             fprintf(o, "; }\n");
         }
@@ -14644,7 +15310,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
                 for (int f = 0; f < var->npayload; f++) {
                     if (f) fprintf(o, "        r = tycho_str_concat(a, r, tycho_str_from_c(a, \", \"));\n");
                     fprintf(o, "        r = tycho_str_concat(a, r, %s);\n",
-                            gen_str(var->payload[f], "a", sfmt("v->u.%s.f%d", var->name, f)));
+                            gen_str(var->payload[f], "a", sfmt("v->u.%s.f%d", c_enum_vfield(var->name), f)));
                 }
                 fprintf(o, "        return tycho_str_concat(a, r, tycho_str_from_c(a, \")\"));\n    }\n");
             }
@@ -14700,6 +15366,12 @@ static void gen_program(FILE *o, ProcVec *prog) {
             fprintf(o, " d->c%d = %s;", j, copy_into(ct, "a", sfmt("s->c%d", j)));
         }
         fprintf(o, " return d; }\n");
+        fprintf(o, "static void Env_%d_drop(Arena *a, void *_p) { if (!_p || !arena_owns(a, _p)) return; Env_%d *e = (Env_%d *)_p;", i, i, i);
+        for (int j = 0; j < li->ncap; j++) {
+            Type ct = li->proc->params[j].type;
+            if (type_is_heap(ct)) fprintf(o, " %s(a, e->c%d);", recycle_name(ct), j);
+        }
+        fprintf(o, " arena_recycle(a, e, sizeof(*e)); }\n");
     }
     for (int i = 0; i < prog->n; i++) {
         if (prog->v[i]->generic) continue;   /* generics: a template emits no code; its instances do (below) */
@@ -14820,18 +15492,37 @@ static void gen_program(FILE *o, ProcVec *prog) {
 static char *read_file(const char *path) {
     FILE *f = fopen(path, "rb");
     if (!f) { fprintf(stderr, "tychoc: cannot open %s\n", path); exit(1); }
-    fseek(f, 0, SEEK_END);
-    long sz = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    char *buf = (char *)xmalloc((size_t)sz + 1);
-    if (fread(buf, 1, (size_t)sz, f) != (size_t)sz) { fprintf(stderr, "tychoc: read error\n"); exit(1); }
+    /* Source paths may be pipes, FIFOs, /dev/stdin or process substitutions.
+     * Do not infer a size with ftell: it returns -1 for those, which used to
+     * turn the following fread into a SIZE_MAX-byte write into malloc(0). */
+    size_t cap = 65536, len = 0;
+    char *buf = (char *)xmalloc(cap + 1);
+    for (;;) {
+        if (len == cap) {
+            if (cap > (SIZE_MAX - 1) / 2) {
+                fprintf(stderr, "tychoc: source file %s is too large\n", path);
+                fclose(f); free(buf); exit(1);
+            }
+            cap *= 2;
+            buf = (char *)xrealloc(buf, cap + 1);
+        }
+        size_t got = fread(buf + len, 1, cap - len, f);
+        len += got;
+        if (got == 0) {
+            if (ferror(f)) {
+                fprintf(stderr, "tychoc: read error in %s\n", path);
+                fclose(f); free(buf); exit(1);
+            }
+            break;
+        }
+    }
     /* The lexer stops at the first NUL, so a NUL byte silently DISCARDED the
      * rest of the file and compiled a program nobody wrote. tychoc1 refuses. */
-    if (memchr(buf, '\0', (size_t)sz)) {
+    if (memchr(buf, '\0', len)) {
         fprintf(stderr, "tychoc: %s contains a NUL byte -- a source file must be text\n", path);
-        exit(1);
+        fclose(f); free(buf); exit(1);
     }
-    buf[sz] = '\0';
+    buf[len] = '\0';
     fclose(f);
     return buf;
 }
@@ -15240,14 +15931,31 @@ static void emit_symbols(ProcVec *prog) {
         printf("type\t%s\t%s\n", g_newtypes[i].name, type_name(g_newtypes[i].under));
 }
 
-/* C-string-escape a source path for a `#line` directive (backslash + quote). */
+/* C-string-escape a source path for a `#line` directive. Control bytes must
+ * not become physical newlines or other raw C source characters. */
 static char *c_escape_path(const char *p) {
     size_t n = strlen(p);
-    char *b = xmalloc(2 * n + 1);
+    if (n > (SIZE_MAX - 1) / 4) {
+        fprintf(stderr, "tychoc: source path is too long to escape\n");
+        exit(1);
+    }
+    char *b = xmalloc(4 * n + 1);
     size_t k = 0;
     for (size_t i = 0; i < n; i++) {
-        if (p[i] == '\\' || p[i] == '"') b[k++] = '\\';
-        b[k++] = p[i];
+        unsigned char c = (unsigned char)p[i];
+        switch (c) {
+            case '\\': case '"': b[k++] = '\\'; b[k++] = (char)c; break;
+            case '\n': b[k++] = '\\'; b[k++] = 'n'; break;
+            case '\r': b[k++] = '\\'; b[k++] = 'r'; break;
+            case '\t': b[k++] = '\\'; b[k++] = 't'; break;
+            default:
+                if (c < 0x20 || c == 0x7f) {
+                    b[k++] = '\\';
+                    b[k++] = (char)('0' + ((c >> 6) & 7));
+                    b[k++] = (char)('0' + ((c >> 3) & 7));
+                    b[k++] = (char)('0' + (c & 7));
+                } else b[k++] = (char)c;
+        }
     }
     b[k] = 0;
     return b;
@@ -15361,8 +16069,18 @@ int main(int argc, char **argv) {
         /* FFI Stage 3: linker/include ergonomics. -L/-I accept both attached
          * (-L/path) and separated (-L /path) forms; all accumulate onto the cc line. */
         else if (!strncmp(argv[i], "-L", 2) || !strncmp(argv[i], "-I", 2)) {
-            extra = sfmt("%s %s", extra, shq(argv[i]));
-            if (!argv[i][2] && i + 1 < argc) extra = sfmt("%s %s", extra, shq(argv[++i]));
+            if (!argv[i][2]) {
+                if (i + 1 >= argc || argv[i + 1][0] == '-') {
+                    fprintf(stderr, "tychoc: %s needs a directory argument\n", argv[i]);
+                    return 1;
+                }
+                const char *opt = argv[i];
+                const char *dir = argv[i + 1];
+                i++;
+                extra = sfmt("%s %s%s", extra, opt, shq(dir));
+            } else {
+                extra = sfmt("%s %s", extra, shq(argv[i]));
+            }
         }
         else if (!strcmp(argv[i], "--link") && i + 1 < argc) extra = sfmt("%s -l%s", extra, cc_safe_name(argv[++i], "--link"));
         else if (!strcmp(argv[i], "--shim") && i + 1 < argc) shims = sfmt("%s %s", shims, shq(argv[++i]));

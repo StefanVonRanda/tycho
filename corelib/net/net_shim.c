@@ -35,7 +35,10 @@ static void ty_net_init(void) {
 #include <stdio.h>
 #include <stdint.h>
 #include <errno.h>              /* EAGAIN/EWOULDBLOCK: SO_RCVTIMEO vs a real error */
+#include <limits.h>
 #include "../tycho.h"
+
+static int netx_fd_ok(tycho_int fd) { return fd >= 0 && fd <= INT_MAX; }
 
 /* Resolve host + port to a single IPv4 endpoint via getaddrinfo. A numeric IP
  * (e.g. "127.0.0.1") resolves offline -- no DNS -- so the loopback test stays
@@ -118,7 +121,7 @@ static void ty_tune_stream(tycho_int fd) {
 
 /* Accept one pending connection off a listener; returns the connected fd or -1. */
 tycho_int netx_accept(tycho_int fd) {
-    if (fd < 0) return -1;
+    if (!netx_fd_ok(fd)) return -1;
     tycho_int c = (tycho_int)accept((int)fd, NULL, NULL);
     if (c >= 0) ty_tune_stream(c);
     return c;
@@ -141,7 +144,7 @@ tycho_int netx_connect(const char *host, tycho_int port) {
 /* The local port an fd is bound to (getsockname), or -1. Lets a caller that
  * bound port 0 learn the kernel-assigned ephemeral port. */
 tycho_int netx_port_of(tycho_int fd) {
-    if (fd < 0) return -1;
+    if (!netx_fd_ok(fd)) return -1;
     struct sockaddr_in a;
     socklen_t len = sizeof a;
     if (getsockname((int)fd, (struct sockaddr *)&a, &len) != 0) return -1;
@@ -157,12 +160,12 @@ tycho_int netx_port_of(tycho_int fd) {
  * one listening fd, so a single shared buffer would be a data race on the one
  * field an access log wants most (crypto_shim.c:43 sets the same precedent). The
  * caller only ever sees a copy anyway -- an extern `-> string` return is wrapped
- * in tycho_str_copy at the call site (src/tychoc.c:10006-10041), so the borrow ends
+ * in tycho_str_copy at the call site (src/tychoc.c:10419-10454), so the borrow ends
  * before the next request can overwrite it. */
 const char *netx_peer_addr(tycho_int fd) {
     static __thread char buf[INET6_ADDRSTRLEN];
     buf[0] = '\0';
-    if (fd < 0) return buf;
+    if (!netx_fd_ok(fd)) return buf;
     struct sockaddr_storage ss;
     socklen_t len = sizeof ss;
     if (getpeername((int)fd, (struct sockaddr *)&ss, &len) != 0) return buf;
@@ -181,7 +184,7 @@ const char *netx_peer_addr(tycho_int fd) {
  * MSG_NOSIGNAL: a peer that vanished mid-write must yield EPIPE here, never a
  * SIGPIPE that kills the process -- see the note at the top of this file. */
 tycho_int netx_write(tycho_int fd, const unsigned char *data, tycho_int len) {
-    if (fd < 0 || len < 0) return -1;
+    if (!netx_fd_ok(fd) || len < 0) return -1;
     tycho_int off = 0;
     while (off < len) {
         tycho_int n = (tycho_int)send((int)fd, (const char *)data + off, (size_t)(len - off), MSG_NOSIGNAL);
@@ -211,7 +214,7 @@ void netx_read(tycho_int fd, tycho_int max, tycho_int *status,
     *out = NULL;
     *outlen = 0;
     *status = TY_RD_ERR;
-    if (fd < 0 || max <= 0) return;
+    if (!netx_fd_ok(fd) || max <= 0) return;
     unsigned char *buf = (unsigned char *)malloc((size_t)max);
     if (!buf) return;                       /* fail closed: empty result, never a partial read */
     errno = 0;
@@ -236,7 +239,7 @@ void netx_read(tycho_int fd, tycho_int max, tycho_int *status,
  * silently-half-armed socket. This is what lets a keep-alive loop refuse to be
  * pinned by an idle or slow-loris peer. */
 tycho_int netx_set_read_timeout(tycho_int fd, tycho_int ms) {
-    if (fd < 0) return 0;
+    if (!netx_fd_ok(fd)) return 0;
     if (ms < 0) ms = 0;
 #ifndef _WIN32
     struct timeval tv;
@@ -252,7 +255,7 @@ tycho_int netx_set_read_timeout(tycho_int fd, tycho_int ms) {
 
 /* Close an fd (idempotent-safe on a negative fd). */
 void netx_close(tycho_int fd) {
-    if (fd >= 0) TY_CLOSE((int)fd);
+    if (netx_fd_ok(fd)) TY_CLOSE((int)fd);
 }
 
 /* ---- UDP ---- */
@@ -275,7 +278,7 @@ tycho_int netx_udp_bind(const char *host, tycho_int port) {
 
 /* Send one datagram to host:port; returns the byte count sent or -1. */
 tycho_int netx_udp_send(tycho_int fd, const char *host, tycho_int port, const unsigned char *data, tycho_int len) {
-    if (fd < 0 || len < 0) return -1;
+    if (!netx_fd_ok(fd) || len < 0) return -1;
     struct sockaddr_in a;
     if (resolve4(host, port, SOCK_DGRAM, &a) != 0) return -1;
     tycho_int n = (tycho_int)sendto((int)fd, (const char *)data, (size_t)len, 0,
@@ -288,7 +291,7 @@ tycho_int netx_udp_send(tycho_int fd, const char *host, tycho_int port, const un
 void netx_udp_read(tycho_int fd, tycho_int max, unsigned char **out, tycho_int *outlen) {
     *out = NULL;
     *outlen = 0;
-    if (fd < 0 || max <= 0) return;
+    if (!netx_fd_ok(fd) || max <= 0) return;
     unsigned char *buf = (unsigned char *)malloc((size_t)max);
     if (!buf) return;
     tycho_int n = (tycho_int)recvfrom((int)fd, (char *)buf, (size_t)max, 0, NULL, NULL);
@@ -306,7 +309,6 @@ void netx_udp_read(tycho_int fd, tycho_int max, unsigned char **out, tycho_int *
 #include <fcntl.h>
 #include <poll.h>               /* not select(): select cannot see a listener at fd >= FD_SETSIZE */
 #endif
-#include <limits.h>
 static int ty_set_nonblocking(int fd, int on) {
 #ifndef _WIN32
     int flags = fcntl(fd, F_GETFL, 0);
@@ -352,7 +354,7 @@ static pthread_mutex_t ty_accept_mu = PTHREAD_MUTEX_INITIALIZER;
  * O_NONBLOCK, so nothing is gained by toggling first, and holding a lock across
  * a `ms`-long wait would serialise the workers instead of the flag. */
 tycho_int netx_accept_wait(tycho_int fd, tycho_int ms) {
-    if (fd < 0 || ms < 0 || ms > INT_MAX) return -1;
+    if (!netx_fd_ok(fd) || ms < 0 || ms > INT_MAX) return -1;
 #ifdef _WIN32
     fd_set ready;
     FD_ZERO(&ready);
@@ -440,7 +442,7 @@ void netx_poll_readable(const tycho_int *fds, tycho_int nfds, tycho_int ms,
     *outlen = 0;
     *status = TY_PL_ERR;
     if (!fds || nfds <= 0 || nfds > TY_PL_MAX || ms < 0 || ms > INT_MAX) return;
-    for (tycho_int i = 0; i < nfds; i++) if (fds[i] < 0) return;
+    for (tycho_int i = 0; i < nfds; i++) if (!netx_fd_ok(fds[i])) return;
 
     ty_pollfd *pf = (ty_pollfd *)calloc((size_t)nfds, sizeof *pf);
     if (!pf) return;

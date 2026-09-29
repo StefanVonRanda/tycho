@@ -7,7 +7,7 @@ import "core:io"
 # correctness needs today.
 #
 # TWO ACCESS PATHS, which is the point of the index below. scan() walks every
-# row; probe() answers an equality on a KEY column by binary search. Without
+# row; probe() answers an equality on a KEY column by hash lookup. Without
 # the second one a planner would have nothing to decide and choosing between
 # them would be theatre -- so the index came first and the plan layer second.
 #
@@ -31,16 +31,11 @@ struct Col:
     ty: Ty
     indexed: bool
 
-# One entry of an equality index: a key and the position of the row holding it.
-struct IdxEnt:
-    key: Val
-    row: int
-
-# Sorted by (key, row). Rows are append-only here -- this SQL has no DELETE and
-# no UPDATE -- so an entry, once placed, never has to move.
+# Equality indexes hash a type-tagged spelling of the key to insertion-ordered
+# row positions. Index maintenance is amortized O(1), including arbitrary keys.
 struct Index:
     col: int
-    ents: [IdxEnt]
+    rows_by_key: [string: [int]]
 
 struct Table:
     name: string
@@ -87,12 +82,10 @@ fn val_str(v: Val) -> string:
         VInt(n): return str(n)
         VText(s): return s
 
-# A TOTAL order over values: -1, 0, 1. Two values of different types are
-# ordered by their tag (every int before every text) rather than refused,
-# because this is what an index sorts by and a sorted array cannot hold a
-# comparison that declines to answer. Refusing a cross-type comparison is a
-# QUERY-level rule and lives in exec, which checks the types first and then
-# delegates the same-type case here -- so the two orderings cannot disagree.
+# A TOTAL order over values: -1, 0, 1. Different types are ordered by their
+# tag (every int before every text) for internal callers that need a total
+# order. Query comparison is stricter: exec checks types first and refuses a
+# cross-type comparison before delegating the same-type case here.
 fn val_cmp(a: Val, b: Val) -> int:
     match a:
         VInt(x):
@@ -156,6 +149,19 @@ fn put_u64(v: int) -> bytes:
         m = m / 256
     return to_bytes(out)
 
+# Encode |v| for v < 0 without ever negating INT_MIN. `-(v + 1)` fits; the
+# carry restores the omitted one in the little-endian byte sequence.
+fn put_u64_neg(v: int) -> bytes:
+    m := 0 - (v + 1)
+    carry := 1
+    out := []int
+    for i := 0; i < 8; i += 1:
+        d := m % 256 + carry
+        push(out, d % 256)
+        carry = d / 256
+        m = m / 256
+    return to_bytes(out)
+
 fn get_u64(b: bytes, off: int) -> int:
     v := 0
     for i := 7; i >= 0; i -= 1:
@@ -179,7 +185,7 @@ fn put_val(v: Val) -> bytes:
     match v:
         VInt(n):
             if n < 0:
-                return to_bytes([T_NEG]) + put_u64(-n)
+                return to_bytes([T_NEG]) + put_u64_neg(n)
             return to_bytes([T_POS]) + put_u64(n)
         VText(s):
             return to_bytes([T_TEXT]) + put_str(s)
@@ -214,7 +220,7 @@ fn encode(db: Db) -> bytes:
 # ---- decoding -------------------------------------------------------------
 
 fn need(b: bytes, off: int, n: int) -> Result(void, StoreErr):
-    if off + n > len(b):
+    if off < 0 or n < 0 or off > len(b) or n > len(b) - off:
         return Err(Corrupt("file ends mid-record"))
     return Ok()
 
@@ -241,16 +247,32 @@ fn take_val(b: bytes, off: inout int) -> Result(Val, StoreErr):
     if tag != T_POS and tag != T_NEG:
         return Err(Corrupt("unknown value tag " + str(tag)))
     need(b, off, 8) or_return
+    mag_off := off
+    # The top bit is outside int64's positive range. It is valid only for the
+    # exact negative magnitude 2^63; check bytes before signed accumulation.
+    if b[mag_off + 7] >= 128:
+        is_min := b[mag_off + 7] == 128
+        for i := 0; i < 7; i += 1:
+            if b[mag_off + i] != 0:
+                is_min = false
+        if tag == T_NEG and is_min:
+            off += 8
+            return Ok(VInt((0 - 9223372036854775807) - 1))
+        return Err(Corrupt("integer magnitude out of range"))
     n := get_u64(b, off)
     off += 8
     if tag == T_NEG:
-        return Ok(VInt(-n))
+        if n == 0:
+            return Err(Corrupt("negative zero is not canonical"))
+        return Ok(VInt(0 - n))
     return Ok(VInt(n))
 
 fn take_col(b: bytes, off: inout int) -> Result(Col, StoreErr):
     name := take_str(b, &off) or_return
     need(b, off, 1) or_return
     tag := b[off]
+    if tag > COL_TEXT + COL_KEY:
+        return Err(Corrupt("unknown column tag " + str(tag)))
     t := ColInt
     if tag % 2 == COL_TEXT:
         t = ColText
@@ -284,52 +306,48 @@ fn decode(path: string, b: bytes) -> Result(Db, StoreErr):
         for ri := 0; ri < nrows; ri += 1:
             nvals := take_u32(b, &off) or_return
             row: [Val] = []
+            if nvals != ncols:
+                return Err(Corrupt(path + " row has " + str(nvals) + " values, expected " + str(ncols)))
             for vi := 0; vi < nvals; vi += 1:
                 v := take_val(b, &off) or_return
+                if val_ty(v) != ty_name(cols[vi].ty):
+                    return Err(Corrupt(path + " row value type does not match column " + cols[vi].name))
                 push(row, v)
             push(rows, row)
         # The entries are rebuilt here rather than read: they are derived from
         # the rows in this same file, so recomputing them is the one way they
         # cannot come back disagreeing with the rows they index.
         push(tables, Table(tname, cols, rows, _build_index(cols, rows)))
+    if off != len(b):
+        return Err(Corrupt(path + " has trailing bytes"))
     return Ok(Db(path, tables, applied))
 
+
+fn _index_key(key: Val) -> string:
+    match key:
+        VInt(n): return "i:" + str(n)
+        VText(s): return "s:" + s
 
 fn _build_index(cols: [Col], rows: [[Val]]) -> [Index]:
     out: [Index] = []
     for c := 0; c < len(cols); c += 1:
         if not cols[c].indexed:
             continue
-        ents: [IdxEnt] = []
-        ix := Index(c, ents)
+        by_key := []string: [int]
+        ix := Index(c, by_key)
         for r := 0; r < len(rows); r += 1:
             _place(&ix, rows[r][c], r)
         push(out, ix)
     return out
 
-# First position whose key is >= `key`. The search is over (key, row) pairs and
-# rows only ever grow, so appending a duplicate key lands after its twins.
-fn _lower(ix: Index, key: Val) -> int:
-    lo := 0
-    hi := len(ix.ents)
-    for lo < hi:
-        mid := lo + (hi - lo) / 2
-        if val_cmp(ix.ents[mid].key, key) < 0:
-            lo = mid + 1
-        else:
-            hi = mid
-    return lo
-
 fn _place(ix: inout Index, key: Val, row: int):
-    at := _lower(ix, key)
-    # walk past equal keys so entries stay ordered by row within a key, which
-    # is what makes probe() return rows in insertion order
-    for at < len(ix.ents) and val_cmp(ix.ents[at].key, key) == 0:
-        at += 1
-    push(ix.ents, IdxEnt(key, row))
-    for k := len(ix.ents) - 1; k > at; k -= 1:
-        ix.ents[k] = ix.ents[k - 1]
-    ix.ents[at] = IdxEnt(key, row)
+    k := _index_key(key)
+    if k in ix.rows_by_key:
+        push(ix.rows_by_key[k], row)
+    else:
+        rows: [int] = []
+        push(rows, row)
+        ix.rows_by_key[k] = rows
 
 fn _index_for(t: Table, col: int) -> int:
     for k := 0; k < len(t.idx); k += 1:
@@ -364,7 +382,15 @@ fn open(path: string) -> Result(Db, StoreErr):
     return decode(path, blob)
 
 fn flush(db: Db) -> Result(bool, StoreErr):
-    io.write_bytes(db.path, encode(db)) or_else _: Err(NotWritten(db.path))
+    tmp := db.path + ".tycho-tmp"
+    io.write_bytes(tmp, encode(db)) or_else _: Err(NotWritten(db.path))
+    match io.sync(tmp):
+        Ok(): pass
+        Err(io.Unsupported): pass       # atomic replacement still protects against a torn write
+        Err(_): return Err(NotWritten(db.path))
+    match io.rename(tmp, db.path):
+        Ok(): pass
+        Err(_): return Err(NotWritten(db.path))
     return Ok(true)
 
 fn _find(db: Db, name: string) -> int:
@@ -383,14 +409,18 @@ fn columns(db: Db, name: string) -> Result([Col], StoreErr):
     i := table_index(db, name) or_return
     return Ok(db.tables[i].cols)
 
-fn create_table(db: inout Db, name: string, cols: [Col]) -> Result(bool, StoreErr):
+fn check_create_table(db: Db, name: string) -> Result(void, StoreErr):
     if _find(db, name) >= 0:
         return Err(TableExists(name))
+    return Ok()
+
+fn create_table(db: inout Db, name: string, cols: [Col]) -> Result(bool, StoreErr):
+    check_create_table(db, name) or_return
     rows: [[Val]] = []
     push(db.tables, Table(name, cols, rows, _build_index(cols, rows)))
     return Ok(true)
 
-fn insert(db: inout Db, name: string, vals: [Val]) -> Result(bool, StoreErr):
+fn check_insert(db: Db, name: string, vals: [Val]) -> Result(void, StoreErr):
     i := table_index(db, name) or_return
     cols := db.tables[i].cols
     if len(vals) != len(cols):
@@ -400,6 +430,11 @@ fn insert(db: inout Db, name: string, vals: [Val]) -> Result(bool, StoreErr):
         got := val_ty(vals[k])
         if want != got:
             return Err(TypeClash(name, cols[k].name, want, got))
+    return Ok()
+
+fn insert(db: inout Db, name: string, vals: [Val]) -> Result(bool, StoreErr):
+    check_insert(db, name, vals) or_return
+    i := table_index(db, name) or_return
     at := len(db.tables[i].rows)
     push(db.tables[i].rows, vals)
     # The index is maintained HERE, on the one path every row arrives by --
@@ -415,7 +450,7 @@ fn scan(db: Db, name: string) -> Result([[Val]], StoreErr):
     return Ok(db.tables[i].rows)
 
 # ACCESS PATH 2: the rows whose `col` equals `key`, in insertion order, found
-# by binary search instead of a walk. Err(NoIndex) if the column has none --
+# by hash lookup instead of a walk. Err(NoIndex) if the column has none --
 # see the variant's note for why this does not fall back to a scan.
 fn probe(db: Db, name: string, col: string, key: Val) -> Result([[Val]], StoreErr):
     i := table_index(db, name) or_return
@@ -427,8 +462,9 @@ fn probe(db: Db, name: string, col: string, key: Val) -> Result([[Val]], StoreEr
     if k < 0:
         return Err(NoIndex(name, col))
     out: [[Val]] = []
-    at := _lower(t.idx[k], key)
-    for at < len(t.idx[k].ents) and val_cmp(t.idx[k].ents[at].key, key) == 0:
-        push(out, t.rows[t.idx[k].ents[at].row])
-        at += 1
+    key_name := _index_key(key)
+    if not (key_name in t.idx[k].rows_by_key):
+        return Ok(out)
+    for r in t.idx[k].rows_by_key[key_name]:
+        push(out, t.rows[r])
     return Ok(out)

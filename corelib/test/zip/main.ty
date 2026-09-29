@@ -15,6 +15,12 @@ fn main():
                       zip.Entry("d.txt", to_bytes(d))])
     ms := zip.list(ar)
     print("entries=" + str(len(ms)) + "\n")
+    direct_ok := 0
+    for m in ms:
+        body := zip.extract_entry(ar, m)
+        if zip.crc32(body) == m.crc and len(body) == m.usize:
+            direct_ok += 1
+    print("extract_entry=" + str(direct_ok) + "\n")
     for m in ms:
         print(m.name + " method=" + str(m.method) + " usz=" + str(m.usize) + "\n")
     print("a=" + to_str(zip.extract(ar, "a.txt")))
@@ -67,4 +73,22 @@ fn main():
     print("nlen=60000 -> " + str(len(zip.list(bb))) + " entries, extract "
           + str(len(zip.extract(bb, "x"))) + " bytes\n")
     print("survived all structural malformation\n")
+
+    long_name := ""
+    for i := 0; i < 65536; i += 1:
+        long_name += "n"
+    long_name_result := false
+    match zip.create_checked([zip.Entry(long_name, to_bytes(""))]):
+        Err(_): long_name_result = true
+        Ok(_): long_name_result = false
+    many_entries: [zip.Entry] = []
+    for i := 0; i < 65536; i += 1:
+        push(many_entries, zip.Entry("e", to_bytes("")))
+    count_result := false
+    match zip.create_checked(many_entries):
+        Err(_): count_result = true
+        Ok(_): count_result = false
+    print("create limits name=" + str(long_name_result) + " count=" + str(count_result) + "\n")
+    junk := ar + to_bytes([0])
+    print("trailing junk entries=" + str(len(zip.list(junk))) + "\n")
 

@@ -5,6 +5,15 @@ fn len(s: string) -> int:
 fn hash(x: int) -> int:
     return 14
 
+fn keys(m: [string: int]) -> [string]:
+    return ["zzz"]
+
+fn to_u8(x: int) -> u8:
+    return 99
+
+fn total(xs: [int]) -> int:
+    return len(xs)
+
 # NEGATIVE CONTROL: `mylen` is not a builtin, so nothing can outrank it. If this
 # printed 4 the fixture would be measuring something other than shadowing, and
 # if the two `true`s below ever agree with it the test has stopped discriminating.
@@ -15,3 +24,7 @@ fn main():
     println(str(len("abcd")))          # 4 -- the BUILTIN, not the `len` above
     println(str(hash(7) == 14))        # false -- the BUILTIN's hash, not 14
     println(str(mylen("abcd")))        # 7 -- negative control: the local wins
+    println(keys(["a": 1])[0])          # "a" -- builtin keys beats the local proc
+    println(str(to_u8(7)))              # 7 -- builtin conversion beats the local proc
+    total := total([1, 2, 3])             # call resolves before local declaration in Tycho
+    println(str(total))

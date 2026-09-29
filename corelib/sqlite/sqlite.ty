@@ -51,7 +51,15 @@ extern "sqlite3" fn sqlite3_free(p: ptr)
 
 # --- the wrapper ------------------------------------------------------------
 
+fn _has_nul(s: string) -> bool:
+    for i := 0; i < len(s); i += 1:
+        if s[i] == 0:
+            return true
+    return false
+
 fn open(path: string) -> Result(Db, string):
+    if _has_nul(path):
+        return Err("path holds an interior NUL byte")
     db := Db(null)
     if sqlite3_open(path, &db.h) != 0:
         msg := errmsg(db)
@@ -71,6 +79,8 @@ fn errmsg(d: Db) -> string:
     return sqlite3_errmsg(d.h)
 
 fn exec(d: inout Db, sql: string) -> Result(int, string):
+    if _has_nul(sql):
+        return Err("SQL holds an interior NUL byte")
     em := null
     before := sqlite3_total_changes(d.h)
     if sqlite3_exec(d.h, sql, null, null, &em) != 0:
@@ -81,6 +91,8 @@ fn exec(d: inout Db, sql: string) -> Result(int, string):
     return Ok(sqlite3_total_changes(d.h) - before)
 
 fn _run_stmt(d: inout Db, sql: string, params: [string]) -> Result(ptr, string):
+    if _has_nul(sql):
+        return Err("SQL holds an interior NUL byte")
     st := null
     if sqlite3_prepare_v2(d.h, sql, len(sql), &st, null) != 0:
         return Err(errmsg(d))

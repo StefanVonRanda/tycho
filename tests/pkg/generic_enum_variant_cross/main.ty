@@ -1,0 +1,8 @@
+package main
+
+import "box"
+
+fn main():
+    has: box.Box(int) = box.Has(41)
+    empty: box.Box(int) = box.Nothing$(int)
+    println(str(has is box.Has) + " " + str(empty is box.Nothing))

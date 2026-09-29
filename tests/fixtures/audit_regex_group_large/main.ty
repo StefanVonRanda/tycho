@@ -1,0 +1,7 @@
+package main
+import "core:regex"
+
+fn main():
+    re := regex.compile("(a)")
+    println(str(regex.group_start(re, "a", 9223372036854775807)))
+    regex.release(re)

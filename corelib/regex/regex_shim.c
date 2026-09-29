@@ -30,8 +30,13 @@
  * reported as "no match" -- a wrong answer to a validation question is worse
  * than a loud one. NUL-free subjects behave identically either way.
  * Returns 0 on a match, non-zero otherwise (regexec's own convention). */
+#define RX_MAX_SUBJECT 4096
 static int rx_exec(void *re, const char *s, tycho_int n, size_t nm, regmatch_t *m) {
     if (!re || n < 0) return -1;
+    if (n > RX_MAX_SUBJECT) {
+        fprintf(stderr, "tycho: core:regex: subject exceeds the %d-byte match limit\n", RX_MAX_SUBJECT);
+        exit(1);
+    }
 #ifdef REG_STARTEND
     m[0].rm_so = 0;
     m[0].rm_eo = (regoff_t)n;
@@ -146,7 +151,9 @@ tycho_int rx_ngroups(void *re) {                     /* # of capturing groups (p
  * like rx_find: one regexec per call, pmatch sized to n+1. */
 static tycho_int rx_group(void *re, const char *s, tycho_int slen, tycho_int n, int want_end) {
     if (!re || n < 0) return -1;
-    size_t nm = (size_t)n + 1;
+    size_t groups = ((regex_t *)re)->re_nsub;
+    if ((uint64_t)n > groups || groups >= SIZE_MAX / sizeof(regmatch_t)) return -1;
+    size_t nm = groups + 1;
     regmatch_t *m = (regmatch_t *)malloc(nm * sizeof(regmatch_t));
     if (!m) return -1;                          /* fail closed on OOM */
     tycho_int r = -1;

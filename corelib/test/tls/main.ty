@@ -16,6 +16,14 @@ fn main():
     println("read_len=" + str(len(tls.read(c, 64))))           # 0
     tls.close_conn(c)                                          # safe on null
 
+    # The documented bounded APIs are public, and reject values that cannot be
+    # represented by the signed 32-bit millisecond APIs in poll/setsockopt.
+    tc := tls.connect_timeout("127.0.0.1", 1, 50)
+    println("timed_connect_null=" + str(b2i(is_null(tc))))
+    println("timed_negative_null=" + str(b2i(is_null(tls.connect_timeout("127.0.0.1", 1, 0 - 1)))))
+    println("timed_large_null=" + str(b2i(is_null(tls.connect_timeout("127.0.0.1", 1, 2147483648)))))
+    println("set_timeout_bad=" + str(b2i(not tls.set_timeout_ms(c, 0 - 1) and not tls.set_timeout_ms(c, 2147483648))))
+
     # An interior NUL in the host is REFUSED, not truncated. The shim feeds `host`
     # to tcp_connect, SSL_set_tlsext_host_name (SNI) and SSL_set1_host (the name
     # the certificate is verified against), so a truncation would dial, announce

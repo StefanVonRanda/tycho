@@ -1,0 +1,4 @@
+package res
+
+fn len(s: string) -> int:
+    return 3

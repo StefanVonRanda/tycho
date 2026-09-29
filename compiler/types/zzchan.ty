@@ -118,9 +118,10 @@ fn _cbody(fns: [ast.Fn], body: [ast.Stmt], nm: string, u: inout CU, seen: inout 
             ast.PlaceSet(l, k): _cexprs(fns, k, nm, &u, &seen)
             ast.ConstS(l, n, k): _cexprs(fns, k, nm, &u, &seen)
             ast.ReturnS(l, k): _cexprs(fns, k, nm, &u, &seen)
-            ast.IfS(l, c, b, e):
-                _cexprs(fns, c, nm, &u, &seen)
-                _cbody(fns, b, nm, &u, &seen)
+            ast.IfS(l, arms, e):
+                for arm in arms:
+                    _cexprs(fns, arm.cond, nm, &u, &seen)
+                    _cbody(fns, arm.body, nm, &u, &seen)
                 _cbody(fns, e, nm, &u, &seen)
             ast.WhileS(l, c, b):
                 _cexprs(fns, c, nm, &u, &seen)
@@ -187,8 +188,9 @@ fn _cdecls(rs: inout R, fns: [ast.Fn], owner: int, body: [ast.Stmt], file: strin
                         rs.file = sf
                         rs.line = sl
                 _cdecls(&rs, fns, owner, v, file)
-            ast.IfS(l, c, b, e):
-                _cdecls(&rs, fns, owner, b, file)
+            ast.IfS(l, arms, e):
+                for arm in arms:
+                    _cdecls(&rs, fns, owner, arm.body, file)
                 _cdecls(&rs, fns, owner, e, file)
             ast.WhileS(l, c, b): _cdecls(&rs, fns, owner, b, file)
             ast.For3(l, ip, c, b): _cdecls(&rs, fns, owner, b, file)
@@ -214,8 +216,11 @@ fn _any_chan_decl(body: [ast.Stmt]) -> bool:
                     return true
                 if _any_chan_decl(v):
                     return true
-            ast.IfS(l, c, b, e):
-                if _any_chan_decl(b) or _any_chan_decl(e):
+            ast.IfS(l, arms, e):
+                for arm in arms:
+                    if _any_chan_decl(arm.body):
+                        return true
+                if _any_chan_decl(e):
                     return true
             ast.WhileS(l, c, b):
                 if _any_chan_decl(b):
@@ -409,9 +414,10 @@ fn _reads_stmt(s: ast.Stmt, out: inout [string]):
         ast.PlaceSet(l, k): _reads_all(k, &out)
         ast.ConstS(l, n, k): _reads_all(k, &out)
         ast.ReturnS(l, k): _reads_all(k, &out)
-        ast.IfS(l, c, b, e):
-            _reads_all(c, &out)
-            _reads_body(b, &out)
+        ast.IfS(l, arms, e):
+            for arm in arms:
+                _reads_all(arm.cond, &out)
+                _reads_body(arm.body, &out)
             _reads_body(e, &out)
         ast.WhileS(l, c, b):
             _reads_all(c, &out)

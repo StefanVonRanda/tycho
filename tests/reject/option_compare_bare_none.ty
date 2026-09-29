@@ -1,0 +1,2 @@
+fn main():
+    print(str(Some(1) == None))

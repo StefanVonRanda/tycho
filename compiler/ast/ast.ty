@@ -141,6 +141,11 @@ struct Arm:
 # --- statements -------------------------------------------------------------
 
 # Same rule as Expr: the first payload element is the source line.
+struct IfArm:
+    cond: [Expr]
+    body: [Stmt]
+    line: int
+
 enum Stmt:
     ExprStmt(int, [Expr])
     Decl(int, string, [Ty], [Expr], [Stmt]) # name, annotation, rhs, value if/match
@@ -152,7 +157,7 @@ enum Stmt:
     ReturnS(int, [Expr])               # empty for a bare `return`
     BreakS(int)
     ContinueS(int)
-    IfS(int, [Expr], [Stmt], [Stmt])   # condition, body, else branch
+    IfS(int, [IfArm], [Stmt])          # flat if/elif arms, then the optional else branch
     WhileS(int, [Expr], [Stmt])        # `for cond:` and bare `for:`
     For3(int, [Stmt], [Expr], [Stmt])  # exactly [init, post], condition, body
     ForIn(int, string, [Expr], [Stmt], bool) # `for x in COLL:`; last field is the parallel flag
@@ -174,7 +179,7 @@ fn sline_of(s: Stmt) -> int:
         ReturnS(l, k): return l
         BreakS(l): return l
         ContinueS(l): return l
-        IfS(l, c, b, e): return l
+        IfS(l, arms, e): return l
         WhileS(l, c, b): return l
         For3(l, ip, c, b): return l
         ForIn(l, n, c, b, zpf): return l

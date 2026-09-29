@@ -1,0 +1,5 @@
+struct K:
+    value: f32
+
+fn main():
+    m := []K: int

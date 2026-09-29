@@ -25,6 +25,14 @@ extern fn cx_x25519_key_from_secret(sec_hex: string) -> ptr
 extern fn cx_x25519_pubkey_hex(k: ptr) -> string
 extern fn cx_x25519_shared(k: ptr, their_pub_hex: string) -> ptr
 
+# Hex arguments cross to C strings; reject embedded NULs before strlen-based
+# decoding so distinct Tycho values can never collapse to the same prefix.
+fn _has_nul_hex(s: string) -> bool:
+    for i := 0; i < len(s); i += 1:
+        if s[i] == 0:
+            return true
+    return false
+
 # ---- secret key handles ----
 # A new secret key of n random bytes. Returns a handle (null on failure).
 fn key_random(n: int) -> ptr:
@@ -32,6 +40,8 @@ fn key_random(n: int) -> ptr:
 
 # Import a key from hex (e.g. one you stored). Returns a handle (null on bad hex).
 fn key_from_hex(hex: string) -> ptr:
+    if _has_nul_hex(hex):
+        return null
     return cx_key_from_hex(hex)
 
 # Re-materialize a key as hex -- the one place a secret leaves the handle. Use
@@ -57,14 +67,20 @@ fn random_hex(n: int) -> string:
 
 # ---- hashing (public data; message is hex) ----
 fn sha256(msg_hex: string) -> string:
+    if _has_nul_hex(msg_hex):
+        return "!err"
     return cx_sha256_hex(msg_hex)
 
 fn sha512(msg_hex: string) -> string:
+    if _has_nul_hex(msg_hex):
+        return "!err"
     return cx_sha512_hex(msg_hex)
 
 # ---- MAC / KDF / constant-time compare ----
 # HMAC-SHA256 under a key handle -> 32-byte tag (64 hex).
 fn hmac_sha256(key: ptr, msg_hex: string) -> string:
+    if _has_nul_hex(msg_hex):
+        return "!err"
     return cx_hmac_sha256_hex(key, msg_hex)
 
 # PBKDF2-HMAC-SHA256 -> a derived KEY handle (dklen bytes). password is text;
@@ -72,6 +88,8 @@ fn hmac_sha256(key: ptr, msg_hex: string) -> string:
 # the returned handle when done. `iters` above 2^31-1 is REFUSED (null handle)
 # rather than truncated -- a truncated count derives a silently weaker key.
 fn pbkdf2_sha256(password: string, salt_hex: string, iters: int, dklen: int) -> ptr:
+    if _has_nul_hex(salt_hex):
+        return null
     return cx_pbkdf2_sha256(password, len(password), salt_hex, iters, dklen)
 
 # Constant-time equality of two hex byte strings (compare MACs this way so the
@@ -79,17 +97,23 @@ fn pbkdf2_sha256(password: string, salt_hex: string, iters: int, dklen: int) -> 
 fn ct_equal(a_hex: string, b_hex: string) -> bool:
     # Lengths passed: an interior NUL would otherwise shorten both sides, and two
     # different hex strings truncating to the same prefix compared equal.
+    if _has_nul_hex(a_hex) or _has_nul_hex(b_hex):
+        return false
     return cx_ct_equal(a_hex, len(a_hex), b_hex, len(b_hex)) == 1
 
 # ---- AEAD: ChaCha20-Poly1305 (32-byte key handle, 12-byte nonce / 24 hex) ----
 # Encrypt-and-authenticate. Returns ciphertext concatenated with the 16-byte tag,
 # as hex. The nonce MUST be unique per key (a counter or random_hex(12)).
 fn aead_encrypt(key: ptr, nonce_hex: string, plaintext_hex: string, aad_hex: string) -> string:
+    if _has_nul_hex(nonce_hex) or _has_nul_hex(plaintext_hex) or _has_nul_hex(aad_hex):
+        return "!err"
     return cx_aead_encrypt(key, nonce_hex, plaintext_hex, aad_hex)
 
 # Verify-and-decrypt. Returns the plaintext as hex, or "!err" if authentication
 # fails. Always check for "!err" before trusting the result.
 fn aead_decrypt(key: ptr, nonce_hex: string, ciphertext_hex: string, aad_hex: string) -> string:
+    if _has_nul_hex(nonce_hex) or _has_nul_hex(ciphertext_hex) or _has_nul_hex(aad_hex):
+        return "!err"
     return cx_aead_decrypt(key, nonce_hex, ciphertext_hex, aad_hex)
 
 fn _ed25519_key_random() -> ptr:
@@ -97,6 +121,8 @@ fn _ed25519_key_random() -> ptr:
 
 # A signing key from a known 32-byte seed (hex). Null on bad input.
 fn ed25519_key_from_seed(seed_hex: string) -> ptr:
+    if _has_nul_hex(seed_hex):
+        return null
     return cx_ed25519_key_from_seed(seed_hex)
 
 # The public key (hex) for a signing-key handle.
@@ -105,10 +131,14 @@ fn ed25519_pubkey(key: ptr) -> string:
 
 # Sign a message (hex) -> 64-byte signature (128 hex).
 fn ed25519_sign(key: ptr, msg_hex: string) -> string:
+    if _has_nul_hex(msg_hex):
+        return "!err"
     return cx_ed25519_sign_hex(key, msg_hex)
 
 # Verify a signature against a public key and message. true iff valid.
 fn ed25519_verify(pub_hex: string, msg_hex: string, sig_hex: string) -> bool:
+    if _has_nul_hex(pub_hex) or _has_nul_hex(msg_hex) or _has_nul_hex(sig_hex):
+        return false
     return cx_ed25519_verify(pub_hex, msg_hex, sig_hex) == 1
 
 # ---- X25519 key exchange (secret = key handle; public = hex; shared = handle) ----
@@ -118,6 +148,8 @@ fn x25519_key_random() -> ptr:
 
 # An X25519 secret from a known 32-byte secret (hex). Null on bad input.
 fn x25519_key_from_secret(secret_hex: string) -> ptr:
+    if _has_nul_hex(secret_hex):
+        return null
     return cx_x25519_key_from_secret(secret_hex)
 
 # The public key (hex) for a secret-key handle.
@@ -128,4 +160,6 @@ fn x25519_pubkey(key: ptr) -> string:
 # shared-secret KEY handle. Both sides get the same value. Free it when done; do
 # not use it as a key directly -- derive one (e.g. hmac_sha256 / pbkdf2) first.
 fn x25519_shared(my_key: ptr, their_pubkey_hex: string) -> ptr:
+    if _has_nul_hex(their_pubkey_hex):
+        return null
     return cx_x25519_shared(my_key, their_pubkey_hex)

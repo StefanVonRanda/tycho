@@ -240,6 +240,23 @@ for shape in zeros flip; do
     cat "$T/p.out" >> "$out"
 done
 
+# The KEY index must remain bounded for adversarial insertion order, both while
+# building it and when reopening the encoded store. This direct store probe skips
+# WAL fsync cost but exercises the same mutation and reconstruction functions.
+P3="$T/indexscale"; mkdir -p "$P3"
+cp -R "$src/store" "$P3/" 2>/dev/null
+cp "$src/../../tests/fixtures/tycho_db_index_scale.src" "$P3/probe.ty"
+if ! "$TYCHOC" "$P3/probe.ty" -o "$T/index-scale-probe" >"$T/index-scale-build.log" 2>&1; then
+    bad "index scale: probe did not compile"; sed 's/^/      /' "$T/index-scale-build.log" | head -8
+else
+    (cd "$W" && rm -f index-scale.db index-scale.db.tycho-tmp && \
+        (ulimit -v 196608; "$T/index-scale-probe" >"$T/index-scale.out" 2>"$T/index-scale.err"))
+    _index_scale_rc=$?
+    [ "$_index_scale_rc" -eq 0 ] || { bad "index scale: exceeded the 192-MiB bound or failed"; sed 's/^/      /' "$T/index-scale.err"; }
+    grep -qxF 'index scale: rows=20000 probe=0' "$T/index-scale.out" || bad "index scale: wrong rebuilt index results"
+    rm -f "$W/index-scale.db" "$W/index-scale.db.tycho-tmp"
+fi
+
 # ---------------------------------------------------------------------------
 # [3b] THE PLANNER, and the only assertions that can tell it from theatre
 #
@@ -297,6 +314,20 @@ for k in 10 20 30 40 50 60 99; do
         diff "$T/scan.rows" "$T/idx.rows" | sed 's/^/      /'
     }
 done
+
+# A type error must not disappear just because the index can prove that no
+# key matches. The scan path evaluates a row and reports this mismatch; the
+# indexed path and EXPLAIN must reject it before opening either path.
+printf "%s" "SELECT * FROM idx WHERE id = 'x';" > case.sql
+"$DB" case.sql pl.db > "$T/index-type.out" 2> "$T/index-type.err"
+_index_type_rc=$?
+[ "$_index_type_rc" -ne 0 ] || bad "plan/index type: returned success for INT KEY = text"
+grep -qF 'cannot compare int with text' "$T/index-type.out" || bad "plan/index type: missing comparison diagnostic"
+printf "%s" "EXPLAIN SELECT * FROM idx WHERE id = 'x';" > case.sql
+"$DB" case.sql pl.db > "$T/index-explain-type.out" 2> "$T/index-explain-type.err"
+_index_explain_rc=$?
+[ "$_index_explain_rc" -ne 0 ] || bad "plan/EXPLAIN type: planned an uncomparable index key"
+grep -qF 'cannot compare int with text' "$T/index-explain-type.out" || bad "plan/EXPLAIN type: missing comparison diagnostic"
 
 # b -- and the two paths must not be the same path wearing two names
 examined() {
@@ -459,6 +490,74 @@ printf '=== err Corrupt\n' >> "$out"
 printf -- '--- stdout\n' >> "$out"; cat "$T/c.out" >> "$out"
 printf -- '--- stderr\n' >> "$out"; cat "$T/c.err" >> "$out"
 
+# Structural corruption that used to panic in index/row consumers or silently
+# accept malformed values. Keep the log absent so open_db reports the store's
+# Corrupt verdict instead of attempting recovery from a log.
+python3 - "$T/corrupt-seed.sql" <<'PYEOF'
+import sys
+with open(sys.argv[1], "w") as f:
+    f.write("CREATE TABLE t (v INT);" + chr(10))
+    f.write("INSERT INTO t VALUES (0);" + chr(10))
+PYEOF
+"$DB" "$T/corrupt-seed.sql" "$T/corrupt-base.db" > /dev/null 2> "$T/corrupt-seed.err" || bad "Corrupt structure: seed failed"
+python3 - "$T/corrupt-base.db" "$T/corrupt" <<'PYEOF'
+import pathlib, sys
+src, dest = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
+b = bytearray(src.read_bytes())
+off = 21
+def u32(at): return int.from_bytes(b[at:at+4], "little")
+def skip_str(at):
+    n = u32(at)
+    return at + 4 + n
+# One table, one int column, one zero-valued row. Record the exact structural
+# offsets rather than relying on the spelling or encoded string lengths.
+off = skip_str(off)
+ncols = u32(off); off += 4
+col_tags = []
+for _ in range(ncols):
+    off = skip_str(off)
+    col_tags.append(off)
+    off += 1
+nrows = u32(off); off += 4
+assert nrows == 1
+nvals_at = off
+nvals = u32(off); off += 4
+assert nvals == 1
+value_tag = off
+
+def save(name, mutate):
+    out = bytearray(b)
+    mutate(out)
+    dest.mkdir(parents=True, exist_ok=True)
+    (dest / (name + ".db")).write_bytes(out)
+save("row-arity", lambda d: d.__setitem__(slice(nvals_at, nvals_at+4), (0).to_bytes(4, "little")))
+save("row-type", lambda d: d.__setitem__(value_tag, 2))  # text of length 0, wrong for int column
+save("integer-range", lambda d: d.__setitem__(value_tag+8, 128))
+save("negative-zero", lambda d: d.__setitem__(value_tag, 1))
+save("truncated", lambda d: d.pop())
+save("column-tag", lambda d: d.__setitem__(col_tags[0], 4))
+save("trailing", lambda d: d.append(0))
+PYEOF
+printf 'SELECT * FROM t;' > "$T/corrupt-query.sql"
+for _badstore in "$T"/corrupt/*.db; do
+    rm -f "$_badstore.wal"
+    "$DB" "$T/corrupt-query.sql" "$_badstore" > "$T/corrupt.out" 2> "$T/corrupt.err"
+    _corrupt_rc=$?
+    [ "$_corrupt_rc" -ne 0 ] || bad "Corrupt structure: accepted ${_badstore##*/}"
+    grep -qF 'store is corrupt:' "$T/corrupt.err" || bad "Corrupt structure: no Corrupt diagnostic for ${_badstore##*/}"
+    [ ! -s "$T/corrupt.out" ] || bad "Corrupt structure: wrote stdout for ${_badstore##*/}"
+done
+# A zero-byte log cannot justify rebuilding a corrupt store from history.
+cp "$T/corrupt/trailing.db" "$T/corrupt-empty-log.db"
+: > "$T/corrupt-empty-log.db.wal"
+cp "$T/corrupt-empty-log.db" "$T/corrupt-empty-log.before"
+"$DB" "$T/corrupt-query.sql" "$T/corrupt-empty-log.db" > "$T/corrupt.out" 2> "$T/corrupt.err"
+_cempty_rc=$?
+[ "$_cempty_rc" -ne 0 ] || bad "Corrupt/empty log: accepted an unrecoverable store"
+grep -qF 'store is corrupt:' "$T/corrupt.err" || bad "Corrupt/empty log: wrong diagnostic"
+[ ! -s "$T/corrupt.out" ] || bad "Corrupt/empty log: answered from an empty reconstruction"
+cmp -s "$T/corrupt-empty-log.before" "$T/corrupt-empty-log.db" || bad "Corrupt/empty log: overwrote the damaged store"
+
 # NotWritten, BOTH enums' variant of it, from a single run. The store path is
 # inside a directory that does not exist, so open() finds nothing (a fresh Db)
 # and every write fails. A directory rather than a chmod, because chmod does
@@ -475,7 +574,7 @@ printf -- '--- stderr\n' >> "$out"; cat "$T/c.err" >> "$out"
 # successful and silently lost. It is the one behaviour change in this file
 # that a reader of the golden should not have to guess at.
 [ -e nodir ] && bad "NotWritten: nodir exists, the fixture does not test what it claims"
-printf 'CREATE TABLE t (a INT);\n' > case.sql
+printf 'CREATE TABLE t (a INT);\nSELECT * FROM t;\nINSERT INTO t VALUES (1);\n' > case.sql
 "$DB" case.sql nodir/x.db > "$T/c.out" 2> "$T/c.err"
 rc=$?
 if [ "$rc" -eq 0 ]; then
@@ -487,12 +586,45 @@ else
         bad "NotWritten/wal: the log write did not fail with its own message"; sed 's/^/      /' "$T/c.out"; }
     grep -q 'ok    created' "$T/c.out" && \
         bad "NotWritten: reported a statement SUCCEEDED that could not be logged"
+    [ "$(grep -c 'no such table: t' "$T/c.out")" -eq 2 ] || \
+        bad "NotWritten: a refused CREATE remained visible to later statements"
 fi
 [ -e nodir ] && bad "NotWritten: the tool CREATED nodir/ -- it must not make a path it was not given"
 [ -e nodir.wal ] && bad "NotWritten: the tool created nodir.wal"
 printf '=== err NotWritten\n' >> "$out"
 printf -- '--- stdout\n' >> "$out"; cat "$T/c.out" >> "$out"
 printf -- '--- stderr\n' >> "$out"; cat "$T/c.err" >> "$out"
+
+# A full disk during the checkpoint must not truncate the last committed store.
+# The same-directory temp write fails under this limit; atomic rename is never
+# reached, so the old store and its checkpointed log remain readable.
+python3 - "$T/atomic.sql" <<'PYEOF'
+import sys
+with open(sys.argv[1], "w") as f:
+    f.write("CREATE TABLE t (id INT, payload TEXT);" + chr(10))
+    payload = "x" * 1000
+    for i in range(10):
+        f.write("INSERT INTO t VALUES (%d, '%s');" % (i, payload) + chr(10))
+PYEOF
+rm -f atomic.db atomic.db.wal atomic.db.tycho-tmp
+"$DB" "$T/atomic.sql" atomic.db > /dev/null 2> "$T/atomic.seed.err" || bad "atomic checkpoint: seed failed"
+printf 'SELECT * FROM t;' > "$T/atomic.read.sql"
+# Replacing a sibling temp must not silently widen/narrow an existing store's
+# access mode to whatever fopen("wb") got from the current umask.
+for mode in 640 600; do
+    chmod "$mode" atomic.db || bad "atomic checkpoint: could not set mode $mode"
+    "$DB" "$T/atomic.read.sql" atomic.db > /dev/null 2> "$T/atomic.mode.err" || bad "atomic checkpoint: mode-$mode reopen failed"
+    [ "$(stat -c '%a' atomic.db)" = "$mode" ] || bad "atomic checkpoint: mode $mode changed to $(stat -c '%a' atomic.db)"
+done
+cp atomic.db "$T/atomic.before"
+(cd "$W" && (ulimit -f 1; trap '' XFSZ; "$DB" "$T/atomic.read.sql" atomic.db > "$T/atomic.limited.out" 2> "$T/atomic.limited.err"))
+_atomic_rc=$?
+[ "$_atomic_rc" -ne 0 ] || bad "atomic checkpoint: file-size-limited checkpoint reported success"
+grep -qF 'cannot write atomic.db' "$T/atomic.limited.err" || bad "atomic checkpoint: missing write failure"
+cmp -s "$T/atomic.before" atomic.db || bad "atomic checkpoint: old store was changed by a partial checkpoint"
+"$DB" "$T/atomic.read.sql" atomic.db > "$T/atomic.reopen.out" 2> "$T/atomic.reopen.err" || bad "atomic checkpoint: old store did not reopen"
+[ "$(grep -c '^  row   ' "$T/atomic.reopen.out")" -eq 10 ] || bad "atomic checkpoint: rows were lost"
+rm -f atomic.db atomic.db.wal atomic.db.tycho-tmp
 
 # wal.WalErr.BadLog -- the store is fine, the LOG is not. An open failure, so
 # nothing runs and stdout must be empty, exactly as for a corrupt store: a
@@ -675,6 +807,15 @@ if ! srv_start n.db; then
 else
     [ "$port" -gt 0 ] 2>/dev/null || bad "server: banner did not name a bound port (got '$port')"
 
+    # The server owns this store for its whole process lifetime. A local CLI
+    # must fail before it can overwrite the server's private in-memory view.
+    printf 'CREATE TABLE intruder (id INT);\n' > "$T/lock.sql"
+    "$DB" "$T/lock.sql" n.db > "$T/lock.out" 2> "$T/lock.err"
+    _lock_rc=$?
+    [ "$_lock_rc" -ne 0 ] || bad "Lock: local CLI opened a store held by the server"
+    grep -qxF 'database is locked: n.db' "$T/lock.err" || bad "Lock: wrong busy diagnostic"
+    [ ! -s "$T/lock.out" ] || bad "Lock: refused CLI wrote stdout"
+
     # a -- a session through our own client
     cat > s1.sql <<'EOF'
 CREATE TABLE people (id INT KEY, name TEXT, age INT);
@@ -709,6 +850,29 @@ EOF
         bad "server/session1: the scan path's counter did not survive the wire"
     printf '=== server session 1 (own client, over TCP)\n' >> "$out"
     cat "$T/s1.out" >> "$out"
+
+    # A silent peer may occupy this serial server for one idle timeout, but it
+    # must not pin every later client forever. Leave the first socket open while
+    # a real client connects and requires its response within four seconds.
+    printf 'SELECT name FROM people WHERE id = 1;\n' > "$T/idle.sql"
+    python3 - "$DB" "$port" "$T/idle.sql" > "$T/idle.out" 2> "$T/idle.err" <<'PYEOF'
+import socket, subprocess, sys, time
+binary, port, script = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+s = socket.create_connection(("127.0.0.1", port))
+time.sleep(0.1)  # let the server accept the silent connection first
+try:
+    p = subprocess.run([binary, "--client=127.0.0.1:%d" % port, script],
+                       text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                       timeout=4)
+except subprocess.TimeoutExpired:
+    raise SystemExit("idle connection pinned the server past its timeout")
+finally:
+    s.close()
+if p.returncode != 0 or "row ada" not in p.stdout:
+    raise SystemExit("client after idle peer failed: rc=%d stdout=%r stderr=%r" %
+                     (p.returncode, p.stdout, p.stderr))
+PYEOF
+    [ "$?" -eq 0 ] || bad "Idle timeout: a silent peer blocked the next client"
 
     # b -- a NEW connection must see what the first one wrote
     printf 'SELECT * FROM people;\n' > s2.sql
@@ -929,7 +1093,7 @@ fi
 # ---------------------------------------------------------------------------
 COVERED='NoTable TableExists ColCount TypeClash Corrupt NotWritten NoIndex
          Storage NoColumn Uncomparable NotAValue NotAPredicate Plan
-         Wal BadLog LostPrefix NotSelect
+         Wal BadLog LostPrefix Locked NotSelect
          Listen Connect Accept Peer TooLong Checkpoint'
 
 variants() {

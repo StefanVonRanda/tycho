@@ -7,19 +7,17 @@
 #   - sqlite3_column_text returns a C string valid only until the next step; tycho
 #     arena-copies it on the string return, so the copy outlives the cursor.
 #   - sqlite3_column_int64 returns a clean 64-bit value (sqlite3_column_int returns a
-#     32-bit int, whose widening to tycho's 64-bit int is the one case still better
-#     served by a shim or a future i32 type).
-# Result codes are all non-negative, so reading C `int` returns as tycho's 64-bit
-# int is correct on a mainstream ABI (a C API returning negative ints would still
-# want a `long` shim). Build:  tychoc demo.ty -o demo --pkg sqlite3   (no --shim)
-extern "sqlite3" fn sqlite3_open(path: string, db: inout ptr) -> int
-extern "sqlite3" fn sqlite3_exec(db: ptr, sql: string, cb: ptr, arg: ptr, errmsg: ptr) -> int
-extern "sqlite3" fn sqlite3_prepare_v2(db: ptr, sql: string, nbyte: int, st: inout ptr, tail: ptr) -> int
-extern "sqlite3" fn sqlite3_step(st: ptr) -> int
-extern "sqlite3" fn sqlite3_column_int64(st: ptr, i: int) -> int
-extern "sqlite3" fn sqlite3_column_text(st: ptr, i: int) -> string
-extern "sqlite3" fn sqlite3_finalize(st: ptr) -> int
-extern "sqlite3" fn sqlite3_close(db: ptr) -> int
+#     32-bit `i32` type, which emits a C `int` prototype exactly).
+# Result codes are read using their actual C width. Build:
+#   tychoc demo.ty -o demo --pkg sqlite3   (no --shim)
+extern "sqlite3" fn sqlite3_open(path: string, db: inout ptr) -> i32
+extern "sqlite3" fn sqlite3_exec(db: ptr, sql: string, cb: ptr, arg: ptr, errmsg: ptr) -> i32
+extern "sqlite3" fn sqlite3_prepare_v2(db: ptr, sql: string, nbyte: i32, st: inout ptr, tail: ptr) -> i32
+extern "sqlite3" fn sqlite3_step(st: ptr) -> i32
+extern "sqlite3" fn sqlite3_column_int64(st: ptr, i: i32) -> int
+extern "sqlite3" fn sqlite3_column_text(st: ptr, i: i32) -> string
+extern "sqlite3" fn sqlite3_finalize(st: ptr) -> i32
+extern "sqlite3" fn sqlite3_close(db: ptr) -> i32
 
 fn main():
     db := null

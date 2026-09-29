@@ -93,6 +93,7 @@ ln -s "$T/outside/secret.txt" "$T/www/link.txt"      2>/dev/null || true
 ln -s "$T/outside"            "$T/www/linkdir"       2>/dev/null || true
 ln -s "$T/www/index.html"     "$T/www/inlink.html"   2>/dev/null || true
 ln -s "$T/www/.hidden/secret.txt" "$T/www/dotlink.txt" 2>/dev/null || true
+ln -s "$T/outside/does-not-exist" "$T/www/dangling.txt" 2>/dev/null || true
 # A zero-length file, for the one Range case a repo of real assets cannot carry:
 # EVERY range over a 0-byte file is unsatisfiable, and `Content-Range: bytes */0`
 # is the only thing a 416 can say about it. git stores the file happily enough,
@@ -412,6 +413,15 @@ for label, v in [("no unit",           b"0-99"),
 eq("206 BYTES=0-9 (unit is case-insensitive)",
    status(rng(b"BYTES=0-9")), "HTTP/1.1 206 Partial Content")
 
+# Leading zeroes do not count toward the position limit. A short value padded
+# past 15 characters must keep its actual meaning (including as a suffix length).
+eq("206 first-byte-pos with 16 characters of leading-zero padding",
+   status(rng(b"bytes=0000000000000001-")), "HTTP/1.1 206 Partial Content")
+eq("206 padded first-byte-pos returns the correct suffix",
+   split(rng(b"bytes=0000000000000001-"))[1], disk[1:])
+eq("206 padded suffix length remains one byte",
+   split(rng(b"bytes=-0000000000000001"))[1], disk[-1:])
+
 # A digit run too long to be a position is not a parse failure with a wild
 # value in it -- it lands in the arm the true number would have.
 eq("416 first-byte-pos of 26 digits (past any EOF)",
@@ -513,6 +523,8 @@ else:
     # target spells a dot segment, and the file it reaches is under .hidden/.
     eq("403 symlink resolving into .hidden/", status(get(b"/dotlink.txt")),
        "HTTP/1.1 403 Forbidden")
+    eq("403 dangling symlink is not treated as a missing leaf",
+       status(get(b"/dangling.txt")), "HTTP/1.1 403 Forbidden")
     # THE POSITIVE CONTROL. Without it every leg above passes on a server that
     # refuses symlinks outright, which is a different (and wrong) rule.
     r = get(b"/inlink.html")
@@ -603,6 +615,9 @@ while time.time() - t0 < 5.0:
             break
 s.close()
 eq("431 20 KiB header (MAX_HEAD=16384)", status(buf), "HTTP/1.1 431 Request Header Fields Too Large")
+eq("413 small head, declared body exceeds MAX_HEAD",
+   status(raw(b"POST / HTTP/1.1\r\nHost: t\r\nContent-Length: 20000\r\n\r\n")),
+   "HTTP/1.1 413 Content Too Large")
 
 s = conn(6.0)
 s.sendall(b"GET / HTTP/1.1\r\nHost: t\r\n")          # no terminating blank line
@@ -715,7 +730,7 @@ chk "access log: every worker served (w1..w4)" "w1 w2 w3 w4 " "$workers"
 peers=$(sed -n 's/^w[0-9][0-9]* \([^ ]*\) .*/\1/p' "$T/srv.err" | "$SORT" -u | tr '\n' ' ')
 chk "access log: peer address on every line (net.peer_addr)" "127.0.0.1 " "$peers"
 
-for code in 200 206 301 400 403 404 405 408 416 431; do
+for code in 200 206 301 400 403 404 405 408 413 416 431; do
     n=$(grep -c " $code [0-9][0-9]* [0-9.]*ms" "$T/srv.err")
     if [ "$n" -gt 0 ]; then echo "  ok   access log: $n line(s) with status $code"
     else echo "  FAIL access log: no line with status $code"; fail=1; fi

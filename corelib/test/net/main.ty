@@ -112,6 +112,14 @@ fn main():
     back := data_of(net.read(cli, 64))
     println("back=[" + to_str(back) + "]")
 
+    # An int64 descriptor must not truncate to an unrelated int descriptor.
+    huge_fd := conn + 4294967296
+    net.close_fd(huge_fd)
+    safe_sent := fd_of(net.write(cli, to_bytes("safe")))
+    safe_body := data_of(net.read(conn, 64))
+    println("large_fd_rejected=" + str(fd_of(net.port_of(huge_fd)) == -1))
+    println("large_fd_close_safe=" + str(safe_sent == 4 and to_str(safe_body) == "safe"))
+
     # -- EOF is now its own answer -- the client closes, the server reads once --
     net.close_fd(cli)
     match net.read(conn, 64):

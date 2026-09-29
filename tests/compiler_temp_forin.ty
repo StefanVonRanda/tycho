@@ -1,0 +1,8 @@
+fn main():
+    _fc0 := 91
+    _fi0 := 92
+    xs := [1, 2]
+    total := 0
+    for item in xs:
+        total += item
+    println("temps=" + str(_fc0) + "," + str(_fi0) + " total=" + str(total))

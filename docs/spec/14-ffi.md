@@ -6,7 +6,7 @@ crosses is copied so that Tycho never holds a pointer into C-owned memory nor
 exposes its own storage to C.
 
 > Provenance: `docs/reference/ffi.md`; `parse_extern_fn` `src/tychoc.c@parse_extern_fn`;
-> boundary copy routines `runtime/tycho_rt.c:1287-1347`,`:1973@tycho_arr_int_from_c`,`:1991-2002`.
+> boundary copy routines `runtime/tycho_rt.c:1314-1374`,`:1991@tycho_arr_int_from_c`,`:2018-2029`.
 
 ## 24. `extern` and the C boundary
 
@@ -123,7 +123,7 @@ there is an error channel, and each call's documented "this did not happen"
 sentinel where there is not. Until 2026-08-13 all three acted on the PREFIX:
 `io.exists("h" + chr(0) + "i")` was `true`, `io.read` of it returned the contents
 of `h`, and `io.write` of it created `h` — a caller that validated one path
-reached another. `core:path` needs no guard: it is lexical and reaches no `char*`.
+reached another. `core:path` is mostly lexical, but `path.real` reaches `realpath`/`GetFullPathNameA` and rejects an interior NUL before crossing its C-string boundary.
 
 The sized-integer conversions truncate or extend by the C cast (probed on both
 compilers). `to_uN` / `to_iN` narrows a value to the type's low `N` bits; widening

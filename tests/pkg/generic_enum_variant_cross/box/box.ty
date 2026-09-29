@@ -1,0 +1,5 @@
+package box
+
+enum Box($T):
+    Has($T)
+    Nothing

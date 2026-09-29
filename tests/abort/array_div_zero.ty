@@ -1,0 +1,5 @@
+fn main():
+    a := [7, 8]
+    b := [1, 0]
+    out := a / b
+    println(str(out[0]))

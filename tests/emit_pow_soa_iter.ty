@@ -1,0 +1,19 @@
+struct Point:
+    x: int
+
+fn main():
+    println(str(pow(2.0, 10.0)))
+
+    points := soa []Point
+    push(points, Point(1))
+    push(points, Point(2))
+    total := 0
+    for p in points:
+        total = total + p.x
+    println(str(total))
+
+    growing := soa []Point
+    push(growing, Point(4))
+    for p in growing:
+        push(growing, Point(9))
+    println(str(len(growing)))

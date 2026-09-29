@@ -97,17 +97,40 @@ static const char *ty_tz_name(const char *p) {
     return p;
 }
 
-/* [+-]hh[:mm[:ss]] -> seconds. POSIX sign, i.e. the value is WEST-positive. */
-static const char *ty_tz_off(const char *p, long *out) {
+/* Parse a bounded decimal component without overflowing, even on long input. */
+static const char *ty_tz_number(const char *p, long max, long *out) {
+    if (!isdigit((unsigned char)*p)) return NULL;
+    long n = 0;
+    do {
+        int d = *p++ - '0';
+        if (d > max || n > (max - d) / 10) return NULL;
+        n = n * 10 + d;
+    } while (isdigit((unsigned char)*p));
+    *out = n;
+    return p;
+}
+
+/* [+-]hh[:mm[:ss]] -> seconds. POSIX sign, i.e. the value is WEST-positive.
+ * Zone offsets are bounded to 24 hours; transition times permit POSIX's
+ * extended +/-167-hour range. */
+static const char *ty_tz_off(const char *p, long *out, long max_hours) {
     int sign = 1;
     if (*p == '+') p++;
     else if (*p == '-') { sign = -1; p++; }
-    if (!isdigit((unsigned char)*p)) return NULL;
     long h = 0, m = 0, s = 0;
-    while (isdigit((unsigned char)*p)) h = h * 10 + (*p++ - '0');
-    if (*p == ':') { p++; while (isdigit((unsigned char)*p)) m = m * 10 + (*p++ - '0'); }
-    if (*p == ':') { p++; while (isdigit((unsigned char)*p)) s = s * 10 + (*p++ - '0'); }
-    *out = sign * (h * 3600 + m * 60 + s);
+    p = ty_tz_number(p, max_hours, &h);
+    if (!p) return NULL;
+    if (*p == ':') {
+        p = ty_tz_number(p + 1, 59, &m);
+        if (!p) return NULL;
+    }
+    if (*p == ':') {
+        p = ty_tz_number(p + 1, 59, &s);
+        if (!p) return NULL;
+    }
+    long total = h * 3600 + m * 60 + s;
+    if (max_hours == 24 && total > 24 * 3600) return NULL;
+    *out = sign * total;
     return p;
 }
 
@@ -116,25 +139,25 @@ static const char *ty_tz_rule(const char *p, TyTzRule *r) {
     if (*p == 'M') {
         p++;
         long mo = 0, wk = 0, dy = 0;
-        if (!isdigit((unsigned char)*p)) return NULL;
-        while (isdigit((unsigned char)*p)) mo = mo * 10 + (*p++ - '0');
-        if (*p++ != '.') return NULL;
-        while (isdigit((unsigned char)*p)) wk = wk * 10 + (*p++ - '0');
-        if (*p++ != '.') return NULL;
-        while (isdigit((unsigned char)*p)) dy = dy * 10 + (*p++ - '0');
+        p = ty_tz_number(p, 12, &mo);
+        if (!p || *p != '.') return NULL;
+        p = ty_tz_number(p + 1, 5, &wk);
+        if (!p || *p != '.') return NULL;
+        p = ty_tz_number(p + 1, 6, &dy);
+        if (!p || mo < 1 || wk < 1) return NULL;
         r->mon = (int)mo; r->week = (int)wk; r->day = (int)dy; r->has = 1;
     } else if (*p == 'J' || isdigit((unsigned char)*p)) {
         if (*p == 'J') { r->julian = 1; p++; }
         long n = 0;
-        if (!isdigit((unsigned char)*p)) return NULL;
-        while (isdigit((unsigned char)*p)) n = n * 10 + (*p++ - '0');
+        p = ty_tz_number(p, 365, &n);
+        if (!p || (r->julian && n == 0)) return NULL;
         r->yday = (int)n; r->has = 2;
     } else {
         return NULL;
     }
     if (*p == '/') {
         long t = 0;
-        const char *q = ty_tz_off(p + 1, &t);
+        const char *q = ty_tz_off(p + 1, &t, 167);
         if (!q) return NULL;
         r->time = t; p = q;
     }
@@ -184,7 +207,7 @@ static int ty_posix_tz_offset(const char *tz, long long secs, long *out) {
     const char *p = ty_tz_name(tz);
     if (p == tz) return 1;                                  /* no std name */
     long stdoff_w = 0;
-    const char *q = ty_tz_off(p, &stdoff_w);
+    const char *q = ty_tz_off(p, &stdoff_w, 24);
     if (!q) return 1;                                       /* std name with no offset */
     long stdoff = -stdoff_w;                                /* POSIX is west-positive */
     p = q;
@@ -195,7 +218,7 @@ static int ty_posix_tz_offset(const char *tz, long long secs, long *out) {
     long dstoff = stdoff + 3600;
     if (*p && *p != ',') {
         long w = 0;
-        q = ty_tz_off(p, &w);
+        q = ty_tz_off(p, &w, 24);
         if (!q) return 1;
         dstoff = -w; p = q;
     }

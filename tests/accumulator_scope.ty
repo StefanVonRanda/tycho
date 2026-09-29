@@ -1,0 +1,23 @@
+const N = 50000
+const CHUNK = "0123456789abcdef"
+
+fn main():
+    raw := to_bytes("")
+    i := 0
+    for i < N:
+        raw = raw + to_bytes(CHUNK)
+        i = i + 1
+    println("bytes=" + str(len(raw)))
+
+    text_len := 0
+    match 1:
+        1:
+            text := ""
+            j := 0
+            for j < N:
+                text = text + CHUNK
+                j = j + 1
+            text_len = len(text)
+        _:
+            text_len = -1
+    println("match_string=" + str(text_len))

@@ -55,14 +55,18 @@ fn connect(host: string, port: int) -> ptr:
     return tlsx_connect(host, port)
 
 # Connect with the TCP connect and the TLS handshake each bounded at `ms`
-# milliseconds. `ms <= 0` is the unbounded `connect` above.
-fn _connect_timeout(host: string, port: int, ms: int) -> ptr:
-    if _has_nul(host):
-        return to_ptr(0)             # same refusal as connect, same reason
+# milliseconds. Zero is the unbounded `connect` behavior; invalid / too-large
+# timeouts fail closed because the platform APIs take a signed 32-bit millisecond
+# count.
+fn connect_timeout(host: string, port: int, ms: int) -> ptr:
+    if _has_nul(host) or ms < 0 or ms > 2147483647:
+        return to_ptr(0)
     return tlsx_connect_timeout(host, port, ms)
 
 # Bound every later read and write on `conn`; 0 clears the bound. False on failure.
-fn _set_timeout_ms(conn: ptr, ms: int) -> bool:
+fn set_timeout_ms(conn: ptr, ms: int) -> bool:
+    if ms < 0 or ms > 2147483647:
+        return false
     return tlsx_set_timeout(conn, ms) == 1
 
 fn write(conn: ptr, data: bytes) -> int:

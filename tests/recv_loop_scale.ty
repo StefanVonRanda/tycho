@@ -1,0 +1,25 @@
+# Per-iteration recv of a composite channel payload must use loop scratch rather
+# than retaining each copied request in the receiving function's long-lived arena.
+struct Msg:
+    key: string
+    value: string
+
+fn make_value() -> string:
+    out := ""
+    for i := 0; i < 2048; i += 1:
+        out += "x"
+    return out
+
+fn main():
+    value := make_value()
+    ch := channel(Msg, 1)
+    total := 0
+    for i := 0; i < 100000; i += 1:
+        send(ch, Msg(value, value))
+        got := recv(ch)
+        match got:
+            Some(msg):
+                total += len(msg.value)
+            None:
+                total += 0
+    println(str(total))

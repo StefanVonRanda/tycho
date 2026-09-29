@@ -22,10 +22,9 @@ the whole stack working against a serious C library:
   `SQLITE_ROW` (100); row values use `sqlite3_column_int64` for a clean 64-bit read.
 - **`--pkg sqlite3`** — pulls the link flags from `pkg-config`.
 
-A note on integer widths: SQLite's result codes are all non-negative, so reading its
-32-bit `int` returns as tycho's 64-bit `int` is correct here without ceremony. A C
-function that can return a *negative* `int` needs `to_i32(...)` around the call to
-sign-extend it (still no shim) — see `docs/reference/ffi.md`.
+SQLite's result-code functions return C `int`, so the bindings use Tycho `i32` and
+emit matching prototypes. The 64-bit row-value API uses `-> int`. Sized integer
+arguments and returns are distinct types; see `docs/reference/ffi.md`.
 
 ## Build & run
 

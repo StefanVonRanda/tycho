@@ -79,10 +79,10 @@ ctl none  '[c2] report NO fd ready' \
 
 # [c3] reintroduce select's ceiling. If the probe's descriptors were all below
 # 1024 this control would change nothing and the >1024 leg would be decoration.
-CEIL='    for (tycho_int i = 0; i < nfds; i++) if (fds[i] < 0) return;'
+CEIL='        pf[i].fd = (int)fds[i];'
 ctl ceil  '[c3] refuse fds >= 1024 (select FD_SETSIZE)' \
-    "$CEIL|||$CEIL
-    for (tycho_int i = 0; i < nfds; i++) if (fds[i] >= 1024) return;" 'ready_is_top=true'
+    "$CEIL|||        if (fds[i] >= 1024) { free(pf); return; }
+$CEIL" 'ready_is_top=true'
 
 # ---------------------------- revert ----------------------------
 if build rev "" && grep -qx 'ready_is_top=true' "$T/o-rev" && grep -qx 'nready=1' "$T/o-rev"; then

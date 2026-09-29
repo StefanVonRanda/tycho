@@ -1,0 +1,3 @@
+fn main():
+    opt: Option(int) = Some(1)
+    print(str(opt == None))

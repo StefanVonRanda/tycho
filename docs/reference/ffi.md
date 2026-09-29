@@ -29,14 +29,13 @@ Prefer a libc function whose header type is fixed on every platform.
 Here's what can cross:
 
 - **Scalars** — `int`, `char`, `float`, `bool`.
-- **Sized integers** — the first-class `u32`, `u64`, `f32` cross as **themselves** (an
-  `extern` parameter or return of one of those types takes/produces a value of that exact
-  type). The narrower spellings `u8 u16 i8 i16 i32 i64` are valid **only** in an `extern`
-  signature and are `int` to Tycho — you pass and receive ordinary `int` values, but the
-  emitted C prototype uses the real fixed-width type so a call matches e.g.
-  `int16_t f(uint8_t)` at the ABI. On the way in the `int` narrows to the C width; on the
-  way back the C result widens to `int`, **sign-extended** for `i8`/`i16`/`i32`/`i64` and
-  **zero-extended** for `u8`/`u16` (so `u8(-1)` reads back as `255`, `i8(200)` as `-56`).
+- **Sized integers** — `u8`, `u16`, `i8`, `i16`, `i32`, `i64`, `u32`, and `u64` are
+  distinct numeric types. In an `extern` signature they emit the matching fixed-width C
+  type, so `extern fn f(x: u8) -> i16` matches `int16_t f(uint8_t)`. Values of these types
+  are also produced explicitly with `to_u8`, `to_i16`, and the other `to_` conversions;
+  there is no implicit conversion between a sized integer and `int` (use `to_int` or the
+  corresponding `to_` conversion). Signed returns keep their signed type, and unsigned
+  returns keep theirs; the compiler does not widen them to `int`.
 - **`string`** — passed as a C `char*`; a C-returned string is **copied into the caller's
   arena** at the call site, so Tycho never holds a pointer into C-owned memory. A nullable C
   return is declared `-> Option(string)`. **The pointer must still be valid when your
@@ -223,11 +222,12 @@ getters. (Only `Option(string)` is supported at the boundary, not arbitrary
 
 **Out-parameter constructors (`inout` params).** Many C APIs return a status and
 write their real result through a pointer out-parameter — `int sqlite3_open(const
-char *path, sqlite3 **db)`. Declare the out-parameter `inout` and the transpiler passes
+char *path, sqlite3 **db)`. Declare the C `int` status as `i32` and the out-parameter
+`inout`; the transpiler passes
 the address of your local automatically; no hand-written shim:
 
 ```tycho
-extern "sqlite3" fn sqlite3_open(path: string, db: inout ptr) -> int
+extern "sqlite3" fn sqlite3_open(path: string, db: inout ptr) -> i32
 
 db := null
 rc := sqlite3_open("app.db", &db)      # the compiler emits sqlite3_open(path, &db)
@@ -247,14 +247,11 @@ crossing C's scalar conventions, both in-language (no shim):
   that use a sentinel pointer constant — e.g. SQLite's `SQLITE_TRANSIENT`, which is
   `(void*)-1`: `sqlite3_bind_text(st, i, s, -1, to_ptr(-1))`. Tycho never
   dereferences the pointer, so this is sound.
-- **`to_i32(n: int) -> int`** sign-extends a 32-bit C `int` return. Tycho's `int` is
-  `int64_t`, so an `extern fn … -> int` bound to a C function that really
-  returns 32-bit `int` reads the correct low 32 bits but the wrong upper bits — a
-  returned `-1` shows up as `4294967295`. Wrap the call: `rc := to_i32(c_func())`
-  recovers the sign. (Only needed when the C function can return a *negative* `int`;
-  non-negative codes and any function returning `int64_t` are already correct —
-  `long` is not among them, being 32-bit on Windows and ILP32.
-  For a 64-bit row value, prefer the `…_int64` variant of the C call.)
+- **`to_i32(n: int) -> i32`** explicitly narrows a Tycho `int` to signed 32 bits; it
+  is not a return-widening helper. Declare a C `int` return as `-> i32` so the emitted
+  prototype matches the C ABI. Convert it to Tycho's 64-bit `int` with `to_int` if needed.
+  Likewise, use `-> int` only for a C 64-bit integer return. A C `long` has platform-
+  dependent width, so prefer an explicitly sized C API.
 
 **Other composites are rejected.** Arrays, maps, structs, other `Option`/`Result`,
 and tuples have Tycho-internal C representations, not a stable C ABI. The type

@@ -1,0 +1,5 @@
+fn main():
+    println(str(to_u8(-1.75)))
+    println(str(to_i8(127.75)))
+    println(str(to_u64(1e19)))
+    println(str(to_u16(sqrt(-1.0))))

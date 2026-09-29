@@ -4,5 +4,7 @@ nul_roundtrip=1
 empty=Ok len=0
 corrupt=Corrupt len=-1
 truncated=Truncated len=-1
+gzip_concat=leftright
+gzip_trailing=Corrupt
 raw_ok=Ok
 raw_corrupt=Truncated

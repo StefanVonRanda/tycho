@@ -170,6 +170,7 @@ fn safe_join(base: string, rel: string) -> string:
 # realpath(3): the absolute path with every symlink and ".." resolved, or "" if
 # the path does not exist, cannot be read, or does not fit. Fail-closed.
 extern fn pathx_real(p: string) -> string
+extern fn pathx_is_symlink(p: string) -> bool
 
 fn real(p: string) -> string:
     for i := 0; i < len(p); i += 1:
@@ -198,8 +199,9 @@ fn under(root: string, p: string) -> bool:
 #
 # A path that does not exist is NOT a refusal: the longest existing ancestor is
 # resolved instead and checked, and the lexical join comes back so the caller can
-# report its own "not found" rather than a spurious "forbidden". Nothing can
-# escape through a component that is not there -- there is no symlink to follow.
+# report its own "not found" rather than a spurious "forbidden". A dangling
+# symlink is different: lstat can see the link even though realpath cannot see
+# its target, so it is refused rather than skipped as a missing leaf.
 #
 # RESIDUAL RACE, stated rather than hidden: between this check and the caller's
 # open(2) an attacker WITH WRITE ACCESS INSIDE the root could replace a resolved
@@ -207,6 +209,12 @@ fn under(root: string, p: string) -> bool:
 # with O_NOFOLLOW per component. This narrows an unconditional escape to a race
 # an outside attacker cannot reach; it does not remove it.
 fn resolve_under(base: string, rel: string) -> string:
+    for i := 0; i < len(base); i += 1:
+        if base[i] == 0:
+            return ""
+    for i := 0; i < len(rel); i += 1:
+        if rel[i] == 0:
+            return ""
     j := safe_join(base, rel)
     if j == "":
         return ""
@@ -216,6 +224,8 @@ fn resolve_under(base: string, rel: string) -> string:
     p := j
     for len(p) > 0:
         rp := real(p)
+        if rp == "" and pathx_is_symlink(p):
+            return ""                              # dangling link: do not skip to its parent
         if rp != "":
             if not under(rb, rp):
                 return ""                      # resolved outside the root

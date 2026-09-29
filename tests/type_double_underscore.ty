@@ -1,0 +1,17 @@
+enum Shape__Kind:
+    Round
+
+struct Box($T):
+    value: T
+
+struct Box__int:
+    other: int
+
+fn main():
+    shape := Round
+    match shape:
+        Round:
+            println("round")
+    generic := Box(1)
+    named := Box__int(2)
+    println(str(generic) + " / " + str(named))

@@ -1,0 +1,5 @@
+# expect: f32 literal out of range
+# Array literal elements cannot silently overflow the f32 destination type.
+fn main():
+    a: [f32] = [1e39]
+    println(str(a[0]))

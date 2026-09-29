@@ -1,0 +1,7 @@
+struct P:
+    x: int
+
+fn main():
+    xs := [P(1)]
+    reserve(xs, 9223372036854775807)
+    println(str(xs[0].x))

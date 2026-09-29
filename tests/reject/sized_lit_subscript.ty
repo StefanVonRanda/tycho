@@ -1,0 +1,5 @@
+# expect: does not fit u8
+# A subscript store adapts and range-checks the stored literal.
+fn main():
+    a: [1]u8 = [to_u8(1)]
+    a[0] = 300

@@ -1,0 +1,10 @@
+fn main():
+    _cx0 := 101
+    _mx36_0_0 := 102
+    _ms36_0 := 103
+    xs := [0, 0]
+    i := 0
+    pad := -1
+    (xs[i], i) = (99, 1)
+    println("temps=" + str(_cx0) + "," + str(_mx36_0_0) + "," + str(_ms36_0) + "," + str(pad))
+    println("store=" + str(i) + "," + str(xs[0]))

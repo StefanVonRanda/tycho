@@ -13,11 +13,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <string.h>
 #include <errno.h>
 #include <sys/stat.h>            /* stat(2) + S_ISDIR -- iox_stat_kind */
 #include <dirent.h>             /* opendir(3) -- iox_dir_probe */
 #include <fcntl.h>               /* open(2) + O_RDONLY -- iox_read_at */
 #include <unistd.h>              /* pread(2) + close(2) -- iox_read_at */
+#ifndef _WIN32
+#include <sys/file.h>             /* flock(2) -- process-lifetime database locks */
+#endif
 /* Every open(2) below MUST carry this. The MSVCRT open() defaults to TEXT
  * mode, which turns \n into \r\n on write and back on read -- on the byte
  * offsets iox_read_at/iox_write_at exist to address, that silently shifts
@@ -94,14 +98,18 @@ void *iox_open_lines(const char *path) {
  * NULL at end of file / error. The pointer is valid only until the next call or
  * close_lines -- Tycho arena-copies it immediately at the FFI boundary. An empty
  * line returns "" (a non-NULL empty string), distinct from EOF's NULL. */
-const char *iox_read_line(void *p) {
-    if (!p) return NULL;
+void iox_read_line(void *p, tycho_int *status, const unsigned char **out, tycho_int *outlen) {
+    *status = 0; *out = NULL; *outlen = 0;
+    if (!p) return;
     IoLines *r = p;
     ssize_t n = getline(&r->buf, &r->cap, r->f);
-    if (n < 0) return NULL;                          /* EOF or read error */
+    if (n < 0) return;                               /* EOF or read error */
     while (n > 0 && (r->buf[n - 1] == '\n' || r->buf[n - 1] == '\r'))
         r->buf[--n] = '\0';
-    return r->buf;
+    unsigned char *copy = malloc(n > 0 ? (size_t)n : 1);
+    if (!copy) { *status = -1; return; }
+    if (n > 0) memcpy(copy, r->buf, (size_t)n);
+    *status = 1; *out = copy; *outlen = (tycho_int)n;
 }
 
 void iox_close_lines(void *p) {
@@ -116,6 +124,62 @@ void iox_close_lines(void *p) {
 #define TY_RF_OK   1
 #define TY_RF_DIR  2
 #define TY_RF_ERR  3
+#define TY_FS_EXISTS 4
+static tycho_int ty_rf_errno(const char *path);
+
+/* core:io's database lock is intentionally process-lifetime: tycho-db opens
+ * exactly one store per process, and the kernel releases the lock on exit. */
+static char *ty_io_lock_path = NULL;
+#ifdef _WIN32
+static HANDLE ty_io_lock_handle = INVALID_HANDLE_VALUE;
+static OVERLAPPED ty_io_lock_overlapped;
+#else
+static int ty_io_lock_fd = -1;
+#endif
+
+tycho_int iox_lock_exclusive(const char *path) {
+    if (ty_io_lock_path) return strcmp(ty_io_lock_path, path) == 0 ? TY_RF_OK : TY_RF_ERR;
+    size_t n = strlen(path);
+    char *saved = malloc(n + 1);
+    if (!saved) return TY_RF_ERR;
+    memcpy(saved, path, n + 1);
+#ifdef _WIN32
+    HANDLE h = CreateFileA(path, GENERIC_READ | GENERIC_WRITE,
+                           FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_ALWAYS,
+                           FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED, NULL);
+    if (h == INVALID_HANDLE_VALUE) {
+        DWORD e = GetLastError();
+        free(saved);
+        if (e == ERROR_FILE_NOT_FOUND || e == ERROR_PATH_NOT_FOUND) return TY_RF_MISS;
+        return TY_RF_ERR;
+    }
+    memset(&ty_io_lock_overlapped, 0, sizeof ty_io_lock_overlapped);
+    if (!LockFileEx(h, LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY,
+                    0, MAXDWORD, MAXDWORD, &ty_io_lock_overlapped)) {
+        DWORD e = GetLastError();
+        CloseHandle(h); free(saved);
+        return e == ERROR_LOCK_VIOLATION ? TY_FS_EXISTS : TY_RF_ERR;
+    }
+    ty_io_lock_handle = h;
+#else
+    int flags = O_RDWR | O_CREAT | O_BINARY;
+#ifdef O_CLOEXEC
+    flags |= O_CLOEXEC;
+#endif
+    int fd = open(path, flags, 0600);
+    if (fd < 0) { tycho_int st = ty_rf_errno(path); free(saved); return st; }
+    if (flock(fd, LOCK_EX | LOCK_NB) != 0) {
+        int e = errno;
+        close(fd);
+        free(saved);
+        if (e == EWOULDBLOCK || e == EAGAIN) return TY_FS_EXISTS;
+        return TY_RF_ERR;
+    }
+    ty_io_lock_fd = fd;
+#endif
+    ty_io_lock_path = saved;
+    return TY_RF_OK;
+}
 
 /* Map a failed fopen/fread errno onto the status codes above. `path` lets a
  * failure that the platform refuses to classify be asked of the kernel: on
@@ -428,6 +492,52 @@ void iox_write_bytes(const char *path, const unsigned char *data,
     *status = TY_RF_OK;
 }
 
+/* Atomic same-filesystem replacement. A checkpoint replaces an existing store
+ * without changing its access policy just because the sibling temp was created
+ * under the process umask. */
+void iox_rename(const char *src, const char *dst, tycho_int *status) {
+    *status = TY_RF_ERR;
+    errno = 0;
+#ifdef _WIN32
+    /* ReplaceFile preserves the replaced file's security descriptor (including
+     * its ACL); MoveFileEx handles a new destination. */
+    if (GetFileAttributesA(dst) != INVALID_FILE_ATTRIBUTES) {
+        if (ReplaceFileA(dst, src, NULL, 0, NULL, NULL)) {
+            *status = TY_RF_OK;
+            return;
+        }
+        DWORD e = GetLastError();
+        if (e != ERROR_FILE_NOT_FOUND && e != ERROR_PATH_NOT_FOUND) {
+            if (e == ERROR_ACCESS_DENIED) *status = TY_RF_ERR;
+            else if (e == ERROR_FILE_NOT_FOUND || e == ERROR_PATH_NOT_FOUND) *status = TY_RF_MISS;
+            return;
+        }
+    }
+    if (MoveFileExA(src, dst, MOVEFILE_WRITE_THROUGH)) {
+        *status = TY_RF_OK;
+        return;
+    }
+    DWORD e = GetLastError();
+    if (e == ERROR_FILE_NOT_FOUND || e == ERROR_PATH_NOT_FOUND) *status = TY_RF_MISS;
+#else
+    struct stat srcst, dstst;
+    if (lstat(src, &srcst) == 0 && S_ISREG(srcst.st_mode)) {
+        int dr = lstat(dst, &dstst);
+        if (dr == 0 && S_ISREG(dstst.st_mode)) {
+            if (chmod(src, dstst.st_mode & 07777) != 0) {
+                *status = ty_rf_errno(src);
+                return;
+            }
+        } else if (dr != 0 && errno != ENOENT && errno != ENOTDIR) {
+            *status = ty_rf_errno(dst);
+            return;
+        }
+    }
+    if (rename(src, dst) == 0) *status = TY_RF_OK;
+    else *status = ty_rf_errno(src);
+#endif
+}
+
 /* Copy `src` over `dst` (truncating it), STREAMING through a fixed buffer: peak
  * memory is the buffer, not the file. The whole reason it exists is that the
  * alternative -- read the file into a string and write the string -- costs a
@@ -443,8 +553,14 @@ void iox_copy_file(const char *src, const char *dst, tycho_int *status) {
     FILE *in = fopen(src, "rb");
     if (!in) { *status = ty_rf_errno(src); return; }       /* dst untouched */
     struct stat cst;
-    if (fstat(fileno(in), &cst) == 0 && S_ISDIR(cst.st_mode)) {
-        *status = TY_RF_DIR; fclose(in); return;           /* glibc opens a dir, reads fail */
+    if (fstat(fileno(in), &cst) == 0) {
+        if (S_ISDIR(cst.st_mode)) {
+            *status = TY_RF_DIR; fclose(in); return;       /* glibc opens a dir, reads fail */
+        }
+        struct stat dstst;
+        if (stat(dst, &dstst) == 0 && cst.st_dev == dstst.st_dev && cst.st_ino == dstst.st_ino) {
+            *status = TY_RF_OK; fclose(in); return;        /* same file (including a symlink): copying is a no-op */
+        }
     }
     errno = 0;
     FILE *out = fopen(dst, "wb");

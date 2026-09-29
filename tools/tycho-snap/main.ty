@@ -147,7 +147,12 @@ fn main():
         if intern.count(ei) > n0:
             push(kinds, e)
 
-    arch := zip.create(entries)
+    arch: bytes = to_bytes([]int)
+    match zip.create_checked(entries):
+        Ok(b): arch = b
+        Err(e):
+            log.error(&lg, "cannot create archive: " + e)
+            exit(1)
     match io.write_bytes(outp, arch):
         Ok(): pass
         Err(e):

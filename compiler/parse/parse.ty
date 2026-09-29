@@ -8,7 +8,7 @@ import "../lex"
 # node rather than living in a mutable parser struct, because a Tycho struct is
 # a value and a `p.i += 1` inside a callee would not be seen by its caller.
 #
-# The grammar is src/tychoc.c's parser (src/tychoc.c:2127-5330), read rather
+# The grammar is src/tychoc.c's parser (src/tychoc.c:2378-5616), read rather
 # than inferred from fixtures. Precedence, tightest first:
 #   postfix > unary(- & ~) > * / % << >> & > + - | ^ > is > == != < > <= >= in
 #          > not > and > or
@@ -122,8 +122,8 @@ fn _isid(toks: [lex.Tok], i: int, s: string) -> bool:
 # paths still print the bare `tychoc1: line N:` form. The compile path
 # (tokenize_file) and the parse-only path (driver.ty) are covered; emit's
 # f-string hole calls remain uncovered because the file is not in scope:
-#   compiler/emit/emit.ty:2574 in _fstr -- re-tokenizes hole text for C emission
-#   compiler/emit/emit.ty:2734 in _fv   -- re-tokenizes hole text for free variable collection
+#   compiler/emit/emit.ty:2864 in _fstr -- re-tokenizes hole text for C emission
+#   compiler/emit/emit.ty:3034 in _fv   -- re-tokenizes hole text for free variable collection
 fn _where(toks: [lex.Tok], t: lex.Tok, msg: string, caret: bool) -> string:
     fl := lex.file_of(toks)
     if len(fl) == 0:
@@ -164,7 +164,7 @@ fn _fail(toks: [lex.Tok], t: lex.Tok, want: string):
 fn _die(toks: [lex.Tok], t: lex.Tok, msg: string):
     die(_where(toks, t, msg, false))
 
-# The two `_die` sites ./tychoc carets (src/tychoc.c:3211@g_err_col and src/tychoc.c:4046@g_err_col).
+# The two `_die` sites ./tychoc carets (src/tychoc.c:3466@g_err_col and src/tychoc.c:4314@g_err_col).
 fn _diec(toks: [lex.Tok], t: lex.Tok, msg: string):
     die(_where(toks, t, msg, true))
 
@@ -354,8 +354,6 @@ fn _ty_d(toks: [lex.Tok], i0: int, depth: int) -> (ast.Ty, int):
             fixed = true
             sz = _x(toks, i)
         if fixed:
-            if _kis(toks, i, lex.K_INT) and _at(toks, i).ival <= 0:
-                _die(toks, _at(toks, i0), "a fixed-size array length must be positive")
             el, j := _ty_d(toks, i + 2, depth + 1)
             return (ast.TFix(sz, [el]), j)
         el, j := _ty_d(toks, i, depth + 1)
@@ -492,6 +490,15 @@ fn _lambda(toks: [lex.Tok], i0: int) -> (ast.Expr, int):
 # since 2026-09-05 it also owns that pass's three malformed-body diagnostics:
 # emit's copies print `tychoc1: <msg>` with no location and are reached only
 # through `--emit-c`, so `--typecheck` ACCEPTED what ./tychoc refuses.
+fn _trim_hole(src: string) -> string:
+    lo := 0
+    hi := len(src)
+    for lo < hi and (src[lo] == 32 or src[lo] == 9 or src[lo] == 10 or src[lo] == 13):
+        lo += 1
+    for hi > lo and (src[hi - 1] == 32 or src[hi - 1] == 9 or src[hi - 1] == 10 or src[hi - 1] == 13):
+        hi -= 1
+    return src[lo:hi]
+
 fn _hole(toks: [lex.Tok], src: string, line: int) -> ast.Expr:
     # The stamping below repairs the TOKENS, which is too late for an error the
     # lexer itself raises: `f"{1 @ 2}"` died as `tychoc1: line 1: unexpected
@@ -499,7 +506,8 @@ fn _hole(toks: [lex.Tok], src: string, line: int) -> ast.Expr:
     # the f-string is on. tokenize_hole carries the owner's file, text and line
     # so that error is reported like any other.
     fl := lex.file_of(toks)
-    ht := lex.tokenize_hole(src, fl, "", line)
+    trimmed := _trim_hole(src)
+    ht := lex.tokenize_hole(trimmed, fl, "", line)
     # lex restarts its line counter at 1 and a hole's columns are body-relative,
     # so stamp the f-string's own line on every sub-token and drop the caret.
     # The path rides on the K_EOF token (lex/lex.ty:46), which _where reads.
@@ -508,8 +516,14 @@ fn _hole(toks: [lex.Tok], src: string, line: int) -> ast.Expr:
         ht[k].col = 0
     if len(ht) > 0:
         ht[len(ht) - 1].text = fl
+    if len(trimmed) == 0:
+        _die(ht, _at(ht, 0), "empty '{}' in an interpolated string")
     e := ast.NullLit(line)
-    _expr_into(ht, 0, &e)
+    j := _expr_into(ht, 0, &e)
+    if _kis(ht, j, lex.K_NEWLINE):
+        j += 1
+    if not _kis(ht, j, lex.K_EOF):
+        _die(ht, _at(ht, j), "unexpected token after expression in an interpolated-string hole")
     return e
 
 fn _fholes(toks: [lex.Tok], ti: int) -> [ast.Expr]:
@@ -539,14 +553,15 @@ fn _fholes(toks: [lex.Tok], ti: int) -> [ast.Expr]:
             # `\"` outside a nested literal: src/tychoc.c@desugar_interp's rule and words
             if d == 92 and i + 1 < n and body[i + 1] == 34:
                 _die(toks, _at(toks, ti), "a `\\\"` inside an f-string hole: the hole is Tycho source, not string text, so a string in it takes plain quotes -- f\"{g(\"x\")}\", not f\"{g(\\\"x\\\")}\"")
-            if d == 34:
+            if d == 34 or d == 39:
+                quote := d
                 i += 1
-                for i < n and body[i] != 34:
+                for i < n and body[i] != quote:
                     if body[i] == 92:
                         i += 1
                     i += 1
                 if i >= n:
-                    _die(toks, _at(toks, ti), "unterminated string in an interpolated hole")
+                    _die(toks, _at(toks, ti), "unterminated literal in an interpolated hole")
                 i += 1
                 continue
             if d == 123:
@@ -634,7 +649,7 @@ fn _primary_into(toks: [lex.Tok], i0: int, out: inout ast.Expr) -> int:
         # `xs := [string]` -- the TYPE spelling where a value goes. "expected an
         # expression" is true and useless. Only for a primitive type KEYWORD,
         # which can never be an expression: `[Foo]` stays a one-element literal
-        # of a variable named Foo (src/tychoc.c:2994).
+        # of a variable named Foo (src/tychoc.c:3256).
         k0 := _at(toks, i)
         if k0.k == lex.K_KW and _is_prim(k0.text):
             if _isop(toks, i + 1, lex.OP_RBRACK):
@@ -1098,28 +1113,34 @@ fn _value_if_newline(toks: [lex.Tok], i: int):
         _diec(toks, _at(toks, i), "a value `if` puts each branch on its own line -- `x := if c:`, then the value indented on the next line, then `else:` and its value indented below it; a one-line `if c: a else: b` is not a form")
 
 fn value_if(toks: [lex.Tok], i0: int) -> (ast.Stmt, int):
+    arms := []ast.IfArm
     c := ast.NullLit(0)
     i := _expr_into(toks, i0, &c)
     i = _op(toks, i, lex.OP_COLON)
     _value_if_newline(toks, i)
     i = _expect(toks, i, lex.K_NEWLINE, "")
     body, j := value_block(toks, i)
+    push(arms, ast.IfArm([c], body, _ln(toks, i0)))
     i = j
+    for _iskw(toks, i, lex.KW_ELIF):
+        el := i
+        c2 := ast.NullLit(0)
+        j2 := _expr_into(toks, i + 1, &c2)
+        j2 = _op(toks, j2, lex.OP_COLON)
+        _value_if_newline(toks, j2)
+        j2 = _expect(toks, j2, lex.K_NEWLINE, "")
+        b2, k2 := value_block(toks, j2)
+        push(arms, ast.IfArm([c2], b2, _ln(toks, el + 1)))
+        i = k2
     els := []ast.Stmt
-    if _iskw(toks, i, lex.KW_ELIF):
-        e, k := value_if(toks, i + 1)
-        push(els, e)
-        i = k
-    elif _iskw(toks, i, lex.KW_ELSE):
+    if _iskw(toks, i, lex.KW_ELSE):
         i = _op(toks, i + 1, lex.OP_COLON)
         _value_if_newline(toks, i)
         i = _expect(toks, i, lex.K_NEWLINE, "")
-        e, k := value_block(toks, i)
-        els = e
-        i = k
+        els, i = value_block(toks, i)
     else:
         _die(toks, _at(toks, i0), "an `if` used as a value must have an `else` — every path must produce a value")
-    return (ast.IfS(_ln(toks, i0), [c], body, els), i)
+    return (ast.IfS(_ln(toks, i0), arms, els), i)
 
 fn value_ctrl(toks: [lex.Tok], i0: int) -> (ast.Stmt, int):
     if _iskw(toks, i0, lex.KW_IF):
@@ -1163,9 +1184,11 @@ fn _rewrite_block(b: [ast.Stmt], kind: string, name: string, target: [ast.Expr])
 
 fn rewrite_tails(s: ast.Stmt, kind: string, name: string, target: [ast.Expr]) -> ast.Stmt:
     match s:
-        ast.IfS(l, c, body, els):
-            return ast.IfS(l, c, _rewrite_block(body, kind, name, target),
-                           _rewrite_block(els, kind, name, target))
+        ast.IfS(l, arms, els):
+            rewritten := []ast.IfArm
+            for arm in arms:
+                push(rewritten, ast.IfArm(arm.cond, _rewrite_block(arm.body, kind, name, target), arm.line))
+            return ast.IfS(l, rewritten, _rewrite_block(els, kind, name, target))
         ast.MatchS(l, subj, arms):
             out := []ast.Arm
             for a in arms:
@@ -1189,8 +1212,8 @@ fn _scalar_arm_ahead(toks: [lex.Tok], i: int) -> bool:
         return true
     return k == lex.K_IDENT and (_isop(toks, i + 1, lex.OP_DOTDOT) or _isop(toks, i + 1, lex.OP_PIPE))
 
-# `miss` is the rule to name when no value follows: src/tychoc.c:3726@expected has a
-# dedicated one for the HIGH end of a range, where src/tychoc.c:3711@variant names the arm forms.
+# `miss` is the rule to name when no value follows: src/tychoc.c:3981@expected has a
+# dedicated one for the HIGH end of a range, where src/tychoc.c:3966@variant names the arm forms.
 fn _pat_end(toks: [lex.Tok], i0: int, miss: string) -> (ast.Pat, int, bool):
     # one end of a scalar pattern: an int/char/bool literal or a const NAME
     i := i0
@@ -1431,7 +1454,7 @@ fn _mhoist(g: ast.Expr, i0: int, tag: int, nx: inout int, pend: inout [ast.Stmt]
             ix := k[1]
             if (ix is ast.IntLit) or (ix is ast.StrLit):
                 return ast.Index(l, [recv, ix])
-            nm := "_mx" + str(i0) + "_" + str(tag) + "_" + str(nx)
+            nm := "Ztycho_mx" + str(i0) + "_" + str(tag) + "_" + str(nx)
             nx = nx + 1
             push(pend, ast.Decl(l, nm, []ast.Ty, [ix], []ast.Stmt))
             return ast.Index(l, [recv, ast.Name(l, nm)])
@@ -1556,7 +1579,7 @@ fn _simple_into(toks: [lex.Tok], i0: int, out: inout ast.Stmt, pend: inout [ast.
             push(places, _mhoist(tgs[a], i0, a, &nx, &pend))
         names := []string
         for a := 0; a < n; a += 1:
-            push(names, "_ms" + str(i0) + "_" + str(a))
+            push(names, "Ztycho_ms" + str(i0) + "_" + str(a))
         rhs := ast.NullLit(0)
         k2 := _expr_into(toks, i, &rhs)
         push(pend, ast.MDecl(ln, true, names, [rhs]))
@@ -1566,7 +1589,7 @@ fn _simple_into(toks: [lex.Tok], i0: int, out: inout ast.Stmt, pend: inout [ast.
         return (k2, true)
     if _isop(toks, i, lex.OP_EQ):
         i += 1
-        # src/tychoc.c:4494 allows E_CALL as a target; its E_CALL covers BOTH the
+        # src/tychoc.c:4782 allows E_CALL as a target; its E_CALL covers BOTH the
         # named form and the indirect one, which split here into Call/CallVal.
         if not (e is ast.Index) and not (e is ast.Field) and not (e is ast.TupIdx) and
            not (e is ast.Call) and not (e is ast.CallVal):
@@ -1589,7 +1612,7 @@ fn _simple_into(toks: [lex.Tok], i0: int, out: inout ast.Stmt, pend: inout [ast.
                 out = ast.Assign(toks[ti].line, n, [b])
                 return (j, true)
             _:
-                # src/tychoc.c:4528 takes only an index, a field or a tuple index here;
+                # src/tychoc.c:4816 takes only an index, a field or a tuple index here;
                 # everything else falls through to the refusal below.
                 if not (e is ast.Index) and not (e is ast.Field) and not (e is ast.TupIdx):
                     _die(toks, _at(toks, i0), "cannot compound-assign to this expression")
@@ -1615,7 +1638,7 @@ fn _simple_into(toks: [lex.Tok], i0: int, out: inout ast.Stmt, pend: inout [ast.
     out = ast.ExprStmt(toks[ti].line, [e])
     return (i, true)
 
-# The three-clause scan src/tychoc.c:4218-4228 does: the first two top-level
+# The three-clause scan src/tychoc.c:4506-4516 does: the first two top-level
 # ';' and the LAST top-level ':' before the newline. A third ';' is the rule.
 fn _for3_scan(toks: [lex.Tok], i0: int, ft: lex.Tok) -> (int, int, int):
     s1 := -1
@@ -1679,8 +1702,8 @@ fn _forstmt_into(toks: [lex.Tok], i0: int, par: bool, out: inout ast.Stmt) -> in
     if s1 >= 0:
         # Each empty clause reaches _simple_into or _expr_into as a bare ';'
         # and reports `expected an expression`, which names no rule.
-        # src/tychoc.c:4233-4240, in that order.
-        # src/tychoc.c:4231 -- with only ONE ';' the generic `_op` reports the
+        # src/tychoc.c:4521-4528, in that order.
+        # src/tychoc.c:4519 -- with only ONE ';' the generic `_op` reports the
         # token it found, which names no rule.
         if s2 < 0:
             _die(toks, _at(toks, i0 - 1), "a three-clause `for` is `for init; cond; post:` -- two ';' separating three clauses")
@@ -1717,7 +1740,7 @@ fn _forstmt_into(toks: [lex.Tok], i0: int, par: bool, out: inout ast.Stmt) -> in
         out = ast.For3(toks[ti].line, [init, post], [cond], b)
         return n
     # `for k, q in xs:` -- without this the comma reaches the condition form and
-    # reports `expected ':', found op ','`. src/tychoc.c:4281.
+    # reports `expected ':', found op ','`. src/tychoc.c:4569.
     if _kis(toks, i, lex.K_IDENT) and _isop(toks, i + 1, lex.OP_COMMA):
         k := 0
         for _kis(toks, i + k, lex.K_IDENT) and _isop(toks, i + k + 1, lex.OP_COMMA):
@@ -1743,7 +1766,7 @@ fn _forstmt_into(toks: [lex.Tok], i0: int, par: bool, out: inout ast.Stmt) -> in
             _die(toks, _at(toks, i0 - 1), "`range()` was removed: write `for " + v + " := 0; " + v + " < N; " + v + " += 1:` to count, or `parallel for " + v + " in 0..<N:` to count in parallel")
         coll := ast.NullLit(0)
         j := _expr_into(toks, i, &coll)
-        # src/tychoc.c:4336 -- an array and a channel source are both scalar
+        # src/tychoc.c:4624 -- an array and a channel source are both scalar
         # handles, so the source must NAME one; a temp could alias a channel.
         if par and not (coll is ast.Name):
             _die(toks, _at(toks, i0 - 1), "parallel for over a collection or channel must name a variable (bind it first)")
@@ -1761,24 +1784,28 @@ fn _forstmt_into(toks: [lex.Tok], i0: int, par: bool, out: inout ast.Stmt) -> in
     out = ast.WhileS(toks[ti].line, [c], b)
     return k
 
-fn _ifstmt_into(toks: [lex.Tok], i0: int, out: inout ast.Stmt) -> int:
+fn _if_arm(toks: [lex.Tok], i0: int) -> (ast.IfArm, int):
     c := ast.NullLit(0)
     i := _expr_into(toks, i0, &c)
     i = _op(toks, i, lex.OP_COLON)
     i = _expect(toks, i, lex.K_NEWLINE, "")
     body, j := block(toks, i)
-    i = j
+    return (ast.IfArm([c], body, _ln(toks, i0)), j)
+
+fn _ifstmt_into(toks: [lex.Tok], i0: int, out: inout ast.Stmt) -> int:
+    arms := []ast.IfArm
+    first_line := _ln(toks, i0 - 1)
+    arm, i := _if_arm(toks, i0)
+    push(arms, arm)
+    for _iskw(toks, i, lex.KW_ELIF):
+        arm, i = _if_arm(toks, i + 1)
+        push(arms, arm)
     els := []ast.Stmt
-    if _iskw(toks, i, lex.KW_ELIF):
-        push(els, ast.PassS(0))
-        i = _ifstmt_into(toks, i + 1, &els[len(els) - 1])
-    elif _iskw(toks, i, lex.KW_ELSE):
+    if _iskw(toks, i, lex.KW_ELSE):
         i = _op(toks, i + 1, lex.OP_COLON)
         i = _expect(toks, i, lex.K_NEWLINE, "")
-        e, k := block(toks, i)
-        els = e
-        i = k
-    out = ast.IfS(_ln(toks, i0 - 1), [c], body, els)
+        els, i = block(toks, i)
+    out = ast.IfS(first_line, arms, els)
     return i
 
 # The statement tree is written into the CALLER's slot. Returning it copied the
@@ -1809,7 +1836,7 @@ fn _stmt_into(toks: [lex.Tok], i0: int, out: inout ast.Stmt, pend: inout [ast.St
         e := ast.NullLit(0)
         k := _expr_into(toks, i, &e)
         i = _expect(toks, k, lex.K_NEWLINE, "")
-        # src/tychoc.c:4056 folds a LOCAL const with refs off -- no sibling-const
+        # src/tychoc.c:4344 folds a LOCAL const with refs off -- no sibling-const
         # refs -- so `const D = K * 2` is refused here and accepted at top level.
         v := _const_fold(toks, e, []ast.ConstD, _at(toks, i0))
         if not _is_lit(v):
@@ -1831,7 +1858,7 @@ fn _stmt_into(toks: [lex.Tok], i0: int, out: inout ast.Stmt, pend: inout [ast.St
         if not (e is ast.Index):
             _die(toks, _at(toks, i0), "`delete` removes a map element: `delete m[k]`")
         match e:
-            # src/tychoc.c:4098 -- the map itself must be a place, not a call result.
+            # src/tychoc.c:4386 -- the map itself must be a place, not a call result.
             ast.Index(dl, dk):
                 mref := dk[0]
                 if not (mref is ast.Name) and not (mref is ast.Field) and
@@ -1895,7 +1922,7 @@ fn _stmt_into(toks: [lex.Tok], i0: int, out: inout ast.Stmt, pend: inout [ast.St
             j := _expr_into(toks, i + 1, &a)
             push(w, a)
             i = _op(toks, j, lex.OP_RPAREN)
-            # src/tychoc.c:4187 -- range-checked only when the width is a literal.
+            # src/tychoc.c:4475 -- range-checked only when the width is a literal.
             match a:
                 ast.IntLit(l, v):
                     if v < 1 or v > 64:
@@ -2031,7 +2058,7 @@ fn _wheres(toks: [lex.Tok], i0: int, tps: [string]) -> ([string], int):
             if nset > 16:
                 _die(toks, _at(toks, i0), "at most 16 types in a `where` type set")
             # The SET is kept, not just the parameter name: the checker needs it
-            # to refuse an instantiation outside it (src/tychoc.c:9631).
+            # to refuse an instantiation outside it (src/tychoc.c:10036).
             push(out, p + ":" + set)
         else:
             if not _is_where_pred(p):
@@ -2122,6 +2149,44 @@ fn _collect_sizeparams_ty(t: ast.Ty, acc: [string]) -> [string]:
 
 # The function is parsed straight into the array slot that will hold it:
 # returning it and pushing copies the whole body once per function.
+fn _unary_token(toks: [lex.Tok], i: int) -> bool:
+    if toks[i].k == lex.K_KW:
+        return toks[i].text == "not"
+    if toks[i].k == lex.K_OP:
+        return toks[i].ival == lex.OP_MINUS or toks[i].ival == lex.OP_AMP or toks[i].ival == lex.OP_TILDE
+    return false
+
+# Refuse deeply nested expression parentheses before recursive descent enters
+# the call/parenthesis chain. The lexer has already separated strings, so only
+# real delimiter tokens count. Scope the scan to a procedure body (not its type
+# signature) and stop at that body's matching DEDENT.
+fn _expr_nesting_guard(toks: [lex.Tok], i0: int):
+    blocks := 0
+    depth := 0
+    unary := 0
+    i := i0
+    for i < len(toks):
+        if toks[i].k == lex.K_INDENT:
+            blocks += 1
+        elif toks[i].k == lex.K_DEDENT:
+            blocks -= 1
+            if blocks <= 0:
+                return
+        elif toks[i].k == lex.K_OP and toks[i].ival == lex.OP_LPAREN:
+            depth += 1
+            if depth > 256:
+                _die(toks, toks[i], "expression nesting too deep")
+        elif toks[i].k == lex.K_OP and toks[i].ival == lex.OP_RPAREN:
+            if depth > 0:
+                depth -= 1
+        if _unary_token(toks, i):
+            unary += 1
+            if unary > 256:
+                _die(toks, toks[i], "expression nesting too deep")
+        else:
+            unary = 0
+        i += 1
+
 fn _func_into(ps0: inout PS, toks: [lex.Tok], i0: int, notes: [lex.DNote], out: inout ast.Fn) -> int:
     i := _expect(toks, i0, lex.K_KW, "fn")
     nm, j := _ident(toks, i, "a procedure name")
@@ -2185,6 +2250,7 @@ fn _func_into(ps0: inout PS, toks: [lex.Tok], i0: int, notes: [lex.DNote], out: 
         return i
     i = _expect(toks, i, lex.K_NEWLINE, "")
     out = ast.Fn(nm, ps, ret, tps, wh, []ast.Stmt, false, "", dn, _ln(toks, i0))
+    _expr_nesting_guard(toks, i)
     return block_into(toks, i, &out.body)
 
 fn externfn(toks: [lex.Tok], i0: int) -> (ast.Fn, int):
@@ -2550,7 +2616,7 @@ fn _const_fold(toks: [lex.Tok], e: ast.Expr, cs: [ast.ConstD], t: lex.Tok) -> as
             if o == "/" or o == "%":
                 if y == 0:
                     _die(toks, t, "const expression divides by zero")
-                # src/tychoc.c:5610: min/-1 is 2^63 and has no int value -- folding
+                # src/tychoc.c:5897: min/-1 is 2^63 and has no int value -- folding
                 # it TRAPS this compiler instead of diagnosing. The remainder is 0.
                 lo := -9223372036854775807 - 1
                 if o == "/":

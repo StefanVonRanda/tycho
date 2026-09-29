@@ -326,6 +326,15 @@ static unsigned long long tycho_umod(unsigned long long a, unsigned long long b)
  * abort cleanly with a tycho: message. Signed `<<` is computed in unsigned to
  * dodge signed-overflow UB (the -fwrapv two's-complement contract); signed `>>`
  * stays arithmetic (sign-extending) for in-range counts. */
+/* Preserve unsigned counts wider than INT64_MAX: treating them as signed first
+ * makes e.g. a u64 count of 2^63 look negative instead of out-of-width. */
+static long long tycho_shift_count(uint64_t n, int is_unsigned) {
+    if (!is_unsigned && n > INT64_MAX) {
+        fprintf(stderr, "tycho: negative shift count\n");
+        exit(1);
+    }
+    return n > INT64_MAX ? INT64_MAX : (long long)n;
+}
 static tycho_int tycho_shl_i(tycho_int x, long long n) {
     if (n < 0) { fprintf(stderr, "tycho: negative shift count\n"); exit(1); }
     if (n >= 64) return 0;
@@ -1082,8 +1091,17 @@ static HChan *tycho_chan_new(tycho_int cap) {
      * a second send claims the cell before the receiver takes the first value
      * (freeing its payload) and the receiver waits forever. Vyukov's queue
      * requires buffer_size >= 2 for exactly this reason. */
+    const size_t max_cells = (size_t)-1 / sizeof(HCell);
+    if ((uint64_t)cap > max_cells) {
+        fprintf(stderr, "tycho: channel capacity too large\n"); exit(1);
+    }
     tycho_int c2 = 2;
-    while (c2 < cap) c2 <<= 1;
+    while (c2 < cap) {
+        if (c2 > INT64_MAX / 2 || (uint64_t)c2 > max_cells / 2) {
+            fprintf(stderr, "tycho: channel capacity too large\n"); exit(1);
+        }
+        c2 *= 2;
+    }
     HChan *ch = (HChan *)malloc(sizeof(HChan));
     if (!ch) tycho_oom();
     ch->cells = (HCell *)ty_aligned_alloc64((size_t)c2 * sizeof(HCell));
@@ -2192,10 +2210,14 @@ void tycho_arr_str_grow(Arena *a, char ***data, tycho_int *cap, tycho_int len) {
     *data = nd; *cap = nc;
 }
 
+void tycho_str_recycle(Arena *a, const char *s);
 char *tycho_arr_str_pop(Arena *a, TychoArrStr *xs) {
     if (xs->len == 0) { fprintf(stderr, "tycho: pop from an empty array\n"); exit(1); }
     xs->len--;
-    return tycho_str_copy(a, xs->data[xs->len]);   /* deep-copy out: survives a later push/recycle */
+    char *old = xs->data[xs->len];
+    char *out = tycho_str_copy(a, old);   /* deep-copy out before releasing the owned slot */
+    tycho_str_recycle(a, old);
+    return out;
 }
 
 char *tycho_arr_str_get(TychoArrStr xs, tycho_int i) {
@@ -2224,26 +2246,31 @@ char **tycho_arr_str_ptr(TychoArrStr *xs, tycho_int i) {
     return &xs->data[i];
 }
 
+void tycho_str_recycle(Arena *a, const char *s) {
+    if (s && arena_owns(a, s - 8))
+        arena_recycle(a, (void *)(s - 8), (size_t)(8 + (size_t)tycho_str_len(s) + 1));
+}
+
+void tycho_str_slot_set(Arena *a, char **slot, const char *v) {
+    /* Copy first: v may alias the old slot. Once the new allocation exists,
+     * the old string is dead and can be recycled if this arena owns it. */
+    char *old = *slot;
+    char *nw = tycho_str_copy(a, v);
+    if (old && arena_owns(a, old - 8)) {
+        size_t on = ((size_t)(8 + (size_t)tycho_str_len(old) + 1) + 7u) & ~(size_t)7u;
+        arena_recycle(a, old - 8, on);
+    }
+    *slot = nw;
+}
+
 void tycho_arr_str_set(Arena *a, TychoArrStr *xs, tycho_int i, const char *v) {
     if (i < 0 || i >= xs->len) {
         fprintf(stderr, "tycho: index %" TY_PRId " out of bounds (len %" TY_PRId ")\n", i, xs->len);
         exit(1);
     }
-    /* MM-9: the slot is being overwritten, so the OLD element is dead -- value
-     * semantics gives every str-array element a unique owner and reads copy out
-     * (cf. tycho_str_copy at every get/bind site), so nothing else references it.
-     * Recycle it back to the arena so the NEXT set reuses the bytes instead of
-     * the arena growing with the whole stream (the sliding-window eviction case).
-     * Copy FIRST (v may alias old, e.g. `s[k] = s[k] + x`), THEN recycle. Only
-     * recycle a buffer THIS arena owns -- never an interned literal or a
-     * cross-arena string (arena_owns), and never the freshly-stored buffer. */
-    char *old = xs->data[i];
-    char *nw = tycho_str_copy(a, v);              /* copy bytes into owner arena */
-    if (old && old != v && arena_owns(a, old - 8)) {
-        size_t on = ((size_t)(8 + (size_t)tycho_str_len(old) + 1) + 7u) & ~(size_t)7u;
-        arena_recycle(a, old - 8, on);
-    }
-    xs->data[i] = nw;
+    /* MM-9: the overwritten element is dead by value semantics. The shared
+     * string-slot helper copies before recycling, including self-assignment. */
+    tycho_str_slot_set(a, &xs->data[i], v);
 }
 
 /* value-semantic copy: independent buffer AND independent element bytes in a */
@@ -2260,6 +2287,17 @@ int tycho_arr_str_eq(TychoArrStr x, TychoArrStr y) {
     for (tycho_int i = 0; i < x.len; i++)
         if (tycho_str_cmp(x.data[i], y.data[i]) != 0) return 0;
     return 1;
+}
+
+void tycho_arr_int_recycle(Arena *a, TychoArrInt xs) {
+    if (xs.cap > 0) arena_recycle(a, xs.data, (size_t)xs.cap * sizeof(*xs.data));
+}
+void tycho_arr_float_recycle(Arena *a, TychoArrFloat xs) {
+    if (xs.cap > 0) arena_recycle(a, xs.data, (size_t)xs.cap * sizeof(*xs.data));
+}
+void tycho_arr_str_recycle(Arena *a, TychoArrStr xs) {
+    for (tycho_int i = 0; i < xs.len; i++) tycho_str_recycle(a, xs.data[i]);
+    if (xs.cap > 0) arena_recycle(a, xs.data, (size_t)xs.cap * sizeof(*xs.data));
 }
 
 /* split s on a (non-empty) separator into a fresh [string] in arena a.
@@ -2775,6 +2813,14 @@ static uint64_t tycho_ik_hash_det(tycho_int k) {    /* deterministic twin: fixed
     x = (x ^ (x >> 27)) * UINT64_C(0x94d049bb133111eb);
     return x ^ (x >> 31);
 }
+/* Equal floating-point zeroes (including -0.0) must share a hash when nested
+ * inside composite map keys. Return canonicalized IEEE-754 bits for both paths. */
+static tycho_int tycho_float_hashbits(double x) {
+    union { double d; tycho_int i; } bits;
+    if (x == 0.0) x = 0.0;
+    bits.d = x;
+    return bits.i;
+}
 /* Deep hash of a scalar array, for composite map keys. Order-SENSITIVE (the multiply
  * runs before the xor), seeded from the per-process key, folding each element's hash
  * so equal-by-== arrays hash equal. Composite-element arrays get a generated hash. */
@@ -2790,12 +2836,12 @@ uint64_t tycho_arr_int_hash_det(TychoArrInt x) {
 }
 uint64_t tycho_arr_float_hash(TychoArrFloat x) {
     uint64_t h = tycho_hash_k0;
-    for (tycho_int i = 0; i < x.len; i++) h = h * UINT64_C(1099511628211) ^ tycho_ik_hash((tycho_int)((union { double _d; tycho_int _l; }){ ._d = x.data[i] })._l);
+    for (tycho_int i = 0; i < x.len; i++) h = h * UINT64_C(1099511628211) ^ tycho_ik_hash(tycho_float_hashbits(x.data[i]));
     return h;
 }
 uint64_t tycho_arr_float_hash_det(TychoArrFloat x) {
     uint64_t h = TYCHO_HASH_DET_K0;
-    for (tycho_int i = 0; i < x.len; i++) h = h * UINT64_C(1099511628211) ^ tycho_ik_hash_det((tycho_int)((union { double _d; tycho_int _l; }){ ._d = x.data[i] })._l);
+    for (tycho_int i = 0; i < x.len; i++) h = h * UINT64_C(1099511628211) ^ tycho_ik_hash_det(tycho_float_hashbits(x.data[i]));
     return h;
 }
 uint64_t tycho_arr_str_hash(TychoArrStr x) {
@@ -3118,6 +3164,41 @@ int tycho_map_if_eq(TychoMapIF x, TychoMapIF y) {
         if (s < 0 || y.evals[s] != x.evals[e]) return 0;
     }
     return 1;
+}
+
+void tycho_map_si_recycle(Arena *a, TychoMapSI m) {
+    for (tycho_int e = 0; e < m.ecount; e++) tycho_str_recycle(a, m.ekeys[e]);
+    if (m.ecap > 0) {
+        arena_recycle(a, m.ekeys, (size_t)m.ecap * sizeof(*m.ekeys));
+        arena_recycle(a, m.evals, (size_t)m.ecap * sizeof(*m.evals));
+        arena_recycle(a, m.elive, (size_t)m.ecap);
+    }
+    if (m.icap > 0) arena_recycle(a, m.idx, (size_t)m.icap * sizeof(*m.idx));
+}
+void tycho_map_sf_recycle(Arena *a, TychoMapSF m) {
+    for (tycho_int e = 0; e < m.ecount; e++) tycho_str_recycle(a, m.ekeys[e]);
+    if (m.ecap > 0) {
+        arena_recycle(a, m.ekeys, (size_t)m.ecap * sizeof(*m.ekeys));
+        arena_recycle(a, m.evals, (size_t)m.ecap * sizeof(*m.evals));
+        arena_recycle(a, m.elive, (size_t)m.ecap);
+    }
+    if (m.icap > 0) arena_recycle(a, m.idx, (size_t)m.icap * sizeof(*m.idx));
+}
+void tycho_map_ii_recycle(Arena *a, TychoMapII m) {
+    if (m.ecap > 0) {
+        arena_recycle(a, m.ekeys, (size_t)m.ecap * sizeof(*m.ekeys));
+        arena_recycle(a, m.evals, (size_t)m.ecap * sizeof(*m.evals));
+        arena_recycle(a, m.elive, (size_t)m.ecap);
+    }
+    if (m.icap > 0) arena_recycle(a, m.idx, (size_t)m.icap * sizeof(*m.idx));
+}
+void tycho_map_if_recycle(Arena *a, TychoMapIF m) {
+    if (m.ecap > 0) {
+        arena_recycle(a, m.ekeys, (size_t)m.ecap * sizeof(*m.ekeys));
+        arena_recycle(a, m.evals, (size_t)m.ecap * sizeof(*m.evals));
+        arena_recycle(a, m.elive, (size_t)m.ecap);
+    }
+    if (m.icap > 0) arena_recycle(a, m.idx, (size_t)m.icap * sizeof(*m.idx));
 }
 
 /* ---- str() of built-in containers (F5) ------------------------------------

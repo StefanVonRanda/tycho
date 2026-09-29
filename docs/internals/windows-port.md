@@ -30,10 +30,10 @@
 ## Why it is feasible at all — the assessment in one screen
 
 - The **compiler** (`src/tychoc.c`) is mostly portable C. Its POSIX surface is
-  `dirent` (opendir/readdir/closedir, `src/tychoc.c:5386@opendir`), `popen`
-  (`src/tychoc.c:15173@popen`), `realpath`, `access`, `vasprintf`
-  (`src/tychoc.c:274@vasprintf`), and `newlocale/uselocale`
-  (`src/tychoc.c:346@uselocale`). mingw-w64 provides no POSIX
+  `dirent` (opendir/readdir/closedir, `src/tychoc.c:5652@opendir`), `popen`
+  (`src/tychoc.c:15864@popen`), `realpath`, `access`, `vasprintf`
+  (`src/tychoc.c:301@vasprintf`), and `newlocale/uselocale`
+  (`src/tychoc.c:373@uselocale`). mingw-w64 provides no POSIX
   `newlocale`/`uselocale`/`locale_t` at any version (checked against upstream
   master 2026-08-05: only the MSVC-style `_locale_t` API) -- the compiler and
   runtime already have localeconv-based fallback legs, so this costs a guard,
@@ -42,7 +42,7 @@
   Estimate: ~1 day.
 - The **runtime** (`runtime/tycho_rt.c`, embedded verbatim into every emitted
   program) needs: winpthreads for the whole concurrency model
-  (`runtime/tycho_rt.c:1001@pthread_create` — free under `-pthread`),
+  (`runtime/tycho_rt.c:1010@pthread_create` — free under `-pthread`),
   `clock_gettime`/`nanosleep`/`sched_yield`/`sysconf`
   (`runtime/tycho_rt.c:72@sysconf` — mingw shims, a few lines), and **the one
   hard piece**: the deep-recursion stack-overflow guard built on
@@ -54,7 +54,7 @@
 - Two corelib shims are **already ported**: `core:os` has `_popen`/`_pclose`
   (`corelib/os/os_shim.c:24-27`), `core:net` has a real Winsock2 path
   (`corelib/net/net_shim.c:16-25`). The rest split into small ports (`core:io`
-  — `getline` at `corelib/io/io_shim.c:59`, `pread` at `:141`), one big port
+  — `getline` at `corelib/io/io_shim.c:63`, `pread` at `:205`), one big port
   (`core:regex` — POSIX `regcomp`/`regexec` at `corelib/regex/regex_shim.c:20, corelib/regex/regex_shim.c:26`
   don't exist on Windows; PCRE2 behind the same API, or a documented gap),
   one redesign (`core:signal` — the `sigaction`-based socket-shutdown design

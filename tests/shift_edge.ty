@@ -19,3 +19,6 @@ fn main():
     w64 := 64
     println(str(to_int(v << w64)))   # 0 (over-wide at width 64)
     println(str(to_int(v << 20)))    # 1048576
+    huge_count := to_u64(1) << 63
+    println(str(to_int(v << huge_count))) # 0 (unsigned count >= INT64_MAX stays over-wide)
+    println(str(to_int(v >> huge_count))) # 0

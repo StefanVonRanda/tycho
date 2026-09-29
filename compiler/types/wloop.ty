@@ -88,9 +88,10 @@ fn _wl_body(b: [ast.Stmt], muts: inout [string], ex: inout bool):
                 _wl_exprs(k, &muts, &ex)
             ast.BreakS(l): ex = true
             ast.ContinueS(l): pass
-            ast.IfS(l, c, b2, e2):
-                _wl_exprs(c, &muts, &ex)
-                _wl_body(b2, &muts, &ex)
+            ast.IfS(l, arms, e2):
+                for arm in arms:
+                    _wl_exprs(arm.cond, &muts, &ex)
+                    _wl_body(arm.body, &muts, &ex)
                 _wl_body(e2, &muts, &ex)
             ast.WhileS(l, c, b2):
                 _wl_exprs(c, &muts, &ex)

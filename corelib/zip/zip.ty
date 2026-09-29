@@ -12,6 +12,7 @@ struct Meta:                      # one central-directory entry (list())
     usize: int                    # uncompressed size
     csize: int                    # compressed size
     crc: int
+    off: int                         # local-file-header offset (one-pass extract)
 
 # --- the three records, stated as layouts ------------------------------------
 #
@@ -108,15 +109,21 @@ fn list(b: bytes) -> [Meta]:
             return out
         name := to_str(b[pos + size_of$(Central):pos + size_of$(Central) + nlen])
         push(out, Meta(name, to_int(c.method), to_int(c.usize), to_int(c.csize),
-                       to_int(c.crc)))
+                       to_int(c.crc), to_int(c.off)))
         pos = pos + skip
     return out
 
 fn _find_eocd(b: bytes) -> int:
-    # the EOCD signature is at least 22 bytes from the end; scan back
+    # APPNOTE allows at most a 65,535-byte comment after the fixed EOCD.
+    # Search only that legal suffix and require the comment to end at EOF, so
+    # trailing junk cannot turn every extract into a full-file backwards scan.
     i := len(b) - size_of$(Eocd)
-    for i >= 0:
-        if to_int(from_bytes$(Eocd)(b[i:i + size_of$(Eocd)]).sig) == SIG_EOCD:
+    first := len(b) - size_of$(Eocd) - ZIP_MAX_U16
+    if first < 0:
+        first = 0
+    for i >= first:
+        e := from_bytes$(Eocd)(b[i:i + size_of$(Eocd)])
+        if to_int(e.sig) == SIG_EOCD and i + size_of$(Eocd) + to_int(e.clen) == len(b):
             return i
         i = i - 1
     return -1
@@ -126,39 +133,31 @@ fn _find_eocd(b: bytes) -> int:
 fn extract(b: bytes, name: string) -> bytes:
     for e in list(b):
         if e.name == name:
-            return _entry_body(b, e)
+            return extract_entry(b, e)
     return to_bytes([]int)
 
-fn _entry_body(b: bytes, e: Meta) -> bytes:
-    # walk the central directory again to find this entry's local offset
-    eocd := _find_eocd(b)
-    if eocd < 0:
+# Extract a Meta returned by list(), avoiding another EOCD and central-directory
+# scan. Iterate `for e in list(archive): extract_entry(archive, e)` for O(archive)
+# work across all entries; extract(name) remains a convenient one-shot lookup.
+fn extract_entry(b: bytes, e: Meta) -> bytes:
+    if e.off < 0 or e.csize < 0 or e.usize < 0:
         return to_bytes([]int)
-    d := from_bytes$(Eocd)(b[eocd:eocd + size_of$(Eocd)])
-    n := to_int(d.n_total)
-    pos := to_int(d.cd_off)
-    off := -1
-    for i := 0; i < n; i += 1:
-        if pos + size_of$(Central) > len(b):
-            return to_bytes([]int)
-        c := from_bytes$(Central)(b[pos:pos + size_of$(Central)])
-        if to_int(c.sig) != SIG_CENTRAL:
-            return to_bytes([]int)
-        nlen := to_int(c.nlen)
-        nm := to_str(b[pos + size_of$(Central):pos + size_of$(Central) + nlen])
-        if nm == e.name:
-            off = to_int(c.off)
-            break
-        pos = pos + size_of$(Central) + nlen + to_int(c.elen) + to_int(c.clen)
-    if off < 0:
-        return to_bytes([]int)
-    if off + size_of$(Local) > len(b):
+    off := e.off
+    if len(b) < size_of$(Local) or off > len(b) - size_of$(Local):
         return to_bytes([]int)
     lh := from_bytes$(Local)(b[off:off + size_of$(Local)])
     if to_int(lh.sig) != SIG_LOCAL:
         return to_bytes([]int)
-    start := off + size_of$(Local) + to_int(lh.nlen) + to_int(lh.elen)
-    if start + e.csize > len(b):
+    start := off + size_of$(Local)
+    nlen := to_int(lh.nlen)
+    elen := to_int(lh.elen)
+    if nlen > len(b) - start:
+        return to_bytes([]int)
+    start += nlen
+    if elen > len(b) - start:
+        return to_bytes([]int)
+    start += elen
+    if e.csize > len(b) - start:
         return to_bytes([]int)
     raw := b[start:start + e.csize]
     data := to_bytes([]int)
@@ -176,19 +175,37 @@ fn _entry_body(b: bytes, e: Meta) -> bytes:
 
 # --- writing ----------------------------------------------------------------
 
-fn create(entries: [Entry]) -> bytes:
+const ZIP_MAX_U16 = 65535
+const ZIP_MAX_U32 = 4294967295
+
+# Checked writer for untrusted entry lists. Classic ZIP has no ZIP64 records in
+# this module, so every count, size, name length and offset must fit its field.
+fn create_checked(entries: [Entry]) -> Result(bytes, string):
+    if len(entries) > ZIP_MAX_U16:
+        return Err("too many ZIP entries")
+    for e in entries:
+        if len(e.name) > ZIP_MAX_U16:
+            return Err("ZIP entry name exceeds 65535 bytes")
+        if len(e.data) > ZIP_MAX_U32:
+            return Err("ZIP entry data exceeds 32-bit size")
+
     out := []int
     offs := []int                          # local header offsets, for the CD
     cdatas := []string                      # per-entry compressed bytes
     methods := []int
     crcs := []int
     for e in entries:
+        if len(out) > ZIP_MAX_U32:
+            return Err("ZIP local-header offset exceeds 32-bit size")
         push(offs, len(out))
         cdata := compress.raw_compress(e.data)
         method := 8
         if len(cdata) >= len(e.data):      # deflate did not help: store raw
             method = 0
             cdata = e.data
+        local_bytes := size_of$(Local) + len(e.name)
+        if local_bytes > ZIP_MAX_U32 - len(out) or len(cdata) > ZIP_MAX_U32 - len(out) - local_bytes:
+            return Err("ZIP local records exceed 32-bit offsets")
         push(cdatas, to_str(cdata))
         push(methods, method)
         push(crcs, crc32(e.data))
@@ -199,11 +216,16 @@ fn create(entries: [Entry]) -> bytes:
         _push_str(&out, e.name)
         _push_bytes(&out, cdata)
     cd_start := len(out)
+    if cd_start > ZIP_MAX_U32:
+        return Err("ZIP central directory offset exceeds 32-bit size")
     for i := 0; i < len(entries); i += 1:
         e := entries[i]
         cdata := cdatas[i]
         method := methods[i]
         c := crcs[i]
+        central_bytes := size_of$(Central) + len(e.name)
+        if central_bytes > ZIP_MAX_U32 - len(out):
+            return Err("ZIP central directory exceeds 32-bit size")
         _push_bytes(&out, to_bytes(Central(to_u32(SIG_CENTRAL), to_u16(20),
             to_u16(20), to_u16(0), to_u16(method), to_u16(0), to_u16(0),
             to_u32(c), to_u32(len(cdata)), to_u32(len(e.data)),
@@ -211,10 +233,21 @@ fn create(entries: [Entry]) -> bytes:
             to_u32(0), to_u32(offs[i]))))
         _push_str(&out, e.name)
     cd_size := len(out) - cd_start
+    if cd_size > ZIP_MAX_U32 or size_of$(Eocd) > ZIP_MAX_U32 - len(out):
+        return Err("ZIP archive exceeds classic 32-bit limits")
     _push_bytes(&out, to_bytes(Eocd(to_u32(SIG_EOCD), to_u16(0), to_u16(0),
         to_u16(len(entries)), to_u16(len(entries)), to_u32(cd_size),
         to_u32(cd_start), to_u16(0))))
-    return to_bytes(out)
+    return Ok(to_bytes(out))
+
+# Compatibility wrapper: valid archives are unchanged, but limits no longer
+# silently wrap into a forged archive. New callers should use create_checked.
+fn create(entries: [Entry]) -> bytes:
+    match create_checked(entries):
+        Ok(archive): return archive
+        Err(e):
+            die("tycho: core:zip.create: " + e)
+            return to_bytes([]int)
 
 fn _push_str(b: inout [int], s: string):
     for i := 0; i < len(s); i += 1:

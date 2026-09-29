@@ -93,4 +93,21 @@ fn main():
             print("nul stored=?\n")
         Ok(r):
             print("nul tycho len=" + str(len(nul)) + " stored len=" + r[0][0] + " hex=" + r[0][1] + "\n")
+    nul_path := ":memory:" + to_str(to_bytes([0])) + "ignored"
+    path_refused := false
+    match sqlite.open(nul_path):
+        Err(_): path_refused = true
+        Ok(other): sqlite.close(&other)
+    print("nul path refused=" + str(path_refused) + "\n")
+    nul_sql := "INSERT INTO n VALUES('prefix')" + to_str(to_bytes([0])) + "; INSERT INTO n VALUES('suffix')"
+    exec_refused := false
+    match sqlite.exec(&db, nul_sql):
+        Err(_): exec_refused = true
+        Ok(_): pass
+    print("nul exec refused=" + str(exec_refused) + "\n")
+    prep_refused := false
+    match sqlite.query(&db, "SELECT 1" + to_str(to_bytes([0])) + " UNION SELECT 2"):
+        Err(_): prep_refused = true
+        Ok(_): pass
+    print("nul prepared SQL refused=" + str(prep_refused) + "\n")
     sqlite.close(&db)

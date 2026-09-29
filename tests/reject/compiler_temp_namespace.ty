@@ -1,0 +1,5 @@
+struct Ztycho_User:
+    value: int
+
+fn main():
+    pass

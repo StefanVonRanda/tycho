@@ -208,6 +208,10 @@ store is corrupt: bad.db is not a tycho-db store
   db    nodir/x.db (0 table(s))
 CREATE TABLE t (a INT);
   ERR   cannot write nodir/x.db.wal
+SELECT * FROM t;
+  ERR   no such table: t
+INSERT INTO t VALUES (1);
+  ERR   no such table: t
 --- stderr
 cannot write nodir/x.db
 === err BadLog

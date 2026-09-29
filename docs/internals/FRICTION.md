@@ -310,12 +310,12 @@ pick-up order is written out in full under "What moved this pass" below.
    (there were 11 at the previous pass): **eight pass**, three fail, and
    `corelib/image/image_shim.c`'s single "error" is only a missing `png.h`
    (environmental, item 9 — the previous pass wrote "item 6" here, which was wrong).
-   - `corelib/net/net_shim.c` — **4 errors** (`corelib/net/net_shim.c:52` storage size
-     of `hints`, `corelib/net/net_shim.c:56` implicit `getaddrinfo`,
-     `corelib/net/net_shim.c:57` invalid use of undefined `struct addrinfo`,
-     `corelib/net/net_shim.c:58` implicit `freeaddrinfo`).
+   - `corelib/net/net_shim.c` — **4 errors** (`corelib/net/net_shim.c:55` storage size
+     of `hints`, `corelib/net/net_shim.c:59` implicit `getaddrinfo`,
+     `corelib/net/net_shim.c:60` invalid use of undefined `struct addrinfo`,
+     `corelib/net/net_shim.c:61` implicit `freeaddrinfo`).
    - `corelib/tls/tls_shim.c` — **9 errors** of the same kind from
-     `corelib/tls/tls_shim.c:149`.
+     `corelib/tls/tls_shim.c:173`.
    - **NEW at this pass — `corelib/signal/signal_shim.c`, 3 errors**: storage size of
      `sa` (`corelib/signal/signal_shim.c`), implicit `sigemptyset`
      (`corelib/signal/signal_shim.c`), implicit `sigaction`
@@ -344,7 +344,7 @@ pick-up order is written out in full under "What moved this pass" below.
    (*Earlier phases*) — reproduced verbatim again at
    `3ddc8fd` with a scratch program: `spawn work(1)` gives `error: a statement must be a
    declaration, assignment, or call -- a bare expression has no effect`
-   (`src/tychoc.c:4180`, unmoved since the previous pass), which still never states the
+   (`src/tychoc.c:4468`, unmoved since the previous pass), which still never states the
    real rule — a task handle must be *bound* so the compiler can hang the implicit join on
    it. **One line of diagnostic text at a known line.** Open only because nobody has spent
    it, through two re-scores.
@@ -378,15 +378,15 @@ pick-up order is written out in full under "What moved this pass" below.
    rejected at the *definition* with `error: 'die' is already defined`. **The reason is
    pinned:** the definition-time duplicate check is
    `if (sig_find(pr->name) || consts_find(pr->name)) die_dup_proc(...)`
-   (`src/tychoc.c:9309`), and `sig_find` searches `g_sigs` — which holds `die` and `exit`
-   as real entries (`src/tychoc.c:5334-5335`, inside `src/tychoc.c@register_builtins`)
+   (`src/tychoc.c:9712`), and `sig_find` searches `g_sigs` — which holds `die` and `exit`
+   as real entries (`src/tychoc.c:5620-5621`, inside `src/tychoc.c@register_builtins`)
    but **holds no entry for `send`, `recv` or `close` at all**; those three are recognised
-   ad hoc during resolution (`src/tychoc.c:6734`, `src/tychoc.c:6743`,
-   `src/tychoc.c:6762`). So it is not a table that omits three rows, it is three builtins
-   that were never in the table. **The code is ~1 line** at `src/tychoc.c:9309`; the open
+   ad hoc during resolution (`src/tychoc.c:7089`, `src/tychoc.c:7098`,
+   `src/tychoc.c:7117`). So it is not a table that omits three rows, it is three builtins
+   that were never in the table. **The code is ~1 line** at `src/tychoc.c:9712`; the open
    part is the decision — which builtin names are shadowable — because landing it newly
    rejects any program defining `send`/`recv`/`close`. Note the generic path a line above
-   (`src/tychoc.c:9303`) consults the same two tables plus `generic_find`, so whatever is
+   (`src/tychoc.c:9706`) consults the same two tables plus `generic_find`, so whatever is
    decided has to be written twice.
 
    And the "corelib layering decision" this item wanted taken **was already
@@ -404,7 +404,7 @@ pick-up order is written out in full under "What moved this pass" below.
    `core:strings`. Note the precedent that has since landed: `core:io` *dropped* a
    dependency (`core:path`) when a syscall made it unnecessary, so the tree's current
    direction is fewer inter-package edges, not more. (The old entry cited `has_ext` at
-   `corelib/httpd/httpd.ty:248`; it is 40 lines further down now, which is why this
+   `corelib/httpd/httpd.ty:292`; it is 40 lines further down now, which is why this
    citation is a `path@SYMBOL` — the definition has a name and its line number was only
    ever a record of how much prose sat above it.)
 7. ~~**`parallel for` caps concurrency at `min(N, ncpu)` and nothing warns** (*Earlier
@@ -416,7 +416,7 @@ pick-up order is written out in full under "What moved this pass" below.
      the reference bounds it at **64**, so above 64 the fan-out is narrower than `ncpu()`
      reports". The old text's "uses `ncpu()` chunks" — false on both counts, the `min`
      and the cap — is gone. The compiler side is cited anchored from the spec's own
-     provenance block, `src/tychoc.c:12336@_pk > 64`, so the gate now polices it.
+     provenance block, `src/tychoc.c:12892@_pk > 64`, so the gate now polices it.
    - **`ncpu()`'s false definition is corrected**, which was the other half:
      `docs/spec/16-builtins.md:248` states outright that it is "the *requested* worker
      count, **not** the width a `parallel for` will actually use" and that "a program that
@@ -440,10 +440,10 @@ pick-up order is written out in full under "What moved this pass" below.
      on 2026-07-30; `docs/spec/13-concurrency.md:81-83` is the corrected text and no
      longer says this.)*
    - The width is now **readable from Tycho**: `ncpu()` is a registered builtin
-     (`src/tychoc.c:5913@ncpu`, lowering at `src/tychoc.c:11303@tycho_ncpu`), so a program can at least
+     (`src/tychoc.c:6220@ncpu`, lowering at `src/tychoc.c:11718@tycho_ncpu`), so a program can at least
      ask. Measured on this box: `ncpu()` → 16.
    - There was an **undocumented hard ceiling of 64 chunks** — `if (_pk < 1) _pk = 1; if
-     (_pk > 64) _pk = 64;` (`src/tychoc.c:11509`, inside `src/tychoc.c@gen_parfor`) —
+     (_pk > 64) _pk = 64;` (`src/tychoc.c:12103`, inside `src/tychoc.c@gen_parfor`) —
      which `docs/spec/13-concurrency.md` did not mention, so on a box with more than 64
      CPUs the spec's "uses `ncpu()` chunks" was false. **That half is a ~1-line spec fix
      and should be split out and taken** — *it was, and closing it is what closed this
@@ -504,7 +504,7 @@ pick-up order is written out in full under "What moved this pass" below.
    recursive fan-out — worker k spawns worker k+1 into a frame-local, then runs its own
    accept loop. **An array of handles is a type-system change, not an item-sized fix.
    Uncosted, and still the honest core of what is left.** *(This entry cited
-   `src/tychoc.c:903` and `server/main.ty:560-562` at the previous pass; the first drifted
+   `src/tychoc.c:934` and `server/main.ty:569-571` at the previous pass; the first drifted
    by one line and the second by 440, because `server/main.ty` roughly doubled — 1088 lines
    now. Both are `path@SYMBOL` here, which is why they will not drift again.)*
    **NARROWED, 2026-07-31, and the item reads stronger than it is** (the prunner plan).
@@ -574,8 +574,8 @@ pick-up order is written out in full under "What moved this pass" below.
     `T_BYTES` case, `instantiate_generic`, the zero-cost reinterpret, `detect_package`,
     the `bytes` representation and the channel-handle type syntax — because every compiler
     phase shifts everything below it, and `src/tychoc.c` is now 754 KB. The four that
-    survived are all into files that barely moved (`corelib/httpd/httpd.ty:376`,
-    `corelib/httpd/httpd.ty:229`, `server/main.ty:625`, `runtime/tycho_rt.c:639`) — which
+    survived are all into files that barely moved (`corelib/httpd/httpd.ty:420`,
+    `corelib/httpd/httpd.ty:229`, `server/main.ty:634`, `runtime/tycho_rt.c:657`) — which
     is the shape of the problem: **the citations that matter most are the ones most likely
     to be wrong.** `scripts/check_citations.py` cannot catch it by construction; it
     verifies anchored `path:line@token` refs against the token and only bounds-checks bare
@@ -825,7 +825,7 @@ shape: a bounded pool over a channel with a fan-in, over jobs that all terminate
   continuously; the results channel filling and parking a worker did not happen, or at
   least was not measured.
 - **Nothing above 64 workers as a real workload.** The 64-chunk probe used synthetic 50 ms
-  sleeps; the real corpus ran at `ncpu()` = 16, nowhere near `src/tychoc.c:11509`.
+  sleeps; the real corpus ran at `ncpu()` = 16, nowhere near `src/tychoc.c:12103`.
 - **No nested parallelism** — no `parallel for` inside a spawned task, and no pool inside
   a pool.
 
@@ -850,7 +850,7 @@ stop reimplementing the read loop.
 Found while writing `io.is_dir` and its test.
 
 - ~~**`Option`/`Result` phase 4** — **nothing in Tycho can create a directory.** Verified absent, not assumed: `docs/spec/16-builtins.md` §29.10 lists five filesystem/time builtins (`read_file`, `write_file`, `list_dir`, `clock`, `now`) and none of them makes a directory, and `mkdir`/`make_dir`/`create_dir` return zero hits across `corelib/`, `src/tychoc.c` and `runtime/`. There is no remove either. So `corelib/test/io` — the test for a `stat(2)` wrapper — has to build its empty directory with `os.system("rm -rf … && mkdir -p …")`: a corelib test depending on `/bin/sh` to set up a filesystem state the corelib itself cannot reach. The asymmetry is the finding: the library can now *classify* a directory but not *make* one.~~ **CLOSED, the option-result plan.** `io.make_dir(p)` (`mkdir(2)`, no `-p`) and `io.remove(p)` (`remove(3)`, one entry, **never recursive**) both return `Result(bool, IoErr)` where `Ok(true)` is "changed it" and `Ok(false)` is "already how you asked" — `make_dir` splits `EEXIST` into `Ok(false)` (already a directory: goal met) and `Err(Exists)` (a file is in the way: goal unreachable), which is exactly the ambiguity test this plan was built on. `corelib/test/io` no longer imports `core:os` and the `rm -rf && mkdir -p` line is gone. A non-empty directory is `Err(Failed)`, which is the property that keeps `io.remove` from being `rm -rf` behind a corelib name.
-- ~~**`Option`/`Result` phase 4** — `io.exists` and `io.is_dir` now answer overlapping questions by different means, and the cheaper one is the newer one: `exists` lists the whole parent directory (O(entries), and it cannot see a `.`/`..`-only leaf) where `is_dir` is one `stat`. `resolve()` ends up calling both on the same path. A `stat`-backed `exists` is the obvious follow-on and was refused on scope, but the general shape is worth recording — a missing syscall does not just block the question it names, it leaves *neighbouring* answers implemented the long way round.~~ **CLOSED, the friction plan, and the follow-on was bigger than the swap.** `exists` is now `iox_stat_kind(p)` and two comparisons (`corelib/io/io.ty:507-511`), the same shim call `is_dir` uses; it still fails closed, so `false` means "`stat` could not say yes" — the old behaviour too, since an unlistable parent yielded no entries. `corelib/test/io.out` is **byte-identical** before and after, which is the proof the swap changed the means and not the meaning. **Two things the entry did not predict.** (1) **`core:io` lost a dependency**: `path.base`/`path.dir` were needed *only* by the old `exists`, so `import "core:path"` is gone and the module written up as "the first corelib module to COMPOSE other core modules" now composes one, not two — a stale claim in three places, all corrected. (2) **`resolve()`'s double call did not just halve, it collapsed**: making the second call a `stat` is what made the pair visibly redundant rather than merely ugly, and the two calls are now ONE `match io.is_dir(fsp)` reading all three answers off the Result (`server/main.ty:393-398`) — `Ok(true)` → `301` (or `404` when `dir_form` already appended `index.html`, i.e. a directory *named* `index.html`, which used to be a `200` → `read_bytes` → `Err(IsDir)` → `404`: same status, one syscall fewer, no wrong intermediate), `Ok(false)` → `200`, `Err(_)` → `404`. Per request for a real file: **2 syscalls (an opendir/readdir walk plus a stat) → 1 stat**. `corelib/io/io.ty` **98 → 93 code lines**, `server/main.ty` shorter as well. The entry's own closing sentence turned out to be the useful half and to run both ways: a missing syscall leaves neighbouring answers implemented the long way round, **and adding it does not fix them — someone has to go back and delete the long way round**, which is a second, separately-scoped piece of work that is easy to leave undone because nothing is red.
+- ~~**`Option`/`Result` phase 4** — `io.exists` and `io.is_dir` now answer overlapping questions by different means, and the cheaper one is the newer one: `exists` lists the whole parent directory (O(entries), and it cannot see a `.`/`..`-only leaf) where `is_dir` is one `stat`. `resolve()` ends up calling both on the same path. A `stat`-backed `exists` is the obvious follow-on and was refused on scope, but the general shape is worth recording — a missing syscall does not just block the question it names, it leaves *neighbouring* answers implemented the long way round.~~ **CLOSED, the friction plan, and the follow-on was bigger than the swap.** `exists` is now `iox_stat_kind(p)` and two comparisons (`corelib/io/io.ty:541-545`), the same shim call `is_dir` uses; it still fails closed, so `false` means "`stat` could not say yes" — the old behaviour too, since an unlistable parent yielded no entries. `corelib/test/io.out` is **byte-identical** before and after, which is the proof the swap changed the means and not the meaning. **Two things the entry did not predict.** (1) **`core:io` lost a dependency**: `path.base`/`path.dir` were needed *only* by the old `exists`, so `import "core:path"` is gone and the module written up as "the first corelib module to COMPOSE other core modules" now composes one, not two — a stale claim in three places, all corrected. (2) **`resolve()`'s double call did not just halve, it collapsed**: making the second call a `stat` is what made the pair visibly redundant rather than merely ugly, and the two calls are now ONE `match io.is_dir(fsp)` reading all three answers off the Result (`server/main.ty:399-404`) — `Ok(true)` → `301` (or `404` when `dir_form` already appended `index.html`, i.e. a directory *named* `index.html`, which used to be a `200` → `read_bytes` → `Err(IsDir)` → `404`: same status, one syscall fewer, no wrong intermediate), `Ok(false)` → `200`, `Err(_)` → `404`. Per request for a real file: **2 syscalls (an opendir/readdir walk plus a stat) → 1 stat**. `corelib/io/io.ty` **98 → 93 code lines**, `server/main.ty` shorter as well. The entry's own closing sentence turned out to be the useful half and to run both ways: a missing syscall leaves neighbouring answers implemented the long way round, **and adding it does not fix them — someone has to go back and delete the long way round**, which is a second, separately-scoped piece of work that is easy to leave undone because nothing is red.
 - **`Option`/`Result` phase 4** — reordering two guards to make room for a new one silently changed a security answer: hoisting `hidden_segment(path.clean(rel))` above the `index.html` append made `GET /` return **403**, because for the root target `rel` is `""` and `path.clean("")` returns `"."` (`corelib/path/path.ty:98-99`), which `hidden_segment` reads as a dotfile. Nothing in the compiler or the corelib could have caught it — `clean("")` returning `"."` is documented POSIX behaviour and both spellings type-check identically. It was caught by the live matrix (`50-request flood 0/50 200`), which is the argument for keeping that matrix.
 
 ### Two defects that were not expressible in Tycho at all
@@ -949,7 +949,7 @@ handling, and the difference is deliberate rather than unfinished.
   , which the `register_conn` / `retire_conn` additions pushed down): calling a Tycho function from
   handler context is a *language* feature, because every Tycho value lives in a
   bump-allocated arena that is not re-entrant and channel operations park behind a mutex
-  (`runtime/tycho_rt.c:1108@mu`) — a handler that interrupts the allocator or the lock
+  (`runtime/tycho_rt.c:1134@mu`) — a handler that interrupts the allocator or the lock
   holder and then allocates or touches a channel deadlocks or corrupts the process it was
   invoked to shut down. **What a general version would need, so the next person costs it
   rather than rediscovers it:** (1) an async-signal-safe hand-off out of handler context —
@@ -1026,7 +1026,7 @@ swept. Recorded so the next reader knows they exist and why nobody fixed them:
   §22.1 and the `ncpu()` correction. The shift bands are mechanical and were
   written down at the time (`docs/reference/concurrency.md` old ≥105 → +13;
   `docs/spec/13-concurrency.md` old 83..112 → +8, and so on).
-- **`src/tychoc.c:3887`** points at `gen_parfor` 98 lines short of where it is.
+- **`src/tychoc.c:4149`** points at `gen_parfor` 98 lines short of where it is.
 - **The package-mode comment above `dup_other_file`** cites two sites and both
   are wrong — one lands in array-copy codegen, the other in an enum comment.
 
@@ -1378,9 +1378,9 @@ confirmed, not a divergence between them. An array aborts on all four, and the
 check is **purely a runtime one**: `a[2:10]` on a 5-element array compiles
 cleanly (exit 0 from tychoc) and dies only when run, so there is no
 compile-time arm to strengthen. The array check is emitted inline into the
-generated C by the compiler — `src/tychoc.c:11830-11832` for an ordinary array
+generated C by the compiler — `src/tychoc.c:12460-12462` for an ordinary array
 (the path the probe above took) and the same test again at
-`src/tychoc.c:11809-11811` for the SoA variant, both spelling it
+`src/tychoc.c:12439-12441` for the SoA variant, both spelling it
 `_lo < 0 || _hi > len || _lo > _hi`, which is why all four shapes abort and not
 just the two that overrun. The clamp is `runtime/tycho_rt.c@tycho_str_substr`,
 whose three lines are exactly `start<0 -> 0`, `end>n -> n`, `end<start -> start`.
@@ -1495,7 +1495,7 @@ an array slice that ABORTS, the MUST NOT infer-from-return rule, and
 The entry's load-bearing sentence — "the builtins are `println`, `die` (stderr,
 then exit 1) and `exit(n)`", so "**a non-fatal warning is inexpressible**" — is
 **false, and was false when it was written**. `eprint(s)` is a builtin: registered
-at `src/tychoc.c:5908@eprint`, emitted as `tycho_eprint`, and defined as
+at `src/tychoc.c:6215@eprint`, emitted as `tycho_eprint`, and defined as
 `fputs(s, stderr)` in `runtime/tycho_rt.c@tycho_eprint`. It is specified —
 `docs/spec/16-builtins.md:74@eprint` says "Write `s`'s bytes to stderr; no
 newline, **no exit**" — and it was added on 2026-06-14 in `61fa0dc`
@@ -2116,12 +2116,12 @@ language changes, which is why this ranks below three corelib items that are not
 >    and runs. The decoration is one underscore per arm, not an invented
 >    identifier. What is refused is dropping the parens entirely —
 >    `VInt: return 1` → `error: VInt binds 1 value(s), got 0`
->    (`src/tychoc.c:9175`).
+>    (`src/tychoc.c:9578`).
 > 2. *"without binding a payload"* — a **nullary** variant needs no match at
 >    all: `if v == VNull:` compiles and runs. `==` is a working discriminator
 >    for the payload-free half of an enum. It stops at the other half:
 >    `if v == VInt:` → `error: VInt carries a payload — write VInt(...)`
->    (`src/tychoc.c:6538`).
+>    (`src/tychoc.c:6893`).
 >
 > So the real gap is narrower than the heading: **a payload-carrying variant
 > has no value-level discriminator**, and `match` is the only test for it.
@@ -2168,7 +2168,7 @@ which arms actually use their payloads.
 > error: or_return propagates a PErr error, but the function's error type is RErr
 > ```
 >
-> — `src/tychoc.c:6524-6526`. So the rule is "no *implicit* conversion", not
+> — `src/tychoc.c:6879-6881`. So the rule is "no *implicit* conversion", not
 > "no conversion".
 >
 > The second, smaller true claim: `map_err` takes a **constant** replacement
@@ -2871,7 +2871,7 @@ records the toll, which is one copied block per shim and is paid once.
   `grep -E '^fn .*-> \[string\]' corelib/strings/strings.ty` returned only
   `lines`. That grep cannot find it: `split(s, sep) -> [string]` is a **language
   builtin**, specified at `docs/spec/16-builtins.md:150` and registered at
-  `src/tychoc.c:5921@.name="split"`, so it is in no package at all.
+  `src/tychoc.c:6228@.name="split"`, so it is in no package at all.
   `corelib/strings/strings.ty:170` says so in a comment one line above `lines`
   — "(split(s, sep) and find(s, sub) are language builtins -- not duplicated
   here.)" — and `corelib/test/wordfreq/main.ty:22` is a word-frequency program
@@ -3303,7 +3303,7 @@ struct Plan($T):
 ```
 
 **The asymmetry, in one line.** A `fn($T) -> $T` typedef is deliberately NOT
-emitted — `src/tychoc.c:13817` skips any function type mentioning a type
+emitted — `src/tychoc.c:14737` skips any function type mentioning a type
 parameter, because `$T` lowers to `void` and a `void` parameter is invalid C.
 But the composite-array BODY loop emitted `struct TychoArrC0_ { FnC0 *data; }`
 for the template's dead `[fn($T)->$T]` anyway, naming the typedef that was just
@@ -3948,8 +3948,8 @@ that there is no element-wise `+` for `string` elements. The message was built
 from the element type at two sites, where `arr_elem(lt)` was spelled into a
 sentence that reads as a claim about the language.
 
-**FIXED 2026-08-13, both sites** (`src/tychoc.c:8065@element-wise` and
-`src/tychoc.c:8120@element-wise`, anchored per this file's header rule). The
+**FIXED 2026-08-13, both sites** (`src/tychoc.c:8460@element-wise` and
+`src/tychoc.c:8464@element-wise`, anchored per this file's header rule). The
 false clause is gone and `+` now names the operation the caller actually wanted:
 
 ```
@@ -6160,7 +6160,7 @@ reader needs to find the mistake. Deciding it means changing the other compiler
 to match, then a nested fixture can land with the fix.
 
 **How it was fixed, and the one thing the sizing got wrong.**
-`diag_flush` (`src/tychoc.c:1026@diag_flush`) runs some 4,800 lines BEFORE `GInst`
+`diag_flush` (`src/tychoc.c:1097@diag_flush`) runs some 4,800 lines BEFORE `GInst`
 is declared, so it cannot walk `g_ginsts` at print time — the sizing below
 assumed it could. Instead `GInst` gained a `parent` index, a new `g_inst_cur`
 tracks which instance's body is being resolved (so a nested instantiation records
@@ -6179,10 +6179,10 @@ wording slip: `tychoc`'s `Diag` carries a *single* instantiation site
 (`src/tychoc.c:105@inst_file` — one `inst_file`/`inst_line`/`inst_src`, not a
 stack), filled from one global pair (`src/tychoc.c:80@g_inst_from`) that
 `gen_program`'s instance loop retargets per instance
-(`src/tychoc.c:13826@g_inst_from`). So it can only ever name the innermost
+(`src/tychoc.c:14477@g_inst_from`). So it can only ever name the innermost
 frame; it is not dropping the outer one, it never had it. Making it match means
 giving `GInst` a link to the instance that instantiated it and walking that
-chain in `diag_flush` (`src/tychoc.c:1026@diag_flush`) — bounded work, but it
+chain in `diag_flush` (`src/tychoc.c:1097@diag_flush`) — bounded work, but it
 touches a user-facing diagnostic for every nested generic in the corpus, so it
 is a golden-churn change and wants to be one deliberate commit. The cheaper
 direction, capping `tychoc1` at one frame to match `tychoc`, is smaller and
@@ -6198,7 +6198,7 @@ makes the diagnostic worse; recording it only so the choice is explicit.
 hypotheses.** `server/run.sh` is not the victim of an outside signal — **it is
 the sender, and it kills itself by proxy**:
 
-1. Its watchdogs are `( sleep N; srv_kill ) &` (`server/run.sh:686@sleep`).
+1. Its watchdogs are `( sleep N; srv_kill ) &` (`server/run.sh:701@sleep`).
    That is a **two-command** subshell, so bash keeps a real subshell — and a
    real subshell **inherits `trap cleanup EXIT INT TERM`** and `$T`.
 2. It cancels a watchdog with `kill "$WD"` — the **default SIGTERM**.
@@ -6258,10 +6258,10 @@ removes the directory is not terminating the shell.
 
 **Ruled out, each by testing rather than reasoning:**
 
-- *The EXIT trap firing in the watchdog subshell* (`server/run.sh:686@sleep`,
+- *The EXIT trap firing in the watchdog subshell* (`server/run.sh:701@sleep`,
   `:14@trap`). bash does not run a parent's EXIT trap when a `( ... ) &`
   subshell exits; probed directly.
-- *The TERM trap firing when the watchdog is killed* (`server/run.sh:691@kill`,
+- *The TERM trap firing when the watchdog is killed* (`server/run.sh:706@kill`,
   which sends the default SIGTERM while the script traps TERM). bash resets the
   trap in the subshell; probed directly, the marker file survived.
 - *Disk or inode pressure on /tmp* — tmpfs, 63 G with 1% used, 1046640 inodes free.
@@ -6304,7 +6304,7 @@ Three findings from that trace, each of which rules something out:
    The failure needs the concurrency.
 
 **The leading hypothesis, explicitly not yet established: a stale PID.** Several
-scripts here save a background `$!` and later `kill` it — `server/run.sh:676`
+scripts here save a background `$!` and later `kill` it — `server/run.sh:691`
 does exactly that to its watchdog. Under four concurrent lanes the process churn
 is high enough for a PID to be recycled between the save and the kill, and the
 signal then lands on an unrelated process. That fits every observation above
@@ -6439,7 +6439,7 @@ The `<file>` was `corelib/os/os_shim.c` at the `osx_is_batch_ref` definition,
 which this entry's fix deleted — so it is named rather than cited, the citation
 gate quite correctly refusing a live reference to a symbol that no longer
 exists. The line carrying the replacement is
-`corelib/os/os_shim.c:125@unused`.
+`corelib/os/os_shim.c:133@unused`.
 
 **Measured, same tree, same command:** gcc 16.2.1 — *"14 shim(s) compiled with
 `-Wall -Wextra -Wdeprecated-declarations`, 0 skipped; 0 warning line(s),
@@ -6448,8 +6448,8 @@ matching `scripts/shim.warn`"*. clang 22.1.8 — the line above.
 which is a narrower claim than it looks.
 
 **The warning is aimed at a suppression, not at a defect.** `osx_is_batch`
-(`corelib/os/os_shim.c:126@osx_is_batch`) is called from exactly one place,
-`corelib/os/os_shim.c:347@osx_is_batch`, inside the `_WIN32` branch. On a POSIX build nothing calls it, so the
+(`corelib/os/os_shim.c:134@osx_is_batch`) is called from exactly one place,
+`corelib/os/os_shim.c:363@osx_is_batch`, inside the `_WIN32` branch. On a POSIX build nothing calls it, so the
 file takes its address at file scope to keep gcc's `-Wunused-function` quiet:
 
 ```c
@@ -6495,7 +6495,7 @@ have put that gate back to scoring a hand-copy — the precise defect the functi
 was moved out of the `#ifdef` to fix. **The recommendation was made without
 reading the eight lines above the function.**
 
-**What was done instead — option 1, the attribute** (`corelib/os/os_shim.c:125@unused`):
+**What was done instead — option 1, the attribute** (`corelib/os/os_shim.c:133@unused`):
 
 ```c
 __attribute__((unused))
@@ -6507,7 +6507,7 @@ and the `osx_is_batch_ref` pointer deleted. The dodge converted an unused
 creates nothing for either compiler to warn about. It is harmless where the
 function IS used — the Windows spawn path at `:341`, and the unit gate. The
 tree already uses `__attribute__` (`runtime/tycho_rt.c:237@constructor`,
-`:887@noinline`), and the Windows build is mingw, which is gcc, so no target
+`:896@noinline`), and the Windows build is mingw, which is gcc, so no target
 loses it. Option 3 stays rejected for the reason given above.
 
 **Measured, both compilers, same tree:**
@@ -6719,7 +6719,7 @@ answers below; the method was to read `surface.lock` and grep the 1,389 tracked
 Of 41 builtins and 115 keywords, exactly one entry appeared in **no** test or
 example: `floor`. It is not a stub — `float -> float`, specified at spec 29 and
 [appendix D](../spec/appendix-d-builtins.md), implemented in both compilers
-(`src/tychoc.c:5932@floor`) — it simply had no fixture.
+(`src/tychoc.c:6239@floor`) — it simply had no fixture.
 
 **It was correct.** Checked against C's libm on the six values a test would have
 pinned, all six identical:
@@ -8162,7 +8162,7 @@ report.
 
 > Pinned-by: python3 scripts/corelib_doc_check.py --selfcheck
 > Pinned-by: grep -q 'def named(name, cat)' scripts/corelib_doc_check.py
-> Pinned-by: make check-links
+> Pinned-by: python3 scripts/corelib_doc_check.py
 
 [99](#99-the-corelib-reference-told-readers-corenet-cannot-poll-and-it-can--fixed-2026-09-19)
 created `scripts/corelib_doc_check.py` that morning so that **absence** from the
@@ -8830,3 +8830,777 @@ Two things turned up on the way:
 - `tychoc1` refuses `-3.0` in a `vector[4]f32` literal ("element 3 … is the wrong
   type"), and `./tychoc` accepts it. The fixtures here write `0.0 - 2.5`. That
   parity gap is not fixed here.
+
+### 133. Inferred-local placeholders collided at a decimal prefix — **FIXED 2026-09-26**
+
+> Pinned-by: make -s test
+
+The 20,000-seed compiler fuzzer hit seed 8405: after enough `[]`/`None`
+placeholders, `tychoc1` emitted invalid C (`TychoArrInt1` and a stray numeric
+suffix). The minimal case is ten inferred empty-array locals followed by a
+`push` into each. `_fnbody` replaced `_PT1` before `_PT10` (and likewise `_PE1`
+before `_PE10`), so the shorter token consumed the prefix of the longer. It now
+substitutes in descending allocation order. `tests/emit_many_inferred_arrays.ty`
+pins the ten-placeholder case; the unfixed output was checked to fail C syntax
+compilation, while `tychoc` and the fixed `tychoc1` both build and print `10`.
+
+### 134. Generic constructor resolution retained pointers across type-table growth — **FIXED 2026-09-26**
+
+> Pinned-by: make -s test
+
+A 17-deep `Wrap(Wrap(...(41)))` made `tychoc` SIGSEGV while resolving a valid
+program. The generic constructor held a `StructDef *` (and the enum path held
+`EnumDef *`/`Variant *`) while recursively resolving payloads. A nested generic
+constructor could grow and relocate the definition table, invalidating those
+pointers. The resolver now retains stable table indices and re-reads definitions
+around recursive calls. `tests/generic_ctor_realloc.ty` crosses the table-growth
+boundary for both generic structs and generic enums; both compilers build it and
+it prints `41` and `enum`.
+
+### 135. `tychoc1` left sized and element-wise integer division unguarded — **FIXED 2026-09-26**
+
+> Pinned-by: make -s test
+
+The audit's D04/D08 repros were confirmed: division by zero in `u32` and in an
+array lane reached raw C `/`, which can SIGFPE/SIGILL instead of producing a
+Tycho diagnostic. The self-hosted emitter now routes signed and unsigned sized
+integer `/` and `%` through the runtime guards, including array, vector and
+broadcast lanes; the type checker checks literal zero before the element-wise
+early return. `tests/abort/{sized_div_zero,array_div_zero,sized_array_div_zero}.ty`
+and `tests/reject/array_div_lit_zero.ty` pin the cases. Both compilers now trap
+with `tycho: division by zero` for runtime zero and reject the literal divisor.
+
+### 136. Empty literals slipped through fixed-array arity checks — **FIXED 2026-09-26**
+
+> Pinned-by: make -s test
+
+`[]` was accepted for `[N]T` and `vector[N]T`: the checker had a fixed-count
+check only on the non-empty literal path. `tychoc` then emitted an uninitialized
+inline aggregate; `tychoc1` built a zero-length value with a fixed type. The
+fixed-array count check now includes zero elements, and the self-hosted checker
+refuses the empty literal in both fixed arrays and vectors. The rejecting twins
+`tests/reject/fixed_array_empty_literal.ty` and
+`tests/reject/vector_empty_literal.ty` cover both compilers.
+
+### 137. Const-sized arrays lost their capacity in the self-hosted checker and emitter — **FIXED 2026-09-26**
+
+> Pinned-by: make -s test
+
+`_fixsize` treated "is a const" as "unknown size", disabling literal arity,
+push/pop and parameter compatibility checks for `[N]T`; zero and negative const
+sizes also escaped. It now resolves the folded const value and enforces a
+positive length. The emitter separately parsed a `vector[N]T` count as a raw
+integer token, turning a valid const into vector width zero; it now resolves
+same-package consts before registering the vector type. `tests/const_sized_arrays.ty`
+pins fixed-array and vector length/element behavior, and five reject fixtures pin
+arity, push, zero/negative sizes and parameter mismatch.
+
+### 138. If/elif chains were nested and quadratically emitted — **FIXED 2026-09-27**
+
+> Pinned-by: sh tests/elif_chain.sh
+
+Audit D03/D23 reproduced cubic memory in `tychoc1`: every nested `IfS` copied
+and indented the remaining chain, while the emitter repeatedly concatenated its
+output. The statement AST now stores a flat `IfArm` list; typechecking, name
+resolution, analysis and emission walk each arm once. C output is a linear
+`if`/`else if` chain, assembled from pieces in one pass. A synthetic 10,000-arm
+chain compiles and runs with both compilers; the generated C stays below 1 MB.
+
+### 139. Native C emission nested every elif arm — **FIXED 2026-09-27**
+
+> Pinned-by: sh tests/elif_chain.sh
+
+Audit D14 found that `tychoc` emitted `else { if (...) { ... } }` at one more
+brace and indentation level per arm. `gen_stmt` now walks the existing
+else-chain iteratively and writes `else if` at a constant depth. The 10,000-arm
+case builds and runs with gcc, and the 300-arm case also builds with clang, for
+both compilers.
+
+### 140. Builtin shadowing and self-named initializers miscompiled — **FIXED 2026-09-27**
+
+> Pinned-by: make -s test
+
+Audit D09/D10 exposed two emitter mismatches: `total := total(...)` made the C
+local hide the function in its own initializer, and `tychoc1` dispatched a
+shadowed builtin such as `keys` to the user function despite the resolver's
+warning. Both emitters now evaluate self-naming initializers through a temporary;
+the self-hosted builtin-dispatch list matches the resolver and C bootstrap. The
+existing `tests/shadow_builtin_selection.ty` now pins both builtin precedence
+and the self-named function call.
+
+### 141. Native source loading assumed seekable files — **FIXED 2026-09-27**
+
+> Pinned-by: sh tests/stream_source.sh
+
+Audit D11 found that `ftell` returning -1 for a pipe became a `SIZE_MAX`-byte
+`fread` into an empty allocation. `tychoc` now reads sources into a growing
+buffer and checks read errors and size overflow. Both compilers accept source
+from `/dev/stdin` and a FIFO; the test is separate from program stdin.
+
+### 142. Literal fit checks were skipped by several coercion paths — **FIXED 2026-09-27**
+
+> Pinned-by: make parse-check; TYCHO_THREADS=8 make -s test
+
+Audit D06's variadic, UFCS, lambda-return, map-default, channel-send,
+subscript-store, value-match and f32 literal cases are now checked at the
+expected destination type. Variadic extras inherit the element type; UFCS
+resolves the receiver's signature before checking arguments (including chained
+calls); and the lambda's tail expression uses its declared/expected result
+type. Both compilers also range-check the scalar broadcast against a sized-array
+element; the native resolver now calls `sized_lit` rather than merely tagging
+the expression. Added ten reject fixtures for the coercion paths and f32 array
+and vector literals.
+
+### 143. Place stores formed stale addresses before an inout RHS could grow the container — **FIXED 2026-09-27**
+
+> Pinned-by: sh tests/place_store_order.sh
+
+Audit D01 reproduced both an array write into recycled arena memory and a lost
+map update: `xs[i] = grow(&xs, &i)` and `m["x"] = grow(&m, 7)`. The emitters
+now evaluate non-literal index/key legs before the RHS, materialize the RHS, and
+form the destination address/slot only after the call returns. Compound map
+updates snapshot the old value and re-find the slot after RHS growth. The new
+`tests/place_store_order.ty` checks array reallocation, map rehash, index
+mutation during the call, and compound map assignment; both compilers also pass
+its clang build.
+
+### 144. `tychoc1 -g` emitted unescaped source paths in `#line` directives — **FIXED 2026-09-27**
+
+> Pinned-by: sh tests/debug_path.sh
+
+Audit D12's backslash and quote could corrupt the C `#line` string; a newline
+could split the directive itself. Both emitters now escape quotes, backslashes,
+line breaks, tabs, and other control bytes. `tests/debug_path.sh` builds and runs
+both compilers with quoted/backslash and newline paths, under the default C
+compiler and clang when available. The separate GDB-version wording finding D90
+remains environment-specific.
+
+### 145. `program_in` retained every growing struct-definition prefix — **FIXED 2026-09-27**
+
+> Pinned-by: sh tests/struct_defs_scale.sh
+
+Audit D15 found the self-hosted emitter appending each struct field to `head`,
+then prepending other generated declarations to that same string. That made the
+compiler's accumulator analysis miss the append loop, retaining quadratic
+intermediate copies (the 900-struct repro peaked above 4 GiB). Struct-definition
+fragments now collect separately and join once before `head` is assembled. The
+regression emits 900 structs with 20 fields each under a 1.5 GiB virtual-memory
+limit when the host supports it.
+
+### 146. Deep integer sums and interpolated strings overflowed compiler/C nesting — **FIXED 2026-09-27**
+
+> Pinned-by: sh tests/expression_scale.sh
+
+Audit D16's flat 1,400-term integer sum recursed through the self-hosted
+checker/emitter and exhausted the compiler stack; D17's 256-term sum and
+130-hole f-string exceeded clang's bracket limit. Simple-int `+` left spines now
+typecheck and emit iteratively, with the shared 2,000-node diagnostic retained
+for larger sums. Other deep left-associated binary spines are refused at 1,024
+nodes, and recursive expression checking has a depth guard; the parser also
+pre-scans and refuses over-256 nested parentheses/calls or consecutive unary
+operators before recursive descent. Both emitters flatten f-string joins into a
+sequential statement-expression instead of nesting one block per piece. The
+generated tests pass 1,400 terms on both compilers, refuse 2,101-term sums and
+subtractions with located diagnostics, reject over-deep calls/unary chains, and
+compile the 256-term/130-hole clang cases.
+
+### 147. Typed tuple literals used synthesized element types in C — **FIXED 2026-09-27**
+
+> Pinned-by: make -s test
+
+Audit D20's `(float, u8) = (1, 2)` passed typechecking but emitted a different
+C tuple struct: the self-hosted emitter chose the tuple type from synthesized
+`(int, int)` elements, despite checking each element under the destination
+component type. It now constructs the C tuple with the expected tuple type and
+emits integer-to-float literal adaptation. The fixture covers declarations,
+returns, function arguments, struct fields, array elements and `Some` payloads;
+both compilers produce the same values.
+
+### 148. The self-hosted emitter accepted `pow` and SoA loops in typechecking but had no lowering — **FIXED 2026-09-27**
+
+> Pinned-by: make -s test
+
+Audit D25 exposed two phase-parity gaps: `pow(x, y)` was registered in the
+checker but fell through to an unsupported-call internal error, and the
+checker accepted `for p in soa_value` while the emitter only handled arrays and
+strings. The emitter now lowers `pow` to libm and SoA iteration through the
+per-element gather helper, preserving a stable length snapshot when the body
+mutates its source. The positive fixture runs on both compilers.
+
+### 149. F-string holes ignored trailing syntax and rejected surrounding whitespace — **FIXED 2026-09-27**
+
+> Pinned-by: make -s test
+
+Audit D24 found that both compilers accepted only the first expression in a
+hole (`{price:.2f}` and `{n, 99}` silently printed the value), while the
+self-hosted re-lexer treated `{ n }` as unexpected indentation. Hole text is now
+trimmed before lexing, the expression parser must consume the entire fragment,
+and both brace scanners skip quoted character literals as well as strings. The
+positive fixture covers whitespace and a `}` character literal; the two reject
+fixtures pin format-spec and trailing-expression refusal.
+
+### 150. Sized float conversions differed from the total wrapping contract — **FIXED 2026-09-27**
+
+> Pinned-by: make -s test
+
+The self-hosted emitter sent `to_u8`..`to_i64` from float/f32 through
+`tycho_f2i`, which traps outside the signed 64-bit range (and on NaN/inf).
+The native emitter already used `tycho_f2u64`, whose documented conversion
+truncates and wraps finite inputs modulo 2^64 and maps non-finite inputs to 0.
+The self-hosted lowering now uses the same helper. The fixture checks negative
+fractional wrap, an in-range signed conversion, `to_u64(1e19)`, and NaN under
+both compilers.
+
+### 151. Equal float leaves in composite map keys hashed differently — **FIXED 2026-09-27**
+
+> Pinned-by: make -s test
+
+Float equality treats `0.0` and `-0.0` as equal, but hashing their IEEE-754 bit
+patterns differed. A map keyed by a struct (or nested struct) could therefore
+store two equal keys and fail to find an overwrite. Both emitters now canonicalize
+zero before hashing; runtime array-of-float key hashing uses the same helper.
+The nested-key fixture inserts `+0.0` then `-0.0` and verifies one entry with
+the updated value under both compilers.
+
+### 152. Self-hosted composite map-key validation admitted un-emittable leaves — **FIXED 2026-09-27**
+
+> Pinned-by: make -s test
+
+The self-hosted key predicate treated every sized integer and `f32` as a valid
+leaf in a composite map key, while the native compiler and supported hash
+emitter accept only the shared leaf set. A struct key with either field passed
+typechecking and then referenced an undefined generated hash function. The
+predicate now matches the native set and refuses these keys before emission.
+
+### 153. Large unsigned shift counts were misread as negative — **FIXED 2026-09-27**
+
+> Pinned-by: make -s test
+
+Shift helpers took a signed `long long` count. Passing a `u64` count at or above
+2^63 converted it to a negative value, so the runtime aborted instead of
+applying the specified `count >= width -> 0` rule. Both emitters now route counts
+through a helper that distinguishes the right operand's signedness before the
+width check; negative signed counts still abort. The shift-edge fixture covers
+both left and right shifts with a `u64` count of 2^63, while the abort fixture
+keeps the negative signed-count diagnostic intact.
+
+### 154. Synthesized locals could shadow user bindings — **FIXED 2026-09-27**
+
+> Pinned-by: make -s test
+
+Both front-ends emitted internal locals in the same identifier namespace as
+source bindings. A user `_fc0`, `_cx0`, `_ms36_0`, or `_mx36_0_0` could therefore
+be shadowed by a for-in or assignment temporary, silently changing results.
+Synthetic binding names now use `Ztycho_`; the lexers reject that prefix in
+source, and resolution permits it only for the internally synthesized AST
+bindings. The multi-assignment fixture pins the exact `_mx36_0_0`/`_ms36_0`
+collision shape, the for-in fixture covers `_fc0`/`_fi0`, and the reject fixture
+defines the reserved namespace boundary.
+
+### 155. Resolver recursion depth leaked across recovered diagnostics — **FIXED 2026-09-27**
+
+> Pinned-by: sh tests/depth_recovery.sh
+
+The native resolver uses `longjmp` to recover from a bad statement and continue
+collecting diagnostics. When an error unwound nested `resolve_exp` calls, their
+normal depth decrements were skipped; after 2000 ordinary errors every later
+statement was misreported as too deeply nested. Recovery boundaries now reset
+the counter. The generated check sends 2105 independent unresolved-name errors
+through both compilers and verifies there are no fabricated depth errors.
+
+### 156. Enum variant spellings leaked into generated C identifiers — **FIXED 2026-09-27**
+
+> Pinned-by: make -s test
+
+Payload variants were emitted as C union members and `E_<enum>_<variant>`
+payload typedefs. C keywords (`default`, `case`, `while`), standard macros
+(`EOF`, `NULL`), and a user enum named `Shape_Circle` could therefore break
+the C build. Both emitters now use prefixed C-only union fields (`V_<name>`) and
+payload types (`TychoPayload_<enum>_<variant>`), while diagnostics and `str()`
+keep the source spelling. The fixture exercises all three collision classes.
+
+### 157. Deep non-addition binary spines could exhaust the self-hosted typechecker — **FIXED 2026-09-27**
+
+> Pinned-by: sh tests/expression_scale.sh
+
+The flat-integer-add path was bounded and iterative, but other left-associated
+binary operators still recursed through the entire AST; a 2101-term subtraction
+stack-overflowed `tychoc1` instead of returning a diagnostic. The self-hosted
+typechecker now guards recursive expression walks, and the native resolver
+checks non-`+` left spines iteratively before descending. Both reject the deep
+subtraction with a located depth diagnostic, while 1400-term `+` remains
+accepted and 2101-term `+` retains its specific max-2000 diagnostic.
+
+### 158. Double underscores in source type names were mistaken for compiler mangling — **FIXED 2026-09-27**
+
+> Pinned-by: make -s test
+
+The self-hosted variant ownership check split every type name at its first `__`,
+so a main-package enum named `Shape__Kind` was misclassified as belonging to a
+package. Generic instance names also used `Box__int` without checking for a
+source struct of that exact name, producing duplicate C definitions. Ownership
+now uses the recorded package prefix, and colliding generated instance names
+receive a deterministic `_2` suffix (matching the native compiler). The fixture
+covers enum matching and the generic/source-name collision.
+
+### 159. Large constant array literals gave gcc one store per element to optimize — **FIXED 2026-09-27**
+
+> Pinned-by: sh tests/array_literal_scale.sh
+
+A 15,625-element constant table lowered to 15,625 assignments inside a GNU
+statement expression; gcc `-O3` spent most of its time optimizing that giant
+basic block. Both emitters now recognize large (64+) scalar-literal arrays,
+write a block-scope `static const` initializer, allocate the destination in its
+arena, and `memcpy` the constant bytes once. Nonconstant and heap-element arrays
+keep the element-wise path and its ownership copies. The generated test compiles
+and runs the 15,625-element case under `-O3` with both compilers.
+
+### 160. F-string C joins and lambda scope snapshots grew quadratically — **FIXED 2026-09-27**
+
+> Pinned-by: sh tests/emitter_memory_scale.sh
+
+`_fchain` repeatedly concatenated the whole emitted prefix for every piece, and
+`_lambda` copied each enclosing local table before compiling each closure. The
+long f-string now joins an array of C fragments once; lambda bindings are
+appended and removed with the existing mark/restore discipline instead of
+copying the outer tables. A bounded generated check emits 4,000 f-string holes
+and 8,000 lambdas each capturing a local below a 1.2-GiB address-space limit.
+
+### 161. Packed fields passed to `inout` were dereferenced at natural alignment — **FIXED 2026-09-27**
+
+> Pinned-by: make -s test
+> Pinned-by: sh tests/packed_inout_ffi.sh
+
+Passing `&packed.field` as `T *` lets the callee dereference an address that
+need not satisfy `alignof(T)`. Both emitters now compute the field's byte address
+from its packed aggregate plus `offsetof`, copy into an aligned local with
+`memcpy`, call through that local, and copy the result back. The same lowering
+covers array elements, user-defined subscript projections, and extern calls.
+The fixture runs all three place forms under AddressSanitizer/UBSan; `tests/packed_inout_ffi.sh` also covers an extern call under UBSan and `-Werror=address-of-packed-member`.
+
+### 162. The debug gate accepted only one GDB spelling for a missing line — **FIXED 2026-09-27**
+
+> Pinned-by: make -s debug-check
+
+GDB 15.1 reports `No line 999 in file`, while GDB 17 reports `No compiled code
+for line 999`; the gate had required only the latter. `tools/tycho-debug/run.sh`
+now accepts either version-specific message. `make debug-check` passes all seven
+legs on Fedora's GDB 17.2, including the previously load-sensitive Ctrl-C leg.
+The Ubuntu 24.04/GDB 15.1 binary is unavailable on this host, but its reported
+message is explicitly covered by the matcher.
+
+### 163. Native generic mismatch diagnostics exposed package-mangled names — **FIXED 2026-09-27**
+
+> Pinned-by: sh tests/package_diagnostic_name.sh
+
+When a package-qualified generic call failed parameter-pattern matching,
+the native compiler printed its internal symbol (`math__clamp`) while the
+self-hosted compiler printed the source name (`clamp`). The native diagnostic
+now uses `nominal_name()` like its sibling paths. A focused script checks that
+both compilers reject the mismatched call without exposing an internal mangled
+symbol (the native diagnostic retains the package qualifier).
+
+### 164. C-string shims silently discarded bytes after an embedded NUL — **FIXED 2026-09-27**
+
+> Pinned-by: make -s corelib
+
+The remaining crypto-hex and SQLite path/SQL inputs now reject interior NULs
+before crossing a C-string ABI. Conversely, output APIs that are byte streams
+(`io.read_line`, `os.run`, and `os.exec_out`) now cross as length-carrying
+`bytes` and convert to Tycho strings only after the explicit length is known.
+The corelib goldens cover binary-safe line/fold reads and child output containing
+`A\0B`, alongside the crypto and SQLite rejection cases.
+
+### 165. Compression truncated zlib lengths and under-enforced its output ceiling — **FIXED 2026-09-27**
+
+> Pinned-by: make -s corelib
+> Pinned-by: sh tests/compress_limits.sh
+
+The gzip and raw inflate paths now clamp growth to the actual output ceiling,
+probe one byte beyond it so an exact-limit stream can finish its trailer, and
+reject trailing non-member data while supporting concatenated gzip members.
+All four zlib entry points refuse lengths that cannot fit `uInt`; compressor
+output bounds are checked before narrowing `avail_out`. The reduced-ceiling C
+gate proves the inclusive 65,536-byte boundary, the first byte over it, and
+oversized lengths without allocating multi-gigabyte buffers.
+
+### 166. POSIX timezone offsets accumulated unbounded decimal fields — **FIXED 2026-09-27**
+
+> Pinned-by: make -s corelib
+
+`offset_at` now parses offset and transition components with digit-by-digit
+bounds, limits zone offsets to 24 hours and transition times to POSIX's extended
+167-hour range, and validates month/week/day and Julian rule ranges before
+casting. The datetime golden includes oversized hours, minutes, seconds, and a
+20-digit offset that previously returned a nonsensical positive value.
+
+### 167. Handle destructors could return aggregate values that require hidden out-parameters — **FIXED 2026-09-27**
+
+> Pinned-by: make -s test
+
+The FFI declaration check now refuses `bytes`, `[int]`, or `[float]` destructor
+returns in both compilers: scope-exit and explicit close calls pass only the
+handle, whereas those C ABIs require two additional output parameters. New
+reject fixtures pin both the byte and scalar-array cases.
+
+### 168. A checkpoint could truncate the only committed store before its replacement was durable — **FIXED 2026-09-27**
+
+> Pinned-by: make -s db-check
+
+`core:io.rename` now provides same-filesystem atomic replacement. `store.flush`
+writes a sibling temporary file, syncs it, and renames it over the old store;
+`wal.checkpoint` then syncs the new file and parent directory before rewinding
+the WAL. Replacement preserves the existing regular file's mode bits on POSIX
+and its ACL on Windows, rather than inheriting the temp file's permissions. The
+database gate checks 0640 and 0600 survive replacement, then forces a partial
+temp write with a 512-byte file-size limit, checks the old store is byte-identical,
+and reopens it with all rows.
+
+### 169. A mutation remained visible after its WAL append was refused — **FIXED 2026-09-27**
+
+> Pinned-by: make -s db-check
+
+`exec._create` and `exec._insert` now validate without mutation, append the WAL
+record, and only then apply it. The NotWritten leg follows a refused CREATE with
+SELECT and INSERT and verifies neither can observe a table that was never
+logged.
+
+### 170. Separate tycho-db processes could overwrite one another's commits — **FIXED 2026-09-27**
+
+> Pinned-by: make -s db-check
+
+`core:io.lock_exclusive` uses a nonblocking process lock (`flock` on POSIX,
+`LockFileEx` on Windows); `wal.open_db` acquires `<store>.lock` before reading
+store or log state. The OS releases it on process exit, including a crash. The
+database gate attempts a local CLI write while the server owns the same store
+and requires a `database is locked` refusal before any output.
+
+### 171. Store decoding trusted row shape and integer encodings — **FIXED 2026-09-27**
+
+> Pinned-by: make -s db-check
+
+The decoder now checks row arity and value/column types before rebuilding an
+index, refuses trailing bytes, unknown column-tag bits, truncated values,
+positive magnitudes outside int64, and noncanonical negative zero. Signed
+magnitude encoding handles INT_MIN without negating it. Six corrupted-store
+fixtures must fail as `Corrupt` with empty stdout rather than panic or accept
+malformed data.
+
+### 172. A corrupt store plus an empty WAL could be rebuilt and overwritten — **FIXED 2026-09-27**
+
+> Pinned-by: make -s db-check
+
+`wal.open_db` no longer treats a zero-length log as evidence that a corrupt
+store can be reconstructed from the beginning. The gate checks that opening
+such a pair fails without answering or changing the damaged store.
+
+### 173. A silent tycho-db client could monopolize the serial server — **FIXED 2026-09-27**
+
+> Pinned-by: make -s db-check
+
+Server reads now have a one-second absolute line deadline (including slow-drip
+input), and a session is capped at 60 seconds. `net.Timeout` is reported as an
+idle timeout and the connection is closed before the next is accepted. The gate
+keeps an idle TCP connection open while a second real client must complete.
+
+### 174. An indexed cross-type comparison returned no rows instead of an error — **FIXED 2026-09-27**
+
+> Pinned-by: make -s db-check
+
+Before opening an `IndexEq` path, `exec` checks the literal type against the
+indexed column. SELECT and EXPLAIN both reject `INT KEY = text` with the same
+`Uncomparable` diagnostic as the scan path; direct regression legs prevent an
+empty index result from hiding the type error.
+
+### 175. Sorted-array KEY index maintenance copied every shifted entry — **FIXED 2026-09-27**
+
+> Pinned-by: make -s db-check
+
+The sorted vector was replaced with a hash index from a type-tagged string key
+to insertion-ordered row positions. Inserts and index rebuilds are amortized
+linear overall instead of repeatedly shifting/deep-copying prior entries. A
+20,000-row reverse-order insert plus flush/reopen/probe runs under a 192-MiB
+address-space limit in `tests/fixtures/tycho_db_index_scale.src`.
+
+### 176. `recv(ch)` returned a payload allocated in the callee's freed scope — **FIXED 2026-09-27**
+
+> Pinned-by: make -s test
+> Pinned-by: sh tests/recv_loop_scale.sh
+
+The self-hosted emitter's receive lowering now passes `cs.arena` both to the
+channel-copy helper and to the `Some` allocation. A receive used as a direct
+return, after a local bind, and through `or_else` is stressed with arena churn
+in `tests/recv_escape.ty`; both compilers preserve the 16-KiB payload.
+
+### 177. `bytes` and scoped string accumulators bypassed self-hosted in-place append — **FIXED 2026-09-27**
+
+> Pinned-by: make -s test
+> Pinned-by: sh tests/accumulator_scope.sh
+
+Accumulator discovery/emission now covers `bytes` plus match/select and related
+nested scopes. The 50,000-iteration fixture runs under both compilers and checks
+the exact output; the dedicated gate applies a 1.2-GiB process limit so a return
+to repeated whole-value concatenation is caught as a scale regression.
+
+### 178. Several untrusted sizes reached allocation or narrowing operations unchecked — **FIXED 2026-09-27**
+
+> Pinned-by: make -s test
+> Pinned-by: sh tests/audit_runtime_guards.sh
+> Pinned-by: sh tests/http_header_guard.sh
+
+Composite-array `reserve` and channel-cell sizing now check multiplication before
+allocation. Regex group indices are bounded before capture-vector allocation,
+and subjects are capped at 4,096 bytes to bound the pathological unanchored
+match. The HTTP client refuses control characters in `Content-Type`; the net
+shim refuses descriptors that do not fit its OS `int` descriptor type. Focused
+runtime and header gates exercise these guards under both compilers.
+
+### 179. TLS timeout wrappers existed only as package-private helpers — **FIXED 2026-09-27**
+
+> Pinned-by: make -s corelib
+
+`tls.connect_timeout` and `tls.set_timeout_ms` are public API and recorded in
+`surface.lock`. Both reject millisecond values outside signed 32-bit range; the
+Windows connect path now uses nonblocking connect plus a bounded wait. Targeted
+TLS tests pass on this POSIX host; the Windows path remains unvalidated on a
+Windows host because neither one nor Wine is available here.
+
+### 180. HTTP parsing conflated absent fields, malformed framing and malformed request grammar — **FIXED 2026-09-27**
+
+> Pinned-by: make -s server-check
+
+`httpd.has_header` distinguishes an absent field from a present-but-empty one;
+framing rejects any Transfer-Encoding and empty Content-Length. The parser now
+rejects invalid field names/values, obsolete folding, extra request-line tokens
+and unsupported versions. Range positions ignore leading zeroes when enforcing
+the digit limit. Empty/duplicate headers and malformed request lines are pinned
+by the server gate. (The separate 413-vs-431 status distinction remains open.)
+
+### 181. The FFI integer table and SQLite example contradicted the compiler — **FIXED 2026-09-27**
+
+> Pinned-by: make -s docs-fences
+> Pinned-by: make -s corelib-doc-check
+
+The FFI reference now distinguishes C `int` (`i32`) from Tycho `int` (signed
+64-bit), and describes `to_i32` as a narrowing conversion. The SQLite example
+now uses the actual sized FFI types and builds with both compilers; stale NUL,
+append, path and corelib boundary descriptions were corrected as well.
+
+### 182. TOML table placement discarded implicit parents and array-of-table children — **FIXED 2026-09-27**
+
+> Pinned-by: make -s corelib
+
+The TOML placer now merges a later explicit parent table with the implicit table
+created by an earlier child header, and nested headers descend into the latest
+array-of-tables element. The corelib fixture asserts that parent and child keys
+both survive and that subtables attach to the right array element.
+
+### 183. TOML parsing had unbounded recursion and quadratic table reconstruction — **FIXED 2026-09-27**
+
+> Pinned-by: make -s corelib
+
+The parser now refuses documents over 64 KiB, more than 512 assignments/headers,
+or nesting beyond 128 levels (including dotted key/header paths). These bounds
+cap the worst-case cost of the current insertion-ordered table representation;
+fixtures cover deep values, deep headers, excessive entry counts and oversized
+input. Valid smaller TOML remains parsed as before.
+
+### 184. ZIP creation truncated names and counts into classic-format fields — **FIXED 2026-09-27**
+
+> Pinned-by: make -s corelib
+> Pinned-by: make -s snap-check
+
+`zip.create_checked` rejects entry counts, name lengths, data sizes and offsets
+that do not fit the classic ZIP fields; the old `create` entry point is now a
+fail-fast wrapper instead of silently forging an archive. The corelib fixture
+checks both the 65,536-byte name and 65,536-entry boundaries, and tycho-snap
+uses the checked API.
+
+### 185. TOML dotted keys split inside quotes and malformed strings became valid values — **FIXED 2026-09-27**
+
+> Pinned-by: make -s corelib
+
+A quote-aware dotted-key scanner is shared by assignments and table headers;
+basic quoted keys decode escapes, duplicate headers compare canonical keys, and
+bare keys are syntax-checked. Literal strings with trailing text and `\\u`
+surrogates now return `Err`. Corelib fixtures cover quoted dots/escapes, quoted
+headers, canonical duplicates, trailing literal text and surrogate escapes.
+
+### 186. JSON object parsing rescanned all prior keys for every member — **FIXED 2026-09-27**
+
+> Pinned-by: make -s corelib
+
+`_parse_object` now keeps a per-object hash map from key to its original slot.
+Duplicate members still replace the value at the first key's position, while
+unique-member lookup no longer scans the growing key vector. The corelib test
+parses and probes a 20,000-member object.
+
+### 187. Markdown rescanned the same found `]` for every unmatched `[` — **FIXED 2026-09-27**
+
+> Pinned-by: make -s corelib
+
+Inline rendering now caches the found `]` and `)` positions and reuses them while
+subsequent link/image openers precede those terminators. A closing delimiter
+that fails to form a link no longer forces every following `[` to rescan to the
+same byte. Corelib output checks 20,000 `[` plus `]` and 20,000 `![` plus `]`
+shapes remain byte-for-byte literal.
+
+### 188. ZIP extraction rescanned the central directory and unbounded file suffix — **FIXED 2026-09-27**
+
+> Pinned-by: make -s corelib
+> Pinned-by: make -s snap-check
+
+Each `zip.Meta` now carries its local-header offset, and `extract_entry(bytes,
+meta)` consumes it directly. Iterating one `list()` result avoids a full directory
+walk per entry. EOCD search is restricted to the ZIP-legal 65,557-byte suffix
+and requires the comment to end at EOF; the malformed trailing-junk test is
+rejected.
+
+### 189. Option reference claimed a bare `None` comparison was valid — **FIXED 2026-09-27**
+
+> Pinned-by: make -s parse-check
+> Pinned-by: make -s docs-fences
+
+The reference now agrees with the normative rule: a bare `None` has no expected
+type in `==`/`!=`; use a typed value or `is None`. The self-hosted typechecker
+rejects ungrounded `Option`/`Result` operands with a located error instead of
+accepting them for a later location-less emitter failure. Three reject fixtures
+cover `Some(1) == None`, `opt == None` and bare `Ok`/`Err` comparison.
+
+### 190. Self-hosted builtin-collision advice mislabeled subpackages as `main` — **FIXED 2026-09-27**
+
+> Pinned-by: make -s test
+
+Builtin-shadow warnings now use the declaring package prefix captured during
+global symbol registration, not the resolver's later current-file state. A
+subpackage `len` fixture checks that the package-qualified remedy is suggested.
+
+### 191. Self-hosted emitter could not construct generic enum variants through a package qualifier — **FIXED 2026-09-27**
+
+> Pinned-by: make -s test
+
+Qualified calls now search generic enum templates only in the declaring package,
+then infer type parameters from payloads or apply explicit type arguments before
+emitting the specialized variant. `tests/pkg/generic_enum_variant_cross` checks
+both `box.Has(41)` and `box.Nothing$(int)` under both compilers.
+
+### 192. Self-hosted loops retained overwritten strings and variadic packs in `_scope` — **FIXED 2026-09-27**
+
+> Pinned-by: make -s test
+> Pinned-by: sh tests/loop_temp_recycle.sh
+
+`[string]` element stores now evaluate into the iteration scratch and call the
+runtime's copy-and-recycle setter. Variadic packs and their transient arguments
+also use the current loop scratch (`_curown`) instead of the function arena. A
+two-million-iteration overwrite plus variadic-call test runs under a 96-MiB
+virtual-memory limit for both compilers.
+
+### 193. Replacing a heap value in a long-lived map abandoned its owned graph — **FIXED 2026-09-27**
+
+> Pinned-by: make -s test
+> Pinned-by: sh tests/map_overwrite_scale.sh
+
+Both emitters now copy map replacements into the owner before recursively
+recycling the evicted value. Generated typed recyclers cover nested arrays,
+composite maps, structs, enums, tuples, options/results, struct-of-arrays and
+captured closure environments; composite-key and value allocations are reclaimed
+on delete as well. String leaves use the runtime's owner-checked recycler. The
+96-MiB regression exercises 200,000 string and nested-array replacements plus
+100,000 struct, enum and captured-closure replacements, then deletes an enum
+value, under both compilers.
+
+### 194. HTTP request-budget overflow mapped a declared oversized body to 431 — **FIXED 2026-09-27**
+
+> Pinned-by: make -s corelib
+> Pinned-by: make -s server-check
+
+`ReqErr.BodyTooLarge` is now distinct from an unterminated oversized header
+(`TooLarge`). The server and tycho-kvsrv map framed body overflow to 413, while
+header overflow remains 431; `reason_phrase(413)` and the error-page explanation
+are present. Corelib's reduced-cap socket test and the server's wire test pin the
+split.
+
+### 195. `resolve_under` treated a dangling symlink as an ordinary missing leaf — **FIXED 2026-09-27**
+
+> Pinned-by: make -s server-check
+
+When `realpath` fails, `resolve_under` now checks whether the current path is
+itself a symlink (`lstat` on POSIX, reparse metadata on Windows) before walking
+to its parent. A dangling link is refused; an ordinary absent file under a
+resolved in-root ancestor still returns its lexical path for a 404. The server
+gate covers both outcomes.
+
+### 196. Package suggestions exposed names that the next compile rejects as private — **FIXED 2026-09-27**
+
+> Pinned-by: make -s test
+
+Both package-symbol suggestion paths now omit `_`-prefixed functions and externs
+from edit-distance and prefix-related candidates. A package reject fixture with
+only `lib._helper` verifies that `lib.helper(...)` gets no unusable suggestion.
+
+### 197. Self-hosted CLI accepted empty output names, swallowed linker paths and indexed invalid programs — **FIXED 2026-09-27**
+
+> Pinned-by: make -s test
+> Pinned-by: sh tests/cli_flags.sh
+
+`--symbols` now runs name resolution and exits nonzero on resolver errors. `-o ""`
+is rejected explicitly, and separated `-L`/`-I` require a non-option directory
+argument instead of consuming the next flag. The CLI regression checks these
+refusals under both compilers.
+
+### 198. Native procedure-signature lookup scaled quadratically — **FIXED 2026-09-29**
+
+> Pinned-by: sh tests/proc_signature_scale.sh
+> Pinned-by: sh tests/name_registry_scale.sh
+
+`sig_find` and `sig_find_quiet` use an append-aware open-addressed index that
+preserves first-match behavior. The companion D31 fix in #201 indexes constant,
+variant and generic registries and caches source line starts for warning
+snippets. The 40,000-procedure chain and focused remaining-registry stress test
+both pass.
+
+### 199. Same-arena copies from replaceable string slots aliased recycled buffers — **FIXED 2026-09-27**
+
+> Pinned-by: make -s test
+> Pinned-by: sh tests/run.sh --one tests/elem_recycle.ty
+
+The self-hosted emitter treated a string read from an array/field slot as safe to
+share merely because source and destination used the same arena. Replacing the
+slot can recycle that buffer, corrupting the copied value. `_shares` now forces a
+copy for fields, tuple fields and indexed places; `elem_recycle` covers overwrite,
+self-assignment and a surviving snapshot.
+
+### 200. Nested generic calls and constructor payloads repeated subtree work — **FIXED 2026-09-29**
+
+> Pinned-by: sh tests/emitter_nested_calls.sh
+
+The self-hosted typechecker now reuses a UFCS receiver type during generic
+inference, and the emitter's argument-type path infers call types without
+re-emitting their arguments. The native resolver likewise reuses concrete
+payload types after generic struct/enum inference, while still resolving partial
+`None`/`Ok`/`Err` values against their expected type. The regression compiles
+64-deep generic method chains and 32-deep nested generic struct/enum constructors
+under both compilers, with a 1.2-GiB memory cap and a 20-second compile limit.
+
+### 201. Native constant, variant, generic and warning-location scans scaled with all prior input — **FIXED 2026-09-29**
+
+> Pinned-by: sh tests/name_registry_scale.sh
+> Pinned-by: sh tests/proc_signature_scale.sh
+
+The native compiler now uses first-match-preserving open-addressed indexes for
+constants, variants and generic procedures, alongside the procedure-signature
+index from #198. Warning source snippets use a lazily built line-start table
+instead of rescanning from byte zero for each warning. Stress coverage registers
+12,000 constants and generics, 1,500 variants, and emits 6,000 warnings; both
+this lane and the 40,000-procedure chain pass.
+
+### 202. Native codegen refused deeply nested loops that the self-hosted compiler accepted — **FIXED 2026-09-30**
+
+> Pinned-by: sh tests/nested_blocks_scale.sh
+
+The D03 verifier found that native codegen's loop and arena-unwind stacks were
+hard-capped at 64, while tychoc1 accepted deeper nesting. Those stacks now hold
+256 entries, matching the parser's nesting ceiling. A 125-level nested-loop
+program compiles and runs under both compilers with a 1.2-GiB cap. Extremely deep
+nesting remains intentionally bounded; the 250-level self-hosted compile's
+measured memory cost is not claimed to be constant.

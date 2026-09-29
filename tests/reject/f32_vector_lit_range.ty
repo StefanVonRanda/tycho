@@ -1,0 +1,5 @@
+# expect: f32 literal out of range
+# Vector literal elements cannot silently overflow the f32 destination type.
+fn main():
+    a: vector[4]f32 = [1e39, 0.0, 0.0, 0.0]
+    println(str(a.x))

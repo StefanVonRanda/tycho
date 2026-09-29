@@ -191,8 +191,31 @@ wine-tools:
 wine-ffi:
 	@sh scripts/wine_ffi.sh
 
-test: tychoc1
+test: tychoc tychoc1
+	@sh tests/compress_limits.sh
+	@sh tests/accumulator_scope.sh
+	@sh tests/loop_temp_recycle.sh
+	@sh tests/recv_loop_scale.sh
+	@sh tests/map_overwrite_scale.sh
+	@sh tests/audit_runtime_guards.sh
+	@sh tests/http_header_guard.sh
 	@sh tests/run.sh
+	@sh tests/elif_chain.sh
+	@sh tests/nested_blocks_scale.sh
+	@sh tests/stream_source.sh
+	@sh tests/debug_path.sh
+	@sh tests/struct_defs_scale.sh
+	@sh tests/expression_scale.sh
+	@sh tests/depth_recovery.sh
+	@sh tests/array_literal_scale.sh
+	@sh tests/emitter_nested_calls.sh
+	@sh tests/emitter_memory_scale.sh
+	@sh tests/packed_inout_ffi.sh
+	@sh tests/package_diagnostic_name.sh
+	@sh tests/cli_flags.sh
+	@sh tests/proc_signature_scale.sh
+	@sh tests/name_registry_scale.sh
+	@sh tests/place_store_order.sh
 
 build/prunner: tools/prunner/main.ty tychoc | build
 	@./tychoc tools/prunner/main.ty -o build/prunner

@@ -1,0 +1,7 @@
+# expect: does not fit u8
+# A variadic `...u8` packs each trailing literal into the element type.
+fn bytes_of(xs: ...u8) -> int:
+    return len(xs)
+
+fn main():
+    println(str(bytes_of(1, 300)))

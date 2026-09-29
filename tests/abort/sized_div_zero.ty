@@ -1,0 +1,6 @@
+fn zero() -> u32:
+    return 0
+
+fn main():
+    a: u32 = 7
+    println(str(a / zero()))

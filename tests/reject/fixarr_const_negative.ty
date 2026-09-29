@@ -1,0 +1,6 @@
+# Negative fixed-array const lengths must be refused like literal negative lengths.
+# expect: a fixed-size array length must be positive
+const N = -1
+fn main():
+    a: [N]int = [1]
+    println(str(a[0]))

@@ -229,12 +229,15 @@ fn _cs(s: Stmt, acc: [string]) -> [string]:
             out = _ces(k, out)
         BreakS(l): push(out, "s.BreakS")
         ContinueS(l): push(out, "s.ContinueS")
-        IfS(l, c, b, e):
+        IfS(l, arms, e):
             push(out, "s.IfS")
-            if len(e) > 0:
-                push(out, "s.Else")
-            out = _ces(c, out)
-            out = _cb(b, out)
+            for i := 0; i < len(arms); i += 1:
+                if i > 0:
+                    push(out, "s.IfS")
+                if i + 1 < len(arms) or len(e) > 0:
+                    push(out, "s.Else")
+                out = _ces(arms[i].cond, out)
+                out = _cb(arms[i].body, out)
             out = _cb(e, out)
         WhileS(l, c, b):
             push(out, "s.WhileS")

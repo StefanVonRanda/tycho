@@ -107,6 +107,24 @@ fn main():
     # refusal above could be a blanket ban on any second header.
     show_one("[[a]]\nx = 1\n[[a]]\nx = 2")
     show_one("[a]\nx = 1\n[a.b]\ny = 2")
+    parent_after_child := toml.parse("[a.b]\nx = 1\n[a]\ny = 2")
+    parent_values := false
+    match parent_after_child:
+        Ok(m): parent_values = unwrap_int(toml.get(m, "a.b.x")) == 1 and unwrap_int(toml.get(m, "a.y")) == 2
+        Err(_): parent_values = false
+    println("parent-after-child=" + str(parent_values))
+    nested_aot := toml.parse("[[fruit]]\nname = 'apple'\n[fruit.physical]\ncolor = 'red'\n[[fruit.varieties]]\nname = 'red'\n[[fruit]]\nname = 'banana'\n[[fruit.varieties]]\nname = 'yellow'")
+    nested_aot_ok := false
+    match nested_aot:
+        Ok(m):
+            match toml.get(m, "fruit"):
+                Some(toml.TArr(fs)):
+                    first_varieties := toml.get(fs[0], "varieties")
+                    second_varieties := toml.get(fs[1], "varieties")
+                    nested_aot_ok = len(fs) == 2 and unwrap_str(toml.get(fs[0], "physical.color")) == "red" and unwrap_len(first_varieties) == 1 and unwrap_len(second_varieties) == 1
+                _: nested_aot_ok = false
+        Err(_): nested_aot_ok = false
+    println("nested-array-tables=" + str(nested_aot_ok))
     # A DATETIME's time half was accepted whole: `T99:99:99` parsed. Each of
     # these must be refused, and the six below must still be accepted -- a
     # refuse-everything check scores full marks on the refusals alone.
@@ -122,3 +140,77 @@ fn main():
     show_one("a = 2023-01-01T12:00:00Z")
     show_one("a = 2023-01-01 12:00:00z")
     show_one("a = 2023-01-01T23:59:60.123456-05:30")
+
+    deep_value := ""
+    deep_path := ""
+    for i := 0; i < 129; i += 1:
+        deep_value += "["
+        if i > 0:
+            deep_path += "."
+        deep_path += "a"
+    deep_value += "0"
+    for i := 0; i < 129; i += 1:
+        deep_value += "]"
+    deep_value_rejected := false
+    match toml.parse("value = " + deep_value):
+        Err(_): deep_value_rejected = true
+        Ok(_): deep_value_rejected = false
+    header_depth_rejected := false
+    match toml.parse("[" + deep_path + "]\nx = 1"):
+        Err(_): header_depth_rejected = true
+        Ok(_): header_depth_rejected = false
+    many_entries := ""
+    for i := 0; i < 513; i += 1:
+        many_entries += "k" + str(i) + " = 0\n"
+    entry_cap_rejected := false
+    match toml.parse(many_entries):
+        Err(_): entry_cap_rejected = true
+        Ok(_): entry_cap_rejected = false
+    oversized := ""
+    for i := 0; i < 65537; i += 1:
+        oversized += " "
+    input_cap_rejected := false
+    match toml.parse(oversized):
+        Err(_): input_cap_rejected = true
+        Ok(_): input_cap_rejected = false
+    println("nesting-caps=" + str(deep_value_rejected) + "," + str(header_depth_rejected))
+    println("size-caps=" + str(entry_cap_rejected) + "," + str(input_cap_rejected))
+
+    quoted_key_ok := false
+    match toml.parse("\"google.com\" = 1"):
+        Ok(v):
+            ks := toml.keys(v)
+            quoted_key_ok = len(ks) == 1 and ks[0] == "google.com"
+            match toml.get(v, "\"google.com\""):
+                Some(toml.TInt(n)): quoted_key_ok = quoted_key_ok and n == 1
+                _: quoted_key_ok = false
+        Err(_): quoted_key_ok = false
+    quoted_header_ok := false
+    match toml.parse("[\"x.y\"]\nz = 1"):
+        Ok(v):
+            ks := toml.keys(v)
+            quoted_header_ok = len(ks) == 1 and ks[0] == "x.y"
+            match toml.get(v, "\"x.y\".z"):
+                Some(toml.TInt(n)): quoted_header_ok = quoted_header_ok and n == 1
+                _: quoted_header_ok = false
+        Err(_): quoted_header_ok = false
+    quoted_escape_ok := false
+    match toml.parse("\"a\\\"b\" = 1"):
+        Ok(v):
+            ks := toml.keys(v)
+            quoted_escape_ok = len(ks) == 1 and ks[0] == "a\"b"
+        Err(_): quoted_escape_ok = false
+    quoted_bad := false
+    match toml.parse("[a]\nx = 1\n[\"a\"]\ny = 2"):
+        Err(_): quoted_bad = true
+        Ok(_): quoted_bad = false
+    literal_bad := false
+    match toml.parse("x = 'a' 'b'"):
+        Err(_): literal_bad = true
+        Ok(_): literal_bad = false
+    surrogate_bad := false
+    match toml.parse("x = \"\\uD800\""):
+        Err(_): surrogate_bad = true
+        Ok(_): surrogate_bad = false
+    println("quoted-keys=" + str(quoted_key_ok) + "," + str(quoted_header_ok) + "," + str(quoted_escape_ok) + "," + str(quoted_bad))
+    println("malformed-strings=" + str(literal_bad) + "," + str(surrogate_bad))

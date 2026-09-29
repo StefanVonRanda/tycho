@@ -1,0 +1,5 @@
+# An empty literal cannot inhabit a fixed-size array.
+# expect: a fixed-size array of length 2 needs 2 elements, got 0
+fn main():
+    names: [2]string = []
+    println(names[0])

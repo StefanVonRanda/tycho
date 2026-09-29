@@ -137,8 +137,7 @@ fn _is_lit(e: sql.Expr) -> bool:
         _: return false
 
 # `col = <literal>` or `<literal> = col`, with col indexed. Equality only:
-# the index is sorted, so a range would be servable too, but nothing above
-# asks for one yet and an untested range path is not a feature.
+# the index is hash-backed, so it provides no ordered range access.
 fn _eq_key(e: sql.Expr, indexed: [string]) -> Option(EqKey):
     match e:
         sql.Cmp(op, l, r):

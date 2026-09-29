@@ -13,6 +13,13 @@ fn _has_nul(s: string) -> bool:
             return true
     return false
 
+fn _bad_header_value(s: string) -> bool:
+    for i := 0; i < len(s); i += 1:
+        c := s[i]
+        if (c < 32 and c != 9) or c == 127:
+            return true
+    return false
+
 # Perform a GET. Returns a response handle, or null on a transport failure --
 # which is also the answer for a URL carrying an interior NUL: a truncated URL is
 # not a shorter one, it is a different one.
@@ -27,13 +34,13 @@ fn get(url: string) -> ptr:
 # Content-Type is still refused -- a truncated URL is not a shorter one, it is a
 # different one, and a header cannot carry a NUL at all.
 fn post(url: string, body: string, content_type: string) -> ptr:
-    if _has_nul(url) or _has_nul(content_type):
+    if _has_nul(url) or _has_nul(content_type) or _bad_header_value(content_type):
         return null
     return http_post_bytes(url, to_bytes(body), content_type)
 
 # The binary-safe sibling of post(): a `bytes` body, for a PNG or a protobuf.
 fn post_bytes(url: string, body: bytes, content_type: string) -> ptr:
-    if _has_nul(url) or _has_nul(content_type):
+    if _has_nul(url) or _has_nul(content_type) or _bad_header_value(content_type):
         return null
     return http_post_bytes(url, body, content_type)
 

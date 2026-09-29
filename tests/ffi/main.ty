@@ -9,7 +9,7 @@ extern "ffidemo" fn ffi_brev(b: bytes) -> bytes          # bytes return via the 
 extern "ffidemo" fn ffi_get(key: int) -> Option(string)  # FFI R3a: nullable string return (C NULL -> None)
 extern "ffidemo" fn ffi_mk(id: int, out: inout ptr) -> int # FFI R4: out-param constructor (compiler passes &db)
 extern "ffidemo" fn ffi_dbl(a: int, out: inout int)        # FFI R4: scalar out-param
-extern "ffidemo" fn ffi_neg() -> int                     # returns a negative 32-bit C int (to_i32 recovers the sign)
+extern "ffidemo" fn ffi_neg() -> i32                    # exact C int return type
 extern "ffidemo" fn ffi_ptrval(p: ptr) -> int            # echoes a ptr's integer value (to_ptr round-trip)
 extern "ffidemo" fn ffi_isum(xs: [int]) -> int           # [int] param -> (const long*, long)
 extern "ffidemo" fn ffi_favg(xs: [float]) -> float       # [float] param -> (const double*, long)
@@ -126,5 +126,5 @@ fn main():
     n := 0
     ffi_dbl(21, &n)                             # n <- 42
     println(f"r4 rc={mrc} read={ffi_read(db)} dbl={n}")   # rc=0 read=9 dbl=42
-    # to_i32: sign-extend a 32-bit C int return; to_ptr: an integer-valued sentinel pointer
-    println(f"neg={to_i32(ffi_neg())} rawneg_ok={to_i32(ffi_neg()) < 0} sentinel={ffi_ptrval(to_ptr(-1))}")
+    # Sized `i32` matches the C int return; to_ptr makes an integer-valued sentinel pointer.
+    println(f"neg={ffi_neg()} rawneg_ok={ffi_neg() < 0} sentinel={ffi_ptrval(to_ptr(-1))}")

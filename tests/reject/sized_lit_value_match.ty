@@ -1,0 +1,11 @@
+# expect: does not fit u8
+# Each value-match tail is checked against the enclosing function's result type.
+fn get(x: int) -> u8:
+    return match x:
+        0:
+            300
+        _:
+            1
+
+fn main():
+    println(str(get(0)))

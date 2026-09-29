@@ -6,8 +6,8 @@ a private arena per activation ([§10](07-memory-model.md)) — is already a sou
 thread boundary, so the concurrency constructs need no `Sendable` marker, no
 lifetime annotations, and no lock machinery in the language.
 
-> Provenance: `docs/reference/concurrency.md`; runtime `runtime/tycho_rt.c:675-1114`
-> (channel ring `:967-1102`, ordering via the cell `seq` release/acquire `:1166@c->seq, c->pos + 1, memory_order_release`,`:1178@memory_order_acquire) - (pos + 1)`).
+> Provenance: `docs/reference/concurrency.md`; runtime `runtime/tycho_rt.c:693-1141`
+> (channel ring `:985-1129`, ordering via the cell `seq` release/acquire `:1184@c->seq, c->pos + 1, memory_order_release`,`:1196@memory_order_acquire) - (pos + 1)`).
 > The ordering guarantees below (channel delivery order, `select` arm order,
 > happens-before, cross-thread `wait`) were pinned from that runtime.
 
@@ -156,16 +156,16 @@ The fail-closed rules of §22 are unchanged inside such a body: `break`,
 `return` and `or_return` at the parallel-loop level are still compile errors, so
 an early exit can never cross a chunk boundary.
 
-> Provenance: `0..<N` parsed at `src/tychoc.c:4221-4246`; parallel-only refusal
-> `src/tychoc.c:4300@par_here`; literal-zero refusal `src/tychoc.c:4303@ival != 0`;
-> any other loop shape under `parallel` refused at `src/tychoc.c:4196@S_FORRANGE`
+> Provenance: `0..<N` parsed at `src/tychoc.c:4509-4534`; parallel-only refusal
+> `src/tychoc.c:4599@par_here`; literal-zero refusal `src/tychoc.c:4571@ival != 0`;
+> any other loop shape under `parallel` refused at `src/tychoc.c:4464@S_FORRANGE`
 > (it is the only node the chunker accepts). Chunk fan-out `K = min(ncpu(), N)`
-> `src/tychoc.c:11507-11508`, capped at 64 by `src/tychoc.c:12336@_pk > 64`
-> (the chunk-handle array `src/tychoc.c:12337@_pts[64]` is the reason for the
+> `src/tychoc.c:12101-12102`, capped at 64 by `src/tychoc.c:12892@_pk > 64`
+> (the chunk-handle array `src/tychoc.c:12893@_pts[64]` is the reason for the
 > number); each chunk is a real OS thread,
-> `runtime/tycho_rt.c:1001@pthread_create`. A capture is deep-copied only when
-> `src/tychoc.c:12347@type_is_heap(ct)` holds, and `type_is_heap`
-> (`src/tychoc.c:1509-1531`) has no channel arm, so a `Channel(T)` capture is
+> `runtime/tycho_rt.c:1010@pthread_create`. A capture is deep-copied only when
+> `src/tychoc.c:12903@type_is_heap(ct)` holds, and `type_is_heap`
+> (`src/tychoc.c:1592-1614`) has no channel arm, so a `Channel(T)` capture is
 > passed by value — one queue shared by every chunk.
 
 ## 23. Channels and `select`

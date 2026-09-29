@@ -48,7 +48,7 @@ const MAX_CONNS = 512
 # by 7754ms and 64 by 15732ms, because the read blocked for the whole head
 # budget and threw the partial buffer away.
 const HEAD_SLICE_MS = 5
-const MAX_HEAD    = 16384      # per-request byte budget; past this -> 431, connection closed
+const MAX_HEAD    = 16384      # total per-request byte budget; head overflow -> 431, framed body overflow -> 413
 const MAX_REQS    = 1024       # requests served on one connection before we close it
 const LOG_FIELD   = 160        # longest request target we will echo into a log line
 const MAX_ACCEPT_FAILS = 100
@@ -192,9 +192,13 @@ const HUGE_POS = 1000000000000000        # 1e15, > any real file, < 2^63
 fn parse_pos(s: string) -> int:
     if not is_digits(s):
         return -1
-    if len(s) > 15:
+    i := 0
+    for i < len(s) - 1 and s[i] == 48:              # measure significant digits, not padding
+        i = i + 1
+    digits := s[i:len(s)]
+    if len(digits) > 15:
         return HUGE_POS
-    return strings.parse_int(s)
+    return strings.parse_int(digits)
 
 fn parse_range(v: string, flen: int) -> Rng:
     if flen < 0:
@@ -297,6 +301,8 @@ fn explain(status: int) -> string:
         return "This server is read-only. Use GET or HEAD."
     if status == 408:
         return "The request was not completed before the idle timeout expired."
+    if status == 413:
+        return "The request body exceeded this server's size limit."
     if status == 416:
         return "The requested byte range lies outside this file."
     if status == 431:
@@ -445,7 +451,7 @@ fn log_req(cfg: Config, wid: int, peer: string, method: string, target: string, 
     eprint(ln)
 
 # Answer a request that could not be read, and log it. The three refusable read
-# failures (400 Malformed, 408 Timeout, 431 TooLarge) differ only in status and
+# failures (400 Malformed, 408 Timeout, 413 BodyTooLarge, 431 TooLarge) differ only in status and
 # body, so the wire-and-log tail lives here once instead of in each arm of
 # serve_conn's cause match. `-` is the method: there is no parsed request to name
 # one, and first_line(raw) is all the log can honestly report.
@@ -526,6 +532,9 @@ fn serve_once(cfg: Config, conn: int, wid: int, peer: string, head_ms: int, have
         Err(httpd.TooLarge):
             refuse(cfg, wid, peer, conn, raw, 431, error_response(431), sw)
             return (false, 1, "")
+        Err(httpd.BodyTooLarge):
+            refuse(cfg, wid, peer, conn, raw, 413, error_response(413), sw)
+            return (false, 1, "")
         #   Malformed a complete head that is not HTTP -> 400.
         Err(httpd.Malformed):
             refuse(cfg, wid, peer, conn, raw, 400, error_response(400), sw)
@@ -533,9 +542,10 @@ fn serve_once(cfg: Config, conn: int, wid: int, peer: string, head_ms: int, have
         Ok(req):
             keep := not httpd.connection_close(req)
             clh := httpd.header(req, "content-length")
-            if clh != "" or httpd.header(req, "transfer-encoding") != "":
+            has_cl := httpd.has_header(req, "content-length")
+            has_te := httpd.has_header(req, "transfer-encoding")
+            if has_cl or has_te:
                 keep = false
-            teh := httpd.header(req, "transfer-encoding")
             # A SECOND LINE, deliberately kept though it is currently
             # unreachable: since the framing rewrite, corelib refuses all
             # three of these (`corelib/httpd/httpd.ty@framing`) and the read
@@ -544,9 +554,8 @@ fn serve_once(cfg: Config, conn: int, wid: int, peer: string, head_ms: int, have
             # cost is three string tests on a path that already parsed a
             # head; if the corelib check is ever loosened this answers 400
             # rather than serving an ambiguously-framed request.
-            bad_len := (clh != "" and not is_digits(clh)) or
-                    httpd.content_length_conflict(req) or
-                    (clh != "" and teh != "")
+            bad_len := has_te or (has_cl and (clh == "" or not is_digits(clh))) or
+                    httpd.content_length_conflict(req)
             head_only := req.method == "HEAD"
             target := log_safe(req.path)
             if bad_len:

@@ -1,0 +1,6 @@
+# A const-sized array remains fixed and cannot grow.
+# expect: cannot push to a [3]int -- its length is fixed; use a bounded[3]int or a [int]
+const N = 3
+fn main():
+    a: [N]int = [1, 2, 3]
+    push(a, 4)

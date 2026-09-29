@@ -233,19 +233,19 @@ Random version-4 UUIDs (RFC 4122) (pure Tycho): `v4(&st)` (draws 16 bytes from
 
 Non-cryptographic 32-bit hashes — for hash tables / checksums / dedup, **not
 security** (pure Tycho): `fnv1a_32`, `djb2`, `sdbm`, `crc32` (IEEE/zlib), plus
-`to_hex`. All return a non-negative int in `[0, 2^32)`. `docs/reference/corelib.md:288-299`.
+`to_hex`. All return a non-negative int in `[0, 2^32)`. `docs/reference/corelib.md:286-297`.
 
 ### 32.19 `md5`
 
 MD5 message-digest (RFC 1321) (pure 32-bit-arithmetic Tycho): `hex(s)` (32-char)
 and `digest(s)` (16 raw bytes). **Broken for security** — checksums/interop only.
-Bit-exact against RFC 1321 vectors. `docs/reference/corelib.md:300-305`.
+Bit-exact against RFC 1321 vectors. `docs/reference/corelib.md:298-303`.
 
 ### 32.20 `sha256`
 
 SHA-256 (FIPS 180-4) (pure 32-bit-arithmetic Tycho): `hex(s)` (64-char) and
 `digest(s)` (32 raw bytes). A real cryptographic digest (not a standalone
-password hash — use a KDF). Bit-exact against NIST vectors. `docs/reference/corelib.md:306-310`.
+password hash — use a KDF). Bit-exact against NIST vectors. `docs/reference/corelib.md:304-308`.
 
 ### 32.21 `io`
 
@@ -309,7 +309,7 @@ Run external commands via a **libc-only shim** (`os_shim.c`, `popen`/`system`/
 (`posix_spawnp`; `CreateProcess` on Windows, where the vector is joined by the
 `CommandLineToArgvW` quoting rules), so arguments are never re-interpreted by a
 shell; they fail closed with `-1` on an empty argv, a build failure, or an
-unspawnable program. `docs/reference/corelib.md:446-470`.
+unspawnable program. `docs/reference/corelib.md:449-473`.
 
 ### 32.23 `regex`
 
@@ -369,8 +369,8 @@ state. Source `corelib/signal/signal.ty`, `corelib/signal/signal_shim.c`.
 `signal.on(sig, handler)`, and an implementation **MUST NOT** run Tycho code in
 handler context. Every Tycho value lives in a bump-allocated arena (§31.1,
 [§9](07-memory-model.md)) whose allocator is not re-entrant, and channel
-operations park behind a mutex (`runtime/tycho_rt.c:1108@mu`,
-`runtime/tycho_rt.c:1108@pthread_mutex_lock`); a handler that interrupts the
+operations park behind a mutex (`runtime/tycho_rt.c:1134@mu`,
+`runtime/tycho_rt.c:1139@pthread_mutex_lock`); a handler that interrupts the
 allocator or a lock holder and then allocates or touches a channel corrupts or
 deadlocks the process it was invoked to shut down. A wider surface is therefore a
 language feature rather than a library one, and would need at minimum: an
@@ -458,7 +458,7 @@ auth failure), Ed25519 (`ed25519_pubkey`/`sign`/`verify`), X25519
 (`x25519_pubkey`/`shared`). Every value crosses as lowercase hex (a Tycho string
 can't hold `0x00`; use `core:hex` to convert text). Bound to OpenSSL rather than
 reimplemented because real crypto must be constant-time and audited.
-`docs/reference/corelib.md:321-336`.
+`docs/reference/corelib.md:319-334`.
 
 ### 33.3 `compress` — zlib
 

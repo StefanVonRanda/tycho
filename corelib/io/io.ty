@@ -57,6 +57,36 @@ fn write_bytes(p: string, b: bytes) -> Result(void, IoErr):
         return Err(IsDir)
     return Err(Failed)
 
+# Atomically replace `dst` with `src` on the same filesystem. On POSIX, an
+# existing regular destination's permission bits are applied to `src` before
+# rename so a checkpoint does not widen access under the process umask; on
+# Windows ReplaceFile preserves the destination's ACL. A new destination keeps
+# `src`'s permissions. The caller remains responsible for syncing file contents
+# and the containing directory.
+fn rename(src: string, dst: string) -> Result(void, IoErr):
+    if _has_nul(src) or _has_nul(dst):
+        return Err(BadPath)
+    st := 0
+    iox_rename(src, dst, &st)
+    return _status(st)
+
+# Acquire a nonblocking exclusive lock held until process exit. This is for
+# single-store command processes; the OS releases the lock even after a crash.
+# Ok(false) means another process holds it; Err reports an inability to open it.
+fn lock_exclusive(p: string) -> Result(bool, IoErr):
+    if _has_nul(p):
+        return Err(BadPath)
+    st := iox_lock_exclusive(p)
+    if st == RF_OK:
+        return Ok(true)
+    if st == FS_EXISTS:
+        return Ok(false)
+    if st == RF_MISS:
+        return Err(NotFound)
+    if st == RF_DIR:
+        return Err(IsDir)
+    return Err(Failed)
+
 fn write_at(p: string, off: int, b: bytes) -> Result(void, IoErr):
     if _has_nul(p):
         return Err(BadPath)
@@ -135,7 +165,7 @@ fn write_lines(p: string, lines: [string]) -> bool:
 # the file size. This reader pulls ONE line at a time into a single reused
 # buffer, so peak memory is O(longest line) -- the right tool for a large log.
 extern fn iox_open_lines(path: string) -> ptr        # null if the path can't be opened
-extern fn iox_read_line(r: ptr) -> Option(string)    # next line (no trailing newline/CRLF); None at EOF
+extern fn iox_read_line(r: ptr, status: inout int) -> bytes # status 1=line, 0=EOF, bytes carry embedded NULs
 extern fn iox_close_lines(r: ptr)
 # `status` is the read classification: 0 missing, 1 read, 2 directory, 3 other
 # error. It is an `inout int`, which lowers to a tycho_int* out-param ahead of the
@@ -148,6 +178,8 @@ extern fn iox_read_at(path: string, off: int, n: int, status: inout int) -> byte
 # read_bytes' (NotFound/IsDir/Failed). All-or-nothing: a partial write is an
 # error, never a short success.
 extern fn iox_write_bytes(path: string, data: bytes, status: inout int)
+extern fn iox_rename(src: string, dst: string, status: inout int)
+extern fn iox_lock_exclusive(path: string) -> int
 extern fn iox_write_at(path: string, off: int, data: bytes, status: inout int)
 # Same status space again. Neither call brings the payload into a Tycho value:
 # copy streams the file through a fixed buffer, and append_str hands the shim the
@@ -478,7 +510,11 @@ fn open_lines(path: string) -> Result(LineReader, IoErr):
 # The next line, without its trailing newline (or CRLF), or None at end of file.
 # An empty line is Some("") -- distinct from EOF's None.
 fn read_line(r: LineReader) -> Option(string):
-    return iox_read_line(r._p)
+    st := 0
+    b := iox_read_line(r._p, &st)
+    if st != 1:
+        return None
+    return Some(to_str(b))
 
 # Close a reader opened with open_lines (frees the file handle + line buffer).
 fn close_lines(r: LineReader):
@@ -498,11 +534,12 @@ fn fold_lines(path: string, init: $A, f: fn($A, string) -> $A) -> $A:
         return acc
     done := false
     for not done:
-        match iox_read_line(r):
-            Some(line):
-                acc = f(acc, line)
-            None:
-                done = true
+        st := 0
+        b := iox_read_line(r, &st)
+        if st == 1:
+            acc = f(acc, to_str(b))
+        else:
+            done = true
     iox_close_lines(r)
     return acc
 

@@ -25,6 +25,7 @@
 #define TY_PATH_MAX MAX_PATH
 #else
 #include <limits.h>
+#include <sys/stat.h>
 #ifndef PATH_MAX
 #define TY_PATH_MAX 4096
 #else
@@ -48,4 +49,19 @@ const char *pathx_real(const char *p) {
     memcpy(buf, tmp, strlen(tmp) + 1);
 #endif
     return buf;
+}
+
+/* A dangling symlink makes realpath fail just like a missing ordinary leaf.
+ * resolve_under walks existing ancestors to preserve 404 semantics, so expose
+ * lstat/GetFileAttributes separately and refuse that symlink instead of treating
+ * it as a missing path beneath its parent. */
+int pathx_is_symlink(const char *p) {
+    if (!p || !*p || strlen(p) > TY_PATH_MAX) return 0;
+#ifdef _WIN32
+    DWORD a = GetFileAttributesA(p);
+    return a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
+#else
+    struct stat st;
+    return lstat(p, &st) == 0 && S_ISLNK(st.st_mode);
+#endif
 }

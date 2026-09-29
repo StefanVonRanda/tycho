@@ -10,3 +10,6 @@ exec_params multi changes=1
 params multi rows=3 (3, not 4: the tail is dropped)
 nul insert ok
 nul tycho len=5 stored len=5 hex=6869007A7A
+nul path refused=true
+nul exec refused=true
+nul prepared SQL refused=true

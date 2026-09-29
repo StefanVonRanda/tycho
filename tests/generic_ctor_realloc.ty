@@ -1,0 +1,12 @@
+struct Wrap($T):
+    value: T
+
+enum Nest($T):
+    Next(T)
+
+fn main():
+    x := Wrap(Wrap(Wrap(Wrap(Wrap(Wrap(Wrap(Wrap(Wrap(Wrap(Wrap(Wrap(Wrap(Wrap(Wrap(Wrap(Wrap(41)))))))))))))))))
+    println(str(x.value.value.value.value.value.value.value.value.value.value.value.value.value.value.value.value.value))
+    e := Next(Next(Next(Next(Next(Next(Next(Next(Next(Next(Next(Next(Next(Next(Next(Next(Next(41)))))))))))))))))
+    match e:
+        Next(_): println("enum")

@@ -8,6 +8,10 @@ missing= []
 body   = {"a":"hello"}
 bodylen= 13
 bad_why = Malformed
+bad_ws_colon = Malformed
+bad_obs_fold = Malformed
+bad_extra_token = Malformed
+bad_version = Malformed
 --- render ---
 HTTP/1.1 404 Not Found
 Content-Length: 4
@@ -58,9 +62,13 @@ frame junk_clen = Malformed body=[]
 frame wrap_clen = Malformed body=[]
 frame clen_conflict = Malformed body=[]
 frame te_and_clen = Malformed body=[]
+frame te_empty_last = Malformed body=[]
+frame te_empty_only = Malformed body=[]
+frame clen_empty = Malformed body=[]
 frame clen_agrees = Ok body=[hello]
 frame exact_body = Ok body=[hello]
 frame pipelined = Ok body=[hello]
+small cap framed body = BodyTooLarge
 clen_15    = 999999999999999 1
 clen_16    = 1
 clen_19    = 1

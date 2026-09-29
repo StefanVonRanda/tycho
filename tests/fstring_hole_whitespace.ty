@@ -1,0 +1,4 @@
+fn main():
+    n := 7
+    println(f"value={ n }")
+    println(f"char={'}'}")

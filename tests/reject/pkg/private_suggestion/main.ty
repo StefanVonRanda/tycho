@@ -1,0 +1,7 @@
+package main
+# expect: has no symbol 'helper'
+
+import "lib"
+
+fn main():
+    println(str(lib.helper(1)))

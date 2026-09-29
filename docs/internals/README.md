@@ -20,8 +20,8 @@ measurements, and they assume you already know the codebase.
 - [`audit-2026-08-16.md`](audit-2026-08-16.md) — security audit across the whole
   threat model: two vulnerabilities found and fixed, and what it did not cover.
 - [`audit-2026-09-25.md`](audit-2026-09-25.md) — a defect hunt across the compilers,
-  runtime, shims, network stack, tycho-db and parsers: 90 defects recorded, none yet
-  fixed, with what was done and what is still to do.
+  runtime, shims, network stack, tycho-db and parsers: 90 baseline defects recorded;
+  the current ledger lists 89 fixed and one partial; no primary finding remains open.
 - [`roadmap-closed-2026-08.md`](roadmap-closed-2026-08.md) — the 1.0 conditions
   closed in August 2026, moved out of `ROADMAP.md`.
 - [`windows-port.md`](windows-port.md) — the design record of the native

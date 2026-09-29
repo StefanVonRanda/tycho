@@ -40,7 +40,6 @@ tests/reject/enum_typaram_max.ty	ACCEPTED	a ceiling (16 type parameters); the gr
 tests/reject/enum_typaram_not_dollar.ty	ACCEPTED	the grammar takes any type in the parameter list; only `$Name` is legal
 tests/reject/err_empty.ty	ACCEPTED	`Err()` is a well-formed call; the refusal is about the Result's error type
 tests/reject/fixarr_qualified_const.ty	ACCEPTED	a qualified name is a legal array length in the grammar; "must be known at parse time" is a resolution rule
-tests/reject/fixed_array_zero_size.ty	ACCEPTED	a value-range check on a literal that lexes correctly
 tests/reject/float_exp_bad.ty	ACCEPTED	`1e` lexes as INT then IDENT in both, and with no newline rule the grammar takes the IDENT as its own expression
 tests/reject/float_lit_overflow_neg.ty	ACCEPTED	`1e400` is a well-formed float token; out-of-range is a value check
 tests/reject/fnty_arity.ty	ACCEPTED	a ceiling (8 parameters in a function type)

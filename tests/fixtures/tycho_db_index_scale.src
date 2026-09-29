@@ -1,0 +1,25 @@
+package main
+
+import "store"
+
+# Exercise both the live index-maintenance path and its rebuild-on-open path.
+# Reverse order forces the old sorted-array implementation to shift every old
+# entry for each incoming key; a hash-backed index stays linear overall.
+fn main() -> Result(void, string):
+    cols: [store.Col] = []
+    push(cols, store.Col("id", store.ColInt, true))
+    tables: [store.Table] = []
+    db := store.Db("index-scale.db", tables, 0)
+    _created := store.create_table(&db, "scale", cols) or_else e: Err(store.err_str(e))
+    for i := 19999; i >= 0; i -= 1:
+        vals: [store.Val] = []
+        push(vals, store.VInt(i))
+        _inserted := store.insert(&db, "scale", vals) or_else e: Err(store.err_str(e))
+    _flushed := store.flush(db) or_else e: Err(store.err_str(e))
+    reopened := store.open("index-scale.db") or_else e: Err(store.err_str(e))
+    all := store.scan(reopened, "scale") or_else e: Err(store.err_str(e))
+    hits := store.probe(reopened, "scale", "id", store.VInt(0)) or_else e: Err(store.err_str(e))
+    if len(all) != 20000 or len(hits) != 1 or store.val_str(hits[0][0]) != "0":
+        return Err("index scale returned wrong rows")
+    println("index scale: rows=20000 probe=0")
+    return Ok()

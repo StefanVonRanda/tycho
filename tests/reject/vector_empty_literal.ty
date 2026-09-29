@@ -1,0 +1,5 @@
+# An empty literal cannot inhabit a vector with a fixed lane count.
+# expect: a fixed-size array of length 4 needs 4 elements, got 0
+fn main():
+    v: vector[4]float = []
+    println(str(v[0]))

@@ -1,0 +1,25 @@
+packed struct Record:
+    tag: u8
+    count: i64
+
+struct Bucket:
+    records: [Record]
+
+subscript record(bucket: Bucket, i: int) -> inout Record:
+    yield &bucket.records[i]
+
+fn bump(value: inout i64):
+    value = value + 1
+
+fn main():
+    direct := Record(to_u8(1), to_i64(4))
+    bump(&direct.count)
+    println(str(direct.count))
+
+    records := [Record(to_u8(2), to_i64(8))]
+    bump(&records[0].count)
+    println(str(records[0].count))
+
+    bucket := Bucket([Record(to_u8(3), to_i64(12))])
+    bump(&bucket.record(0).count)
+    println(str(bucket.record(0).count))

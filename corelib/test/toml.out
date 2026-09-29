@@ -27,6 +27,8 @@ err duplicate key: a
 err duplicate table header: [t]
 ok
 ok
+parent-after-child=true
+nested-array-tables=true
 err not a real time: 2023-01-01T99:99:99
 err not a real time: 2023-01-01T25:61:61+99:99
 err not a real time: 2023-01-01hello
@@ -39,3 +41,7 @@ ok
 ok
 ok
 ok
+nesting-caps=true,true
+size-caps=true,true
+quoted-keys=true,true,true,true
+malformed-strings=true,true

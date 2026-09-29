@@ -30,6 +30,7 @@ fn why(r: Result(httpd.Request, httpd.ReqErr)) -> string:
         Err(httpd.Closed): return "Closed"
         Err(httpd.Timeout): return "Timeout"
         Err(httpd.TooLarge): return "TooLarge"
+        Err(httpd.BodyTooLarge): return "BodyTooLarge"
         _: return "Failed"
 
 fn main():
@@ -52,6 +53,10 @@ fn main():
     badr := httpd.parse_request("garbage" + nl + nl)
     bad := rq(badr)
     println("bad_why = " + why(badr))
+    println("bad_ws_colon = " + why(httpd.parse_request("POST / HTTP/1.1" + nl + "Content-Length : 1" + nl + nl + "x")))
+    println("bad_obs_fold = " + why(httpd.parse_request("POST / HTTP/1.1" + nl + " X-Fold: 1" + nl + nl)))
+    println("bad_extra_token = " + why(httpd.parse_request("GET / HTTP/1.1 extra" + nl + nl)))
+    println("bad_version = " + why(httpd.parse_request("GET / FOO/9.9" + nl + nl)))
 
     # render a response: auto Content-Length + default Content-Type
     r0 := httpd.text_response(404, "nope")
@@ -229,6 +234,12 @@ fn main():
     push(frames, "POST /x HTTP/1.1" + nl + "Content-Length: 0" + nl + "Content-Length: 44" + nl + nl)
     push(fr, "te_and_clen")
     push(frames, "POST /x HTTP/1.1" + nl + "Content-Length: 6" + nl + "Transfer-Encoding: chunked" + nl + nl + "0" + nl + nl)
+    push(fr, "te_empty_last")                             # empty duplicate must not hide an earlier TE
+    push(frames, "POST /x HTTP/1.1" + nl + "Transfer-Encoding: chunked" + nl + "Transfer-Encoding:" + nl + nl)
+    push(fr, "te_empty_only")                             # present-but-empty is still unsupported TE
+    push(frames, "POST /x HTTP/1.1" + nl + "Transfer-Encoding:" + nl + nl)
+    push(fr, "clen_empty")                                # present-but-empty is malformed, not absent
+    push(frames, "POST /x HTTP/1.1" + nl + "Content-Length:" + nl + nl)
     push(fr, "clen_agrees")                                  # CONTROL: not a conflict -> Ok
     push(frames, "POST /x HTTP/1.1" + nl + "Content-Length: 5" + nl + "Content-Length: 5" + nl + nl + "hello")
     push(fr, "exact_body")                                   # CONTROL: the valid case round-trips
@@ -244,6 +255,13 @@ fn main():
         println("frame " + fr[i] + " = " + why(fres) + " body=[" + to_str(rq(fres).body) + "]")
         net.close_fd(fconn)
 
+    bigcli := n_of(net.connect("127.0.0.1", port))
+    bigconn := n_of(net.accept(srv))
+    _ := net.write(bigcli, to_bytes("POST /x HTTP/1.1" + nl + "Content-Length: 1000" + nl + nl))
+    body_budget, _body_buf := httpd.read_request_resume(bigconn, 64, 0, "")
+    println("small cap framed body = " + why(body_budget))
+    net.close_fd(bigcli)
+    net.close_fd(bigconn)
     net.close_fd(srv)
 
     # ---- Content-Length ceiling: 15 significant digits enforced ----------

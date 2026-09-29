@@ -1,0 +1,5 @@
+# expect: does not fit u8
+# Channel UFCS send checks a literal against the channel element type.
+fn main():
+    ch := channel(u8, 1)
+    ch.send(300)

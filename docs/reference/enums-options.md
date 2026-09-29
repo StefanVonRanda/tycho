@@ -187,8 +187,10 @@ a distinct tagged value, deep-copied like any other. An option is a fine struct 
 (`age: Option(int)`) or array element (`[Option(int)]` — a list of optionals, where a `None`
 element takes its type from the others, so the first element cannot be a bare `None`).
 
-Two options compare with `==` (structurally — `Some(1) == Some(1)` is `true`, `Some(1) ==
-None` is `false`), and so do values that merely contain them.
+Two options compare with `==` (structurally — `Some(1) == Some(1)` is `true`), and so
+do values that merely contain them. A bare `None` has no type for `==` to use as an
+expected type, so `Some(1) == None` and `opt == None` are rejected; bind or annotate
+the absent value first, or use `opt is None` when testing its variant.
 
 ## `Result(T, E)` — success, or an error
 

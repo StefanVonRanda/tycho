@@ -1,0 +1,25 @@
+# Place indices are captured before the RHS, but container addresses are formed
+# after it: inout growth must not leave a store pointing into recycled storage.
+fn grow_array(a: inout [int], i: inout int) -> int:
+    push(a, 0)
+    i = 1
+    return 9
+
+fn grow_map(m: inout [string: int], value: int) -> int:
+    for i := 0; i < 100; i += 1:
+        m["k" + str(i)] = i
+    return value
+
+fn main():
+    xs := [1, 2, 3]
+    i := 0
+    xs[i] = grow_array(&xs, &i)
+    println("array=" + str(xs[0]) + "," + str(xs[1]) + " i=" + str(i) + " len=" + str(len(xs)))
+
+    m: [string: int] = ["x": 1]
+    m["x"] = grow_map(&m, 7)
+    println("map=" + str(m["x"]) + " len=" + str(len(m)))
+
+    n: [string: int] = ["x": 1]
+    n["x"] += grow_map(&n, 4)
+    println("compound=" + str(n["x"]) + " len=" + str(len(n)))

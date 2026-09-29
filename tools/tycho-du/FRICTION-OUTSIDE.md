@@ -139,7 +139,7 @@ directory into the same variable); I backed that out.
 ## 3. `is_null` on a handle exists in exactly one sentence, and the shipped example says it is impossible
 
 The only place in all of `docs/` that says a handle can be null-tested is
-`docs/reference/ffi.md:57`:
+`docs/reference/ffi.md:56`:
 
 > `is_null` accepts a `handle` too, which is how you check whether an opener
 > succeeded; the scope-exit free is null-guarded, so a failed open is safe to let

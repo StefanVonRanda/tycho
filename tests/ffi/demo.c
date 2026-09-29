@@ -74,10 +74,10 @@ const char *ffi_get(int64_t key) { return key > 0 ? "hit" : 0; }
 int64_t ffi_mk(int64_t id, void **out) { if (id <= 0) { *out = 0; return -1; } slot = (int)id; *out = &slot; return 0; }
 void ffi_dbl(int64_t a, int64_t *out) { *out = a * 2; }
 
-/* to_i32 / to_ptr coverage. ffi_neg returns a NEGATIVE 32-bit C int -- declared
- * `-> int` it is read as 64-bit (a huge positive); to_i32 recovers the sign.
- * ffi_ptrval echoes a pointer's integer value, so to_ptr(-1) (a SQLITE_TRANSIENT
- * -style sentinel) round-trips. */
+/* Sized return / to_ptr coverage. ffi_neg returns a negative C int and is
+ * declared `-> i32`, so the emitted prototype matches exactly. ffi_ptrval echoes
+ * a pointer's integer value, so to_ptr(-1) (a SQLITE_TRANSIENT-style sentinel)
+ * round-trips. */
 int  ffi_neg(void)        { return -7; }
 int64_t ffi_ptrval(void *p)  { return (int64_t)p; }
 

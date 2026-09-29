@@ -411,6 +411,21 @@ fn main():
     println("depth_2000_ok=" + str(parsed_ok(dp)))
     println("depth_2001_refused=" + str(parsed_ok(dq) == false))
     println("brackets_in_string_ok=" + str(parsed_ok(ins)))
+    large_obj := "{"
+    for i := 0; i < 20000; i += 1:
+        if i > 0:
+            large_obj += ","
+        large_obj += "\"k" + str(i) + "\":" + str(i)
+    large_obj += "}"
+    large_parsed := json.parse_checked(large_obj)
+    large_members := 0
+    large_last := -1
+    match large_parsed:
+        Ok(v):
+            large_members = len(json.keys(v))
+            large_last = json.as_num(json.get(v, "k19999"))
+        Err(_): pass
+    println("large_object=" + str(large_members) + "," + str(large_last))
 
 fn parsed_ok(s: string) -> bool:
     match json.parse_checked(s):

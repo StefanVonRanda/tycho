@@ -64,9 +64,8 @@ fn _eval(tbl: string, cols: [store.Col], row: [store.Val], e: sql.Expr) -> Resul
         _: return _lit(e)
 
 # -1, 0, 1. The QUERY rule that two values of different types do not compare
-# lives here; the ordering of two values that do is store.val_cmp's, which the
-# index also sorts by -- so a row found through the index and the same row
-# found through a scan can never be ordered differently.
+# lives here; the ordering of two values that do is store.val_cmp's. The index
+# uses a type-tagged key spelling, but it never decides query comparability.
 fn _cmp(a: store.Val, b: store.Val) -> Result(int, ExecErr):
     at := store.val_ty(a)
     bt := store.val_ty(b)
@@ -97,12 +96,11 @@ fn _create(db: inout store.Db, lg: inout wal.Log, name: string, defs: [sql.ColDe
         if sql.ty_name(defs[k].ty) == "text":
             t = store.ColText
         push(cols, store.Col(defs[k].name, t, defs[k].key))
-    _ok := store.create_table(&db, name, cols) or_else e: Err(Storage(e))
-    # Logged after the apply, not before: the apply is in MEMORY and the store
-    # file is untouched until checkpoint, so the record still reaches disk
-    # first -- and a statement the store rejected never enters the log, which
-    # keeps replay from re-running a failure.
+    store.check_create_table(db, name) or_else e: Err(Storage(e))
+    # Validate first, then log, then apply. A failed append must not leave a
+    # refused mutation visible in memory for later statements or checkpoint.
     _lsn := wal.append(&lg, wal.RCreate(name, cols)) or_else e: Err(Wal(e))
+    _ok := store.create_table(&db, name, cols) or_else e: Err(Storage(e))
     return Ok(Created(name))
 
 fn _insert(db: inout store.Db, lg: inout wal.Log, name: string, exprs: [sql.Expr]) -> Result(Outcome, ExecErr):
@@ -110,8 +108,9 @@ fn _insert(db: inout store.Db, lg: inout wal.Log, name: string, exprs: [sql.Expr
     for k := 0; k < len(exprs); k += 1:
         v := _lit(exprs[k]) or_return
         push(vals, v)
-    _ok := store.insert(&db, name, vals) or_else e: Err(Storage(e))
+    store.check_insert(db, name, vals) or_else e: Err(Storage(e))
     _lsn := wal.append(&lg, wal.RInsert(name, vals)) or_else e: Err(Wal(e))
+    _ok := store.insert(&db, name, vals) or_else e: Err(Storage(e))
     return Ok(Inserted(name))
 
 # The planner's inputs that only the catalogue can supply.
@@ -139,9 +138,24 @@ fn _open(db: store.Db, p: plan.Plan) -> Result([[store.Val]], ExecErr):
             rs := store.probe(db, p.table, col, k) or_else e: Err(Storage(e))
             return Ok(rs)
 
+fn _check_index_key(tbl: string, cols: [store.Col], p: plan.Plan) -> Result(void, ExecErr):
+    match p.access:
+        plan.IndexEq(col, key):
+            j := _col_index(cols, col)
+            if j < 0:
+                return Err(NoColumn(tbl, col))
+            v := _lit(key) or_return
+            want := store.ty_name(cols[j].ty)
+            got := store.val_ty(v)
+            if want != got:
+                return Err(Uncomparable(want, got))
+        _: pass
+    return Ok()
+
 fn _select(db: store.Db, st: sql.Stmt, want: [string], tbl: string) -> Result(Outcome, ExecErr):
     cols := store.columns(db, tbl) or_else e: Err(Storage(e))
     p := _plan_for(db, st, tbl) or_return
+    _check_index_key(tbl, cols, p) or_return
     all := _open(db, p) or_return
 
     names: [string] = []
@@ -177,7 +191,9 @@ fn _select(db: store.Db, st: sql.Stmt, want: [string], tbl: string) -> Result(Ou
 fn _explain(db: store.Db, inner: sql.Stmt) -> Result(Outcome, ExecErr):
     match inner:
         sql.Select(want, t, w):
+            cols := store.columns(db, t) or_else e: Err(Storage(e))
             p := _plan_for(db, inner, t) or_return
+            _check_index_key(t, cols, p) or_return
             return Ok(Explained(plan.show(p)))
         _:
             # Routed through plan.build rather than refused here, so the rule

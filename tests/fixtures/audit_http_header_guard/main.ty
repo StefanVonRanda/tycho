@@ -1,0 +1,14 @@
+package main
+import "core:http"
+
+fn main():
+    url := args()[1]
+    clean := http.post(url, "x", "text/plain")
+    clean_body := http.body(clean)
+    bad := "text/plain" + chr(13) + chr(10) + "X-Audit: injected"
+    bad_string := http.post(url, "x", bad)
+    bad_bytes := http.post_bytes(url, to_bytes("x"), bad)
+    println("clean=" + clean_body + " blocked=" + str(is_null(bad_string)) + " bytes_blocked=" + str(is_null(bad_bytes)))
+    http.release(clean)
+    http.release(bad_string)
+    http.release(bad_bytes)

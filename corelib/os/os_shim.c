@@ -61,7 +61,7 @@ tycho_int osx_system(const char *cmd) {
     return ty_os_decode(system(cmd));
 }
 
-typedef struct { tycho_int code; char *out; } OsRun;
+typedef struct { tycho_int code; char *out; size_t out_len; } OsRun;
 
 void *osx_run(const char *cmd) {
     FILE *f = TY_POPEN(cmd, "r");
@@ -86,13 +86,21 @@ void *osx_run(const char *cmd) {
     OsRun *r = malloc(sizeof *r);
     if (!r) { free(buf); TY_PCLOSE(f); return NULL; }
     r->out  = buf;
+    r->out_len = len;
     r->code = ty_os_decode(TY_PCLOSE(f));            /* pclose exactly once, on every path */
     return r;
 }
 
-tycho_int   osx_run_code(void *p) { return p ? ((OsRun *)p)->code : -1; }
-const char *osx_run_out (void *p) { return p ? ((OsRun *)p)->out  : ""; }
-void        osx_run_free(void *p) { if (p) { OsRun *r = p; free(r->out); free(r); } }
+tycho_int osx_run_code(void *p) { return p ? ((OsRun *)p)->code : -1; }
+void osx_run_out(void *p, const unsigned char **out, tycho_int *outlen) {
+    *out = NULL; *outlen = 0;
+    if (!p) return;
+    OsRun *r = p;
+    *out = (const unsigned char *)r->out;             /* transfer to the bytes FFI copier */
+    *outlen = (tycho_int)r->out_len;
+    r->out = NULL; r->out_len = 0;
+}
+void osx_run_free(void *p) { if (p) { OsRun *r = p; free(r->out); free(r); } }
 
 #define OSX_ARGV_MAX 4096       /* a bound, so a runaway loop fails instead of swapping */
 
@@ -163,8 +171,10 @@ static char **osx_argv_dup(const char *const *v, tycho_int n) {
  * `out` NULL -> stdout is inherited (the osx_system shape); non-NULL -> stdout
  * is captured into a fresh buffer (the osx_run shape). stderr is inherited in
  * both, matching the two shell functions above. */
-static tycho_int osx_spawn(const char *const *v, tycho_int n, char **out) {
+static tycho_int osx_spawn(const char *const *v, tycho_int n, char **out, size_t *outlen) {
     if (out) *out = NULL;
+    if (outlen) *outlen = 0;
+    size_t captured = 0;
     char **argv = osx_argv_dup(v, n);
     if (!argv) return -1;                             /* fail closed */
 
@@ -218,6 +228,7 @@ static tycho_int osx_spawn(const char *const *v, tycho_int n, char **out) {
             len += (size_t)n;
         }
         buf[len] = '\0';
+        captured = len;
         close(fds[0]);
     }
 
@@ -226,19 +237,22 @@ static tycho_int osx_spawn(const char *const *v, tycho_int n, char **out) {
         if (errno != EINTR) { free(buf); return -1; }  /* free(NULL) is a no-op */
     }
     if (out) *out = buf;
+    if (outlen) *outlen = captured;
     return ty_os_decode(st);
 }
 
-tycho_int osx_exec(const char *const *v, tycho_int n) { return osx_spawn(v, n, NULL); }
+tycho_int osx_exec(const char *const *v, tycho_int n) { return osx_spawn(v, n, NULL, NULL); }
 
 void *osx_exec_out(const char *const *v, tycho_int n) {
     char *out = NULL;
-    tycho_int code = osx_spawn(v, n, &out);
+    size_t out_len = 0;
+    tycho_int code = osx_spawn(v, n, &out, &out_len);
     if (code < 0 && !out) return NULL;                /* spawn failed: no handle, no output */
     OsRun *r = malloc(sizeof *r);
     if (!r) { free(out); return NULL; }
     r->code = code;
     r->out  = out;
+    r->out_len = out_len;
     return r;                                          /* freed by osx_run_free, like osx_run's */
 }
 
@@ -337,8 +351,10 @@ static char *osx_win_cmdline(const char *const *v, tycho_int n) {
 
 /* lpApplicationName is NULL so the PATH is searched, matching execvp/
  * posix_spawnp. `out` NULL -> stdout inherited; non-NULL -> captured. */
-static tycho_int osx_spawn_win(const char *const *v, tycho_int n, char **out) {
+static tycho_int osx_spawn_win(const char *const *v, tycho_int n, char **out, size_t *outlen) {
     if (out) *out = NULL;
+    if (outlen) *outlen = 0;
+    size_t captured = 0;
     if (!osx_argv_ok(v, n)) return -1;                 /* fail closed */
 
     /* Refuse .bat/.cmd: they run through cmd.exe which re-parses the command
@@ -409,6 +425,7 @@ static tycho_int osx_spawn_win(const char *const *v, tycho_int n, char **out) {
             len += n;
         }
         buf[len] = '\0';
+        captured = len;
         CloseHandle(rd);
     }
 
@@ -418,6 +435,7 @@ static tycho_int osx_spawn_win(const char *const *v, tycho_int n, char **out) {
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);
     if (out) *out = buf;
+    if (outlen) *outlen = captured;
     return (tycho_int)(int)code;                       /* Windows hands back the code directly */
 }
 
@@ -425,16 +443,18 @@ static tycho_int osx_spawn_win(const char *const *v, tycho_int n, char **out) {
  * tested by os_argv_quotecheck.c (run by shim-check on MSYS/MINGW/CYGWIN).
  * The spawn+capture path itself has no Linux-host test -- loud-skip: the
  * os_argv_quotecheck.c leg in shim-check is the only Windows gate. */
-tycho_int osx_exec(const char *const *v, tycho_int n) { return osx_spawn_win(v, n, NULL); }
+tycho_int osx_exec(const char *const *v, tycho_int n) { return osx_spawn_win(v, n, NULL, NULL); }
 
 void *osx_exec_out(const char *const *v, tycho_int n) {
     char *out = NULL;
-    tycho_int code = osx_spawn_win(v, n, &out);
+    size_t out_len = 0;
+    tycho_int code = osx_spawn_win(v, n, &out, &out_len);
     if (code < 0 && !out) return NULL;
     OsRun *r = malloc(sizeof *r);
     if (!r) { free(out); return NULL; }
     r->code = code;
     r->out  = out;
+    r->out_len = out_len;
     return r;
 }
 

@@ -1,0 +1,5 @@
+struct K:
+    value: u8
+
+fn main():
+    m := []K: int

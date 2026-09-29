@@ -1,0 +1,3 @@
+fn main():
+    n := 7
+    println(f"{n, 99}")

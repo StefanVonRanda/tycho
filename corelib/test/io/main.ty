@@ -476,6 +476,8 @@ fn copy_checks():
     io.write(dst, "LONGER-THAN-THE-SOURCE-CONTENT")
     ok := io.copy(src, dst)
     println(f"copy={vwhy(ok)} copied=[{io.read(dst)}] len={len(io.read(dst))}")
+    same := io.copy(src, src)
+    println(f"copy_same={vwhy(same)} len={len(io.read(src))}")
     miss := io.copy("/tmp/tycho_corelib_io_no_such_src_xyz", dst)
     println(f"copy_miss={vwhy(miss)} dst_intact=[{io.read(dst)}]")
     println(f"copy_dir={vwhy(io.copy("/tmp", dst))} copy_nul={vwhy(io.copy(src + chr(0), dst))}")
@@ -485,7 +487,13 @@ fn copy_checks():
     a2 := io.append_text(ap, chr(0) + "cd")
     println(f"append={vwhy(a1)}|{vwhy(a2)} got=[{io.read(ap)}] len={len(io.read(ap))}")
     println(f"append_bool={io.append(ap, "!")} len2={len(io.read(ap))} append_nul={vwhy(io.append_text(ap + chr(0), "z"))}")
-    println(f"copy_cleanup={fswhy(io.remove(src))}|{fswhy(io.remove(dst))}|{fswhy(io.remove(ap))}")
+    ren_src := "/tmp/tycho_corelib_io_rename_src"
+    ren_dst := "/tmp/tycho_corelib_io_rename_dst"
+    io.write(ren_src, "new contents")
+    io.write(ren_dst, "old contents")
+    ren := io.rename(ren_src, ren_dst)
+    println(f"rename={vwhy(ren)} src_exists={io.exists(ren_src)} dst=[{io.read(ren_dst)}] nul={vwhy(io.rename(ren_dst + chr(0), ren_src))}")
+    println(f"copy_cleanup={fswhy(io.remove(src))}|{fswhy(io.remove(dst))}|{fswhy(io.remove(ap))}|{fswhy(io.remove(ren_dst))}")
 
 fn nul_checks():
     nt := "/tmp/tycho_corelib_io_nul_target"
@@ -501,6 +509,18 @@ fn nul_checks():
         Err(e):
             nul_open = "other"
     println(f"nul_open={nul_open} nul_fold={io.fold_lines(nb, 0, addlen)}")
+    linefile := "/tmp/tycho_corelib_io_line_nul"
+    io.write(linefile, to_str(to_bytes([65, 0, 66, 10])))
+    line_ok := false
+    match io.open_lines(linefile):
+        Ok(lr):
+            match io.read_line(lr):
+                Some(line): line_ok = len(line) == 3 and line[0] == 65 and line[1] == 0 and line[2] == 66
+                None: line_ok = false
+            io.close_lines(lr)
+        Err(_): line_ok = false
+    println(f"nul_stream_line={line_ok} nul_stream_fold={io.fold_lines(linefile, 0, addlen)}")
+    io.remove(linefile)
     println(f"nul_write={io.write(nb, "z")} nul_append={io.append(nb, "z")} nul_wlines={io.write_lines(nb, ["z"])}")
     println(f"nul_bytes={why(io.read_bytes(nb))} nul_text={twhy(io.read_text(nb))} nul_at={why(io.read_at(nb, 0, 1))}")
     println(f"nul_isdir={dwhy(io.is_dir(nb))} nul_mtime={mwhy(io.mtime(nb))} nul_size={mwhy(io.size(nb))}")

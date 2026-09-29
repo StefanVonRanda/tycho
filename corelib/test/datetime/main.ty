@@ -6,6 +6,9 @@ fn b2i(b: bool) -> int:
         return 1
     return 0
 
+fn tz_bounded(x: int) -> bool:
+    return x >= (0 - 86400) and x <= 86400
+
 fn show(secs: int) -> string:                  # ISO + weekday name for a timestamp
     dt := datetime.from_unix(secs)
     return datetime.format_iso(dt) + " " + datetime.weekday_name(dt.weekday)
@@ -72,6 +75,12 @@ fn main():
     etjul := datetime.offset_at(et, 1247000000)          # 2009-07-07 UTC -> summer -> 0 - 14400
     etz := datetime.offset_at("UTC0", 1234567890)        # 0
     println(f"et_jan={etjan} et_jul={etjul} utc0={etz}")
+    bad_tz_ok := tz_bounded(datetime.offset_at("EST25", 0))
+    bad_tz_ok = bad_tz_ok and tz_bounded(datetime.offset_at("EST99999", 0))
+    bad_tz_ok = bad_tz_ok and tz_bounded(datetime.offset_at("EST5:99:99", 0))
+    bad_tz_ok = bad_tz_ok and tz_bounded(datetime.offset_at("EST9999999999999999999", 0))
+    bad_tz_ok = bad_tz_ok and tz_bounded(datetime.offset_at("EST5EDT99999,M3.2.0,M11.1.0", 0))
+    println("bad_tz_bounded=" + str(b2i(bad_tz_ok)))
     # compose the pure + libc layers: ts1234 as US-Eastern wall-clock, DST applied
     nyc := datetime.format_iso_tz(datetime.from_unix_at(1234567890, etjan), etjan)
     println("nyc = " + nyc)                              # 2009-02-13T18:31:30-05:00

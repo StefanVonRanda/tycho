@@ -18,3 +18,5 @@ nul_system=-1
 nul_run=[] code=-1
 nul_exec=-1
 nul_exec_out=[] code=-1
+nul_child_run=3,true,66
+nul_child_exec=3,true,66

@@ -1,0 +1,2 @@
+fn main():
+    println(str(1 << -1))

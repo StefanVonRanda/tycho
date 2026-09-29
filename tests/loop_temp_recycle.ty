@@ -1,0 +1,13 @@
+fn sum(xs: ...int) -> int:
+    total := 0
+    for x in xs:
+        total += x
+    return total
+
+fn main():
+    xs := [""]
+    total := 0
+    for i := 0; i < 2000000; i += 1:
+        xs[0] = "value-" + str(i)
+        total += sum(i, i + 1, i + 2)
+    println(str(total) + " " + xs[0])

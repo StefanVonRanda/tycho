@@ -1,0 +1,9 @@
+package main
+
+handle File:
+    free: close_file
+
+extern fn close_file(h: File) -> bytes
+
+fn main():
+    return

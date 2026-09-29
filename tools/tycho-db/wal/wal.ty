@@ -34,6 +34,7 @@ enum WalErr:
     NotWritten(string)
     BadLog(string)
     LostPrefix(string, int)
+    Locked(string)
 
 # A mutation. SELECT is absent on purpose: it changes nothing, so logging it
 # would only make the log grow.
@@ -68,6 +69,7 @@ fn err_str(e: WalErr) -> string:
         BadLog(p): return "not a tycho-db log: " + p
         LostPrefix(p, n):
             return p + " is unreadable and its log no longer reaches back past lsn " + str(n)
+        Locked(p): return "database is locked: " + p
 
 fn log_path(store_path: string) -> string:
     return store_path + ".wal"
@@ -266,6 +268,15 @@ fn _apply(db: inout store.Db, r: Rec) -> Result(bool, WalErr):
 # point a caller wants: it is the only one that returns a Db reflecting
 # mutations that were logged but never folded in.
 fn open_db(store_path: string) -> Result(Session, WalErr):
+    lock_path := store_path + ".lock"
+    match io.lock_exclusive(lock_path):
+        Ok(acquired):
+            if not acquired:
+                return Err(Locked(store_path))
+        # A missing parent means this store cannot be opened anyway. Let the
+        # normal log/store path report its own NotWritten error in statement order.
+        Err(io.NotFound): pass
+        Err(_): return Err(NotWritten(lock_path))
     lp := log_path(store_path)
     sc := scan(lp) or_return
 
@@ -278,7 +289,7 @@ fn open_db(store_path: string) -> Result(Session, WalErr):
             # The store would not decode. Rebuilding is only honest when a log
             # exists AND still reaches back to the beginning; with no log at
             # all the corruption is the answer, and is reported unchanged.
-            if not sc.present:
+            if not sc.present or sc.end == 0:
                 return Err(Storage(e))
             if sc.base_lsn != 0:
                 return Err(LostPrefix(store_path, sc.base_lsn))

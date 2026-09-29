@@ -1,0 +1,8 @@
+const N = 1 + 2
+const V = 2 + 2
+
+fn main():
+    a: [N]int = [1, 2, 3]
+    v: vector[V]f32 = [1.0, 2.0, 3.0, 4.0]
+    println(str(len(a)) + " " + str(a[2]))
+    println(str(len(v)) + " " + str(v[3]))

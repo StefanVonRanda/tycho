@@ -52,6 +52,12 @@ fn main():
     trunc := compress.decompress(full[0:len(full) / 2])
     println("truncated=" + zwhy(trunc) + " len=" + str(zn(trunc)))
 
+    # Gzip permits concatenated members; trailing non-member data is rejected.
+    member1 := compress.compress(to_bytes("left"))
+    member2 := compress.compress(to_bytes("right"))
+    println("gzip_concat=" + zs(compress.decompress(member1 + member2)))
+    println("gzip_trailing=" + zwhy(compress.decompress(member1 + to_bytes("junk"))))
+
     # raw DEFLATE carries the same three answers
     rc := compress.raw_compress(ob)
     println("raw_ok=" + zwhy(compress.raw_decompress(rc)))

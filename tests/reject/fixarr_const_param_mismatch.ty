@@ -1,0 +1,8 @@
+# A const-sized array is not compatible with a differently-sized parameter.
+# expect: argument type mismatch
+const N = 3
+fn take(xs: [2]int):
+    println(str(xs[0]))
+fn main():
+    a: [N]int = [1, 2, 3]
+    take(a)

@@ -91,7 +91,7 @@ n_lib=$(find corelib -name '*.ty' | wc -l | tr -d ' ')
 n_rej=$(ls tests/reject/*.ty | wc -l | tr -d ' ')
 n_tsv=$(wc -l < "$TSV" | tr -d ' ')
 n_new=$(find tools examples server bench -name '*.ty' | wc -l | tr -d ' ')
-[ "$n_acc" = 295 ] || { echo "parse-check: tests/*.ty is $n_acc, expected 295"; rc=1; }   # +1 each: tests/packed_struct.ty (V2), tests/vector_type.ty (V3), tests/fixarr_iter.ty (V3a), tests/generic_recur_same.ty, tests/align_struct.ty (L1), tests/multi_assign.ty (L2), tests/swizzle.ty (L3), tests/vector_map_key.ty (composite map keys), tests/lane_names.ty (L4), tests/bounded_local_cap.ty (G9), tests/float_floor.ty (FRICTION 94, 0b385a24 -- the commit that turned this leg RED for a day because nothing runs parse-check; FRICTION 106), tests/inline_arr_reassign_loop.ty (tychoc emitted .data on an inline array reassigned in a loop, found by tools/tycho-grade, 2026-09-24), tests/or_else.ty and tests/or_else_frees.ty (2026-09-25), tests/or_else_escape.ty (tychoc1 returned an or_else payload from a freed arena, 2026-09-25), tests/to_bytes_escape.ty (tychoc1 read to_bytes(local) as fresh, 2026-09-25), tests/neg_literal_adapt.ty (the two compilers disagreed on a negative literal at an adapting type)
+[ "$n_acc" = 314 ] || { echo "parse-check: tests/*.ty is $n_acc, expected 314"; rc=1; }   # +1 each: tests/packed_struct.ty (V2), tests/vector_type.ty (V3), tests/fixarr_iter.ty (V3a), tests/generic_recur_same.ty, tests/align_struct.ty (L1), tests/multi_assign.ty (L2), tests/swizzle.ty (L3), tests/vector_map_key.ty (composite map keys), tests/lane_names.ty (L4), tests/bounded_local_cap.ty (G9), tests/float_floor.ty (FRICTION 94, 0b385a24 -- the commit that turned this leg RED for a day because nothing runs parse-check; FRICTION 106), tests/inline_arr_reassign_loop.ty (tychoc emitted .data on an inline array reassigned in a loop, found by tools/tycho-grade, 2026-09-24), tests/or_else.ty and tests/or_else_frees.ty (2026-09-25), tests/or_else_escape.ty (tychoc1 returned an or_else payload from a freed arena, 2026-09-25), tests/to_bytes_escape.ty (tychoc1 read to_bytes(local) as fresh, 2026-09-25), tests/neg_literal_adapt.ty (the two compilers disagreed on a negative literal at an adapting type), tests/emit_many_inferred_arrays.ty (emitter placeholder-prefix collision, 2026-09-26), tests/generic_ctor_realloc.ty (generic type-table realloc, 2026-09-26), tests/const_sized_arrays.ty (const fixed-array/vector sizes, 2026-09-26); +1 place-store sequencing, tuple adaptation, pow/SoA iteration, D24 f-string, D22 sized-float, D29/D30 map-key, D26 temp-namespace, D28 enum-C-name, D36 double-underscore and D21 packed-inout regressions; +4 accumulator/loop/map/receive lifetime probes and +1 D81 receive escape case (2026-09-27)
 [ "$n_lib" = 91 ]  || { echo "parse-check: corelib/**.ty is $n_lib, expected 91"; rc=1; }
 [ "$n_new" = 180 ] || { echo "parse-check: tools+examples+server+bench .ty is $n_new, expected 180"; rc=1; }   # +1: tools/tycho-grade/main.ty, the worked vector/swizzle user FRICTION 128 layout 4 asked for (2026-09-24). +1: tools/tycho-du/main.ty, the handle probe's program brought in tree (2026-09-22). -1 before that: tools/tycho-rsa/ removed in 0888bf28, which left this literal at 179 and the lane red
 [ "$n_rej" = "$n_tsv" ] || { echo "parse-check: $n_rej reject fixtures but $n_tsv classified rows -- rerun scripts/classify_rejects.py"; rc=1; }
@@ -124,8 +124,8 @@ leg_accept() {
     echo "$1: files=$((ok+bad)) parse-ok=$ok fail=$bad"
     [ "$ok" = "$3" ] && [ "$bad" = 0 ] || { echo "parse-check: $1 expected $3 ok, 0 fail"; rc=1; }
 }
-# leg1 289 -> 290: tests/inline_arr_reassign_loop.ty; -> 292: tests/or_else{,_frees}.ty (2026-09-25); -> 293: tests/or_else_escape.ty; -> 294: tests/to_bytes_escape.ty; -> 295: tests/neg_literal_adapt.ty; leg1c 179 -> 180: tools/tycho-grade/main.ty (2026-09-24)
-leg_accept "leg1  tests/*.ty" "$(ls tests/*.ty)" 295
+# leg1 289 -> 290: tests/inline_arr_reassign_loop.ty; -> 292: tests/or_else{,_frees}.ty (2026-09-25); -> 293: tests/or_else_escape.ty; -> 294: tests/to_bytes_escape.ty; -> 295: tests/neg_literal_adapt.ty; -> 296: tests/emit_many_inferred_arrays.ty (emitter placeholder-prefix collision, 2026-09-26); -> 297: tests/generic_ctor_realloc.ty (generic type-table realloc, 2026-09-26); -> 298: tests/const_sized_arrays.ty (const fixed-array/vector sizes, 2026-09-26); leg1c 179 -> 180: tools/tycho-grade/main.ty (2026-09-24)
+leg_accept "leg1  tests/*.ty" "$(ls tests/*.ty)" 314
 leg_accept "leg1b corelib/**.ty" "$(find corelib -name '*.ty' | sort)" 91
 leg_accept "leg1c tools+examples+server+bench" "$(find tools examples server bench -name '*.ty' | sort)" 180
 
@@ -149,7 +149,7 @@ tr=0; tm=0; ta=0; tw=0
 # B-3 grounding analysis was ported into compiler/types/tcheck.ty@_pend_ground:
 # both are refused by their OWN rule now, byte for byte with ./tychoc.
 # infer_bare_empty LEFT it earlier, when `declared and not used` became fatal --
-# by THAT rule, not by grounding; it is the B-3 audit (src/tychoc.c:9561@grounding) that refuses it today.
+# by THAT rule, not by grounding; it is the B-3 audit (src/tychoc.c:9918@grounding) that refuses it today.
 # len_scalar LEFT it too, when the f-string interpolation holes became real
 # expressions: the `len` rule was always here, the hole was simply never walked.
 KNOWN_TYPE_MISS=""
@@ -207,7 +207,7 @@ echo "leg2c tests/reject/*.ty --typecheck: all=$((tr+tm)) rejected=$tr missed=$t
 # SEMANTIC 288 -> 290: the two unbound-opener fixtures (2026-09-21). The rule
 # needs the symbol table AND the callee's return type, so both are SEMANTIC.
 # SEMANTIC 290 -> 292: the two handle-destructor fixtures (2026-09-21).
-[ "$nsyn" = 122 ] && [ "$nname" = 36 ] && [ "$ntype" = 175 ] && [ "$nsem" = 306 ] || { echo "parse-check: the split moved -- expected SYNTAX=122 NAME=36 TYPE=175 SEMANTIC=306"; rc=1; }   # SYNTAX 119 -> 120: tests/reject/value_if_nested.ty (2026-09-24); SEMANTIC 292 -> 295: the three handle use-after-close fixtures (2026-09-24); -> 296: handle_close_param (2026-09-24); -> 297: slice_struct (2026-09-25); -> 301: fixarr/vector pop and reserve (2026-09-25); NAME 35 -> 36 and SEMANTIC -> 305: the five or_else rejects (2026-09-25); -> 306: sized_lit_binop_fit; SYNTAX 120 -> 122: value_if_one_line and fstr_hole_escaped_quote (2026-09-25)
+[ "$nsyn" = 124 ] && [ "$nname" = 36 ] && [ "$ntype" = 187 ] && [ "$nsem" = 318 ] || { echo "parse-check: the split moved -- expected SYNTAX=124 NAME=36 TYPE=187 SEMANTIC=318"; rc=1; }   # SYNTAX 119 -> 120: tests/reject/value_if_nested.ty (2026-09-24); SEMANTIC 292 -> 295: the three handle use-after-close fixtures (2026-09-24); -> 296: handle_close_param (2026-09-24); -> 297: slice_struct (2026-09-25); -> 301: fixarr/vector pop and reserve (2026-09-25); NAME 35 -> 36 and SEMANTIC -> 305: the five or_else rejects (2026-09-25); -> 306: sized_lit_binop_fit; -> 307: array_div_lit_zero (2026-09-26); TYPE 175 -> 182: empty fixed/vector literals, const arity/size/parameter rules, and nonpositive lengths; SEMANTIC -> 308: const push; -> 318: D06 numeric-literal coercion paths (2026-09-27); SYNTAX 122 -> 121 as nonpositive fixed-array lengths move to TYPE; -> 123: f-string format/trailing-token rejects (D24, 2026-09-27); TYPE 182 -> 184: sized-int/f32 composite map-key leaves (D30, 2026-09-27); SYNTAX 123 -> 124: reserved compiler-temp namespace (D26, 2026-09-27); TYPE 184 -> 187: grounded Option/Result comparison rejects (D86, 2026-09-27)
 [ "$mr" = 0 ] || { echo "parse-check: a NAME or SEMANTIC fixture was rejected by --parse; a parser has no symbol table"; rc=1; }
 [ "$sa" = 0 ] || { echo "parse-check: a SYNTAX fixture was accepted; the parser must refuse it"; rc=1; }
 [ "$rm_" = 0 ] || { echo "parse-check: a NAME fixture resolved; the resolver must refuse it"; rc=1; }
@@ -217,7 +217,7 @@ echo "leg2c tests/reject/*.ty --typecheck: all=$((tr+tm)) rejected=$tr missed=$t
 got=$(echo $seen_miss | tr ' ' '\n' | LC_ALL=C sort | tr '\n' ' ')
 want=$(echo $KNOWN_TYPE_MISS | tr ' ' '\n' | LC_ALL=C sort | tr '\n' ' ')
 [ "$got" = "$want" ] || { echo "parse-check: the TYPE misses moved"; echo "    now:  $got"; echo "    was:  $want"; rc=1; }
-[ "$tr" = 639 ] || { echo "parse-check: --typecheck refused $tr of 639, expected 639"; rc=1; }   # +2 each: the unbound-opener and handle-destructor fixtures (2026-09-21); +1: value_if_nested (2026-09-24); +3: handle use-after-close (2026-09-24); +1: handle_close_param (2026-09-24); +1: slice_struct (2026-09-25); +4: fixarr/vector pop and reserve (2026-09-25); +5: the or_else rejects (2026-09-25); +1: sized_lit_binop_fit; +2: value_if_one_line, fstr_hole_escaped_quote
+[ "$tr" = 665 ] || { echo "parse-check: --typecheck refused $tr of 665, expected 665"; rc=1; }   # +2 each: the unbound-opener and handle-destructor fixtures (2026-09-21); +1: value_if_nested (2026-09-24); +3: handle use-after-close (2026-09-24); +1: handle_close_param (2026-09-25); +1: slice_struct (2026-09-25); +4: fixarr/vector pop and reserve (2026-09-25); +5: the or_else rejects (2026-09-25); +1: sized_lit_binop_fit; +2: value_if_one_line, fstr_hole_escaped_quote; +1: array_div_lit_zero; +7: fixed/vector empty and const-sized array cases (2026-09-26); +10: D06 numeric-literal coercion paths (2026-09-27); +2 D24 malformed f-string hole rejects; +2 D30 invalid composite map-key leaf rejects; +1 D26 reserved temporary namespace reject; +3 D86 Option/Result comparison rejects (2026-09-27)
 
 # [3] -- the census, against a recorded golden
 for f in $(ls tests/*.ty) $(find corelib -name '*.ty' | sort) $(find tools examples server bench -name '*.ty' | sort); do
@@ -349,7 +349,7 @@ fn main():
     print(str(frexp(8.0, &n)))
 EOF
 # The accepting subscript twin is also the only place either corpus writes
-# THROUGH a subscript, which is the `g.at(0) = 5` place form (src/tychoc.c:4494).
+# THROUGH a subscript, which is the `g.at(0) = 5` place form (src/tychoc.c:4782).
 pr ok_subscript <<'EOF'
 package main
 struct G:
@@ -377,8 +377,8 @@ echo "leg4  declaration rules: refused=$nref/5 accepted=$nacc/5"
 
 # [4b] -- the two package-member formats, which NO verdict leg can see: both
 # spellings are a refusal, so leg2b/5/6/8 are green either way and the wording
-# is decoration until Phase 9 pins message text. src/tychoc.c:6790 answers
-# `pkg.Name` written with NO call; src/tychoc.c:7149 answers `pkg.name(...)`.
+# is decoration until Phase 9 pins message text. src/tychoc.c:7145 answers
+# `pkg.Name` written with NO call; src/tychoc.c:7504 answers `pkg.name(...)`.
 # Both measured against ./tychoc 2026-08-23. The accepting twin is required for
 # the usual reason: two refusals alone are satisfied by refusing everything.
 pr r3_field <<'EOF'
@@ -778,8 +778,8 @@ for f in tests/conc/*.ty tests/pkg/*/main.ty; do
     if "$TYCHOC1" "$f" --typecheck >/dev/null 2>&1; then n15a=$((n15a+1))
     else echo "  CONC-WRONGLY-REFUSED $f :: $("$TYCHOC1" "$f" --typecheck 2>&1 | head -1)"; l15=1; fi
 done
-echo "leg15 conc + pkg rules by MESSAGE: refused=$n15r/52 disagree=$n15d accepted=$n15a/41"
-[ "$n15r" = 52 ] && [ "$n15a" = 41 ] || { echo "parse-check: leg15 corpus moved -- update the literals"; l15=1; }
+echo "leg15 conc + pkg rules by MESSAGE: refused=$n15r/55 disagree=$n15d accepted=$n15a/42"
+[ "$n15r" = 55 ] && [ "$n15a" = 42 ] || { echo "parse-check: leg15 corpus moved -- update the literals"; l15=1; }
 [ "$l15" = 0 ] || { echo "parse-check: a concurrency or match-arm rule moved"; rc=1; }
 
 # [5] -- the whole tree, both verdicts, split by the same site table. See the

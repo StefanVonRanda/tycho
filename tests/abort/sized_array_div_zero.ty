@@ -1,0 +1,5 @@
+fn main():
+    a: [u32] = [7, 8]
+    b: [u32] = [1, 0]
+    out := a / b
+    println(str(out[0]))

@@ -1,0 +1,6 @@
+# A const length still constrains a fixed-array literal's arity.
+# expect: a fixed-size array of length 3 needs 3 elements, got 4
+const N = 3
+fn main():
+    a: [N]int = [1, 2, 3, 4]
+    println(str(len(a)))

@@ -1,0 +1,5 @@
+# expect: does not fit u8
+# An explicitly typed lambda body is checked against its declared result type.
+fn main():
+    f := fn() -> u8: 300
+    println(str(f()))

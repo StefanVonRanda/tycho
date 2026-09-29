@@ -1,0 +1,25 @@
+enum Shape:
+    Circle(int)
+    default(string)
+    EOF(int)
+    NULL(int)
+    case(int)
+    while(int)
+
+enum Shape_Circle:
+    Radius
+
+fn main():
+    a := Circle(5)
+    b := default("ok")
+    c := EOF(9)
+    d := NULL(3)
+    e := case(2)
+    f := while(1)
+    println(str(a) + " / " + str(b) + " / " + str(c) + " / " + str(d) + " / " + str(e) + " / " + str(f))
+    match b:
+        default(s):
+            println(s)
+        _:
+            println("other")
+    println(str(Radius))

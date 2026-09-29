@@ -120,7 +120,9 @@ fn handle_connection(conn: int, cmd: Channel(Cmd), r0: Channel(Res), r1: Channel
                 if e == httpd.Malformed:
                     _ := httpd.write_response(conn, httpd.text_response(400, "bad request"))
                 elif e == httpd.TooLarge:
-                    _ := httpd.write_response(conn, httpd.text_response(431, "request too large"))
+                    _ := httpd.write_response(conn, httpd.text_response(431, "request headers too large"))
+                elif e == httpd.BodyTooLarge:
+                    _ := httpd.write_response(conn, httpd.text_response(413, "request body too large"))
                 net.close_fd(conn)
                 return served
     return served

@@ -14,3 +14,4 @@ nul_system=-1
 nul_run=[] code=-1
 nul_exec=-1
 nul_exec_out=[] code=-1
+nul_child_output=windows-unavailable

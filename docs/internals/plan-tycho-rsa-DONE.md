@@ -66,7 +66,7 @@ core:bignum's mag_mul.
   needs castling masks and wrote `6917529027641081856` and
   `1008806316530991104` where every other bitboard engine writes
   `0x6000000000000000`. Integer literals were decimal-only by spec
-  (`docs/spec/01-lexical.md:203` now reads "no **octal** form" -- the hex
+  (`docs/spec/01-lexical.md:205` now reads "no **octal** form" -- the hex
   absence was the same sentence). The cost was concrete: the constant was
   opaque, and the engine author transcribed it by hand from hex -- one wrong
   digit is a silent bitboard bug that only perft catches if the position

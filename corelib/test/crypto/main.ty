@@ -103,3 +103,13 @@ fn main():
     println("cte_diff=" + str(yn(crypto.ct_equal("aabb", "ccdd") == false)))
     println("cte_nul_no_collide=" + str(yn(crypto.ct_equal("aabb" + nz + "1122", "aabb" + nz + "3344") == false)))
     println("cte_nul_vs_clean=" + str(yn(crypto.ct_equal("aabb" + nz + "1122", "aabbccdd") == false)))
+    badhex := "616263" + nz + "646566"
+    println("hex_nul_sha=" + str(yn(crypto.sha256(badhex) == "!err")))
+    println("hex_nul_key=" + str(yn(is_null(crypto.key_from_hex("00" + nz + "11")))))
+    println("hex_nul_salt=" + str(yn(is_null(crypto.pbkdf2_sha256("pw", "00" + nz + "11", 2, 16)))))
+    println("hex_nul_hmac=" + str(yn(crypto.hmac_sha256(null, badhex) == "!err")))
+    println("hex_nul_aead=" + str(yn(crypto.aead_encrypt(null, nonce, "00" + nz + "11", aad) == "!err")))
+    println("hex_nul_verify=" + str(yn(crypto.ed25519_verify(pub, smsg + nz + "00", sig) == false)))
+    println("hex_nul_ed_seed=" + str(yn(is_null(crypto.ed25519_key_from_seed("00" + nz + "11")))))
+    println("hex_nul_x_secret=" + str(yn(is_null(crypto.x25519_key_from_secret("00" + nz + "11")))))
+    println("hex_nul_x_shared=" + str(yn(is_null(crypto.x25519_shared(null, pubb + nz + "00")))))

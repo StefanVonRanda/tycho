@@ -115,11 +115,11 @@ static int tls_set_sock_timeout(int fd, tycho_int ms) {
 /* connect(2) bounded by `ms`: non-blocking connect, poll for writability, then
  * read SO_ERROR -- a poll that returns ready still has to be asked whether the
  * connect SUCCEEDED. The descriptor is put back to blocking on every path. */
-static int tcp_connect_timed(int fd, const struct sockaddr *sa, socklen_t salen, tycho_int ms) {
+static int tcp_connect_timed(int fd, const struct sockaddr *sa, int salen, tycho_int ms) {
     int flags = fcntl(fd, F_GETFL, 0);
     if (flags < 0) return -1;
     if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) != 0) return -1;
-    int rc = connect(fd, sa, salen);
+    int rc = connect(fd, sa, (socklen_t)salen);
     if (rc != 0 && errno == EINPROGRESS) {
         struct pollfd pfd;
         pfd.fd = fd; pfd.events = POLLOUT; pfd.revents = 0;
@@ -136,10 +136,34 @@ static int tcp_connect_timed(int fd, const struct sockaddr *sa, socklen_t salen,
     (void)fcntl(fd, F_SETFL, flags);
     return rc;
 }
+#else
+static int tcp_connect_timed(int fd, const struct sockaddr *sa, int salen, tycho_int ms) {
+    u_long nonblock = 1;
+    if (ioctlsocket((SOCKET)fd, FIONBIO, &nonblock) != 0) return -1;
+    int rc = connect((SOCKET)fd, sa, salen);
+    if (rc == SOCKET_ERROR) {
+        int e = WSAGetLastError();
+        if (e == WSAEWOULDBLOCK || e == WSAEINPROGRESS) {
+            fd_set writable;
+            FD_ZERO(&writable); FD_SET((SOCKET)fd, &writable);
+            struct timeval tv;
+            tv.tv_sec = (long)(ms / 1000);
+            tv.tv_usec = (long)((ms % 1000) * 1000);
+            int ready = select(0, NULL, &writable, NULL, &tv);
+            int soerr = 0, n = sizeof soerr;
+            if (ready > 0 && getsockopt((SOCKET)fd, SOL_SOCKET, SO_ERROR, (char *)&soerr, &n) == 0 && soerr == 0)
+                rc = 0;
+            else rc = -1;
+        } else rc = -1;
+    }
+    nonblock = 0;
+    (void)ioctlsocket((SOCKET)fd, FIONBIO, &nonblock);
+    return rc == 0 ? 0 : -1;
+}
 #endif
 
 static int tcp_connect(const char *host, tycho_int port, tycho_int ms) {
-    if (!host || port < 0 || port > 65535 || ms < 0) return -1;
+    if (!host || port < 0 || port > 65535 || ms < 0 || ms > INT_MAX) return -1;
     char portstr[16];
     snprintf(portstr, sizeof portstr, "%d", (int)port);   /* port validated 0..65535 above */
     struct addrinfo hints, *res = NULL, *rp;
@@ -157,15 +181,13 @@ static int tcp_connect(const char *host, tycho_int port, tycho_int ms) {
             setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, sizeof on);
         }
 #endif
-#ifndef _WIN32
         if (ms > 0) {
-            if (tcp_connect_timed(fd, rp->ai_addr, (socklen_t)rp->ai_addrlen, ms) == 0) break;
+            if (tcp_connect_timed(fd, rp->ai_addr, (int)rp->ai_addrlen, ms) == 0) break;
             close(fd);
             fd = -1;
             continue;
         }
-#endif
-        if (connect(fd, rp->ai_addr, rp->ai_addrlen) == 0) break;
+        if (connect(fd, rp->ai_addr, (int)rp->ai_addrlen) == 0) break;
         close(fd);
         fd = -1;
     }
@@ -210,7 +232,7 @@ void *tlsx_connect(const char *host, tycho_int port) {
  * Returns 1 on success, 0 on failure -- the net.set_read_timeout_ms shape. */
 tycho_int tlsx_set_timeout(void *p, tycho_int ms) {
     tlsx_live((const Tls *)p, 0);
-    if (!p || ms < 0) return 0;
+    if (!p || ms < 0 || ms > INT_MAX) return 0;
     return tls_set_sock_timeout(((Tls *)p)->fd, ms) ? 1 : 0;
 }
 

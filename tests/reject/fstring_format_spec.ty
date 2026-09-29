@@ -1,0 +1,3 @@
+fn main():
+    price := 3.14
+    println(f"{price:.2f}")

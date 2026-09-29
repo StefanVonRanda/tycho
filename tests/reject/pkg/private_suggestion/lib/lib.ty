@@ -1,0 +1,4 @@
+package lib
+
+fn _helper(x: int) -> int:
+    return x

@@ -59,4 +59,14 @@ fn main():
     # count above is satisfied by a renderer that refuses every link there is.
     println("control http linked=" +
             str(find(markdown.render("[x](http://example.com/a)"), "href=") >= 0))
+    bad_links := ""
+    bad_images := ""
+    for i := 0; i < 20000; i += 1:
+        bad_links += "["
+        bad_images += "!["
+    bad_links += "]"
+    bad_images += "]"
+    println("bracket tails preserved=" +
+            str(len(markdown.inline(bad_links)) == len(bad_links)) + "," +
+            str(len(markdown.inline(bad_images)) == len(bad_images)))
 

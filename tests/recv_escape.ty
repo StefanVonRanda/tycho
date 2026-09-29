@@ -1,0 +1,46 @@
+# A recv() result is allocated in the arena of the expression's destination,
+# not the callee's short-lived scope. Returning it directly and after a bind
+# must leave the heap payload alive for the caller.
+
+fn receive_direct(ch: Channel(string)) -> Option(string):
+    return recv(ch)
+
+fn receive_bound(ch: Channel(string)) -> Option(string):
+    got := recv(ch)
+    return got
+
+fn receive_or_else(ch: Channel(string)) -> string:
+    return recv(ch) or_else _: "empty"
+
+fn churn():
+    for i := 0; i < 256; i += 1:
+        xs := []string
+        for j := 0; j < 64; j += 1:
+            push(xs, "reused" + str(j))
+
+fn main():
+    payload := ""
+    for i := 0; i < 2048; i += 1:
+        payload += "abcdefgh"
+
+    a := channel(string, 1)
+    send(a, payload)
+    direct := receive_direct(a)
+    churn()
+    match direct:
+        Some(s): println("direct=" + str(len(s)) + "," + str(s[0]) + "," + str(s[len(s) - 1]))
+        None: println("direct=none")
+
+    b := channel(string, 1)
+    send(b, payload)
+    bound := receive_bound(b)
+    churn()
+    match bound:
+        Some(s): println("bound=" + str(len(s)) + "," + str(s[0]) + "," + str(s[len(s) - 1]))
+        None: println("bound=none")
+
+    c := channel(string, 1)
+    send(c, payload)
+    unwrapped := receive_or_else(c)
+    churn()
+    println("or_else=" + str(len(unwrapped)) + "," + str(unwrapped[0]) + "," + str(unwrapped[len(unwrapped) - 1]))

@@ -2,6 +2,7 @@ package srv
 
 import "core:net"
 import "core:strings"
+import "core:time"
 import "../sql"
 import "../store"
 import "../wal"
@@ -51,6 +52,8 @@ import "../exec"
 # server dies. This is the trust boundary: everything past it is parsed.
 const MAX_LINE = 8192
 const READ_CHUNK = 4096
+const IDLE_TIMEOUT_MS = 1000
+const MAX_SESSION_MS = 60000
 const END = "."
 
 enum SrvErr:
@@ -112,6 +115,7 @@ fn close_conn(fd: int):
 # A stream that ends with bytes still in the buffer DID -- that is a statement
 # cut in half, and it comes back as Peer.
 fn recv_line(fd: int, buf: inout string) -> Result(Option(string), SrvErr):
+    sw := time.start()
     for true:
         if strings.contains(buf, "\n"):
             line, rest := strings.split_once(buf, "\n")
@@ -121,12 +125,18 @@ fn recv_line(fd: int, buf: inout string) -> Result(Option(string), SrvErr):
             return Ok(Some(strings.strip_suffix(line, "\r")))
         if len(buf) > MAX_LINE:
             return Err(TooLong(MAX_LINE))
+        remaining := IDLE_TIMEOUT_MS - time.elapsed_ms(sw)
+        if remaining <= 0:
+            return Err(Peer("idle timeout"))
+        if not net.set_read_timeout_ms(fd, remaining):
+            return Err(Peer("cannot set idle timeout"))
         match net.read(fd, READ_CHUNK):
             Ok(b): buf = buf + to_str(b)
             Err(net.Eof):
                 if len(strings.trim(buf)) > 0:
                     return Err(Peer("closed mid-statement"))
                 return Ok(None)
+            Err(net.Timeout): return Err(Peer("idle timeout"))
             Err(e): return Err(Peer("read failed"))
     return Ok(None)
 
@@ -183,7 +193,10 @@ fn render(o: exec.Outcome) -> [string]:
 fn serve_conn(conn: int, db: inout store.Db, lg: inout wal.Log) -> Result(int, SrvErr):
     buf := ""
     served := 0
+    session_sw := time.start()
     for true:
+        if time.elapsed_ms(session_sw) >= MAX_SESSION_MS:
+            return Err(Peer("session timeout"))
         got := recv_line(conn, &buf) or_return
         line := ""
         eof := false

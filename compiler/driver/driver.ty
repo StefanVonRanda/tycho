@@ -170,7 +170,7 @@ fn _links(p: types.Program) -> [string]:
                 push(out, fd.lib)
     return out
 
-# NEVER eat a .c this compiler did not write (src/tychoc.c:15308). A file WE left
+# NEVER eat a .c this compiler did not write (src/tychoc.c:15962). A file WE left
 # behind starts with the runtime banner and is fair game; anything else is the
 # user's and the intermediate would destroy it.
 fn _guard_c(c_path: string):
@@ -223,7 +223,7 @@ fn _pkgflags(p: types.Program) -> [string]:
                     # Everything after `_WIN32:` is RAW linker flags for the
                     # Windows build (-lws2_32, -lpcre2-posix). They are not
                     # pkg-config names, and a non-Windows compiler skips the
-                    # whole section (src/tychoc.c:5793). Reading them as package
+                    # whole section (src/tychoc.c:6082). Reading them as package
                     # names made pkg-config fail and net/tls/httpd/regex SKIP.
                     if t == "_WIN32:":
                         win = true
@@ -272,7 +272,7 @@ fn build(src_path: string, runtime_path: string, base: string, argv0: string,
     _guard_c(c_path)
     p := types.Program([]types.File, "", "", "", "")
     check_into(src_path, argv0, &p, _vec_tgt(tgt, nat))
-    # -g: src/tychoc.c:15248 makes #line single-file only, and names the source
+    # -g: src/tychoc.c:16277 makes #line single-file only, and names the source
     # in every directive. A multi-file build has no single g_line_file to name.
     dbgf := ""
     if dbg and len(p.files) == 1:
@@ -640,7 +640,7 @@ fn _ty_src(t: ast.Ty, pk: string, own: [string: bool], imp: [string: string]) ->
                 # gates this on is_imported_pkg, which filters g_imports by
                 # g_srcname -- a global left pointing at whichever file the parser
                 # finished with (no assignment between parse and emit_symbols,
-                # src/tychoc.c:15301-15385). So the SAME type prints `graph.MakeErr`
+                # src/tychoc.c:15943-16039). So the SAME type prints `graph.MakeErr`
                 # and `build__BuildErr` in one run, and tools/tycho-make/main.ty
                 # imports build either way. Matching that means reproducing a load
                 # order, not a rule. Unconditional also scores better: tycho-make
@@ -713,8 +713,9 @@ fn _sym_locals(b: [ast.Stmt], fnline: int, pk: string, own: [string: bool], imp:
             ast.MDecl(l, d, ns, r):
                 for n2 in ns:
                     print("local\t" + n2 + "\t?\t" + str(fnline) + "\t" + str(l) + "\n")
-            ast.IfS(l, c, bb, e):
-                _sym_locals(bb, fnline, pk, own, imp)
+            ast.IfS(l, arms, e):
+                for arm in arms:
+                    _sym_locals(arm.body, fnline, pk, own, imp)
                 _sym_locals(e, fnline, pk, own, imp)
             ast.WhileS(l, c, bb): _sym_locals(bb, fnline, pk, own, imp)
             ast.For3(l, ip, c, bb):
@@ -734,6 +735,18 @@ fn _sym_locals(b: [ast.Stmt], fnline: int, pk: string, own: [string: bool], imp:
 fn emit_symbols(src_path: string, argv0: string):
     p := types.Program([]types.File, "", "", "", "")
     types.load_into(src_path, argv0, &p)
+    rs := types.resolve(p)
+    wl := ""
+    for w in types.warn_lines(rs):
+        wl = wl + w + "\n"
+    eprint(wl)
+    if len(rs.errs) > 0:
+        out := ""
+        for e in rs.errs:
+            out = out + e + "\n"
+        eprint(out)
+        exit(1)
+    _drain_late(rs)
     # the checker's inferred type for every local, bucketed by the fn it is in.
     # The AST alone cannot supply it: `a := args()` carries no annotation.
     # keyed by the fn's MANGLED NAME, not its line: cli__is_short and main are

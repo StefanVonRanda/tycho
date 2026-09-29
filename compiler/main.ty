@@ -69,6 +69,7 @@ fn main():
     av := args()
     src := ""
     out := ""
+    out_set := false
     rt := "runtime/tycho_rt.c"
     emit_c := false
     cc9 := "cc"
@@ -119,6 +120,7 @@ fn main():
             if i >= len(av):
                 usage()
             out = av[i]
+            out_set = true
         elif a == "--native":
             nat = true
         elif a == "--target":
@@ -165,10 +167,13 @@ fn main():
                     push(xtra, strings.trim(w9))
         # -L/-I take the attached (-L/path) and separated (-L /path) forms
         elif strings.starts_with(a, "-L") or strings.starts_with(a, "-I"):
-            push(xtra, a)
-            if len(a) == 2 and i + 1 < len(av):
+            if len(a) == 2:
+                if i + 1 >= len(av) or strings.starts_with(av[i + 1], "-"):
+                    die("tychoc: " + a + " needs a directory argument")
                 i += 1
-                push(xtra, av[i])
+                push(xtra, a + av[i])
+            else:
+                push(xtra, a)
         elif a == "--runtime":
             i += 1
             if i >= len(av):
@@ -181,6 +186,8 @@ fn main():
         i += 1
     if len(src) == 0:
         usage()
+    if out_set and len(out) == 0:
+        die("tychoc: -o needs a non-empty output name")
     if mode == "dump":
         driver.dump_tokens(src)
         return

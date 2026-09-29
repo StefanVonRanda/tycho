@@ -502,16 +502,11 @@ fn _parse_array(s: string, n: int, pos: inout int, ecode: inout int) -> Json:
     pos = pos + 1                              # skip ]
     return JArr(xs)
 
-fn _key_index(ks: [string], k: string) -> int:  # position of k in ks, or -1
-    for i := 0; i < len(ks); i += 1:
-        if ks[i] == k:
-            return i
-    return -1
-
 fn _parse_object(s: string, n: int, pos: inout int, ecode: inout int) -> Json:
     pos = pos + 1                              # skip {
     ks := []string
     vs := []Json
+    slots := []string: int
     _skip_ws(s, n, &pos)
     for pos < n and s[pos] != 125 and ecode == JE_OK:  # until }
         before := pos
@@ -535,10 +530,11 @@ fn _parse_object(s: string, n: int, pos: inout int, ecode: inout int) -> Json:
         # answer to every mainstream parser, and a filter that read one value
         # while the consumer downstream read the other.
         kv := _parse_value(s, n, &pos, &ecode)
-        dup := _key_index(ks, k)
+        dup := slots.get(k, -1)
         if dup >= 0:
             vs[dup] = kv
         else:
+            slots[k] = len(ks)
             push(ks, k)
             push(vs, kv)
         if ecode != JE_OK:

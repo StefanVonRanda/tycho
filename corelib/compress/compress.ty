@@ -5,7 +5,7 @@ enum ZErr:
     Corrupt        # inflate refused the data: bad wrapper, bad checksum, needs a dictionary
     Truncated      # the input stops mid-stream
     Failed         # init or allocation failed -- nothing to do with the payload
-    TooBig         # the output passed the 1 GiB ceiling -- a decompression bomb, not a
+    TooBig         # the output passed the decompression ceiling -- a bomb, not a
                    # damaged stream: the input is VALID and that is the danger
 
 # ---- shim externs (zlib; defined in compress_shim.c) ----
@@ -20,12 +20,13 @@ const ZD_OK = 0
 const ZD_CORRUPT = 1
 const ZD_TRUNCATED = 2
 const ZD_TOOBIG = 3
+const ZD_FAILED = 4
 
 fn compress(data: bytes) -> bytes:
     return zx_compress(data)
 
 # Shared decode of the shim's status code, so both inflate entry points answer
-# with the same three causes.
+# with the same set of causes.
 fn _cause(st: int) -> ZErr:
     if st == ZD_CORRUPT:
         return Corrupt
@@ -33,6 +34,8 @@ fn _cause(st: int) -> ZErr:
         return Truncated
     if st == ZD_TOOBIG:
         return TooBig
+    if st == ZD_FAILED:
+        return Failed
     return Failed
 
 # Ok(b) on success -- and an empty payload is Ok with len(b) == 0, a real value

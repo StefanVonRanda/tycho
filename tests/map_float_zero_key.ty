@@ -1,0 +1,11 @@
+struct FKey:
+    x: float
+
+struct WrappedKey:
+    key: FKey
+
+fn main():
+    m := []WrappedKey: int
+    m[WrappedKey(FKey(0.0))] = 1
+    m[WrappedKey(FKey(-0.0))] = 2
+    println("len=" + str(len(m)) + " value=" + str(m[WrappedKey(FKey(0.0))]))

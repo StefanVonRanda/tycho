@@ -1,0 +1,6 @@
+package main
+
+import "res"
+
+fn main():
+    println(str(res.len("abc")))

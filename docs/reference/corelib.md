@@ -111,8 +111,8 @@ element type instead of a family of per-type siblings.
     not resolve. A path that **does not exist is not a refusal**: the longest
     existing ancestor is resolved and checked instead, and the lexical join comes
     back, so the caller reports its own "not found" rather than a spurious
-    "forbidden". Nothing can escape through a component that is not there — there
-    is no symlink to follow.
+    "forbidden". A dangling symlink is different: it exists even though its
+    target does not, so it is detected with `lstat`/reparse metadata and refused.
 
     **Residual TOCTOU, stated rather than hidden:** between this check and the
     caller's own open, an attacker *with write access inside the root* could
@@ -275,21 +275,19 @@ element type instead of a family of per-type siblings.
   `-`/`_` alphabet, no padding). Pure arithmetic — the 6-bit packing uses `/` and `%`
   (exact on the unsigned 0..255 that `s[i]` returns), no bit-operators. `decode` is
   lenient: it skips any non-alphabet byte (padding `=`, whitespace, newlines in wrapped
-  Base64) and accepts both alphabets. **Byte-safety caveat** (a tycho string-model limit,
-  not a Base64 one): `encode` is fully byte-safe, but `decode` builds its result with
-  `chr()`, and a tycho string can't hold an interior `0x00` (`chr(0)` appends nothing), so
-  decoding plaintext that contains a NUL byte silently drops it — `decode` is exact for
-  text and any non-NUL binary, lossy only for data containing `0x00`.
+  Base64) and accepts both alphabets. Tycho strings are length-carrying and can contain
+  interior `0x00` bytes (`chr(0)` is one NUL byte), so `decode` preserves NULs as well as
+  other decoded bytes. Use `bytes` when crossing a binary C API.
 - **`hex`** — hexadecimal `encode` (lowercase) / `encode_upper` / `decode`, two digits per
   byte, plus `is_valid` (strict: even length, all hex digits). `decode` is lenient (skips
   any non-hex byte, so `de:ad:be:ef` and spaced/newlined hex work, either case) and reuses
-  `core:char`'s `hex_val`. Same `0x00` decode caveat as `base64` (`decode("00")` is `""`).
+  `core:char`'s `hex_val`. Decoding `"00"` returns a one-byte string containing NUL.
 - **`url`** — URL percent-encoding (RFC 3986). `encode` is component-style (like JS
   `encodeURIComponent` — everything but unreserved `A-Z a-z 0-9 - _ . ~` becomes `%XX`,
   uppercase, space → `%20`); `encode_form` / `decode_form` use the
   `x-www-form-urlencoded` convention (space ↔ `+`); `decode` decodes `%XX` (leaving `+`).
   `decode` is lenient (a `%` not followed by two hex digits is emitted literally) and reuses
-  `core:char`'s `hex_val`. Same `0x00` decode caveat as `base64`/`hex`.
+  `core:char`'s `hex_val`. `%00` produces an interior NUL byte in the returned string.
 - **`uuid`** — version-4-shaped UUIDs (RFC 4122) plus the nil UUID and helpers. `v4(&st)`
   draws from `rand`'s 32-bit xorshift, so it is **not unguessable** — use
   `crypto.random_hex` for a token.
@@ -351,8 +349,8 @@ element type instead of a family of per-type siblings.
   primitives are bound to OpenSSL rather than reimplemented. Constant-time code needs
   guarantees no high-level language makes about its own arithmetic, which is why Go ships
   `crypto/subtle` and why nobody writes production RSA in Python either. Every value (keys, nonces, ciphertext, signatures,
-  digests) crosses as lowercase hex, because a Tycho string can't hold a `0x00`; use
-  `core:hex` to convert text. Checked against independent known-answer vectors (RFC 4231 HMAC,
+  digests) crosses as lowercase hexadecimal text at this interface; use `core:hex`
+  to convert byte buffers. Checked against independent known-answer vectors (RFC 4231 HMAC,
   RFC 7914 PBKDF2, RFC 8439 ChaCha20-Poly1305, Ed25519/X25519).
   **Keys are opaque handles, and their lifecycle is the part you need first:**
   `key_random(n) -> ptr` makes one from the CSPRNG, `key_from_hex(hex) -> ptr`
@@ -399,18 +397,20 @@ element type instead of a family of per-type siblings.
 - **`toml`** — a TOML v1.0-subset parser: `parse(s) -> Result(Value, string)`
   (fail-closed), a recursive `Value` enum (TStr/TInt/TFloat/TBool/TArr/TTable;
   tables are parallel keys/values arrays), and `get(t, "a.b.c") -> Option(Value)`
-  / `keys(t)`. Supports bare + quoted + dotted keys, `[table]` and
+  / `keys(t)`. `get` accepts quote-aware path segments for keys containing dots. Supports bare + quoted + dotted keys, `[table]` and
   `[[array-of-tables]]`, basic strings with escapes and \uXXXX, literal
   strings, ints (dec/0x/0o/0b/underscores), floats, bools, arrays with
   trailing commas; an ISO-8601 datetime is kept as a string. Not inline tables
   or multi-line strings.
-  `empty_table()` gives an empty `Value` table, the starting point for building one up rather than parsing it.
+  `empty_table()` gives an empty `Value` table, the starting point for building one up rather than parsing it. Parsing is bounded to 64 KiB, 512 assignments/headers and 128 nesting levels; larger documents return `Err` rather than consuming unbounded time or memory.
 - **`zip`** — a ZIP archive reader and writer over core:compress's raw
-  deflate: `list(bytes)` (names, methods, sizes, CRCs), `extract(bytes, name)`
+  deflate: `list(bytes)` (names, methods, sizes, CRCs and local offsets),
+  `extract_entry(bytes, meta)` for one-pass iteration, `extract(bytes, name)`
   (fail-closed: missing/corrupt entries or a CRC mismatch yield empty), and
-  `create([Entry(name, data)])` (stored or deflated, CRC-32 computed here).
-  Entries are names, not paths — extracting never touches the filesystem.
-  The writer's output is read back byte-exactly by Python's zipfile.
+  `create_checked([Entry(name, data)]) -> Result(bytes, string)` validates classic-ZIP count,
+  name, size and offset fields before writing; legacy `create(...)` remains a
+  fail-fast wrapper. Entries are names, not paths — extracting never touches
+  the filesystem. The writer's output is read back byte-exactly by Python's zipfile.
 - **`sqlite`** — a thin wrapper over libsqlite3, bound directly (no
   hand-written shim — the `extern "sqlite3"` forms name the pkg-config
   dependency, so the package and its test skip where sqlite3 is absent):
@@ -438,16 +438,20 @@ element type instead of a family of per-type siblings.
   empty one alike, so prefer `read_text(p) -> Result(string, IoErr)` (same content, with
   the error channel) or `read_bytes(p)` when the difference matters —
   `write(p, s)` (truncate, returns false if unopenable),
-  `append(p, s)` (read-rewrite, not atomic) and `append_text(p, s) -> Result(void, IoErr)`
+  `append(p, s)` (`O_APPEND`, no read-rewrite) and `append_text(p, s) -> Result(void, IoErr)`
   (the same, with the error channel), `read_lines(p)` / `write_lines(p, lines)`
   (newline-terminated round-trip), `list(p)` (entry basenames) and `list_checked(p) -> Result([string], IoErr)`
   (which distinguishes an empty directory from an unreadable one, where `list`
-  cannot), `exists(p)` (**one `stat(2)`**, not a
+  cannot), `rename(src, dst) -> Result(void, IoErr)` atomically replaces a destination on
+  the same filesystem, preserving an existing regular file's access mode (sync file and
+  directory separately when durability matters),
+  `lock_exclusive(p) -> Result(bool, IoErr)` is a nonblocking process-lifetime lock (`Ok(false)`
+  means busy; the OS releases it when the process exits), `exists(p)` (**one `stat(2)`**, not a
   listing of the parent — that would be O(entries) and blind to a leaf under an unlistable
   parent; `false` means "`stat` could not say yes", so it fails closed). For
   inputs too large to slurp, a **bounded-memory streaming line reader** over a libc `getline`
   shim: `open_lines(p) -> Result(LineReader, io.IoErr)` → `read_line(r)` (`Some(line)` / `None`
-  at EOF) → `close_lines(r)`. A `LineReader` is opaque (its C pointer is private), and the opener
+  at EOF; embedded NUL bytes are preserved) → `close_lines(r)`. A `LineReader` is opaque (its C pointer is private), and the opener
   reports *why* it failed rather than handing back a null to check: `BadPath` for an interior NUL,
   else `NotFound` / `IsDir` / `Failed`. There is no `defer`, so `close_lines` is yours to call —
   as it is in Go and Odin, whose openers return the same (resource, error) pair. Plus
@@ -457,7 +461,7 @@ element type instead of a family of per-type siblings.
   bytes, a missing path is `Err(NotFound)` and a directory is `Err(IsDir)` — three outcomes a
   single empty `bytes` would collapse, which is how a static file server ends up serving a
   0-byte `200` for a path it cannot read. The variants are payload-free, so `==` and a nested
-  `Err(io.IsDir)` arm both work. **Six** calls go past the builtins to real syscalls. Three of them
+  `Err(io.IsDir)` arm both work. Filesystem helpers also go past the builtins to real syscalls. Three of them
   resolve `list`'s empty-directory-vs-non-directory ambiguity, which is a missing `stat(2)`
   and never a return type: `is_dir(p) -> Result(bool, io.IoErr)` asks it (an **empty directory is
   a directory**, which `len(list(p)) > 0` gets wrong), and `make_dir(p)` / `remove(p)` —
@@ -478,7 +482,7 @@ element type instead of a family of per-type siblings.
   read; and `read_at(p, off, n) -> Result(bytes, io.IoErr)` over `pread(2)`, which allocates
   `min(n, size - off)` and never `n`, so a length off the wire cannot over-allocate, and answers
   `Ok` with zero bytes past EOF. The **writers that can only succeed or fail** —
-  `write_bytes(p, b)`, `write_at(p, off, b)`, `set_mtime(p, secs)` and `sync(p)` — return
+  `write_bytes(p, b)`, `write_at(p, off, b)`, `set_mtime(p, secs)`, `rename(src, dst)` and `sync(p)` — return
   `Result(void, io.IoErr)`, so `io.write_bytes(p, b) or_return` is a statement and a `match`
   arm is `Ok():`. There is no bool: `Ok(false)` would be
   unreachable, and a caller binding one would be guarding a case that cannot occur. Contrast
@@ -544,7 +548,8 @@ element type instead of a family of per-type siblings.
 - **`httpd`** — a minimal HTTP/1.1 **server** toolkit over `core:net` (no external
   dependency — net is libc-only). The request/response plumbing is pure Tycho; you own the
   accept loop. `parse_request(raw) -> Result(Request, httpd.ReqErr)` (method/path/version,
-  case-insensitive `header(r, name)`, honors Content-Length; `Err(Malformed)` on a
+  case-insensitive `header(r, name)`, `has_header(r, name)` distinguishes an absent
+  field from a present-but-empty one, honors Content-Length; `Err(Malformed)` on a
   malformed request line);
   `response(status, body: bytes)` (standard reason phrase) /
   `response_reason(status, reason, body: bytes)` (your own phrase, for a status the
@@ -585,7 +590,8 @@ element type instead of a family of per-type siblings.
   `net.set_read_timeout_ms` so an idle peer cannot pin a worker. CRLF is built with
   `chr(13)` (tycho strings have no `\r` escape).
   **Framing is refused, never guessed**, by all three read entry points
-  (`corelib/httpd/httpd.ty@framing`): any `Transfer-Encoding` at all — **chunked bodies are
+  (`corelib/httpd/httpd.ty@framing`): any `Transfer-Encoding` field (including an empty
+  or repeated one) and an empty/invalid `Content-Length` are refused — **chunked bodies are
   not decoded** — a `Content-Length` that is not a plain decimal, two `Content-Length`
   headers that disagree, or `Content-Length` together with `Transfer-Encoding`, are each
   `Err(Malformed)`, and the connection must not be reused. A framed size past `cap` is
@@ -718,7 +724,7 @@ plus three more:
   `tools/tycho-ar` depends on this: its "archive the same tree twice, `cmp`-identical"
   gate reddens if it ever stops holding. The compressed *length* is a zlib tuning
   detail — it is not stable across zlib versions and no golden here locks it.
-  `raw_compress(data)` is the same deflate without the gzip framing, for callers that supply their own container.
+  `raw_compress(data)` is the same deflate without the gzip framing, for callers that supply their own container. Each decompression is capped at 1 GiB (or the zlib `uInt` limit when lower).
 - **`image`** — PNG decode/encode over **libpng** (`deps: libpng`): `decode(bytes) ->
   Result(Image{width, height, pixels}, ImgErr)` (8-bit RGBA) and `encode(Image) ->
   Result(bytes, ImgErr)`. A sentinel — a 0×0 `Image`, an empty buffer — would make a
@@ -729,7 +735,9 @@ plus three more:
 - **`tls`** — a TLS 1.2/1.3 client over **OpenSSL** (`deps: openssl`). Secure by default:
   `connect(host, port)` verifies the certificate against the system CA store, checks the
   hostname, and sends SNI; failure returns a null handle (never a silent insecure
-  connection). `write`/`read`/`close_conn` over the encrypted stream.
+  connection). `connect_timeout(host, port, ms)` bounds TCP connect and handshake,
+  and `set_timeout_ms(conn, ms)` bounds later reads/writes; timeout values outside
+  0..2,147,483,647 fail closed. `write`/`read`/`close_conn` use the encrypted stream.
 
 This keeps the test suite libc-only and portable while still allowing library-backed modules.
 A libc-only shim needs no `deps` — `core:regex`, `core:os`, `core:net` and `core:signal`

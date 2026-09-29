@@ -1,0 +1,11 @@
+# expect: does not fit u8
+# UFCS arguments are checked against the resolved free function's parameters.
+struct Box:
+    value: int
+
+fn pick(b: Box, n: u8) -> u8:
+    return n
+
+fn main():
+    b := Box(0)
+    println(str(b.pick(300)))

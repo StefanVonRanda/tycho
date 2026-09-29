@@ -1,0 +1,2 @@
+fn main():
+    print(str(Ok(1) == Err("no")))

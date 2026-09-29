@@ -1,0 +1,5 @@
+# Element-wise broadcast must reject a literal zero divisor just like scalar division.
+# expect: division by zero
+fn main():
+    xs := [7, 8]
+    println(str(xs / 0))

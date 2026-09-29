@@ -85,6 +85,8 @@ fn _inline_at(s: string, depth: int) -> string:
     no_bt := false                                  # no ` at or after i
     no_rb := false                                  # no ]
     no_rp := false                                  # no )
+    next_rb := 0 - 1                                # cached next ]
+    next_rp := 0 - 1                                # cached next )
     no_bb := false                                  # no **
     no_st := false                                  # no *
     no_us := false                                  # no _
@@ -103,15 +105,17 @@ fn _inline_at(s: string, depth: int) -> string:
                 out = out + "<code>" + esc(substr(s, i + 1, j)) + "</code>"
                 i = j + 1
         elif c == 33 and i + 1 < n and s[i + 1] == 91:   # ![alt](src)
-            rb := 0 - 1
-            if not no_rb:
+            rb := next_rb
+            if not no_rb and rb < i + 2:
                 rb = _index_from(s, 93, i + 2)           # ]
+                next_rb = rb
                 if rb < 0:
                     no_rb = true
             if rb > 0 and rb + 1 < n and s[rb + 1] == 40:   # (
-                rp := 0 - 1
-                if not no_rp:
+                rp := next_rp
+                if not no_rp and rp < rb + 2:
                     rp = _index_from(s, 41, rb + 2)      # )
+                    next_rp = rp
                     if rp < 0:
                         no_rp = true
                 if rp > 0:
@@ -129,15 +133,17 @@ fn _inline_at(s: string, depth: int) -> string:
                 out = out + "!"
                 i = i + 1
         elif c == 91:                               # [text](url)
-            rb := 0 - 1
-            if not no_rb:
+            rb := next_rb
+            if not no_rb and rb < i + 1:
                 rb = _index_from(s, 93, i + 1)       # ]
+                next_rb = rb
                 if rb < 0:
                     no_rb = true
             if rb > 0 and rb + 1 < n and s[rb + 1] == 40:   # (
-                rp := 0 - 1
-                if not no_rp:
+                rp := next_rp
+                if not no_rp and rp < rb + 2:
                     rp = _index_from(s, 41, rb + 2)  # )
+                    next_rp = rp
                     if rp < 0:
                         no_rp = true
                 if rp > 0:

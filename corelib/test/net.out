@@ -6,6 +6,8 @@ sent=4
 got=[ping] len=4
 echoed=4
 back=[ping]
+large_fd_rejected=true
+large_fd_close_safe=true
 eof=Eof
 armed=true
 tmo=Timeout

@@ -54,6 +54,7 @@ enum ReqErr:
     Timeout            # the socket read deadline expired (net.set_read_timeout_ms)
     Failed             # the socket read failed (reset, bad fd, ...)
     TooLarge           # the cap was reached with no header terminator in sight -> 431
+    BodyTooLarge       # a framed Content-Length exceeds the request byte budget -> 413
 
 struct Request:
     method: string        # "GET", "POST", ...
@@ -160,6 +161,15 @@ fn parse_len(s: string) -> (int, bool):
         v = v * 10 + (d[j] - 48)
     return (v, true)
 
+# True when a header name is present, even if its value is empty. header() alone
+# cannot make this distinction because it returns "" for both cases.
+fn has_header(r: Request, name: string) -> bool:
+    want := _ascii_lower(name)
+    for i := 0; i < len(r.header_keys); i += 1:
+        if _ascii_lower(r.header_keys[i]) == want:
+            return true
+    return false
+
 # How many body bytes this request frames, per RFC 9112 6. The bool is whether
 # the question is ANSWERABLE at all: false means REFUSE the request (400), never
 # guess a length. Guessing is the request-smuggling precondition -- bytes this
@@ -176,13 +186,16 @@ fn parse_len(s: string) -> (int, bool):
 #   two Content-Lengths differing -> false (RFC 9112 6.3)
 #   absent                        -> (0, true): a request with no body
 fn framing(r: Request) -> (int, bool):
-    if header(r, "transfer-encoding") != "":
+    if has_header(r, "transfer-encoding"):
         return (0, false)
     if content_length_conflict(r):
         return (0, false)
+    has_cl := has_header(r, "content-length")
     clh := trim(header(r, "content-length"))
-    if clh == "":
+    if not has_cl:
         return (0, true)
+    if clh == "":
+        return (0, false)
     return parse_len(clh)
 
 # True when `hay` contains `needle` as a comma-separated token, case-insensitively
@@ -202,6 +215,28 @@ fn bad_request() -> Request:
 
 # ---- request parsing -------------------------------------------------------
 
+fn _token_byte(c: int) -> bool:
+    if (c >= 48 and c <= 57) or (c >= 65 and c <= 90) or (c >= 97 and c <= 122):
+        return true
+    return c == 33 or c == 35 or c == 36 or c == 37 or c == 38 or c == 39 or
+        c == 42 or c == 43 or c == 45 or c == 46 or c == 94 or c == 95 or
+        c == 96 or c == 124 or c == 126
+
+fn _valid_header_name(name: string) -> bool:
+    if name == "":
+        return false
+    for i := 0; i < len(name); i += 1:
+        if not _token_byte(name[i]):
+            return false
+    return true
+
+fn _valid_header_value(value: string) -> bool:
+    for i := 0; i < len(value); i += 1:
+        c := value[i]
+        if (c < 32 and c != 9) or c == 127:
+            return false
+    return true
+
 # Parse a full raw request (headers, then the body after the blank line).
 # Err(Malformed) if the request line is not "METHOD TARGET VERSION" -- fail
 # closed. A caller that only wants a value can collapse it in one line:
@@ -217,16 +252,25 @@ fn parse_request(raw: string) -> Result(Request, ReqErr):
     if len(lines) == 0:
         return Err(Malformed)
     parts := split(_chomp(lines[0]), " ")
-    if len(parts) < 3:
+    if len(parts) != 3 or parts[0] == "" or parts[1] == "":
+        return Err(Malformed)
+    if parts[2] != "HTTP/1.0" and parts[2] != "HTTP/1.1":
         return Err(Malformed)
     keys := []string
     vals := []string
     for i := 1; i < len(lines); i += 1:
         ln := _chomp(lines[i])
+        if len(ln) > 0 and (ln[0] == 32 or ln[0] == 9):
+            return Err(Malformed)                    # obsolete folded field
         col := find(ln, ":")
-        if col > 0:
-            push(keys, trim(ln[0:col]))
-            push(vals, trim(ln[col + 1:len(ln)]))
+        if col <= 0:
+            return Err(Malformed)
+        name := ln[0:col]
+        raw_value := ln[col + 1:len(ln)]
+        if not _valid_header_name(name) or not _valid_header_value(raw_value):
+            return Err(Malformed)
+        push(keys, name)
+        push(vals, trim(raw_value))
     return Ok(Request(parts[0], parts[1], parts[2], keys, vals, to_bytes(body)))
 
 # The value of header `name` (case-insensitive), or "" if absent.
@@ -257,7 +301,7 @@ fn read_request(fd: int) -> Result(Request, ReqErr):
 # whole head+body (0 disables it). Refuses rather than guesses: ambiguous framing
 # is Err(Malformed) (any Transfer-Encoding -- chunked is NOT decoded -- a
 # non-decimal or self-contradicting Content-Length, or CL together with TE), an
-# over-budget framed size is Err(TooLarge) before the body is read, a body
+# over-budget framed size is Err(BodyTooLarge) before the body is read, a body
 # shorter than its own Content-Length is Err(Closed). PIPELINING IS NOT
 # SUPPORTED: exactly `need` bytes are parsed and anything past them is DISCARDED
 # with the buffer, so a pipelining client loses every request after the first.
@@ -309,7 +353,7 @@ fn read_request_resume(fd: int, cap: int, deadline_ms: int, have: string) -> (Re
                                                 # the connection must not be reused
             need = he + 4 + blen
             if need > cap:
-                return (Err(TooLarge), buf)     # the body does not fit the budget;
+                return (Err(BodyTooLarge), buf) # the framed entity exceeds the budget;
                                                 # refuse rather than read a prefix
         if (need >= 0 and len(buf) >= need) or len(buf) >= cap:
             reading = false
@@ -402,6 +446,8 @@ fn reason_phrase(status: int) -> string:
         return "Method Not Allowed"
     if status == 408:
         return "Request Timeout"
+    if status == 413:
+        return "Content Too Large"
     # RFC 7233 4.4's spelling. RFC 2616 called it "Requested Range Not
     # Satisfiable"; the shorter form is the current one and is what a 7233-era
     # client expects to read back in a log.

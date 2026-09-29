@@ -1,0 +1,9 @@
+package main
+import "core:regex"
+
+fn main():
+    re := regex.compile("a+b")
+    s := ""
+    for i := 0; i < 4097; i += 1:
+        s = s + "a"
+    println(str(regex.is_match(re, s)))

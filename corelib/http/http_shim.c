@@ -49,7 +49,22 @@ static size_t collect(char *ptr, size_t size, size_t nmemb, void *userp) {
 
 static int g_curl_init = 0;
 
+static int bad_header_value(const char *s) {
+    if (!s) return 0;
+    for (const unsigned char *p = (const unsigned char *)s; *p; p++)
+        if ((*p < 0x20 && *p != '\t') || *p == 0x7f) return 1;
+    return 0;
+}
+
 static Resp *perform(const char *url, const char *post_body, size_t post_len, const char *ctype) {
+    char ctype_header[512];
+    int have_ctype_header = 0;
+    if (post_body && ctype && *ctype) {
+        if (bad_header_value(ctype)) return NULL;
+        int hn = snprintf(ctype_header, sizeof ctype_header, "Content-Type: %s", ctype);
+        if (hn < 0 || (size_t)hn >= sizeof ctype_header) return NULL;
+        have_ctype_header = 1;
+    }
     if (!g_curl_init) { curl_global_init(CURL_GLOBAL_DEFAULT); g_curl_init = 1; }
     CURL *c = curl_easy_init();
     if (!c) return NULL;
@@ -104,10 +119,11 @@ static Resp *perform(const char *url, const char *post_body, size_t post_len, co
          * entity. The COPY form is what makes the length authoritative. */
         curl_easy_setopt(c, CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t)post_len);
         curl_easy_setopt(c, CURLOPT_COPYPOSTFIELDS, post_body);
-        if (ctype && *ctype) {
-            char h[512];
-            snprintf(h, sizeof h, "Content-Type: %s", ctype);
-            hdrs = curl_slist_append(hdrs, h);
+        if (have_ctype_header) {
+            hdrs = curl_slist_append(hdrs, ctype_header);
+            if (!hdrs) {
+                free(r->body); free(r); curl_easy_cleanup(c); return NULL;
+            }
             curl_easy_setopt(c, CURLOPT_HTTPHEADER, hdrs);
         }
     }

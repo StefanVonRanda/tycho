@@ -5,8 +5,8 @@ The grammar of statements is in
 meaning. Declarations and assignments are covered in
 [§12](08-declarations.md); this chapter covers control flow.
 
-> Provenance: `parse_stmt` `src/tychoc.c:3763-4303` (`parse_if` `:3571@parse_if`,
-> `parse_match` `:3809@parse_match`, `for` `:3900-4132`, `select` `src/tychoc.c:4136@TK_SELECT`). Loop and `match` behaviors marked
+> Provenance: `parse_stmt` `src/tychoc.c:4025-4591` (`parse_if` `:3826@parse_if`,
+> `parse_match` `:4064@parse_match`, `for` `:4162-4420`, `select` `src/tychoc.c:4404@TK_SELECT`). Loop and `match` behaviors marked
 > "probed" were confirmed against the implementation (spec-plan.md §6a).
 
 ## 14.1 Blocks
@@ -185,16 +185,16 @@ the implementation **does not diagnose it**, at compile time or at run time.
 bought is a single loop form that says its own direction and amount in the
 source instead of inferring them from the sign of a step expression.
 
-> Provenance: bare `for:` `src/tychoc.c:4210@TK_COLON`; the three-clause header
-> scan and its five required-clause refusals `src/tychoc.c:3831-3876`; `init`
-> parsed by `parse_stmt` itself `src/tychoc.c:4244@parse_stmt`; loop scoping and
-> the post clause resolved outside the body block `src/tychoc.c:8676-8681`;
-> `continue` emitted as `goto _post<id>` `src/tychoc.c:12272-12275` with the
-> label at `src/tychoc.c:13184@_post%d`; the `range()` refusal
-> `src/tychoc.c:4317@was removed: write`. There is no step in the implementation
-> at all: `Stmt` carries `r_start` and `r_stop` only (`src/tychoc.c:1746-1752`)
+> Provenance: bare `for:` `src/tychoc.c:4498@TK_COLON`; the three-clause header
+> scan and its five required-clause refusals `src/tychoc.c:4093-4138`; `init`
+> parsed by `parse_stmt` itself `src/tychoc.c:4529@parse_stmt`; loop scoping and
+> the post clause resolved outside the body block `src/tychoc.c:9079-9084`;
+> `continue` emitted as `goto _post<id>` `src/tychoc.c:13070-13073` with the
+> label at `src/tychoc.c:13811@_post%d`; the `range()` refusal
+> `src/tychoc.c:4585@was removed: write`. There is no step in the implementation
+> at all: `Stmt` carries `r_start` and `r_stop` only (`src/tychoc.c:1829-1835`)
 > and every `S_FORRANGE` emits `h_i < _stopN; h_i += 1`
-> (`src/tychoc.c:12437-12441`).
+> (`src/tychoc.c:12710-12714`).
 
 ## 14.5 `return`
 

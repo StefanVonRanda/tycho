@@ -1,0 +1,6 @@
+# expect: does not fit u8
+# A scalar broadcast is still adapted to (and range-checked against) the array element type.
+fn main():
+    a: [u8] = [to_u8(1)]
+    b := a + 300
+    println(str(b[0]))

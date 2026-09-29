@@ -1,0 +1,43 @@
+struct Box:
+    items: [string]
+
+enum Payload:
+    Empty
+    Items([string])
+
+fn make_value() -> string:
+    value := ""
+    for i := 0; i < 1024; i += 1:
+        value += "x"
+    return value
+
+fn main():
+    m := []string: string
+    value := make_value()
+    for i := 0; i < 200000; i += 1:
+        m["same"] = value
+    values := [value, value, value, value]
+    nested := []string: [string]
+    for i := 0; i < 200000; i += 1:
+        nested["same"] = values
+    println(str(len(m)) + " " + str(len(m["same"])) + " " + str(len(nested)) + " " +
+        str(len(nested["same"])))
+    boxes := []int: Box
+    for i := 0; i < 100000; i += 1:
+        boxes[0] = Box(values)
+    println(str(len(boxes[0].items)))
+    payloads := []int: Payload
+    for i := 0; i < 100000; i += 1:
+        payloads[0] = Items(values)
+    match payloads[0]:
+        Items(items):
+            println(str(len(items)))
+        Empty:
+            println("empty")
+    delete payloads[0]
+    println(str(len(payloads)))
+    callbacks := []int: fn(int) -> int
+    for i := 0; i < 100000; i += 1:
+        f := fn(x: int) -> int: len(value) + x
+        callbacks[0] = f
+    println(str(callbacks[0](1)))

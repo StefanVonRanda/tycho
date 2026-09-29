@@ -86,3 +86,11 @@ fn main():
     println("nul_exec=" + str(os.exec(["printf", "NULBAD" + chr(0) + "TAIL"])))
     nx := os.exec_out(["printf", "NULBAD" + chr(0) + "TAIL"])
     println("nul_exec_out=[" + nx.out + "] code=" + str(nx.code))
+    if posix:
+        slash := chr(92)
+        rn := os.run("printf 'A" + slash + "000B'")
+        enul := os.exec_out(["/usr/bin/printf", "A" + slash + "000B"])
+        println("nul_child_run=" + str(len(rn.out)) + "," + str(rn.out[1] == 0) + "," + str(rn.out[2]))
+        println("nul_child_exec=" + str(len(enul.out)) + "," + str(enul.out[1] == 0) + "," + str(enul.out[2]))
+    else:
+        println("nul_child_output=windows-unavailable")

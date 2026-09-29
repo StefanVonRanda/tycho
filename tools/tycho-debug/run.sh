@@ -106,7 +106,7 @@ fi
 out=$(printf 'b 999\nr\nq\n' | TYCHOC="$PWD/tychoc" "$TD" "$FIX/prog.ty" 2>&1); rc3=$?
 if [ "$rc1" -ne 0 ] && grep -q 'no such file' "$T/e1.out" \
    && [ "$rc2" -ne 0 ] && grep -q 'single-file' "$T/e2.out" \
-   && echo "$out" | grep -q 'No compiled code for line 999' && [ "$rc3" -eq 0 ]; then
+   && echo "$out" | grep -Eq 'No compiled code for line 999|No line 999 in file' && [ "$rc3" -eq 0 ]; then
     echo "  [5] fail-closed: missing file / package build / bad line ok"
 else echo "FAIL [5] fail-closed"; cat "$T/e1.out" "$T/e2.out" | sed 's/^/    /'; echo "$out" | sed 's/^/    /' | head -8; fail=1; fi
 
