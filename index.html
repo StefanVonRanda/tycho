@@ -165,7 +165,7 @@
 
 <main class="page" id="main">
   <header class="hero" id="top">
-    <span class="kicker">Experimental systems language · v0.8.6, pre-1.0</span>
+    <span class="kicker">Experimental · v0.8.6, pre-1.0</span>
     <h1>Tycho is a systems language without a garbage collector.</h1>
     <p class="lede">
       Memory is managed with <b>implicit arenas</b>: every scope owns one, and it
@@ -179,7 +179,7 @@
     <div class="herometa">
       <span><b>Transpiles to C</b>, builds with <b>cc + make</b></span>
       <span><b>45</b> stdlib packages</span>
-      <span><b>1,100+</b> gated fixtures</span>
+      <span><b>No runtime</b>, no collector</span>
     </div>
   </header>
 
@@ -228,17 +228,17 @@
     older := <span class="fn">promote</span>(ada)
     <span class="fn">println</span>(<span class="fn">str</span>(ada.age) + <span class="s">" "</span> + <span class="fn">str</span>(older.age))   <span class="c"># 36 37</span></code></pre>
         </div>
-    <p class="codecap"><b>Listing 02.</b> The returned struct is moved, not copied; <span class="inl">q := p</span> stays independent.</p>
+    <p class="codecap"><b>Listing 02.</b> Copied in, moved out; the original is untouched.</p>
   </section>
 
   <section id="costs">
     <span class="kicker">03 — Costs</span>
     <h2>What it costs.</h2>
     <div class="fact">
-      <div class="row"><span class="k">No references</span><span class="v">Pointer-shaped data costs more than C: trie 1.55×, LRU 2.8× memory. The index-pool idiom brings graphs to 1.3×. Full accounting in the <a href="https://tycho-lang.com/docs/internals/value-semantics-limits.html">loss column ↗</a>.</span></div>
+      <div class="row"><span class="k">Pointer-shaped data</span><span class="v">Costs more than C: trie 1.55×, LRU 2.8× memory. The index-pool idiom brings graphs to 1.3×. Full accounting in the <a href="https://tycho-lang.com/docs/internals/value-semantics-limits.html">loss column ↗</a>.</span></div>
       <div class="row"><span class="k">No interface values</span><span class="v">No interface values. A mixed list of implementors can't exist; closed enums with match cover known sets, generics cover the static case. See <a href="https://tycho-lang.com/docs/idioms.html">Thinking in Tycho ↗</a>.</span></div>
       <div class="row"><span class="k">Pre-1.0</span><span class="v">Breaking changes ship with a changelog entry and no deprecation window until 1.0 (<a href="https://github.com/StefanVonRanda/tycho/blob/main/SUPPORT.md">policy ↗</a>).</span></div>
-      <div class="row"><span class="k">Scope exit</span><span class="v">Memory returns when the scope exits, never mid-scope.</span></div>
+      <div class="row"><span class="k">Scope exit</span><span class="v">A long-lived scope holds its transients until it returns.</span></div>
     </div>
   </section>
 
@@ -248,7 +248,7 @@
     <ul class="plain">
       <li><b>Value semantics, generics, sum types</b> — <span class="inl">Option</span> / <span class="inl">Result</span>, <span class="inl">match</span>, <span class="inl">$T</span> monomorphized.</li>
       <li><b>Methods, closures</b> — UFCS, no classes; value capture.</li>
-      <li><b>Systems pieces</b> — <span class="inl">spawn</span>, channels, <span class="inl">parallel for</span>; <span class="inl">extern fn</span> FFI; packages with a 45-module corelib.</li>
+      <li><b>Systems pieces</b> — <span class="inl">spawn</span>, channels, <span class="inl">parallel for</span>; <span class="inl">extern fn</span> FFI; packages and a corelib.</li>
     </ul>
     <p>Python-flavored syntax, Go/Odin-like semantics; the value core comes from <a href="https://www.hylo-lang.org/">Hylo ↗</a>.</p>
   </section>
@@ -265,7 +265,7 @@
 
   <section id="try">
     <span class="kicker">06 — Try it</span>
-    <h2>How to try it.</h2>
+    <h2>Two routes.</h2>
     <div class="panel">
 <div class="phead"><span class="traf"></span><span class="fn">LISTING 02b — terminal</span><span class="badge">prebuilt — nothing to build</span></div>
 <pre><code><span class="c"># Linux x86-64; macOS arm64 and Windows builds are on the same release page</span>
@@ -296,11 +296,11 @@
 
   <section id="learn">
     <span class="kicker">07 — Learn</span>
-    <h2>An afternoon to a running program.</h2>
+    <h2>Where to start.</h2>
     <nav class="toc" aria-label="Learn">
       <a href="https://tycho-lang.com/docs/tutorial.html"><span class="n">01</span>Tutorial — first programs in about an hour<span class="dots"></span><span class="arr">→</span></a>
       <a href="https://tycho-lang.com/docs/from-c-to-arenas.html"><span class="n">02</span>Arenas — the memory model in five steps<span class="dots"></span><span class="arr">→</span></a>
-      <a href="https://tycho-lang.com/docs/idioms.html"><span class="n">03</span>Idioms — what to reach for instead<span class="dots"></span><span class="arr">→</span></a>
+      <a href="https://tycho-lang.com/docs/idioms.html"><span class="n">03</span>Idioms — pools, channels, enums instead of pointers<span class="dots"></span><span class="arr">→</span></a>
       <a href="https://tycho-lang.com/docs/reference/index.html"><span class="n">04</span>Reference — every construct, by topic<span class="dots"></span><span class="arr">→</span></a>
       <a href="https://tycho-lang.com/docs/quiet-results.html"><span class="n">05</span>Quiet results — read before the first real program<span class="dots"></span><span class="arr">→</span></a>
     </nav>
@@ -308,18 +308,18 @@
 
   <section id="faq">
     <span class="kicker">08 — Questions</span>
-    <h2>Questions.</h2>
+    <h2>Short answers.</h2>
     <details open>
       <summary>No GC, no borrow checker — how is it safe?</summary>
-      <div class="a">There is no reference type, so a dangling pointer can't be written. Scopes free their arenas; <span class="inl">Option</span> replaces null, <span class="inl">Result</span> replaces exceptions; indexing is bounds-checked.</div>
+      <div class="a">There is no reference type, so a dangling pointer can't be written. <span class="inl">Option</span> replaces null, <span class="inl">Result</span> replaces exceptions; indexing is bounds-checked.</div>
     </details>
     <details>
       <summary>What does value semantics cost?</summary>
-      <div class="a">More memory for pointer-shaped data — figures above. Rule of thumb: if C would use pointers, budget extra or reach for the pool idiom.</div>
+      <div class="a">More memory for pointer-shaped data — see 03 above. Rule of thumb: if C would use pointers, budget extra or reach for the pool idiom.</div>
     </details>
     <details>
       <summary>Copying everything must be slow?</summary>
-      <div class="a">The compiler removes copies it can prove dead: returns, loop appends, last uses. What remains is work a collector would do too.</div>
+      <div class="a">Returns, loop appends, and last uses don't copy — see 02 above.</div>
     </details>
     <details>
       <summary>Where's the package manager?</summary>
