@@ -26,9 +26,11 @@ A `fn` with no `-> type` returns nothing. Blocks are indentation-based (tabs or 
 don't mix the two within one line's indentation), every block header ends with `:`, and `#`
 starts a comment — like Python's layout.
 
-By default a parameter is a **copy** (or, for the heap aggregates, a read-only **borrow**). An
-`inout` parameter is mutated in place: the callee writes back into the caller's variable, marked
-with `&` at the call site.
+Parameters come in three kinds. By default a parameter is a **copy** — for
+large values (arrays, maps, structs holding them) the callee instead gets a
+read-only look that costs nothing. An `inout` parameter is mutated in place:
+the callee writes back into the caller's variable, marked with `&` at the
+call site.
 
 ```tycho
 fn incr(n: inout int):
