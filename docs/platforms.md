@@ -19,7 +19,7 @@ miscompile stops.
 | clang 14 | Ubuntu 22.04 | **not supported** — builds the compiler, then miscompiles what it emits: eight fixtures come back with empty strings where a string literal was expected |
 | clang 15+ | the floor this repo states | supported |
 | clang 19 | whole fixture corpus, against gcc | agrees on every fixture |
-| clang 22.1.8 | whole corpus | builds `tychoc`, bootstraps `tychoc1` through both stages, corpus **1039 / 0** — each fixture built twice, native and under `-fsanitize=address,undefined`, byte-identical output required between them |
+| clang 22.1.8 | whole corpus | builds `tychoc`, bootstraps `tychoc1` through both stages, corpus clean — each fixture built twice, native and under `-fsanitize=address,undefined`, byte-identical output required between them |
 | gcc (C11) | the development default | supported |
 
 MSVC is not a supported C target and is not planned. Native Windows means MSYS2
@@ -43,7 +43,7 @@ must be caught there.
 **x86-64** is the development host and the reference platform: the full fixture
 suite under ASan/UBSan/LeakSanitizer, plus every gate lane.
 
-**arm64** is gated — `make test` is 1065/1065 on Ubuntu 26.04 /
+**arm64** is gated — `make test` is green on Ubuntu 26.04 /
 aarch64, run in a VM on the Apple Silicon box at native speed. No Graviton
 artifact is built yet.
 
