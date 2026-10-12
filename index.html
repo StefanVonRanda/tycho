@@ -3,21 +3,20 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Tycho — an experimental systems language</title>
-<meta name="description" content="Tycho is an experimental systems language built around one idea: implicit hierarchical arenas under value semantics. Automatic memory management from lexical scope, no garbage collector, no manual free. Transpiles to C.">
-<meta name="theme-color" content="#eceee9">
+<title>Tycho — memory that manages itself</title>
+<meta name="description" content="Tycho is an experimental systems language: implicit arenas under value semantics. No garbage collector, no manual free, no borrow checker. It transpiles to C.">
+<meta name="theme-color" content="#faf7ef">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://tycho-lang.com">
-<meta property="og:title" content="Tycho — an experimental systems language">
-<meta property="og:description" content="Implicit hierarchical arenas under value semantics. Automatic memory management from lexical scope, not a runtime. Transpiles to C.">
+<meta property="og:title" content="Tycho — memory that manages itself">
+<meta property="og:description" content="Implicit arenas under value semantics. No garbage collector, no manual free. It transpiles to C.">
 <meta property="og:image" content="https://tycho-lang.com/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://tycho-lang.com/og.png">
-<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%20100%20100%27%3E%3Cstyle%3E.ink%7Bfill:none;stroke:%231c1c2e;stroke-width:4%7D.dot%7Bfill:%231c1c2e%7D@media%20(prefers-color-scheme:dark)%7B.ink%7Bstroke:%23ececf4%7D.dot%7Bfill:%23ececf4%7D%7D%3C/style%3E%3Ccircle%20class%3D%27ink%27%20cx%3D%2750%27%20cy%3D%2750%27%20r%3D%2720%27/%3E%3Ccircle%20class%3D%27ink%27%20cx%3D%2750%27%20cy%3D%2750%27%20r%3D%2738%27/%3E%3Ccircle%20class%3D%27ink%27%20cx%3D%2770%27%20cy%3D%2738%27%20r%3D%2711%27/%3E%3Ccircle%20class%3D%27dot%27%20cx%3D%2750%27%20cy%3D%2750%27%20r%3D%274.5%27/%3E%3Ccircle%20class%3D%27dot%27%20cx%3D%2770%27%20cy%3D%2738%27%20r%3D%274%27/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%20100%20100%27%3E%3Ccircle%20cx%3D%2750%27%20cy%3D%2750%27%20r%3D%2720%27%20fill%3D%27none%27%20stroke%3D%27%231c1c2e%27%20stroke-width%3D%274%27/%3E%3Ccircle%20cx%3D%2750%27%20cy%3D%2750%27%20r%3D%2738%27%20fill%3D%27none%27%20stroke%3D%27%231c1c2e%27%20stroke-width%3D%274%27/%3E%3Ccircle%20cx%3D%2750%27%20cy%3D%2750%27%20r%3D%274.5%27%20fill%3D%27%231c1c2e%27/%3E%3C/svg%3E">
 <script>
-  /* set theme before first paint to avoid flash */
   (function(){try{var t=localStorage.getItem('tycho-theme')||'light';document.documentElement.dataset.theme=t;}catch(e){document.documentElement.dataset.theme='light';}})();
 </script>
 <link rel="stylesheet" href="fonts/fonts.css">
@@ -26,332 +25,260 @@
 <a class="skip" href="#main">Skip to content</a>
 <style>
   :root{
-    --paper:#131109; --ink:#f2ede1; --ink-soft:#cfc8b4;
-    --dim:#a8a28c; --faint:#8b8570; --line:#757065;
-    --code-bg:#0b0a07; --code-fg:#e6e1d2; --code-dim:#8f8875; --code-line:#6b6557;
-    --acc:#d4f542; --acc-code:#d4f542; --acc-on:#131109; --dot:#2a2720;
+    --paper:#100e0b; --ink:#f4eee0; --ink-soft:#d3c9b2;
+    --dim:#a89f86; --faint:#877f68; --line:#6e675a;
+    --code-bg:#0a0906; --code-fg:#ece5d3; --code-dim:#948b70; --code-line:#665f52;
+    --acc:#d7f651; --acc-code:#d7f651; --acc-on:#100e0b;
   }
   :root[data-theme="light"]{
-    --paper:#f7f4ec; --ink:#191712; --ink-soft:#3f3b31;
-    --dim:#5c574a; --faint:#6f695b; --line:#948b74;
-    --code-bg:#0b0a07; --code-fg:#e6e1d2; --code-dim:#8f8875; --code-line:#6b6557;
-    --acc:#33660f; --acc-code:#d4f542; --acc-on:#ffffff; --dot:#cfc9b8;
+    --paper:#faf7ef; --ink:#1b1811; --ink-soft:#454034;
+    --dim:#6b6350; --faint:#746c58; --line:#8f8672;
+    --code-bg:#0a0906; --code-fg:#ece5d3; --code-dim:#948b70; --code-line:#665f52;
+    --acc:#2f5d0c; --acc-code:#d7f651; --acc-on:#ffffff;
   }
-
   *{box-sizing:border-box}
   html{-webkit-text-size-adjust:100%; scroll-behavior:smooth}
   @media (prefers-reduced-motion:reduce){ html{scroll-behavior:auto} }
-  body{
-    margin:0; background:var(--paper); color:var(--ink-soft); overflow-x:hidden;
-    font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
-    font-size:16.5px; line-height:1.75; letter-spacing:0;
-    -webkit-font-smoothing:antialiased;
-  }
-  a{color:inherit; text-decoration:none; border:0}
-  a:focus-visible,button:focus-visible{outline:2px solid var(--acc); outline-offset:3px; border-radius:4px}
+  body{margin:0; background:var(--paper); color:var(--ink-soft);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    font-size:17px; line-height:1.75; -webkit-font-smoothing:antialiased}
+  a{color:inherit; text-decoration:none}
+  a:focus-visible,button:focus-visible,summary:focus-visible{outline:2px solid var(--acc); outline-offset:3px; border-radius:6px}
   ::selection{background:var(--acc); color:var(--acc-on)}
-  .skip{position:absolute; left:12px; top:-56px; z-index:100; background:var(--ink);
-    color:var(--paper); padding:10px 18px; font-size:12px; border-radius:8px}
+  .skip{position:absolute; left:12px; top:-60px; z-index:100; background:var(--ink);
+    color:var(--paper); padding:10px 18px; font-size:13px; border-radius:8px}
   .skip:focus{top:8px}
+  .mono,.masthead,.kicker,.secnum,.fact .k,.phead,.btn,.themebtn,.toc a,
+  .figcap,.codecap,pre,code,.tag,.flinks a,.colophon{font-family:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+  .page{max-width:1180px; margin:0 auto; padding:0 clamp(20px,4vw,56px)}
 
-  :root{ --pad:clamp(20px,4vw,64px); --bar:60px; --measure:68ch; --col:1120px; }
-  .mono,.bar,.hrail,.kicker,.spec2 .k,.spec2 .cmd,.phead,
-  .btn,.runsec,.themebtn,.contents a,.fig .fhead,.card .idx,.group .gt,
-  footer .fbrand,footer .col a,footer .legal,.inl,pre,code{font-family:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+  /* masthead */
+  .masthead{position:sticky; top:0; z-index:50; background:var(--paper); border-bottom:1px solid var(--line)}
+  .masthead .in{max-width:1180px; margin:0 auto; padding:0 clamp(20px,4vw,56px);
+    height:62px; display:flex; align-items:center; gap:22px}
+  .wordmark{display:flex; align-items:center; gap:10px; color:var(--ink);
+    font-size:15px; font-weight:600; letter-spacing:.14em}
+  .wordmark svg{width:20px; height:20px}
+  .masthead nav{display:flex; align-items:center; gap:4px; margin-left:auto; overflow-x:auto; scrollbar-width:none}
+  .masthead nav::-webkit-scrollbar{display:none}
+  .masthead nav a{flex:0 0 auto; padding:8px 12px; font-size:11px; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--dim); border-radius:8px}
+  .masthead nav a:hover{color:var(--ink)}
+  .themebtn{background:none; border:1px solid var(--line); border-radius:999px; color:var(--dim);
+    cursor:pointer; font:inherit; font-size:11px; letter-spacing:.14em; text-transform:uppercase;
+    padding:8px 16px; margin-left:10px; flex:0 0 auto}
+  .themebtn:hover{color:var(--ink); border-color:var(--dim)}
 
-  /* ── top bar ── */
-  .bar{position:sticky; top:0; z-index:50; background:var(--paper);
-    border-bottom:1px solid var(--line)}
-  .bar .brandwrap{display:flex; align-items:stretch; max-width:var(--col);
-    margin:0 auto; padding:0 var(--pad); height:var(--bar); min-width:0}
-  .bar .brand{display:flex; align-items:center; gap:10px; flex:0 0 auto;
-    color:var(--ink); font-size:13px; letter-spacing:.4px}
-  .bar .brand .logo{width:17px; height:17px}
-  .runsec{display:flex; align-items:center; margin-left:14px; white-space:nowrap;
-    font-size:10px; letter-spacing:1.6px; text-transform:uppercase; color:var(--faint)}
-  .bar nav{display:flex; align-items:stretch; margin-left:auto; min-width:0;
-    overflow-x:auto; scrollbar-width:none}
-  .bar nav::-webkit-scrollbar{display:none}
-  .bar nav a{display:flex; align-items:center; flex:0 0 auto; padding:0 13px;
-    font-size:10.5px; letter-spacing:1.6px; text-transform:uppercase; color:var(--dim)}
-  .bar nav a:hover{color:var(--ink)}
-  .bar nav a[aria-current="true"]{color:var(--acc)}
-  .themebtn{background:none; border:0; border-left:1px solid var(--line); color:var(--dim);
-    cursor:pointer; font:inherit; font-size:10.5px; letter-spacing:1.6px; flex:0 0 auto;
-    text-transform:uppercase; padding:0 0 0 18px; margin-left:6px}
-  .themebtn:hover{color:var(--ink)}
-
-  .wrap{max-width:var(--col); margin:0 auto; padding:0 var(--pad); position:relative}
-
-  /* ── hero ── */
-  header.hero{display:grid; grid-template-columns:1.08fr .92fr; gap:clamp(28px,4vw,64px);
-    align-items:center; padding:clamp(56px,8vw,120px) 0 clamp(48px,6vw,96px);
-    border-bottom:1px solid var(--line)}
-  .hrail{display:flex; justify-content:space-between; gap:16px; grid-column:1/-1;
-    padding-bottom:26px; font-size:10.5px; letter-spacing:2px; text-transform:uppercase; color:var(--faint)}
-  .kicker{display:inline-block; font-size:11.5px; letter-spacing:2.4px; text-transform:uppercase;
-    color:var(--acc); margin-bottom:22px}
-  h1{margin:0 0 24px; font-weight:800; color:var(--ink);
-    font-size:clamp(42px,5.6vw,84px); line-height:1.02; letter-spacing:-.03em; max-width:14ch}
+  /* hero */
+  .hero{padding:clamp(72px,10vw,150px) 0 clamp(48px,6vw,88px); border-bottom:1px solid var(--line)}
+  .kicker{display:inline-block; font-size:12px; letter-spacing:.22em; text-transform:uppercase;
+    color:var(--acc); border:1px solid var(--line); border-radius:999px; padding:8px 18px; margin-bottom:28px}
+  h1{margin:0 0 26px; color:var(--ink); font-weight:800;
+    font-size:clamp(46px,7vw,104px); line-height:1.0; letter-spacing:-.032em; max-width:16ch}
   h1 .tok{color:var(--acc)}
-  .herofoot .lede,.lede{margin:0 0 32px; font-size:18px; line-height:1.7; color:var(--dim); max-width:52ch}
+  .lede{margin:0 0 36px; font-size:clamp(18px,2vw,22px); line-height:1.65; color:var(--dim); max-width:56ch}
   .lede b{color:var(--ink); font-weight:650}
   .lede a{color:var(--ink); border-bottom:1px solid var(--line)}
-  .lede a:hover{border-bottom-color:var(--ink)}
   .lede code{color:var(--ink-soft)}
-  .cta{display:flex; flex-wrap:wrap; gap:12px; margin:0}
-  .btn{display:inline-flex; align-items:center; gap:10px; padding:15px 28px;
-    border-radius:999px; border:1px solid var(--line); background:transparent; color:var(--ink);
-    font-size:11.5px; letter-spacing:1.6px; text-transform:uppercase; font-weight:600}
-  .btn::after{content:"↗"; color:var(--faint)}
+  .cta{display:flex; flex-wrap:wrap; gap:12px}
+  .btn{display:inline-flex; align-items:center; gap:10px; padding:16px 30px; border-radius:999px;
+    border:1px solid var(--line); color:var(--ink); font-size:12px; letter-spacing:.14em;
+    text-transform:uppercase; font-weight:600}
   .btn:hover{border-color:var(--ink)}
-  .btn:hover::after{color:var(--ink)}
   .btn.primary{background:var(--acc); border-color:var(--acc); color:var(--acc-on)}
-  .btn.primary::after{color:var(--acc-on)}
-  .btn.primary:hover{filter:brightness(1.06)}
-  .specimen{border:1px solid var(--line); border-radius:18px; padding:8px 28px;
-    background-image:radial-gradient(var(--dot) 1px, transparent 1.2px); background-size:9px 9px}
-  .specimen .shead{font-size:10.5px; letter-spacing:2.2px; text-transform:uppercase;
-    color:var(--faint); padding:20px 0 6px}
-  .specimen .frow{display:flex; align-items:baseline; justify-content:space-between; gap:20px;
-    padding:13px 0; border-top:1px solid var(--line)}
-  .specimen .frow b{color:var(--ink); font-weight:700; font-size:clamp(19px,2vw,27px);
-    letter-spacing:-.02em; white-space:nowrap}
-  .specimen .frow span{font-size:10.5px; letter-spacing:1.6px; text-transform:uppercase;
-    color:var(--faint); text-align:right}
-  @media (max-width:900px){ header.hero{grid-template-columns:1fr} }
+  .btn.primary:hover{filter:brightness(1.07)}
+  .herometa{display:flex; flex-wrap:wrap; gap:8px 26px; margin-top:44px; padding-top:22px;
+    border-top:1px solid var(--line); font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:var(--faint)}
+  .herometa b{color:var(--dim)}
 
-  /* ── sections ── */
-  section{position:relative; overflow:hidden; padding:clamp(64px,8vw,128px) 0 clamp(48px,6vw,88px)}
+  /* chapters */
+  section{padding:clamp(64px,8vw,120px) 0}
   section + section{border-top:1px solid var(--line)}
-  section::before{content:attr(data-n) " — " attr(data-t); display:block;
-    margin-bottom:26px; font-size:11px; letter-spacing:2.4px; text-transform:uppercase; color:var(--faint)}
-  section::after{content:attr(data-n); position:absolute; top:-30px; right:-10px;
-    font-weight:600; font-size:clamp(160px,22vw,300px); line-height:1;
-    color:transparent; -webkit-text-stroke:1px var(--line); opacity:.5; pointer-events:none}
-  .marker{display:none}
-  h2{margin:0 0 20px; color:var(--ink); font-weight:800;
-    font-size:clamp(30px,4vw,54px); line-height:1.05; letter-spacing:-.025em; max-width:20ch}
-  p{margin:0 0 16px; max-width:var(--measure)}
-  p.muted{color:var(--dim)}
-  strong{color:var(--ink); font-weight:650}
-  .inl{border:1px solid var(--line); border-radius:6px; padding:1px 7px; font-size:.88em; color:var(--ink); white-space:nowrap}
+  .secnum{display:block; font-size:12px; letter-spacing:.22em; color:var(--acc); margin-bottom:20px}
+  h2{margin:0 0 18px; color:var(--ink); font-weight:800;
+    font-size:clamp(32px,4.4vw,58px); line-height:1.04; letter-spacing:-.025em; max-width:22ch}
+  .standfirst{margin:0 0 40px; font-size:18px; color:var(--dim); max-width:62ch}
+  .standfirst a{color:var(--ink); border-bottom:1px solid var(--line)}
+  p{margin:0 0 16px; max-width:68ch}
+  strong{color:var(--ink)}
 
-  /* ── contents ── */
-  .contents{margin-top:36px; max-width:720px}
-  .contents .chead{font-size:10.5px; letter-spacing:2.2px; text-transform:uppercase;
-    color:var(--faint); margin-bottom:10px}
-  .contents a{display:flex; align-items:center; gap:16px; padding:15px 18px;
-    border:1px solid transparent; border-radius:12px; color:var(--dim);
-    font-size:14px; text-transform:uppercase; letter-spacing:.6px}
-  .contents a:hover{border-color:var(--line); color:var(--ink)}
-  .contents a .n{color:var(--faint); font-size:10px; letter-spacing:1.4px; width:3ch; flex:0 0 auto}
-  .contents a:hover .n,.contents a:hover .arr{color:var(--acc)}
-  .contents a .dots{flex:1; border-bottom:1px dotted var(--line); transform:translateY(-3px)}
-  .contents a .arr{color:var(--faint); flex:0 0 auto}
+  /* fact rows */
+  .fact{border-top:1px solid var(--line)}
+  .fact .row{display:grid; grid-template-columns:220px 1fr; gap:24px; padding:22px 0; border-bottom:1px solid var(--line)}
+  .fact .k{font-size:11.5px; letter-spacing:.18em; text-transform:uppercase; color:var(--acc); padding-top:5px}
+  .fact .v{font-size:16.5px; color:var(--dim); max-width:62ch}
+  .fact .v b{color:var(--ink)}
+  .fact .v a{color:var(--ink); border-bottom:1px solid var(--line)}
+  @media (max-width:640px){ .fact .row{grid-template-columns:1fr; gap:6px} }
 
-  /* ── cards + groups ── */
-  .cards,.groups{display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin:34px 0 8px}
-  .cards.quad{grid-template-columns:repeat(2,1fr)}
-  .card,.group{border:1px solid var(--line); border-radius:16px; background:transparent;
-    padding:30px 30px 34px}
-  .card:hover{border-color:var(--faint)}
-  .card .idx,.group .gt{display:block; margin-bottom:16px; font-size:10px; letter-spacing:2px;
-    text-transform:uppercase; color:var(--acc)}
-  .card h3{margin:0 0 10px; font-size:13px; color:var(--ink); font-weight:600;
-    text-transform:uppercase; letter-spacing:1.2px}
-  .card p{margin:0; font-size:15px; line-height:1.7; max-width:none; color:var(--dim)}
-  .card p a{color:var(--ink); border-bottom:1px solid var(--line)}
-  .card p a:hover{border-bottom-color:var(--ink)}
-  ul.feat{list-style:none; margin:0; padding:0}
-  ul.feat li{padding:13px 0; border-top:1px solid var(--line); font-size:14px; color:var(--dim)}
-  ul.feat li:first-child{border-top:0}
-  ul.feat li b{display:block; margin-bottom:2px; color:var(--ink); font-weight:600;
-    text-transform:uppercase; font-size:11.5px; letter-spacing:1.2px}
-  ul.feat li span{color:var(--faint); font-size:12.5px}
-  .group .gt::before{content:none}
-  @media (max-width:900px){ .cards,.groups,.cards.quad{grid-template-columns:1fr} }
-
-  /* ── code panels ── */
-  .panel{border:1px solid var(--code-line); border-radius:16px; overflow:hidden;
-    background:var(--code-bg); margin:34px 0 0}
-  .phead{display:flex; align-items:center; gap:12px; padding:12px 20px;
-    border-bottom:1px solid var(--code-line); background:transparent}
-  .phead .traf{width:7px; height:7px; border-radius:50%; background:var(--acc-code)}
-  .phead .fn{font-size:10px; letter-spacing:1.6px; text-transform:uppercase; color:var(--code-dim)}
-  .phead .badge{margin-left:auto; font-size:9px; letter-spacing:1.6px; text-transform:uppercase;
-    color:var(--acc-code)}
-  pre{margin:0; padding:22px 24px; overflow-x:auto;
-    font-size:13px; line-height:1.8; color:var(--code-fg)}
+  /* code */
+  .panel{border:1px solid var(--code-line); border-radius:14px; overflow:hidden;
+    background:var(--code-bg); margin:30px 0 0}
+  .phead{display:flex; align-items:center; gap:12px; padding:12px 20px; border-bottom:1px solid var(--code-line)}
+  .phead .traf{width:8px; height:8px; border-radius:50%; background:var(--acc-code)}
+  .phead .fn{font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--code-dim)}
+  .phead .badge{margin-left:auto; font-size:9.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--acc-code)}
+  pre{margin:0; padding:22px 24px; overflow-x:auto; font-size:13px; line-height:1.8; color:var(--code-fg)}
   .k{color:#fff; font-weight:600} .fn{color:#cfd4dc} .s{color:var(--acc-code)}
   .c{color:var(--code-dim)} .g{color:#9aa1ab} .out{color:#8b929c}
-  .codecap{margin:0; padding:14px 4px 0; font-size:13.5px; line-height:1.65; color:var(--faint); max-width:none}
-  .codecap b{color:var(--dim); font-weight:600}
+  .codecap{margin:0; padding:14px 2px 0; font-size:13px; color:var(--faint); max-width:none}
+  .codecap b{color:var(--dim)}
 
-  /* §02 — points beside code */
-  .split{display:grid; grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr); gap:clamp(24px,3vw,48px);
-    align-items:start; margin-top:8px}
-  ul.points{list-style:none; margin:6px 0 20px; padding:0; display:grid; gap:18px}
-  ul.points li{position:relative; padding-left:22px; font-size:16px; line-height:1.7; color:var(--dim)}
-  ul.points li::before{content:""; position:absolute; left:0; top:11px; width:7px; height:7px;
-    border-radius:50%; background:var(--acc)}
-  ul.points li b{color:var(--ink); font-weight:650}
-  @media (max-width:1100px){ .split{grid-template-columns:1fr} }
-
-  /* ── figures ── */
-  .fig{border:1px solid var(--line); border-radius:16px; overflow:hidden;
-    background:transparent; margin:34px 0 8px}
+  /* figures */
+  .fig{border:1px solid var(--line); border-radius:14px; overflow:hidden; margin:30px 0 0}
   .fig .fhead{display:flex; align-items:center; gap:10px; padding:12px 20px;
-    border-bottom:1px solid var(--line); font-size:10px; letter-spacing:2px;
+    border-bottom:1px solid var(--line); font-size:10.5px; letter-spacing:.18em;
     text-transform:uppercase; color:var(--faint)}
-  .fig .fhead .dot{width:7px; height:7px; border-radius:50%; background:var(--acc)}
-  .fig .fhead b{color:var(--dim); font-weight:600}
-  .fig canvas{display:block; width:100%}
+  .fig .fhead .dot{width:8px; height:8px; border-radius:50%; background:var(--acc)}
+  .fig .fhead b{color:var(--dim)}
   .fig svg{display:block; width:100%; height:auto}
-  .fig svg text{font-family:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace; font-size:10px; letter-spacing:2px; fill:var(--faint); text-transform:uppercase}
-  .fig .ln{stroke:var(--dim); stroke-width:1}
-  .fig .nd{fill:none; stroke:currentColor; stroke-width:1.4}
-  .fig .slot{fill:none; stroke:currentColor; stroke-width:1.4}
-  .fig .edge{stroke:var(--acc); stroke-width:1.4}
-  .fig .enum{fill:var(--acc); font-size:12px; letter-spacing:0}
-  .fig .fcap{padding:14px 20px; border-top:1px solid var(--line);
-    font-size:13.5px; line-height:1.65; color:var(--faint)}
-  .fig .fcap b{color:var(--dim); font-weight:600}
-  .fig .fcap code{color:var(--ink-soft)}
-  .fig{color:var(--ink-soft)}
-  .trace{height:clamp(140px,14vw,240px)}
-  .trace figcaption{display:none}
+  .fig svg text{font-family:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace; font-size:11px; letter-spacing:1.5px; fill:var(--faint)}
+  .fig .enum{fill:var(--acc); font-size:13px}
+  .fig svg text{font-family:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace; font-size:11px; letter-spacing:1.5px; fill:var(--faint)}
+  .fig .ln{stroke:var(--dim); stroke-width:1.2}
+  .fig .nd{fill:var(--paper); stroke:var(--dim); stroke-width:1.4}
+  .fig .slot{fill:var(--paper); stroke:var(--dim); stroke-width:1.4}
+  .fig .edge{stroke:var(--acc); stroke-width:1.6; fill:none}
+  .fig .bar{fill:var(--dim)}
+  .fig .bar.acc{fill:var(--acc)}
+  .fig .exit{stroke:var(--faint); stroke-width:1; stroke-dasharray:4 3}
+  .figcap{padding:14px 20px; border-top:1px solid var(--line); font-size:13.5px; color:var(--faint)}
+  .figcap b{color:var(--dim)}
 
-  /* ── conformance rows ── */
-  .spec2{margin:34px 0 8px; border:1px solid var(--line); border-radius:16px; overflow:hidden}
-  .spec2 .row{display:grid; grid-template-columns:clamp(140px,16vw,230px) 1fr}
-  .spec2 .row + .row{border-top:1px solid var(--line)}
-  .spec2 .row .k{padding:20px 24px; font-size:10px; letter-spacing:1.8px;
-    text-transform:uppercase; color:var(--dim); font-weight:600}
-  .spec2 .row .v{padding:20px 24px; font-size:15px; line-height:1.7;
-    color:var(--dim); min-width:0}
-  .spec2 .row .v b{color:var(--ink)}
-  .spec2 .row .v .cmd{color:var(--acc)}
-  @media (max-width:640px){ .spec2 .row{grid-template-columns:1fr}
-    .spec2 .row .k{padding-bottom:0} }
+  /* learn path */
+  .toc{margin-top:8px; max-width:760px}
+  .toc a{display:flex; align-items:center; gap:16px; padding:16px 20px; border:1px solid transparent;
+    border-radius:12px; color:var(--dim); font-size:13px; text-transform:uppercase; letter-spacing:.06em}
+  .toc a:hover{border-color:var(--line); color:var(--ink)}
+  .toc a .n{color:var(--acc); font-size:11px; letter-spacing:.14em; width:3ch; flex:0 0 auto}
+  .toc a .dots{flex:1; border-bottom:1px dotted var(--line); transform:translateY(-3px)}
+  .toc a .arr{color:var(--faint); flex:0 0 auto}
 
-  /* ── footer ── */
-  footer{border-top:1px solid var(--line); margin-top:40px; padding:56px 0 40px}
-  .fgrid{display:grid; grid-template-columns:1.6fr 1fr 1fr 1fr; gap:clamp(24px,3vw,56px)}
-  @media (max-width:900px){ .fgrid{grid-template-columns:1fr 1fr; gap:28px} }
-  footer .fbrand{display:flex; align-items:center; gap:10px; color:var(--ink); font-weight:600;
-    font-size:14px; margin-bottom:14px; letter-spacing:1.4px; text-transform:uppercase}
-  footer .fbrand svg{width:17px; height:17px}
-  footer .tagline{color:var(--faint); font-size:14px; max-width:36ch; line-height:1.7}
-  footer .col b{display:block; margin-bottom:14px; font-size:10px; letter-spacing:2px;
-    text-transform:uppercase; color:var(--faint); font-weight:600}
-  footer .col a{display:block; color:var(--dim); font-size:13px; padding:5px 0;
-    text-transform:uppercase; letter-spacing:.8px}
-  footer .col a:hover{color:var(--acc)}
-  footer .legal{margin-top:44px; padding-top:16px; border-top:1px solid var(--line);
-    display:flex; flex-wrap:wrap; gap:8px 24px; font-size:10px; letter-spacing:1.6px;
+  /* faq */
+  details{border:1px solid var(--line); border-radius:14px; margin-bottom:12px; max-width:760px}
+  details[open]{border-color:var(--faint)}
+  summary{cursor:pointer; list-style:none; padding:20px 24px; font-weight:650; font-size:17px;
+    color:var(--ink); display:flex; gap:14px; align-items:baseline}
+  summary::-webkit-details-marker{display:none}
+  summary::before{content:"+"; color:var(--acc); font-weight:400}
+  details[open] summary::before{content:"–"}
+  details .a{padding:0 24px 24px; color:var(--dim); font-size:16px; max-width:62ch}
+  details .a a{color:var(--ink); border-bottom:1px solid var(--line)}
+
+  /* groups */
+  .groups{display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-top:36px}
+  .group{border:1px solid var(--line); border-radius:14px; padding:26px}
+  .group .gt{display:block; margin-bottom:16px; font-size:10.5px; letter-spacing:.2em;
+    text-transform:uppercase; color:var(--acc)}
+  ul.feat{list-style:none; margin:0; padding:0}
+  ul.feat li{padding:12px 0; border-top:1px solid var(--line); font-size:14.5px; color:var(--dim)}
+  ul.feat li:first-child{border-top:0}
+  ul.feat li b{display:block; color:var(--ink); font-size:13px; text-transform:uppercase; letter-spacing:.1em}
+  ul.feat li span{color:var(--faint); font-size:13px}
+  @media (max-width:900px){ .groups{grid-template-columns:1fr} }
+
+  /* footer */
+  footer{border-top:1px solid var(--line); margin-top:32px; padding:60px 0 36px}
+  .fgrid{display:grid; grid-template-columns:1.5fr 1fr 1fr 1fr; gap:32px}
+  @media (max-width:900px){ .fgrid{grid-template-columns:1fr 1fr} }
+  .fbrand{display:flex; align-items:center; gap:10px; color:var(--ink); font-weight:600; font-size:15px; margin-bottom:14px}
+  .fbrand svg{width:18px; height:18px}
+  .tagline{color:var(--faint); font-size:14.5px; max-width:34ch}
+  .fcol b{display:block; margin-bottom:14px; font-size:10.5px; letter-spacing:.2em;
     text-transform:uppercase; color:var(--faint)}
-
-  /* ── reveal ── */
-  .rise{opacity:0; animation:rise .5s ease forwards}
-  .d1{animation-delay:.04s}.d2{animation-delay:.1s}.d3{animation-delay:.16s}
-  .d4{animation-delay:.22s}.d5{animation-delay:.28s}
-  @keyframes rise{to{opacity:1}}
-  .rv{opacity:0; transition:opacity .45s ease; transition-delay:var(--d,0ms)}
-  .rv.in{opacity:1}
-  @media (prefers-reduced-motion:reduce){ html{scroll-behavior:auto} .rise{animation:none; opacity:1} .rv{opacity:1; transition:none} }
+  .fcol a{display:block; color:var(--dim); font-size:14px; padding:5px 0}
+  .fcol a:hover{color:var(--acc)}
+  .colophon{margin-top:48px; padding-top:16px; border-top:1px solid var(--line);
+    display:flex; flex-wrap:wrap; gap:8px 24px; font-size:10.5px; letter-spacing:.16em;
+    text-transform:uppercase; color:var(--faint)}
+  .inl{border:1px solid var(--line); border-radius:6px; padding:1px 7px; font-size:.88em; color:var(--ink); white-space:nowrap}
+  .tag{display:inline-block; font-size:11px; letter-spacing:.16em; text-transform:uppercase;
+    color:var(--acc); border:1px solid var(--line); border-radius:999px; padding:7px 16px; margin-bottom:22px}
+  .flinks a{display:block; padding:6px 0; font-size:15px}
+  .flinks a:hover{color:var(--acc)}
 </style>
 
-<div class="bar">
- <div class="brandwrap">
-  <a class="brand" href="#top"><svg class="logo" viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true">
+<div class="masthead">
+ <div class="in" style="max-width:1180px">
+  <a class="wordmark" href="#top" style="max-width:none"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true">
         <circle cx="100" cy="100" r="26"/><circle cx="100" cy="100" r="50"/><circle cx="100" cy="100" r="74"/>
-        <circle cx="143.3" cy="75" r="16"/>
-        <g fill="currentColor" stroke="none">
-          <circle cx="100" cy="100" r="8"/><circle cx="143.3" cy="75" r="6"/><circle cx="143.3" cy="91" r="3.6"/><circle cx="35.9" cy="137" r="4.2"/>
-        </g>
-      </svg><span>tycho-lang.com</span></a>
-  <span class="runsec" id="runsec">v0.8.6</span>
+        <circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/>
+      </svg><span>TYCHO</span></a>
   <nav aria-label="Sections">
-    <a href="#idea">The idea</a>
-    <a href="#fast">Why it stays fast</a>
-    <a href="#lang">The language</a>
-    <a href="#rigor">How it's checked</a>
-    <a href="#start">Try it</a>
+    <a href="#idea">Idea</a>
+    <a href="#fast">Speed</a>
+    <a href="#costs">Costs</a>
+    <a href="#try">Try</a>
     <a href="#learn">Learn</a>
     <a href="#faq">FAQ</a>
-    <a href="#community">Community</a>
     <a href="docs/">Docs</a>
-    <a href="https://github.com/StefanVonRanda/tycho">Get it ↗</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
   </nav>
   <button class="themebtn" id="tbtn" aria-label="Toggle theme">Theme</button>
  </div>
 </div>
 
-<main class="wrap" id="main">
+<main class="page" id="main">
   <header class="hero" id="top">
-    <div>
-      <div class="hrail">
-        <span>Tycho / implicit arenas · value semantics</span>
-        <span>transpiles to C / no GC</span>
-      </div>
-      <span class="kicker rise d1">An experimental systems language</span>
-      <h1 class="rise d2">Automatic memory management. No garbage collector, no manual <span class="tok">free</span>.</h1>
-      <p class="lede rise d3">
-        A research project testing one idea: <b>implicit hierarchical arenas under value
-        semantics</b>. Every scope owns a memory arena, freed on exit. There is no reference
-        type, so the compiler places every allocation and free from your code's structure
-        alone. New here? Start with the <a href="https://tycho-lang.com/docs/tutorial.html">tutorial ↗</a>
-        — builds with <code>cc</code> and <code>make</code>, nothing else.
-      </p>
-      <div class="cta rise d4">
-        <a class="btn primary" href="#start">Get started</a>
-        <a class="btn ghost" href="docs/">Docs</a>
-        <a class="btn ghost" href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
-      </div>
+    <span class="tag">Experimental systems language · v0.8.6</span>
+    <h1>It frees what you stop using.</h1>
+    <p class="lede">
+      Tycho manages memory with <b>implicit arenas</b>: every scope owns one, and it
+      empties when the scope ends. No garbage collector, no manual
+      <code>free</code>, no borrow checker. It transpiles to C and builds with
+      <code>cc</code> and <code>make</code>. New here? Start with the
+      <a href="https://tycho-lang.com/docs/tutorial.html">tutorial ↗</a>.
+    </p>
+    <div class="cta">
+      <a class="btn primary" href="#try">Try it</a>
+      <a class="btn" href="docs/">Read the docs</a>
+      <a class="btn" href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
     </div>
-    <div class="specimen rv">
-      <div class="shead">At a glance</div>
-      <div class="frow"><b><code>v0.8.6</code></b><span>tagged release</span></div>
-      <div class="frow"><b>cc + make</b><span>whole toolchain</span></div>
-      <div class="frow"><b>no GC</b><span>arenas from scope</span></div>
-      <div class="frow"><b>45</b><span>stdlib packages</span></div>
-      <div class="frow"><b>1,100+</b><span>gated fixtures</span></div>
+    <div class="herometa">
+      <span><b>cc + make</b> — whole toolchain</span>
+      <span><b>45</b> stdlib packages</span>
+      <span><b>1,100+</b> gated fixtures</span>
     </div>
   </header>
 
-<nav class="contents rise d4" aria-label="Contents">
-    <div class="chead">Contents</div>
-    <a href="#idea"><span class="n">01</span>The idea<span class="dots"></span><span class="arr">→</span></a>
-    <a href="#fast"><span class="n">02</span>Why it stays fast<span class="dots"></span><span class="arr">→</span></a>
-    <a href="#lang"><span class="n">03</span>The language<span class="dots"></span><span class="arr">→</span></a>
-    <a href="#rigor"><span class="n">04</span>How it's checked<span class="dots"></span><span class="arr">→</span></a>
-    <a href="#start"><span class="n">05</span>Try it<span class="dots"></span><span class="arr">→</span></a>
-    <a href="#learn"><span class="n">06</span>Learn<span class="dots"></span><span class="arr">→</span></a>
-    <a href="#faq"><span class="n">07</span>FAQ<span class="dots"></span><span class="arr">→</span></a>
-    <a href="#community"><span class="n">08</span>Community<span class="dots"></span><span class="arr">→</span></a>
-    <a href="docs/"><span class="n">09</span>Docs — every page<span class="dots"></span><span class="arr">→</span></a>
-  </nav>
+  <section id="idea">
+    <span class="secnum">01 — The idea</span>
+    <h2>Memory comes from scope, not a runtime.</h2>
+    <div class="fact">
+      <div class="row"><span class="k">Scopes own arenas</span><span class="v">Allocation is a pointer bump. When the scope exits, the whole arena empties in one step — <b>no per-object free, ever</b>.</span></div>
+      <div class="row"><span class="k">No references</span><span class="v"><span class="inl">b := a</span> copies. With nothing to alias, the compiler reads every value's lifetime straight from the syntax.</span></div>
+      <div class="row"><span class="k">Placed, not managed</span><span class="v">A value leaves a scope only <b>down</b> into a callee or <b>up</b> to a caller. The compiler puts every allocation and every free where it belongs.</span></div>
+    </div>
+    <div class="fig">
+      <div class="fhead"><span class="dot"></span><b>FIG. 01</b><span>— arena lifetimes</span></div>
+      <svg viewBox="0 0 640 210" role="img" aria-labelledby="fig01t fig01d">
+        <title id="fig01t">Arena lifetimes</title>
+        <desc id="fig01d">Three scopes with allocation bars that all end at their scope exit, except one highlighted value that crosses into the caller.</desc>
+        <text x="16" y="26">MAIN</text>
+        <text x="16" y="96">BUILD</text>
+        <text x="16" y="166">LOOP</text>
+        <rect class="bar" x="120" y="36" width="380" height="12"/>
+        <rect class="bar" x="200" y="56" width="180" height="12"/>
+        <rect class="bar" x="120" y="106" width="300" height="12"/>
+        <rect class="bar" x="240" y="126" width="180" height="12"/>
+        <rect class="bar" x="120" y="176" width="260" height="12"/>
+        <line class="exit" x1="500" y1="30" x2="500" y2="200"/>
+        <line class="exit" x1="420" y1="100" x2="420" y2="200"/>
+        <line class="exit" x1="380" y1="170" x2="380" y2="200"/>
+        <rect class="bar acc" x="300" y="146" width="220" height="12"/>
+        <text x="508" y="200">scope exits free whole arenas — the highlighted value crosses into its caller</text>
+      </svg>
+      <div class="figcap"><b>Arena lifetimes.</b> Every bar ends at its scope's exit line. The highlighted value is returned, so it crosses that line and lives on in its caller.</div>
+    </div>
+  </section>
 
-  <section id="idea" data-n="01" data-t="The idea">
-    <p class="marker rv"><span class="n">§01</span> The idea</p>
-    <h2 class="rv">Memory comes from scope, not a runtime.</h2>
-    <div class="cards">
-      <div class="card rv" style="--d:0ms">
-        <span class="idx">A /</span>
-        <h3>Every scope owns an arena</h3>
-        <p>Allocation is a pointer bump. When the scope exits, the whole arena is freed in one step.</p>
-      </div>
-      <div class="card rv" style="--d:70ms">
-        <span class="idx">B /</span>
-        <h3>No reference type</h3>
-        <p><span class="inl">b := a</span> copies. The compiler sees every value's lifetime from the syntax alone.</p>
-      </div>
-      <div class="card rv" style="--d:140ms">
-        <span class="idx">C /</span>
-        <h3>Compiler-placed memory</h3>
-        <p>Every allocation and free is inserted for you — no GC, no manual <span class="inl">free</span>, nothing to annotate.</p>
-      </div>
+  <section id="fast">
+    <span class="secnum">02 — Why it stays fast</span>
+    <h2>Value semantics, minus the copies you'd expect.</h2>
+    <div class="fact">
+      <div class="row"><span class="k">Returns move</span><span class="v">A value you build and return is allocated straight into the caller's arena. <span class="inl">return</span> <b>moves</b> it — 1.75× faster than copying it out.</span></div>
+      <div class="row"><span class="k">Loops grow</span><span class="v"><span class="inl">acc = acc + x</span> grows <b>one buffer in place</b>: the textbook O(n²) string build becomes O(n) — 828&nbsp;MB down to 4&nbsp;MB at the same input.</span></div>
+      <div class="row"><span class="k">Dead values move</span><span class="v">A copy happens only where a GC would work too. The <a href="https://tycho-lang.com/docs/performance.html">numbers ↗</a> are measured, not asserted.</span></div>
     </div>
     <div class="panel rv">
       <div class="phead"><span class="traf"></span><span class="fn">LISTING 01 — examples/count.ty</span><span class="badge">one buffer · O(n)</span></div>
@@ -363,30 +290,8 @@
             total = total + <span class="s">", "</span>
     <span class="fn">println</span>(<span class="s">"counted: "</span> + total)   <span class="c"># counted: 1, 2, 3, 4, 5</span></code></pre>
     </div>
-    <p class="codecap rv"><b>Listing 01.</b> The string built inside the loop lives in main's arena — the compiler frees it for you on return.</p>
-
-    <div class="fig rv">
-      <div class="fhead"><span class="dot"></span><b>FIG. 01</b><span>— arena lifetimes</span></div>
-      <canvas class="trace" id="tr1" aria-hidden="true"></canvas>
-      <div class="fcap"><b>Arena lifetimes.</b> Each bar is one allocation, drawn from where it is made to where it is freed. A scope's allocations all end on the same line — leaving the scope frees its whole arena in one step. The highlighted value is returned, so it crosses that line and lives on in <code>main</code>'s arena.</div>
-    </div>
-  </section>
-
-  <section id="fast" data-n="02" data-t="Why it stays fast">
-    <p class="marker rv"><span class="n">§02</span> Why it stays fast</p>
-    <h2 class="rv">Value semantics, without the copies you'd expect.</h2>
-    <div class="split">
-      <div>
-        <ul class="points rv">
-          <li>A value can leave a scope only two ways, both visible in the source: <b>down</b> into a callee, or <b>up</b> to the caller.</li>
-          <li>A value you build and return is allocated straight into the caller's arena — <span class="inl">return</span> <b>moves</b> it, it doesn't copy.</li>
-          <li><span class="inl">acc = acc + x</span> in a loop grows <b>one buffer in place</b>: the textbook O(n²) string build becomes O(n).</li>
-        </ul>
-        <p class="muted rv">Where the model helps and where it costs are both measured — as machine-specific ratios, with the workloads that produce them — in the <a href="https://tycho-lang.com/docs/performance.html">performance notes ↗</a>. Pointer-shaped data like graphs and trees is where value semantics is least free — the <a href="https://tycho-lang.com/docs/internals/value-semantics-limits.html">loss column ↗</a>
-          names every price, and <a href="https://tycho-lang.com/docs/idioms.html">Thinking in Tycho ↗</a> names the idioms.</p>
-      </div>
-      <div>
-        <div class="panel rv">
+    <p class="codecap"><b>Listing 01.</b> The string built inside the loop lives in main's arena — the compiler frees it for you on return.</p>
+    <div class="panel rv">
           <div class="phead"><span class="traf"></span><span class="fn">LISTING 02 — examples/promote.ty</span><span class="badge">return moves · zero copies</span></div>
           <pre><code><span class="k">struct</span> <span class="fn">Person</span>:
     name: <span class="k">string</span>
@@ -402,66 +307,50 @@
     older := <span class="fn">promote</span>(ada)
     <span class="fn">println</span>(<span class="fn">str</span>(ada.age) + <span class="s">" "</span> + <span class="fn">str</span>(older.age))   <span class="c"># 36 37</span></code></pre>
         </div>
-        <p class="codecap rv"><b>Listing 02.</b> <span class="inl">return</span> moves the value into the caller's arena; the copy <span class="inl">q := p</span> stays independent.</p>
-      </div>
+    <p class="codecap"><b>Listing 02.</b> <span class="inl">return</span> moves the value into the caller's arena; the copy <span class="inl">q := p</span> stays independent.</p>
+  </section>
+
+  <section id="costs">
+    <span class="secnum">03 — The costs</span>
+    <h2>Stated before you commit.</h2>
+    <div class="fact">
+      <div class="row"><span class="k">No references</span><span class="v">Shared-mutable graphs and observers can't be written the pointer way. <b>Pools + indices</b> are the idiom — the cache-friendly one — and the <a href="https://tycho-lang.com/docs/internals/value-semantics-limits.html">loss column ↗</a> names every price: trie ~1.55× C, LRU ~2.8×, graph idiom ~1.3×.</span></div>
+      <div class="row"><span class="k">No interface values</span><span class="v">A heterogeneous list of implementors can't exist here. <b>Closed enums + match</b> cover the known set, generics the static half — the replacements are in <a href="https://tycho-lang.com/docs/idioms.html">Thinking in Tycho ↗</a>.</span></div>
+      <div class="row"><span class="k">Pre-1.0</span><span class="v">The surface can still break with a changelog entry and no deprecation window. The policy is in <a href="https://github.com/StefanVonRanda/tycho/blob/main/SUPPORT.md">SUPPORT ↗</a>. Arenas free at scope exit, not incrementally.</span></div>
     </div>
-    <div class="spec2 rv">
-      <div class="row"><span class="k">No references</span><span class="v">Shared-mutable graphs and observers can't be written the pointer way — <b>pools + indices</b> are the idiom, and the cache-friendly one. Every price is named in the <a href="https://tycho-lang.com/docs/internals/value-semantics-limits.html">loss column ↗</a>.</span></div>
-      <div class="row"><span class="k">No interface values</span><span class="v">A heterogeneous list of implementors can't exist here — <b>closed enums + match</b> cover the known set, generics the static half. The replacements are in <a href="https://tycho-lang.com/docs/idioms.html">Thinking in Tycho ↗</a>.</span></div>
-      <div class="row"><span class="k">Pre-1.0</span><span class="v">The surface can still break with a changelog entry and no deprecation window. What that promise covers is in <a href="https://github.com/StefanVonRanda/tycho/blob/main/SUPPORT.md">SUPPORT ↗</a>.</span></div>
-    </div>
-    <div class="fig rv">
+    <div class="fig">
       <div class="fhead"><span class="dot"></span><b>FIG. 02</b><span>— the pool idiom</span></div>
-      <svg viewBox="0 0 640 228" role="img" aria-labelledby="fig02t fig02d">
-        <title id="fig02t">Pointer graph versus index pool</title>
-        <desc id="fig02d">Left: nodes scattered with crossing pointer edges. Right: one contiguous array of nodes with edges as integer indices, two of them naming one slot.</desc>
-        <text x="16" y="28">Pointers</text>
-        <line class="ln" x1="60" y1="96" x2="152" y2="62"/>
-        <line class="ln" x1="152" y1="62" x2="242" y2="102"/>
-        <line class="ln" x1="60" y1="96" x2="202" y2="172"/>
-        <line class="ln" x1="102" y1="162" x2="242" y2="102"/>
-        <line class="ln" x1="202" y1="172" x2="272" y2="152"/>
-        <line class="ln" x1="152" y1="62" x2="102" y2="162"/>
-        <line class="ln" x1="242" y1="102" x2="272" y2="152"/>
-        <circle class="nd" cx="60" cy="96" r="10"/>
-        <circle class="nd" cx="152" cy="62" r="10"/>
-        <circle class="nd" cx="242" cy="102" r="10"/>
-        <circle class="nd" cx="102" cy="162" r="10"/>
-        <circle class="nd" cx="202" cy="172" r="10"/>
-        <circle class="nd" cx="272" cy="152" r="10"/>
-        <text x="336" y="28">Pool</text>
-        <rect class="slot" x="344" y="78" width="42" height="42"/>
-        <rect class="slot" x="390" y="78" width="42" height="42"/>
-        <rect class="slot" x="436" y="78" width="42" height="42"/>
-        <rect class="slot" x="482" y="78" width="42" height="42"/>
-        <rect class="slot" x="528" y="78" width="42" height="42"/>
-        <rect class="slot" x="574" y="78" width="42" height="42"/>
-        <text x="360" y="142">0</text>
-        <text x="406" y="142">1</text>
-        <text x="452" y="142">2</text>
-        <text x="498" y="142">3</text>
-        <text x="544" y="142">4</text>
-        <text x="590" y="142">5</text>
-        <text class="enum" x="359" y="105">2</text>
-        <text class="enum" x="497" y="105">2</text>
-        <line class="edge" x1="365" y1="120" x2="365" y2="132"/>
-        <line class="edge" x1="365" y1="132" x2="457" y2="132"/>
-        <line class="edge" x1="457" y1="132" x2="457" y2="120"/>
-        <line class="edge" x1="503" y1="120" x2="503" y2="132"/>
-        <line class="edge" x1="503" y1="132" x2="457" y2="132"/>
-        <text x="336" y="170">Edges as indices —</text>
-        <text x="336" y="186">two naming one slot is sharing</text>
+      <svg viewBox="0 0 640 190" role="img" aria-labelledby="fig02t fig02d">
+        <title id="fig02t">One array, edges as indices</title>
+        <desc id="fig02d">Six array slots in a row; slots 0 and 3 each hold the index 2, sharing one slot.</desc>
+        <rect class="slot" x="40" y="40" width="84" height="52"/>
+        <rect class="slot" x="132" y="40" width="84" height="52"/>
+        <rect class="slot" x="224" y="40" width="84" height="52"/>
+        <rect class="slot" x="316" y="40" width="84" height="52"/>
+        <rect class="slot" x="408" y="40" width="84" height="52"/>
+        <rect class="slot" x="500" y="40" width="84" height="52"/>
+        <text x="76" y="122">0</text>
+        <text x="168" y="122">1</text>
+        <text x="260" y="122">2</text>
+        <text x="352" y="122">3</text>
+        <text x="444" y="122">4</text>
+        <text x="536" y="122">5</text>
+        <text class="enum" x="68" y="72">→2</text>
+        <text class="enum" x="344" y="72">→2</text>
+        <polyline class="edge" points="82,92 82,150 266,150 266,92"/>
+        <polyline class="edge" points="358,92 358,150 266,150 266,92"/>
+        <text x="40" y="178">An edge is an integer index. Slots 0 and 3 both name slot 2 — that shared naming is sharing.</text>
       </svg>
-      <div class="fcap"><b>The pool idiom.</b> Left: nodes linked by pointer, scattered. Right: one array; an edge is an integer index. Slots 0 and 3 both name slot 2 — that shared naming is what by-value storage alone cannot express.</div>
+      <div class="figcap"><b>The pool idiom.</b> One array; slots 0 and 3 both name slot 2 — sharing without a single pointer.</div>
     </div>
   </section>
 
-  <section id="lang" data-n="03" data-t="The language">
-    <p class="marker rv"><span class="n">§03</span> The language</p>
-    <h2 class="rv">Small, and Go/Odin-shaped.</h2>
-    <p class="muted rv">Python/Nim-flavored syntax, Go/Odin-like semantics; the value-semantics core comes from <a href="https://www.hylo-lang.org/">Hylo ↗</a>.</p>
+  <section id="lang">
+    <span class="secnum">04 — The language</span>
+    <h2>Small, and Go/Odin-shaped.</h2>
+    <p class="standfirst">Python/Nim-flavored syntax, Go/Odin-like semantics; the value-semantics core comes from <a href="https://www.hylo-lang.org/">Hylo ↗</a>. The <a href="docs/">reference ↗</a> covers every construct — this is the shape of it:</p>
     <div class="groups">
-      <div class="group rv" style="--d:0ms">
+      <div class="group">
         <div class="gt">Core</div>
         <ul class="feat">
           <li><b>Value semantics</b><span>no aliasing, no GC</span></li>
@@ -469,14 +358,14 @@
           <li><b>Sum types</b><span><span class="inl">Option</span> / <span class="inl">Result</span>, <span class="inl">match</span></span></li>
         </ul>
       </div>
-      <div class="group rv" style="--d:70ms">
+      <div class="group">
         <div class="gt">Shape</div>
         <ul class="feat">
-          <li><b>Methods (UFCS)</b><span>no classes</span></li>
+          <li><b>Methods</b><span>UFCS, no classes</span></li>
           <li><b>Closures</b><span>value capture</span></li>
         </ul>
       </div>
-      <div class="group rv" style="--d:140ms">
+      <div class="group">
         <div class="gt">Systems</div>
         <ul class="feat">
           <li><b>Concurrency</b><span>spawn, channels, parallel-for</span></li>
@@ -487,25 +376,19 @@
     </div>
   </section>
 
-  <section id="rigor" data-n="04" data-t="How it's checked">
-    <p class="marker rv"><span class="n">§04</span> How it's checked</p>
-    <h2 class="rv">An experiment, but a heavily-checked one.</h2>
-    <div class="spec2 rv">
-      <div class="row"><span class="k">Compiler</span><span class="v">One reference implementation, <b>written in C</b>, transpiling to C99 that any host compiler will take.</span></div>
-      <div class="row"><span class="k">Corpus</span><span class="v"><span class="cmd">make test</span> builds and runs <b>1,100+ fixtures</b> against committed goldens, each under ASan/UBSan/LeakSanitizer.</span></div>
-      <div class="row"><span class="k">Sanitizers</span><span class="v">A fuzzer runs random programs through <b>two builds of each program</b> — native <span class="cmd">-O2</span> against ASan/UBSan — and the disagreement is the oracle; every example is built twice and compared to a golden.</span></div>
-      <div class="row"><span class="k">Gate</span><span class="v"><span class="cmd">make ci</span> runs the whole check suite on your own machine — there's no cloud CI to take on faith.</span></div>
+  <section id="rigor">
+    <span class="secnum">05 — How it's checked</span>
+    <h2>Experimental in scope. Not in rigor.</h2>
+    <div class="fact">
+      <div class="row"><span class="k">Corpus</span><span class="v"><b>1,100+ fixtures</b> built twice — native and sanitized — byte-identical output required, matched against committed goldens. 621 refusals pin every rejection.</span></div>
+      <div class="row"><span class="k">Fuzzed</span><span class="v">Random programs run native <span class="inl">-O2</span> against ASan/UBSan; disagreement is the oracle. Malformed input must fail closed — never crash.</span></div>
+      <div class="row"><span class="k">Gated, locally</span><span class="v"><span class="inl">make ci</span> runs the whole suite on your machine. No cloud CI to take on faith — and every gate proves it can fail.</span></div>
     </div>
-    <p class="muted rv">
-      It's experimental in <em>scope</em>, not in rigor — the honest caveats live in the
-      <a href="https://tycho-lang.com/docs/internals/value-semantics-limits.html">loss column ↗</a>
-      and the <a href="https://tycho-lang.com/docs/performance.html">performance notes ↗</a>.
-    </p>
   </section>
 
-  <section id="start" data-n="05" data-t="Try it">
-    <p class="marker rv"><span class="n">§05</span> Try it</p>
-    <h2 class="rv">A C compiler and make — that's the whole toolchain.</h2>
+  <section id="try">
+    <span class="secnum">06 — Try it</span>
+    <h2>A C compiler and make. Nothing else.</h2>
     <div class="panel rv">
 <div class="phead"><span class="traf"></span><span class="fn">LISTING 02b — terminal</span><span class="badge">prebuilt — nothing to build</span></div>
 <pre><code><span class="c"># Linux x86-64; macOS arm64 and Windows builds are on the same release page</span>
@@ -519,9 +402,7 @@
 <span class="out">what is your name: Ada</span>
 <span class="out">hello Ada</span></code></pre>
 </div>
-    <p class="codecap rv"><b>Listing 02b.</b> The prebuilt route: the tarball carries <code>tychoc</code>, the
-core library and the examples. You still need <code>cc</code> — it is what <code>tychoc</code> hands
-the generated C to. Building from source below ends at the same prompt.</p>
+    <p class="codecap"><b>Prebuilt.</b> The tarball carries <code>tychoc</code>, the core library and the examples. You still need <code>cc</code> — it is what <code>tychoc</code> hands the generated C to.</p>
     <div class="panel rv">
       <div class="phead"><span class="traf"></span><span class="fn">LISTING 03 — terminal</span><span class="badge">hello.ty — the success-criterion demo</span></div>
       <pre><code><span class="c"># a `cc` and `make`, nothing else</span>
@@ -533,19 +414,13 @@ the generated C to. Building from source below ends at the same prompt.</p>
 <span class="out">what is your name: Ada</span>
 <span class="out">hello Ada</span></code></pre>
     </div>
-    <p class="codecap rv"><b>Listing 03.</b> The success-criterion demo: ask for a name, greet it. New to the language? Start with the <a href="https://tycho-lang.com/docs/tutorial.html">tutorial ↗</a>.</p>
-    <div class="cta rv">
-      <a class="btn" href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
-      <a class="btn ghost" href="https://tycho-lang.com/docs/thesis.html">The thesis</a>
-      <a class="btn ghost" href="https://tycho-lang.com/docs/reference/index.html">Reference</a>
-    </div>
+    <p class="codecap"><b>From source.</b> Ask for a name, greet it. New to the language? Start with the <a href="https://tycho-lang.com/docs/tutorial.html">tutorial ↗</a>.</p>
   </section>
 
-  <section id="learn" data-n="06" data-t="Learn">
-    <p class="marker rv"><span class="n">§06</span> Learn</p>
-    <h2 class="rv">An afternoon to a running program.</h2>
-    <nav class="contents rv" aria-label="Learn">
-      <div class="chead">Path</div>
+  <section id="learn">
+    <span class="secnum">07 — Learn</span>
+    <h2>An afternoon to a running program.</h2>
+    <nav class="toc" aria-label="Learn">
       <a href="https://tycho-lang.com/docs/tutorial.html"><span class="n">01</span>Tutorial — first programs in about an hour<span class="dots"></span><span class="arr">→</span></a>
       <a href="https://tycho-lang.com/docs/from-c-to-arenas.html"><span class="n">02</span>Arenas — the memory model in five steps<span class="dots"></span><span class="arr">→</span></a>
       <a href="https://tycho-lang.com/docs/idioms.html"><span class="n">03</span>Idioms — what to reach for instead<span class="dots"></span><span class="arr">→</span></a>
@@ -554,52 +429,38 @@ the generated C to. Building from source below ends at the same prompt.</p>
     </nav>
   </section>
 
-  <section id="faq" data-n="07" data-t="FAQ">
-    <p class="marker rv"><span class="n">§07</span> FAQ</p>
-    <h2 class="rv">Asked every time.</h2>
-    <div class="cards quad">
-      <div class="card rv" style="--d:0ms">
-        <span class="idx">Q1 /</span>
-        <h3>No GC, no borrow checker — how is it safe?</h3>
-        <p>There is no reference type, so a dangling pointer can't be written. Memory frees per scope, <span class="inl">Option</span> removes null, <span class="inl">Result</span> removes exceptions, indexing is bounds-checked.</p>
-      </div>
-      <div class="card rv" style="--d:70ms">
-        <span class="idx">Q2 /</span>
-        <h3>What does value semantics cost?</h3>
-        <p>Pointer-shaped data stored by value: trie ~1.55× C, LRU ~2.8×, the pool idiom ~1.3×. Arenas free at scope exit, not incrementally. The <a href="https://tycho-lang.com/docs/internals/value-semantics-limits.html">loss column ↗</a> names every price.</p>
-      </div>
-      <div class="card rv" style="--d:140ms">
-        <span class="idx">Q3 /</span>
-        <h3>Copying everything must be slow?</h3>
-        <p>"Copied" is the model, not the code: returns move, <span class="inl">acc += x</span> grows in place, dead values move. A copy happens only where a GC would work too. The <a href="https://tycho-lang.com/docs/performance.html">numbers ↗</a> are measured.</p>
-      </div>
-      <div class="card rv" style="--d:210ms">
-        <span class="idx">Q4 /</span>
-        <h3>Where's the package manager?</h3>
-        <p>There isn't one, on purpose: vendor directories, import by path. No transitive graph you've never read. The <a href="https://tycho-lang.com/docs/reference/packages.html">packages page ↗</a> shows the shape.</p>
-      </div>
-    </div>
+  <section id="faq">
+    <span class="secnum">08 — FAQ</span>
+    <h2>Asked every time.</h2>
+    <details open>
+      <summary>No GC, no borrow checker — how is it safe?</summary>
+      <div class="a">There is no reference type, so a dangling pointer can't be written. Memory frees per scope, <span class="inl">Option</span> removes null, <span class="inl">Result</span> removes exceptions, indexing is bounds-checked.</div>
+    </details>
+    <details>
+      <summary>What does value semantics cost?</summary>
+      <div class="a">Pointer-shaped data stored by value: trie ~1.55× C, LRU ~2.8×, the pool idiom ~1.3×. Arenas free at scope exit, not incrementally. The <a href="https://tycho-lang.com/docs/internals/value-semantics-limits.html">loss column ↗</a> names every price.</div>
+    </details>
+    <details>
+      <summary>Copying everything must be slow?</summary>
+      <div class="a">"Copied" is the model, not the code: returns move, <span class="inl">acc += x</span> grows in place, dead values move. A copy happens only where a GC would work too. The <a href="https://tycho-lang.com/docs/performance.html">numbers ↗</a> are measured.</div>
+    </details>
+    <details>
+      <summary>Where's the package manager?</summary>
+      <div class="a">There isn't one, on purpose: vendor directories, import by path. No transitive graph you've never read. The <a href="https://tycho-lang.com/docs/reference/packages.html">packages page ↗</a> shows the shape.</div>
+    </details>
   </section>
 
-  <section id="community" data-n="08" data-t="Community">
-    <p class="marker rv"><span class="n">§08</span> Community</p>
-    <h2 class="rv">Built in the open.</h2>
-    <div class="cards">
-      <div class="card rv" style="--d:0ms">
-        <span class="idx">A /</span>
-        <h3>Report a bug</h3>
-        <p>Miscompile, crash, wrong output? A small <span class="inl">.ty</span> repro plus expected-vs-actual is the whole report. <a href="https://github.com/StefanVonRanda/tycho/issues/new?template=bug_report.md">File it ↗</a>.</p>
-      </div>
-      <div class="card rv" style="--d:70ms">
-        <span class="idx">B /</span>
-        <h3>Ideas and feedback</h3>
-        <p>Rough edges, "I bounced off X", why-does-it-work-this-way — all useful. A few things are out of scope; the <a href="https://tycho-lang.com/docs/architecture.html#decided-non-goals">non-goals ↗</a> name them. <a href="https://github.com/StefanVonRanda/tycho/issues/new?template=idea.md">Speak up ↗</a>.</p>
-      </div>
-      <div class="card rv" style="--d:140ms">
-        <span class="idx">C /</span>
-        <h3>Contribute</h3>
-        <p>Pre-1.0, repros and feedback beat big features. Docs-only changes need one 3-second gate. <a href="https://github.com/StefanVonRanda/tycho/blob/main/CONTRIBUTING.md">How to help ↗</a>.</p>
-      </div>
+  <section id="community">
+    <span class="secnum">09 — Community</span>
+    <h2>Built in the open.</h2>
+    <div class="fact">
+      <div class="row"><span class="k">Report a bug</span><span class="v">Miscompile, crash, wrong output? A small <span class="inl">.ty</span> repro plus expected-vs-actual is the whole report. <a href="https://github.com/StefanVonRanda/tycho/issues/new?template=bug_report.md">File it ↗</a>.</span></div>
+      <div class="row"><span class="k">Ideas</span><span class="v">Rough edges, "I bounced off X", why-does-it-work-this-way — all useful. A few things are out of scope; the <a href="https://tycho-lang.com/docs/architecture.html#decided-non-goals">non-goals ↗</a> name them. <a href="https://github.com/StefanVonRanda/tycho/issues/new?template=idea.md">Speak up ↗</a>.</span></div>
+      <div class="row"><span class="k">Contribute</span><span class="v">Pre-1.0, repros and feedback beat big features. Docs-only changes need one 3-second gate. <a href="https://github.com/StefanVonRanda/tycho/blob/main/CONTRIBUTING.md">How to help ↗</a>.</span></div>
+    </div>
+    <div class="flinks">
+      <a href="https://github.com/StefanVonRanda/tycho/blob/main/RELEASE_NOTES.md">Release notes ↗</a>
+      <a href="https://www.hylo-lang.org/">Value semantics ← Hylo ↗</a>
     </div>
   </section>
 
@@ -607,43 +468,31 @@ the generated C to. Building from source below ends at the same prompt.</p>
     <div class="fgrid">
       <div>
         <div class="fbrand">
-          <svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true">
-            <circle cx="100" cy="100" r="26"/><circle cx="100" cy="100" r="50"/><circle cx="100" cy="100" r="74"/>
-            <circle cx="143.3" cy="75" r="16"/>
-            <g fill="currentColor" stroke="none">
-              <circle cx="100" cy="100" r="8"/><circle cx="143.3" cy="75" r="6"/><circle cx="143.3" cy="91" r="3.6"/><circle cx="35.9" cy="137" r="4.2"/>
-            </g>
+          <svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true">
+            <circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/>
           </svg>
-          <span>Tycho</span>
+          <span>TYCHO</span>
         </div>
         <p class="tagline">An experimental systems language. The source, the checks, and the honest caveats are all in the repo.</p>
       </div>
-      <div class="col">
+      <div class="fcol">
         <b>Docs</b>
         <a href="https://tycho-lang.com/docs/tutorial.html">Tutorial</a>
         <a href="https://tycho-lang.com/docs/reference/index.html">Reference</a>
         <a href="https://tycho-lang.com/docs/thesis.html">The thesis</a>
-        <a href="https://tycho-lang.com/docs/architecture.html">Architecture</a>
-      </div>
-      <div class="col">
-        <b>Guides</b>
-        <a href="https://tycho-lang.com/docs/performance.html">Performance &amp; memory</a>
-        <a href="https://tycho-lang.com/docs/from-c-to-arenas.html">malloc → arenas</a>
         <a href="https://tycho-lang.com/docs/idioms.html">Thinking in Tycho</a>
-        <a href="https://tycho-lang.com/docs/memory-model.html">Memory model</a>
       </div>
-      <div class="col">
-        <b>Meta</b>
+      <div class="fcol">
+        <b>Project</b>
         <a href="https://github.com/StefanVonRanda/tycho">GitHub</a>
         <a href="https://github.com/StefanVonRanda/tycho/blob/main/RELEASE_NOTES.md">Release notes</a>
-        <a href="https://www.hylo-lang.org/">Value semantics ← Hylo</a>
+        <a href="https://github.com/StefanVonRanda/tycho/blob/main/SUPPORT.md">Support policy</a>
       </div>
     </div>
-    <div class="legal">
+    <div class="colophon">
       <span>MIT licensed</span>
       <span>© Stefan Von Randa</span>
       <span>tycho-lang.com</span>
-      <span>■ end of document</span>
     </div>
   </footer>
 
@@ -652,226 +501,15 @@ the generated C to. Building from source below ends at the same prompt.</p>
 <script>
 (function(){
   'use strict';
-  var root=document.documentElement, reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
-  var TAU=Math.PI*2;
-
-  /* ── theme ── */
   var tbtn=document.getElementById('tbtn');
-  var mqDark=matchMedia('(prefers-color-scheme: dark)');
+  function curTheme(){ return document.documentElement.dataset.theme || 'light'; }
   function setTheme(t, persist){
-    root.dataset.theme=t;
+    document.documentElement.dataset.theme=t;
     var meta=document.querySelector('meta[name="theme-color"]');
-    if(meta) meta.setAttribute('content', t==='dark' ? '#0c0d0b' : '#eceee9');
+    if(meta) meta.setAttribute('content', t==='dark' ? '#100e0b' : '#faf7ef');
     if(persist){ try{ localStorage.setItem('tycho-theme', t); }catch(e){} }
   }
-  function curTheme(){ return root.dataset.theme || (mqDark.matches?'dark':'light'); }
-  tbtn.addEventListener('click', function(){ setTheme(curTheme()==='dark'?'light':'dark', true); if(reduce) drawFrame(0); });
-  mqDark.addEventListener('change', function(){ if(!('tycho-theme' in localStorage)) setTheme(mqDark.matches?'dark':'light', false); });
-
-  /* ── reveal on scroll ── */
-  var rvs=document.querySelectorAll('.rv');
-  if('IntersectionObserver' in window){
-    var rio=new IntersectionObserver(function(es){
-      es.forEach(function(e){ if(e.isIntersecting){ e.target.classList.add('in'); rio.unobserve(e.target); } });
-    }, {threshold:.12});
-    rvs.forEach(function(el){ rio.observe(el); });
-  }else{ rvs.forEach(function(el){ el.classList.add('in'); }); }
-
-  /* ── scroll-spy: nav + running section header ── */
-  var secLinks=document.querySelectorAll('.bar nav a[href^="#"]');
-  var runsec=document.getElementById('runsec');
-  var SECLABEL={idea:'§01 — The idea', fast:'§02 — Why it stays fast', lang:'§03 — The language', rigor:'§04 — How it\'s checked', start:'§05 — Try it', learn:'§06 — Learn', faq:'§07 — FAQ', community:'§08 — Community'};
-  if('IntersectionObserver' in window && secLinks.length){
-    var sio=new IntersectionObserver(function(es){
-      es.forEach(function(e){
-        if(!e.isIntersecting) return;
-        secLinks.forEach(function(a){ a.removeAttribute('aria-current'); });
-        var link=document.querySelector('.bar nav a[href="#'+e.target.id+'"]');
-        if(link) link.setAttribute('aria-current','true');
-        if(runsec) runsec.textContent=SECLABEL[e.target.id]||'Contents';
-      });
-    }, {rootMargin:'-35% 0px -60% 0px'});
-    document.querySelectorAll('section[id]').forEach(function(sec){ sio.observe(sec); });
-  }
-
-  /* ── canvas plumbing ── */
-  /* gap: these duplicate the CSS palette by hand and nothing keeps them in sync.
-     scripts/check_contrast.py reads the :root tokens and CANNOT see a canvas fill,
-     so a --acc edit in the stylesheet leaves these behind silently. The ink/faint
-     pairs already diverge from their tokens (ink here is 236,237,230; --ink is
-     #f4f3ef). Reading them with getComputedStyle at draw time would fix it. */
-  var PAL={
-    light:{ink:[25,23,18], faint:[111,105,91], acc:[51,102,15]},
-    dark:{ink:[242,237,225], faint:[139,133,112], acc:[212,245,66]}
-  };
-  function col(k,a){ var c=PAL[curTheme()][k]; return 'rgba('+c[0]+','+c[1]+','+c[2]+','+a+')'; }
-  function mkState(cv){ return {cv:cv, ctx:cv.getContext('2d'), w:0, h:0, on:true, ready:false}; }
-  function sizeState(s){
-    var dpr=Math.min(window.devicePixelRatio||1, 2);
-    s.w=s.cv.clientWidth; s.h=s.cv.clientHeight;
-    if(!s.w||!s.h) return;
-    s.cv.width=Math.max(1, Math.round(s.w*dpr)); s.cv.height=Math.max(1, Math.round(s.h*dpr));
-    s.ctx.setTransform(dpr,0,0,dpr,0,0);
-  }
-  /* pause off-screen canvases */
-  var states=[];
-  if('IntersectionObserver' in window){
-    var vio=new IntersectionObserver(function(es){
-      es.forEach(function(e){ var s=states[e.target._i]; if(s) s.on=e.isIntersecting; });
-    }, {rootMargin:'160px'});
-  }
-
-  /* ── FIG. 01 arena lifetimes: a lifetime chart ──
-     X IS TIME AND LENGTH IS LIFETIME. That is the whole point, and it is what the
-     previous version got wrong: blocks were placed at a fixed x fraction while a
-     "time →" axis sat underneath, so horizontal position meant nothing, and each
-     block carried its own duration -- so allocations in one scope vanished on
-     unrelated schedules while the caption claimed the arena was "freed at once".
-     The drawing contradicted its own caption.
-
-     Here every allocation ENDS AT ITS SCOPE'S EXIT, by construction: a bar's right
-     edge is SCOPES[r].to, never a per-block duration. The vertical rule at each
-     exit is the one idea in the figure -- one cut, the whole arena gone.
-
-     The escaping value is the exception and is drawn in the accent: born in the
-     loop body, it crosses that rule and steps down a row at each exit, ending only
-     with main. That step IS "outliving the scope that built it".
-
-     The chart is drawn WHOLE at every frame; the playhead only splits each bar
-     into solid (already happened) and ghosted (not yet). So a still frame carries
-     the entire story -- which is what makes the reduced-motion path honest, where
-     the old code drew frame 0 and every block was still 0.6s from appearing. */
-  var TR_T=10, TR_LOOP=11.4;              /* 10 units of story + a pause before the loop */
-  var TR_SCOPES=[
-    {label:'LOOP BODY', from:2.2, to:6.2},
-    {label:'COUNT_TO',  from:1.2, to:8.0},
-    {label:'MAIN',      from:0.0, to:10.0}
-  ];
-  /* Each allocation names only its BIRTH. Its death is its scope's exit -- there is
-     deliberately no per-allocation duration to get wrong. */
-  var TR_ALLOC=[
-    {r:0, at:2.6, lane:0}, {r:0, at:3.6, lane:1},
-    {r:1, at:1.6, lane:0}, {r:1, at:4.4, lane:1},
-    {r:2, at:0.5, lane:0}, {r:2, at:3.0, lane:1}
-  ];
-  var TR_ESC={at:4.6, lane:2};            /* born in row 0, returned down to main */
-
-  function drawTrace(s, t){
-    if(!s.w) return;
-    var ctx=s.ctx, w=s.w, h=s.h, i, r;
-    ctx.clearRect(0,0,w,h);
-    ctx.font='9.5px "IBM Plex Mono",monospace';
-    ctx.textBaseline='alphabetic';
-
-    var padT=22, padB=24, gap=9;   /* padT leaves room for the "scope exit" label */
-    var gut=Math.min(120, Math.max(64, w*0.20));       /* label gutter */
-    var x0=gut, x1=w-14, pw=x1-x0;
-    var rowH=(h-padT-padB-gap*2)/3;
-    var laneH=Math.max(5, (rowH-10)/3), laneGap=Math.max(2,(rowH-10-laneH*3)/2);
-    var X=function(u){ return x0+(u/TR_T)*pw; };
-    var rowY=function(i){ return padT+i*(rowH+gap); };
-    var laneY=function(i,l){ return rowY(i)+5+l*(laneH+laneGap); };
-
-    /* playhead: sweeps 0..TR_T then holds while the loop pauses. reduce => finished. */
-    var ph=reduce ? TR_T : Math.min(TR_T, (t%TR_LOOP));
-
-    /* bar(): solid up to the playhead, dimmed after it. One helper so no bar can be
-       drawn by a path that forgets the split.
-       THE DIM FACTOR IS 0.55, NOT 0.18. At 0.18 the whole chart was illegible for
-       the first second of every loop, when the playhead sits at 0 and nothing has
-       "happened" yet -- the same blank-figure failure the old version had, just
-       briefer. The playhead must ADD emphasis to a chart that is already readable,
-       never be the thing that makes it readable. */
-    function bar(a,b,y,hh,key,alpha){
-      if(b<=a) return;
-      var mid=Math.max(a, Math.min(b, ph));
-      if(mid>a){ ctx.fillStyle=col(key,alpha);      ctx.fillRect(X(a), y, X(mid)-X(a), hh); }
-      if(b>mid){ ctx.fillStyle=col(key,alpha*0.55); ctx.fillRect(X(mid), y, X(b)-X(mid), hh); }
-    }
-
-    /* scope extents + row labels */
-    for(i=0;i<3;i++){
-      var S=TR_SCOPES[i], y=rowY(i);
-      ctx.fillStyle=col('ink',0.05);
-      ctx.fillRect(X(S.from), y, X(S.to)-X(S.from), rowH);
-      ctx.strokeStyle=col('ink',0.24); ctx.lineWidth=1;
-      ctx.strokeRect(X(S.from)+0.5, y+0.5, X(S.to)-X(S.from)-1, rowH-1);
-      ctx.fillStyle=col('ink',0.62);
-      ctx.fillText(S.label, 8, y+rowH/2+3.5);
-    }
-
-    /* allocations -- right edge is the scope's exit, always */
-    for(i=0;i<TR_ALLOC.length;i++){
-      var A=TR_ALLOC[i];
-      bar(A.at, TR_SCOPES[A.r].to, laneY(A.r,A.lane), laneH, 'ink', 0.66);
-    }
-
-    /* the escaping value: one accent bar per row it survives into */
-    var segs=[[0,TR_ESC.at,TR_SCOPES[0].to],[1,TR_SCOPES[0].to,TR_SCOPES[1].to],[2,TR_SCOPES[1].to,TR_SCOPES[2].to]];
-    for(i=0;i<segs.length;i++){
-      bar(segs[i][1], segs[i][2], laneY(segs[i][0],TR_ESC.lane), laneH, 'acc', 0.95);
-    }
-    /* the steps down between rows, at each exit it crosses */
-    ctx.lineWidth=1;
-    for(i=0;i<2;i++){
-      var xs=X(TR_SCOPES[i].to), ya=laneY(i,TR_ESC.lane)+laneH, yb=laneY(i+1,TR_ESC.lane);
-      ctx.strokeStyle=col('acc', ph>=TR_SCOPES[i].to ? 0.9 : 0.5);
-      ctx.beginPath(); ctx.moveTo(xs-laneH*0.5, ya); ctx.lineTo(xs-laneH*0.5, yb); ctx.stroke();
-    }
-
-    /* scope exits: the one cut that frees a whole arena */
-    for(i=0;i<3;i++){
-      var ex=X(TR_SCOPES[i].to), yt=rowY(i), yb2=rowY(i)+rowH;
-      var hot=Math.abs(ph-TR_SCOPES[i].to)<0.30 && !reduce;
-      ctx.strokeStyle=col('ink', hot?0.85:0.42); ctx.lineWidth=hot?2:1;
-      ctx.setLineDash(hot?[]:[3,3]);
-      ctx.beginPath(); ctx.moveTo(ex, yt-3); ctx.lineTo(ex, yb2+3); ctx.stroke();
-      ctx.setLineDash([]);
-    }
-    /* name the rule once, above the innermost exit */
-    ctx.fillStyle=col('faint',1);
-    ctx.fillText('scope exit', X(TR_SCOPES[0].to)+5, rowY(0)-7);
-
-    /* playhead */
-    if(!reduce && ph<TR_T){
-      ctx.strokeStyle=col('ink',0.45); ctx.lineWidth=1;
-      ctx.beginPath(); ctx.moveTo(X(ph), padT-6); ctx.lineTo(X(ph), rowY(2)+rowH+6); ctx.stroke();
-    }
-
-    /* axis */
-    ctx.strokeStyle=col('ink',0.22); ctx.lineWidth=1;
-    ctx.beginPath(); ctx.moveTo(x0, h-padB+8); ctx.lineTo(x1, h-padB+8); ctx.stroke();
-    ctx.fillStyle=col('faint',1); ctx.fillText('time →', x0, h-7);
-  }
-
-  /* ── wiring ── */
-  var traces=[];
-  function initAll(){
-    var t1=document.getElementById('tr1'); if(t1){ var s=mkState(t1); s.ready=true; traces.push(s); }
-    states=traces;
-    if(vio) states.forEach(function(s,i){ s.cv._i=i; vio.observe(s.cv); });
-    sizeAll();
-  }
-  function sizeAll(){ traces.forEach(sizeState); }
-  function drawFrame(time){
-    var t=time*0.001;
-    traces.forEach(function(s){ if(s.on) drawTrace(s, t); });
-  }
-  var raf=null;
-  function loop(ts){ drawFrame(ts); raf=requestAnimationFrame(loop); }
-  function start(){ if(!raf && !reduce) raf=requestAnimationFrame(loop); }
-  function stop(){ if(raf){ cancelAnimationFrame(raf); raf=null; } }
-
-  function boot(){
-    initAll();
-    if(reduce){ drawFrame(0); return; }
-    start();
-  }
-  if(document.readyState!=='loading') boot(); else document.addEventListener('DOMContentLoaded',boot);
-  window.addEventListener('load', function(){ sizeAll(); if(reduce) drawFrame(0); });
-  var rt;
-  window.addEventListener('resize', function(){ clearTimeout(rt); rt=setTimeout(function(){ sizeAll(); if(reduce) drawFrame(0); },180); });
-  document.addEventListener('visibilitychange', function(){ if(document.hidden) stop(); else start(); });
+  if(tbtn) tbtn.addEventListener('click', function(){ setTheme(curTheme()==='dark'?'light':'dark', true); });
 })();
 </script>
 </body>
