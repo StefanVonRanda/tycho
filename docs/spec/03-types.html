@@ -73,11 +73,11 @@
 <p>yield the byte <strong>value</strong>; <code>to_char(n)</code> converts the other way, aborting rather</p>
 <p>than wrapping for an <code>n</code> outside <code>0..255</code></p>
 <p>(<a href="16-builtins.html#294-conversions">§29.4</a>).</p>
-<p><strong>There is no `char` type keyword, and its absence is normative</strong> — it is</p>
+<p><strong>There is no <code>char</code> type keyword, and its absence is normative</strong> — it is</p>
 <p>restated at <a href="01-lexical.html#36-keywords">§3.6</a> and</p>
 <p><a href="02-grammar.html#42-types">§4.2</a>. Every <code>char</code>-valued expression therefore reaches</p>
 <p>its type by inference: a character literal, <code>char_at</code>, <code>to_char</code>, or arithmetic</p>
-<p>on those. <code>char</code>'s operator set is <strong>narrower than `int`'s</strong></p>
+<p>on those. <code>char</code>'s operator set is <strong>narrower than <code>int</code>'s</strong></p>
 <p>(<code>+</code> and <code>-</code> only, §13.2).</p>
 <p>Indexing a <code>string</code> does <strong>not</strong> produce a <code>char</code>: <code>s[i]</code> yields <code>int</code> (§5.2.5).</p>
 <p>The <code>char</code>-typed reader is the builtin <code>char_at(s, i)</code></p>
@@ -117,7 +117,7 @@
 <tr><td><code>b + 'c'</code></td><td><code>bytes</code></td><td>appends the char's single byte; one-directional, like <code>string + char</code> (<a href="09-expressions.html#132-operators">§13.2</a>)</td></tr>
 <tr><td><code>a == b</code>, <code>a != b</code></td><td><code>bool</code></td><td>byte-wise, by the length headers</td></tr>
 </table>
-<p><strong>A `bytes` slice is not a bounds check.</strong> The clamp in the <code>b[i:j]</code> row is</p>
+<p><strong>A <code>bytes</code> slice is not a bounds check.</strong> The clamp in the <code>b[i:j]</code> row is</p>
 <p>silent: on a 5-byte <code>bytes</code>, <code>b[2:10]</code> is three bytes and <code>b[7:9]</code> is zero, and</p>
 <p>neither form reports that the requested range did not exist. An <strong>array</strong> slice</p>
 <p>written the same way aborts instead — <code>[1,2,3,4,5][2:10]</code> dies</p>
@@ -131,7 +131,7 @@
 <p><code>strings.slice_str(s, start, stop)</code> (<a href="18-library.html#324-strings">§32.4</a>) take</p>
 <p>the same two bounds and return <code>Result(_, SliceErr)</code>, refusing what the clamp</p>
 <p>would have repaired.</p>
-<p>There is <strong>no implicit conversion between `string` and `bytes`</strong> in either</p>
+<p>There is <strong>no implicit conversion between <code>string</code> and <code>bytes</code></strong> in either</p>
 <p>direction: <code>b + "s"</code> and <code>s + b</code> are type errors. The boundary is crossed only by</p>
 <p><code>to_bytes</code> / <code>to_str</code>, both zero-cost reinterprets (§8). Arithmetic other than</p>
 <p><code>+</code> is a type error naming this set. <code>bytes</code> has no other operators: iteration</p>
@@ -270,12 +270,12 @@ fn main():
 <p><code>Ok(T)</code> and <code>Err(E)</code>. Enums are consumed by exhaustive <code>match</code> and support</p>
 <p><code>or_return</code> for <code>Option</code>/<code>Result</code> (§19). Recursive payloads are</p>
 <p>permitted (they are arena-allocated, hence finite).</p>
-<p><strong>`Result(void, E)`.</strong> A <code>Result</code>'s ok payload MAY be <code>void</code>, for an operation</p>
+<p><strong><code>Result(void, E)</code>.</strong> A <code>Result</code>'s ok payload MAY be <code>void</code>, for an operation</p>
 <p>that either fails with a reason or succeeds with nothing to report. <code>void</code> is a</p>
 <p>type with <strong>no values</strong>, so:</p>
 <ul>
 <li>it is constructed by a zero-argument <code>Ok()</code>, and <code>Ok(x)</code> is an error;</li>
-<li>it is matched by a <strong>bare `Ok:` arm</strong>, the same shape a fieldless enum variant</li>
+<li>it is matched by a <strong>bare <code>Ok:</code> arm</strong>, the same shape a fieldless enum variant</li>
 </ul>
 <p>uses, and <code>Ok(x)</code> as an arm is an error;</p>
 <ul>
@@ -429,8 +429,8 @@ fn report(r: Result(void, string)) -&gt; string:
 <p><code>to_str</code>/<code>to_bool</code> or the generic <code>to_under</code> (§8). A newtype over <code>int</code> or</p>
 <p><code>string</code> is a valid map key carrying its wrapped identity (§5.3.5).</p>
 <h2 id="55-equality-and-ordering">5.5 Equality and ordering</h2>
-<p><strong>Equality (`==`, `!=`).</strong> Two values may be compared iff they have the **same</p>
-<p>type<strong> (§5.1); `void` values are not comparable. Equality is </strong>structural and</p>
+<p><strong>Equality (<code>==</code>, <code>!=</code>).</strong> Two values may be compared iff they have the **same</p>
+<p>type<strong> (§5.1); <code>void</code> values are not comparable. Equality is </strong>structural and</p>
 <p>deep**: scalars compare by value; <code>string</code>, <code>bytes</code>, arrays, structs, tuples,</p>
 <p>maps, enums, <code>Option</code>, and <code>Result</code> compare by content, recursing through nesting</p>
 <p>— so <code>a == b</code> holds exactly when <code>b</code> is an independent deep copy of <code>a</code>.</p>
@@ -440,7 +440,7 @@ fn report(r: Result(void, string)) -&gt; string:
 <p>equality: the aggregate still compares structurally, and a function field within</p>
 <p>it compares by identity. Comparing values of two different types is a compile</p>
 <p>error.</p>
-<p><strong>Ordering (`&lt;`, `&gt;`, `&lt;=`, `&gt;=`).</strong> Both operands MUST have the same type, and</p>
+<p><strong>Ordering (<code>&lt;</code>, <code>&gt;</code>, <code>&lt;=</code>, <code>&gt;=</code>).</strong> Both operands MUST have the same type, and</p>
 <p>that type's underlying scalar MUST be <code>int</code>, <code>float</code>, <code>char</code>, <code>string</code>, or a</p>
 <p>sized numeric (<code>u8</code>, <code>u16</code>, <code>u32</code>, <code>u64</code>, <code>i8</code>, <code>i16</code>, <code>i32</code>, <code>i64</code>, <code>f32</code>) — or a</p>
 <p>newtype over one of these. Structs, tuples,</p>

@@ -31,23 +31,23 @@
 <p>different type is a type error — use the <code>to_uN</code> / <code>to_iN</code> / <code>to_f32</code> conversion</p>
 <p>to produce the sized value.</p>
 <ul>
-<li><strong>`string`</strong> — passed as a C <code>char*</code>, with no length alongside it. A <code>string</code></li>
+<li><strong><code>string</code></strong> — passed as a C <code>char*</code>, with no length alongside it. A <code>string</code></li>
 </ul>
 <p><strong>returned</strong> from C is copied into the caller's storage at the call site, so</p>
 <p>Tycho never retains a pointer into C memory. A nullable C return is declared</p>
 <p><code>-&gt; Option(string)</code>. A <code>string</code> holding an interior <code>NUL</code> does <strong>not</strong> survive</p>
 <p>the round trip in either direction — see "Interior <code>NUL</code>s" below.</p>
 <ul>
-<li><strong>`bytes`</strong> — crosses as a <code>(pointer, length)</code> pair, preserving interior <code>NUL</code>s;</li>
+<li><strong><code>bytes</code></strong> — crosses as a <code>(pointer, length)</code> pair, preserving interior <code>NUL</code>s;</li>
 </ul>
 <p>a <code>bytes</code>/array returned from C is copied into an arena and the C buffer freed.</p>
 <ul>
-<li><strong>`[int]` and `[float]`</strong> — a <strong>scalar</strong> array crosses as a <code>(const T*, int64_t)</code></li>
+<li><strong><code>[int]</code> and <code>[float]</code></strong> — a <strong>scalar</strong> array crosses as a <code>(const T*, int64_t)</code></li>
 </ul>
 <p>pair (like <code>bytes</code>), in either direction; an array of any other element type,</p>
 <p>and any map or struct, is rejected (no flat, self-describing C ABI).</p>
 <ul>
-<li><strong>`[string]` — parameter direction only.</strong> It crosses as a</li>
+<li><strong><code>[string]</code> — parameter direction only.</strong> It crosses as a</li>
 </ul>
 <p><code>(const char *const *, int64_t)</code> pair, the same <code>(ptr, len)</code> convention as</p>
 <p><code>[int]</code>/<code>[float]</code> and <strong>not</strong> a <code>NULL</code>-terminated <code>argv</code>; a callee wanting</p>
@@ -65,12 +65,12 @@
 <p>A <code>[string]</code> <strong>return</strong> is rejected: a <code>char**</code> out of C carries no length, the</p>
 <p>same reason an <code>inout string</code> out-parameter is rejected below.</p>
 <ul>
-<li><strong>`ptr`</strong> — an opaque <code>void*</code> Tycho never dereferences; the <code>null</code> literal and</li>
+<li><strong><code>ptr</code></strong> — an opaque <code>void*</code> Tycho never dereferences; the <code>null</code> literal and</li>
 </ul>
 <p><code>is_null(p)</code> apply.</p>
 <ul>
-<li><strong>typed `handle`s</strong> — §25.</li>
-<li><strong>`inout` out-parameters</strong> — a numeric scalar or <code>ptr</code> only (<code>int</code>/<code>char</code>/</li>
+<li><strong>typed <code>handle</code>s</strong> — §25.</li>
+<li><strong><code>inout</code> out-parameters</strong> — a numeric scalar or <code>ptr</code> only (<code>int</code>/<code>char</code>/</li>
 </ul>
 <p><code>float</code>/<code>bool</code>/<code>ptr</code>); a <code>string</code>, <code>bytes</code>, handle, or composite <code>inout</code></p>
 <p>out-parameter is <strong>rejected</strong> (no trivial out-param ABI).</p>
@@ -78,25 +78,25 @@
 <p><strong>deep-copied into the caller's storage at the call site</strong>; a program never holds</p>
 <p>a live pointer into C-owned memory.</p>
 <p>#### Interior <code>NUL</code>s: a <code>string</code> is truncated at the boundary, silently</p>
-<p>A Tycho <code>string</code> carries an explicit length and <strong>may hold an interior `0x00`</strong> —</p>
+<p>A Tycho <code>string</code> carries an explicit length and <strong>may hold an interior <code>0x00</code></strong> —</p>
 <p><code>to_bytes</code> on an <code>[int]</code> is the documented way to build one</p>
 <p>(<a href="16-builtins.html">§16</a>), and <code>chr(0)</code> concatenates like any other byte. A C</p>
 <p><code>char*</code> carries no length: it ends at its first <code>NUL</code>. The two disagree, and the</p>
 <p>ABI has nowhere to put the difference.</p>
-<p>So wherever a <code>string</code> crosses the FFI <strong>as a `char*`</strong>, the bytes at and after</p>
+<p>So wherever a <code>string</code> crosses the FFI <strong>as a <code>char*</code></strong>, the bytes at and after</p>
 <p>the first interior <code>NUL</code> are invisible to the other side. This is **not</p>
 <p>diagnosed** — there is no error, no truncation warning, and no way to detect it</p>
 <p>after the fact. It applies in every <code>char*</code> direction:</p>
 <ul>
-<li>a <strong>scalar `string` parameter</strong> — the callee's <code>strlen</code> reports the prefix</li>
+<li>a <strong>scalar <code>string</code> parameter</strong> — the callee's <code>strlen</code> reports the prefix</li>
 </ul>
 <p>length, not <code>len(s)</code>;</p>
 <ul>
-<li><strong>each element of a `[string]` parameter</strong> — the length counts pointers, so no</li>
+<li><strong>each element of a <code>[string]</code> parameter</strong> — the length counts pointers, so no</li>
 </ul>
 <p>element length is available to the callee at all;</p>
 <ul>
-<li>a <strong>`string` return from C</strong> — the arena copy is <code>strlen</code>-bounded</li>
+<li>a <strong><code>string</code> return from C</strong> — the arena copy is <code>strlen</code>-bounded</li>
 </ul>
 <p>, so a C buffer holding <code>"h\0i"</code> becomes</p>
 <p>a Tycho <code>string</code> of length 1.</p>
@@ -106,7 +106,7 @@
 <p>the *length*, which is the only thing telling the callee they are there.</p>
 <p><strong>This follows from the borrow.</strong></p>
 <p>Rationale: passing <code>(ptr, len)</code> per element would copy, and scanning for <code>NUL</code> before every call would turn an O(1) borrow into an O(total bytes) one.</p>
-<p><strong>Use `bytes` for any payload that may hold a `NUL`.</strong> <code>bytes</code> crosses as a</p>
+<p><strong>Use <code>bytes</code> for any payload that may hold a <code>NUL</code>.</strong> <code>bytes</code> crosses as a</p>
 <p><code>(pointer, length)</code> pair in both directions and preserves interior <code>NUL</code>s exactly</p>
 <p>— that is what the explicit length is for. Convert with <code>to_bytes(s)</code> at the call</p>
 <p>and <code>to_str(b)</code> on the way back, both zero-cost reinterprets</p>
@@ -160,7 +160,7 @@ extern void iox_read_file(char *, tycho_int *, unsigned char **, tycho_int *);
 </code></pre>
 <p>Rules that follow from §24.1 and are not optional:</p>
 <ul>
-<li>The classification parameter must be a <strong>numeric scalar or `ptr`</strong> — that is the</li>
+<li>The classification parameter must be a <strong>numeric scalar or <code>ptr</code></strong> — that is the</li>
 </ul>
 <p>whole <code>inout</code> crossable set. A <code>string</code>, <code>bytes</code>, handle or composite <code>inout</code> is</p>
 <p>rejected, so the classification cannot be a message; it is a code.</p>
@@ -184,7 +184,7 @@ extern void iox_read_file(char *, tycho_int *, unsigned char **, tycho_int *);
 <p>is <strong>forced, not preferred</strong> — and the constraint that forces it only exists for</p>
 <p>one kind of payload:</p>
 <ul>
-<li><strong>A `bytes` or array payload cannot be an `inout` at all.</strong> The crossable</li>
+<li><strong>A <code>bytes</code> or array payload cannot be an <code>inout</code> at all.</strong> The crossable</li>
 </ul>
 <p><code>inout</code> set is int/char/float/bool/ptr (the rule above), and the compiler</p>
 <p>rejects the rest by name —  is the predicate and</p>
@@ -225,7 +225,7 @@ extern fn iox_stat_mtime(path: string, mtime: inout int) -&gt; int
 <p>automatically (<a href="15-program.html">§28</a>). <code>-lm</code> (a link flag) and <code>-fwrapv</code> (a</p>
 <p>compile flag) are always on this single <code>cc</code> command line.</p>
 <h2 id="25-typed-handles">25. Typed handles</h2>
-<p>A <code>handle</code> declaration is a <strong>header over an indented `free:` line</strong> — a block,</p>
+<p>A <code>handle</code> declaration is a <strong>header over an indented <code>free:</code> line</strong> — a block,</p>
 <p>not a one-liner. It declares a nominal, affine, opaque C resource: a <code>void*</code></p>
 <p>whose destructor runs automatically at scope exit (RAII).</p>
 <pre><code class="language-tycho">handle File:
@@ -282,7 +282,7 @@ extern fn fh_close(f: File) -&gt; int        # the destructor, called at scope e
 <p>no variable is never freed. <code>close(open(p))</code> is refused by the <code>close</code> rule</p>
 <p>below rather than by this one, because <code>close</code> does free it.</p>
 <ul>
-<li><strong>Early `close(h)`.</strong> <code>close(h)</code> runs the destructor immediately and sets the</li>
+<li><strong>Early <code>close(h)</code>.</strong> <code>close(h)</code> runs the destructor immediately and sets the</li>
 </ul>
 <p>handle to null; the scope-exit finalizer is null-guarded, so the destructor</p>
 <p>runs <strong>exactly once</strong>. <code>close</code> requires a handle <strong>variable</strong> (a call result has</p>
@@ -292,7 +292,7 @@ extern fn fh_close(f: File) -&gt; int        # the destructor, called at scope e
 <p>scope-exit free would run the destructor a second time. Close it in the</p>
 <p>owning scope.</p>
 <ul>
-<li><strong>Use after `close`.</strong> A <code>close(h)</code> <strong>statement</strong> closes <code>h</code> for the rest of</li>
+<li><strong>Use after <code>close</code>.</strong> A <code>close(h)</code> <strong>statement</strong> closes <code>h</code> for the rest of</li>
 </ul>
 <p>the block it is written in, including every block nested after it. Any later</p>
 <p>mention of <code>h</code> there is a compile error — a call that passes it, a second</p>

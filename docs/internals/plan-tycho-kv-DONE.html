@@ -8,7 +8,7 @@
 <body>
 <nav class="crumb"><a href="../index.html">docs</a> / internals/plan-tycho-kv-DONE.md</nav>
 <h1 id="what-the-next-program-says-the-language-needs">What the next program says the language needs</h1>
-<p><strong>Status: DONE 2026-08-03. Program: persistent B-tree key-value store (`tools/tycho-kv/`). Outcome: `io.write_at` shipped, concurrent `pscan` shipped, differential byte-identical over 1,816 commands.</strong></p>
+<p><strong>Status: DONE 2026-08-03. Program: persistent B-tree key-value store (<code>tools/tycho-kv/</code>). Outcome: <code>io.write_at</code> shipped, concurrent <code>pscan</code> shipped, differential byte-identical over 1,816 commands.</strong></p>
 <blockquote>
 <p>This plan is a fresh clone, 2026-08-03: the completed tycho-scheme compiler</p>
 <p>plan lives at <code>docs/internals/plan-tycho-scheme-compiler-DONE.md</code>. The rule</p>
@@ -52,7 +52,7 @@
 <p>and truncation errors appeared on reload. Internal pages are now padded to</p>
 <p>the leaf page size.</p>
 <ul>
-<li><strong>`cli.argv()` excludes the program name</strong> -- argv[0] is the first real</li>
+<li><strong><code>cli.argv()</code> excludes the program name</strong> -- argv[0] is the first real</li>
 </ul>
 <p>argument. The interpreter's <code>run</code>-first check masked this; the store's</p>
 <p>multi-command CLI hit it immediately.</p>

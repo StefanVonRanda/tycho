@@ -24,7 +24,7 @@
 <p>which is <code>int</code>, <code>float</code>, a sized numeric (<code>u32</code>/<code>u64</code>/<code>f32</code>), <code>char</code> (for <code>+</code>/<code>-</code></p>
 <p>with the byte-domain rule below), or a newtype over an <code>int</code> or <code>float</code> base; the</p>
 <p>result keeps that type. <code>int</code>/<code>u32</code>/<code>u64</code> division or modulo by a zero *value*</p>
-<p>aborts (<a href="17-runtime.html">§30</a>). Division or modulo by an <strong>integer literal `0`</strong> is</p>
+<p>aborts (<a href="17-runtime.html">§30</a>). Division or modulo by an <strong>integer literal <code>0</code></strong> is</p>
 <p>a compile error regardless of operand type (so <code>x / 0</code> is rejected even when <code>x</code></p>
 <p>is <code>float</code>); <code>float</code>/<code>f32</code> division by a zero *value* or by the float literal</p>
 <p><code>0.0</code> never traps and follows IEEE-754 (<code>x/0.0</code> → <code>±inf</code>/<code>NaN</code>). Integer overflow wraps (two's-complement for <code>int</code>, modulo <code>2^32</code>/<code>2^64</code></p>
@@ -35,7 +35,7 @@
 <p>single byte to the string and yields a <code>string</code> (<code>"ab" + 'c'</code> → <code>"abc"</code>). It is</p>
 <p><strong>one-directional</strong>: <code>char + string</code> is a type error. For symmetric composition, convert</p>
 <p>explicitly with <code>str(c)</code>. An implementation MUST implement exactly this.</p>
-<p><strong>`bytes` concatenation.</strong> <code>+</code> on two <code>bytes</code> concatenates them, and `bytes +</p>
+<p><strong><code>bytes</code> concatenation.</strong> <code>+</code> on two <code>bytes</code> concatenates them, and `bytes +</p>
 <p>char<code> appends the char's single byte — the same two forms </code>string` has, with the</p>
 <p>same one-directional rule, because <code>bytes</code> is the same length-counted buffer</p>
 <p>(<a href="03-types.html#526-bytes">§5.2.6</a>). There is <strong>no</strong> mixing with <code>string</code>: <code>b + "s"</code></p>
@@ -97,7 +97,7 @@
 <p>multiplicative level and <code>| ^</code> at the additive level, so every bitwise operator</p>
 <p>binds tighter than a comparison: <code>a &amp; b == c</code> is <code>(a &amp; b) == c</code>. A shift <strong>count</strong></p>
 <p>outside <code>0.. width−1</code> is <strong>defined</strong>: a count **≥ the</p>
-<p>operand's bit width<strong> yields `0` (every bit is shifted out), and a </strong>negative<strong> count is a program error that </strong>aborts** at runtime</p>
+<p>operand's bit width<strong> yields <code>0</code> (every bit is shifted out), and a </strong>negative<strong> count is a program error that </strong>aborts** at runtime</p>
 <p>(<code>tycho: negative shift count</code>), like division by zero. A negative *constant*</p>
 <p>count is rejected at compile time.</p>
 <h2 id="133-unary-operators">13.3 Unary operators</h2>
@@ -111,11 +111,11 @@
 <p>the compiler):</p>
 <ul>
 <li><strong>Short-circuit</strong> <code>and</code>/<code>or</code> as in §13.2.</li>
-<li><strong>`match` subject — evaluated exactly once</strong> (*probed*), before any arm is</li>
+<li><strong><code>match</code> subject — evaluated exactly once</strong> (*probed*), before any arm is</li>
 </ul>
 <p>tested.</p>
 <ul>
-<li><strong>`for x in xs` — the collection is evaluated exactly once</strong>, before the loop.</li>
+<li><strong><code>for x in xs</code> — the collection is evaluated exactly once</strong>, before the loop.</li>
 <li><strong>Compound assignment</strong> — a **side-effecting call inside the place is evaluated</li>
 </ul>
 <p>once** (*probed*); a pure index sub-expression may be evaluated twice.</p>
@@ -243,16 +243,16 @@ fn main():
 <p>(<a href="01-lexical.html#395-f-string-interpolated-literals">§3.9.5</a>); a hole MUST have</p>
 <p>a type <code>str</code> accepts (<a href="06-conversions.html#82-explicit-conversion-builtins">§8.2</a>).</p>
 <ul>
-<li><strong>`or_return`</strong> is a postfix operator that unwraps an <code>Option</code>/<code>Result</code> or</li>
+<li><strong><code>or_return</code></strong> is a postfix operator that unwraps an <code>Option</code>/<code>Result</code> or</li>
 </ul>
 <p>short-circuits out of the enclosing function (<a href="12-aggregates.html">§19</a>); it binds tighter than any binary operator.</p>
 <ul>
-<li><strong>`or_else x: h`</strong> is the same postfix unwrap, but on failure it returns <code>h</code></li>
+<li><strong><code>or_else x: h</code></strong> is the same postfix unwrap, but on failure it returns <code>h</code></li>
 </ul>
 <p>from the enclosing function, with the error bound to <code>x</code></p>
 <p>(<a href="10-statements.html#1461-or_else">§14.6.1</a>).</p>
 <ul>
-<li><strong>`spawn`</strong>, <strong>`channel(…)`</strong>, and the concurrency operators are specified in</li>
+<li><strong><code>spawn</code></strong>, <strong><code>channel(…)</code></strong>, and the concurrency operators are specified in</li>
 </ul>
 <p><a href="13-concurrency.html">§20</a>; each has grammar restrictions noted in §4.4.</p>
 <footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>

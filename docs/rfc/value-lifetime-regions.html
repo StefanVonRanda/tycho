@@ -13,7 +13,7 @@
 <p>the maintainer — <strong>do not build</strong> (see §6 for the one condition that would</p>
 <p>change that). Nothing here changes the compiler, the runtime, or codegen.</p>
 <p>The companion negative result on *stored references* is</p>
-<p><a href="limited-references-spike.html">`limited-references-spike.md`</a>; this is a different</p>
+<p><a href="limited-references-spike.html"><code>limited-references-spike.md</code></a>; this is a different</p>
 <p>question and §1 says how.</p>
 </blockquote>
 <h2 id="1-the-question-and-what-it-is-not">1. The question, and what it is not</h2>
@@ -180,7 +180,7 @@ drop(r)                          # or at r's scope exit
 <p>is what destroys locality: the destination of a write is no longer decidable from</p>
 <p>enclosing scopes and signatures (<code>docs/memory-model.md:50-59</code>) — it needs the</p>
 <p>region variable, which is an annotation on every signature in the transitive closure.</p>
-<p><strong>`spawn` / channels.</strong> A spawn site allocates its argument struct in the task root</p>
+<p><strong><code>spawn</code> / channels.</strong> A spawn site allocates its argument struct in the task root</p>
 <p>and deep-copies each heap argument into it, after which spawner and task share zero</p>
 <p>bytes (<code>src/tychoc.c:12333-12341</code>, <code>runtime/tycho_rt.c@tycho_task_new</code>); <code>wait</code> copies</p>
 <p>the result out and frees the root eagerly</p>
@@ -223,7 +223,7 @@ remove(r, h)                    # the element's bytes return to r's arena NOW
 <p>region introduces no new direction; it changes only *which* arena an allocation lands</p>
 <p>in, and the compiler already picks that per write site (<code>src/tychoc.c:10718@g_cur_scope</code>,</p>
 <p><code>docs/memory-model.md:50-59</code>).</p>
-<p><strong>`spawn` / channels.</strong> This design survives the boundary, which is the reason it is</p>
+<p><strong><code>spawn</code> / channels.</strong> This design survives the boundary, which is the reason it is</p>
 <p>worth writing down at all. Because a region is owned and pointer-free from outside,</p>
 <p><code>copy_into(param, "(&amp;_tk-&gt;root)", arg)</code> (<code>src/tychoc.c:12312@copy_into</code>) generalises without a new</p>
 <p>rule: create a fresh arena inside the task root, deep-copy every live element into it.</p>
@@ -287,7 +287,7 @@ remove(r, h)                    # the element's bytes return to r's arena NOW
 <p>compile error, not a silent copy (<code>docs/spec/11-functions.md:35-38</code>). <code>drop(x)</code> is</p>
 <p><code>sink</code> into a callee that does nothing.</p>
 <p><strong>Sideways.</strong> None. <code>drop</code> removes storage; it opens no new path for a pointer.</p>
-<p><strong>`spawn` / channels.</strong> None. <code>drop</code> is intra-scope, and a dropped value cannot be sent</p>
+<p><strong><code>spawn</code> / channels.</strong> None. <code>drop</code> is intra-scope, and a dropped value cannot be sent</p>
 <p>because it is consumed.</p>
 <p><strong>C lowering.</strong> <code>drop(x)</code> emits a recursive walk over <code>x</code>'s heap-bearing fields calling</p>
 <p><code>arena_recycle</code> on each against <code>x</code>'s home arena. The one-level version of exactly this</p>
@@ -330,7 +330,7 @@ remove(r, h)                    # the element's bytes return to r's arena NOW
 <tr><th>Design</th><th>Fits inside the 1.0 freeze?</th><th>Why</th></tr>
 <tr><td><strong>A — region variables</strong></td><td><strong>No, and not post-1.0 either.</strong></td><td>Breaks §9.1 at the root: "Tycho has <strong>no reference type</strong>. A program cannot name, store, or return a pointer into another value's storage" (<code>docs/spec/07-memory-model.md:16-21</code>). An <code>@r</code> value *is* such a pointer. Also breaks §10.1's "Lifetime is lexical … never from a whole-program pointer analysis" (<code>docs/spec/07-memory-model.md:85-91</code>) and §20's no-<code>Sendable</code> claim (<code>docs/spec/13-concurrency.md:3-7</code>). This is not a breaking change to Tycho; it is a different language.</td></tr>
 <tr><td><strong>B — value-homed arena</strong></td><td><strong>Compatible in substance; needs a new dated version in procedure.</strong></td><td>It violates no normative clause. A region value copies deeply (§9.2, <code>docs/spec/07-memory-model.md:28-39</code>), holds no externally-visible pointer (§9.1), keeps unique ownership (§9.4, <code>:55-62</code>), and its own lifetime is still lexical (§10.1), so §10.4's asymmetry survives intact. But it adds a type constructor and a builtin family — new grammar in Ch 4 and new clauses in §16–19 and Part XII — and additions to a frozen version are a new dated release (<code>Tycho 2027</code>), not errata. <strong>Post-1.0, additive.</strong></td></tr>
-<tr><td><strong>C — `drop`</strong></td><td><strong>Needs a breaking change, not merely an addition.</strong></td><td>Same procedural answer as B for the grammar, but worse in substance: §10.3.1 guarantees no dangling *by construction* (<code>docs/spec/07-memory-model.md:122-126</code>) and §10.4 states the asymmetry as the reason (<code>:141-152</code>). <code>drop</code> makes both hold by check instead. Those clauses would have to be reworded, which is a change to observable behaviour of the conformance model — errata against 1.0 in the strict sense the spec forbids doing silently.</td></tr>
+<tr><td><strong>C — <code>drop</code></strong></td><td><strong>Needs a breaking change, not merely an addition.</strong></td><td>Same procedural answer as B for the grammar, but worse in substance: §10.3.1 guarantees no dangling *by construction* (<code>docs/spec/07-memory-model.md:122-126</code>) and §10.4 states the asymmetry as the reason (<code>:141-152</code>). <code>drop</code> makes both hold by check instead. Those clauses would have to be reworded, which is a change to observable behaviour of the conformance model — errata against 1.0 in the strict sense the spec forbids doing silently.</td></tr>
 </table>
 <p>One useful negative check: none of the three is reachable as an *implementation*</p>
 <p>detail. §10.1 explicitly says the arena mechanism "is an implementation realization and</p>
@@ -378,7 +378,7 @@ remove(r, h)                    # the element's bytes return to r's arena NOW
 <p>the gap is theoretical and the recommendation is</p>
 <p>unconditional.</p>
 <h2 id="7-a-finding-that-changes-the-surrounding-picture">7. A finding that changes the surrounding picture</h2>
-<p><strong>`handle` is the lifecycle object this question was asking for, minus the storage.</strong></p>
+<p><strong><code>handle</code> is the lifecycle object this question was asking for, minus the storage.</strong></p>
 <p>A typed FFI handle is already an affine value with a compiler-known destructor that runs</p>
 <p>at every scope exit, built by reusing the task finaliser machinery, and the</p>
 <p>soundness argument for that pattern is that affine ownership plus a scope-exit finaliser plus</p>

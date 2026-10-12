@@ -115,7 +115,7 @@ print(str(x))
 </ul>
 <p><code>sink</code> and variadic parameters and lambda parameters), a destructuring</p>
 <p>target, a <code>for</code> loop variable, a match-arm payload binding, and a <code>select</code></p>
-<p><code>recv</code> binding — <strong>must start with a lowercase letter or `_`</strong>. A conforming</p>
+<p><code>recv</code> binding — <strong>must start with a lowercase letter or <code>_</code></strong>. A conforming</p>
 <p>implementation rejects any other spelling.</p>
 <p>The rule is exclusion, not preference: because no run-time binding can be</p>
 <p>spelled the way a variant is spelled, a binding can never shadow a constructor,</p>
@@ -308,7 +308,7 @@ HexDigit ::= "0".."9" | "a".."f" | "A".."F"
 <p><code>'\x0a'</code> is <code>'\n'</code>. The fixed width is normative and is not C's greedy <code>\x</code>;</p>
 <p><code>'\x4'</code> is a lexical error rather than a short read. Together with <code>\0</code> it makes</p>
 <p>every one of the 256 byte values writable as a literal.</p>
-<p><strong>`\xNN` is a character-literal escape only</strong> — a string literal still rejects it</p>
+<p><strong><code>\xNN</code> is a character-literal escape only</strong> — a string literal still rejects it</p>
 <p>(<a href="#394-string-literals">§3.9.4</a>), and for a reason that is about representation</p>
 <p>rather than about hex. A character literal is decoded to its byte at lex time and</p>
 <p>never reaches a C string literal, whereas a string literal's text is carried as</p>

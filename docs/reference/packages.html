@@ -54,12 +54,12 @@ import_decl  := "import" IDENT? STRING NEWLINE   # optional alias, then the path
 </ul>
 <p><code>package &lt;name&gt;</code>, and <code>&lt;name&gt;</code> must equal the directory name.</p>
 <ul>
-<li><strong>`import "math/geom"`</strong> binds the package under its last path component</li>
+<li><strong><code>import "math/geom"</code></strong> binds the package under its last path component</li>
 </ul>
-<p>(<code>geom</code>); <strong>`import g "math/geom"`</strong> aliases it to <code>g</code>. Paths resolve relative</p>
+<p>(<code>geom</code>); <strong><code>import g "math/geom"</code></strong> aliases it to <code>g</code>. Paths resolve relative</p>
 <p>to the importing package's directory.</p>
 <ul>
-<li><strong>`pkg.symbol`</strong> is the qualified form for types, functions, struct/enum</li>
+<li><strong><code>pkg.symbol</code></strong> is the qualified form for types, functions, struct/enum</li>
 </ul>
 <p>constructors, and enum variants — <code>geom.Point</code>, <code>geom.add</code>, <code>geom.Red</code>.</p>
 <ul>
@@ -97,7 +97,7 @@ fn main():
 </ul>
 <p>one <code>.c</code>. There's no linker step and no per-package object file.</p>
 <ul>
-<li><strong>A file with no `package` declaration is a standalone single-file program</strong> —</li>
+<li><strong>A file with no <code>package</code> declaration is a standalone single-file program</strong> —</li>
 </ul>
 <p>provided it imports nothing. An <code>import</code> switches on directory-package mode:</p>
 <p>the file must then declare a package and live in its own directory.</p>

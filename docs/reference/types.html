@@ -101,7 +101,7 @@ for d := 0; d &lt; 10; d += 1:
 <p>quote needs no escape — <code>"it's"</code> is a valid literal. For any other byte, build it:</p>
 <p><code>chr(27)</code> is a one-byte string holding ESC, and <code>to_bytes(xs)</code> over an <code>[int]</code> is</p>
 <p>the way to a <code>bytes</code> with interior NULs. An <code>f"..."</code> lexes the same five and</p>
-<p>rejects the same rest. A <a href="#char">`char` literal</a> is a <strong>different</strong> set — it takes</p>
+<p>rejects the same rest. A <a href="#char"><code>char</code> literal</a> is a <strong>different</strong> set — it takes</p>
 <p><code>\0</code>, <code>\'</code> and <code>\xNN</code>, and refuses <code>\"</code>.</p>
 <pre><code class="language-tycho">fn main():
     println("tab:\there")
@@ -137,7 +137,7 @@ fn main():
     # area(3.0, 4.0)           -&gt; error: a float is not a Meters
     # w + Seconds(1.0)         -&gt; error: can't mix two newtypes
 </code></pre>
-<p>A newtype supports its base type's <strong>arithmetic, ordering, `==`, and `str`</strong> — but only</p>
+<p>A newtype supports its base type's <strong>arithmetic, ordering, <code>==</code>, and <code>str</code></strong> — but only</p>
 <p>between two values of the *same* newtype, so <code>Meters</code> and <code>Seconds</code> never mix by accident.</p>
 <p>That is the point: zero-cost unit and ID safety. Construct one with <code>Meters(x)</code>; recover</p>
 <p>the raw value with <code>to_int</code> / <code>to_float</code> / <code>to_str</code> / <code>to_bool</code> per the underlying scalar.</p>

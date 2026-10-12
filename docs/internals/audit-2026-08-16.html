@@ -13,7 +13,7 @@
 </blockquote>
 <p>Maintainer material. Everything below was executed, not read — where a claim</p>
 <p>rests on running something, the command and the answer are named.</p>
-<p>Scope: every entry point in <a href="audit-brief.html">`audit-brief.md`</a>'s threat model.</p>
+<p>Scope: every entry point in <a href="audit-brief.html"><code>audit-brief.md</code></a>'s threat model.</p>
 <p>Two vulnerabilities were found and fixed; the rest came back clean, and the</p>
 <p>per-package reasoning is below so a reviewer can disagree with it.</p>
 <table>
@@ -47,7 +47,7 @@
 <li><code>le16</code>/<code>le32</code> do no bounds checking of their own. Every call is reached</li>
 </ul>
 <p>through a guard: <code>list</code> and <code>entry_body</code> both test <code>pos + 46 &gt; len(b)</code> before</p>
-<p><code>le32(b, pos)</code>, and <strong>`or` short-circuits</strong> — confirmed by running a case</p>
+<p><code>le32(b, pos)</code>, and <strong><code>or</code> short-circuits</strong> — confirmed by running a case</p>
 <p>whose right arm would abort if evaluated.</p>
 <ul>
 <li><code>find_eocd</code> scans backward from <code>len(b) - 22</code>, so its reads stay in range for</li>
@@ -163,7 +163,7 @@
 <p>check for NULL, and a Tycho program with no regex at the same cap fails</p>
 <p>cleanly with <code>tycho: out of memory</code>.</p>
 <ul>
-<li><strong>Not glibc's `regcomp` alone.</strong> Pure C calling it at the same cap returns</li>
+<li><strong>Not glibc's <code>regcomp</code> alone.</strong> Pure C calling it at the same cap returns</li>
 </ul>
 <p><code>REG_ESPACE</code> cleanly — including a version that mirrors the shim exactly</p>
 <p>(heap <code>regex_t</code>, <code>free</code> on failure) and one that first fills the heap with</p>
@@ -215,12 +215,12 @@
 <p>from several tasks. <code>make conc</code> and the TSan leg of <code>flow-check</code> cover the</p>
 <p>runtime, not these packages specifically.</p>
 <ul>
-<li><strong>`core:toml` and `core:csv` as parsers.</strong> <code>format-diff</code> compares csv and json</li>
+<li><strong><code>core:toml</code> and <code>core:csv</code> as parsers.</strong> <code>format-diff</code> compares csv and json</li>
 </ul>
 <p>against Python, which is a correctness oracle rather than a hostile-input one.</p>
 <p>toml has no differential at all.</p>
 <ul>
-<li><strong>The compiler on hostile `.ty` source.</strong> The fuzz lanes cover it; this audit</li>
+<li><strong>The compiler on hostile <code>.ty</code> source.</strong> The fuzz lanes cover it; this audit</li>
 </ul>
 <p>did not add to them.</p>
 <ul>

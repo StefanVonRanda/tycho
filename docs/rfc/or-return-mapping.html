@@ -9,7 +9,7 @@
 <nav class="crumb"><a href="../index.html">docs</a> / rfc/or-return-mapping.md</nav>
 <h1 id="or-return-with-a-mapping-expression"><code>or_return</code> with a mapping expression</h1>
 <blockquote>
-<p><strong>Status: decided 2026-09-25 — `or_else`, not the `or_return &lt;fn&gt;` form below.</strong></p>
+<p><strong>Status: decided 2026-09-25 — <code>or_else</code>, not the <code>or_return &lt;fn&gt;</code> form below.</strong></p>
 <p>Built in both compilers (<code>529fe940</code>, tychoc1 <code>4cb884a9</code>) and specified in</p>
 <p><a href="../spec/10-statements.html#1461-or_else">§14.6.1</a>; 79 call sites migrated, shipped</p>
 <p>in 0.8.6. The body below is the proposal as measured, kept for the reasoning.</p>
@@ -33,7 +33,7 @@ r := fetch(u) or_else _: false              # in a fn that returns bool
 <p>and leave on an <code>Err</code> found <strong>76 sites across 17 files</strong>. They split cleanly:</p>
 <table>
 <tr><th>shape</th><th>count</th><th>today</th></tr>
-<tr><td><code>Err(e): return Err(e)</code> — same error, forwarded</td><td>34</td><td><strong>`or_return` already does this</strong> — all 34 migrated in <code>f6f1025a</code></td></tr>
+<tr><td><code>Err(e): return Err(e)</code> — same error, forwarded</td><td>34</td><td><strong><code>or_return</code> already does this</strong> — all 34 migrated in <code>f6f1025a</code></td></tr>
 <tr><td><code>Err(e): return Err(Wrap(e))</code> — wrapped</td><td>25</td><td>no form exists</td></tr>
 <tr><td><code>Err(e): return Err(Fresh(...))</code> — replaced</td><td>17</td><td>no form exists</td></tr>
 </table>

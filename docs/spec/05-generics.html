@@ -54,7 +54,7 @@ Predicate   ::= "numeric" | "comparable" | "has_str" | "hashable" | "defaultable
 <tr><td><code>hashable(T)</code></td><td>any legal map key type (<a href="03-types.html#535-maps-k-v">§5.3.5</a>)</td></tr>
 <tr><td><code>defaultable(T)</code></td><td><strong>exactly</strong> <code>int</code>, <code>float</code>, <code>bool</code>, <code>string</code></td></tr>
 </table>
-<p><strong>`hashable(K)` admits `K` as a map key inside the generic.</strong> A body carrying it</p>
+<p><strong><code>hashable(K)</code> admits <code>K</code> as a map key inside the generic.</strong> A body carrying it</p>
 <p>MAY write <code>[]$K: V</code> and index the result with a <code>$K</code> value; the key check is</p>
 <p>deferred to instantiation, where the concrete type is known and a violation is</p>
 <p>reported against the call (`'f' instantiated with K = float, which does not</p>
@@ -111,7 +111,7 @@ Predicate   ::= "numeric" | "comparable" | "has_str" | "hashable" | "defaultable
 <p>consumer of an aggregate type about it; it is not planned.</p>
 <h2 id="74-const-generics-nt-nt">7.4 Const generics (<code>[N]T</code>, <code>[$N]T</code>)</h2>
 <p>A fixed-size array type <code>[N]T</code> has its length <code>N</code> fixed at compile time by an</p>
-<p>integer literal or an <code>int</code> <code>const</code> (§5.3.2). The generic form <strong>`[$N]T`</strong></p>
+<p>integer literal or an <code>int</code> <code>const</code> (§5.3.2). The generic form <strong><code>[$N]T</code></strong></p>
 <p>introduces a <strong>size parameter</strong> <code>N</code>: its length is inferred from the (fixed-size</p>
 <p>array) argument at each call, and one instance is monomorphized per distinct</p>
 <p>length. Inside the body, <code>N</code> is an <code>int</code> constant. <code>[$N]$T</code> infers both the size</p>

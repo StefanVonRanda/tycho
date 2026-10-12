@@ -155,7 +155,7 @@ for x in xs:                # foreach: each element of an array, or each byte of
 <p>loop that advances only there still terminates. The foreach form binds each element of an</p>
 <p>array (<code>[T]</code>) or each byte of a string, evaluating the collection once. The condition form</p>
 <p>takes any <code>bool</code>. <code>break</code> and <code>continue</code> work in every shape and are an error outside a loop.</p>
-<p>No block may be empty, and <strong>`pass` is how you write one that does nothing</strong> — a <code>match</code> arm</p>
+<p>No block may be empty, and <strong><code>pass</code> is how you write one that does nothing</strong> — a <code>match</code> arm</p>
 <p>whose case is deliberately ignored, an <code>if</code> branch kept for its comment, a loop whose work is</p>
 <p>all in its head. Reach for it before writing an empty function to call:</p>
 <pre><code class="language-tycho">fn drain(r: Result(int, string)) -&gt; int:

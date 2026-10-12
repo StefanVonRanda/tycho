@@ -43,8 +43,8 @@
 </ul>
 <p>does *not* abort — it is defined as <code>0</code> (§30.1, §13.2).</p>
 <ul>
-<li><strong>`chr(n)` with `n` outside `0..255`</strong> — the byte value is out of range (§16).</li>
-<li><strong>`to_int(f)` of a `NaN` or out-of-range `float`/`f32`</strong> (§8.5). The sized</li>
+<li><strong><code>chr(n)</code> with <code>n</code> outside <code>0..255</code></strong> — the byte value is out of range (§16).</li>
+<li><strong><code>to_int(f)</code> of a <code>NaN</code> or out-of-range <code>float</code>/<code>f32</code></strong> (§8.5). The sized</li>
 </ul>
 <p>integer conversions are total (no abort).</p>
 <ul>
@@ -55,9 +55,9 @@
 <p>immutable.) A <code>bytes</code> index <code>b[i]</code> is the same read with the same abort, and</p>
 <p><code>b[i] = v</code> is the same compile error.</p>
 <ul>
-<li><strong>`pop` from an empty array.</strong></li>
-<li><strong>`reserve` with a negative or excessive capacity.</strong></li>
-<li><strong>`split` with an empty separator.</strong></li>
+<li><strong><code>pop</code> from an empty array.</strong></li>
+<li><strong><code>reserve</code> with a negative or excessive capacity.</strong></li>
+<li><strong><code>split</code> with an empty separator.</strong></li>
 <li><strong>Channel misuse:</strong> <code>send</code> on a closed channel; a second <code>close</code>; a channel</li>
 </ul>
 <p>capacity below 1.</p>
@@ -67,11 +67,11 @@
 <p>ceiling; a thread-creation failure.</p>
 <ul>
 <li><strong>Out of memory.</strong></li>
-<li><strong>`die(msg)`</strong> — the explicit user abort (<a href="10-statements.html#148-die-exit-and-termination">§14.8</a>).</li>
+<li><strong><code>die(msg)</code></strong> — the explicit user abort (<a href="10-statements.html#148-die-exit-and-termination">§14.8</a>).</li>
 </ul>
 <h2 id="303-conditions-that-clamp">30.3 Conditions that clamp</h2>
 <ul>
-<li><strong>`substr(s, start, end)`</strong>, and the slice forms <code>s[a:b]</code> / <code>b[a:b]</code> it</li>
+<li><strong><code>substr(s, start, end)</code></strong>, and the slice forms <code>s[a:b]</code> / <code>b[a:b]</code> it</li>
 </ul>
 <p>implements, clamp out-of-range bounds rather than aborting: <code>start &lt; 0</code> becomes</p>
 <p><code>0</code>, <code>end &gt; len</code> becomes <code>len</code>, and <code>end &lt; start</code> yields an empty result. This</p>
@@ -109,12 +109,12 @@
 <p>floating-point reduction result MAY differ across thread counts. (An integer</p>
 <p>reduction is deterministic and is *not* unspecified.)</p>
 <ul>
-<li><strong>The textual rendering of `NaN`/`inf` by `str`</strong> (e.g. <code>-nan</code> vs <code>nan</code>) is</li>
+<li><strong>The textual rendering of <code>NaN</code>/<code>inf</code> by <code>str</code></strong> (e.g. <code>-nan</code> vs <code>nan</code>) is</li>
 </ul>
 <p><strong>implementation-defined</strong> (derived from the C library). The float *values*</p>
 <p>themselves are IEEE-754 and fully defined (§5.2.2).</p>
 <ul>
-<li><strong>Using a typed handle after `close(h)`</strong> — passes null to C; a logic bug, not</li>
+<li><strong>Using a typed handle after <code>close(h)</code></strong> — passes null to C; a logic bug, not</li>
 </ul>
 <p>memory corruption, and not compile-rejected (§25).</p>
 <ul>

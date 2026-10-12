@@ -23,7 +23,7 @@
 <table>
 <tr><th>What you write</th><th>What you get</th><th>The fail-closed form</th></tr>
 <tr><td>§1 <code>len(s)</code>, <code>s[i]</code>, <code>s[a:b]</code></td><td><strong>bytes</strong>, not characters</td><td><code>core:utf8</code> (<code>utf8.count</code>)</td></tr>
-<tr><td>§2 <code>utf8.decode</code> on bad input</td><td>width <strong>`0`</strong> — <code>at += w</code> never advances</td><td>test <code>w == 0</code> before advancing</td></tr>
+<tr><td>§2 <code>utf8.decode</code> on bad input</td><td>width <strong><code>0</code></strong> — <code>at += w</code> never advances</td><td>test <code>w == 0</code> before advancing</td></tr>
 <tr><td>§3 <code>s[a:b]</code> out of range</td><td>a <strong>clamped</strong> slice, no trap</td><td><code>strings.slice_str</code> / <code>slice_bytes</code> → <code>Result</code></td></tr>
 <tr><td>§4 <code>a + b</code> past the integer range</td><td><strong>wraparound</strong>, never a trap</td><td>check the operands before the operation</td></tr>
 <tr><td>§5 <code>c + n</code> on a <code>char</code></td><td><strong>wraps to a byte</strong> (<code>0..255</code>)</td><td>treat <code>char</code> as a byte, because it is one</td></tr>
@@ -55,7 +55,7 @@ fn main():
 utf8.count= 5
 </code></pre>
 <p><code>s[i]</code> yields one byte as an <code>int</code> in <code>0..255</code>, so indexing into multi-byte text</p>
-<p>gives you half a character. Reach for <a href="reference/strings.html">`core:utf8`</a> the</p>
+<p>gives you half a character. Reach for <a href="reference/strings.html"><code>core:utf8</code></a> the</p>
 <p>moment the input is not known to be ASCII.</p>
 <h2 id="2-utf8decode-reports-invalid-input-with-a-zero-width">2. <code>utf8.decode</code> reports invalid input with a zero width</h2>
 <p>The companion to §1, and the only entry on this page whose failure is a <strong>hang</strong></p>
@@ -231,11 +231,11 @@ fn main():
 </ul>
 <p>aborts, what clamps, what is unspecified.</p>
 <ul>
-<li><a href="reference/strings.html">`reference/strings.md`</a> — bytes, <code>substr</code>, and the</li>
+<li><a href="reference/strings.html"><code>reference/strings.md</code></a> — bytes, <code>substr</code>, and the</li>
 </ul>
 <p>checked slice functions.</p>
 <ul>
-<li><a href="debugging.html">`debugging.md`</a> — when a program is already misbehaving.</li>
+<li><a href="debugging.html"><code>debugging.md</code></a> — when a program is already misbehaving.</li>
 </ul>
 <footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
 </body>

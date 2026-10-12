@@ -24,12 +24,12 @@
 <p>and mutating it is a compile error. The caller's value is unchanged either way, so this is</p>
 <p>value semantics with the copy elided where nobody can tell.</p>
 <ul>
-<li><strong>`inout`</strong> — an exclusive, call-scoped mutable borrow, written <code>&amp;x</code> at the call site and</li>
+<li><strong><code>inout</code></strong> — an exclusive, call-scoped mutable borrow, written <code>&amp;x</code> at the call site and</li>
 </ul>
 <p>equivalent to <code>x = f(x)</code>. The same variable may not be passed to two <code>inout</code> parameters of</p>
 <p>one call.</p>
 <ul>
-<li><strong>`sink`</strong> — the callee <strong>owns and consumes</strong> the argument. After passing a variable to a</li>
+<li><strong><code>sink</code></strong> — the callee <strong>owns and consumes</strong> the argument. After passing a variable to a</li>
 </ul>
 <p><code>sink</code> parameter the caller MUST NOT use it again; that is a compile error, not a silent</p>
 <p>copy. A fresh literal or a call's result is adopted with no copy.</p>

@@ -36,12 +36,12 @@
 <p>cannot observe the difference. A value produced or returned from the callee is</p>
 <p>copied into the appropriate storage as usual.</p>
 <ul>
-<li><strong>`inout` (copy-in/copy-out borrow).</strong> Specified in <a href="07-memory-model.html#11-inout">§11</a>:</li>
+<li><strong><code>inout</code> (copy-in/copy-out borrow).</strong> Specified in <a href="07-memory-model.html#11-inout">§11</a>:</li>
 </ul>
 <p>an exclusive, call-scoped mutable borrow written <code>&amp;x</code> at the call site,</p>
 <p>equivalent to <code>x = f(x)</code>, with the exclusivity rule of §11.2.</p>
 <ul>
-<li><strong>`sink` (owned, consuming).</strong> The callee <strong>owns and consumes</strong> the argument</li>
+<li><strong><code>sink</code> (owned, consuming).</strong> The callee <strong>owns and consumes</strong> the argument</li>
 </ul>
 <p>and may mutate it in place. <strong>On a heap-bearing type</strong> the caller's argument is</p>
 <p>consumed: after passing a variable to a <code>sink</code> parameter, the caller MUST NOT</p>
@@ -90,7 +90,7 @@
 <p>re-homed into the caller's storage on return</p>
 <p>(<a href="09-expressions.html#136-closures-and-function-values">§13.6</a>). Two things cannot</p>
 <p>be taken as function values: a <strong>builtin</strong> name (<code>len</code>, <code>push</code>, <code>str</code>, …), and a</p>
-<p>function with an <strong>`inout`</strong> parameter (an <code>inout</code> borrow is call-scoped and</p>
+<p>function with an <strong><code>inout</code></strong> parameter (an <code>inout</code> borrow is call-scoped and</p>
 <p>cannot be deferred through an indirect call). Function values are **not</p>
 <p>comparable** (§5.5).</p>
 <h2 id="155-methods-ufcs">15.5 Methods (UFCS)</h2>

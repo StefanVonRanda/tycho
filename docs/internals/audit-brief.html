@@ -55,7 +55,7 @@
 <p>There are 13 <code>corelib/*/*_shim.c</code> files; <code>wc -l</code> them plus <code>runtime/tycho_rt.c</code></p>
 <p>for the current size.</p>
 <ul>
-<li><strong>`core:os` runs processes without a shell</strong> (<code>posix_spawnp</code> with a real argv</li>
+<li><strong><code>core:os</code> runs processes without a shell</strong> (<code>posix_spawnp</code> with a real argv</li>
 </ul>
 <p>vector). <code>osx_system</code> exists and is the documented shell API doing what it</p>
 <p>says. That distinction is load-bearing.</p>
@@ -159,11 +159,11 @@ sh scripts/asan_self.sh   # the COMPILER under ASan/UBSan over the whole corpus
 <h2 id="6-where-we-would-start-if-we-were-you">6. Where we would start, if we were you</h2>
 <p>Offered as a starting point, not a scope — a reviewer who picks differently is</p>
 <p>the entire point of the exercise.</p>
-<p>1. <strong>`corelib/zip/` and `tools/tycho-ar`.</strong> Archive parsing is offset arithmetic</p>
+<p>1. <strong><code>corelib/zip/</code> and <code>tools/tycho-ar</code>.</strong> Archive parsing is offset arithmetic</p>
 <p>over attacker-controlled integers, and the zip-slip defence rests on</p>
 <p><code>path.safe_join</code>, which has a property test but no adversarial one. The</p>
 <p>fuzzing seeds for this were wrong twice before they reached the parser at all.</p>
-<p>2. <strong>`core:httpd` and `server/`.</strong> Slowloris is bounded, not eliminated, and the</p>
+<p>2. <strong><code>core:httpd</code> and <code>server/</code>.</strong> Slowloris is bounded, not eliminated, and the</p>
 <p>residual is a design property of connection-per-worker. Request parsing</p>
 <p>survived every malformed shape thrown at it by one person.</p>
 <p>3. <strong>The FFI signature surface itself.</strong> Not any single shim — the fact that</p>
@@ -176,7 +176,7 @@ sh scripts/asan_self.sh   # the COMPILER under ASan/UBSan over the whole corpus
 <p>two passwords into one derived key (FRICTION #70, #75, #76, #77). Mechanically</p>
 <p>listing all 46 externs that take a <code>string</code> found them in a single pass. Grep</p>
 <p>the declarations; do not reason about which ones matter.</p>
-<p>4. <strong>`core:crypto` beyond the comparison.</strong> <code>cx_ct_equal</code> uses <code>CRYPTO_memcmp</code></p>
+<p>4. <strong><code>core:crypto</code> beyond the comparison.</strong> <code>cx_ct_equal</code> uses <code>CRYPTO_memcmp</code></p>
 <p>and the key-import decode is constant-time; the rest of the package's</p>
 <p>side-channel surface is unexamined.</p>
 <p>5. <strong>Windows use-after-free.</strong> Structurally uncovered: mingw-w64 here ships no</p>

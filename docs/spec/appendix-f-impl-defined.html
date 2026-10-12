@@ -19,21 +19,21 @@
 <tr><th>#</th><th>Behavior</th><th>Reference</th><th>Status</th></tr>
 <tr><td>1</td><td><strong>Argument / operand evaluation order</strong> within one expression (order of side effects among a call's arguments or a binary operator's operands). *Exceptions:* a side-effecting <strong>index in an assignment place</strong> (<code>a[f()] = g()</code>) and the <strong>holes of an f-string</strong> (<code>f"{a()}{b()}"</code>) are sequenced <strong>left-to-right</strong> — specified, not in this list.</td><td><a href="09-expressions.html#134-evaluation-order">§13.4</a></td><td>probed; arguments/operands inherited from the target, not sequenced by Tycho</td></tr>
 <tr><td>2</td><td><strong>Floating-point reduction reassociation</strong> in <code>parallel for</code>: the result MAY differ across thread counts. (Integer reductions are deterministic and are <strong>not</strong> in this list.)</td><td><a href="13-concurrency.html#22-parallel-for">§22</a></td><td>defined boundary</td></tr>
-<tr><td>3</td><td><strong>Using a typed handle after a `close(h)` nested in a branch or loop</strong> — passes null to C; a logic bug, not memory corruption. A use after a <code>close(h)</code> statement in the same block is compile-rejected.</td><td><a href="14-ffi.html#25-typed-handles">§25</a></td><td>defined boundary</td></tr>
+<tr><td>3</td><td><strong>Using a typed handle after a <code>close(h)</code> nested in a branch or loop</strong> — passes null to C; a logic bug, not memory corruption. A use after a <code>close(h)</code> statement in the same block is compile-rejected.</td><td><a href="14-ffi.html#25-typed-handles">§25</a></td><td>defined boundary</td></tr>
 <tr><td>4</td><td><strong>Behavior on the far side of the FFI boundary</strong> — C-side global/<code>static</code> races and misuse.</td><td><a href="14-ffi.html#26-ffi-and-concurrency">§26</a></td><td>outside all guarantees</td></tr>
 </table>
 <p>An out-of-range <strong>shift count</strong> (count ≥ width yields <code>0</code>, negative aborts —</p>
 <p><a href="09-expressions.html#132-operators">§13.2</a>) and an out-of-range</p>
-<p><strong>`to_int(float)`</strong> (NaN / out-of-range aborts — <a href="06-conversions.html#85-out-of-range-conversions">§8.5</a>;</p>
+<p><strong><code>to_int(float)</code></strong> (NaN / out-of-range aborts — <a href="06-conversions.html#85-out-of-range-conversions">§8.5</a>;</p>
 <p>the sized conversions are total) are defined, not unspecified.</p>
 <h2 id="f2-implementation-defined-behavior">F.2 Implementation-defined behavior</h2>
 <p>An implementation MUST document its choice for each of these; none but the last</p>
 <p>affects the value semantics of a program.</p>
 <table>
 <tr><th>Behavior</th><th>Reference</th></tr>
-<tr><td><strong>Textual rendering of `NaN`/`inf` by `str`</strong> (e.g. <code>-nan</code> vs <code>nan</code>). The float *values* are IEEE-754 and fully defined; only their string form varies.</td><td><a href="17-runtime.html#305-unspecified-behavior">§30.5</a></td></tr>
+<tr><td><strong>Textual rendering of <code>NaN</code>/<code>inf</code> by <code>str</code></strong> (e.g. <code>-nan</code> vs <code>nan</code>). The float *values* are IEEE-754 and fully defined; only their string form varies.</td><td><a href="17-runtime.html#305-unspecified-behavior">§30.5</a></td></tr>
 <tr><td><strong>The concurrent-task ceiling</strong> (default 1024) and whether it is overridable at run time.</td><td><a href="13-concurrency.html#21-spawn-task-wait">§21</a></td></tr>
-<tr><td><strong>The `parallel for` worker count</strong> (default: one per CPU), whether it is overridable, and <strong>any fixed upper bound on it</strong> (the reference caps the chunk count at 64, so <code>ncpu()</code> above 64 is not the width used).</td><td><a href="13-concurrency.html#22-parallel-for">§22</a></td></tr>
+<tr><td><strong>The <code>parallel for</code> worker count</strong> (default: one per CPU), whether it is overridable, and <strong>any fixed upper bound on it</strong> (the reference caps the chunk count at 64, so <code>ncpu()</code> above 64 is not the width used).</td><td><a href="13-concurrency.html#22-parallel-for">§22</a></td></tr>
 <tr><td><strong>Diagnostic message text</strong> for all errors and aborts (this specification constrains the *presence* of an error/abort, never its wording).</td><td><a href="00-conventions.html#11-scope">§1.1</a></td></tr>
 <tr><td><strong>An unpacked struct's layout</strong>, and so the value <code>size_of$(T)</code> yields for an <code>align(N)</code> struct. The one guarantee is that the value is a multiple of <code>N</code>. The reference lays the fields out in declaration order at the host C compiler's natural alignment, then rounds the size up to <code>N</code>; on every target it builds for, two <code>u8</code> fields under <code>align(8)</code> are 8 bytes. This row is the one exception to the sentence above: <code>size_of$</code> makes it a value.</td><td><a href="12-aggregates.html#171a-packed-layout">§17.1a</a>, <a href="12-aggregates.html#171b-the-bytes-bridge">§17.1b</a></td></tr>
 </table>

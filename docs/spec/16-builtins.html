@@ -51,7 +51,7 @@
 <p>argument type-checking, exactly like a user function (§15). A</p>
 <p><code>Sig</code> builtin is never overloaded and takes its arguments by value.</p>
 <ul>
-<li><strong>magic</strong> — recognized <strong>by name in `resolve_expr`</strong> (and in codegen) *before*</li>
+<li><strong>magic</strong> — recognized <strong>by name in <code>resolve_expr</code></strong> (and in codegen) *before*</li>
 </ul>
 <p>signature lookup. A magic builtin MAY be polymorphic (its result or accepted</p>
 <p>types depend on an argument's type), MAY have a restricted parse form (e.g.</p>
@@ -88,16 +88,16 @@
 <p>duplicated here; this section states only each builtin's kind and one-line role.</p>
 <table>
 <tr><th>Builtin</th><th>Role</th><th>Kind</th></tr>
-<tr><td><code>str(x)</code></td><td>Polymorphic value → <code>string</code> for <code>int</code>, any sized int, <code>f32</code>, <code>bool</code>, <code>float</code>, <code>string</code> (through <code>base_of</code>); identity on <code>string</code>; a <strong>`char` → its one-byte glyph</strong> string.</td><td>magic</td></tr>
+<tr><td><code>str(x)</code></td><td>Polymorphic value → <code>string</code> for <code>int</code>, any sized int, <code>f32</code>, <code>bool</code>, <code>float</code>, <code>string</code> (through <code>base_of</code>); identity on <code>string</code>; a <strong><code>char</code> → its one-byte glyph</strong> string.</td><td>magic</td></tr>
 <tr><td><code>to_int(x)</code></td><td><code>float</code>/<code>u32</code>/<code>u64</code>/<code>f32</code> or an <code>int</code>-newtype → <code>int</code> (float truncates toward zero).</td><td>magic</td></tr>
 <tr><td><code>to_float(n)</code></td><td><code>int</code>/<code>u32</code>/<code>u64</code>/<code>f32</code> or a <code>float</code>-newtype → <code>float</code>.</td><td>magic</td></tr>
 <tr><td><code>to_u32(x)</code> / <code>to_u64(x)</code> / <code>to_f32(x)</code></td><td>Any numeric scalar (<code>int</code>/<code>char</code>/<code>float</code>/<code>u32</code>/<code>u64</code>/<code>f32</code>, through <code>base_of</code>) → the sized type.</td><td>magic</td></tr>
 <tr><td><code>to_str(x)</code></td><td><code>bytes</code>, or a <code>string</code>-newtype → <code>string</code> (zero-cost reinterpret).</td><td>magic</td></tr>
-<tr><td><code>to_bytes(x)</code></td><td><code>string</code>/<code>bytes</code> (through <code>base_of</code>) → <code>bytes</code> (same buffer, distinct type — zero-cost reinterpret); <strong>or `[int]` → `bytes`</strong>, each element truncated <code>&amp; 0xFF</code> into a fresh buffer (the only way to construct a binary <code>bytes</code> with interior <code>0x00</code>); <strong>or a packed struct → `bytes`</strong>, its exact <code>size_of$(T)</code> bytes, little-endian (<a href="12-aggregates.html#171b-the-bytes-bridge">§17.1b</a>).</td><td>magic</td></tr>
+<tr><td><code>to_bytes(x)</code></td><td><code>string</code>/<code>bytes</code> (through <code>base_of</code>) → <code>bytes</code> (same buffer, distinct type — zero-cost reinterpret); <strong>or <code>[int]</code> → <code>bytes</code></strong>, each element truncated <code>&amp; 0xFF</code> into a fresh buffer (the only way to construct a binary <code>bytes</code> with interior <code>0x00</code>); <strong>or a packed struct → <code>bytes</code></strong>, its exact <code>size_of$(T)</code> bytes, little-endian (<a href="12-aggregates.html#171b-the-bytes-bridge">§17.1b</a>).</td><td>magic</td></tr>
 <tr><td><code>to_bool(x)</code></td><td>A <code>bool</code>-newtype → <code>bool</code> (unwrap).</td><td>magic</td></tr>
 <tr><td><code>to_under(x)</code></td><td>Any newtype → its underlying type (generic zero-cost unwrap).</td><td>magic</td></tr>
 <tr><td><code>chr(n)</code></td><td><code>int -&gt; string</code>: the one-byte string for byte value <code>n</code> (<code>0</code>–<code>255</code>); a value outside <code>0..255</code> <strong>aborts</strong>.</td><td>Sig</td></tr>
-<tr><td><code>to_char(n)</code></td><td><code>int -&gt; char</code>: the byte value <code>n</code> (<code>0</code>–<code>255</code>) as a <a href="03-types.html#524-char">`char`</a>; a value outside <code>0..255</code> <strong>aborts</strong>, with <code>chr</code>'s message — it is the same conversion, differing only in whether the byte comes back as a <code>char</code> or as a one-byte <code>string</code>.</td><td>Sig</td></tr>
+<tr><td><code>to_char(n)</code></td><td><code>int -&gt; char</code>: the byte value <code>n</code> (<code>0</code>–<code>255</code>) as a <a href="03-types.html#524-char"><code>char</code></a>; a value outside <code>0..255</code> <strong>aborts</strong>, with <code>chr</code>'s message — it is the same conversion, differing only in whether the byte comes back as a <code>char</code> or as a one-byte <code>string</code>.</td><td>Sig</td></tr>
 <tr><td><code>to_ptr(n)</code></td><td><code>int -&gt; ptr</code>: an opaque FFI sentinel pointer, never dereferenced (<a href="14-ffi.html">§24</a>).</td><td>Sig</td></tr>
 <tr><td><code>to_u8</code>…<code>to_i64</code>, <code>to_f32</code></td><td>numeric <code>-&gt; </code> the named fixed-width type (<a href="03-types.html#527-fixed-width-integers-u8u16u32u64-i8i16i32i64">§5.2.7</a>); narrow/reinterpret, total.</td><td>Sig</td></tr>
 <tr><td><code>is_null(p)</code></td><td><code>ptr -&gt; bool</code>, and <code>handle -&gt; bool</code>: test an opaque FFI pointer or a typed handle for <code>NULL</code> (<a href="14-ffi.html">§24</a>). On a handle it is how an opener's failure is detected, and it reads true after <code>close(h)</code> (<a href="14-ffi.html">§25</a>).</td><td>Sig</td></tr>
@@ -126,7 +126,7 @@
 <tr><td><code>len(s)</code></td><td><code>string -&gt; int</code></td><td>magic</td><td>Byte length. Overloaded (§29.6).</td></tr>
 <tr><td><code>substr(s, a, b)</code></td><td><code>(string, int, int) -&gt; string</code></td><td>Sig</td><td>A fresh copy of the byte range <code>[a, b)</code>; out-of-range bounds are <strong>clamped</strong>, not an error.</td></tr>
 <tr><td><code>find(s, sub)</code></td><td><code>(string, string) -&gt; int</code></td><td>Sig</td><td>Byte index of the first occurrence of <code>sub</code>, or <code>-1</code>.</td></tr>
-<tr><td><code>char_at(s, i)</code></td><td><code>(string, int) -&gt; char</code></td><td>Sig</td><td>The byte at <code>i</code> as a <a href="03-types.html#524-char">`char`</a>. Same read and same bounds abort as <code>s[i]</code> (<a href="03-types.html#525-string">§5.2.5</a>); only the STATIC type differs — <code>s[i]</code> yields <code>int</code>. Aborts at run time if <code>i</code> is out of bounds.</td></tr>
+<tr><td><code>char_at(s, i)</code></td><td><code>(string, int) -&gt; char</code></td><td>Sig</td><td>The byte at <code>i</code> as a <a href="03-types.html#524-char"><code>char</code></a>. Same read and same bounds abort as <code>s[i]</code> (<a href="03-types.html#525-string">§5.2.5</a>); only the STATIC type differs — <code>s[i]</code> yields <code>int</code>. Aborts at run time if <code>i</code> is out of bounds.</td></tr>
 <tr><td><code>split(s, sep)</code></td><td><code>(string, string) -&gt; [string]</code></td><td>Sig</td><td>Split on a non-empty separator; <code>n</code> separators yield <code>n+1</code> fields. An <strong>empty</strong> <code>sep</code> aborts at run time (§29.12).</td></tr>
 </table>
 <p><code>char_at</code> is the <code>char</code>-typed companion to string indexing. <code>s[i]</code> yields <code>int</code></p>

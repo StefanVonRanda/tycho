@@ -8,7 +8,7 @@
 <body>
 <nav class="crumb"><a href="../index.html">docs</a> / internals/probe-simd-2026-09-07.md</nav>
 <h1 id="layoutsimd-probe-2026-09-07--four-new-features-no-findings">Layout/SIMD probe, 2026-09-07 — four new features, no findings</h1>
-<p><strong>Verdict: zero defects, zero doc gaps. Probed 2026-09-07 against `packed`, `align(N)`, `vector[N]T`, and swizzling with a 57-line pixel kernel. Outcome: recorded because a probe that finds nothing is the one most likely to go unwritten.</strong></p>
+<p><strong>Verdict: zero defects, zero doc gaps. Probed 2026-09-07 against <code>packed</code>, <code>align(N)</code>, <code>vector[N]T</code>, and swizzling with a 57-line pixel kernel. Outcome: recorded because a probe that finds nothing is the one most likely to go unwritten.</strong></p>
 <p>The first probe aimed at the surface the freeze was broken for. <code>packed</code>,</p>
 <p><code>align(N)</code>, <code>vector[N]T</code> and groups/swizzling shipped 2026-09-04 and 2026-09-05;</p>
 <p>every probe record before this one is dated 2026-08-19 or 2026-08-20, so nothing</p>
@@ -48,7 +48,7 @@
 <p>read compiler source, then lists deletions that leave <code>compiler/</code> in place — 19</p>
 <p>files including <code>compiler/parse/parse.ty</code> and the typechecker, which is a syntax</p>
 <p>oracle for exactly the features under test. It was deleted by hand for this run.</p>
-<p><strong>Every round since `compiler/` entered the tree had this leak.</strong> That weakens</p>
+<p><strong>Every round since <code>compiler/</code> entered the tree had this leak.</strong> That weakens</p>
 <p>those records rather than voiding them — an agent that can read a parser is still</p>
 <p>not the author — but it is unmeasured, and the delete list names</p>
 <p><code>compiler</code>.</p>

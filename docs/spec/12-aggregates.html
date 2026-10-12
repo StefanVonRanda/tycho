@@ -127,7 +127,7 @@ bump(&amp;ps[1].x)           # a field of an element passed as an `inout` argume
 <p>(§16.6) MUST be rejected on a <code>[N]T</code>; use a dynamic <code>[T]</code> when the length</p>
 <p>varies.</p>
 <ul>
-<li><strong>`len` is a compile-time constant.</strong> <code>len(v)</code> for <code>v: [N]T</code> is the constant</li>
+<li><strong><code>len</code> is a compile-time constant.</strong> <code>len(v)</code> for <code>v: [N]T</code> is the constant</li>
 </ul>
 <p><code>N</code>, with no runtime length field. Indexing is bounds-checked against the</p>
 <p>static <code>N</code>; <code>==</code> compares element-wise.</p>
@@ -169,7 +169,7 @@ bump(&amp;ps[1].x)           # a field of an element passed as an `inout` argume
 <p>out-of-range bounds rather than aborting (<code>start &lt; 0</code> → <code>0</code>, <code>end &gt; len</code> → <code>len</code>,</p>
 <p><code>end &lt; start</code> → empty) — unlike an array slice, which aborts — because it is</p>
 <p>exactly <code>substr(s, a, b)</code>, the equivalent function form (§29).</p>
-<p>A <strong>`bytes` slice</strong> <code>b[a:b]</code> behaves identically to a string slice — always</p>
+<p>A <strong><code>bytes</code> slice</strong> <code>b[a:b]</code> behaves identically to a string slice — always</p>
 <p>copies, clamps rather than aborts, same four bound forms — and yields <code>bytes</code></p>
 <p>(<a href="03-types.html#526-bytes">§5.2.6</a>). It is the same operation on the same buffer;</p>
 <p>only the static type of the result differs.</p>
@@ -794,13 +794,13 @@ match s:
 <h3 id="194-statement-match-versus-value-match">19.4 Statement <code>match</code> versus value <code>match</code></h3>
 <p><code>match</code> exists in two positions:</p>
 <ul>
-<li><strong>Statement `match`</strong> is a compound statement</li>
+<li><strong>Statement <code>match</code></strong> is a compound statement</li>
 </ul>
 <p>(<a href="02-grammar.html#432-compound-statements">§4.3.2</a>); its arms are blocks that may</p>
 <p>contain any statements and produce a value by assigning or <code>return</code>-ing from</p>
 <p>inside each arm.</p>
 <ul>
-<li><strong>Value `match`</strong> stands as the whole right-hand side of a <code>:=</code>, a typed</li>
+<li><strong>Value <code>match</code></strong> stands as the whole right-hand side of a <code>:=</code>, a typed</li>
 </ul>
 <p><code>x: T =</code>, a plain assignment, or a <code>return</code> (tail position). Each arm is a block</p>
 <p>whose <strong>final statement is a value expression</strong> (a bare value expression is the</p>
@@ -866,14 +866,14 @@ fn main():
 <p>To return something other than the unchanged failure — a wrapped error, a fresh</p>
 <p>one, or a plain <code>false</code> — use <code>or_else</code></p>
 <p>(<a href="10-statements.html#1461-or_else">§14.6.1</a>).</p>
-<p>On a <strong>`Result`</strong>, <code>v := expr or_return</code>:</p>
+<p>On a <strong><code>Result</code></strong>, <code>v := expr or_return</code>:</p>
 <ul>
 <li>binds <code>v</code> to the payload when <code>expr</code> is <code>Ok(v)</code>; and</li>
 <li>otherwise returns that <code>Err</code> from the <strong>enclosing function</strong>, which MUST itself</li>
 </ul>
 <p>return <code>Result(_, E)</code> with the <strong>same</strong> error type <code>E</code> — a differing <code>E</code> is a</p>
 <p>compile error.</p>
-<p>On an <strong>`Option`</strong>, <code>v := opt or_return</code> binds <code>v</code> on <code>Some(v)</code> and returns</p>
+<p>On an <strong><code>Option</code></strong>, <code>v := opt or_return</code> binds <code>v</code> on <code>Some(v)</code> and returns</p>
 <p><code>None</code>; the enclosing function MUST return an <code>Option</code>.</p>
 <p>The short-circuited payload (<code>Err</code>'s error, or <code>None</code>) is promoted into the</p>
 <p>caller's storage, so it outlives the return</p>

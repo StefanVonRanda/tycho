@@ -174,7 +174,7 @@
 <p>Two parameter types MUST NOT be declared <code>inout</code>, because copy-out through the</p>
 <p>borrow would defeat the affinity or the lifetime rule that governs the value:</p>
 <ul>
-<li><strong>`Channel(T)`</strong> (<a href="13-concurrency.html">§23.1</a>). A channel parameter is already a</li>
+<li><strong><code>Channel(T)</code></strong> (<a href="13-concurrency.html">§23.1</a>). A channel parameter is already a</li>
 </ul>
 <p>shared handle onto one queue: every by-value copy names the same queue, so an</p>
 <p><code>inout</code> borrow buys no additional sharing, while a copy-out could write a</p>

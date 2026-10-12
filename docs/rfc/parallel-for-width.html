@@ -11,7 +11,7 @@
 <p>Status: <strong>BUILT 2026-08-13.</strong> What follows is the proposal as written; the</p>
 <p>differences the implementation forced are listed under "What shipped" at the end.</p>
 <p>Written 2026-08-13 to cost open-list item 8 in</p>
-<p><a href="../internals/FRICTION.html">`../internals/FRICTION.md`</a>, which had stood as</p>
+<p><a href="../internals/FRICTION.html"><code>../internals/FRICTION.md</code></a>, which had stood as</p>
 <p>"uncosted, and still the honest core of what is left". It is costed now, and it</p>
 <p>is smaller than the item says.</p>
 <h2 id="the-want-split-in-two">The want, split in two</h2>
@@ -66,19 +66,19 @@ Width       ::= "(" Expr ")"
 <p>1. <strong>Evaluated when?</strong> Once, at the spawn site, before any task starts — the</p>
 <p>same rule the counting form's <code>N</code> already has. An expression re-evaluated per</p>
 <p>chunk would make the width unobservable and racy.</p>
-<p>2. <strong>`W &lt; 1`?</strong> Fail closed, not clamp. A literal <code>parallel(0)</code> is refused at</p>
+<p>2. <strong><code>W &lt; 1</code>?</strong> Fail closed, not clamp. A literal <code>parallel(0)</code> is refused at</p>
 <p>compile time; a computed <code>W &lt; 1</code> aborts at run time with its own message. The</p>
 <p>precedent is this language's habit of refusing rather than guessing, and the</p>
 <p>counter-precedent is instructive: <code>range()</code>'s zero-step abort was *lost* when</p>
 <p>the three-clause loop replaced it (<code>docs/spec/10-statements.md</code>, "The</p>
 <p>zero-step guarantee is gone"), and that is recorded there as a deliberate</p>
 <p>trade, not a model to copy.</p>
-<p>3. <strong>`W` versus `TYCHO_THREADS`?</strong> The explicit width wins. The environment</p>
+<p>3. <strong><code>W</code> versus <code>TYCHO_THREADS</code>?</strong> The explicit width wins. The environment</p>
 <p>variable is a process-wide default for programs that did not choose; a</p>
 <p>program that says <code>parallel(4)</code> has chosen. Say this in §22 — a reader who</p>
 <p>expects <code>TYCHO_THREADS=1</code> to serialise everything for debugging needs to know</p>
 <p>it no longer does.</p>
-<p>4. <strong>Does `W` bound anything else?</strong> No. It is the fan-out width of this</p>
+<p>4. <strong>Does <code>W</code> bound anything else?</strong> No. It is the fan-out width of this</p>
 <p>statement, not a pool the runtime keeps.</p>
 <h2 id="cost-and-the-gates-that-can-redden">Cost, and the gates that can redden</h2>
 <ul>
@@ -140,14 +140,14 @@ parallel(4) for wid in 0..&lt;nworkers:   # nworkers workers, each with its own 
 <p>Landed in <code>src/tychoc.c</code> at the three sites this RFC named, plus the two spec</p>
 <p>sections. Two things the proposal did not say, both found by building it:</p>
 <ul>
-<li><strong>The range is `1..64`, not `&gt;= 1`.</strong> 64 is the static <code>_pts[64]</code> task array in</li>
+<li><strong>The range is <code>1..64</code>, not <code>&gt;= 1</code>.</strong> 64 is the static <code>_pts[64]</code> task array in</li>
 </ul>
 <p><code>gen_parfor</code>, and it was already the silent ceiling for <code>ncpu()</code>. Silently</p>
 <p>clamping an explicit <code>parallel(100)</code> would run a program nobody asked for, so a</p>
 <p>literal outside the range is refused in the parser (where the caret lands on the</p>
 <p>author's digit) and a computed one aborts at run time via <code>tycho_die</code>.</p>
 <ul>
-<li><strong>The width lands in `r_stop`, not in a new codegen path.</strong> For the</li>
+<li><strong>The width lands in <code>r_stop</code>, not in a new codegen path.</strong> For the</li>
 </ul>
 <p>channel-drain form the iteration space IS the worker count, so the author's</p>
 <p>expression simply replaces the synthesised <code>ncpu()</code> node and every existing</p>

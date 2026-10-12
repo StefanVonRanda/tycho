@@ -95,21 +95,21 @@ tycho-debug&gt; n
 <p>The emitted C is faithful but not idiomatic, so a few things read differently</p>
 <p>in a debugger:</p>
 <ul>
-<li><strong>Every function takes a hidden first argument `Arena *_parent`</strong> — the arena</li>
+<li><strong>Every function takes a hidden first argument <code>Arena *_parent</code></strong> — the arena</li>
 </ul>
 <p>that owns its return value. You'll see it on every frame; ignore it unless</p>
 <p>you're debugging allocation.</p>
 <ul>
-<li><strong>`inout` parameters are passed by pointer.</strong> A <code>inout int x</code> is a <code>long *h_x</code> in</li>
+<li><strong><code>inout</code> parameters are passed by pointer.</strong> A <code>inout int x</code> is a <code>long *h_x</code> in</li>
 </ul>
 <p>C; print <code>*h_x</code>, not <code>h_x</code>. A heap <code>inout</code> also carries an <code>Arena *_ina_x</code></p>
 <p>just before it.</p>
 <ul>
-<li><strong>Locals are prefixed `h_`</strong> (<code>h_x</code> for Tycho <code>x</code>) to avoid clashing with C</li>
+<li><strong>Locals are prefixed <code>h_</code></strong> (<code>h_x</code> for Tycho <code>x</code>) to avoid clashing with C</li>
 </ul>
 <p>keywords and runtime symbols.</p>
 <ul>
-<li><strong>Statement temporaries live in per-statement `_t` arenas</strong> freed at the end</li>
+<li><strong>Statement temporaries live in per-statement <code>_t</code> arenas</strong> freed at the end</li>
 </ul>
 <p>of each statement; block/loop bodies get their own <code>_b</code>/<code>_scope</code> arenas. These</p>
 <p>are the arena-management lines you'll step over between your statements.</p>

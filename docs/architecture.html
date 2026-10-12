@@ -54,12 +54,12 @@
 <p>The two are <strong>not</strong> peers, and saying so turns "keep them agreeing forever" from</p>
 <p>a standing tax into a procedure with a known shape:</p>
 <ul>
-<li><strong>`src/tychoc.c` is normative.</strong> It defines what the language does. It is also</li>
+<li><strong><code>src/tychoc.c</code> is normative.</strong> It defines what the language does. It is also</li>
 </ul>
 <p>the bootstrap, and the README's "one dependency-free C file" is a promise</p>
 <p>about it.</p>
 <ul>
-<li><strong>`tychoc1` is the oracle.</strong> Its value is being a second implementation that</li>
+<li><strong><code>tychoc1</code> is the oracle.</strong> Its value is being a second implementation that</li>
 </ul>
 <p>can disagree. It is what every suite here defaults to</p>
 <p>(<code>tests/run.sh:175@TYCHOC</code>), so it is exercised far harder than a spare would</p>
@@ -77,7 +77,7 @@
 <p>with valgrind memcheck over the fixtures, corelib packages, examples, and all</p>
 <p>tools driven through their gates — clean — with the instrument proved able to</p>
 <p>fire in both directions. The method is recorded in</p>
-<p><a href="internals/probe-uninit-arena-2026-09-11.html">`internals/probe-uninit-arena-2026-09-11.md`</a></p>
+<p><a href="internals/probe-uninit-arena-2026-09-11.html"><code>internals/probe-uninit-arena-2026-09-11.md</code></a></p>
 <p>and the controls in <a href="controls.html">controls.md</a>.</p>
 <p><code>make ci</code> runs the whole gate locally — there is no hosted CI, by policy. What each</p>
 <p>step proves:</p>

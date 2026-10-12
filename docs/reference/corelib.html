@@ -36,7 +36,7 @@ fn main():
 <p>Non-<code>core:</code> imports stay relative to the importing package, unchanged. <code>tychoc</code> resolves <code>core:</code> natively, with no</p>
 <p>bundling step required.</p>
 <h2 id="how-corelib-is-shaped">How corelib is shaped</h2>
-<p>corelib is <strong>generic free functions over a type parameter `$T`</strong>, with <code>where</code></p>
+<p>corelib is <strong>generic free functions over a type parameter <code>$T</code></strong>, with <code>where</code></p>
 <p>constraints (<code>comparable(T)</code>, <code>numeric(T)</code>, <code>has_str(T)</code>) picking which element</p>
 <p>types each function accepts. Array and iterator utilities are single generic</p>
 <p>packages over any element type <code>[$T]</code> (<code>core:arrays</code>, <code>core:iter</code>) rather than</p>
@@ -47,24 +47,24 @@ fn main():
 <p>expression-bodied; pass a named function where you need a multi-line body.</p>
 <h2 id="packages">Packages</h2>
 <ul>
-<li><strong>`math`</strong> — <code>min</code>/<code>max</code>/<code>clamp(x, lo, hi)</code> are generic over any comparable type</li>
+<li><strong><code>math</code></strong> — <code>min</code>/<code>max</code>/<code>clamp(x, lo, hi)</code> are generic over any comparable type</li>
 </ul>
 <p>(int/float/string/char) and lane-wise at a <code>vector[N]T</code>; <code>sign(x)</code> over any numeric</p>
 <p>type (returns an int −1/0/1); <code>abs</code>, <code>gcd</code>, <code>ipow(base, exp)</code> (exp ≥ 0) are integer-</p>
 <p>specific. (<code>sqrt</code>/<code>pow</code>/<code>floor</code>/<code>fabs</code> are float builtins.)</p>
 <ul>
-<li><strong>`fmath`</strong> — float-only helpers (scalar <code>min</code>/<code>max</code>/<code>clamp</code>/<code>sign</code> live in <code>math</code>):</li>
+<li><strong><code>fmath</code></strong> — float-only helpers (scalar <code>min</code>/<code>max</code>/<code>clamp</code>/<code>sign</code> live in <code>math</code>):</li>
 </ul>
 <p><code>pi</code>, <code>e</code>, <code>round</code> (half away from zero), <code>trunc</code>, <code>lerp(a, b, t)</code>,</p>
 <p><code>approx_eq(a, b, eps)</code>. (No trig — the language has no libm sin/cos builtin.)</p>
 <ul>
-<li><strong>`char`</strong> — byte/char classification &amp; conversion over int byte values (what</li>
+<li><strong><code>char</code></strong> — byte/char classification &amp; conversion over int byte values (what</li>
 </ul>
 <p><code>s[i]</code>/<code>chr</code> use): <code>is_digit</code>, <code>is_alpha</code>, <code>is_alnum</code>, <code>is_upper</code>, <code>is_lower</code>,</p>
 <p><code>is_space</code>, <code>is_hex</code>, <code>to_upper</code>/<code>to_lower</code> (one byte), <code>digit_val</code> (−1 if not a</p>
 <p>digit), <code>hex_val</code> (0..15 or −1).</p>
 <ul>
-<li><strong>`strings`</strong> — <code>to_upper</code>, <code>to_lower</code>, <code>starts_with</code>, <code>ends_with</code>, <code>contains</code>,</li>
+<li><strong><code>strings</code></strong> — <code>to_upper</code>, <code>to_lower</code>, <code>starts_with</code>, <code>ends_with</code>, <code>contains</code>,</li>
 </ul>
 <p><code>repeat(s, n)</code>, <code>trim</code> (ASCII whitespace), <code>parse_int</code>, <code>is_space</code>, <code>lines</code> (splits on</p>
 <p><code>\n</code>, drops one trailing <code>\r</code> per line, trailing newline adds no empty line), <code>replace</code></p>
@@ -81,7 +81,7 @@ fn main():
 <p>the forms that refuse an out-of-range window instead of narrowing it.</p>
 <p><code>format_g17(v)</code> renders a float at the 17 significant digits that round-trip.</p>
 <ul>
-<li><strong>`path`</strong> — POSIX path utilities (separator <code>/</code>). The pure functions below are</li>
+<li><strong><code>path</code></strong> — POSIX path utilities (separator <code>/</code>). The pure functions below are</li>
 </ul>
 <p>string math only (no filesystem access, every function returns a fresh value):</p>
 <p><code>base</code> (final element, trailing slashes ignored; <code>""</code>→<code>.</code>, <code>"/"</code>→<code>/</code>), <code>dir</code></p>
@@ -121,7 +121,7 @@ fn main():
 <p>write access inside the root; a fully race-free form would need the open done</p>
 <p>inside the check.</p>
 <ul>
-<li><strong>`arrays`</strong> — generic utilities over any element type <code>[T]</code>: <code>contains</code>, <code>index_of</code></li>
+<li><strong><code>arrays</code></strong> — generic utilities over any element type <code>[T]</code>: <code>contains</code>, <code>index_of</code></li>
 </ul>
 <p>(−1 if absent), <code>count</code>, <code>reverse</code>, <code>take(xs, n)</code>, <code>drop(xs, n)</code>, <code>concat(a, b)</code>,</p>
 <p><code>fill(n, v)</code>, <code>dedup</code> (consecutive — sort first for a full dedup); <code>sort</code> (ascending),</p>
@@ -131,7 +131,7 @@ fn main():
 <p><code>product</code> seed from <code>xs[0]</code>, so they need a non-empty array. (<code>push</code>/<code>pop</code>/<code>len</code>/<code>range</code></p>
 <p>are builtins; higher-order <code>map</code>/<code>filter</code>/<code>reduce</code> live in <code>iter</code>.)</p>
 <ul>
-<li><strong>`iter`</strong> — generic higher-order helpers over any <code>[T]</code>, each taking a <code>fn</code>/closure:</li>
+<li><strong><code>iter</code></strong> — generic higher-order helpers over any <code>[T]</code>, each taking a <code>fn</code>/closure:</li>
 </ul>
 <p><code>map</code> (two type variables — <code>map(xs: [$T], f: fn($T) -&gt; $U) -&gt; [$U]</code>, the only one that may change element type, so <code>iter.map(nums, to_str)</code> is a <code>[string]</code>), <code>filter</code>, <code>reduce</code>, <code>count</code>, <code>any</code>.</p>
 <p>Fallible stages get two siblings whose callback returns a <code>Result</code>:</p>
@@ -140,7 +140,7 @@ fn main():
 <p>the <strong>first</strong> <code>Err</code> and return it unchanged. <code>reduce</code>/<code>count</code>/<code>any</code></p>
 <p>have no fallible form — write the <code>for</code> loop with <code>or_return</code> if you need one.</p>
 <ul>
-<li><strong>`sort`</strong> — <code>argsort(keys)</code> / <code>argsort_desc(keys)</code>: return the index permutation that</li>
+<li><strong><code>sort</code></strong> — <code>argsort(keys)</code> / <code>argsort_desc(keys)</code>: return the index permutation that</li>
 </ul>
 <p>orders the keys — generic over any comparable key type (int/float/string/char). The way</p>
 <p>to order data by a derived value: keep it in parallel arrays, argsort one, and walk every</p>
@@ -153,7 +153,7 @@ fn main():
 <p><code>desc(a, b)</code> are the two ready-made comparators for that parameter, so the</p>
 <p>common orderings need no lambda: <code>sort_by(xs, sort.asc)</code>.</p>
 <ul>
-<li><strong>`pool`</strong> — a generational node pool for pointer-shaped data (graphs, trees,</li>
+<li><strong><code>pool</code></strong> — a generational node pool for pointer-shaped data (graphs, trees,</li>
 </ul>
 <p>doubly-linked structures). Hold every node in one array and link by integer</p>
 <p>index; <code>pool</code> packages that idiom. Generic over the element type <code>Pool($T)</code>:</p>
@@ -166,7 +166,7 @@ fn main():
 <p>hand-rolled bookkeeping, not the cost: pointer-shaped storage costs more in</p>
 <p>this model (see <a href="../internals/value-semantics-limits.html">value-semantics limits</a>).</p>
 <ul>
-<li><strong>`intern`</strong> — hash-consing / interning: canonical storage of values keyed by a hashable</li>
+<li><strong><code>intern</code></strong> — hash-consing / interning: canonical storage of values keyed by a hashable</li>
 </ul>
 <p>key. Generic <code>Interner($K, $V)</code>: <code>intern(&amp;i, k, v) -&gt; Handle</code> returns the canonical handle</p>
 <p>for key <code>k</code> — the first sight stores <code>v</code> and mints the handle, every later sight of the</p>
@@ -179,7 +179,7 @@ fn main():
 <p>Keys are any map-key type — <code>string</code>, <code>[int]</code>, a struct, a tuple. Create one</p>
 <p>with <code>i := intern.Interner([]int, []string: int)</code>.</p>
 <ul>
-<li><strong>`rand`</strong> — deterministic xorshift32 (not cryptographic). No globals in Tycho, so the</li>
+<li><strong><code>rand</code></strong> — deterministic xorshift32 (not cryptographic). No globals in Tycho, so the</li>
 </ul>
 <p>state is an explicit int threaded via <code>inout</code> (the <code>&amp;</code> marks the <code>inout</code> call site,</p>
 <p><a href="../reference/basics.html#procedures">Basics</a>). There is no <code>rand.State</code> type — a</p>
@@ -188,7 +188,7 @@ fn main():
 <p><code>rand.next(&amp;st)</code> ([1, 2³²)), <code>rand.below(&amp;st, n)</code> ([0, n)), <code>rand.shuffle(&amp;st, xs)</code></p>
 <p>(Fisher-Yates, returns a new array).</p>
 <ul>
-<li><strong>`time`</strong> — wraps the <code>clock()</code> (monotonic ns) and <code>now()</code> (UNIX seconds) builtins.</li>
+<li><strong><code>time</code></strong> — wraps the <code>clock()</code> (monotonic ns) and <code>now()</code> (UNIX seconds) builtins.</li>
 </ul>
 <p>Stopwatch (value-semantic, no inout — a reading is just an int): <code>sw := time.start()</code>,</p>
 <p>then <code>time.elapsed_ns(sw)</code> / <code>elapsed_us</code> / <code>elapsed_ms</code>. Duration conversions</p>
@@ -198,7 +198,7 @@ fn main():
 <p>immediately, the sleep is *not* interruptible (it retries with the remaining</p>
 <p>time, so the full duration always elapses), and it parks the <strong>calling task only</strong>.</p>
 <ul>
-<li><strong>`datetime`</strong> — civil (proleptic Gregorian) calendar math over UNIX timestamps, all</li>
+<li><strong><code>datetime</code></strong> — civil (proleptic Gregorian) calendar math over UNIX timestamps, all</li>
 </ul>
 <p>pure integer arithmetic. A <code>DateTime</code> struct</p>
 <p>(<code>year</code>/<code>month</code>/<code>day</code>/<code>hour</code>/<code>minute</code>/<code>second</code>/<code>weekday</code>, all UTC). <code>from_unix(secs)</code></p>
@@ -215,7 +215,7 @@ fn main():
 <p>small libc shim (<code>local_offset</code>, <code>offset_at</code>, <code>now_local</code>). There is no IANA tz database.</p>
 <p><code>format_offset(offset_secs)</code> renders a UTC offset as <code>+HH:MM</code> / <code>-HH:MM</code>.</p>
 <ul>
-<li><strong>`regex`</strong> — POSIX extended regular expressions (ERE) over libc. `compile(pat) -&gt;</li>
+<li><strong><code>regex</code></strong> — POSIX extended regular expressions (ERE) over libc. `compile(pat) -&gt;</li>
 </ul>
 <p>ptr<code> (opaque handle; </code>ok<code>/</code>is_null<code> to check), </code>is_match<code>, </code>find<code> / </code>find_end`</p>
 <p>(offset or −1), <code>matched</code> (first match substring). <strong>Capture groups</strong> of the first</p>
@@ -224,7 +224,7 @@ fn main():
 <p><code>release</code> frees the C-owned handle — the compiled pattern is C-malloc'd, <strong>not</strong></p>
 <p>caller-managed, so call it when done.</p>
 <ul>
-<li><strong>`http`</strong> — an HTTP(S) client over <strong>libcurl</strong>, and the first module to</li>
+<li><strong><code>http</code></strong> — an HTTP(S) client over <strong>libcurl</strong>, and the first module to</li>
 </ul>
 <p>declare an <a href="#external-dependencies-c-shim-deps">external dependency</a> (<code>corelib/http/deps</code></p>
 <p>→ <code>libcurl</code>). <code>get(url) -&gt; ptr</code> / <code>post(url, body, content_type) -&gt; ptr</code> return an opaque</p>
@@ -237,7 +237,7 @@ fn main():
 <p><code>0x00</code>; <code>post_bytes(url, body, content_type)</code> is its binary-safe sibling, taking</p>
 <p><code>bytes</code> and sending the whole length. Tests are skipped where libcurl is absent.</p>
 <ul>
-<li><strong>`json`</strong> — a recursive-descent JSON parser + serializer. The document is a</li>
+<li><strong><code>json</code></strong> — a recursive-descent JSON parser + serializer. The document is a</li>
 </ul>
 <p>value-semantic tree, the <code>Json</code> enum (<code>JNull</code>/<code>JBool</code>/<code>JNum</code>/<code>JFloat</code>/<code>JStr</code>/<code>JArr</code>/</p>
 <p><code>JObj</code>, objects as parallel key/value arrays). **`parse_checked(s) -&gt;</p>
@@ -262,7 +262,7 @@ fn main():
 <p><code>err_at(code, off)</code> builds a <code>JsonErr</code> for a given code and byte offset, for a caller</p>
 <p>layering its own parse step on top of this one.</p>
 <ul>
-<li><strong>`csv`</strong> — an RFC 4180 CSV parser + serializer. A document is rows of fields,</li>
+<li><strong><code>csv</code></strong> — an RFC 4180 CSV parser + serializer. A document is rows of fields,</li>
 </ul>
 <p><code>[[string]]</code>. <code>parse(s) -&gt; [[string]]</code> handles quoted fields, the <code>""</code> escape,</p>
 <p>embedded delimiters/newlines inside quotes, and LF / CRLF / lone-CR line endings;</p>
@@ -274,7 +274,7 @@ fn main():
 <p><code>parse_delim</code>/<code>stringify_delim</code> take an arbitrary single-byte delimiter (TSV is</p>
 <p><code>parse_delim(s, 9)</code>); <code>get(rows, r, c)</code> is a bounds-safe cell read (<code>""</code> if OOB).</p>
 <ul>
-<li><strong>`markdown`</strong> — a pragmatic Markdown → HTML renderer in pure Tycho. <code>render(src)</code></li>
+<li><strong><code>markdown</code></strong> — a pragmatic Markdown → HTML renderer in pure Tycho. <code>render(src)</code></li>
 </ul>
 <p>handles ATX headings, fenced code (HTML-escaped), blockquotes, unordered/ordered</p>
 <p>lists, thematic breaks, and paragraphs; inline <code>**bold**</code>, <code>*italic*</code>/<code>_italic_</code>,</p>
@@ -284,20 +284,20 @@ fn main():
 <p>blog/wiki. <code>esc(s)</code> is that HTML escaper on its own, for callers assembling</p>
 <p>markup around rendered output.</p>
 <ul>
-<li><strong>`base64`</strong> — Base64 (RFC 4648) <code>encode</code>/<code>decode</code>, plus <code>encode_url</code> (URL-safe</li>
+<li><strong><code>base64</code></strong> — Base64 (RFC 4648) <code>encode</code>/<code>decode</code>, plus <code>encode_url</code> (URL-safe</li>
 </ul>
 <p><code>-</code>/<code>_</code> alphabet, no padding). <code>decode</code> is lenient: it skips any non-alphabet byte</p>
 <p>(padding <code>=</code>, whitespace, newlines in wrapped Base64) and accepts both alphabets.</p>
 <p>Tycho strings are length-carrying and can contain interior <code>0x00</code> bytes, so <code>decode</code></p>
 <p>preserves NULs as well as other decoded bytes. Use <code>bytes</code> when crossing a binary C API.</p>
 <ul>
-<li><strong>`hex`</strong> — hexadecimal <code>encode</code> (lowercase) / <code>encode_upper</code> / <code>decode</code>, two digits per</li>
+<li><strong><code>hex</code></strong> — hexadecimal <code>encode</code> (lowercase) / <code>encode_upper</code> / <code>decode</code>, two digits per</li>
 </ul>
 <p>byte, plus <code>is_valid</code> (strict: even length, all hex digits). <code>decode</code> is lenient (skips</p>
 <p>any non-hex byte, so <code>de:ad:be:ef</code> and spaced/newlined hex work, either case) and reuses</p>
 <p><code>core:char</code>'s <code>hex_val</code>. Decoding <code>"00"</code> returns a one-byte string containing NUL.</p>
 <ul>
-<li><strong>`url`</strong> — URL percent-encoding (RFC 3986). <code>encode</code> is component-style (like JS</li>
+<li><strong><code>url</code></strong> — URL percent-encoding (RFC 3986). <code>encode</code> is component-style (like JS</li>
 </ul>
 <p><code>encodeURIComponent</code> — everything but unreserved <code>A-Z a-z 0-9 - _ . ~</code> becomes <code>%XX</code>,</p>
 <p>uppercase, space → <code>%20</code>); <code>encode_form</code> / <code>decode_form</code> use the</p>
@@ -305,7 +305,7 @@ fn main():
 <p><code>decode</code> is lenient (a <code>%</code> not followed by two hex digits is emitted literally) and reuses</p>
 <p><code>core:char</code>'s <code>hex_val</code>. <code>%00</code> produces an interior NUL byte in the returned string.</p>
 <ul>
-<li><strong>`uuid`</strong> — version-4 UUIDs (RFC 4122) plus the nil UUID and helpers. <code>v4(&amp;st)</code></li>
+<li><strong><code>uuid</code></strong> — version-4 UUIDs (RFC 4122) plus the nil UUID and helpers. <code>v4(&amp;st)</code></li>
 </ul>
 <p>draws 16 bytes from <code>core:rand</code> (state threaded by <code>inout</code>) and sets the</p>
 <p>version/variant bits; it is <strong>not unguessable</strong> — use <code>crypto.random_hex</code> for a</p>
@@ -314,7 +314,7 @@ fn main():
 <p><code>is_valid</code> (strict), <code>version</code> (the version nibble, <code>-1</code> if invalid). v1 and the</p>
 <p>name-based v3/v5 are out of scope. Zero bytes survive formatting.</p>
 <ul>
-<li><strong>`hash`</strong> — non-cryptographic 32-bit hashes for hash tables / checksums / dedup (NOT for</li>
+<li><strong><code>hash</code></strong> — non-cryptographic 32-bit hashes for hash tables / checksums / dedup (NOT for</li>
 </ul>
 <p>security): <code>fnv1a_32</code>, <code>djb2</code>, <code>sdbm</code>, and <code>crc32</code> (IEEE/zlib, bit-by-bit), plus <code>to_hex</code></p>
 <p>(8-digit lowercase). All return a non-negative int in <code>[0, 2^32)</code>. Matches published vectors:</p>
@@ -323,13 +323,13 @@ fn main():
 <p><code>hash(x)</code> — deterministic (the same value hashes the same on every run and machine),</p>
 <p>full 64-bit as a signed int (<a href="../spec/16-builtins.html#297-maps">builtins §29.7</a>).</p>
 <ul>
-<li><strong>`md5`</strong> — the MD5 message-digest (RFC 1321): <code>hex(s)</code> (32-char lowercase digest) and</li>
+<li><strong><code>md5</code></strong> — the MD5 message-digest (RFC 1321): <code>hex(s)</code> (32-char lowercase digest) and</li>
 </ul>
 <p><code>digest(s)</code> (16 raw bytes). <strong>MD5 is broken for security</strong> (use it for checksums /</p>
 <p>content-addressing / interop, never passwords or signatures). Bit-exact against the</p>
 <p>RFC 1321 suite (<code>md5("abc") = 900150983cd24fb0d6963f7d28e17f72</code>).</p>
 <ul>
-<li><strong>`sha256`</strong> — the SHA-256 hash (FIPS 180-4): <code>hex(s)</code> (64-char lowercase digest) and</li>
+<li><strong><code>sha256</code></strong> — the SHA-256 hash (FIPS 180-4): <code>hex(s)</code> (64-char lowercase digest) and</li>
 </ul>
 <p><code>digest(s)</code> (32 raw bytes). A <strong>real cryptographic digest</strong> — fine for checksums,</p>
 <p>content addressing, and HMAC building blocks (not a standalone password hash; use a KDF</p>
@@ -338,12 +338,12 @@ fn main():
 <p>a <code>State</code>, <code>update(&amp;st, data)</code> folds in each chunk, and <code>final_hex(&amp;st)</code> closes</p>
 <p>it and returns the digest — the same answer <code>hex(s)</code> gives for the concatenation.</p>
 <ul>
-<li><strong>`bignum`</strong> — arbitrary-precision integers in pure Tycho (sign + base-10⁹ limb array),</li>
+<li><strong><code>bignum</code></strong> — arbitrary-precision integers in pure Tycho (sign + base-10⁹ limb array),</li>
 </ul>
 <p>value-semantic: <code>from_int</code>/<code>from_str</code>/<code>to_str</code>/<code>to_int</code>, <code>add</code>/<code>sub</code>/<code>mul</code>/<code>divmod</code>/<code>div</code>/</p>
 <p><code>mod</code>/<code>pow</code>, <code>abs</code>/<code>neg</code>/<code>cmp</code>/<code>is_zero</code>.</p>
 <ul>
-<li><strong>`decimal`</strong> — arbitrary-precision base-10 fixed point, composed on <code>core:bignum</code> (a <code>Big</code></li>
+<li><strong><code>decimal</code></strong> — arbitrary-precision base-10 fixed point, composed on <code>core:bignum</code> (a <code>Big</code></li>
 </ul>
 <p>coefficient × 10⁻ˢᶜᵃˡᵉ), so decimal fractions are <strong>exact</strong> (<code>0.1 + 0.2 == 0.3</code>):</p>
 <p><code>from_int</code>/<code>from_str</code>/<code>to_str</code>, <code>add</code>/<code>sub</code>/<code>mul</code> (exact), <code>cmp</code>, <code>neg</code>/<code>abs</code>/<code>is_zero</code>,</p>
@@ -354,7 +354,7 @@ fn main():
 <p>from zero) or <code>toward_zero()</code> (agrees with <code>rescale</code>) — there is no default, because there</p>
 <p>is no correct one. A zero divisor, a negative scale and an unknown mode are each an <code>Err</code>.</p>
 <ul>
-<li><strong>`crypto`</strong> — the security-grade module, a C-shim over OpenSSL <code>libcrypto</code> (see</li>
+<li><strong><code>crypto</code></strong> — the security-grade module, a C-shim over OpenSSL <code>libcrypto</code> (see</li>
 </ul>
 <p><a href="#c-shim-ffi-backed-modules">C-shim modules</a>; needs the OpenSSL dev package). Where the</p>
 <p>pure-Tycho <code>sha256</code>/<code>md5</code> are for non-adversarial integrity, this is what to reach for</p>
@@ -379,7 +379,7 @@ fn main():
 <p><code>x25519_shared(my_key, their_pubkey_hex) -&gt; ptr</code>, whose result is a key handle</p>
 <p>ready for the AEAD.</p>
 <ul>
-<li><strong>`result`</strong> — the <code>Result</code> / <code>Option</code> collapses, generic over <code>$T</code> and <code>$E</code>:</li>
+<li><strong><code>result</code></strong> — the <code>Result</code> / <code>Option</code> collapses, generic over <code>$T</code> and <code>$E</code>:</li>
 </ul>
 <p><code>unwrap_or(r, fallback)</code>, <code>is_ok(r)</code>, <code>is_err(r)</code>, <code>err_or(r, fallback)</code>,</p>
 <p><code>map_err(r, replacement)</code>, <code>map_err_with(r, f)</code>, and</p>
@@ -390,7 +390,7 @@ fn main():
 <p>all** — a one-line <code>if</code>. <code>map_err(r, replacement)</code> re-labels the error so</p>
 <p><code>or_return</code> carries it —</p>
 <p><code>req := result.map_err(httpd.read_request(fd), net.Failed) or_return</code> — at the cost of</p>
-<p>the original cause. <strong>`map_err_with(r, f)` is its cause-preserving sibling</strong> —</p>
+<p>the original cause. <strong><code>map_err_with(r, f)</code> is its cause-preserving sibling</strong> —</p>
 <p>identical job and argument order, except <code>f</code> receives the <code>Err</code> payload and builds the</p>
 <p>replacement from it, so a <code>Syntax(7)</code> arrives as <code>FromParse(7)</code> rather than as a</p>
 <p>constant. Use it where the cause carries something the caller still needs (a byte</p>
@@ -399,7 +399,7 @@ fn main():
 <p><a href="../spec/10-statements.html#1431-nested-patterns">§14.3.1</a>); the corelib's error enums</p>
 <p>stay payload-free so both spellings keep working.</p>
 <ul>
-<li><strong>`testing`</strong> — a unit-test framework, state threaded like <code>core:rand</code>'s:</li>
+<li><strong><code>testing</code></strong> — a unit-test framework, state threaded like <code>core:rand</code>'s:</li>
 </ul>
 <p><code>t := testing.new("name")</code>, then <code>check(&amp;t, cond, msg)</code> and generic</p>
 <p><code>eq(&amp;t, got, want, msg)</code> (comparable scalars — int/float/string/char; for a</p>
@@ -407,7 +407,7 @@ fn main():
 <p><code>exit(testing.report(t))</code> — prints <code>ok name (N checks)</code> or the failing checks</p>
 <p>plus <code>FAIL name (N of M checks failed)</code> and returns 0/1 for the exit code.</p>
 <ul>
-<li><strong>`toml`</strong> — a TOML v1.0-subset parser: <code>parse(s) -&gt; Result(Value, string)</code></li>
+<li><strong><code>toml</code></strong> — a TOML v1.0-subset parser: <code>parse(s) -&gt; Result(Value, string)</code></li>
 </ul>
 <p>(fail-closed), a recursive <code>Value</code> enum (TStr/TInt/TFloat/TBool/TArr/TTable;</p>
 <p>tables are parallel keys/values arrays), and <code>get(t, "a.b.c") -&gt; Option(Value)</code></p>
@@ -418,7 +418,7 @@ fn main():
 <p>or multi-line strings.</p>
 <p><code>empty_table()</code> gives an empty <code>Value</code> table, the starting point for building one up rather than parsing it. Parsing is bounded to 64 KiB, 512 assignments/headers and 128 nesting levels; larger documents return <code>Err</code> rather than consuming unbounded time or memory.</p>
 <ul>
-<li><strong>`zip`</strong> — a ZIP archive reader and writer over core:compress's raw</li>
+<li><strong><code>zip</code></strong> — a ZIP archive reader and writer over core:compress's raw</li>
 </ul>
 <p>deflate: <code>list(bytes)</code> (names, methods, sizes, CRCs and local offsets),</p>
 <p><code>extract_entry(bytes, meta)</code> for one-pass iteration, <code>extract(bytes, name)</code></p>
@@ -428,7 +428,7 @@ fn main():
 <p>fail-fast wrapper. Entries are names, not paths — extracting never touches</p>
 <p>the filesystem. The writer's output is read back byte-exactly by Python's zipfile.</p>
 <ul>
-<li><strong>`sqlite`</strong> — a thin wrapper over libsqlite3, bound directly (no</li>
+<li><strong><code>sqlite</code></strong> — a thin wrapper over libsqlite3, bound directly (no</li>
 </ul>
 <p>hand-written shim — the <code>extern "sqlite3"</code> forms name the pkg-config</p>
 <p>dependency, so the package and its test skip where sqlite3 is absent):</p>
@@ -438,7 +438,7 @@ fn main():
 <p>coerce; fail-closed with sqlite's own messages.</p>
 <p><code>exec_params(&amp;d, sql, params)</code> is the parameter-binding form of <code>exec</code>, returning the affected-row count.</p>
 <ul>
-<li><strong>`log`</strong> — a leveled logger, state threaded like <code>core:rand</code>'s:</li>
+<li><strong><code>log</code></strong> — a leveled logger, state threaded like <code>core:rand</code>'s:</li>
 </ul>
 <p><code>l := log.init(log.level_info(), false)</code>, then `log.debug/info/warn/error(&amp;l,</p>
 <p>msg)<code> — each prints </code>[level] message`, dropping messages below the logger's</p>
@@ -446,14 +446,14 @@ fn main():
 <p>functions: <code>level_info()</code>, <code>level_warn()</code>, <code>level_error()</code> (and <code>level_debug()</code>).</p>
 <p>No timestamps (they would make output non-deterministic); prepend your own.</p>
 <ul>
-<li><strong>`utf8`</strong> — Unicode validation and codepoint iteration over byte strings:</li>
+<li><strong><code>utf8</code></strong> — Unicode validation and codepoint iteration over byte strings:</li>
 </ul>
 <p><code>valid(s)</code> (strict — rejects overlong, surrogates, truncated), <code>decode(s, at)</code></p>
 <p>→ <code>(codepoint, width)</code> at a byte offset (the iteration idiom), <code>encode(cp)</code> →</p>
 <p>its UTF-8 bytes, <code>count(s)</code> → codepoints or -1. No case mapping or full</p>
 <p>tables — validation + iteration is the core.</p>
 <ul>
-<li><strong>`io`</strong> — filesystem helpers over the <code>read_file</code>/<code>write_file</code>/<code>list_dir</code> builtins.</li>
+<li><strong><code>io</code></strong> — filesystem helpers over the <code>read_file</code>/<code>write_file</code>/<code>list_dir</code> builtins.</li>
 </ul>
 <p><code>read(p)</code> — <strong>fail-open</strong>: <code>""</code> for a missing file, an unreadable one and a genuinely</p>
 <p>empty one alike, so prefer <code>read_text(p) -&gt; Result(string, IoErr)</code> or <code>read_bytes(p)</code></p>
@@ -475,7 +475,7 @@ fn main():
 <p><code>BadPath</code> for an interior NUL, else <code>NotFound</code> / <code>IsDir</code> / <code>Failed</code>. There is no</p>
 <p><code>defer</code>, so <code>close_lines</code> is the caller's to make. Plus <code>fold_lines(p, init, f)</code> —</p>
 <p>peak memory is O(longest line), not O(file). <code>read_bytes(p) -&gt; Result(bytes, io.IoErr)</code></p>
-<p>reads a whole file as raw <code>bytes</code> (binary-safe); an <strong>empty file is `Ok`</strong> with zero</p>
+<p>reads a whole file as raw <code>bytes</code> (binary-safe); an <strong>empty file is <code>Ok</code></strong> with zero</p>
 <p>bytes, a missing path is <code>Err(NotFound)</code> and a directory is <code>Err(IsDir)</code> — three</p>
 <p>outcomes a single empty <code>bytes</code> would collapse. The variants are payload-free, so <code>==</code></p>
 <p>and a nested <code>Err(io.IsDir)</code> arm both work. Three helpers resolve <code>list</code>'s</p>
@@ -487,8 +487,8 @@ fn main():
 <p>purpose<strong>: no corelib name is secretly recursive. There is deliberately </strong>no</p>
 <p><code>remove_all</code>**: a recursive delete is the one where a wrong path costs unrecoverable</p>
 <p>data. Three more answer what an HTTP server needs: <code>mtime(p) -&gt; Result(int, io.IoErr)</code></p>
-<p>(whole seconds; a <strong>directory is `Ok`</strong>), <code>size(p) -&gt; Result(int, io.IoErr)</code> (a length</p>
-<p>without reading; a <strong>directory is `Err(IsDir)`</strong>), and `read_at(p, off, n) -&gt;</p>
+<p>(whole seconds; a <strong>directory is <code>Ok</code></strong>), <code>size(p) -&gt; Result(int, io.IoErr)</code> (a length</p>
+<p>without reading; a <strong>directory is <code>Err(IsDir)</code></strong>), and `read_at(p, off, n) -&gt;</p>
 <p>Result(bytes, io.IoErr)<code> (allocates only what the file holds past </code>off`, so a length off</p>
 <p>the wire cannot over-allocate; past EOF is <code>Ok</code> with zero bytes). The **writers that can</p>
 <p>only succeed or fail** — <code>write_bytes(p, b)</code>, <code>write_at(p, off, b)</code>, <code>set_mtime(p, secs)</code>,</p>
@@ -496,14 +496,14 @@ fn main():
 <p><code>io.write_bytes(p, b) or_return</code> is a statement and a <code>match</code> arm is <code>Ok():</code>.</p>
 <p>Nothing aborts.</p>
 <ul>
-<li><strong>`os`</strong> — <code>is_windows()</code> reports the host family at runtime — run external commands via</li>
+<li><strong><code>os</code></strong> — <code>is_windows()</code> reports the host family at runtime — run external commands via</li>
 </ul>
 <p>a <strong>libc-only FFI shim</strong> (no <code>deps</code>, nothing to install). <code>os.system(cmd)</code> runs <code>cmd</code></p>
 <p>through the shell with stdout/stderr inherited, returning its exit code (0..255,</p>
 <p><code>128+signal</code> if killed, <code>-1</code> if the shell won't start); <code>os.run(cmd)</code> additionally</p>
 <p>captures stdout into <code>Output{code, out}</code>. <code>cmd</code> is a <code>/bin/sh -c</code> line — shell</p>
 <p>metacharacters are active, so quote untrusted input yourself.</p>
-<p><strong>`os.exec(argv)` / `os.exec_out(argv)`</strong> are the array-argv pair and take a</p>
+<p><strong><code>os.exec(argv)</code> / <code>os.exec_out(argv)</code></strong> are the array-argv pair and take a</p>
 <p><code>[string]</code>: no shell is started at all, so an argument of <code>"; rm -rf /"</code> is one</p>
 <p>ordinary argument rather than a second command — prefer them whenever the arguments</p>
 <p>are not compile-time constants. Neither replaces the calling process despite the</p>
@@ -515,7 +515,7 @@ fn main():
 <p>other rules (a <code>.bat</code>/<code>.cmd</code> file) can still read it differently, so don't hand a batch</p>
 <p>file untrusted argv.</p>
 <ul>
-<li><strong>`net`</strong> — TCP/UDP sockets over a <strong>libc-only FFI shim</strong> (POSIX sockets; no <code>deps</code>,</li>
+<li><strong><code>net</code></strong> — TCP/UDP sockets over a <strong>libc-only FFI shim</strong> (POSIX sockets; no <code>deps</code>,</li>
 </ul>
 <p>nothing to install). <strong>The transfer calls block; readiness does not.</strong></p>
 <p><code>read</code>/<code>write</code>/<code>connect</code> block, so a worker-per-connection server still has its</p>
@@ -526,7 +526,7 @@ fn main():
 <p><code>accept_wait(fd, ms) -&gt; Result(int, NetErr)</code> waits for one inbound connection</p>
 <p>with a timeout.</p>
 <p><code>close_fd(fd)</code> releases a descriptor obtained this way. Every fallible TCP call returns</p>
-<p><strong>`Result(T, net.NetErr)`</strong>: <code>listen</code>/<code>accept</code>/<code>connect</code>/<code>port_of</code> give <code>Result(int, …)</code>,</p>
+<p><strong><code>Result(T, net.NetErr)</code></strong>: <code>listen</code>/<code>accept</code>/<code>connect</code>/<code>port_of</code> give <code>Result(int, …)</code>,</p>
 <p><code>peer_addr(fd)</code> gives <code>Result(string, …)</code> — the connected peer's address as text,</p>
 <p>the field a real access log leads with.</p>
 <p><code>write</code> gives <code>Result(int, …)</code> (bytes sent), <code>read</code> gives <code>Result(bytes, …)</code>. Payloads</p>
@@ -541,7 +541,7 @@ fn main():
 <p>(<code>udp_bind</code>/<code>udp_send</code>/<code>udp_read</code>) are still sentinel-based on purpose: a zero-length</p>
 <p>datagram is legal, so <code>udp_read</code>'s empty result is a real success value.</p>
 <ul>
-<li><strong>`httpd`</strong> — a minimal HTTP/1.1 <strong>server</strong> toolkit over <code>core:net</code> (no external</li>
+<li><strong><code>httpd</code></strong> — a minimal HTTP/1.1 <strong>server</strong> toolkit over <code>core:net</code> (no external</li>
 </ul>
 <p>dependency — net is libc-only). The request/response plumbing is pure Tycho; the accept</p>
 <p>loop is the caller's. <code>parse_request(raw) -&gt; Result(Request, httpd.ReqErr)</code></p>
@@ -575,7 +575,7 @@ fn main():
 <p>font round-trips byte for byte; headers stay <code>string</code> (ASCII by spec).</p>
 <p><code>content_type(path)</code> maps a file extension to a MIME type — `.html .htm .css .js .mjs</p>
 <p>.json .txt .xml .svg .png .jpg .jpeg .gif .webp .ico .woff .woff2 .pdf .wasm` — and an</p>
-<p><strong>unknown extension yields `application/octet-stream`, never `text/plain`</strong>.</p>
+<p><strong>unknown extension yields <code>application/octet-stream</code>, never <code>text/plain</code></strong>.</p>
 <p>Keep-alive: <code>connection_close(req)</code> (HTTP/1.1 defaults open, 1.0 defaults closed, an</p>
 <p>empty <code>bad_request()</code> always closes) and <code>with_connection(r, alive)</code>; pair it with</p>
 <p><code>net.set_read_timeout_ms</code> so an idle peer cannot pin a worker. CRLF is built with</p>
@@ -597,7 +597,7 @@ fn main():
 <p><code>Transfer-Encoding</code>), <code>parse_len(s) -&gt; (int, bool)</code> (a length header with its validity</p>
 <p>flag), <code>has_ext(path, ext)</code>, and <code>crlf()</code>.</p>
 <ul>
-<li><strong>`cli`</strong> — command-line argument parsing, pure string math. <code>parse(argv) -&gt; Cli</code> sorts the</li>
+<li><strong><code>cli</code></strong> — command-line argument parsing, pure string math. <code>parse(argv) -&gt; Cli</code> sorts the</li>
 </ul>
 <p>vector into three buckets: <code>--key=value</code> <strong>options</strong>, boolean <strong>flags</strong> (<code>--flag</code>, and short</p>
 <p>clusters <code>-abc</code> → <code>a</code>/<code>b</code>/<code>c</code>), and <strong>positionals</strong> (everything else, plus everything after</p>
@@ -622,7 +622,7 @@ fn main():
 <p><code>get(c, key, default)</code>, <code>has(c, key)</code>, <code>flag(c, name)</code> (long or short), <code>positionals(c)</code>,</p>
 <p><code>count(c)</code>, <code>missing(c)</code>, <code>unknown(c)</code>. Uses parallel arrays, not maps.</p>
 <ul>
-<li><strong>`raster`</strong> — pure-Tycho raster image codecs, <strong>BMP</strong> and <strong>QOI</strong>, with no external</li>
+<li><strong><code>raster</code></strong> — pure-Tycho raster image codecs, <strong>BMP</strong> and <strong>QOI</strong>, with no external</li>
 </ul>
 <p>dependency (unlike <code>core:image</code>'s libpng-backed PNG). An <code>Image</code> is 8-bit RGBA (4</p>
 <p>bytes/pixel, row-major, top-to-bottom); pixel data is <code>bytes</code>. <code>encode_bmp</code>/<code>decode_bmp</code></p>
@@ -632,7 +632,7 @@ fn main():
 <p>(check <code>width &gt; 0</code>). <code>too_big(w, h)</code> is the decode guard in front of every codec here:</p>
 <p>it answers whether a declared width and height would allocate past the ceiling.</p>
 <ul>
-<li><strong>`signal`</strong> — <strong>clean shutdown on SIGTERM/SIGINT, and nothing else</strong>: a libc-only shim</li>
+<li><strong><code>signal</code></strong> — <strong>clean shutdown on SIGTERM/SIGINT, and nothing else</strong>: a libc-only shim</li>
 </ul>
 <p>with nothing to install and nothing to link.</p>
 <p><code>on_shutdown(fd) -&gt; bool</code> installs one handler for both signals whose <strong>only</strong> action is</p>
@@ -676,22 +676,22 @@ fn main():
 <p>The <code>deps</code>-backed modules are <code>http</code> (libcurl) and <code>crypto</code> (libcrypto), documented above,</p>
 <p>plus three more:</p>
 <ul>
-<li><strong>`compress`</strong> — gzip (RFC 1952) compress/decompress over <strong>zlib</strong> (<code>deps: zlib</code>).</li>
+<li><strong><code>compress</code></strong> — gzip (RFC 1952) compress/decompress over <strong>zlib</strong> (<code>deps: zlib</code>).</li>
 </ul>
 <p><code>compress(bytes) -&gt; bytes</code>; <code>decompress(bytes) -&gt; Result(bytes, ZErr)</code> and</p>
 <p><code>raw_decompress</code> likewise, where <code>ZErr</code> is <code>Corrupt</code> / <code>Truncated</code> / <code>Failed</code> /</p>
 <p><code>TooBig</code> (decompressed output exceeds its limit).</p>
-<p><strong>`Ok` with length 0 is a real empty payload</strong>, distinct from every failure. On a RAW</p>
+<p><strong><code>Ok</code> with length 0 is a real empty payload</strong>, distinct from every failure. On a RAW</p>
 <p>deflate stream <code>Truncated</code> also covers "not a deflate stream": there is no wrapper or</p>
 <p>checksum to tell those apart.</p>
-<p><strong>`compress` is byte-deterministic</strong> and callers may rely on it: for one zlib build</p>
+<p><strong><code>compress</code> is byte-deterministic</strong> and callers may rely on it: for one zlib build</p>
 <p>it is a pure function of its input — same bytes in, byte-identical bytes out. The</p>
 <p>compressed *length* is a zlib tuning detail — it is not stable across zlib versions.</p>
 <p><code>raw_compress(data)</code> is the same deflate without the gzip framing, for callers that</p>
 <p>supply their own container. Each decompression is capped at 1 GiB (or the zlib <code>uInt</code></p>
 <p>limit when lower).</p>
 <ul>
-<li><strong>`image`</strong> — PNG decode/encode over <strong>libpng</strong> (<code>deps: libpng</code>): `decode(bytes) -&gt;</li>
+<li><strong><code>image</code></strong> — PNG decode/encode over <strong>libpng</strong> (<code>deps: libpng</code>): `decode(bytes) -&gt;</li>
 </ul>
 <p>Result(Image{width, height, pixels}, ImgErr)<code> (8-bit RGBA) and </code>encode(Image) -&gt;</p>
 <p>Result(bytes, ImgErr)<code>. </code>ImgErr<code> names which failure: </code>Empty<code>, </code>NotPng<code>, </code>Corrupt` on the</p>
@@ -699,7 +699,7 @@ fn main():
 <p>a libpng failure. PNG has no 0-dimension image, so an <code>Ok</code> always carries <code>width &gt;= 1</code>.</p>
 <p>JPEG is a demand-gated follow-up.</p>
 <ul>
-<li><strong>`tls`</strong> — a TLS 1.2/1.3 client over <strong>OpenSSL</strong> (<code>deps: openssl</code>). Secure by default:</li>
+<li><strong><code>tls</code></strong> — a TLS 1.2/1.3 client over <strong>OpenSSL</strong> (<code>deps: openssl</code>). Secure by default:</li>
 </ul>
 <p><code>connect(host, port)</code> verifies the certificate against the system CA store, checks the</p>
 <p>hostname, and sends SNI; failure returns a null handle (never a silent insecure</p>

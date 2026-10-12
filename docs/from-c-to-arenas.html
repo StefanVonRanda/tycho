@@ -99,11 +99,11 @@ println(str(a[0]) + " " + str(b[0]))    # 1 9 -- writing b left a alone
 <p><code>return len(msg)</code>.</p>
 <p>Two things worth noticing:</p>
 <ul>
-<li><strong>`greet` creates no arena at all.</strong> A function whose result escapes does not pay for a</li>
+<li><strong><code>greet</code> creates no arena at all.</strong> A function whose result escapes does not pay for a</li>
 </ul>
 <p>scope it would immediately hand upward. The cheap case is the common one.</p>
 <ul>
-<li><strong>`arena_free` is one call, not one per allocation.</strong> It reclaims everything the scope</li>
+<li><strong><code>arena_free</code> is one call, not one per allocation.</strong> It reclaims everything the scope</li>
 </ul>
 <p>took, whether that was one string or ten thousand, which is why the cost does not scale</p>
 <p>with how many objects you made.</p>

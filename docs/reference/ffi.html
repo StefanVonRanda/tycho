@@ -41,7 +41,7 @@ extern fn crc32(data: bytes, len: u32) -&gt; u32        # sized ints: real uint3
 <p>corresponding <code>to_</code> conversion). Signed returns keep their signed type, and</p>
 <p>unsigned returns keep theirs; the compiler does not widen them to <code>int</code>.</p>
 <ul>
-<li><strong>`string`</strong> — passed as a C <code>char*</code>; a C-returned string is **copied into the</li>
+<li><strong><code>string</code></strong> — passed as a C <code>char*</code>; a C-returned string is **copied into the</li>
 </ul>
 <p>caller's arena** at the call site, so Tycho never holds a pointer into C-owned</p>
 <p>memory. A nullable C return is declared <code>-&gt; Option(string)</code>. **The pointer</p>
@@ -52,7 +52,7 @@ extern fn crc32(data: bytes, len: u32) -&gt; u32        # sized ints: real uint3
 <p>buffer that outlives the call instead, or hold the pointer in a shim and free</p>
 <p>it on the next call.</p>
 <ul>
-<li><strong>`bytes`</strong> — a binary buffer (interior NULs intact), crossing as a `(pointer,</li>
+<li><strong><code>bytes</code></strong> — a binary buffer (interior NULs intact), crossing as a `(pointer,</li>
 </ul>
 <p>length)<code> pair. A </code>bytes` return uses an out-param shim: the C function</p>
 <p>allocates the buffer and Tycho copies it into the caller's arena, then frees</p>
@@ -60,17 +60,17 @@ extern fn crc32(data: bytes, len: u32) -&gt; u32        # sized ints: real uint3
 <p><code>bytes</code> return never leaks: the two directions have opposite ownership, so do</p>
 <p>not reason about them together.</p>
 <ul>
-<li><strong>`[int]` and `[float]`</strong> — a scalar array crosses as a <code>(pointer, length)</code></li>
+<li><strong><code>[int]</code> and <code>[float]</code></strong> — a scalar array crosses as a <code>(pointer, length)</code></li>
 </ul>
 <p>pair (like <code>bytes</code>); an array of any other element type does not.</p>
 <ul>
-<li><strong>`ptr`</strong> — an opaque foreign handle, a <code>void*</code> Tycho never dereferences. The</li>
+<li><strong><code>ptr</code></strong> — an opaque foreign handle, a <code>void*</code> Tycho never dereferences. The</li>
 </ul>
 <p><code>null</code> literal and <code>is_null(p)</code> work on it. <code>is_null</code> accepts a <code>handle</code> too,</p>
 <p>which is how to check whether an opener succeeded; the scope-exit free is</p>
 <p>null-guarded, so a failed open is safe to let fall out of scope.</p>
 <ul>
-<li><strong>typed `handle`s</strong> — a <code>handle Name:</code> header over an indented <code>free: c_fn</code></li>
+<li><strong>typed <code>handle</code>s</strong> — a <code>handle Name:</code> header over an indented <code>free: c_fn</code></li>
 </ul>
 <p>line declares a <code>void*</code> whose C destructor runs automatically at scope exit,</p>
 <p>so a foreign resource cannot leak or be used after close. A handle has exactly</p>
@@ -87,7 +87,7 @@ extern fn crc32(data: bytes, len: u32) -&gt; u32        # sized ints: real uint3
 <p>that block, so a use after it compiles: it passes null to C if the branch ran,</p>
 <p>a logic bug, not memory corruption.</p>
 <ul>
-<li><strong>`inout` scalar out-parameters</strong> (a numeric scalar or <code>ptr</code>) — cross too; a</li>
+<li><strong><code>inout</code> scalar out-parameters</strong> (a numeric scalar or <code>ptr</code>) — cross too; a</li>
 </ul>
 <p><code>string</code>, <code>bytes</code>, handle, or composite <code>inout</code> out-parameter is <strong>rejected</strong>.</p>
 <p>Maps, structs, and non-scalar arrays are <strong>rejected</strong> at the boundary — fail closed. (The</p>
@@ -101,10 +101,10 @@ extern fn crc32(data: bytes, len: u32) -&gt; u32        # sized ints: real uint3
 <p>Ergonomics live on the <code>tychoc</code> command line: <code>--link</code> (a raw linker flag),</p>
 <p><code>--pkg</code> (pkg-config), and <code>--shim</code> (compile a companion <code>.c</code> alongside). For a</p>
 <p>complete worked binding over a real library, in-memory SQLite is at</p>
-<p><a href="../../examples/sqlite">`examples/sqlite/`</a> — note that it drives the C API</p>
+<p><a href="../../examples/sqlite"><code>examples/sqlite/</code></a> — note that it drives the C API</p>
 <p>through raw <code>ptr</code>, not through a <code>handle</code>. For a worked <strong>handle</strong> paired with</p>
-<p><code>--shim</code>, see <a href="../../tools/tycho-du">`tools/tycho-du/`</a>;</p>
-<p><a href="../../tools/tycho-fh">`tools/tycho-fh/`</a> declares one over a hand-built static</p>
+<p><code>--shim</code>, see <a href="../../tools/tycho-du"><code>tools/tycho-du/</code></a>;</p>
+<p><a href="../../tools/tycho-fh"><code>tools/tycho-fh/</code></a> declares one over a hand-built static</p>
 <p>library.</p>
 <hr/>
 <h2 id="working-with-it">Working with it</h2>
@@ -162,11 +162,11 @@ extern fn sx_col_text(stmt: ptr, i: int) -&gt; string       # C string in, Tycho
 <tr><td><code>ptr</code></td><td><code>void *</code></td><td>in/out</td><td>opaque handle, never dereferenced</td></tr>
 <tr><td>(none)</td><td><code>void</code></td><td>out only</td><td>return-less extern</td></tr>
 </table>
-<p><strong>The integer column is `int64_t`, not `long`.</strong> Writing <code>long</code> in a C prototype</p>
+<p><strong>The integer column is <code>int64_t</code>, not <code>long</code>.</strong> Writing <code>long</code> in a C prototype</p>
 <p>is right only where <code>long</code> is 64 bits and silently truncates where it is 32.</p>
 <p>Nothing catches the mismatch: the emitted prototype lives in a different</p>
 <p>translation unit from the shim, so C never compares the two.</p>
-<p><strong>Shims spell the integer `int64_t`.</strong> The generated program declares each</p>
+<p><strong>Shims spell the integer <code>int64_t</code>.</strong> The generated program declares each</p>
 <p><code>extern fn</code> for the caller; the shim only defines a function of the same shape.</p>
 <p><code>#include &lt;stdint.h&gt;</code> and write <code>int64_t</code> — no Tycho-specific typedef, guard, or</p>
 <p>header is required.</p>
@@ -192,13 +192,13 @@ extern fn sx_col_text(stmt: ptr, i: int) -&gt; string       # C string in, Tycho
 <p>**Convention: the C function <code>malloc</code>s <code>*out</code> and sets <code>*outlen</code>; Tycho copies</p>
 <p>the buffer into the caller's arena and then <code>free</code>s <code>*out</code>.** A <code>NULL</code> <code>*out</code></p>
 <p>becomes empty <code>bytes</code>.</p>
-<p><strong>Nullable string return (`-&gt; Option(string)`).</strong> An <code>extern fn … -&gt; string</code></p>
+<p><strong>Nullable string return (<code>-&gt; Option(string)</code>).</strong> An <code>extern fn … -&gt; string</code></p>
 <p>maps a C <code>NULL</code> return to <code>""</code> (see below). When the difference between "absent"</p>
 <p>and "empty" matters, declare the return as <code>Option(string)</code> instead: the C symbol</p>
 <p>still returns <code>char*</code>, but a <code>NULL</code> surfaces as <code>None</code> and any other pointer as</p>
 <p><code>Some(&lt;arena-copied&gt;)</code>. (Only <code>Option(string)</code> is supported at the boundary, not</p>
 <p>arbitrary <code>Option(T)</code>.)</p>
-<p><strong>Out-parameter constructors (`inout` params).</strong> Many C APIs return a status and</p>
+<p><strong>Out-parameter constructors (<code>inout</code> params).</strong> Many C APIs return a status and</p>
 <p>write their real result through a pointer out-parameter — `int sqlite3_open(const</p>
 <p>char *path, sqlite3 **db)<code>. Declare the C </code>int<code> status as </code>i32` and the</p>
 <p>out-parameter <code>inout</code>; the transpiler passes</p>
@@ -215,16 +215,16 @@ println(str(rc))
 <p>a <code>inout string</code> would hand Tycho a raw pointer with no length header, and</p>
 <p><code>bytes</code>/handles/composites have no trivial pointer-to-self form, so all are</p>
 <p>rejected (use <code>--shim</code>).</p>
-<p><strong>Boundary helpers: `to_ptr` and `to_i32`.</strong> Two builtins cover the rough edges of</p>
+<p><strong>Boundary helpers: <code>to_ptr</code> and <code>to_i32</code>.</strong> Two builtins cover the rough edges of</p>
 <p>crossing C's scalar conventions, both in-language (no shim):</p>
 <ul>
-<li><strong>`to_ptr(n: int) -&gt; ptr`</strong> turns an integer into an opaque pointer, for C APIs</li>
+<li><strong><code>to_ptr(n: int) -&gt; ptr</code></strong> turns an integer into an opaque pointer, for C APIs</li>
 </ul>
 <p>that use a sentinel pointer constant — e.g. SQLite's <code>SQLITE_TRANSIENT</code>, which</p>
 <p>is <code>(void*)-1</code>: <code>sqlite3_bind_text(st, i, s, -1, to_ptr(-1))</code>. Tycho never</p>
 <p>dereferences the pointer, so this is sound.</p>
 <ul>
-<li><strong>`to_i32(n: int) -&gt; i32`</strong> explicitly narrows a Tycho <code>int</code> to signed 32 bits.</li>
+<li><strong><code>to_i32(n: int) -&gt; i32</code></strong> explicitly narrows a Tycho <code>int</code> to signed 32 bits.</li>
 </ul>
 <p>Declare a C <code>int</code> return as <code>-&gt; i32</code> so the emitted prototype matches the C</p>
 <p>ABI; convert it to Tycho's 64-bit <code>int</code> with <code>to_int</code> if needed. Likewise, use</p>
@@ -275,8 +275,8 @@ fn run():
 <p>The rule behind every item here: foreign memory never enters Tycho's owned</p>
 <p>world.</p>
 <ul>
-<li><strong>`string` argument (Tycho → C):</strong> the <code>char *</code> is passed through unchanged.</li>
-<li><strong>`string` return (C → Tycho):</strong> the C-owned bytes are **copied into the</li>
+<li><strong><code>string</code> argument (Tycho → C):</strong> the <code>char *</code> is passed through unchanged.</li>
+<li><strong><code>string</code> return (C → Tycho):</strong> the C-owned bytes are **copied into the</li>
 </ul>
 <p>caller's arena** at the call site, so Tycho never holds a pointer into memory</p>
 <p>C controls. A <code>NULL</code> return becomes <code>""</code> rather than a crash. When the</p>
@@ -284,7 +284,7 @@ fn run():
 <p>may be skipped with byte-identical output; anything that could retain it keeps</p>
 <p>the copy.</p>
 <ul>
-<li><strong>`ptr`:</strong> an opaque <code>void *</code>. Tycho supports only passing it back to C,</li>
+<li><strong><code>ptr</code>:</strong> an opaque <code>void *</code>. Tycho supports only passing it back to C,</li>
 </ul>
 <p>comparing it (<code>==</code>/<code>!=</code> against another <code>ptr</code> or the <code>null</code> literal), and</p>
 <p><code>is_null(p)</code>. No dereference, no arithmetic — Tycho shuttles the handle and</p>
@@ -307,7 +307,7 @@ fn run():
 <p>the FFI**: a C function touching shared state is invisible to the transpiler,</p>
 <p>so two tasks racing on it race exactly as they would in C. Isolate such state</p>
 <p>per thread or serialize the calls. The full analysis is in</p>
-<p><a href="../rfc/ffi-threading-design-review.html">`rfc/ffi-threading-design-review.md`</a>, and</p>
+<p><a href="../rfc/ffi-threading-design-review.html"><code>rfc/ffi-threading-design-review.md</code></a>, and</p>
 <p>the concurrency guarantee's scope is in</p>
 <p><a href="../reference/concurrency.html#the-safety-envelope">the concurrency reference</a>.</p>
 <p>Handles are affine (see <a href="#typed-handles-safe-by-default-resources">Typed handles</a>):</p>
@@ -335,16 +335,16 @@ fn run():
 <p><a href="#type-mapping">nullable string return</a>.</p>
 <h3 id="capabilities">Capabilities</h3>
 <p>What the FFI handles today, in rough order of how much of C it unlocks:</p>
-<p>1. <strong>Scalars + `string`</strong> — <code>int</code>/<code>char</code>/<code>float</code>/<code>bool</code>/<code>string</code>/void. Covers</p>
+<p>1. <strong>Scalars + <code>string</code></strong> — <code>int</code>/<code>char</code>/<code>float</code>/<code>bool</code>/<code>string</code>/void. Covers</p>
 <p>libm, most of libc, and any C library with a scalar/string ABI.</p>
-<p>2. <strong>Opaque `ptr`</strong> — <code>void *</code> plus the <code>null</code> literal and <code>is_null</code>. Covers</p>
+<p>2. <strong>Opaque <code>ptr</code></strong> — <code>void *</code> plus the <code>null</code> literal and <code>is_null</code>. Covers</p>
 <p>handle-based libraries (SQLite, SDL, curl).</p>
-<p>3. <strong>Linking ergonomics (`tychoc`)</strong> — <code>-L</code>/<code>-I</code>/<code>--link</code>/<code>--pkg</code>/<code>--shim</code> on the</p>
+<p>3. <strong>Linking ergonomics (<code>tychoc</code>)</strong> — <code>-L</code>/<code>-I</code>/<code>--link</code>/<code>--pkg</code>/<code>--shim</code> on the</p>
 <p><code>tychoc</code> command line.</p>
-<p>A worked scalar/string binding is in <a href="../../examples/sqlite/">`examples/sqlite/`</a>:</p>
+<p>A worked scalar/string binding is in <a href="../../examples/sqlite/"><code>examples/sqlite/</code></a>:</p>
 <p>opaque pointers, SQL string arguments, and <code>--shim</code> for the out-parameter API.</p>
-<p>The worked <code>handle</code> is <a href="../../tools/tycho-du">`tools/tycho-du/`</a>, built with</p>
-<p><code>--shim</code>; <a href="../../tools/tycho-fh">`tools/tycho-fh/`</a> builds one over a static</p>
+<p>The worked <code>handle</code> is <a href="../../tools/tycho-du"><code>tools/tycho-du/</code></a>, built with</p>
+<p><code>--shim</code>; <a href="../../tools/tycho-fh"><code>tools/tycho-fh/</code></a> builds one over a static</p>
 <p>library instead.</p>
 <h3 id="limitations-by-design">Limitations (by design)</h3>
 <p>These limits are deliberate:</p>
@@ -367,7 +367,7 @@ fn run():
 </ul>
 <p>as an <code>extern fn</code>.</p>
 <ul>
-<li><strong>`ptr` is opaque.</strong> No dereference and no pointer arithmetic on the Tycho side</li>
+<li><strong><code>ptr</code> is opaque.</strong> No dereference and no pointer arithmetic on the Tycho side</li>
 </ul>
 <p>— Tycho only shuttles handles back to C.</p>
 <p>These keep the boundary narrow on purpose: anything richer would either break</p>

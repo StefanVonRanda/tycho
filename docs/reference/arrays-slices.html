@@ -225,7 +225,7 @@ fn main():
 <p>vector compare and blend per bound: <code>math.clamp(v, lo, hi)</code> with three <code>vector[4]f32</code></p>
 <p>clamps all four lanes at once. All arguments are the same vector type; a scalar bound</p>
 <p>is refused, so write <code>lo</code> as a vector.</p>
-<p>Worked example: <a href="../../tools/tycho-grade/main.ty">`tools/tycho-grade/`</a> grades a TGA with one</p>
+<p>Worked example: <a href="../../tools/tycho-grade/main.ty"><code>tools/tycho-grade/</code></a> grades a TGA with one</p>
 <p><code>vector[4]f32</code> multiply-add and one <code>math.clamp</code> per pixel, and swaps BGRA↔RGBA with</p>
 <p><code>px.(r, b) = px.(b, r)</code>.</p>
 <p>The exact rules are in <a href="../spec/03-types.html#5311-vectornt">spec §5.3.11</a>.</p>
@@ -268,7 +268,7 @@ _mid := xs[1:4]                    # stored: a deep copy, owning its own buffer
 <p>of <code>xs</code> and a <code>inout</code> of <code>xs</code> to the same call, since the <code>inout</code> could reallocate the viewed buffer.</p>
 <p>A string slice <code>s[a:b]</code> works too — with the same <code>s[a:]</code> / <code>s[:b]</code> / <code>s[:]</code> forms — but unlike</p>
 <p>an array view it <strong>always copies</strong> into a fresh substring (there is no zero-copy string view);</p>
-<p><a href="builtins.html">`substr(s, a, b)`</a> is the equivalent function form.</p>
+<p><a href="builtins.html"><code>substr(s, a, b)</code></a> is the equivalent function form.</p>
 <hr/>
 <p>*Design background:* why deep-copied aggregates stay sound with no borrow checker is in <a href="../internals/design-aggregates.html">the aggregates design note</a>.</p>
 <footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>

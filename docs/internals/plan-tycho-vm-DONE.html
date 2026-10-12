@@ -8,24 +8,24 @@
 <body>
 <nav class="crumb"><a href="../index.html">docs</a> / internals/plan-tycho-vm-DONE.md</nav>
 <h1 id="what-tycho-vm-said-the-language-needs">What <code>tycho-vm</code> said the language needs</h1>
-<p><strong>Status: DONE. All 5 phases complete 2026-08-03. Program: bytecode VM (`tools/tycho-vm/`, commits 1bb0668, 89909d2, 4782ff8) — the first program here to need a hot dispatch loop and fixed-capacity memory. Outcome: scalar `match` shipped, `&amp;` restricted to `inout` arguments, `inout` docs corrected.</strong></p>
+<p><strong>Status: DONE. All 5 phases complete 2026-08-03. Program: bytecode VM (<code>tools/tycho-vm/</code>, commits 1bb0668, 89909d2, 4782ff8) — the first program here to need a hot dispatch loop and fixed-capacity memory. Outcome: scalar <code>match</code> shipped, <code>&amp;</code> restricted to <code>inout</code> arguments, <code>inout</code> docs corrected.</strong></p>
 <p>Previous plan: the four-of-seven plan (archived, then pruned 2026-08-03).</p>
 <p><strong>Five findings came out of it; two became phases.</strong> Rule: *does anything that is not <code>tycho-vm</code> need this?* A finding becomes a phase only with a second caller.</p>
 <p>Recorded, not phases:</p>
 <ul>
-<li><strong>`bounded[N]T` has no `push`/`pop`/`len`</strong>, so it cannot model a stack.</li>
+<li><strong><code>bounded[N]T</code> has no <code>push</code>/<code>pop</code>/<code>len</code></strong>, so it cannot model a stack.</li>
 </ul>
 <p><code>grep -rl 'bounded\[' --include='*.ty' corelib/ examples/ tools/ server/</code></p>
-<p>returns <strong>one file, `tools/tycho-vm/main.ty`</strong> — the other 51 hits are all</p>
+<p>returns <strong>one file, <code>tools/tycho-vm/main.ty</code></strong> — the other 51 hits are all</p>
 <p>under <code>tests/</code>. One customer. Returns if a second caller appears.</p>
 <ul>
-<li><strong>A `[N]T` table cannot be a top-level `const`</strong> (`expected '=' after the</li>
+<li><strong>A <code>[N]T</code> table cannot be a top-level <code>const</code></strong> (`expected '=' after the</li>
 </ul>
 <p>constant name`; §12.2 wants the RHS to fold to one literal). The only</p>
 <p>fixed-array table returned by a function in the tree is</p>
 <p><code>tools/tycho-vm/main.ty@optable</code>. Same reasoning.</p>
 <ul>
-<li><strong>`defer` does not exist</strong> (absent from <code>docs/spec/appendix-b-keywords.md</code>;</li>
+<li><strong><code>defer</code> does not exist</strong> (absent from <code>docs/spec/appendix-b-keywords.md</code>;</li>
 </ul>
 <p><code>defer f()</code> is rejected as a bare expression statement). Memory is arena-freed</p>
 <p>at scope exit, <code>core:io</code> is path-based with no handles, and the only manual</p>
@@ -51,7 +51,7 @@
 <p>scalar <code>match</code> is a phase and the two constructs above are not.</p>
 <h2 id="phases">Phases</h2>
 <ul>
-<li>[x] <strong>Phase 1 — DESIGN: `match` on scalars</strong></li>
+<li>[x] <strong>Phase 1 — DESIGN: <code>match</code> on scalars</strong></li>
 <li>Deliverable was a written design at <code>docs/internals/design-scalar-match.md</code>,</li>
 </ul>
 <p><strong>not code</strong>.</p>
@@ -74,7 +74,7 @@
 </ul>
 <p><code>docs/internals/design-scalar-match.md</code>; both doc gates green.</p>
 <ul>
-<li>[x] <strong>Phase 2 — IMPLEMENT scalar `match`</strong></li>
+<li>[x] <strong>Phase 2 — IMPLEMENT scalar <code>match</code></strong></li>
 <li>Scope: <code>src/tychoc.c</code>, <code>docs/spec/</code> (§4.3.2 statements, §5.5 or wherever</li>
 </ul>
 <p><code>match</code> is specified, Appendix A grammar), and fixtures under <code>tests/</code>.</p>
@@ -126,7 +126,7 @@
 <p>real findings became the phases below: <code>&amp;</code> outside argument position</p>
 <p>compiles to invalid C, and the <code>inout</code> docs read as implementation.</p>
 <ul>
-<li>[x] <strong>Phase 4 — REJECT `&amp;` outside an inout argument</strong></li>
+<li>[x] <strong>Phase 4 — REJECT <code>&amp;</code> outside an inout argument</strong></li>
 <li>Found by phase 3's design. <code>&amp;</code> parsed as unary <code>E_ADDR</code> everywhere</li>
 </ul>
 <p>(<code>src/tychoc.c:3454-3457</code>) and the resolver only validated it at call</p>
@@ -154,7 +154,7 @@
 <p>generic inout calls all still compile. Reject fixtures</p>
 <p><code>tests/reject/addr_{binding,expr}.ty</code>. <code>make test</code> 582/0.</p>
 <ul>
-<li>[x] <strong>Phase 5 — CORRECT the stale `inout` documentation</strong></li>
+<li>[x] <strong>Phase 5 — CORRECT the stale <code>inout</code> documentation</strong></li>
 <li>Found by phase 3's design. The spec and reference said <code>inout</code> is</li>
 </ul>
 <p>copy-in/copy-out; that is the semantic contract, but it read as</p>
@@ -186,11 +186,11 @@
 <p>(<code>tools/tycho-ar/main.ty:140-162</code>).</p>
 <ul>
 <li><strong>JSON UTF-8 validation</strong> — raw UTF-8 in strings is not validated.</li>
-<li><strong>`strings.parse_int` failing open</strong> — <code>0</code> is both "zero" and "garbage";</li>
+<li><strong><code>strings.parse_int</code> failing open</strong> — <code>0</code> is both "zero" and "garbage";</li>
 </ul>
 <p>the corelib's own house style is a <code>Result</code> for exactly this class.</p>
 <ul>
-<li><strong>`io.write_bytes`</strong> — the read side has <code>read_bytes</code>/<code>read_at</code>; the write</li>
+<li><strong><code>io.write_bytes</code></strong> — the read side has <code>read_bytes</code>/<code>read_at</code>; the write</li>
 </ul>
 <p>side stops at strings.</p>
 <p>Filed, not phases — the demand test fails, the customer would have to appear</p>

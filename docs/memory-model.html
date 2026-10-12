@@ -82,7 +82,7 @@ long h_sc(Arena *_parent, long h_a, long h_b) {
 <p>dynamic last use — <code>b</code> takes over <code>a</code>'s buffer instead, a move rather than a</p>
 <p>copy. Output-invisible; it reduces allocator churn.</p>
 <ul>
-<li><strong>`sink` — the move you ask for.</strong> Where move-on-last-use is an inference the</li>
+<li><strong><code>sink</code> — the move you ask for.</strong> Where move-on-last-use is an inference the</li>
 </ul>
 <p>compiler makes silently, a <code>sink</code> parameter states it in the signature: the</p>
 <p>callee <strong>owns and consumes</strong> the argument, and the caller may not use that</p>

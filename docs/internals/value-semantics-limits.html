@@ -90,7 +90,7 @@ fn insert(t: inout Trie, s: string):
 <p>semantics just make it the default rather than the optimization you remember to apply. The cost</p>
 <p>is ergonomic: you index a pool instead of following references, and you cannot delete a single</p>
 <p>node without compacting — the packaged answer to that is <code>core:pool</code>, below.</p>
-<p><strong>Stale-index protection — generational indices (`core:pool`).</strong> The raw pool's one hazard</p>
+<p><strong>Stale-index protection — generational indices (<code>core:pool</code>).</strong> The raw pool's one hazard</p>
 <p>is deletion: removing a node, reusing its slot, and later dereferencing the old index</p>
 <p>silently aliases the new occupant (the ABA problem). The fix — the same design standardized</p>
 <p>across the Rust ecosystem (<code>slotmap</code>, <code>generational-arena</code>) and every ECS entity store — is</p>
@@ -239,7 +239,7 @@ fn insert(t: inout Trie, s: string):
 <p>state) → <strong>mutate it in place; do not rebuild it per operation</strong> (§2). The arena usually</p>
 <p>recycles the old bytes; what it cannot give back is the full copy you paid to make them.</p>
 <ul>
-<li>Known-size or hot maps of large values → <strong>`reserve`, or store handles not structs</strong> (§3).</li>
+<li>Known-size or hot maps of large values → <strong><code>reserve</code>, or store handles not structs</strong> (§3).</li>
 </ul>
 <p>None of these makes Tycho a systems allocator's equal on its worst cases. They keep you on</p>
 <p>the value-semantics path — no <code>malloc</code>/<code>free</code>, no UAF — for the workloads where that path is</p>
@@ -253,7 +253,7 @@ fn insert(t: inout Trie, s: string):
 <p>deep-copy thread boundary (a stored pointer can't survive a call's copy-in) and the no-escape</p>
 <p>arena model — so adding it would dismantle the value-semantics guarantees, not extend them. The</p>
 <p>index-pool isn't the fallback after references didn't make it; within this model it *is* the way</p>
-<p>to store a graph, and the copy-cost side of the same question is what <a href="../reference/basics.html">`sink`</a></p>
+<p>to store a graph, and the copy-cost side of the same question is what <a href="../reference/basics.html"><code>sink</code></a></p>
 <p>answers for call arguments. The only reference-shaped feature that fits — user-defined</p>
 <p>projections, a generalization of the shipped <code>&amp;m[k]</code> — is an ergonomic convenience over the</p>
 <p>index idiom, not a different way to store the data.</p>

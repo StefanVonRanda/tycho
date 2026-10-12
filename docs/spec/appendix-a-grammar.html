@@ -198,7 +198,7 @@ CallTypeArgs ::= "$" "(" Type ( "," Type )* ")"  /* at least one; `f$()` is an e
 Lambda  ::= "fn" "(" LambdaParams? ")" ( "-&gt;" Type )? ":" Expr
 LambdaParams ::= IDENT ( ":" Type )? ( "," IDENT ( ":" Type )? )*
 </code></pre>
-<p><strong>Note — `RawPiece` ([§3.9.4](01-lexical.md#394-string-literals)).</strong> The</p>
+<p><strong>Note — <code>RawPiece</code> (<a href="01-lexical.html#394-string-literals">§3.9.4</a>).</strong> The</p>
 <p><code>RawElem</code> production above says which *bytes* a backtick-delimited piece may</p>
 <p>contain; the rule it cannot express is that <strong>no escape is interpreted</strong> inside</p>
 <p>one. A backslash is a backslash, so <code></code> <code>a\nb</code> <code></code> is four characters, and an</p>
@@ -213,23 +213,23 @@ LambdaParams ::= IDENT ( ":" Type )? ( "," IDENT ( ":" Type )? )*
 <p>feature chapters rather than by a <code>::=</code> production, and so are not repeated in the</p>
 <p>listing:</p>
 <ul>
-<li><strong>`Call`</strong> — a <code>Postfix</code> (§4.4) whose outermost operator is a call <code>( … )</code>;</li>
+<li><strong><code>Call</code></strong> — a <code>Postfix</code> (§4.4) whose outermost operator is a call <code>( … )</code>;</li>
 </ul>
 <p>used by <code>ExprStmt</code> and after <code>spawn</code> (<a href="02-grammar.html#44-expressions">§4.4</a>).</p>
 <ul>
-<li><strong>`ConstExpr`</strong> — an expression that folds to a single literal at compile time</li>
+<li><strong><code>ConstExpr</code></strong> — an expression that folds to a single literal at compile time</li>
 </ul>
 <p>(integer arithmetic, bitwise, unary, and backward references to earlier</p>
 <p>top-level consts), defined in</p>
 <p><a href="02-grammar.html#41-program-and-top-level-declarations">§4.1</a> and</p>
 <p><a href="08-declarations.html">§12</a>.</p>
 <ul>
-<li><strong>`ArrayOrMapLit`</strong> — the <code>[ … ]</code> array, map, and <code>soa</code> literal forms, defined</li>
+<li><strong><code>ArrayOrMapLit</code></strong> — the <code>[ … ]</code> array, map, and <code>soa</code> literal forms, defined</li>
 </ul>
 <p>with their element/key typing rules in <a href="12-aggregates.html">§16</a> (arrays) and</p>
 <p><a href="12-aggregates.html#18-maps-and-subscripts">§18</a> (maps).</p>
 <ul>
-<li><strong>`ExternParamList`</strong> — the parameter list of an <code>extern fn</code>, defined with the</li>
+<li><strong><code>ExternParamList</code></strong> — the parameter list of an <code>extern fn</code>, defined with the</li>
 </ul>
 <p>FFI-permitted parameter types in <a href="14-ffi.html">§24</a>.</p>
 <h2 id="a5-the-identical-to-source-invariant">A.5 The identical-to-source invariant</h2>

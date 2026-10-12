@@ -27,7 +27,7 @@
 </blockquote>
 <p>Keep shared C state per thread or serialize the calls, and assume nothing about</p>
 <p>the C side's thread-safety. The analysis behind this rule is in</p>
-<p><a href="../rfc/ffi-threading-design-review.html">`rfc/ffi-threading-design-review.md`</a>.</p>
+<p><a href="../rfc/ffi-threading-design-review.html"><code>rfc/ffi-threading-design-review.md</code></a>.</p>
 <h2 id="spawn-and-wait"><code>spawn</code> and <code>wait</code></h2>
 <p>Rule: <code>spawn f(args)</code> starts the call as a task and returns a <code>Task(T)</code> handle.</p>
 <p>The argument list is the capture list — explicit and by value:</p>
@@ -168,7 +168,7 @@ parallel for i in 0..&lt;400000000:      # K = ncpu chunk tasks; TYCHO_THREADS o
 <p><strong>Naming the width.</strong> <code>parallel(W) for …</code> fixes the chunk count for one loop:</p>
 <p><code>parallel(4) for i in 0..&lt;n:</code> runs exactly four. The literal is checked at</p>
 <p>compile time and must be <code>1..64</code>; a computed width aborts at run time rather</p>
-<p>than silently clamping. An explicit width <strong>beats `TYCHO_THREADS`</strong>: it pins the</p>
+<p>than silently clamping. An explicit width <strong>beats <code>TYCHO_THREADS</code></strong>: it pins the</p>
 <p>one loop whose shape is known (a short body where <code>ncpu()</code> chunks would cost</p>
 <p>more in copy-in than they save) without changing how the rest of the program</p>
 <p>scales. Otherwise the default stands.</p>

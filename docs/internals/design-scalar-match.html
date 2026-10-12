@@ -35,7 +35,7 @@
 <p>and c &lt;= 57)<code> — the range is **inclusive** (</code>&lt;=<code>, not </code>&lt;`).</p>
 <p>Every ladder subject is <code>int</code>: string indexing returns the byte **value as an</p>
 <p>int** (<code>src/tychoc.c:7128@T_BYTES</code>), so the char-position ladders all compare ints.</p>
-<p><strong>No ladder in the tree dispatches on `string` or `bytes`.</strong></p>
+<p><strong>No ladder in the tree dispatches on <code>string</code> or <code>bytes</code>.</strong></p>
 <h2 id="how-match-works-today">How <code>match</code> works today</h2>
 <ul>
 <li><strong>Parse</strong> — <code>parse_match</code> (<code>src/tychoc.c@parse_match</code>) requires an IDENT per</li>
@@ -61,15 +61,15 @@
 <h2 id="decisions">Decisions</h2>
 <h3 id="d1--which-types-int-now-char-and-bool-fall-out-free-stringbytes-deferred-float-refused">D1 — Which types. <code>int</code> now; <code>char</code> and <code>bool</code> fall out free; <code>string</code>/<code>bytes</code> deferred; <code>float</code> refused</h3>
 <ul>
-<li><strong>`int`</strong> — the only type with customers (the table above). Primary.</li>
-<li><strong>`char`</strong> — the same machine type as <code>int</code> (both emit as <code>tycho_int</code>,</li>
+<li><strong><code>int</code></strong> — the only type with customers (the table above). Primary.</li>
+<li><strong><code>char</code></strong> — the same machine type as <code>int</code> (both emit as <code>tycho_int</code>,</li>
 </ul>
 <p><code>src/tychoc.c:2081@T_CHAR</code>). Arm literals are <code>'a'</code>-spelled; the byte-value ladders</p>
 <p>use <code>int</code> and stay <code>int</code>. No customer for the distinct <code>char</code> type today,</p>
 <p>but the cost is zero once the int machinery exists.</p>
 <ul>
-<li><strong>`bool`</strong> — a two-value domain, so exhaustiveness is provable (D2).</li>
-<li><strong>`string` / `bytes`</strong> — <strong>deferred, with the measurement as the reason.</strong></li>
+<li><strong><code>bool</code></strong> — a two-value domain, so exhaustiveness is provable (D2).</li>
+<li><strong><code>string</code> / <code>bytes</code></strong> — <strong>deferred, with the measurement as the reason.</strong></li>
 </ul>
 <p>Zero ladders in the tree dispatch on either (counted above). A string arm</p>
 <p>needs string-comparison codegen (a string is a length-headered <code>char *</code>,</p>
@@ -78,7 +78,7 @@
 <p>if a second caller appears. A <code>match</code> on a <code>string</code>/<code>bytes</code> subject is a</p>
 <p><strong>compile error at resolve</strong>, with the reason in the message.</p>
 <ul>
-<li><strong>`float`</strong> — <strong>refused.</strong> Equality on floats is the classic trap (arms on</li>
+<li><strong><code>float</code></strong> — <strong>refused.</strong> Equality on floats is the classic trap (arms on</li>
 </ul>
 <p>a continuous domain invite NaN and mid-computation surprises), no customer</p>
 <p>exists, and <code>if</code> with comparisons is the form to use. The refusal is</p>
@@ -181,7 +181,7 @@
 <h2 id="what-phase-2-touches">What Phase 2 touches</h2>
 <ul>
 <li><strong>Lexer</strong> — the <code>..</code> token and the dot-not-followed-by-digit rule (D5).</li>
-<li><strong>`parse_match`</strong> (<code>src/tychoc.c@parse_match</code>) — the arm grammar accepts,</li>
+<li><strong><code>parse_match</code></strong> (<code>src/tychoc.c@parse_match</code>) — the arm grammar accepts,</li>
 </ul>
 <p>beside variant names and <code>_</code>: an int/char/bool literal, a set</p>
 <p>(<code>lit | lit | ...</code>), and a range (<code>lit..lit</code>). The diagnostic widens from</p>
@@ -225,7 +225,7 @@
 </ul>
 <p>scalar temp is assigned once before the switch.</p>
 <ul>
-<li><strong>Empty `_`-only matches</strong> — legal (<code>match c: _: ...</code>), a pass-through.</li>
+<li><strong>Empty <code>_</code>-only matches</strong> — legal (<code>match c: _: ...</code>), a pass-through.</li>
 <li><strong>A set containing a range</strong> (<code>1 | 3..5</code>) — legal; the pieces merge into</li>
 </ul>
 <p>one interval set for overlap checking.</p>
@@ -234,7 +234,7 @@
 </ul>
 <p>Option/Result nesting is unchanged.</p>
 <ul>
-<li><strong>No `default` keyword</strong> — <code>_</code> is the spelling; one spelling, one rule.</li>
+<li><strong>No <code>default</code> keyword</strong> — <code>_</code> is the spelling; one spelling, one rule.</li>
 </ul>
 <footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
 </body>

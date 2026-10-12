@@ -15,19 +15,19 @@
 <p>Every finding below was rebuilt on <code>main</code> before being written down, so the</p>
 <p>findings stand; the independence does not.</p>
 </blockquote>
-<p><strong>Verdict: two defects, both fixed in `669d0a50`. Probed 2026-08-19 on the v0.7.0 tarball against `extern fn`, `handle`, and `soa`. Outcome: `is_null` accepts handles, and `docs/reference/ffi.md` states the returned-pointer lifetime rule.</strong></p>
+<p><strong>Verdict: two defects, both fixed in <code>669d0a50</code>. Probed 2026-08-19 on the v0.7.0 tarball against <code>extern fn</code>, <code>handle</code>, and <code>soa</code>. Outcome: <code>is_null</code> accepts handles, and <code>docs/reference/ffi.md</code> states the returned-pointer lifetime rule.</strong></p>
 <p>The agent built a 245-line directory-size analyser with a 42-line C shim. The program was discarded; this record is the artifact. It is not in the tree and does not need to be.</p>
 <p>The probe aimed at ground no earlier record covered: <code>tools/tycho-diff</code> was algorithms, <code>tools/tycho-hash</code> concurrency, and an earlier markov run maps and structs. The FFI boundary, <code>handle</code>, and <code>soa</code> had never been driven from outside.</p>
 <h2 id="what-it-changed">What it changed</h2>
 <p>Two fixes, both in <code>669d0a50</code>:</p>
 <ul>
-<li><strong>`is_null` refused a handle.</strong> The agent wrote <code>if is_null(d)</code> after an</li>
+<li><strong><code>is_null</code> refused a handle.</strong> The agent wrote <code>if is_null(d)</code> after an</li>
 </ul>
 <p>opener, got <code>argument 1 of 'is_null' is DirStream, expected ptr</code>, and deleted</p>
 <p>the check — leaving no way to test whether the open succeeded, with the</p>
 <p>destructor then freeing NULL at scope exit. <code>is_null</code> accepts a handle now.</p>
 <ul>
-<li><strong>`docs/reference/ffi.md` did not state that a returned C string must still be live.</strong></li>
+<li><strong><code>docs/reference/ffi.md</code> did not state that a returned C string must still be live.</strong></li>
 </ul>
 <p>It said the string is "copied into the caller's arena", which reads as</p>
 <p>permission to return anything. The copy happens after the C function returns.</p>

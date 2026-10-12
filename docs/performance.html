@@ -12,13 +12,13 @@
 <p>golden. Cross-language *ratios* matter more than absolute times, which depend</p>
 <p>on the machine.</p>
 <h2 id="a-real-program-at-flat-memory">A real program at flat memory</h2>
-<p><a href="../examples/json.ty">`examples/json.ty`</a> is a 220-line recursive-descent JSON</p>
+<p><a href="../examples/json.ty"><code>examples/json.ty</code></a> is a 220-line recursive-descent JSON</p>
 <p>parser over a recursive <code>Json</code> sum type — real recursion, zero</p>
 <p><code>malloc</code>/<code>free</code>/refcount/GC in the source. Parsing <strong>5,000,000</strong> documents in a</p>
 <p>loop holds at a <strong>flat 10 MB</strong>: each document's tree is reclaimed when its loop</p>
 <p>iteration's arena resets. Clean under ASan + LeakSanitizer.</p>
 <h2 id="head-to-head-five-languages">Head-to-head, five languages</h2>
-<p>Per-workload timings are in <a href="../bench/prongB/RESULTS.html">`bench/prongB/RESULTS.md`</a>.</p>
+<p>Per-workload timings are in <a href="../bench/prongB/RESULTS.html"><code>bench/prongB/RESULTS.md</code></a>.</p>
 <p>Peak resident memory (MB) — every binary computes the same checksum; lower is</p>
 <p>better. Figures below are rounded per-round snapshots; the precise log, with</p>
 <p>wall times and hardware, is that RESULTS file.</p>

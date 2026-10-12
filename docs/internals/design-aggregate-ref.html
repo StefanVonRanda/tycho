@@ -26,7 +26,7 @@
 <p>3. <code>corelib/decimal/decimal.ty</code> and the corelib generally — return-new</p>
 <p>signature shapes.</p>
 <p>**The premise is wrong about the codegen, and the measurement is the emitted</p>
-<p>C.<strong> `inout` on a heap value already passes a </strong>pointer plus the value's owning</p>
+<p>C.<strong> <code>inout</code> on a heap value already passes a </strong>pointer plus the value's owning</p>
 <p>arena** as a hidden <code>_ina_</code> parameter (<code>src/tychoc.c:10365-10373</code>), and every</p>
 <p>allocating mutation of the parameter allocates into that arena — the caller's,</p>
 <p>where the value lives — not the callee's scope (<code>src/tychoc.c@owner_arena_of</code>).</p>
@@ -74,7 +74,7 @@
 <p>The brief asks what the construct is: a borrow, a view, a <code>ref</code> binding, or</p>
 <p>something else. The tree already contains the two compatible answers, both</p>
 <p>measured above:</p>
-<p>1. <strong>In-place `inout`</strong> — an exclusive, call-scoped, non-escaping mutable</p>
+<p>1. <strong>In-place <code>inout</code></strong> — an exclusive, call-scoped, non-escaping mutable</p>
 <p>alias. It is not a stored reference; it cannot outlive the call by</p>
 <p>construction (the parameter dies at return); its exclusivity is the</p>
 <p>existing inout rule. Its codegen is the pointer + <code>_ina_</code> arena pass.</p>
@@ -138,7 +138,7 @@
 <p><code>tools/tycho-vm/main.ty:475-478</code> — the helper is free, so the "one big</p>
 <p>function" comment is misleading; the machine could be factored if anyone</p>
 <p>wants to.</p>
-<p>2. <strong>Reject `&amp;` outside argument position.</strong> <code>&amp;</code> parses as a unary <code>E_ADDR</code></p>
+<p>2. <strong>Reject <code>&amp;</code> outside argument position.</strong> <code>&amp;</code> parses as a unary <code>E_ADDR</code></p>
 <p>everywhere (<code>src/tychoc.c:3454-3457</code>) and resolves to the place's type</p>
 <p>without position validation (<code>src/tychoc.c:6872-6874</code> — "only valid as an</p>
 <p>inout argument", enforced only at call sites). <code>r := &amp;a</code> therefore compiles</p>

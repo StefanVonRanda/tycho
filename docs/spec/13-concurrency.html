@@ -31,17 +31,17 @@
 <p>synchronizes-with relationship, so the transferred value — and everything the</p>
 <p>source sequenced before it — is visible to the receiving side:</p>
 <ul>
-<li><strong>`spawn` → body:</strong> a task's arguments are deep-copied before its thread</li>
+<li><strong><code>spawn</code> → body:</strong> a task's arguments are deep-copied before its thread</li>
 </ul>
 <p>starts, so the body observes them and every write sequenced before the <code>spawn</code>.</p>
 <ul>
-<li><strong>`send` → `recv`:</strong> a <code>recv</code> that returns a value <code>v</code> synchronizes-with the</li>
+<li><strong><code>send</code> → <code>recv</code>:</strong> a <code>recv</code> that returns a value <code>v</code> synchronizes-with the</li>
 </ul>
 <p><code>send</code> that produced <code>v</code> (a release store paired with an acquire load on the</p>
 <p>ring cell), so every write the sender sequenced before that <code>send</code> is visible</p>
 <p>to the receiver after that <code>recv</code> returns.</p>
 <ul>
-<li><strong>task → `wait`:</strong> a task's body runs-before the <code>wait</code> (or implicit join) that</li>
+<li><strong>task → <code>wait</code>:</strong> a task's body runs-before the <code>wait</code> (or implicit join) that</li>
 </ul>
 <p>observes its result, so the waiter sees all of the task's writes.</p>
 <h2 id="21-spawn-task-wait">21. <code>spawn</code>, <code>Task</code>, <code>wait</code></h2>
@@ -81,11 +81,11 @@
 <p>impose a fixed upper bound on the chunk count — the reference bounds it at <strong>64</strong>,</p>
 <p>so above 64 the fan-out is narrower than <code>ncpu()</code> reports</p>
 <p>(<a href="16-builtins.html#299-concurrency">§29.9</a>).</p>
-<p><strong>The program MAY choose the width: `parallel(W) for …`.</strong> <code>W</code> is an ordinary</p>
+<p><strong>The program MAY choose the width: <code>parallel(W) for …</code>.</strong> <code>W</code> is an ordinary</p>
 <p>expression of type <code>int</code>, evaluated <strong>once</strong>, at the spawn site, before any</p>
 <p>chunk starts. It replaces <code>ncpu()</code> in the rule above; the <code>min(…, N)</code> and the</p>
 <p>64-chunk bound still apply, so <code>parallel(8) for i in 0..&lt;3:</code> runs 3 chunks.</p>
-<p>An explicit width <strong>overrides `TYCHO_THREADS`</strong> — the variable is the default</p>
+<p>An explicit width <strong>overrides <code>TYCHO_THREADS</code></strong> — the variable is the default</p>
 <p>for a program that did not choose. A width outside <code>1..64</code> is refused: a</p>
 <p>literal at compile time, and a computed one aborts at run time rather than</p>
 <p>clamping, because a clamped width answers a different question than the one</p>

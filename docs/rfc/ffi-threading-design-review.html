@@ -71,7 +71,7 @@
 <p>unbounded, and a panic/abort in any task <code>exit(1)</code>s the whole process</p>
 <p>(<code>docs/reference/concurrency.md:141</code>, <code>runtime/tycho_rt.c:1135-1148</code>).</p>
 <p><strong>Top recommendations (ranked, both areas):</strong></p>
-<p>1. <strong>First-class immutable `bytes` type crossing as `(ptr,len)`</strong> — removes</p>
+<p>1. <strong>First-class immutable <code>bytes</code> type crossing as <code>(ptr,len)</code></strong> — removes</p>
 <p>the hex-marshaling tax, the single biggest FFI usability win. Fundamental</p>
 <p>(new type) but fits value semantics cleanly.</p>
 <p>2. <strong>Tighten the safety claim in docs</strong> — cheap, high trust value.</p>
@@ -79,7 +79,7 @@
 <p>(FFI, global C state, panic). Add an FFI-from-threads guidance section.</p>
 <p>3. <strong>Typed handles with a compiler-known destructor</strong> (<code>handle "Lib" Db</code>) —</p>
 <p>fixes leaks + wrong-handle bugs. Incremental on top of <code>ptr</code>.</p>
-<p>4. <strong>Bounded worker pool for `spawn` / `parallel for`</strong> — caps the</p>
+<p>4. <strong>Bounded worker pool for <code>spawn</code> / <code>parallel for</code></strong> — caps the</p>
 <p>thread-explosion and thread-creation cost. Runtime-only, no language change.</p>
 <p>5. <strong>Auto-shim / out-param sugar</strong> — reduces hand-written C. Incremental,</p>
 <p>medium effort.</p>
@@ -188,7 +188,7 @@
 <p>non-goals; listed here for completeness, not necessarily to fix.</p>
 <h3 id="ffi--ranked-recommendations">FFI — ranked recommendations</h3>
 <p>Ranked by value / effort.</p>
-<p><strong>R1 (highest value). First-class immutable `bytes` type, crosses as `(ptr,len)`.</strong></p>
+<p><strong>R1 (highest value). First-class immutable <code>bytes</code> type, crosses as <code>(ptr,len)</code>.</strong></p>
 <ul>
 <li>*Design.* Add an immutable byte buffer type (<code>bytes</code>, or <code>[u8]</code>). It owns a</li>
 </ul>
@@ -215,7 +215,7 @@
 <p>on the seam preserves the no-aliasing invariant. The only new surface is the</p>
 <p><code>(ptr,len)</code> lowering, which is as safe as the existing <code>string</code> <code>char *</code></p>
 <p>lowering (arena-copy on return keeps foreign memory out).</p>
-<p><strong>R2. Typed handle wrapper over `ptr`, with an optional compiler-known free.</strong></p>
+<p><strong>R2. Typed handle wrapper over <code>ptr</code>, with an optional compiler-known free.</strong></p>
 <ul>
 <li>*Design.* Allow a newtype-style declaration that tags a handle and names its</li>
 </ul>
@@ -285,13 +285,13 @@
 <h2 id="threading--cost-analysis--safety-envelope-with-citations">Threading — cost analysis + safety envelope (with citations)</h2>
 <h3 id="why-it-is-heavy">Why it is heavy</h3>
 <ul>
-<li><strong>One OS thread per `spawn`.</strong> <code>tycho_task_start</code> calls <code>pthread_create</code></li>
+<li><strong>One OS thread per <code>spawn</code>.</strong> <code>tycho_task_start</code> calls <code>pthread_create</code></li>
 </ul>
 <p>directly with no pool (<code>runtime/tycho_rt.c:315-318</code>). Each task allocates a</p>
 <p>fresh root arena (<code>tycho_task_new</code>, <code>:297-303</code>). Thread creation +</p>
 <p>teardown + a fresh arena per task is the per-spawn cost.</p>
 <ul>
-<li><strong>`parallel for` forks `ncpu` threads with full capture copy per chunk.</strong> K =</li>
+<li><strong><code>parallel for</code> forks <code>ncpu</code> threads with full capture copy per chunk.</strong> K =</li>
 </ul>
 <p><code>tycho_ncpu()</code> chunk tasks (<code>src/tychoc.c:5121-5134</code>; runtime <code>:925-932</code>,</p>
 <p><code>TYCHO_THREADS</code> overrides). Every captured variable is deep-copied into each</p>
@@ -384,7 +384,7 @@
 <li>*Effort.* Trivial. *Value.* High — the current wording is the specific thing</li>
 </ul>
 <p>the feedback flagged as overclaiming.</p>
-<p><strong>R2. Bounded worker pool / thread cap for `spawn` and `parallel for`.</strong></p>
+<p><strong>R2. Bounded worker pool / thread cap for <code>spawn</code> and <code>parallel for</code>.</strong></p>
 <ul>
 <li>*Design.* A runtime worker pool sized to <code>tycho_ncpu()</code> (reuse the existing</li>
 </ul>
@@ -437,7 +437,7 @@
 <p>highest trust return; directly addresses the "unsafe / overclaiming"</p>
 <p>feedback. Scope the race-free claim, add FFI-from-threads guidance, document</p>
 <p>the unbounded-spawn and panic-kills-process limits as first-class.</p>
-<p>2. <strong>`bytes` type (FFI R1).</strong> The biggest usability win; removes the</p>
+<p>2. <strong><code>bytes</code> type (FFI R1).</strong> The biggest usability win; removes the</p>
 <p>hex-marshaling tax that the crypto package demonstrates. Prototype the</p>
 <p><code>(ptr,len)</code> lowering against a binary-data library (e.g. re-bind a hash</p>
 <p>function to take <code>bytes</code> directly and compare to the hex path).</p>

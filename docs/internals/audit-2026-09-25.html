@@ -34,7 +34,7 @@
 <p>Without the last one <code>make test</code> fails <code>float_lit_locale</code> and <code>float_str_locale</code>, exactly as</p>
 <p>FRICTION #111 says. wine is absent, so its lanes skip. <code>make preflight</code> is green after these.</p>
 <ul>
-<li><strong>Baseline `make ci` run twice on the untouched tree.</strong> The first stopped at <code>make test</code>,</li>
+<li><strong>Baseline <code>make ci</code> run twice on the untouched tree.</strong> The first stopped at <code>make test</code>,</li>
 </ul>
 <p>whose only failures were the two locale fixtures. The second, with the locale installed, was red in <code>make debug-check</code></p>
 <p>(D90) and in nothing else that reported; the sweep was stopped during the four-lane join,</p>

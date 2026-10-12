@@ -67,7 +67,7 @@
 <p>manifest, nothing external to install. The <code>.ty</code> declares the shim's entry</p>
 <p>points with <code>extern fn</code> (<code>regex</code>, <code>os</code>, <code>net</code>, and <code>datetime</code>'s timezone</p>
 <p>helpers). <strong>Core tier.</strong></p>
-<p>3. <strong>pkg-config `deps`</strong> — a <code>&lt;pkg&gt;_shim.c</code> plus a <code>corelib/&lt;pkg&gt;/deps</code> manifest</p>
+<p>3. <strong>pkg-config <code>deps</code></strong> — a <code>&lt;pkg&gt;_shim.c</code> plus a <code>corelib/&lt;pkg&gt;/deps</code> manifest</p>
 <p>naming pkg-config packages, one per line. On import the transpiler runs</p>
 <p><code>pkg-config --cflags --libs &lt;name&gt;</code> for each and splices the result onto the</p>
 <p>cc line (<code>add_pkg_deps</code>), so the include path and link flags resolve per</p>
@@ -222,29 +222,29 @@
 <p>IoErr)<code> reads at most </code>n<code> bytes starting at byte offset </code>off<code>, over </code>pread(2)`,</p>
 <p>which disturbs no file offset. Five semantics are normative for the three:</p>
 <ul>
-<li><strong>A directory is `Ok` for `mtime` and `Err(IsDir)` for `size`.</strong> <code>IsDir</code> is likewise absent from <code>is_dir</code>, where being a directory is</li>
+<li><strong>A directory is <code>Ok</code> for <code>mtime</code> and <code>Err(IsDir)</code> for <code>size</code>.</strong> <code>IsDir</code> is likewise absent from <code>is_dir</code>, where being a directory is</li>
 </ul>
 <p>the answer rather than a failure to give one.</p>
 <p>Rationale: a directory has a modification time the kernel reports, while its <code>st_size</code> is filesystem-dependent entry metadata no read can produce.</p>
 <ul>
-<li><strong>`size` succeeds on exactly the paths `read_at` can read.</strong> Regular file →</li>
+<li><strong><code>size</code> succeeds on exactly the paths <code>read_at</code> can read.</strong> Regular file →</li>
 </ul>
 <p>both <code>Ok</code>; directory → both <code>Err(IsDir)</code>; a fifo, socket, device or anything</p>
 <p>else unseekable → both <code>Err(Failed)</code>. <code>size(p)</code> is the length <code>read_bytes(p)</code></p>
 <p>would return, on every path, or neither call answers.</p>
 <ul>
-<li><strong>`Ok(0)` from `size` is a success and is never the failure value.</strong> An empty</li>
+<li><strong><code>Ok(0)</code> from <code>size</code> is a success and is never the failure value.</strong> An empty</li>
 </ul>
 <p>file has a length and that length is zero; the status does not travel in the</p>
 <p>payload, so a failure is an <code>Err</code> and cannot present as a small number.</p>
 <ul>
-<li><strong>`read_at`'s allocation is bounded by the FILE, not by `n`.</strong> It allocates</li>
+<li><strong><code>read_at</code>'s allocation is bounded by the FILE, not by <code>n</code>.</strong> It allocates</li>
 </ul>
 <p><code>min(n, size - off)</code>, so <code>read_at(p, 0, 10^12)</code> on a 26-byte file allocates 26</p>
 <p>bytes, and no further cap is imposed. That bound, not a policy limit, is what</p>
 <p>makes <code>n</code> safe to take from untrusted input such as a <code>Range</code> header.</p>
 <ul>
-<li><strong>A read starting at or past EOF is `Ok` with zero bytes, not an error.</strong> The</li>
+<li><strong>A read starting at or past EOF is <code>Ok</code> with zero bytes, not an error.</strong> The</li>
 </ul>
 <p>caller chose the offset, so "no bytes there" is a complete answer to the</p>
 <p>question asked. An <code>n</code> running past EOF is a short <code>Ok</code> with no padding —</p>
@@ -341,13 +341,13 @@
 <p>which is ordinary code. Two orderings are load-bearing and an implementation</p>
 <p><strong>MUST</strong> preserve both:</p>
 <ul>
-<li><strong>The descriptor is registered before the first `sigaction`</strong></li>
+<li><strong>The descriptor is registered before the first <code>sigaction</code></strong></li>
 </ul>
 <p>(<code>corelib/signal/signal_shim.c:107@sigx_fd</code>), so a signal arriving mid-install</p>
 <p>can never find a handler in place and a stale or absent descriptor to act on. An</p>
 <p>unregistered descriptor <strong>MUST</strong> leave the handler setting only the flag.</p>
 <ul>
-<li><strong>The handler is installed with `sa_flags = 0`</strong></li>
+<li><strong>The handler is installed with <code>sa_flags = 0</code></strong></li>
 </ul>
 <p>(<code>corelib/signal/signal_shim.c:112@sa_flags</code>), that is, **without</p>
 <p><code>SA_RESTART</code>**. This is observable, so it is normative: with <code>sa_flags = 0</code> the</p>
@@ -405,7 +405,7 @@
 <p>it makes a corrupt member read as a legitimate zero-byte file. On a raw deflate</p>
 <p>stream <code>Truncated</code> also covers "not a deflate stream at all", since a headerless</p>
 <p>stream carries no wrapper or checksum to tell those apart. Binary-safe</p>
-<p>(<code>bytes</code>, interior NUL preserved). <strong>`compress` is byte-deterministic</strong>: for a</p>
+<p>(<code>bytes</code>, interior NUL preserved). <strong><code>compress</code> is byte-deterministic</strong>: for a</p>
 <p>given zlib build it is a pure function of its input, so the same bytes in give</p>
 <p>byte-identical bytes out across processes, wall-clock times, locales and time</p>
 <p>zones. Concretely, RFC 1952's MTIME header field is <strong>zero</strong> — an implementation</p>

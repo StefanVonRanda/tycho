@@ -59,7 +59,7 @@ b.name = "Alan"                # never touches a
 <p>(<code>r.area()</code> calls <code>area(r)</code>); see <a href="functions.html#methods-ufcs">Methods</a>.</p>
 <h3 id="layout-packed-and-alignn">Layout: <code>packed</code> and <code>align(N)</code></h3>
 <p>An ordinary struct's layout is up to the implementation. Two declaration attributes pin it.</p>
-<p><strong>`packed struct`</strong> removes all padding: its size is exactly the sum of its field sizes, each</p>
+<p><strong><code>packed struct</code></strong> removes all padding: its size is exactly the sum of its field sizes, each</p>
 <p>field sits right after the one before, and it is the one aggregate that converts to and from</p>
 <p><code>bytes</code>, little-endian, for file formats and wire protocols.</p>
 <pre><code class="language-tycho">packed struct Ins:          # exactly 9 bytes: 1 + 4 + 4
@@ -79,7 +79,7 @@ fn main():
 <p>(<code>u8</code>…<code>u64</code>, <code>i8</code>…<code>i64</code>, <code>f32</code>), a newtype over one, or another packed struct. A <code>string</code>,</p>
 <p>array, map, <code>Option</code> or other heap-owning field is refused. <code>from_bytes$</code> aborts unless the</p>
 <p>length is exactly <code>size_of$(T)</code>; see <a href="builtins.html">builtins</a>.</p>
-<p><strong>`align(N) struct`</strong> raises the struct's alignment to <code>N</code> bytes (a power of two, at most 8,</p>
+<p><strong><code>align(N) struct</code></strong> raises the struct's alignment to <code>N</code> bytes (a power of two, at most 8,</p>
 <p>the arena's own alignment). Its size rounds up to a multiple of <code>N</code>, so every element of an</p>
 <p>array of it stays aligned. It never lowers alignment, and <code>packed</code> and <code>align</code> on one struct</p>
 <p>are refused.</p>
@@ -88,8 +88,8 @@ fn main():
 <p>multiple of <code>N</code>: an <code>align(8)</code> struct of two <code>u8</code> fields is 8, two bytes rounded up. <code>to_bytes</code></p>
 <p>and <code>from_bytes$</code> still take only a packed struct, because only a packed struct has a</p>
 <p>byte-exact layout.</p>
-<p>Worked examples: <code>BmpHeader</code> in <a href="../../corelib/raster/raster.ty">`corelib/raster/raster.ty`</a> and</p>
-<p><code>TgaHeader</code> in <a href="../../tools/tycho-grade/main.ty">`tools/tycho-grade/`</a>. Neither uses <code>align(N)</code>, for</p>
+<p>Worked examples: <code>BmpHeader</code> in <a href="../../corelib/raster/raster.ty"><code>corelib/raster/raster.ty</code></a> and</p>
+<p><code>TgaHeader</code> in <a href="../../tools/tycho-grade/main.ty"><code>tools/tycho-grade/</code></a>. Neither uses <code>align(N)</code>, for</p>
 <p>the reason above.</p>
 <p>Rules: <a href="../spec/12-aggregates.html#171a-packed-layout">spec §17.1a</a>.</p>
 <h2 id="tuples-and-multiple-return-values">Tuples and multiple return values</h2>

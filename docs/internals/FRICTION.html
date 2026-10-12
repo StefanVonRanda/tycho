@@ -18,14 +18,14 @@
 <p>serving <code>server/www</code> to a real browser. Everything below was hit while writing</p>
 <p>it, not imagined about it.</p>
 <blockquote>
-<p><strong>A bare `path:line` in this file is as-of its entry's date.</strong> Measured</p>
+<p><strong>A bare <code>path:line</code> in this file is as-of its entry's date.</strong> Measured</p>
 <p>2026-08-13 on a fresh random sample: 7 of 15 no longer point at their subject,</p>
 <p>because every insertion into <code>src/tychoc.c</code> shifts everything below it. They are</p>
 <p>deliberately NOT being re-anchored — open-list item 10 has the measurement and</p>
 <p>why a mechanical pass would certify the wrong line rather than fix it. **When</p>
 <p>you write a NEW citation here, anchor it**: <code>path@SYMBOL</code> for a definition, or</p>
 <p><code>path:N@token</code>. Both survive an insertion; a bare line number does not.</p>
-<p><strong>An entry that claims to be closed carries `&gt; Pinned-by:`, since 2026-08-22.</strong></p>
+<p><strong>An entry that claims to be closed carries <code>&gt; Pinned-by:</code>, since 2026-08-22.</strong></p>
 <p>The line is a shell command; <code>make friction-check</code> runs every one of them,</p>
 <p>deduped and in parallel, and names the entry whose fix stopped holding. Write</p>
 <p><code>&gt; Pinned-by: none -- &lt;reason&gt;</code> when nothing can assert it (#86 is a timing</p>
@@ -43,7 +43,7 @@
 <p>**The language has a good answer for fallible calls and the standard library</p>
 <p>does not use it.** <code>Option</code>/<code>Result</code> are real types and <code>or_return</code> is a real</p>
 <p>postfix operator that unwraps or short-circuits (<code>docs/spec/10-statements.md:76</code>).</p>
-<p>Exactly <strong>1 of the corelib's 386 functions returns an `Option`</strong> —</p>
+<p>Exactly <strong>1 of the corelib's 386 functions returns an <code>Option</code></strong> —</p>
 <p><code>io.read_line</code> (<code>corelib/io/io.ty:17</code>). Every other fallible call in this server</p>
 <p>reports failure with a sentinel, and the sentinel is different each time:</p>
 <table>
@@ -201,7 +201,7 @@
 <p>headline block at the top of this file and neither reached the item. **A file where</p>
 <p>the summary and the item list can disagree needs the audit run in both directions.**</p>
 <ul>
-<li><strong>The `Option`/`Result` plan created 16 items, not 6.</strong> Measured, not recounted from</li>
+<li><strong>The <code>Option</code>/<code>Result</code> plan created 16 items, not 6.</strong> Measured, not recounted from</li>
 </ul>
 <p>its prose: <code>FRICTION.md</code> went from 38 bullets at <code>fd97211</code> to 57 at <code>796dd90</code>, of</p>
 <p>which 3 are that plan's own score bullets — 5 items in its phase-1 section, 5 in</p>
@@ -284,7 +284,7 @@
 <p>ten more in an afternoon.</p>
 <p><strong>What this pass did NOT re-score:</strong> the other 86 numbered entries in this file,</p>
 <p>and the per-item prose below, which still carries its 2026-07-31 framing.</p>
-<p><strong>Re-scored 2026-07-31 against `3ddc8fd` — 11 open items.</strong> 43 commits since the</p>
+<p><strong>Re-scored 2026-07-31 against <code>3ddc8fd</code> — 11 open items.</strong> 43 commits since the</p>
 <p>previous pass: <code>core:signal</code>, <code>io.mtime</code> / <code>io.read_at</code> / <code>io.size</code>,</p>
 <p><code>Last-Modified</code> / <code>304</code>, <code>Range</code> / <code>206</code> / <code>416</code>, bounded worker retry, and a</p>
 <p>citation gate that grew four directions, ambiguous-anchor rejection and a</p>
@@ -299,8 +299,8 @@
 <p>and new ones are appended. The count above is the count of *unstruck* entries.</p>
 <p>The paragraphs below are the previous pass's, kept as its record:</p>
 <blockquote>
-<p><strong>Re-scored 2026-07-30 against `53dd937` — 10 open items.</strong></p>
-<p>Every item below was <strong>re-verified against the tree at `53dd937`</strong> before it was</p>
+<p><strong>Re-scored 2026-07-30 against <code>53dd937</code> — 10 open items.</strong></p>
+<p>Every item below was <strong>re-verified against the tree at <code>53dd937</code></strong> before it was</p>
 <p>scored: the compiler was run by hand on the shape the item describes, or the cited</p>
 <p>source was opened, or the gate/shim was invoked directly. <strong>All ten reproduce.</strong></p>
 <p>Nothing on the previous list turned out to be already closed — but four of them are</p>
@@ -311,8 +311,8 @@
 <p>order is preserved. **The two appended items are not last in priority just</p>
 <p>because they are last in the list** — item 11 is the cheapest thing here. The</p>
 <p>pick-up order is written out in full under "What moved this pass" below.</p>
-<p>1. ~~<strong>Three shims do not compile under `-std=c11`</strong> (*Found by phase 1's gate sweep*)~~ —</p>
-<p><strong>CLOSED 2026-07-31 at `251ec39` by the shim-gate phase, gate first.</strong></p>
+<p>1. ~~<strong>Three shims do not compile under <code>-std=c11</code></strong> (*Found by phase 1's gate sweep*)~~ —</p>
+<p><strong>CLOSED 2026-07-31 at <code>251ec39</code> by the shim-gate phase, gate first.</strong></p>
 <p><code>scripts/shim_check.sh</code> /</p>
 <p><code>make shim-check</code> / <code>scripts/ci.sh</code> step <code>[3d/13]</code> compiles every</p>
 <p><code>corelib/*/*_shim.c</code> standalone under <code>-std=c11</code>, and the three failures were fixed</p>
@@ -340,7 +340,7 @@
 </ul>
 <p><code>corelib/tls/tls_shim.c:173</code>.</p>
 <ul>
-<li><strong>NEW at this pass — `corelib/signal/signal_shim.c`, 3 errors</strong>: storage size of</li>
+<li><strong>NEW at this pass — <code>corelib/signal/signal_shim.c</code>, 3 errors</strong>: storage size of</li>
 </ul>
 <p><code>sa</code> (<code>corelib/signal/signal_shim.c</code>), implicit <code>sigemptyset</code></p>
 <p>(<code>corelib/signal/signal_shim.c</code>), implicit <code>sigaction</code></p>
@@ -358,12 +358,12 @@
 <p><code>corelib/os/os_shim.c:9-10</code>, <code>corelib/datetime/datetime_shim.c:10-11</code> and</p>
 <p><code>corelib/time/time_shim.c:1-2</code> (<code>_POSIX_C_SOURCE 200809L</code>) — so it is **3 lines</p>
 <p>copied into each of 3 files**, plus the gate. Left on scope four times now.</p>
-<p>2. ~~<strong>`spawn f(x)` as a bare statement</strong>~~ — **CLOSED 2026-07-31: the parser now names</p>
+<p>2. ~~<strong><code>spawn f(x)</code> as a bare statement</strong>~~ — **CLOSED 2026-07-31: the parser now names</p>
 <p>the rule.** <code>parse_stmt</code> tests <code>E_SPAWN</code> ahead of the generic bare-expression</p>
 <p><code>die_at</code> and says <code>a </code>spawn` must be bound to a task handle -- write</p>
 <p><code>t := spawn f(args)</code>, because the implicit join at scope exit needs a handle to wait</p>
 <p>on (a Task cannot be discarded)`. Measured before and after on the same scratch</p>
-<p>program; <strong>no `tests/diag/` fixture pinned the old text</strong> (grepped <code>tests/</code> for it and</p>
+<p>program; <strong>no <code>tests/diag/</code> fixture pinned the old text</strong> (grepped <code>tests/</code> for it and</p>
 <p>found the string only in <code>docs/internals/</code>), so the corpus count is unchanged at 560.</p>
 <p>The record of what the item said when open follows.</p>
 <p>(*Earlier phases*) — reproduced verbatim again at</p>
@@ -373,7 +373,7 @@
 <p>real rule — a task handle must be *bound* so the compiler can hang the implicit join on</p>
 <p>it. <strong>One line of diagnostic text at a known line.</strong> Open only because nobody has spent</p>
 <p>it, through two re-scores.</p>
-<p>3. ~~<strong> is not reachable from `docs/README.md`</strong>~~ — **CLOSED</p>
+<p>3. ~~<strong> is not reachable from <code>docs/README.md</code></strong>~~ — **CLOSED</p>
 <p>2026-07-31: <code>docs/README.md</code> now lists it** under "How the docs are organized", beside</p>
 <p><code>architecture.md</code>. The real question behind it — nothing checks that a document is</p>
 <p>*reachable*, only that its links resolve — is <strong>not</strong> closed and is filed as item 13</p>
@@ -389,7 +389,7 @@
 <p>link**, plus the real question behind it: <code>scripts/check_links.sh</code> checks that links</p>
 <p>*resolve*, not that documents are *reachable*, so an orphan is invisible to every gate.</p>
 <p>Three files under <code>docs/internals/</code> are additionally mentioned by no Markdown at all.</p>
-<p>4. ~~<strong>The `send` collision</strong> (*Phase 7*)~~ — **CLOSED 2026-08-13: the definition is</p>
+<p>4. ~~<strong>The <code>send</code> collision</strong> (*Phase 7*)~~ — **CLOSED 2026-08-13: the definition is</p>
 <p>diagnosed now.** <code>fn send(a: int, b: int) -&gt; int</code> warns where it is WRITTEN --</p>
 <p>"<code>send</code> collides with the builtin of the same name -- every unqualified <code>send(...)</code></p>
 <p>calls the BUILTIN, so this procedure is unreachable by that name (§3.7). Rename it,</p>
@@ -405,7 +405,7 @@
 <p><code>if (sig_find(pr-&gt;name) || consts_find(pr-&gt;name)) die_dup_proc(...)</code></p>
 <p>(<code>src/tychoc.c:9711</code>), and <code>sig_find</code> searches <code>g_sigs</code> — which holds <code>die</code> and <code>exit</code></p>
 <p>as real entries (<code>src/tychoc.c:5619-5620</code>, inside <code>src/tychoc.c@register_builtins</code>)</p>
-<p>but <strong>holds no entry for `send`, `recv` or `close` at all</strong>; those three are recognised</p>
+<p>but <strong>holds no entry for <code>send</code>, <code>recv</code> or <code>close</code> at all</strong>; those three are recognised</p>
 <p>ad hoc during resolution (<code>src/tychoc.c:7088</code>, <code>src/tychoc.c:7097</code>,</p>
 <p><code>src/tychoc.c:7116</code>). So it is not a table that omits three rows, it is three builtins</p>
 <p>that were never in the table. <strong>The code is ~1 line</strong> at <code>src/tychoc.c:9711</code>; the open</p>
@@ -430,7 +430,7 @@
 <p><code>corelib/httpd/httpd.ty:292</code>; it is 40 lines further down now, which is why this</p>
 <p>citation is a <code>path@SYMBOL</code> — the definition has a name and its line number was only</p>
 <p>ever a record of how much prose sat above it.)</p>
-<p>7. ~~<strong>`parallel for` caps concurrency at `min(N, ncpu)` and nothing warns</strong> (*Earlier</p>
+<p>7. ~~<strong><code>parallel for</code> caps concurrency at <code>min(N, ncpu)</code> and nothing warns</strong> (*Earlier</p>
 <p>phases*)~~ — **CLOSED 2026-07-31 at <code>3ddc8fd</code>, by the spec catching up with the</p>
 <p>compiler.** Both live halves are answered in <code>docs/spec/</code>, verified by reading it:</p>
 <ul>
@@ -443,7 +443,7 @@
 <p>and the cap — is gone. The compiler side is cited anchored from the spec's own</p>
 <p>provenance block, <code>src/tychoc.c:12891@_pk &gt; 64</code>, so the gate now polices it.</p>
 <ul>
-<li><strong>`ncpu()`'s false definition is corrected</strong>, which was the other half:</li>
+<li><strong><code>ncpu()</code>'s false definition is corrected</strong>, which was the other half:</li>
 </ul>
 <p><code>docs/spec/16-builtins.md:248</code> states outright that it is "the *requested* worker</p>
 <p>count, <strong>not</strong> the width a <code>parallel for</code> will actually use" and that "a program that</p>
@@ -560,14 +560,14 @@
 <p>is still evidence, but for a <strong>different</strong> want: N long-lived workers each carrying its</p>
 <p>own <code>wid</code>, which <code>parallel for</code> genuinely cannot express because a chunk's identity is</p>
 <p>not observable. Two items, not one, and only the second needs the type system.</p>
-<p><strong>Re-checked at `3ddc8fd` and the narrowed form holds in both halves.</strong> The grammar</p>
+<p><strong>Re-checked at <code>3ddc8fd</code> and the narrowed form holds in both halves.</strong> The grammar</p>
 <p>still has no width slot — <code>docs/spec/02-grammar.md:255-256</code> is two productions, a</p>
 <p>counting one over a literal <code>0..&lt;Expr</code> and a foreach one over a bare name, and neither</p>
 <p>carries a count. And <code>server/main.ty</code> still spells its pool as a recursion carrying</p>
 <p><code>wid</code>, which the file now uses for more than logging: the shutdown registry is indexed</p>
 <p>by <code>wid - 1</code> (<code>server/main.ty</code>), so worker identity is load-bearing there and</p>
 <p><code>parallel for</code> remains unable to supply it.</p>
-<p>9. <strong>`corelib/test/image` is skipped without libpng</strong> (*the friction plan</p>
+<p>9. <strong><code>corelib/test/image</code> is skipped without libpng</strong> (*the friction plan</p>
 <p>phase 7, non-blocking*) — confirmed environmental and confirmed *live*:</p>
 <p><code>corelib/image/deps</code> names <code>libpng</code>, <code>pkg-config --exists libpng</code> still fails on this</p>
 <p>machine at <code>3ddc8fd</code>,</p>
@@ -705,7 +705,7 @@
 <p>two.** Phase 1's ~240-line pool (two channels, a spawned producer, a spawned collector,</p>
 <p>a <code>parallel for</code> with <code>select</code>/<code>recv</code>, a subprocess call inside the body) and phase 2's</p>
 <p>479-line rewrite (seven lane judges, <code>os.run</code>, structs-with-strings through a channel,</p>
-<p><code>sort.asc</code>) each built with <strong>no errors and no warnings on the first `./tychoc`</strong>. This</p>
+<p><code>sort.asc</code>) each built with <strong>no errors and no warnings on the first <code>./tychoc</code></strong>. This</p>
 <p>file's picture of concurrent Tycho as a fight is not what either phase found, and the</p>
 <p>expectation of a fight was set *by this file*. "Concurrency is the best thing in the</p>
 <p>language" (What was good, below) now has a second, independent data point from a</p>
@@ -766,9 +766,9 @@
 <p>~3 sentences in §22 plus a carve-out beside the write rule. Filed as a carried-forward</p>
 <p>phase. <strong>The estimate was right: what landed is one paragraph.</strong></p>
 <ul>
-<li>~~<strong>NEW — `iter.map` cannot change the element type, and the lambda syntax hid it.</strong>~~</li>
+<li>~~<strong>NEW — <code>iter.map</code> cannot change the element type, and the lambda syntax hid it.</strong>~~</li>
 </ul>
-<p><strong>CLOSED 2026-07-31, verified at `3ddc8fd`:</strong> <code>corelib/iter/iter.ty:14</code> is now</p>
+<p><strong>CLOSED 2026-07-31, verified at <code>3ddc8fd</code>:</strong> <code>corelib/iter/iter.ty:14</code> is now</p>
 <p><code>fn map(xs: [$T], f: fn($T) -&gt; $U) -&gt; [$U]</code>, two type variables, so <code>[Res] -&gt; [int]</code> is</p>
 <p>expressible. <strong>And it answers the question the entry flagged as unverified</strong> — the entry</p>
 <p>said "whether the inference reaches a <strong>function-typed</strong> <code>fn($T) -&gt; $U</code> parameter is</p>
@@ -851,7 +851,7 @@
 <p><strong>What this program did NOT touch, so that nobody over-reads the evidence.</strong> It is *one*</p>
 <p>shape: a bounded pool over a channel with a fan-in, over jobs that all terminate.</p>
 <ul>
-<li><strong>`select` under contention is untested.</strong> Both <code>select</code>s in <code>tools/prunner/main.ty</code></li>
+<li><strong><code>select</code> under contention is untested.</strong> Both <code>select</code>s in <code>tools/prunner/main.ty</code></li>
 </ul>
 <p>have exactly <strong>one</strong> <code>recv</code> arm and no <code>default:</code> and no <code>closed:</code>. Nothing here</p>
 <p>exercises arm ordering, and the spec's "select is not fair, so an earlier-listed ready</p>
@@ -894,9 +894,9 @@
 <h2 id="phase-4-of-the-optionresult-plan--the-missing-syscall">Phase 4 of the Option/Result plan — the missing syscall</h2>
 <p>Found while writing <code>io.is_dir</code> and its test.</p>
 <ul>
-<li>~~<strong>`Option`/`Result` phase 4</strong> — <strong>nothing in Tycho can create a directory.</strong> Verified absent, not assumed: <code>docs/spec/16-builtins.md</code> §29.10 lists five filesystem/time builtins (<code>read_file</code>, <code>write_file</code>, <code>list_dir</code>, <code>clock</code>, <code>now</code>) and none of them makes a directory, and <code>mkdir</code>/<code>make_dir</code>/<code>create_dir</code> return zero hits across <code>corelib/</code>, <code>src/tychoc.c</code> and <code>runtime/</code>. There is no remove either. So <code>corelib/test/io</code> — the test for a <code>stat(2)</code> wrapper — has to build its empty directory with <code>os.system("rm -rf … &amp;&amp; mkdir -p …")</code>: a corelib test depending on <code>/bin/sh</code> to set up a filesystem state the corelib itself cannot reach. The asymmetry is the finding: the library can now *classify* a directory but not *make* one.~~ <strong>CLOSED, the option-result plan.</strong> <code>io.make_dir(p)</code> (<code>mkdir(2)</code>, no <code>-p</code>) and <code>io.remove(p)</code> (<code>remove(3)</code>, one entry, <strong>never recursive</strong>) both return <code>Result(bool, IoErr)</code> where <code>Ok(true)</code> is "changed it" and <code>Ok(false)</code> is "already how you asked" — <code>make_dir</code> splits <code>EEXIST</code> into <code>Ok(false)</code> (already a directory: goal met) and <code>Err(Exists)</code> (a file is in the way: goal unreachable), which is exactly the ambiguity test this plan was built on. <code>corelib/test/io</code> no longer imports <code>core:os</code> and the <code>rm -rf &amp;&amp; mkdir -p</code> line is gone. A non-empty directory is <code>Err(Failed)</code>, which is the property that keeps <code>io.remove</code> from being <code>rm -rf</code> behind a corelib name.</li>
-<li>~~<strong>`Option`/`Result` phase 4</strong> — <code>io.exists</code> and <code>io.is_dir</code> now answer overlapping questions by different means, and the cheaper one is the newer one: <code>exists</code> lists the whole parent directory (O(entries), and it cannot see a <code>.</code>/<code>..</code>-only leaf) where <code>is_dir</code> is one <code>stat</code>. <code>resolve()</code> ends up calling both on the same path. A <code>stat</code>-backed <code>exists</code> is the obvious follow-on and was refused on scope, but the general shape is worth recording — a missing syscall does not just block the question it names, it leaves *neighbouring* answers implemented the long way round.~~ <strong>CLOSED, the friction plan, and the follow-on was bigger than the swap.</strong> <code>exists</code> is now <code>iox_stat_kind(p)</code> and two comparisons (<code>corelib/io/io.ty:541-545</code>), the same shim call <code>is_dir</code> uses; it still fails closed, so <code>false</code> means "<code>stat</code> could not say yes" — the old behaviour too, since an unlistable parent yielded no entries. <code>corelib/test/io.out</code> is <strong>byte-identical</strong> before and after, which is the proof the swap changed the means and not the meaning. <strong>Two things the entry did not predict.</strong> (1) <strong>`core:io` lost a dependency</strong>: <code>path.base</code>/<code>path.dir</code> were needed *only* by the old <code>exists</code>, so <code>import "core:path"</code> is gone and the module written up as "the first corelib module to COMPOSE other core modules" now composes one, not two — a stale claim in three places, all corrected. (2) <strong>`resolve()`'s double call did not just halve, it collapsed</strong>: making the second call a <code>stat</code> is what made the pair visibly redundant rather than merely ugly, and the two calls are now ONE <code>match io.is_dir(fsp)</code> reading all three answers off the Result (<code>server/main.ty:399-404</code>) — <code>Ok(true)</code> → <code>301</code> (or <code>404</code> when <code>dir_form</code> already appended <code>index.html</code>, i.e. a directory *named* <code>index.html</code>, which used to be a <code>200</code> → <code>read_bytes</code> → <code>Err(IsDir)</code> → <code>404</code>: same status, one syscall fewer, no wrong intermediate), <code>Ok(false)</code> → <code>200</code>, <code>Err(_)</code> → <code>404</code>. Per request for a real file: <strong>2 syscalls (an opendir/readdir walk plus a stat) → 1 stat</strong>. <code>corelib/io/io.ty</code> <strong>98 → 93 code lines</strong>, <code>server/main.ty</code> shorter as well. The entry's own closing sentence turned out to be the useful half and to run both ways: a missing syscall leaves neighbouring answers implemented the long way round, <strong>and adding it does not fix them — someone has to go back and delete the long way round</strong>, which is a second, separately-scoped piece of work that is easy to leave undone because nothing is red.</li>
-<li><strong>`Option`/`Result` phase 4</strong> — reordering two guards to make room for a new one silently changed a security answer: hoisting <code>hidden_segment(path.clean(rel))</code> above the <code>index.html</code> append made <code>GET /</code> return <strong>403</strong>, because for the root target <code>rel</code> is <code>""</code> and <code>path.clean("")</code> returns <code>"."</code> (<code>corelib/path/path.ty:98-99</code>), which <code>hidden_segment</code> reads as a dotfile. Nothing in the compiler or the corelib could have caught it — <code>clean("")</code> returning <code>"."</code> is documented POSIX behaviour and both spellings type-check identically. It was caught by the live matrix (<code>50-request flood 0/50 200</code>), which is the argument for keeping that matrix.</li>
+<li>~~<strong><code>Option</code>/<code>Result</code> phase 4</strong> — <strong>nothing in Tycho can create a directory.</strong> Verified absent, not assumed: <code>docs/spec/16-builtins.md</code> §29.10 lists five filesystem/time builtins (<code>read_file</code>, <code>write_file</code>, <code>list_dir</code>, <code>clock</code>, <code>now</code>) and none of them makes a directory, and <code>mkdir</code>/<code>make_dir</code>/<code>create_dir</code> return zero hits across <code>corelib/</code>, <code>src/tychoc.c</code> and <code>runtime/</code>. There is no remove either. So <code>corelib/test/io</code> — the test for a <code>stat(2)</code> wrapper — has to build its empty directory with <code>os.system("rm -rf … &amp;&amp; mkdir -p …")</code>: a corelib test depending on <code>/bin/sh</code> to set up a filesystem state the corelib itself cannot reach. The asymmetry is the finding: the library can now *classify* a directory but not *make* one.~~ <strong>CLOSED, the option-result plan.</strong> <code>io.make_dir(p)</code> (<code>mkdir(2)</code>, no <code>-p</code>) and <code>io.remove(p)</code> (<code>remove(3)</code>, one entry, <strong>never recursive</strong>) both return <code>Result(bool, IoErr)</code> where <code>Ok(true)</code> is "changed it" and <code>Ok(false)</code> is "already how you asked" — <code>make_dir</code> splits <code>EEXIST</code> into <code>Ok(false)</code> (already a directory: goal met) and <code>Err(Exists)</code> (a file is in the way: goal unreachable), which is exactly the ambiguity test this plan was built on. <code>corelib/test/io</code> no longer imports <code>core:os</code> and the <code>rm -rf &amp;&amp; mkdir -p</code> line is gone. A non-empty directory is <code>Err(Failed)</code>, which is the property that keeps <code>io.remove</code> from being <code>rm -rf</code> behind a corelib name.</li>
+<li>~~<strong><code>Option</code>/<code>Result</code> phase 4</strong> — <code>io.exists</code> and <code>io.is_dir</code> now answer overlapping questions by different means, and the cheaper one is the newer one: <code>exists</code> lists the whole parent directory (O(entries), and it cannot see a <code>.</code>/<code>..</code>-only leaf) where <code>is_dir</code> is one <code>stat</code>. <code>resolve()</code> ends up calling both on the same path. A <code>stat</code>-backed <code>exists</code> is the obvious follow-on and was refused on scope, but the general shape is worth recording — a missing syscall does not just block the question it names, it leaves *neighbouring* answers implemented the long way round.~~ <strong>CLOSED, the friction plan, and the follow-on was bigger than the swap.</strong> <code>exists</code> is now <code>iox_stat_kind(p)</code> and two comparisons (<code>corelib/io/io.ty:541-545</code>), the same shim call <code>is_dir</code> uses; it still fails closed, so <code>false</code> means "<code>stat</code> could not say yes" — the old behaviour too, since an unlistable parent yielded no entries. <code>corelib/test/io.out</code> is <strong>byte-identical</strong> before and after, which is the proof the swap changed the means and not the meaning. <strong>Two things the entry did not predict.</strong> (1) <strong><code>core:io</code> lost a dependency</strong>: <code>path.base</code>/<code>path.dir</code> were needed *only* by the old <code>exists</code>, so <code>import "core:path"</code> is gone and the module written up as "the first corelib module to COMPOSE other core modules" now composes one, not two — a stale claim in three places, all corrected. (2) <strong><code>resolve()</code>'s double call did not just halve, it collapsed</strong>: making the second call a <code>stat</code> is what made the pair visibly redundant rather than merely ugly, and the two calls are now ONE <code>match io.is_dir(fsp)</code> reading all three answers off the Result (<code>server/main.ty:399-404</code>) — <code>Ok(true)</code> → <code>301</code> (or <code>404</code> when <code>dir_form</code> already appended <code>index.html</code>, i.e. a directory *named* <code>index.html</code>, which used to be a <code>200</code> → <code>read_bytes</code> → <code>Err(IsDir)</code> → <code>404</code>: same status, one syscall fewer, no wrong intermediate), <code>Ok(false)</code> → <code>200</code>, <code>Err(_)</code> → <code>404</code>. Per request for a real file: <strong>2 syscalls (an opendir/readdir walk plus a stat) → 1 stat</strong>. <code>corelib/io/io.ty</code> <strong>98 → 93 code lines</strong>, <code>server/main.ty</code> shorter as well. The entry's own closing sentence turned out to be the useful half and to run both ways: a missing syscall leaves neighbouring answers implemented the long way round, <strong>and adding it does not fix them — someone has to go back and delete the long way round</strong>, which is a second, separately-scoped piece of work that is easy to leave undone because nothing is red.</li>
+<li><strong><code>Option</code>/<code>Result</code> phase 4</strong> — reordering two guards to make room for a new one silently changed a security answer: hoisting <code>hidden_segment(path.clean(rel))</code> above the <code>index.html</code> append made <code>GET /</code> return <strong>403</strong>, because for the root target <code>rel</code> is <code>""</code> and <code>path.clean("")</code> returns <code>"."</code> (<code>corelib/path/path.ty:98-99</code>), which <code>hidden_segment</code> reads as a dotfile. Nothing in the compiler or the corelib could have caught it — <code>clean("")</code> returning <code>"."</code> is documented POSIX behaviour and both spellings type-check identically. It was caught by the live matrix (<code>50-request flood 0/50 200</code>), which is the argument for keeping that matrix.</li>
 </ul>
 <h3 id="two-defects-that-were-not-expressible-in-tycho-at-all">Two defects that were not expressible in Tycho at all</h3>
 <p>Both were found by running the server, both are C-level socket properties with</p>
@@ -904,19 +904,19 @@
 <p>rather than a line in this file. Recording them here because *the reason they</p>
 <p>were unreachable* is the ergonomic finding.</p>
 <ul>
-<li><strong>`SIGPIPE` killed the whole server.</strong> Nothing in <code>corelib/</code>, <code>runtime/</code> or <code>src/</code> mentioned SIGPIPE. One client that sent a partial request and closed without reading terminated the process — every worker, every in-flight connection — measured as <code>poll()</code> = <code>-13</code>. A Tycho program cannot fix this: signal disposition is process-wide with no Tycho surface, and <code>netx_write</code> loops <code>send()</code> internally, so even a single logical <code>net.write</code> can issue several syscalls. Fixed with <code>MSG_NOSIGNAL</code> / <code>SO_NOSIGPIPE</code>; the server now survives 100 consecutive hostile disconnects. <strong>RE-SCORED 2026-07-31 — the general claim inside this entry has stopped being true, and the entry's conclusion is unchanged by that.</strong> Tycho does have a signal surface now: <code>core:signal</code> (<code>docs/spec/18-library.md</code> §32.27) installs a <code>SIGTERM</code>/<code>SIGINT</code> handler whose only action is <code>shutdown(fd, SHUT_RDWR)</code> on a listening socket. It is two functions wide and <strong>cannot set a disposition</strong> — there is no <code>signal.on(sig, handler)</code> and no way to spell <code>SIG_IGN</code> — so <code>SIGPIPE</code> remains unreachable from Tycho and <code>MSG_NOSIGNAL</code> in the shim is still the only fix for it. What changed is the *precision* of the complaint: "signal disposition is process-wide with no Tycho surface" is now "no Tycho surface for signal <strong>disposition</strong>", which is the narrower and more useful statement of the gap.</li>
+<li><strong><code>SIGPIPE</code> killed the whole server.</strong> Nothing in <code>corelib/</code>, <code>runtime/</code> or <code>src/</code> mentioned SIGPIPE. One client that sent a partial request and closed without reading terminated the process — every worker, every in-flight connection — measured as <code>poll()</code> = <code>-13</code>. A Tycho program cannot fix this: signal disposition is process-wide with no Tycho surface, and <code>netx_write</code> loops <code>send()</code> internally, so even a single logical <code>net.write</code> can issue several syscalls. Fixed with <code>MSG_NOSIGNAL</code> / <code>SO_NOSIGPIPE</code>; the server now survives 100 consecutive hostile disconnects. <strong>RE-SCORED 2026-07-31 — the general claim inside this entry has stopped being true, and the entry's conclusion is unchanged by that.</strong> Tycho does have a signal surface now: <code>core:signal</code> (<code>docs/spec/18-library.md</code> §32.27) installs a <code>SIGTERM</code>/<code>SIGINT</code> handler whose only action is <code>shutdown(fd, SHUT_RDWR)</code> on a listening socket. It is two functions wide and <strong>cannot set a disposition</strong> — there is no <code>signal.on(sig, handler)</code> and no way to spell <code>SIG_IGN</code> — so <code>SIGPIPE</code> remains unreachable from Tycho and <code>MSG_NOSIGNAL</code> in the shim is still the only fix for it. What changed is the *precision* of the complaint: "signal disposition is process-wide with no Tycho surface" is now "no Tycho surface for signal <strong>disposition</strong>", which is the narrower and more useful statement of the gap.</li>
 <li><strong>Nagle cost 620× on every small response.</strong> <code>httpd.write_response</code> deliberately sends head and body as two writes so the body is never copied — a Phase 2 optimization. With Nagle on, that second small segment waits for the peer's delayed ACK. Measured, same server, same bytes: <strong>43.73 ms/req (23 req/s) with two writes vs 0.07 ms/req (14,465 req/s) with one.</strong> <code>TCP_NODELAY</code> fixes it and no Tycho program can set it. The lesson is sharper than the bug: a corelib change that saved one <code>memcpy</code> cost three orders of magnitude, and nothing in the language or library could have surfaced that to the person who wrote it.</li>
 </ul>
 <h2 id="what-was-good">What was good</h2>
 <p>An honest account needs this half, and the good is not a consolation prize —</p>
 <p>some of it is genuinely better than the mainstream alternatives.</p>
 <ul>
-<li><strong>Concurrency is the best thing in the language.</strong> <code>spawn</code> / <code>wait</code>, no async colouring, no executor to configure, no locks anywhere in the server, and real parallelism: 1 / 4 / 8 client processes gave 12,456 / 41,046 / <strong>79,712 req/s</strong>, linear in worker count. The whole pool is five lines. Compare what "8 worker threads sharing an accept loop" costs to write in C. <strong>Confirmed 2026-07-31 on a second, non-server workload, which matters because this bullet was written from a program that never used `parallel for`:</strong> <code>tools/prunner/main.ty</code> runs 560 fixtures over a bounded channel at <strong>7.62x</strong> (<code>maxconc</code> measured at 16 = <code>ncpu()</code>), and both of its drafts — ~240 lines and 479 lines — compiled with no errors and no warnings on the first attempt. See the 2026-07-31 re-score section above.</li>
+<li><strong>Concurrency is the best thing in the language.</strong> <code>spawn</code> / <code>wait</code>, no async colouring, no executor to configure, no locks anywhere in the server, and real parallelism: 1 / 4 / 8 client processes gave 12,456 / 41,046 / <strong>79,712 req/s</strong>, linear in worker count. The whole pool is five lines. Compare what "8 worker threads sharing an accept loop" costs to write in C. <strong>Confirmed 2026-07-31 on a second, non-server workload, which matters because this bullet was written from a program that never used <code>parallel for</code>:</strong> <code>tools/prunner/main.ty</code> runs 560 fixtures over a bounded channel at <strong>7.62x</strong> (<code>maxconc</code> measured at 16 = <code>ncpu()</code>), and both of its drafts — ~240 lines and 479 lines — compiled with no errors and no warnings on the first attempt. See the 2026-07-31 re-score section above.</li>
 <li><strong>Value semantics made the response builder obviously correct.</strong> <code>r = httpd.with_header(r, ...)</code> returns a new value, so a three-call chain has no aliasing question, needs no defensive copy, and cannot be wrong. Zero aliasing bugs across the whole phase. This is the part I would keep unchanged.</li>
-<li><strong>`path.safe_join` is exemplary corelib design.</strong> Fail-closed (returns <code>""</code>), handles both the absolute-path and the climb-out cases, and documents itself with worked examples including the answers. Thirteen traversal vectors — <code>..</code>, <code>%2e%2e</code>, <code>%2E%2E%2f</code>, <code>....//</code>, <code>//etc/passwd</code>, <code>/%00</code>, <code>.git</code> — all refused on the first attempt, with the whole defence being one call plus decoding in the right order.</li>
-<li><strong>`httpd.content_type` defaults to `application/octet-stream`, never `text/plain`, and says why in a comment.</strong> That is the correct call and the reasoning was written down where the next person will read it.</li>
+<li><strong><code>path.safe_join</code> is exemplary corelib design.</strong> Fail-closed (returns <code>""</code>), handles both the absolute-path and the climb-out cases, and documents itself with worked examples including the answers. Thirteen traversal vectors — <code>..</code>, <code>%2e%2e</code>, <code>%2E%2E%2f</code>, <code>....//</code>, <code>//etc/passwd</code>, <code>/%00</code>, <code>.git</code> — all refused on the first attempt, with the whole defence being one call plus decoding in the right order.</li>
+<li><strong><code>httpd.content_type</code> defaults to <code>application/octet-stream</code>, never <code>text/plain</code>, and says why in a comment.</strong> That is the correct call and the reasoning was written down where the next person will read it.</li>
 <li><strong>Diagnostics are precise when they fire</strong> — file, line, column, caret, and the source line quoted. The <code>send</code> collision is a gap in *where* the check happens, not in the quality of the message.</li>
-<li><strong>`bytes` bodies delivered byte-exact binary on the first try</strong>: a 480×270 PNG, a PNG-in-ICO favicon, and a 95 KB TrueType font, all <code>cmp</code>-identical to disk, including a <code>HEAD</code> that reports the real <code>Content-Length</code> and sends nothing.</li>
+<li><strong><code>bytes</code> bodies delivered byte-exact binary on the first try</strong>: a 480×270 PNG, a PNG-in-ICO favicon, and a 95 KB TrueType font, all <code>cmp</code>-identical to disk, including a <code>HEAD</code> that reports the real <code>Content-Length</code> and sends nothing.</li>
 <li><strong>It compiled on the second attempt</strong> — one rename — and then ran the entire abuse campaign (malformed request lines, binary junk, 60 KB headers, 2000 headers, slow-loris, RST-mid-body, 64-way floods, 6400-request runs) with <strong>zero runtime crashes</strong> once the two C-level socket issues were fixed. No use-after-free, no bounds abort, no leak, no data race across 8 threads sharing a listening fd.</li>
 <li><strong>The corelib is unusually well-commented.</strong> Learning <code>path</code>, <code>httpd</code>, <code>net</code> and <code>datetime</code> well enough to build against them was fast, and the comments were accurate — with one exception, <code>httpd</code>'s old claim that an interior NUL truncates a string body, which Phase 2 measured as false.</li>
 <li><strong>Indentation-block syntax reads well at length.</strong> <code>server/main.ty</code> is 440 lines and stayed readable without a formatter fight.</li>
@@ -932,7 +932,7 @@
 <p><strong>Postscript, 2026-07-26.</strong> That last sentence was acted on and it was wrong. See</p>
 <p>"The score against this file" above: five phases of adoption closed <strong>two</strong> of this</p>
 <p>file's twelve items, created six new ones (one since closed), spent **182 library</p>
-<p>code lines<strong>, and left `server/main.ty` </strong>nine lines longer** than it started —</p>
+<p>code lines<strong>, and left <code>server/main.ty</code> </strong>nine lines longer** than it started —</p>
 <p>371 → 380 — with the growth coming from the phase that made a startup message</p>
 <p>*accurate*, not from the four that made failures *sayable*. The narrower claim</p>
 <p>survives intact and is the one to carry forward: **where a sentinel is genuinely ambiguous, <code>Result</code> is a clear win;</p>
@@ -941,7 +941,7 @@
 <p>cannot yet make *failure* pleasant — still holds; what changed is that the reason</p>
 <p>is ergonomics (<code>unwrap_or</code>, nested patterns, <code>map_err</code>, inference) rather than the</p>
 <p>absence of <code>Option</code> and <code>Result</code> from the type system.</p>
-<p><strong>Postscript, 2026-07-30 (head `53dd937`).</strong> Two numbers in the verdict above have</p>
+<p><strong>Postscript, 2026-07-30 (head <code>53dd937</code>).</strong> Two numbers in the verdict above have</p>
 <p>moved and the sentence they support has been overtaken by its own follow-through.</p>
 <p>Re-counted at HEAD by <code>grep '^fn '</code> over the package sources (not <code>corelib/test/</code>):</p>
 <p>the corelib is <strong>406</strong> functions, not 386; <strong>1</strong> still returns an <code>Option</code></p>
@@ -967,7 +967,7 @@
 <p>closes that. The honest score is that it closes the <strong>shutdown case</strong>, not signal</p>
 <p>handling, and the difference is deliberate rather than unfinished.</p>
 <ul>
-<li><strong>CLOSED — a Tycho program can shut down cleanly on `SIGTERM`/`SIGINT`.</strong></li>
+<li><strong>CLOSED — a Tycho program can shut down cleanly on <code>SIGTERM</code>/<code>SIGINT</code>.</strong></li>
 </ul>
 <p><code>signal.on_shutdown(fd)</code> (<code>corelib/signal/signal.ty:14@on_shutdown</code>) installs one</p>
 <p>handler for both signals whose only action is <code>shutdown(fd, SHUT_RDWR)</code> on the</p>
@@ -1072,8 +1072,8 @@
 <p>written down at the time (<code>docs/reference/concurrency.md</code> old ≥105 → +13;</p>
 <p><code>docs/spec/13-concurrency.md</code> old 83..112 → +8, and so on).</p>
 <ul>
-<li><strong>`src/tychoc.c:4149`</strong> points at <code>gen_parfor</code> 98 lines short of where it is.</li>
-<li><strong>The package-mode comment above `dup_other_file`</strong> cites two sites and both</li>
+<li><strong><code>src/tychoc.c:4149</code></strong> points at <code>gen_parfor</code> 98 lines short of where it is.</li>
+<li><strong>The package-mode comment above <code>dup_other_file</code></strong> cites two sites and both</li>
 </ul>
 <p>are wrong — one lands in array-copy codegen, the other in an enum comment.</p>
 <p><strong>Why retired.</strong> Every one is bounds-valid, so <code>scripts/check_citations.py</code></p>
@@ -1147,7 +1147,7 @@
 <p>refusal. Below is what writing it surfaced, <strong>ranked</strong>, worst first. The last</p>
 <p>group is the entries that got smaller as they were written down, and they are</p>
 <p>labelled as such rather than padded.</p>
-<h3 id="1-the-one-shot-digest-is-what-the-language-makes-natural--downgraded-2026-08-18-coresha256-streams-now">1. ~~The one-shot digest is what the language makes natural~~ — <strong>DOWNGRADED 2026-08-18: `core:sha256` streams now</strong></h3>
+<h3 id="1-the-one-shot-digest-is-what-the-language-makes-natural--downgraded-2026-08-18-coresha256-streams-now">1. ~~The one-shot digest is what the language makes natural~~ — <strong>DOWNGRADED 2026-08-18: <code>core:sha256</code> streams now</strong></h3>
 <p><code>corelib/sha256/sha256.ty</code> has <code>init</code>, <code>update</code>, <code>final</code> and <code>final_hex</code>, so the</p>
 <p>package this actually matters for — <code>tycho-ar</code> stakes file integrity on it —</p>
 <p>can hash something it does not hold entire. <code>core:md5</code>, <code>core:hash</code> and</p>
@@ -1377,7 +1377,7 @@ s neg =2 inv=0
 <p>whose three lines are exactly <code>start&lt;0 -&gt; 0</code>, <code>end&gt;n -&gt; n</code>, <code>end&lt;start -&gt; start</code>.</p>
 <p>**Both reference languages fault where Tycho clamps, and that divergence is the</p>
 <p>finding.** Measured here, not recalled — go1.26.5 panics on all six shapes tried,</p>
-<p><strong>including the `string` slice</strong>:</p>
+<p><strong>including the <code>string</code> slice</strong>:</p>
 <pre><code>[]byte[2:10]  PANIC slice bounds out of range [:10] with capacity 5
 []byte[4:1]   PANIC slice bounds out of range [4:1]
 string[2:10]  PANIC slice bounds out of range [:10] with length 5
@@ -1461,7 +1461,7 @@ exit=1
 <p>a bounds check" — the silent clamp with both worked examples, the contrast with</p>
 <p>an array slice that ABORTS, the MUST NOT infer-from-return rule, and</p>
 <p><code>strings.slice_bytes</code> named as the checked form. Nothing left to write.**</p>
-<h3 id="6-there-is-no-eprintln-and-the-missing-channel-removed-a-feature--the-channel-was-never-missing-eprint-has-shipped-since-2026-06-14-2026-08-11">~~6. There is no <code>eprintln</code>, and the missing channel removed a feature~~ — <strong>the channel was never missing; `eprint` has shipped since 2026-06-14, 2026-08-11</strong></h3>
+<h3 id="6-there-is-no-eprintln-and-the-missing-channel-removed-a-feature--the-channel-was-never-missing-eprint-has-shipped-since-2026-06-14-2026-08-11">~~6. There is no <code>eprintln</code>, and the missing channel removed a feature~~ — <strong>the channel was never missing; <code>eprint</code> has shipped since 2026-06-14, 2026-08-11</strong></h3>
 <p>The entry's load-bearing sentence — "the builtins are <code>println</code>, <code>die</code> (stderr,</p>
 <p>then exit 1) and <code>exit(n)</code>", so "<strong>a non-fatal warning is inexpressible</strong>" — is</p>
 <p><strong>false, and was false when it was written</strong>. <code>eprint(s)</code> is a builtin: registered</p>
@@ -1604,7 +1604,7 @@ $ od -An -tx1 -N10 p1.gz               # MTIME is bytes 4..7
 <p>Recorded because they were hit, ranked below the line because writing them out</p>
 <p>shrank them. Padding this list would make the eight above harder to act on.</p>
 <ul>
-<li>~~<strong>No `io.write_bytes`.</strong>~~ — <strong>CLOSED by commit 2b226aa2; struck 2026-08-21.</strong></li>
+<li>~~<strong>No <code>io.write_bytes</code>.</strong>~~ — <strong>CLOSED by commit 2b226aa2; struck 2026-08-21.</strong></li>
 </ul>
 <p><code>corelib/io/io.ty@write_bytes</code> takes <code>bytes</code> and returns</p>
 <p><code>Result(void, IoErr)</code>, classified as <code>read_bytes</code> is, and <code>write_at</code> landed</p>
@@ -1616,7 +1616,7 @@ $ od -An -tx1 -N10 p1.gz               # MTIME is bytes 4..7
 <p>from symmetric with <code>io.read_bytes</code> and it never actually cost this program a</p>
 <p>bug, only a paragraph of comment justifying a line. Legibility, not safety.</p>
 <ul>
-<li>~~<strong>No `mkdir -p`.</strong>~~ — <strong>CLOSED 2026-08-21: `corelib/io/io.ty@make_dir_all`.</strong></li>
+<li>~~<strong>No <code>mkdir -p</code>.</strong>~~ — <strong>CLOSED 2026-08-21: <code>corelib/io/io.ty@make_dir_all</code>.</strong></li>
 </ul>
 <p>Pure Tycho over <code>make_dir</code>, no shim; <code>tools/tycho-ar/main.ty@mkdir_p</code> is the</p>
 <p>wrapper that names the error and is now 6 lines. **The entry was half wrong and</p>
@@ -1633,7 +1633,7 @@ $ od -An -tx1 -N10 p1.gz               # MTIME is bytes 4..7
 <p>into a tree it does not own rebuilds the component chain;</p>
 <p><code>tools/tycho-ar/main.ty@mkdir_p</code> is 18 lines of it. <strong>Real, and 18 lines.</strong></p>
 <p>**Re-scored 2026-08-21 — reproduces, and the number was wrong in the</p>
-<p>cheap direction:<strong> `@mkdir_p` is </strong>39 lines**, not 18. "Every caller" was</p>
+<p>cheap direction:<strong> <code>@mkdir_p</code> is </strong>39 lines**, not 18. "Every caller" was</p>
 <p>also too strong — it is the tree's ONLY recursive one; <code>tools/tycho-fetch</code></p>
 <p>and <code>tools/prunner</code> call <code>io.make_dir</code> once, for a parent they already own.</p>
 <p>So the cost is 39 lines in one place rather than a little in many, which</p>
@@ -1650,7 +1650,7 @@ $ od -An -tx1 -N10 p1.gz               # MTIME is bytes 4..7
 <p>change to callers the author never knew existed. No cost estimate, because the</p>
 <p>fix is a visibility rule and that is a language question, not a corelib one.</p>
 <ul>
-<li><strong>`core:io` is path-based, with no file handles.</strong> The compressor's read and the</li>
+<li><strong><code>core:io</code> is path-based, with no file handles.</strong> The compressor's read and the</li>
 </ul>
 <p>digest's reads are separate <code>open(2)</code>s over the same path, so an archiver cannot</p>
 <p>read a file atomically. A writer racing between them is <strong>detectable</strong> — a read</p>
@@ -1669,12 +1669,12 @@ $ od -An -tx1 -N10 p1.gz               # MTIME is bytes 4..7
 <p>expression became three statements. **The only thing that changed the code rather</p>
 <p>than the comments**, and it changed it by two lines.</p>
 <ul>
-<li><strong>`chr(n)` is the only route from a number to a byte.</strong> There is no <code>bytes</code></li>
+<li><strong><code>chr(n)</code> is the only route from a number to a byte.</strong> There is no <code>bytes</code></li>
 </ul>
 <p>builder from integers; <code>to_bytes</code> takes a <code>string</code>. SHA-256's padding is</p>
 <p>therefore assembled as a <code>string</code> and converted. Harmless at ≤120 bytes built</p>
 <p>once per file, and it would not be in a hot loop. Pairs with <code>io.write_bytes</code>:</p>
-<p><strong>`bytes` is a good type to receive and an awkward one to construct.</strong></p>
+<p><strong><code>bytes</code> is a good type to receive and an awkward one to construct.</strong></p>
 <ul>
 <li><strong>A match arm cannot be empty.</strong> An arm with no body is `error: expected an</li>
 </ul>
@@ -1687,7 +1687,7 @@ $ od -An -tx1 -N10 p1.gz               # MTIME is bytes 4..7
 <p>nearly shipped into this file, which is the one file here where that is</p>
 <p>expensive.</p>
 <ul>
-<li><strong>`push` has no inverse.</strong> No <code>pop</code>, so the directory walk is a queue with a</li>
+<li><strong><code>push</code> has no inverse.</strong> No <code>pop</code>, so the directory walk is a queue with a</li>
 </ul>
 <p>cursor rather than a stack. <strong>Not a defect</strong> — the queue reads better — but the</p>
 <p>data structure was chosen by the corelib rather than by the program.</p>
@@ -1700,8 +1700,8 @@ $ od -An -tx1 -N10 p1.gz               # MTIME is bytes 4..7
 <p>functions. This matches what the concurrent-program re-scoring above found and</p>
 <p>contradicts the picture the older half of this file paints.</p>
 <ul>
-<li><strong>The `bytes`/`string` crossing cost one call and no copy</strong> (item 2).</li>
-<li><strong>`sort.asc` over `[string]` is unsigned-byte lexicographic and locale-free</strong>,</li>
+<li><strong>The <code>bytes</code>/<code>string</code> crossing cost one call and no copy</strong> (item 2).</li>
+<li><strong><code>sort.asc</code> over <code>[string]</code> is unsigned-byte lexicographic and locale-free</strong>,</li>
 </ul>
 <p>because string comparison is <code>memcmp</code> over the length header</p>
 <p>(<code>runtime/tycho_rt.c@tycho_str_cmp</code>). That is what a format needs, and a</p>
@@ -1709,7 +1709,7 @@ $ od -An -tx1 -N10 p1.gz               # MTIME is bytes 4..7
 <p><code>runtime/tycho_rt.c@tycho_list_dir</code> returns filesystem order, so the sort is the</p>
 <p>entire determinism story on the walk side.</p>
 <ul>
-<li><strong>`path.safe_join` fails closed and was asserted, not assumed.</strong> A hand-built</li>
+<li><strong><code>path.safe_join</code> fails closed and was asserted, not assumed.</strong> A hand-built</li>
 </ul>
 <p>archive whose member path is <code>../a.txt</code> — the same eight bytes as <code>xx/a.txt</code>, and</p>
 <p>no digest in the format covers the path, so the substitution leaves a</p>
@@ -1866,14 +1866,14 @@ $ ./pj '[{"a":1.5}]'  → kind:arr  out: [{"a":1,"5}]":null}]   exit 0
 </code></pre>
 <p>Three different failures, and <strong>two of them exit 0</strong>:</p>
 <ul>
-<li><strong>Bare `1.5` truncates silently</strong> to <code>JNum(1)</code>.</li>
-<li><strong>`[1.5]` exhausts memory from five bytes of input.</strong> <code>parse_value</code> consumes</li>
+<li><strong>Bare <code>1.5</code> truncates silently</strong> to <code>JNum(1)</code>.</li>
+<li><strong><code>[1.5]</code> exhausts memory from five bytes of input.</strong> <code>parse_value</code> consumes</li>
 </ul>
 <p>nothing at the <code>.</code>, and <code>corelib/json/json.ty:81-92</code> advances only on <code>,</code> or</p>
 <p><code>]</code>, so <code>JNum(0)</code> is pushed forever. Not a slow parse — an unbounded one, from</p>
 <p>input a user could paste by accident.</p>
 <ul>
-<li><strong>`[{"a":1.5}]` exits 0 with a fabricated column.</strong> The leftover <code>.5}]</code> is read</li>
+<li><strong><code>[{"a":1.5}]</code> exits 0 with a fabricated column.</strong> The leftover <code>.5}]</code> is read</li>
 </ul>
 <p>as the next KEY. <strong>This is the shape a table reader actually meets</strong>, and it is</p>
 <p>the one with nothing to notice.</p>
@@ -1921,7 +1921,7 @@ $ ./pj '[{"a":1.5}]'  → kind:arr  out: [{"a":1,"5}]":null}]   exit 0
 </blockquote>
 <p>&gt;</p>
 <blockquote>
-<p><strong>`tycho-q`'s exact-only `/` is gone with it.</strong> <code>tools/tycho-q/main.ty:240-252</code></p>
+<p><strong><code>tycho-q</code>'s exact-only <code>/</code> is gone with it.</strong> <code>tools/tycho-q/main.ty:240-252</code></p>
 <p>records the change: the query the finding said had no answer now has one, and</p>
 <p>the zero divisor it had to pre-check is an <code>Err</code> it can attribute to a row.</p>
 </blockquote>
@@ -1980,7 +1980,7 @@ no div, so there is no rounding policy to apply
 <p>to the corelib call is separate cleanup.</p>
 <p>The original text follows.</p>
 <p>Read against the signatures, not assumed. <code>corelib/sort/sort.ty@by_key</code> takes</p>
-<p><code>key: fn($T) -&gt; int</code> — <strong>the key is an `int`</strong>, so it can express no order that</p>
+<p><code>key: fn($T) -&gt; int</code> — <strong>the key is an <code>int</code></strong>, so it can express no order that</p>
 <p>does not fit in one machine word, and this program's order ranks by kind and then</p>
 <p>by value across <code>VStr</code> and <code>decimal.Decimal</code>. There is no order-preserving</p>
 <p>injection of a string into an <code>int</code>. <code>corelib/sort/sort.ty@asc</code> and</p>
@@ -2035,7 +2035,7 @@ no div, so there is no rounding policy to apply
 <p><strong>Cost to fix:</strong> either a unit-like type usable as a <code>Result</code>'s success payload,</p>
 <p>or admitting <code>or_return</code> as a statement when the value is discarded. Both are</p>
 <p>language changes, which is why this ranks below three corelib items that are not.</p>
-<h3 id="5-an-enum-cannot-be-asked-which-variant-it-is-without-binding-a-payload--fixed-2026-08-11-the-is-operator">5. ~~An enum cannot be asked which variant it is without binding a payload~~ — <strong>FIXED 2026-08-11: the `is` operator</strong></h3>
+<h3 id="5-an-enum-cannot-be-asked-which-variant-it-is-without-binding-a-payload--fixed-2026-08-11-the-is-operator">5. ~~An enum cannot be asked which variant it is without binding a payload~~ — <strong>FIXED 2026-08-11: the <code>is</code> operator</strong></h3>
 <blockquote>
 <p>Pinned-by: test -f tests/enum_is.ty</p>
 <p>Pinned-by: make test</p>
@@ -2111,7 +2111,7 @@ no div, so there is no rounding policy to apply
 <p>discriminator, and the only way to get one is to build it.** The alternative is</p>
 <p>that decoration at every site, which is where a reader stops being able to see</p>
 <p>which arms actually use their payloads.</p>
-<h3 id="6-two-error-types-cannot-share-an-or-return-chain--wrong-mechanism-corrected-2026-08-11-closed-by-resultmap-err-with-the-same-day">6. ~~Two error types cannot share an <code>or_return</code> chain~~ — <strong>WRONG MECHANISM, corrected 2026-08-11; CLOSED by `result.map_err_with` the same day</strong></h3>
+<h3 id="6-two-error-types-cannot-share-an-or-return-chain--wrong-mechanism-corrected-2026-08-11-closed-by-resultmap-err-with-the-same-day">6. ~~Two error types cannot share an <code>or_return</code> chain~~ — <strong>WRONG MECHANISM, corrected 2026-08-11; CLOSED by <code>result.map_err_with</code> the same day</strong></h3>
 <blockquote>
 <p>Pinned-by: test -f src/tychoc.c</p>
 <p>Pinned-by: make test</p>
@@ -2177,7 +2177,7 @@ no div, so there is no rounding policy to apply
 </blockquote>
 <p>&gt;</p>
 <blockquote>
-<p><strong>CLOSED 2026-08-11 — the function is `result.map_err_with`</strong>, exactly the four</p>
+<p><strong>CLOSED 2026-08-11 — the function is <code>result.map_err_with</code></strong>, exactly the four</p>
 <p>lines probed above, sitting beside <code>map_err</code> in <code>corelib/result/result.ty</code> with</p>
 <p>the same name shape, the same argument order and the same doc voice. Its</p>
 <p>regression is <code>with_pay</code> in <code>corelib/test/result/main.ty</code>, which asserts the</p>
@@ -2190,7 +2190,7 @@ no div, so there is no rounding policy to apply
 <p><code>PErr</code> (parse — carries a byte offset) and <code>RErr</code> (runtime — carries a column name</p>
 <p>or nothing) genuinely differ, and folding them would put a meaningless <code>off: 0</code> on</p>
 <p>two thirds of the messages. But <code>Result(T, PErr)</code> and <code>Result(T, RErr)</code> are</p>
-<p>different types and there is <strong>no `From`-style error conversion</strong>, so no function</p>
+<p>different types and there is <strong>no <code>From</code>-style error conversion</strong>, so no function</p>
 <p>can propagate across the boundary.</p>
 <p>Here they meet only in <code>main</code> and the cost is one extra <code>match</code>. That is why it</p>
 <p>ranks sixth and not higher — but the cost is structural, not proportional: **a</p>
@@ -2337,7 +2337,7 @@ error: or_return requires the enclosing function to return a Result, but it
 <p>wanting both "where I started" and "where I am" derives the first from the</p>
 <p>second on entry. <strong>Cost: one line per lexer function, and no bug.</strong></p>
 <ul>
-<li><strong>A bare path in `from` cannot be absolute.</strong> <code>from /tmp/x.csv</code> lexes the</li>
+<li><strong>A bare path in <code>from</code> cannot be absolute.</strong> <code>from /tmp/x.csv</code> lexes the</li>
 </ul>
 <p>leading <code>/</code> as division and fails with "expected a source path after <code>from</code>" —</p>
 <p>a diagnostic about division for a problem about quoting. **A tool wart, not a</p>
@@ -2362,7 +2362,7 @@ error: or_return requires the enclosing function to return a Result, but it
 <p>Zero diagnostics. The AST is therefore direct recursion and <strong>not</strong> the</p>
 <p>index-into-a-node-array fallback the plan had budgeted for.</p>
 <ul>
-<li><strong>`Option` and `Result` plumbing needed no workaround anywhere.</strong> <code>Option(Expr)</code></li>
+<li><strong><code>Option</code> and <code>Result</code> plumbing needed no workaround anywhere.</strong> <code>Option(Expr)</code></li>
 </ul>
 <p>and <code>Option(int)</code> are usable as struct fields over a program-local recursive</p>
 <p>enum, <code>None</code> infers its type from the field it is assigned to, and</p>
@@ -2383,7 +2383,7 @@ error: or_return requires the enclosing function to return a Result, but it
 <p>another package's enum match directly, qualified: <code>Err(io.NotFound)</code> works,</p>
 <p>bare <code>NotFound</code> is "not a variant of io__IoErr", which is the right answer.</p>
 <ul>
-<li><strong>`core:decimal` preserves scale through a round trip.</strong> <code>decimal.from_str("1.50")</code></li>
+<li><strong><code>core:decimal</code> preserves scale through a round trip.</strong> <code>decimal.from_str("1.50")</code></li>
 </ul>
 <p>renders back as <code>1.50</code>, so a decimal literal survives byte-exactly and `0.1 +</p>
 <p>0.2<code> is the three characters </code>0.3<code> — not </code>0.30000000000000004<code> and not </code>0.30`.</p>
@@ -2423,14 +2423,14 @@ fn main():
 ./main.ty:8: note: required from here -- this call instantiated the generic
      8 |     r := iter.try_map([1,2], check)
 </code></pre>
-<p><strong>The `note:` is the day's other feature working exactly as intended</strong> — without</p>
+<p><strong>The <code>note:</code> is the day's other feature working exactly as intended</strong> — without</p>
 <p><code>4a7cca0</code> this was a bare corelib line and nothing else. It is still a message</p>
 <p>about <code>out</code>, a local the caller has never heard of, for a problem that is "there</p>
 <p>is no <code>try_each</code>". The workaround is a hand-written loop with <code>or_return</code>, three</p>
 <p>lines, which is what <code>try_map</code> existed to remove. **Not fixed here: adding</p>
 <p><code>try_each</code> is a design decision about the package's shape, not a defect.**</p>
 <blockquote>
-<p><strong>Decided 2026-08-12: `try_each` is DECLINED. The loop is the answer.</strong></p>
+<p><strong>Decided 2026-08-12: <code>try_each</code> is DECLINED. The loop is the answer.</strong></p>
 </blockquote>
 <p>&gt;</p>
 <blockquote>
@@ -2594,7 +2594,7 @@ Odin os.open("h\0i")                    = nil      # OPENS `h`
 <p>NUL still costs a scan, header or no header.</p>
 <h3 id="what-did-not-go-wrong-which-is-also-data">What did not go wrong, which is also data</h3>
 <ul>
-<li><strong>`is` is single-eval and short-circuits correctly.</strong> <code>make(&amp;c) is VB</code> on a</li>
+<li><strong><code>is</code> is single-eval and short-circuits correctly.</strong> <code>make(&amp;c) is VB</code> on a</li>
 </ul>
 <p>call with an <code>inout</code> side effect calls once; <code>a is Some and boom(&amp;c) is Some</code></p>
 <p>leaves the counter at 0 when the left side is false. Codegen emits</p>
@@ -2614,7 +2614,7 @@ Odin os.open("h\0i")                    = nil      # OPENS `h`
 <p>message. A struct FIELD and an <code>extern fn</code> parameter name may still be</p>
 <p>uppercase, and neither is a binding.</p>
 <ul>
-<li><strong>`[string]` over the FFI is right everywhere else probed.</strong> Empty array, empty</li>
+<li><strong><code>[string]</code> over the FFI is right everywhere else probed.</strong> Empty array, empty</li>
 </ul>
 <p>string elements, a 2000-element array built by <code>push</code> in a loop, an array</p>
 <p>literal written inline, a <code>[string]</code> read out of a struct field, and the same</p>
@@ -2622,7 +2622,7 @@ Odin os.open("h\0i")                    = nil      # OPENS `h`
 <p>two copies — <code>p_two</code> returned <code>1303</code>). A <code>bounded[4]string</code> is refused at the</p>
 <p>call, which is right: it stores in <code>.v</code>, not <code>.data</code>.</p>
 <ul>
-<li><strong>`Result(void, E)` composes.</strong> Three <code>or_return</code> steps in a chain stop at the</li>
+<li><strong><code>Result(void, E)</code> composes.</strong> Three <code>or_return</code> steps in a chain stop at the</li>
 </ul>
 <p>failing one; <code>result.is_ok</code>/<code>is_err</code>/<code>err_or</code> and <code>r is Ok</code>/<code>r is Err</code> all</p>
 <p>answer at a void payload.</p>
@@ -2632,7 +2632,7 @@ Odin os.open("h\0i")                    = nil      # OPENS `h`
 <p><code>Ok([])</code> for an empty input.** Nested <code>try_map</code> inside <code>try_map</code> over <code>[[int]]</code></p>
 <p>propagates the inner <code>Err</code> unchanged.</p>
 <ul>
-<li><strong>`io.set_mtime` behaves at every edge probed.</strong> A directory is <code>Ok</code> (as</li>
+<li><strong><code>io.set_mtime</code> behaves at every edge probed.</strong> A directory is <code>Ok</code> (as</li>
 </ul>
 <p>documented), a symlink follows to its target, a missing path and <code>""</code> are both</p>
 <p><code>Err(NotFound)</code>, a mode-444 file the caller owns is <code>Ok</code> (POSIX: the owner may</p>
@@ -2822,7 +2822,7 @@ typedef int64_t tycho_int;
 <p>records the toll, which is one copied block per shim and is paid once.</p>
 <h3 id="what-did-not-go-wrong-which-is-also-data">What did not go wrong, which is also data</h3>
 <ul>
-<li><strong>`core:strings` is not missing `split`; `split` is a builtin.</strong> This was</li>
+<li><strong><code>core:strings</code> is not missing <code>split</code>; <code>split</code> is a builtin.</strong> This was</li>
 </ul>
 <p>written up as the day's most likely newcomer-bouncer — a word-frequency</p>
 <p>program hand-rolled a character scanner because</p>
@@ -2840,7 +2840,7 @@ typedef int64_t tycho_int;
 <p>is kept), <code>split("a,", ",")</code> -&gt; <code>[a, ]</code> (a trailing separator DOES add an</p>
 <p>empty element, unlike <code>lines</code>), <code>split("a::b", "::")</code> -&gt; <code>[a, b]</code>. An empty</p>
 <p>separator aborts at run time by design (§29.12).</p>
-<p><strong>Adding `strings.split` would have been actively harmful</strong>, not merely</p>
+<p><strong>Adding <code>strings.split</code> would have been actively harmful</strong>, not merely</p>
 <p>redundant: <code>split</code> is on the shadowed-builtin list</p>
 <p>(<code>src/tychoc.c@shadows_builtin</code>), so a <code>fn split</code> in <code>corelib/strings</code> would</p>
 <p>have emitted the exact warning entry #B of this session removed — into every</p>
@@ -3127,7 +3127,7 @@ fn relabel(it: Item($A), f: fn($A) -&gt; $B) -&gt; Item($B):    # refused
 <p>type, verified 2026-08-12. So the accepted spelling works by name coincidence,</p>
 <p>which is exactly why the restriction is invisible until a stage needs to change</p>
 <p>the parameter.</p>
-<p><strong>The cost, measured in `tools/tycho-flow`.</strong> Every generic stage had to be</p>
+<p><strong>The cost, measured in <code>tools/tycho-flow</code>.</strong> Every generic stage had to be</p>
 <p>endomorphic — same instantiation in and out — because a type-CHANGING stage</p>
 <p>(<code>Item($A)</code> -&gt; <code>Item($B)</code>) cannot be spelled. Tuples were the obvious escape and</p>
 <p>are not one (see below).</p>
@@ -3276,19 +3276,19 @@ f := fn(k: string) -&gt; int: m.get(k, 0)
 <p>per resolver arm, because only the capture list is shared between them.</p>
 <h3 id="the-three-that-were-not-defects-so-the-next-audit-does-not-re-litigate-them">The three that were not defects, so the next audit does not re-litigate them</h3>
 <p>Each now carries a one-line comment at its site.</p>
-<p><strong>`type_is_heap` has no `IS_CHAN` arm, and must not.</strong> A channel is a shared</p>
+<p><strong><code>type_is_heap</code> has no <code>IS_CHAN</code> arm, and must not.</strong> A channel is a shared</p>
 <p>handle: <code>d := c</code> has to alias the one queue, and a deep copy would silently</p>
 <p>split a rendezvous in two — the probe sends on <code>d</code> and receives on <code>c</code>. It is</p>
 <p>also unreachable through the aggregate arms, since arrays, tuples and structs</p>
 <p>all refuse a channel element.</p>
-<p><strong>`type_mangle_ident`'s `t%d` tail is unique, just unstable.</strong> The brief</p>
+<p><strong><code>type_mangle_ident</code>'s <code>t%d</code> tail is unique, just unstable.</strong> The brief</p>
 <p>expected mangling collisions from the missing <code>FUNC</code> and <code>TUP</code> arms. There are</p>
 <p>none and there cannot be: the type ranges are disjoint, so no two types share a</p>
 <p>number. What the fallback costs is a name that moves with unrelated edits</p>
 <p>(<code>gid__t16384</code>), which is the same reason <code>f0fd19e5</code> added the <code>CHAN</code> arm — so</p>
 <p><code>TUP</code> and <code>SOA</code> arms went in with the rest, and <code>FUNC</code> is left as the one</p>
 <p>remaining case with a comment saying the tail is a naming choice, not a hazard.</p>
-<p><strong>`type_mentions_tp` cannot collide by missing an arm.</strong> Its answer decides</p>
+<p><strong><code>type_mentions_tp</code> cannot collide by missing an arm.</strong> Its answer decides</p>
 <p>whether an unpinned <code>$T</code>'s binding is appended to the instance name. A false</p>
 <p>negative therefore *adds* a redundant suffix (<code>unbox__Box__int__int</code>) and a</p>
 <p>collision would need a false positive, which no missing arm can produce. <code>TUP</code></p>
@@ -3328,7 +3328,7 @@ f := fn(k: string) -&gt; int: m.get(k, 0)
 <p>The last one is the sharp edge: <code>str</code> produced a decimal that this project's own</p>
 <p>parser rejects, so a value at the top of the range could be printed and never</p>
 <p>read. Nothing warned; the text looked fine.</p>
-<p><strong>Fixed by shortest-round-trip, not by `%.17g`.</strong> The renderer now tries</p>
+<p><strong>Fixed by shortest-round-trip, not by <code>%.17g</code>.</strong> The renderer now tries</p>
 <p><code>%.15g</code>, <code>%.16g</code>, <code>%.17g</code> and returns the first that <code>strtod</code> reads back</p>
 <p>unchanged. Both options fix every row above; the choice was about what happens</p>
 <p>to the values that were *already* correct.</p>
@@ -3339,7 +3339,7 @@ f := fn(k: string) -&gt; int: m.get(k, 0)
 <ul>
 <li>Escalation keeps the short text wherever 15 digits already round-tripped.</li>
 </ul>
-<p><strong>Measured: of 660 `make test` fixtures, exactly one golden line moved</strong></p>
+<p><strong>Measured: of 660 <code>make test</code> fixtures, exactly one golden line moved</strong></p>
 <p>(<code>0.1+0.2</code>, in <code>tests/float_str_locale.out</code>, once per locale block), and</p>
 <p><code>make corelib</code>, <code>make corelib-examples</code>, <code>make conc</code>, <code>q-check</code>, <code>ed-check</code>,</p>
 <p><code>db-check</code> and <code>flow-check</code> all stayed green with no re-record at all. A</p>
@@ -3374,7 +3374,7 @@ f := fn(k: string) -&gt; int: m.get(k, 0)
 <p>Pinned-by: make format-diff</p>
 </blockquote>
 <p>Measured before the change: <code>parse_float("2.2250738585072014e-308")</code> was <code>Ok</code></p>
-<p>and <strong>everything smaller was `Err(Underflow)`</strong> — <code>5e-324</code>, <code>1e-320</code>, the lot.</p>
+<p>and <strong>everything smaller was <code>Err(Underflow)</code></strong> — <code>5e-324</code>, <code>1e-320</code>, the lot.</p>
 <p>That boundary is DBL_MIN, the smallest *normal*. Every subnormal, a third of a</p>
 <p>binary64's exponent range, was unreadable.</p>
 <p><strong>Was it deliberate?</strong> Half. The <code>Underflow</code> variant carried a comment saying</p>
@@ -3675,7 +3675,7 @@ probe/main.ty:3: error: unknown type 'E'; did you mean 'S'?
 <p>of them: read a TOML manifest, walk a tree, archive it as a zip, and prove the</p>
 <p>archive by reading it back and checking every CRC against the bytes that went</p>
 <p>in. Every finding below was hit while writing it, in order.</p>
-<h3 id="29-cliparse-specs-schema-names-must-be-undashed-and-getting-it-wrong-is-silent--fixed-2026-08-13-c46952de-see-the-banner-below-the-residue--unknown-is-advisory--is-not-fixed">29. ~~<code>cli.parse_spec</code>'s schema names must be UNDASHED, and getting it wrong is silent~~ — <strong>FIXED 2026-08-13 (`c46952de`); see the banner below. The residue — `unknown()` is advisory — is not fixed.</strong></h3>
+<h3 id="29-cliparse-specs-schema-names-must-be-undashed-and-getting-it-wrong-is-silent--fixed-2026-08-13-c46952de-see-the-banner-below-the-residue--unknown-is-advisory--is-not-fixed">29. ~~<code>cli.parse_spec</code>'s schema names must be UNDASHED, and getting it wrong is silent~~ — <strong>FIXED 2026-08-13 (<code>c46952de</code>); see the banner below. The residue — <code>unknown()</code> is advisory — is not fixed.</strong></h3>
 <blockquote>
 <p>Pinned-by: test -f corelib/cli/cli.ty</p>
 <p>Pinned-by: make corelib</p>
@@ -3714,7 +3714,7 @@ bare    get=[real.toml]  unknown=0
 <p>started the server on the default port with nothing said. It now reports</p>
 <p><code>unknown option --pot</code>, and <code>--port</code> with nothing after it reports</p>
 <p><code>--port needs a value</code>.**</p>
-<h3 id="30-string--string-is-refused-with-a-reason-that-is-false--fixed-2026-08-13-c46952de-both-sites-see-the-banner-below">30. ~~<code>[string] + [string]</code> is refused with a reason that is false~~ — <strong>FIXED 2026-08-13 (`c46952de`), both sites; see the banner below</strong></h3>
+<h3 id="30-string--string-is-refused-with-a-reason-that-is-false--fixed-2026-08-13-c46952de-both-sites-see-the-banner-below">30. ~~<code>[string] + [string]</code> is refused with a reason that is false~~ — <strong>FIXED 2026-08-13 (<code>c46952de</code>), both sites; see the banner below</strong></h3>
 <blockquote>
 <p>Pinned-by: test -f src/tychoc.c</p>
 <p>Pinned-by: make test</p>
@@ -3751,7 +3751,7 @@ bare    get=[real.toml]  unknown=0
 <p>generic, and inference from the field values is what lets the type parameters go</p>
 <p>unwritten. Recorded because the first thing a caller reads is the <code>($K, $V)</code></p>
 <p>header, and it is a false friend.</p>
-<h3 id="32-mangled-instantiation-names-reach-the-user--recorded-cosmetic-one-pass-over-type-namecallee-spelling-not-a-phase">32. ~~Mangled instantiation names reach the user~~ — <strong>RECORDED, cosmetic; one pass over `type_name`/callee spelling, not a phase</strong></h3>
+<h3 id="32-mangled-instantiation-names-reach-the-user--recorded-cosmetic-one-pass-over-type-namecallee-spelling-not-a-phase">32. ~~Mangled instantiation names reach the user~~ — <strong>RECORDED, cosmetic; one pass over <code>type_name</code>/callee spelling, not a phase</strong></h3>
 <p>Two diagnostics from the same session, verbatim:</p>
 <pre><code>error: argument 1 of 'intern__count__intern__Interner__string__int__string__int' is not inout; remove the '&amp;'
 error: cannot compare intern__Handle with int
@@ -3763,7 +3763,7 @@ error: cannot compare intern__Handle with int
 <p><code>type_name</code>/callee spelling at some point, not a phase of its own.</p>
 <h3 id="what-did-not-go-wrong-which-is-also-data">What did not go wrong, which is also data</h3>
 <ul>
-<li><strong>`core:zip` is interoperable, and nothing in this tree had ever checked.</strong></li>
+<li><strong><code>core:zip</code> is interoperable, and nothing in this tree had ever checked.</strong></li>
 </ul>
 <p>Its output is read by Python's <code>zipfile</code>: <code>testzip()</code> returns <code>None</code> (every</p>
 <p>CRC verified by a second implementation), the member list matches, and one</p>
@@ -3777,7 +3777,7 @@ error: cannot compare intern__Handle with int
 <p>snapshot. That is the program's job, not the package's, and <code>sort.asc</code> made it</p>
 <p>one line.</p>
 <ul>
-<li><strong>`core:toml`, `core:log` and `core:intern` did what their headers say</strong> on</li>
+<li><strong><code>core:toml</code>, <code>core:log</code> and <code>core:intern</code> did what their headers say</strong> on</li>
 </ul>
 <p>first reading, with no probe needed: dotted-path <code>get</code>, an <code>inout</code> logger with</p>
 <p>four levels, and handle identity across repeated keys.</p>
@@ -3878,7 +3878,7 @@ a, _ = two()  error: `_` is not a discard -- it is an ordinary variable, and thi
 <p>shape as #29, where the plausible spelling was the silent one.</p>
 <h3 id="what-did-not-go-wrong-which-is-also-data">What did not go wrong, which is also data</h3>
 <ul>
-<li><strong>`core:testing` fails honestly, and this is now GATED.</strong> The whole risk of a</li>
+<li><strong><code>core:testing</code> fails honestly, and this is now GATED.</strong> The whole risk of a</li>
 </ul>
 <p>test framework nobody tests is that it prints <code>ok</code> unconditionally. Probed by</p>
 <p>changing one expected total in a copy of the program: it printed</p>
@@ -3887,17 +3887,17 @@ a, _ = two()  error: `_` is not a discard -- it is an ordinary variable, and thi
 <p><code>tools/tycho-tally/run.sh</code> leg [2] — it edits a COPY, never the tree, so the</p>
 <p>proof runs on every <code>make tally-check</code>.</p>
 <ul>
-<li><strong>`core:sqlite`'s parameter binding holds against a hostile value.</strong></li>
+<li><strong><code>core:sqlite</code>'s parameter binding holds against a hostile value.</strong></li>
 </ul>
 <p><code>o'brien'); DROP TABLE entry; --</code> inserted through <code>exec_params</code> reads back as</p>
 <p>one row with its bytes intact, and the table is still there afterwards — three</p>
 <p>assertions in the suite, not a claim in a comment.</p>
 <ul>
-<li><strong>`sqlite.exec` on malformed SQL is `Err` with a message</strong>, not a silent</li>
+<li><strong><code>sqlite.exec</code> on malformed SQL is <code>Err</code> with a message</strong>, not a silent</li>
 </ul>
 <p><code>Ok(0)</code>: <code>THIS IS NOT SQL</code> is asserted in the suite.</p>
 <ul>
-<li><strong>A `Db` handle is an ordinary struct over a `ptr`</strong>, so <code>open</code> -&gt; <code>close</code> is</li>
+<li><strong>A <code>Db</code> handle is an ordinary struct over a <code>ptr</code></strong>, so <code>open</code> -&gt; <code>close</code> is</li>
 </ul>
 <p>the whole lifecycle and nothing in the language stops a use-after-close. Not a</p>
 <p>finding — the package says <code>h: ptr # the sqlite3* handle; 0 = closed</code> — but</p>
@@ -3925,7 +3925,7 @@ a, _ = two()  error: `_` is not a discard -- it is an ordinary variable, and thi
 <p><code>tools/tycho-flow/stage/stage.ty</code> (21, <code>struct Item($T)</code>),</p>
 <p><code>tools/tycho-flow/graph/graph.ty</code> (16, <code>struct Plan($T)</code>), <code>tools/tycho-q</code>,</p>
 <p><code>tools/prunner</code>, and <code>examples/generics_tour.ty</code>, which exists for exactly this</p>
-<p>subject. <strong>Writing generics outside `corelib/` was not new here.</strong> The findings</p>
+<p>subject. <strong>Writing generics outside <code>corelib/</code> was not new here.</strong> The findings</p>
 <p>below stand on their own — they are properties of the type system, not of who</p>
 <p>had written a generic first — and the lane's one defensible uniqueness is</p>
 <p>narrower: no other <code>run.sh</code> greps the emitted C for a <code>pkg__fn__type</code> mangling.</p>
@@ -3974,7 +3974,7 @@ a, _ = two()  error: `_` is not a discard -- it is an ordinary variable, and thi
 </blockquote>
 <p>Hit in order while writing <code>pipe/</code>:</p>
 <ul>
-<li><strong>`[]$T` is not an empty-array literal.</strong> <strong>*FIXED 2026-08-13: it is now.</strong>*</li>
+<li><strong><code>[]$T</code> is not an empty-array literal.</strong> <strong>*FIXED 2026-08-13: it is now.</strong>*</li>
 </ul>
 <p>The empty-literal parse site accepted every type-token EXCEPT <code>TK_DOLLAR</code>, so</p>
 <p>the literal fell through to the untyped marker and the <code>$</code> died on the next</p>
@@ -3985,7 +3985,7 @@ a, _ = two()  error: `_` is not a discard -- it is an ordinary variable, and thi
 <p>which is what every corelib generic does (<code>corelib/iter/iter.ty</code>,</p>
 <p><code>corelib/arrays/arrays.ty</code>).</p>
 <ul>
-<li><strong>A bare `[]` needs an expected type.</strong> In <code>Tally([], [])</code> it is</li>
+<li><strong>A bare <code>[]</code> needs an expected type.</strong> In <code>Tally([], [])</code> it is</li>
 </ul>
 <p>`error: cannot type a bare [] here -- no expected type (write []T, or use it</p>
 <p>where the element type is known)<code>. The message's </code>[]T` advice is right and is</p>
@@ -4024,20 +4024,20 @@ a, _ = two()  error: `_` is not a discard -- it is an ordinary variable, and thi
 <p>call site. <code>make agg-check</code> asserts the mangled instantiations appear in the</p>
 <p>emitted C, because the counts alone cannot show a generic ran.</p>
 <ul>
-<li><strong>The `required from here` note is the reason these were diagnosable at all.</strong></li>
+<li><strong>The <code>required from here</code> note is the reason these were diagnosable at all.</strong></li>
 </ul>
 <p>Every generic error above pointed at the instantiating call in <code>main.ty</code> as</p>
 <p>well as the failing line in <code>pipe/</code>, which is what turned "an unbound type</p>
 <p>variable" into "this call did it".</p>
 <ul>
-<li><strong>`where` clauses compose with an `inout` generic struct.</strong> `bump(t: inout</li>
+<li><strong><code>where</code> clauses compose with an <code>inout</code> generic struct.</strong> `bump(t: inout</li>
 </ul>
 <p>Tally($K), k: $K) where hashable(K)` takes the tally by reference, mutates the</p>
 <p>map, and the caller's copy sees it — no aliasing surprise and no annotation</p>
 <p>beyond the one on the parameter.</p>
 <h2 id="found-by-toolstycho-tmpl-2026-08-14-head-08f50a5f">Found by <code>tools/tycho-tmpl</code>, 2026-08-14 (head <code>08f50a5f</code>)</h2>
 <p>The fourth dogfood audit. Subject picked by measurement, **with <code>grep -F</code> this</p>
-<p>time<strong>: `sink` appears 18 times in the tree and </strong>all 18 are in <code>tests/</code>** — no</p>
+<p>time<strong>: <code>sink</code> appears 18 times in the tree and </strong>all 18 are in <code>tests/</code>** — no</p>
 <p>program under <code>tools/</code>, <code>examples/</code>, <code>server/</code> or <code>bench/</code> uses it, and neither</p>
 <p>does <code>corelib/</code>. A parameter mode exercised only by its own fixtures.</p>
 <p><code>tools/tycho-tmpl</code> is a line-oriented template renderer whose document builder</p>
@@ -4095,12 +4095,12 @@ a, _ = two()  error: `_` is not a discard -- it is an ordinary variable, and thi
 <p><code>lines[0] = …</code>) and says "even before this line", which is what turned a</p>
 <p>puzzling refusal into a five-second edit.</p>
 <ul>
-<li><strong>`cli.parse_checked` earned its keep on its first outside caller.</strong> This</li>
+<li><strong><code>cli.parse_checked</code> earned its keep on its first outside caller.</strong> This</li>
 </ul>
 <p>program used it from the start and <code>--sett x=1</code> was refused by name — the</p>
 <p>shape FRICTION #29 asked for, working in a program written after it.</p>
 <ul>
-<li><strong>A `sink` on a plain array works exactly as specified.</strong> <code>doc.of(xs: sink [string])</code></li>
+<li><strong>A <code>sink</code> on a plain array works exactly as specified.</strong> <code>doc.of(xs: sink [string])</code></li>
 </ul>
 <p>adopts a call's result with no copy; only NAMED values are the problem.</p>
 <hr/>
@@ -4158,7 +4158,7 @@ local_sum(1, 2, 3)  # fine -- the same declaration, called unqualified
 <p>packed.** <code>vp.sum(arr...)</code>, <code>vp.tagged("n", 7, 8)</code> and <code>vp.count("a","b","c")</code></p>
 <p>needed no further change — #38 was one missing fold, not a broken feature.</p>
 <ul>
-<li><strong>`zero$(T)` under `where defaultable(T), numeric(T)` worked first time</strong>, which</li>
+<li><strong><code>zero$(T)</code> under <code>where defaultable(T), numeric(T)</code> worked first time</strong>, which</li>
 </ul>
 <p>is the feature the package was written to exercise. The constraint list is</p>
 <p>comma-separated; <code>and</code> is not a spelling the grammar has.</p>
@@ -4225,7 +4225,7 @@ argument 2 of 'money__add' is int, expected money__Cents
 <p>string, <code>keys()</code> handing the keys back wrapped, arrays of a foreign newtype,</p>
 <p><code>to_int</code>/<code>to_str</code>/<code>to_under</code>, and a struct field typed as one.</p>
 <ul>
-<li><strong>`sort.asc` instantiated at a foreign newtype</strong>, so <code>where comparable(T)</code></li>
+<li><strong><code>sort.asc</code> instantiated at a foreign newtype</strong>, so <code>where comparable(T)</code></li>
 </ul>
 <p>admits a newtype over string across two package boundaries at once.</p>
 <ul>
@@ -4236,7 +4236,7 @@ argument 2 of 'money__add' is int, expected money__Cents
 <hr/>
 <h2 id="found-by-toolstycho-fh-2026-08-14-head-ff7894f3">Found by <code>tools/tycho-fh</code>, 2026-08-14 (head <code>ff7894f3</code>)</h2>
 <p>Seventh audit, and the last feature whose only caller was its own fixture:</p>
-<p><code>handle Name:</code> was declared in exactly <strong>10 files, all under `tests/`</strong> — nine</p>
+<p><code>handle Name:</code> was declared in exactly <strong>10 files, all under <code>tests/</code></strong> — nine</p>
 <p>rejects and <code>tests/ffi/main.ty</code>. Nothing under <code>tools/</code>, <code>examples/</code>, <code>server/</code>,</p>
 <p><code>bench/</code> or <code>corelib/</code> declared one. Writing the first consumer found a **double</p>
 <p>free**.</p>
@@ -4511,7 +4511,7 @@ println(str(f(1)))  # and none here either -- the call names `f`
 <p>Found by sweeping every corelib parse function for FRICTION #4's shape after</p>
 <p>closing it. <code>core:decimal</code> is the money type — the package header calls itself</p>
 <p>"the right type for money and any base-10-exact arithmetic" — and its only</p>
-<p>constructor from text failed open <strong>worse than `parse_int` does</strong>. <code>parse_int</code></p>
+<p>constructor from text failed open <strong>worse than <code>parse_int</code> does</strong>. <code>parse_int</code></p>
 <p>fails to 0, which is at least obviously a default. <code>from_str</code> returns a plausible</p>
 <p>wrong amount, because it splits on the point and lets <code>bignum.from_str</code> skip</p>
 <p>non-digits while the SCALE still counts them as digit positions:</p>
@@ -4554,7 +4554,7 @@ println(str(f(1)))  # and none here either -- the call names `f`
 <p>1. A program cannot talk to an internal service with a private CA. The only</p>
 <p>workaround is installing the CA into the system store, which is a machine-wide</p>
 <p>change to make one program work.</p>
-<p>2. <strong>`core:http`'s verification is therefore ungated.</strong> A</p>
+<p>2. <strong><code>core:http</code>'s verification is therefore ungated.</strong> A</p>
 <p><code>CURLOPT_SSL_VERIFYPEER, 0L</code> added while debugging would pass every lane in</p>
 <p>this tree — the same hole <code>tls-verify</code> just closed for <code>core:tls</code>, still open</p>
 <p>here. Not because the check is hard, but because without a leg that must</p>
@@ -4611,7 +4611,7 @@ println(str(f(1)))  # and none here either -- the call names `f`
 <p>sequence exactly, across processes.</p>
 <p>That is correct behaviour for the generator -- <code>rand</code>'s own header says "NOT</p>
 <p>cryptographic" in its first line, and it is right to be deterministic. The gap</p>
-<p>was that <strong>`uuid` never repeated it</strong>, and neither did the corelib catalogue,</p>
+<p>was that <strong><code>uuid</code> never repeated it</strong>, and neither did the corelib catalogue,</p>
 <p>which described them as "random version-4 UUIDs". A reader who knows what v4</p>
 <p>means will assume unguessable, and the API gives them no reason not to.</p>
 <p>Both now say so and point at <code>crypto.random_hex</code>, which is <code>RAND_bytes</code>-backed.</p>
@@ -4963,7 +4963,7 @@ gcd(min, min+1)  = -1     true answer 1, REPRESENTABLE         -- a WRONG SIGN
 </blockquote>
 <p>Found by pointing #65's new lane at the next package. <code>round</code> documents itself</p>
 <p>*"round half away from zero"* and implemented it as <code>floor(x + 0.5)</code>. That</p>
-<p>addition <strong>rounds before `floor` ever runs</strong>, and it was wrong two different ways:</p>
+<p>addition <strong>rounds before <code>floor</code> ever runs</strong>, and it was wrong two different ways:</p>
 <table>
 <tr><th>input</th><th>returned</th><th>half away from zero</th></tr>
 <tr><td><code>0.49999999999999994</code> — the largest double <strong>below</strong> a half</td><td><code>1.0</code></td><td><code>0.0</code></td></tr>
@@ -5036,7 +5036,7 @@ pad_left("x", 5, "é")   -&gt;  "ééééx"      len 9     a UTF-8 pad, same ove
 <p>the thing that was wrong, and a golden carrying only the text could not have</p>
 <p>seen it — the same reason <code>ed-check</code> asserts byte counts and <code>sheet-check</code></p>
 <p>asserts float text. Reverting the two loops reddens <code>strings</code> and only <code>strings</code>.</p>
-<h3 id="69-coresqlites-two-halves-disagree-about-a-multi-statement-string--exec-fixed--params-pinned-2026-08-15">69. <code>core:sqlite</code>'s two halves disagree about a multi-statement string — <strong>exec FIXED, `_params` PINNED, 2026-08-15</strong></h3>
+<h3 id="69-coresqlites-two-halves-disagree-about-a-multi-statement-string--exec-fixed--params-pinned-2026-08-15">69. <code>core:sqlite</code>'s two halves disagree about a multi-statement string — <strong>exec FIXED, <code>_params</code> PINNED, 2026-08-15</strong></h3>
 <blockquote>
 <p>Pinned-by: make corelib</p>
 </blockquote>
@@ -5054,12 +5054,12 @@ pad_left("x", 5, "é")   -&gt;  "ééééx"      len 9     a UTF-8 pad, same ove
 <tr><td><code>exec("INSERT 'a'; INSERT 'b'")</code></td><td><strong>both</strong></td><td><code>Ok(1)</code> — under-reported</td></tr>
 <tr><td><code>exec_params("INSERT 'c'; INSERT 'd'")</code></td><td><strong>only 'c'</strong></td><td><code>Ok(1)</code> — no error at all</td></tr>
 </table>
-<p><strong>`exec`'s count is fixed.</strong> <code>sqlite3_changes</code> describes the most recent statement</p>
+<p><strong><code>exec</code>'s count is fixed.</strong> <code>sqlite3_changes</code> describes the most recent statement</p>
 <p>alone, so two inserted rows reported 1 against a function documenting</p>
 <p>*"Ok(the change count)"*. It reports a delta of <code>sqlite3_total_changes</code> now, which</p>
 <p>is exactly the rows this call changed. Single-statement callers — every caller in</p>
 <p>the tree — see the identical number.</p>
-<p><strong>`exec_params`'s discard is PINNED, not fixed</strong>, and the distinction is the</p>
+<p><strong><code>exec_params</code>'s discard is PINNED, not fixed</strong>, and the distinction is the</p>
 <p>honest part. Making it fail closed means reading <code>pzTail</code> back as a string to</p>
 <p>test whether anything follows, and the alternative — scanning the SQL for a <code>;</code></p>
 <p>in Tycho — has to know about quoted literals *and* <code>--</code> and <code>/* */</code> comments, or</p>
@@ -5315,12 +5315,12 @@ derive("secret\0A") == derive("secret")       true    truncated to the prefix
 </blockquote>
 <p>#75 and #76 named four externs as unswept and #77 explained why leaving them</p>
 <p>named mattered. These are the last two, and both truncated.</p>
-<p><strong>`core:http`'s URL.</strong> A URL crosses to curl as a <code>char*</code>. Measured: fetching</p>
+<p><strong><code>core:http</code>'s URL.</strong> A URL crosses to curl as a <code>char*</code>. Measured: fetching</p>
 <p><code>file://…/real.txt\0/ignored</code> returned <strong>real.txt's 18 bytes</strong> — the caller asked</p>
 <p>for one resource and got another, with no error. A program building a URL from</p>
 <p>user input inherits that. Guarded now, returning the null handle that already</p>
 <p>means "this did not run".</p>
-<p><strong>`core:datetime`'s TZ.</strong> <code>offset_at("EST5\0UTC0", 0)</code> answered <strong>-18000</strong> — the</p>
+<p><strong><code>core:datetime</code>'s TZ.</strong> <code>offset_at("EST5\0UTC0", 0)</code> answered <strong>-18000</strong> — the</p>
 <p>truncated prefix applied, not the string given. Refused as <code>0</code>, which is already</p>
 <p>what an unparseable or empty TZ answers; a truncated zone is not a valid one.</p>
 <p><strong>The http fix was wrong the first time, and the probe is what said so.</strong></p>
@@ -5359,7 +5359,7 @@ derive("secret\0A") == derive("secret")       true    truncated to the prefix
 <p>state, because a <code>[</code> inside a string is a character rather than a level — 5000</p>
 <p>brackets inside a string still parse, and that non-regression is gated beside the</p>
 <p>boundary, which is asserted on <strong>both</strong> sides (2000 Ok, 2001 refused).</p>
-<p><strong>Adding the variant broke two exhaustive matches inside `json.ty` itself</strong></p>
+<p><strong>Adding the variant broke two exhaustive matches inside <code>json.ty</code> itself</strong></p>
 <p>(<code>err_offset</code>, then <code>err_reason</code>) — the consequence <code>tycho-verify</code> names as the</p>
 <p>textbook consumer-breaking change, hit by the person who had just read that</p>
 <p>warning. Zero consumers outside the package match on <code>JsonErr</code>, so nothing else</p>
@@ -5506,7 +5506,7 @@ sh scripts/format_diff.sh       -&gt; 420 paths, 129 refused  -&gt; 0 violations
 <p>Both found by *being* the third party rather than reasoning about one: install</p>
 <p>from the published tarball, clone the repo, run the first command each document</p>
 <p>tells you to.</p>
-<p><strong>1. `SECURITY.md` advertised a channel that is switched off.</strong> It said to use</p>
+<p><strong>1. <code>SECURITY.md</code> advertised a channel that is switched off.</strong> It said to use</p>
 <p>GitHub's private vulnerability reporting — "Report a vulnerability" under the</p>
 <p>Security tab. <code>gh api repos/.../private-vulnerability-reporting</code> returns</p>
 <p><code>{"enabled":false}</code>. The button is not there, and the fallback was "contact the</p>
@@ -5515,7 +5515,7 @@ sh scripts/format_diff.sh       -&gt; 420 paths, 129 refused  -&gt; 0 violations
 <p>describe the repository as configured, with a route that needs no</p>
 <p>infrastructure. Enabling the feature would make the original text true and is one</p>
 <p>API call; that is the owner's decision, not a documentation fix.</p>
-<p><strong>2. `make check-links` passed here and FAILED in a fresh clone.</strong> It is the</p>
+<p><strong>2. <code>make check-links</code> passed here and FAILED in a fresh clone.</strong> It is the</p>
 <p>command <code>CONTRIBUTING.md</code> calls *"the one gate to never skip"* and the one the</p>
 <p>pre-push hook runs, so a contributor's first action was red before they had</p>
 <p>touched anything.</p>
@@ -5643,11 +5643,11 @@ sh scripts/format_diff.sh       -&gt; 420 paths, 129 refused  -&gt; 0 violations
 <p>Pinned-by: make server-check</p>
 </blockquote>
 <p>**THE CAUSE, found by kernel-level signal tracing after four rounds of wrong</p>
-<p>hypotheses.<strong> `server/run.sh` is not the victim of an outside signal — </strong>it is</p>
+<p>hypotheses.<strong> <code>server/run.sh</code> is not the victim of an outside signal — </strong>it is</p>
 <p>the sender, and it kills itself by proxy**:</p>
 <p>1. Its watchdogs are <code>( sleep N; srv_kill ) &amp;</code> (<code>server/run.sh:701@sleep</code>).</p>
 <p>That is a <strong>two-command</strong> subshell, so bash keeps a real subshell — and a</p>
-<p>real subshell <strong>inherits `trap cleanup EXIT INT TERM`</strong> and <code>$T</code>.</p>
+<p>real subshell <strong>inherits <code>trap cleanup EXIT INT TERM</code></strong> and <code>$T</code>.</p>
 <p>2. It cancels a watchdog with <code>kill "$WD"</code> — the <strong>default SIGTERM</strong>.</p>
 <p>3. The watchdog runs the inherited <code>cleanup</code>: <code>rm -rf "$T"</code>, on the directory</p>
 <p>the parent is still using.</p>
@@ -5668,7 +5668,7 @@ B) ( sleep 30; : ) &amp;   -&gt; CLEANUP RAN in the subshell; marker GONE
 </code></pre>
 <p>Every earlier attempt to reproduce used shape A and concluded, wrongly, that</p>
 <p>subshells do not inherit the trap. They do — when they are real subshells.</p>
-<p><strong>The fix: `kill -KILL "$WD"` at all five cancel sites.</strong> SIGKILL cannot be</p>
+<p><strong>The fix: <code>kill -KILL "$WD"</code> at all five cancel sites.</strong> SIGKILL cannot be</p>
 <p>trapped. <code>trap - INT TERM</code> inside the subshell is <strong>not</strong> a fix — measured: the</p>
 <p>kill can arrive before the subshell has executed the reset — and a</p>
 <p>fire-and-forget timer has nothing to clean up regardless.</p>
@@ -5785,7 +5785,7 @@ instructions -- leg [3] is not discriminating
 <tr><td>clang 22.1.8</td><td><code>-O1</code></td><td>18</td><td><strong>14</strong></td></tr>
 </table>
 <p>gcc's control is a perfect discriminator. clang emits packed arithmetic for a</p>
-<p>plain <code>[4]float</code> <strong>even at `-O0`</strong>, so <code>control == 0</code> is a gcc property the leg</p>
+<p>plain <code>[4]float</code> <strong>even at <code>-O0</code></strong>, so <code>control == 0</code> is a gcc property the leg</p>
 <p>reads as a C property. Note the vector form still emits strictly more than its</p>
 <p>control under clang (12 vs 8, 18 vs 14), so the *feature* is fine — it is the</p>
 <p>binary test that stops working.</p>
@@ -5837,7 +5837,7 @@ exit=1
 <p>causes and this entry only ever measured one of them.</p>
 <p><a href="../../CONTRIBUTING.html">CONTRIBUTING</a> was corrected to say exactly that, rather</p>
 <p>than inheriting either the old claim or the overclaim.</p>
-<h3 id="90-shim-warns-locked-baseline-is-gccs-a-gcc--wunused-function-dodge-trips-clangs--wunused-variable--fixed-2026-09-18-the-dodge-is-now-an-attribute-and-make-ci-runs-under-clang">90. ~~<code>shim-warn</code>'s locked baseline is gcc's: a gcc <code>-Wunused-function</code> dodge trips clang's <code>-Wunused-variable</code>~~ — <strong>FIXED 2026-09-18: the dodge is now an attribute, and `make ci` runs under clang</strong></h3>
+<h3 id="90-shim-warns-locked-baseline-is-gccs-a-gcc--wunused-function-dodge-trips-clangs--wunused-variable--fixed-2026-09-18-the-dodge-is-now-an-attribute-and-make-ci-runs-under-clang">90. ~~<code>shim-warn</code>'s locked baseline is gcc's: a gcc <code>-Wunused-function</code> dodge trips clang's <code>-Wunused-variable</code>~~ — <strong>FIXED 2026-09-18: the dodge is now an attribute, and <code>make ci</code> runs under clang</strong></h3>
 <blockquote>
 <p>Pinned-by: grep -q '__attribute__((unused))' corelib/os/os_shim.c</p>
 <p>Pinned-by: make shim-warn</p>
@@ -5880,11 +5880,11 @@ static int (*osx_is_batch_ref)(const char *) = osx_is_batch;
 <p>One line, silences both, but introduces an attribute this tree does not use</p>
 <p>and that is not MSVC-portable (the block is POSIX-only, so that may not</p>
 <p>matter).</p>
-<p>2. <strong>Compile `osx_is_batch` only on Windows</strong> — wrap its definition in</p>
+<p>2. <strong>Compile <code>osx_is_batch</code> only on Windows</strong> — wrap its definition in</p>
 <p><code>#ifdef _WIN32</code> and delete the reference entirely. The most honest of the</p>
 <p>three: nothing on POSIX calls it, so nothing on POSIX need compile it. Costs</p>
 <p>a second <code>#ifdef</code> around an existing function.</p>
-<p>3. <strong>Record clang's line in `scripts/shim.warn`</strong> — cheapest, and wrong: the</p>
+<p>3. <strong>Record clang's line in <code>scripts/shim.warn</code></strong> — cheapest, and wrong: the</p>
 <p>baseline would then assert a warning the code should not be producing, and</p>
 <p>the gate exists to notice exactly that.</p>
 <p><strong>OPTION 2 WAS RECOMMENDED HERE AND IS WRONG, AND THE CODE SAYS SO.</strong> The</p>
@@ -5922,7 +5922,7 @@ static int osx_is_batch(const char *name) {
 <p><code>TYCHO_OSX_BATCH_UNIT</code> macro "defined only by that gate". No such macro exists</p>
 <p>anywhere in the tree — <code>os_batch_check.c</code> simply includes the file and supplies</p>
 <p>its own <code>main</code>. The comment now describes what the gate does.</p>
-<p><strong>With this and 89, `make ci` runs under gcc AND clang</strong> — the two causes behind</p>
+<p><strong>With this and 89, <code>make ci</code> runs under gcc AND clang</strong> — the two causes behind</p>
 <p>one headline, closed separately.</p>
 <h3 id="91-make-cis-wall-clock-moves-2x-between-runs-so-a-speedup-cannot-be-read-off-two-totals--open-and-it-is-the-measurement-not-the-gate">91. <code>make ci</code>'s wall clock moves ~2x between runs, so a speedup cannot be read off two totals — <strong>OPEN, and it is the MEASUREMENT, not the gate</strong></h3>
 <p><strong>Found while making the gate faster, which is when it matters most.</strong> Three</p>
@@ -5953,7 +5953,7 @@ static int osx_is_batch(const char *name) {
 <p>frequency, a dropped page cache between runs and an otherwise idle box, which is</p>
 <p>a bigger job than any optimisation it would be qualifying. Filed so the next</p>
 <p>person reads a total with suspicion rather than re-learning this.</p>
-<h3 id="92-crypto-hygienes-ctgrind-control-is-gcc-shaped-clang-if-converts-the-branch-it-exists-to-have--fixed-2026-09-18-the-control-builds-at--o0-the-subject-stays-at--o1">92. ~~<code>crypto_hygiene</code>'s ctgrind control is gcc-shaped: clang if-converts the branch it exists to have~~ — <strong>FIXED 2026-09-18: the control builds at `-O0`, the subject stays at `-O1`</strong></h3>
+<h3 id="92-crypto-hygienes-ctgrind-control-is-gcc-shaped-clang-if-converts-the-branch-it-exists-to-have--fixed-2026-09-18-the-control-builds-at--o0-the-subject-stays-at--o1">92. ~~<code>crypto_hygiene</code>'s ctgrind control is gcc-shaped: clang if-converts the branch it exists to have~~ — <strong>FIXED 2026-09-18: the control builds at <code>-O0</code>, the subject stays at <code>-O1</code></strong></h3>
 <blockquote>
 <p>Pinned-by: grep -q 'ct_run "$T/ctl" -O0' scripts/crypto_hygiene.sh</p>
 <p>Pinned-by: sh scripts/crypto_hygiene.sh</p>
@@ -6078,7 +6078,7 @@ old code     gate rc=0, marker ABSENT   -- the override was discarded
 <p>actually exercised, and is every entry on it actually meant to be there?** Three</p>
 <p>answers below; the method was to read <code>surface.lock</code> and grep the 1,389 tracked</p>
 <p><code>.ty</code> files for each entry.</p>
-<h3 id="94-floor-is-a-shipped-builtin-that-no-fixture-exercised--fixed-2026-09-19-testsfloat-floor">94. ~~<code>floor</code> is a shipped builtin that no fixture exercised~~ — <strong>FIXED 2026-09-19: `tests/float_floor`</strong></h3>
+<h3 id="94-floor-is-a-shipped-builtin-that-no-fixture-exercised--fixed-2026-09-19-testsfloat-floor">94. ~~<code>floor</code> is a shipped builtin that no fixture exercised~~ — <strong>FIXED 2026-09-19: <code>tests/float_floor</code></strong></h3>
 <blockquote>
 <p>Pinned-by: test -f tests/float_floor.ty</p>
 <p>Pinned-by: test -f tests/float_floor.out</p>
@@ -6115,7 +6115,7 @@ old code     gate rc=0, marker ABSENT   -- the override was discarded
 <p>a heading reading "§23–24 Concurrency &amp; FFI". The cited fixtures were right and</p>
 <p>real; the clause numbers were wrong, so §21 and §22 read as having no</p>
 <p>conformance mapping at all while §23 carried three unrelated rows.</p>
-<p><strong>`make spec-check` cannot catch this, by construction.</strong> Its two checks are (1)</p>
+<p><strong><code>make spec-check</code> cannot catch this, by construction.</strong> Its two checks are (1)</p>
 <p>Appendix A's collected grammar matches the chapters, and (2) every fixture cited</p>
 <p>in Appendix E exists. Nothing verifies that a cited <strong>clause</strong> exists, or that it</p>
 <p>says what the row claims. A conformance map can therefore point at any section</p>
@@ -6129,7 +6129,7 @@ old code     gate rc=0, marker ABSENT   -- the override was discarded
 <p>Pinned-by: grep -q '^fn _mag_cmp' corelib/bignum/bignum.ty</p>
 <p>Pinned-by: python3 -c "import json;d=json.load(open('surface.lock'));assert not [k for k in d['corelib'] if '._' in k], 'a package-private name is back in the freeze'"</p>
 <p>Pinned-by: make surface-check</p>
-<p><strong>Closed by options (1) AND (2) below, both in `f6f1025a`.</strong> The extractor</p>
+<p><strong>Closed by options (1) AND (2) below, both in <code>f6f1025a</code>.</strong> The extractor</p>
 <p>learned the underscore rule, dropping <code>compress._cause</code>, <code>image._cause</code> and</p>
 <p><code>io._status</code>; and 125 internal helpers across 28 packages were renamed</p>
 <p><code>_</code>-prefixed. The freeze went 559 -&gt; <strong>431</strong>, and <code>surface.lock</code> now carries</p>
@@ -6184,7 +6184,7 @@ io._status     (st: int)-&gt; Result(void, IoErr)
 <p>1. <strong>Teach the surface extractor the underscore rule</strong> — drop <code>_</code>-prefixed names</p>
 <p>from <code>surface.lock</code>. Small, purely a gate change, and it fixes the second</p>
 <p>defect outright. It does nothing about the 127, which carry no underscore.</p>
-<p>2. <strong>Rename the 127 to `_`-prefixed</strong> and let (1) remove them from the freeze.</p>
+<p>2. <strong>Rename the 127 to <code>_</code>-prefixed</strong> and let (1) remove them from the freeze.</p>
 <p>Mechanical, uses a shipped feature as intended, touches no compiler code —</p>
 <p>but it is 127 renames across the corelib and every internal call site.</p>
 <p>3. <strong>Leave it and document the split</strong>, accepting that the freeze covers more</p>
@@ -6231,12 +6231,12 @@ accessible from another package
 <p>refusals — means constructing a program that trips a rule the corpus does not</p>
 <p>otherwise exercise. The list is the work item; the count is the argument for</p>
 <p>doing it.</p>
-<h3 id="98-34-error-forwarding-blocks-predate-or-return-the-other-42-want-a-form-that-does-not-exist--fixed-2026-09-25-or-else">98. 34 error-forwarding blocks predate <code>or_return</code>; the other 42 want a form that does not exist — <strong>FIXED 2026-09-25: `or_else`</strong></h3>
+<h3 id="98-34-error-forwarding-blocks-predate-or-return-the-other-42-want-a-form-that-does-not-exist--fixed-2026-09-25-or-else">98. 34 error-forwarding blocks predate <code>or_return</code>; the other 42 want a form that does not exist — <strong>FIXED 2026-09-25: <code>or_else</code></strong></h3>
 <blockquote>
 <p>Pinned-by: grep -q '"or_else"' surface.lock</p>
 <p>Pinned-by: test -f tests/or_else.ty</p>
 </blockquote>
-<p><strong>2026-09-25: closed by `or_else`</strong> (<a href="../spec/10-statements.html#1461-or_else">§14.6.1</a>,</p>
+<p><strong>2026-09-25: closed by <code>or_else</code></strong> (<a href="../spec/10-statements.html#1461-or_else">§14.6.1</a>,</p>
 <p><code>529fe940</code>, tychoc1 <code>4cb884a9</code>), which returns any value of the enclosing</p>
 <p>function's type, so it also covers the sites returning <code>false</code>, <code>-1</code> or <code>None</code>.</p>
 <p>The 34 went to <code>or_return</code> in <code>f6f1025a</code>, 11 more it missed in <code>fdda3c5a</code>;</p>
@@ -6371,7 +6371,7 @@ accessible from another package
 <p>The <strong>lldb</strong> block at <code>docs/debugging.md:37</code> — the one no Linux host can check,</p>
 <p>which is why it is the other half of that pair — RAN here and its breakpoint</p>
 <p>bound to a <code>.ty</code> line.</p>
-<p><strong>Two flags in `Makefile@TYCHOC1_CFLAGS` are gcc-shaped and clang drops them</strong>:</p>
+<p><strong>Two flags in <code>Makefile@TYCHOC1_CFLAGS</code> are gcc-shaped and clang drops them</strong>:</p>
 <p><code>--param inline-unit-growth=150</code> and <code>-static-pie</code>. The second cannot work on</p>
 <p>macOS at all — there is no static libc — so the release archive's "no versioned</p>
 <p>GLIBC symbol" property (<code>scripts/release_content.sh:96</code>) has no Darwin analogue</p>
@@ -6455,7 +6455,7 @@ accessible from another package
 <p>and the body [...] roughly one CI run in three, while the same lane passed</p>
 <p>every time it was run on its own.*</p>
 </blockquote>
-<p><strong>Twenty-five lines below, the binary-body case still did a single `net.read`.</strong></p>
+<p><strong>Twenty-five lines below, the binary-body case still did a single <code>net.read</code>.</strong></p>
 <p>The diagnosis was right, it was written down, and it was applied to one of the</p>
 <p>two sites that have the shape.</p>
 <p>And the split is not bad luck: <code>corelib/httpd/httpd.ty@write_response</code> issues</p>
@@ -6512,7 +6512,7 @@ accessible from another package
 <p>project against the project — but both are gatable *in particular*, which is</p>
 <p>what the two pins above do: each asserts the retired sentence has not come back.</p>
 <p>That is the same shape as 99's pins, and it is the most that class admits.</p>
-<h3 id="104-the-executable-defect-log-is-executed-by-nobody--make-ci-has-never-called-friction-check--fixed-2026-09-19-option-1-the-fact-pins-as-lane-1d213">104. The executable defect log is executed by nobody — <code>make ci</code> has never called <code>friction-check</code> — <strong>FIXED 2026-09-19: option (1), the fact pins, as lane `[1d2/13]`</strong></h3>
+<h3 id="104-the-executable-defect-log-is-executed-by-nobody--make-ci-has-never-called-friction-check--fixed-2026-09-19-option-1-the-fact-pins-as-lane-1d213">104. The executable defect log is executed by nobody — <code>make ci</code> has never called <code>friction-check</code> — <strong>FIXED 2026-09-19: option (1), the fact pins, as lane <code>[1d2/13]</code></strong></h3>
 <blockquote>
 <p>Pinned-by: grep -q 'make -s friction-check-light' scripts/ci.sh</p>
 <p>Pinned-by: grep -q '^friction-check-light:' Makefile</p>
@@ -6546,7 +6546,7 @@ $ grep -rn 'friction-check' scripts/ Makefile
 <p><strong>+39%, and most of it is duplicated work</strong>: of the 83 distinct pin commands, a</p>
 <p>large share are <code>make &lt;target&gt;</code> invocations for targets <code>make ci</code> has just run,</p>
 <p>so a naive append re-runs them. The options, cheapest first:</p>
-<p>1. <strong>Run the pins that are NOT `make` targets</strong> — the greps, the <code>test -f</code>s, the</p>
+<p>1. <strong>Run the pins that are NOT <code>make</code> targets</strong> — the greps, the <code>test -f</code>s, the</p>
 <p>inline <code>python3 -c</code>s — as a <code>ci</code> lane, and leave the <code>make &lt;target&gt;</code> pins to</p>
 <p>the standalone run. Nearly free, and it covers the pins that assert a</p>
 <p>*specific fact* rather than re-running a suite. It does not score every pin.</p>
@@ -6558,7 +6558,7 @@ $ grep -rn 'friction-check' scripts/ Makefile
 <p>4. <strong>Leave it standalone and fix the STATUS sentence</strong>, accepting that the log is</p>
 <p>executable on demand rather than continuously.</p>
 <p><strong>(1) was taken, and (4) was done regardless</strong> — the STATUS sentence was wrong</p>
-<p>however this was decided. <code>make friction-check-light</code> is lane <strong>`[1d2/13]`</strong>, and</p>
+<p>however this was decided. <code>make friction-check-light</code> is lane <strong><code>[1d2/13]</code></strong>, and</p>
 <p>it costs <strong>0.16s</strong>, not the 113s the full run costs:</p>
 <pre><code class="language-text">friction check (--light): ok (65 of 103 closed entries scored here by 65 fact
 pins; 37 entries and 21 suite pin(s) DEFERRED to `make friction-check`, which is
@@ -6601,7 +6601,7 @@ the full run)
 <p><code>scripts/ci.sh</code> announces each lane with <code>step "&lt;label&gt;  (&lt;rationale&gt;)"</code>. The</p>
 <p>string is <strong>double-quoted</strong>, so a backtick inside it is not punctuation — the</p>
 <p>shell runs the text and splices its output into the banner. Two were live.</p>
-<p><strong>The pre-existing one, `scripts/ci.sh:90`.</strong> Its rationale quoted the two</p>
+<p><strong>The pre-existing one, <code>scripts/ci.sh:90</code>.</strong> Its rationale quoted the two</p>
 <p>diagnostic examples the lane exists for. Every sweep printed:</p>
 <pre><code class="language-text">... and numbers its lines from 0, so  died as  -- no path, wrong line.
 </code></pre>
@@ -6617,7 +6617,7 @@ the full run)
 <p>sweeps printed <code>NOT RECORDED -- the tree changed while the sweep ran</code>** before</p>
 <p>the cause was found. The gate was right every time; the tree really was changing</p>
 <p>under it, because the gate itself was changing it.</p>
-<p><strong>`sh -n` is blind to this by construction.</strong> The script is valid; it simply does</p>
+<p><strong><code>sh -n</code> is blind to this by construction.</strong> The script is valid; it simply does</p>
 <p>something other than describe itself. <code>make script-check</code> parses every tracked</p>
 <p><code>.sh</code> and said ok on both instances.</p>
 <p><strong>Now gated</strong>, as leg [3] of <code>scripts/check_scripts.py</code> — the file that already</p>
@@ -6633,7 +6633,7 @@ the full run)
 <p>run. <code>core.hooksPath</code> is unset on the machine this was found on. So this guard</p>
 <p>runs at push time for a developer who activated the hook, and not in the sweep.</p>
 <p>See 106.</p>
-<h3 id="106-parse-check-is-red-has-been-all-day-and-is-in-neither-make-ci-nor-the-hook--drift-cleared-and-corpus-check-gated-2026-09-19-the-divergence-closed-2026-09-22-the-lanes-absence-from-the-sweep-is-still-the-owners-call">106. <code>parse-check</code> is RED, has been all day, and is in neither <code>make ci</code> nor the hook — <strong>DRIFT CLEARED and `corpus-check` GATED 2026-09-19; the divergence CLOSED 2026-09-22; the lane's absence from the sweep is still the owner's call</strong></h3>
+<h3 id="106-parse-check-is-red-has-been-all-day-and-is-in-neither-make-ci-nor-the-hook--drift-cleared-and-corpus-check-gated-2026-09-19-the-divergence-closed-2026-09-22-the-lanes-absence-from-the-sweep-is-still-the-owners-call">106. <code>parse-check</code> is RED, has been all day, and is in neither <code>make ci</code> nor the hook — <strong>DRIFT CLEARED and <code>corpus-check</code> GATED 2026-09-19; the divergence CLOSED 2026-09-22; the lane's absence from the sweep is still the owner's call</strong></h3>
 <blockquote>
 <p>Pinned-by: grep -q 'make -s corpus-check' scripts/ci.sh</p>
 <p>Pinned-by: make corpus-check</p>
@@ -6649,8 +6649,8 @@ the full run)
 <tr><td><code>contrast-check</code>, <code>site-code-check</code></td><td>no</td><td>yes, on a gh-pages push only</td></tr>
 <tr><td><code>corpus-check</code></td><td>no</td><td>no — <code>parse-check</code> runs it, and that does not run either</td></tr>
 <tr><td><code>mingw-warn</code></td><td>no</td><td>no — needs the mingw cross toolchain; platform-gated, fair</td></tr>
-<tr><td><strong>`parse-check`</strong></td><td><strong>no</strong></td><td><strong>no</strong></td></tr>
-<tr><td><strong>`tychoc1-check`</strong></td><td><strong>no</strong></td><td><strong>no</strong></td></tr>
+<tr><td><strong><code>parse-check</code></strong></td><td><strong>no</strong></td><td><strong>no</strong></td></tr>
+<tr><td><strong><code>tychoc1-check</code></strong></td><td><strong>no</strong></td><td><strong>no</strong></td></tr>
 </table>
 <p>The hook's own header says the sweep is deliberately not in it — *"THE SWEEP IS</p>
 <p>YOURS TO RUN"* — so the hook being a subset is by design. It also requires</p>
@@ -6661,8 +6661,8 @@ the full run)
 <p><code>make tychoc1-check</code> substitutes it into the real runners."* Neither runs</p>
 <p>unattended. The differential oracle that the project decided, on 2026-09-11, to</p>
 <p>keep <code>src/tychoc.c</code> alive for is scored only when somebody types it.</p>
-<p><strong>`tychoc1-check` passes</strong> — 36 lanes, 0 failed, 188s.</p>
-<p><strong>`parse-check` FAILS</strong>, and it fails for two different reasons:</p>
+<p><strong><code>tychoc1-check</code> passes</strong> — 36 lanes, 0 failed, 188s.</p>
+<p><strong><code>parse-check</code> FAILS</strong>, and it fails for two different reasons:</p>
 <p>1. <strong>Three count literals drifted.</strong> <code>tests/*.ty</code> is 289 against an expected 288,</p>
 <p>the tree is 1401 <code>.ty</code> files against 1375, leg15 refused is 52 against 51, and</p>
 <p>617 reject fixtures have 593 classified rows. Mechanical.</p>
@@ -6724,7 +6724,7 @@ the full run)
 </table>
 <p>Every decrease is the migration; every increase is a fixture. **Nothing is</p>
 <p>unexplained**, which is the only basis on which a census golden should move.</p>
-<p><strong>`corpus-check` is now lane `[1d3/13]`</strong>, at <strong>0.04s</strong>. It cannot see what</p>
+<p><strong><code>corpus-check</code> is now lane <code>[1d3/13]</code></strong>, at <strong>0.04s</strong>. It cannot see what</p>
 <p><code>parse-check</code> sees — but it sees the one thing that broke it, for nothing, and it</p>
 <p>would have reddened at <code>f0078c52</code> on the day.</p>
 <p><strong>What was still red, deliberately, and is not any more:</strong></p>
@@ -6755,7 +6755,7 @@ the full run)
 tychoc1: 'len' is a builtin, not a member of package 'strings' -- call it
          directly: len(...)
 </code></pre>
-<p><strong>`tychoc1` is right</strong>, and the difference is not stylistic. Someone arriving</p>
+<p><strong><code>tychoc1</code> is right</strong>, and the difference is not stylistic. Someone arriving</p>
 <p>from Go or Python reaches for the package qualifier first; the reference</p>
 <p>compiler's answer sends them to read <code>core:strings</code> looking for a <code>len</code> that was</p>
 <p>never going to be there, while the self-hosted one names the mistake and the</p>
@@ -6778,7 +6778,7 @@ tychoc1: 'len' is a builtin, not a member of package 'strings' -- call it
 <p><code>surface.lock</code> it is missing <code>exit</code>, <code>get</code>, <code>read_file</code> and <code>wait</code>. Swapping one</p>
 <p>for another fixed 39 of 41 and left <code>get</code> and <code>wait</code> still diverging, which is</p>
 <p>how the fourth list earned its place rather than being assumed into existence.</p>
-<p><strong>So `is_builtin_name()` carries all 41, and its completeness is GATED</strong>, because</p>
+<p><strong>So <code>is_builtin_name()</code> carries all 41, and its completeness is GATED</strong>, because</p>
 <p>a fourth list that nothing checks is the same defect waiting to happen.</p>
 <p><code>scripts/builtin_qualified.sh</code> reads the builtin set out of <code>surface.lock</code>,</p>
 <p>compiles a qualified call for every one, and requires <strong>both</strong> compilers to name</p>
@@ -6839,7 +6839,7 @@ poll_hup=[c0,c1,c2]  expected, got [c1]
 <p>are unchanged.</p>
 <p><strong>Same family as 102</strong>, which was also a corelib test assuming loopback timing,</p>
 <p>also found by the macOS sweep, and also invisible on an idle machine.</p>
-<h3 id="109-the-macos-artifact-would-have-shipped-unexamined--fixed-2026-09-19-darwin-arm64-built-reproducible-and-content-gated">109. The macOS artifact would have shipped unexamined — <strong>FIXED 2026-09-19: `darwin-arm64` built, reproducible, and content-gated</strong></h3>
+<h3 id="109-the-macos-artifact-would-have-shipped-unexamined--fixed-2026-09-19-darwin-arm64-built-reproducible-and-content-gated">109. The macOS artifact would have shipped unexamined — <strong>FIXED 2026-09-19: <code>darwin-arm64</code> built, reproducible, and content-gated</strong></h3>
 <blockquote>
 <p>Pinned-by: grep -q 'check_native_darwin' scripts/release_content.sh</p>
 <p>Pinned-by: sh -c 'grep -q "mingw_skip=" scripts/release_content.sh'</p>
@@ -6848,7 +6848,7 @@ poll_hup=[c0,c1,c2]  expected, got [c1]
 <p><a href="../../ROADMAP.html">ROADMAP §1</a> calls a macOS/ARM64 build *"the largest single</p>
 <p>gap"*, and <a href="../../STATUS.html">STATUS</a> recorded that no such binary exists. It does</p>
 <p>now — and building it was the easy half.</p>
-<p><strong>`scripts/release.sh` needed no change at all.</strong> The native leg already derives</p>
+<p><strong><code>scripts/release.sh</code> needed no change at all.</strong> The native leg already derives</p>
 <p>its name from <code>uname -s</code>/<code>uname -m</code>, and even carries a comment about <code>touch -t</code></p>
 <p>working under both BSD and GNU. One command produced</p>
 <p><code>dist/tycho-v0.8.5-darwin-arm64.tar.gz</code>, it passed release.sh's own smoke test</p>
@@ -7133,7 +7133,7 @@ Illegal instruction
 <tr><th>input</th><th><code>parse_int</code> returns</th></tr>
 <tr><td><code>"abc"</code></td><td><code>0</code> — indistinguishable from a real zero</td></tr>
 <tr><td><code>"9999999999999999999"</code></td><td><code>0</code> — an overflow becomes a plausible count</td></tr>
-<tr><td><code>"50x"</code></td><td><strong>`50`</strong> — it takes the numeric prefix and discards the rest</td></tr>
+<tr><td><code>"50x"</code></td><td><strong><code>50</code></strong> — it takes the numeric prefix and discards the rest</td></tr>
 </table>
 <p>Measured end-to-end on a crafted log before the fix — both records <strong>accepted</strong>,</p>
 <p>carrying invented numbers into the report:</p>
@@ -7150,7 +7150,7 @@ Illegal instruction
 <p>on the same day. That is not ignorance about the API; it is the convention being</p>
 <p>applied unevenly, which is this file's most repeated finding.</p>
 <p>Fixed with <code>parse_int_checked</code>, failing the record exactly as the timestamp does.</p>
-<p><strong>`-` is handled explicitly</strong>, because CLF spells "no body sent" that way: it maps</p>
+<p><strong><code>-</code> is handled explicitly</strong>, because CLF spells "no body sent" that way: it maps</p>
 <p>to 0 deliberately instead of arriving there through the same fail-open path that</p>
 <p>swallowed <code>"abc"</code> — the distinction the bare parse could not make.</p>
 <p><strong>The golden could not have caught this and still cannot</strong>, which is why the</p>
@@ -7175,7 +7175,7 @@ Illegal instruction
 <p>The second site the <a href="#115-the-fail-open-audit-reached-three-parsers-and-missed-a-fourth-on-the-untrusted-side--fixed-2026-09-19">115</a></p>
 <p>sweep turned up. <code>examples/site/main.ty</code> read a post's <code>date:</code> front matter with</p>
 <p>the unchecked <code>strings.parse_int</code>, and that value does two jobs: it **sorts the</p>
-<p>index<strong> (`sort.argsort(dates)`) and it is </strong>rendered** through</p>
+<p>index<strong> (<code>sort.argsort(dates)</code>) and it is </strong>rendered** through</p>
 <p><code>datetime.format_iso(datetime.from_unix(...))</code>.</p>
 <p><code>parse_int</code> fails open by taking a numeric <strong>prefix</strong>, so the most plausible</p>
 <p>mistake an author can make — writing an ISO date where a unix timestamp</p>
@@ -7225,7 +7225,7 @@ date:              -&gt;           0   renders 1970-01-01T00:00:00
 <p>sweep landed: <code>core:net</code> refuses with a named error (<code>BadAddr</code> — *"NOT Failed: no</p>
 <p>syscall was made, so retrying cannot help"*), and <code>core:http</code>, <code>core:io</code>,</p>
 <p><code>core:os</code>, <code>core:path</code> and <code>core:datetime</code> all guard, the last two with inline</p>
-<p>loops rather than a shared helper. <strong>`core:tls` did not.</strong></p>
+<p>loops rather than a shared helper. <strong><code>core:tls</code> did not.</strong></p>
 <pre><code class="language-text">fn connect(host: string, port: int) -&gt; ptr:
     return tlsx_connect(host, port)          # host straight through
 </code></pre>
@@ -7371,7 +7371,7 @@ run_pkg:         ok=20  skip=0  FAIL=0
 <p>Six seconds on a ~300s gate. There was no budget objection to answer; there was</p>
 <p>simply never a target.</p>
 <p>**Two are left out deliberately, and this is a decision rather than an</p>
-<p>oversight.<strong> `typeparity` costs </strong>65s<strong> and `run_pkg.py` </strong>143s** — +24% and +48%</p>
+<p>oversight.<strong> <code>typeparity</code> costs </strong>65s<strong> and <code>run_pkg.py</code> </strong>143s** — +24% and +48%</p>
 <p>on the sweep. That is the same shape as <code>parse-check</code> in</p>
 <p><a href="#106-parse-check-is-red-has-been-all-day-and-is-in-neither-make-ci-nor-the-hook--drift-cleared-and-corpus-check-gated-2026-09-19-the-divergence-closed-2026-09-22-the-lanes-absence-from-the-sweep-is-still-the-owners-call">106</a></p>
 <p>and gets the same treatment: measured, written down, and the owner's call.</p>
@@ -7525,7 +7525,7 @@ open("a")               opens 15  closes 5
 <p>A handle is freed by its owning <strong>variable's</strong> scope exit and by nothing else, so</p>
 <p>a handle-typed call in any other position — a bare statement, an argument, an</p>
 <p>operand — opens a resource with no owner and leaks it for the life of the</p>
-<p>process. No error, no warning, and <strong>nothing in `docs/` said so</strong>: the probe could</p>
+<p>process. No error, no warning, and <strong>nothing in <code>docs/</code> said so</strong>: the probe could</p>
 <p>only learn it by adding counters to its own shim and measuring. Its report lists</p>
 <p>this under *"what I could not learn from the documentation"* and calls it "the one</p>
 <p>thing about this feature I would most want written down".</p>
@@ -7708,7 +7708,7 @@ tychoc: C compilation failed (cc -O3 -fwrapv ...)
 <tr><td>handle —</td><td><strong>FIXED 2026-09-24, #130:</strong> a use after an unconditional <code>close(h)</code> is now a compile error in both compilers. after <code>close(h)</code>, <code>is_null</code> cannot distinguish "closed" from "never opened", because <code>close</code> nulls the variable. Use-after-close is documented as permitted and is not compile-rejected, so the one remaining misuse of an exactly-once resource is undetectable in both directions. A design question</td></tr>
 <tr><td>layout 1</td><td><strong>FIXED 2026-09-24:</strong> <code>size_of$(T)</code> also takes an <code>align(N)</code> struct, in both compilers; the value is implementation-defined (Appendix F) but always a multiple of <code>N</code>, and <code>tests/align_struct.ty</code> pins <code>8 4</code>. No new name. <code>size_of$</code> requires a packed struct and <code>packed</code>/<code>align(N)</code> are mutually exclusive, so <code>align(N)</code> is <strong>unobservable from inside the language</strong>. The probe had to emit C and run <code>cc</code> to learn its <code>align(8)</code> did anything</td></tr>
 <tr><td>layout 3</td><td><strong>FIXED 2026-09-24:</strong> <code>vector</code>/swizzling in <code>reference/arrays-slices.md</code>, <code>packed</code>/<code>align</code> in <code>structs-tuples.md</code>, each with a run fence. <code>vector[</code>, <code>align(</code>, swizzling and <code>packed</code> appear <strong>nowhere</strong> in <code>docs/reference/</code>. A reader following README → tutorial → reference finishes believing Tycho has no SIMD type, no layout control and no swizzling</td></tr>
-<tr><td>layout 4</td><td><strong>FIXED 2026-09-24:</strong> <a href="../../tools/tycho-grade/main.ty">`tools/tycho-grade/`</a>, a TGA/BMP/QOI colour grader gated by <code>make grade-check</code>, grades each pixel as one <code>vector[4]f32</code> multiply-add, reorders BGRA↔RGBA with <code>px.(r, b) = px.(b, r)</code> and reads its header through a <code>packed struct</code>. <code>align(N)</code> is deliberately not used: it is unobservable inside the language (layout 1) and the program has no C boundary for it to matter at. <code>vector[N]T</code>, <code>align(N)</code> and swizzling have <strong>zero</strong> users in <code>examples/</code> and <code>corelib/</code>; <code>packed</code> has four, and <code>corelib/raster/raster.ty</code> was singled out as the one teaching example any of the four has</td></tr>
+<tr><td>layout 4</td><td><strong>FIXED 2026-09-24:</strong> <a href="../../tools/tycho-grade/main.ty"><code>tools/tycho-grade/</code></a>, a TGA/BMP/QOI colour grader gated by <code>make grade-check</code>, grades each pixel as one <code>vector[4]f32</code> multiply-add, reorders BGRA↔RGBA with <code>px.(r, b) = px.(b, r)</code> and reads its header through a <code>packed struct</code>. <code>align(N)</code> is deliberately not used: it is unobservable inside the language (layout 1) and the program has no C boundary for it to matter at. <code>vector[N]T</code>, <code>align(N)</code> and swizzling have <strong>zero</strong> users in <code>examples/</code> and <code>corelib/</code>; <code>packed</code> has four, and <code>corelib/raster/raster.ty</code> was singled out as the one teaching example any of the four has</td></tr>
 <tr><td>layout 6</td><td><strong>FIXED 2026-09-24, #132:</strong> <code>math.min</code>/<code>max</code>/<code>clamp</code> are lane-wise at a <code>vector[N]T</code> in both compilers, one compare and blend per bound, and <code>tools/tycho-grade</code> clamps with one <code>math.clamp</code>. No new name, no signature change. no lane-wise min/max, and <code>math.clamp</code> refuses a vector (<code>does not satisfy comparable(T)</code>), so the clamp — what a grading kernel does as often as the multiply — drops out of the vector unit</td></tr>
 <tr><td>layout 8a</td><td><strong>FIXED 2026-09-24:</strong> §5.5, <code>reference/basics.md</code> and the diagnostic (both compilers) now carry the compiler's real rule. §5.5 omits <code>u8</code> from the ordered scalars, the mixed-type diagnostic omits <code>char</code>/<code>u32</code>/<code>u64</code>/<code>f32</code>, and the compiler's real rule is in neither. Two documents, two different wrong answers</td></tr>
 <tr><td>layout 8b</td><td><strong>FIXED 2026-09-24:</strong> both stated, and exercised by the <code>vector</code> fence. <code>str()</code> on a vector works and is undocumented; a vector as a struct field works and is undocumented</td></tr>

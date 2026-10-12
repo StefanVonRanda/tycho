@@ -27,7 +27,7 @@
 <p>and no page re-faulting. Peak live memory is unchanged (the pool holds at</p>
 <p>most what a scope just released; reclaimed by the OS at exit).</p>
 <ul>
-<li><strong>Block-retaining `arena_reset`.</strong> A loop's scratch arena keeps its head</li>
+<li><strong>Block-retaining <code>arena_reset</code>.</strong> A loop's scratch arena keeps its head</li>
 </ul>
 <p>block and just rewinds it (<code>off = 0</code>), releasing only overflow blocks. The</p>
 <p>common one-block-per-iteration loop does zero pool traffic per iteration.</p>

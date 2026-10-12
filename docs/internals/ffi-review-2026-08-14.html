@@ -33,7 +33,7 @@
 <tr><td>redirect / protocol handling</td><td>two findings (below)</td></tr>
 </table>
 <h2 id="what-is-sound">What is sound</h2>
-<p><strong>`corelib/os/os_shim.c` is the part most likely to be wrong and is not.</strong> The</p>
+<p><strong><code>corelib/os/os_shim.c</code> is the part most likely to be wrong and is not.</strong> The</p>
 <p>argv path builds a NULL-terminated vector and hands it to <code>posix_spawnp</code> — no</p>
 <p>shell, so no quoting question and no injection surface. Its reasoning for</p>
 <p><code>posix_spawnp</code> over <code>fork</code>+<code>execvp</code> is correct and is the sort of thing that is</p>
@@ -56,7 +56,7 @@
 <p>corelib fetches.</p>
 <h3 id="2-the-same-accumulation-could-wrap-on-a-32-bit-target-same-function">2. The same accumulation could WRAP on a 32-bit target (same function)</h3>
 <p><code>r-&gt;len + add + 1</code> is <code>size_t</code> arithmetic. On LP64 reaching 2^64 is not a</p>
-<p>concern. <strong>On ILP32 `size_t` is 32 bits and this wraps past 4 GiB</strong> — <code>realloc</code></p>
+<p>concern. <strong>On ILP32 <code>size_t</code> is 32 bits and this wraps past 4 GiB</strong> — <code>realloc</code></p>
 <p>would then honour a small size and the following <code>memcpy</code> would run off the</p>
 <p>buffer. This is a supported target: the tree has an <code>ilp32</code> lane and runs the</p>
 <p>whole corpus under <code>gcc -m32</code>.</p>
@@ -286,7 +286,7 @@ bounded[3]int b[7]      tycho: index 7 out of bounds (len 2)
 <p>hex it produced last stayed live for the life of the thread — including the raw</p>
 <p>secret key that <code>cx_key_export_hex</code> puts through it. It now wipes the previous</p>
 <p>contents before <code>realloc</code> may copy or release them.</p>
-<p><strong>`hexdec` is now constant-time, measured the same way.</strong> It rejected at the</p>
+<p><strong><code>hexdec</code> is now constant-time, measured the same way.</strong> It rejected at the</p>
 <p>first bad digit, which timed the *offset* of the error, and it is on the</p>
 <p>key-import path. The digit decode is branch-free now; the proof is valgrind, not</p>
 <p>a stopwatch — the input is marked UNDEFINED and memcheck reports every branch</p>
@@ -305,7 +305,7 @@ bounded[3]int b[7]      tycho: index 7 out of bounds (len 2)
 <p>nothing about memory the shim never owned — OpenSSL's own allocations, or the</p>
 <p>copy Tycho's runtime makes at the FFI boundary — nothing about cache-line or</p>
 <p>table-lookup side channels.</p>
-<p><strong>`core:tls` now has one thing proved about it, and only one.</strong> It is the client</p>
+<p><strong><code>core:tls</code> now has one thing proved about it, and only one.</strong> It is the client</p>
 <p>half of every HTTPS request a Tycho program makes, and the only test it had</p>
 <p>connected to a CLOSED LOOPBACK PORT — which cannot tell a refused CERTIFICATE</p>
 <p>from a refused CONNECTION, since both return a null handle. Turning</p>

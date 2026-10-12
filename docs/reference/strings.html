@@ -44,7 +44,7 @@ fn main():
 <p>holding one stray continuation byte, which renders as plausible-looking mojibake</p>
 <p>rather than raising anything. Nothing in the language stops you: the slice is a</p>
 <p>valid byte range, and byte ranges are what the language promises.</p>
-<p><strong>`utf8.count(s)` returns `-1` on invalid input</strong> rather than a count, so a</p>
+<p><strong><code>utf8.count(s)</code> returns <code>-1</code> on invalid input</strong> rather than a count, so a</p>
 <p>negative answer is your signal that the bytes are not UTF-8 at all.</p>
 <h2 id="stepping-by-character">Stepping by character</h2>
 <p><code>utf8.decode(s, at)</code> returns the codepoint at a byte offset and how many bytes it</p>
@@ -64,7 +64,7 @@ fn main():
         n = n + 1
     println(str(n))         # 5
 </code></pre>
-<p><strong>The `nb &lt;= 0` guard is not optional.</strong> On invalid input <code>decode</code> returns a</p>
+<p><strong>The <code>nb &lt;= 0</code> guard is not optional.</strong> On invalid input <code>decode</code> returns a</p>
 <p>non-positive width, and a loop that adds it never advances — so a caller who</p>
 <p>trusts the return spins forever on exactly the input an attacker controls.</p>
 <p><code>utf8.valid(s)</code> checks a whole string up front, but a streaming caller cannot</p>
@@ -94,9 +94,9 @@ fn main():
 <h2 id="where-the-rest-lives">Where the rest lives</h2>
 <table>
 <tr><th>You want</th><th>Look in</th></tr>
-<tr><td>case, trim, split, find, replace, padding, parsing</td><td><a href="../reference/corelib.html">`core:strings`</a></td></tr>
-<tr><td>character counts, decoding, validation, encoding</td><td><a href="../reference/corelib.html">`core:utf8`</a></td></tr>
-<tr><td>the byte-level type with no text semantics at all</td><td><a href="types.html">`bytes`</a></td></tr>
+<tr><td>case, trim, split, find, replace, padding, parsing</td><td><a href="../reference/corelib.html"><code>core:strings</code></a></td></tr>
+<tr><td>character counts, decoding, validation, encoding</td><td><a href="../reference/corelib.html"><code>core:utf8</code></a></td></tr>
+<tr><td>the byte-level type with no text semantics at all</td><td><a href="types.html"><code>bytes</code></a></td></tr>
 <tr><td><code>len</code>, <code>chr</code>, <code>char_at</code>, <code>find</code> and the other builtins</td><td><a href="builtins.html">Builtins</a></td></tr>
 </table>
 <p>The rule that ties them together: **the language gives you bytes, and <code>core:utf8</code></p>
