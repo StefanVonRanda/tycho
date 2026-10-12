@@ -217,27 +217,6 @@
       <div class="row"><span class="k">No references</span><span class="v"><span class="inl">b := a</span> copies. With nothing to alias, the compiler reads every value's lifetime from the syntax alone.</span></div>
       <div class="row"><span class="k">Placed, not managed</span><span class="v">A value leaves a scope only <b>down</b> into a callee or <b>up</b> to a caller. The compiler puts each allocation and each free where it belongs.</span></div>
     </div>
-    <div class="fig">
-      <div class="fhead"><b>FIG. 01</b><span>— arena lifetimes</span></div>
-      <svg viewBox="0 0 640 210" role="img" aria-labelledby="fig01t fig01d">
-        <title id="fig01t">Arena lifetimes</title>
-        <desc id="fig01d">Three scopes with allocation bars that all end at their scope exit, except one value that crosses into its caller.</desc>
-        <text x="16" y="26">MAIN</text>
-        <text x="16" y="96">BUILD</text>
-        <text x="16" y="166">LOOP</text>
-        <rect class="bar" x="120" y="36" width="380" height="12"/>
-        <rect class="bar" x="200" y="56" width="180" height="12"/>
-        <rect class="bar" x="120" y="106" width="300" height="12"/>
-        <rect class="bar" x="240" y="126" width="180" height="12"/>
-        <rect class="bar" x="120" y="176" width="260" height="12"/>
-        <line class="exit" x1="500" y1="30" x2="500" y2="200"/>
-        <line class="exit" x1="420" y1="100" x2="420" y2="200"/>
-        <line class="exit" x1="380" y1="170" x2="380" y2="200"/>
-        <rect class="bar acc" x="300" y="146" width="220" height="12"/>
-        <text x="508" y="200">exits free whole arenas — the highlighted value crosses into its caller</text>
-      </svg>
-      <div class="figcap"><b>Arena lifetimes.</b> Every bar ends at its scope's exit line. The highlighted value is returned, so it crosses that line and lives on in its caller.</div>
-    </div>
   </section>
 
   <section id="fast">
@@ -285,31 +264,6 @@
       <div class="row"><span class="k">No references</span><span class="v">Shared-mutable graphs and observers can't be written the pointer way. <b>Pools + indices</b> are the idiom — the cache-friendly one. Trie ~1.55× C, LRU ~2.8×, graph idiom ~1.3×. The <a href="https://tycho-lang.com/docs/internals/value-semantics-limits.html">loss column ↗</a> names every price.</span></div>
       <div class="row"><span class="k">No interface values</span><span class="v">A heterogeneous list of implementors can't exist here. <b>Closed enums + match</b> cover the known set, generics the static half — the replacements are in <a href="https://tycho-lang.com/docs/idioms.html">Thinking in Tycho ↗</a>.</span></div>
       <div class="row"><span class="k">Pre-1.0, scope exit</span><span class="v">The surface can still break with a changelog entry and no deprecation window (<a href="https://github.com/StefanVonRanda/tycho/blob/main/SUPPORT.md">policy ↗</a>). Arenas free at scope exit, not incrementally.</span></div>
-    </div>
-    <div class="fig">
-      <div class="fhead"><span class="dot"></span><b>FIG. 02</b><span>— the pool idiom</span></div>
-      <svg viewBox="0 0 640 190" role="img" aria-labelledby="fig02t fig02d">
-        <title id="fig02t">One array, edges as indices</title>
-        <desc id="fig02d">Six array slots in a row; slots 0 and 3 each hold the index 2, sharing one slot.</desc>
-        <rect class="slot" x="40" y="40" width="84" height="52"/>
-        <rect class="slot" x="132" y="40" width="84" height="52"/>
-        <rect class="slot" x="224" y="40" width="84" height="52"/>
-        <rect class="slot" x="316" y="40" width="84" height="52"/>
-        <rect class="slot" x="408" y="40" width="84" height="52"/>
-        <rect class="slot" x="500" y="40" width="84" height="52"/>
-        <text x="76" y="122">0</text>
-        <text x="168" y="122">1</text>
-        <text x="260" y="122">2</text>
-        <text x="352" y="122">3</text>
-        <text x="444" y="122">4</text>
-        <text x="536" y="122">5</text>
-        <text class="enum" x="68" y="72">→2</text>
-        <text class="enum" x="344" y="72">→2</text>
-        <polyline class="edge" points="82,92 82,150 266,150 266,92"/>
-        <polyline class="edge" points="358,92 358,150 266,150 266,92"/>
-        <text x="40" y="178">An edge is an integer index. Slots 0 and 3 both name slot 2 — that shared naming is sharing.</text>
-      </svg>
-      <div class="figcap"><b>The pool idiom.</b> One array; slots 0 and 3 both name slot 2 — sharing without a single pointer.</div>
     </div>
   </section>
 
@@ -433,7 +387,8 @@
       <div class="fcol">
         <b>Project</b>
         <a href="https://github.com/StefanVonRanda/tycho">GitHub</a>
-        <a href="https://github.com/StefanVonRanda/tycho/blob/main/RELEASE_NOTES.md">Release notes</a>
+        <a href="https://tycho-lang.com/docs/changelog.html">Changelog</a>
+        <a href="https://tycho-lang.com/docs/release-notes.html">Release notes</a>
         <a href="https://github.com/StefanVonRanda/tycho/blob/main/SUPPORT.md">Support policy</a>
       </div>
     </div>
