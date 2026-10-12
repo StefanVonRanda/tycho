@@ -55,21 +55,30 @@ state. The edge is a message, not an alias, so nothing can dangle and nothing
 races.
 
 ```tycho
-fn watcher(events: chan string):
-    for:
-        select:
-            recv(events, e):
+fn watcher(events: Channel(string)) -> int:
+    n := 0
+    for true:
+        match recv(events):
+            Some(e):
                 println("saw " + e)
-            closed:
+                n = n + 1
+            None:                   # closed and drained
                 break
+    return n
 
 fn main():
-    events := chan string(16)
+    events := channel(string, 16)
     t := spawn watcher(events)
     send(events, "open")
     send(events, "close")
     close(events)
-    wait(t)
+    println(str(wait(t)))   # 2
+```
+
+```output
+saw open
+saw close
+2
 ```
 
 Why this way: each task owns its arena and every crossing value is a copy, so
