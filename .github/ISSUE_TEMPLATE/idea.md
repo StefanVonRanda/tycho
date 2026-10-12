@@ -21,7 +21,8 @@ What was awkward, surprising, missing, or confusing — or what would you change
 
 ---
 
-*Heads up — a couple of things are **deliberately out of scope**, so I'll
+*Heads up — a couple of things are **out of scope**, so I'll
 politely decline suggestions for them: a ternary/conditional expression and a
-package manager. Everything else is fair game. (See the README's "Known
-limitations" and `CONTRIBUTING.md`.)*
+package manager. Everything else is fair game. (See "What you give up" in the
+README and "Decided non-goals" in `docs/architecture.md`, plus
+`CONTRIBUTING.md`.)*
