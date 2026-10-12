@@ -93,6 +93,12 @@ corpus, and what each scored, is the
 
 ## What you give up
 
+No reference type, no stored borrows, no interface values — and
+[Thinking in Tycho](docs/idioms.md) is what to reach for instead: pools for
+graphs, channels for observers, closed enums for heterogeneity. Each idiom is
+also the faster spelling. What follows is the boundary itself, stated plainly
+so you meet it here rather than on page 40.
+
 **There is no reference type.** That is what makes the demo above work, and
 it is the part that will cost you a weekend if you meet it on page 40 instead of
 here. A shared mutable graph, a doubly-linked list, an observer holding a

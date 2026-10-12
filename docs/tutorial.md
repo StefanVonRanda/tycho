@@ -223,6 +223,8 @@ measurements and the cases where it costs, is in [thesis.md](thesis.md).
 
 - **[From `malloc` to arenas](from-c-to-arenas.md)** — the five-step version of
   section 8, starting from C. Read this first.
+- **[Thinking in Tycho](idioms.md)** — what to reach for instead of references
+  and observers. Read this second.
 - **[Language reference](reference/index.md)** — the precise behavior of every feature.
 - **[Quiet results](quiet-results.md)** — seven quiet spots to know before the
   first real program.
