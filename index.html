@@ -82,6 +82,9 @@
   .herometa{margin-top:40px; padding-top:20px; border-top:1px solid var(--line);
     font-size:12px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint)}
   .herometa b{color:var(--dim)}
+  .herometa a{color:var(--ink); text-decoration:underline; text-underline-offset:3px}
+  .fact .k a{color:inherit; text-decoration:underline; text-underline-offset:3px}
+  ul.plain li a,ul.points li a{color:var(--ink)}
 
   section{padding:96px 0}
   section + section{border-top:1px solid var(--line)}
@@ -169,18 +172,18 @@
     <span class="kicker">Experimental · v0.8.6, pre-1.0</span>
     <h1>Tycho is a systems language without a garbage collector.</h1>
     <p class="lede">
-      Memory is managed with <b>implicit arenas</b>: every scope owns one, and it
+      Memory is managed with <b><a href="https://tycho-lang.com/docs/thesis.html">implicit arenas</a></b>: every scope owns one, and it
       empties when the scope ends. No manual <code>free</code>, no borrow checker.
-      Built for parsers, compilers, and batch tools. Not for shared-mutable graphs.
+      Built for parsers, compilers, and batch tools. Not for <a href="https://tycho-lang.com/docs/idioms.html">shared-mutable graphs</a>.
     </p>
     <div class="cta">
       <a class="btn" href="#try">Try it</a>
       <a class="btn ghost" href="docs/">Read the docs</a>
     </div>
     <div class="herometa">
-      <span><b>Transpiles to C</b>, builds with <b>cc + make</b></span>
-      <span><b>45</b> stdlib packages</span>
-      <span><b>No runtime</b>, no collector</span>
+      <span><a href="https://tycho-lang.com/docs/architecture.html">Transpiles to C</a>, builds with <b>cc + make</b></span>
+      <span><b>45</b> <a href="https://tycho-lang.com/docs/reference/corelib.html">stdlib packages</a></span>
+      <span><a href="https://tycho-lang.com/docs/thesis.html">No runtime</a>, no collector</span>
     </div>
   </header>
 
@@ -189,8 +192,8 @@
     <h2>How it works.</h2>
     <div class="fact">
       <div class="row"><span class="k">Arenas per scope</span><span class="v">Each scope gets an arena. Allocation bumps a pointer; exiting the scope frees everything at once.</span></div>
-      <div class="row"><span class="k">No references</span><span class="v"><span class="inl">b := a</span> copies. Without aliasing, lifetimes are visible in the syntax.</span></div>
-      <div class="row"><span class="k">Placed, not managed</span><span class="v">A value leaves a scope only <b>down</b> into a callee or <b>up</b> to a caller. The compiler places every allocation and every free.</span></div>
+      <div class="row"><span class="k">No references</span><span class="v"><span class="inl">b := a</span> copies. Without aliasing, lifetimes are <a href="https://tycho-lang.com/docs/thesis.html">visible in the syntax</a>.</span></div>
+      <div class="row"><span class="k">Placed, not managed</span><span class="v">A value leaves a scope only <b>down</b> into a callee or <b>up</b> to a caller. The compiler <a href="https://tycho-lang.com/docs/memory-model.html">places every allocation and every free</a>.</span></div>
     </div>
   </section>
 
@@ -198,8 +201,8 @@
     <span class="kicker">02 — Speed</span>
     <h2>Why it is fast.</h2>
     <ul class="points">
-      <li>Returned values are built in the caller's arena — no copy on the way out (1.75× faster than copying).</li>
-      <li><span class="inl">acc = acc + x</span> grows one buffer: O(n²) becomes O(n). 828 MB becomes 4 MB on the same input.</li>
+      <li>Returned values are built in the caller's arena — no copy on the way out (<a href="https://tycho-lang.com/docs/thesis.html">1.75× faster than copying</a>).</li>
+      <li><span class="inl">acc = acc + x</span> grows one buffer: O(n²) becomes O(n). <a href="https://tycho-lang.com/docs/thesis.html">828 MB becomes 4 MB</a> on the same input.</li>
       <li>Copies happen only where a collector would do the same work. See the <a href="https://tycho-lang.com/docs/performance.html">measurements ↗</a>.</li>
     </ul>
     <div class="panel">
@@ -239,7 +242,7 @@
       <div class="row"><span class="k">Pointer-shaped data</span><span class="v">Costs more than C: trie 1.55×, LRU 2.8× memory. The index-pool idiom brings graphs to 1.3×. Full accounting in the <a href="https://tycho-lang.com/docs/internals/value-semantics-limits.html">loss column ↗</a>.</span></div>
       <div class="row"><span class="k">No interface values</span><span class="v">A mixed list of implementors can't exist; closed enums with match cover known sets, generics cover the static case. See <a href="https://tycho-lang.com/docs/idioms.html">Thinking in Tycho ↗</a>.</span></div>
       <div class="row"><span class="k">Pre-1.0</span><span class="v">Breaking changes ship with a changelog entry and no deprecation window until 1.0 (<a href="https://github.com/StefanVonRanda/tycho/blob/main/SUPPORT.md">policy ↗</a>).</span></div>
-      <div class="row"><span class="k">Scope exit</span><span class="v">A long-lived scope holds its transients until it returns.</span></div>
+      <div class="row"><span class="k">Scope exit</span><span class="v">A long-lived scope <a href="https://tycho-lang.com/docs/internals/value-semantics-limits.html">holds its transients</a> until it returns.</span></div>
     </div>
   </section>
 
@@ -247,13 +250,13 @@
     <span class="kicker">04 — Proof</span>
     <h2>Substantial programs, checked against ground truth.</h2>
     <div class="fact">
-      <div class="row"><span class="k">tycho-scheme</span><span class="v">Interpreter and bytecode compiler with closures. The same six programs run identically on both — <span class="inl">make scheme-check</span>.</span></div>
-      <div class="row"><span class="k">tycho-vm</span><span class="v">Assembler, disassembler, virtual machine. Disassembly round-trips assembly exactly.</span></div>
-      <div class="row"><span class="k">tycho-kv</span><span class="v">Persistent B+ tree store. Every command script matches a naive map backend exactly.</span></div>
-      <div class="row"><span class="k">tycho-chess</span><span class="v">Bitboards with search. Move generation matches published perft totals.</span></div>
-      <div class="row"><span class="k">tycho-kvsrv</span><span class="v">Concurrent HTTP key-value server. Parallel clients, every write intact.</span></div>
-      <div class="row"><span class="k">tycho-sat</span><span class="v">DPLL/CDCL SAT solver. Pigeonhole cases come back unsat; planted models verify clause by clause.</span></div>
-      <div class="row"><span class="k">Self-hosted</span><span class="v">A ~21,500-line compiler written in Tycho itself, bootstrapped in two stages. Successive generations emit identical C.</span></div>
+      <div class="row"><span class="k"><a href="https://github.com/StefanVonRanda/tycho/tree/main/tools/tycho-scheme">tycho-scheme</a></span><span class="v">Interpreter and bytecode compiler with closures. The same six programs run identically on both — <span class="inl">make scheme-check</span>.</span></div>
+      <div class="row"><span class="k"><a href="https://github.com/StefanVonRanda/tycho/tree/main/tools/tycho-vm">tycho-vm</a></span><span class="v">Assembler, disassembler, virtual machine. Disassembly round-trips assembly exactly.</span></div>
+      <div class="row"><span class="k"><a href="https://github.com/StefanVonRanda/tycho/tree/main/tools/tycho-kv">tycho-kv</a></span><span class="v">Persistent B+ tree store. Every command script matches a naive map backend exactly.</span></div>
+      <div class="row"><span class="k"><a href="https://github.com/StefanVonRanda/tycho/tree/main/tools/tycho-chess">tycho-chess</a></span><span class="v">Bitboards with search. Move generation matches published perft totals.</span></div>
+      <div class="row"><span class="k"><a href="https://github.com/StefanVonRanda/tycho/tree/main/tools/tycho-kvsrv">tycho-kvsrv</a></span><span class="v">Concurrent HTTP key-value server. Parallel clients, every write intact.</span></div>
+      <div class="row"><span class="k"><a href="https://github.com/StefanVonRanda/tycho/tree/main/tools/tycho-sat">tycho-sat</a></span><span class="v">DPLL/CDCL SAT solver. Pigeonhole cases come back unsat; planted models verify clause by clause.</span></div>
+      <div class="row"><span class="k">Self-hosted</span><span class="v">A ~21,500-line compiler written in Tycho itself, <a href="https://tycho-lang.com/docs/architecture.html">bootstrapped in two stages</a>. Successive generations emit identical C.</span></div>
     </div>
   </section>
 
@@ -261,9 +264,9 @@
     <span class="kicker">05 — The language</span>
     <h2>What is included.</h2>
     <ul class="plain">
-      <li><b>Value semantics, generics, sum types</b> — <span class="inl">Option</span> / <span class="inl">Result</span>, <span class="inl">match</span>, <span class="inl">$T</span> monomorphized.</li>
-      <li><b>Methods, closures</b> — UFCS, no classes; value capture.</li>
-      <li><b>Systems pieces</b> — <span class="inl">spawn</span>, channels, <span class="inl">parallel for</span>; <span class="inl">extern fn</span> FFI; packages and a corelib.</li>
+      <li><b>Value semantics, generics, sum types</b> — <span class="inl">Option</span> / <span class="inl">Result</span>, <a href="https://tycho-lang.com/docs/reference/enums-options.html"><span class="inl">match</span></a>, <a href="https://tycho-lang.com/docs/reference/generics.html"><span class="inl">$T</span> monomorphized</a>.</li>
+      <li><b>Methods, closures</b> — <a href="https://tycho-lang.com/docs/reference/functions.html">UFCS</a>, no classes; value capture.</li>
+      <li><b>Systems pieces</b> — <a href="https://tycho-lang.com/docs/reference/concurrency.html"><span class="inl">spawn</span>, channels, <span class="inl">parallel for</span></a>; <a href="https://tycho-lang.com/docs/reference/ffi.html"><span class="inl">extern fn</span> FFI</a>; <a href="https://tycho-lang.com/docs/reference/packages.html">packages</a> and a corelib.</li>
     </ul>
     <p>Python-flavored syntax, Go/Odin-like semantics; the value core comes from <a href="https://www.hylo-lang.org/">Hylo ↗</a>.</p>
   </section>
@@ -272,10 +275,10 @@
     <span class="kicker">06 — Verification</span>
     <h2>How it is tested.</h2>
     <div class="fact">
-      <div class="row"><span class="k">Corpus</span><span class="v"><b>1,100+ fixtures</b>, each built native and sanitized with byte-identical output, matched to committed goldens. 621 fixtures pin every refusal.</span></div>
+      <div class="row"><span class="k">Corpus</span><span class="v"><b>1,100+ fixtures</b>, each built native and sanitized with byte-identical output, matched to <a href="https://tycho-lang.com/docs/controls.html">committed goldens</a>. <a href="https://github.com/StefanVonRanda/tycho/tree/main/tests">621 fixtures</a> pin every refusal.</span></div>
       <div class="row"><span class="k">Fuzzed</span><span class="v">Random programs run native <span class="inl">-O2</span> against ASan/UBSan; any disagreement is a defect. Malformed input must fail closed.</span></div>
       <div class="row"><span class="k">Authored evidence</span><span class="v">Most programs above were written by the author. Outside programs are the 1.0 gate — see the <a href="https://github.com/StefanVonRanda/tycho/blob/main/ROADMAP.md#what-production-ready-requires">roadmap ↗</a>.</span></div>
-      <div class="row"><span class="k">No cloud CI</span><span class="v"><span class="inl">make ci</span> runs everything on your machine. Caveats are written down in the <a href="https://tycho-lang.com/docs/performance.html">performance notes ↗</a>.</span></div>
+      <div class="row"><span class="k">No cloud CI</span><span class="v"><a href="https://github.com/StefanVonRanda/tycho/blob/main/CONTRIBUTING.md"><span class="inl">make ci</span></a> runs everything on your machine. Caveats are written down in the <a href="https://tycho-lang.com/docs/performance.html">performance notes ↗</a>.</span></div>
     </div>
   </section>
 
@@ -327,7 +330,7 @@
     <h2>Short answers.</h2>
     <details open>
       <summary>No GC, no borrow checker — how is it safe?</summary>
-      <div class="a">There is no reference type, so a dangling pointer can't be written. <span class="inl">Option</span> replaces null, <span class="inl">Result</span> replaces exceptions; indexing is bounds-checked.</div>
+      <div class="a">There is no reference type, so a <a href="https://tycho-lang.com/docs/thesis.html">dangling pointer</a> can't be written. <span class="inl">Option</span> replaces null, <span class="inl">Result</span> replaces exceptions; indexing is bounds-checked.</div>
     </details>
     <details>
       <summary>What does value semantics cost?</summary>
