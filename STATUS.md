@@ -26,6 +26,9 @@ flags. The harness also reports *"all outputs identical within each workload"*.
 | array-pipeline | 6 | 3 | 1 | 7 | 16 |
 | string-pipeline | 1 | 1 | 0 | 4 | 4 |
 
+Rounded per-round snapshot from the run above; the precise log, with wall
+times and hardware, is [`bench/prongB/RESULTS.md`](bench/prongB/RESULTS.md).
+
 **On both allocation-heavy workloads Tycho uses the least memory of the five** —
 with no GC, no reference counting, and no manual management written by the programmer.
 

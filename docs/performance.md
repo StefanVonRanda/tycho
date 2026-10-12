@@ -16,7 +16,8 @@ iteration's arena resets. Clean under ASan + LeakSanitizer.
 
 Per-workload timings are in [`bench/prongB/RESULTS.md`](../bench/prongB/RESULTS.md).
 Peak resident memory (MB) — every binary computes the same checksum; lower is
-better:
+better. Figures below are rounded per-round snapshots; the precise log, with
+wall times and hardware, is that RESULTS file.
 
 | workload         | tycho |  C | Rust | Go (GC) | Koka (Perceus) |
 | ---------------- | ----: | -: | ---: | ------: | -------------: |
