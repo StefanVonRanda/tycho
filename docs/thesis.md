@@ -238,7 +238,7 @@ two handles to one mutable object, a write through one seen through the other,
 held beyond any single call. The observer pattern, a shared mutable cache held
 in a field, doubly-linked structures by reference, **and dynamic dispatch
 through an interface value**. This is forbidden **by construction**, and `inout`
-deliberately doesn't provide it (it's call-scoped, not storable). That
+doesn't provide it (it's call-scoped, not storable). That
 forbiddance is *what value semantics is*. Removing it wouldn't extend Tycho; it
 would make it a different language.
 
@@ -254,7 +254,7 @@ everything else in this section is.
 
 ## 6. Where that leaves the idea
 
-The verdict, backed by measurement rather than intuition:
+The verdict:
 
 - For **tree-shaped, scope-shaped, build-and-return, accumulate** programs —
   compilers and compiler passes, request handlers, batch transforms, CLI
@@ -299,7 +299,7 @@ example and feature program is checked against its golden under sanitizers.
 Three further things back the thesis up, written up separately.
 
 **Head-to-head performance.** The cross-language benchmark suite under `bench/`
-(Tycho vs C, Go, Rust, and Koka's Perceus reference-counting) and the
+(Tycho vs C, Go, Rust, and Koka's Perceus reference-counting) and
 the compiler and codegen numbers are in [docs/perf.md](perf.md).
 
 **Concurrency falls out for free.** The same call convention — deep-copy in, copy
@@ -310,4 +310,4 @@ in the language. Measured: `parallel for` at C-pthreads parity on a
 compute-bound reduction; and a lock-free-channel pipeline that runs ~9× faster than a
 hand-written C *mutex-ring* baseline (73 ms vs 654 ms) — a design-expressiveness result
 (lock-free vs mutex), not a throughput claim over optimal C, and still paying the
-value-semantic copies C doesn't ([docs/concurrency.md](reference/concurrency.md), `bench/conc/`).
+value-semantic copies C doesn't ([reference/concurrency.md](reference/concurrency.md), `bench/conc/`).
