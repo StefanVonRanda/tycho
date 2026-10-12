@@ -126,9 +126,8 @@ parallel(4) for wid in 0..<nworkers:   # nworkers workers, each with its own wid
 
 Probed directly — 4 workers, ids summing to 6 — and then applied to the program
 the item cited: `server/main.ty`'s recursive fan-out is gone and
-`make server-check` starts the real server and passes. The reasoning below is
-kept because its analysis of the SECOND BINDER is still correct; what it got
-wrong is treating the first binder as unavailable.
+`make server-check` starts the real server and passes. The second-binder analysis
+below still holds; its error is treating the first binder as unavailable.
 
 ## The original: why (b) looked still open, and harder to spell
 
@@ -147,7 +146,7 @@ binder meaning "worker id" would take a slot every reader expects to mean
 something else.
 
 The alternatives, none costed here: a builtin readable inside a parallel body
-(`worker_id()`), which is honest about being ambient rather than bound; or the
+(`worker_id()`), which is ambient rather than bound; or the
 original ask, task handles in a container, which is the type-system change the
 item names and which nothing in this RFC makes cheaper.
 

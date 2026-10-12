@@ -1,9 +1,9 @@
 # Value-lifetime regions — an arena whose lifetime follows a value
 
 > Status: **research study, not a proposal to build.** Reaches a recommendation for
-> the maintainer. Nothing here changes the compiler, the runtime, or codegen. Every
-> claim about current behaviour cites `path:line` and was re-opened at the source
-> before being written down. The companion negative result on *stored references* is
+> the maintainer — **do not build** (see §6 for the one condition that would
+> change that). Nothing here changes the compiler, the runtime, or codegen.
+> The companion negative result on *stored references* is
 > [`limited-references-spike.md`](limited-references-spike.md); this is a different
 > question and §1 says how.
 
@@ -79,7 +79,7 @@ design in §4 is judged on whether it introduces one.
 
 ### 2.3 One correction to the framing
 
-The premise this study was commissioned under says the only way a value outlives its
+The starting premise says the only way a value outlives its
 scope is "to be copied up into the parent's arena". That overstates the cost.
 Up-escape is **destination-passing first, copy second**: the value is *produced
 directly in the destination's storage* (`docs/spec/07-memory-model.md:109-112`), and
@@ -97,24 +97,20 @@ is dead but not reclaimable until the owning scope exits.
 
 For pointer-shaped, structurally-shared data the documented idiom is a flat node pool
 with integer-index children (`docs/internals/value-semantics-limits.md:61-94`). The
-project is deliberate that this is a representation worth choosing and not merely a
-constraint to satisfy, and equally deliberate that it is *not* presented as the model
+docs recommend this representation as worth choosing rather than as a constraint to
+satisfy, while not presenting it as the model
 (`docs/architecture.md:64-67`). Its two named costs are ergonomic: "you index a pool
 instead of following references, and you cannot delete a single node without
 compacting" (`docs/internals/value-semantics-limits.md:91-93`).
 
-The measured cost of *not* using it — the by-value recursive form, which is what a
+The cost of *not* using it — the by-value recursive form, which is what a
 naive long-lived structure gets — is **~1.55× C peak RSS**, from a prefix tree where
 each node owns an `int -> child` map: tycho 58.7 MB vs C 37.8 MB vs Go 33.8 MB
-(`docs/internals/value-semantics-limits.md:50-54`). I re-opened every place that
-figure appears rather than trusting the number I was handed: it is stated identically
+(`docs/internals/value-semantics-limits.md:50-54`). The figure is stated identically
 at `docs/internals/value-semantics-limits.md:54`, `docs/memory-model.md:111`,
 `docs/architecture.md:64`, `README.md:128`, `bench/README.md:26` and
 `bench/trie/RESULTS.md:28`, all of them attributing the halving from ~3.2× (119 MB) to
 the compact indexed-dict map layout. The figure is current.
-
-(`examples/triepool.ty:3` carried a stale "~2.7x C" from before the compact-map work;
-corrected to ~1.55x in the same series as this study.)
 
 Two adjacent measurements bound the shape of the problem. Expressed the value-semantic
 way — a graph as an adjacency list of indices — `bench/dijkstra` lands at ~1.3× C
@@ -127,13 +123,11 @@ steady with zero per-op allocation (`bench/lru/lru.ty:4-13`).
 
 ### 3.2 What actually happens to a removed node
 
-This is the crux, and it is worth spelling out at source level because it is where a
-value-lifetime region would earn its keep or not.
-
-`corelib/pool` packages the idiom: `add` returns a `Handle` (a distinct int newtype,
+At source level, removal works as follows. `corelib/pool` packages the idiom:
+`add` returns a `Handle` (a distinct int newtype,
 introducing no aliasing), and every access is checked against a per-slot generation
-counter so a stale handle is caught at runtime (`corelib/pool/pool.ty:1-22`). It is
-explicit that it improves ergonomics, not memory (`corelib/pool/pool.ty:15-18`).
+counter so a stale handle is caught at runtime (`corelib/pool/pool.ty:1-22`). It
+improves ergonomics, not memory (`corelib/pool/pool.ty:15-18`).
 
 `remove` marks the slot unused, bumps its generation, and pushes the index onto a free
 list (`corelib/pool/pool.ty:57-65`). It does **not** clear `val`. So the removed
@@ -145,7 +139,7 @@ back to the array's arena free list (`docs/memory-model.md:101-106`), backed by
 (`runtime/tycho_rt.c@arena_recycle`, reused on the next allocation at
 `runtime/tycho_rt.c@arena_alloc`).
 
-The consequence, stated plainly: **a pool's memory tracks the high-water mark of live
+The consequence: **a pool's memory tracks the high-water mark of live
 nodes, and never returns below it.** Bytes are recovered on reuse, never on removal.
 For a cache with a fixed capacity that is exactly right and is why `bench/lru` holds
 steady. For a structure whose live set genuinely shrinks — a server that had 10 000
@@ -175,8 +169,8 @@ supplies only per-request plumbing (`corelib/httpd/httpd.ty:5-14`). A connection
 arena is reset per iteration, so the loop runs in bounded memory
 (`runtime/tycho_rt.c:10-13`, `docs/memory-model.md:46-48`).
 
-That is not proof that the gap is imaginary — it is proof that **no call site in this
-repository currently pays for it.** A design study should say so.
+The gap may still be real. The point stands that **no call site in this
+repository currently pays for it.**
 
 ## 4. Three designs
 
@@ -198,9 +192,8 @@ drop(r)                          # or at r's scope exit
 For the compiler to reject `escape(n)` where `n` outlives `r`, the region must appear
 in `n`'s type — `Node@r` — and therefore in the signature of every function that
 touches such a value, and a function taking values from two regions needs region
-polymorphism. This is Tofte–Talpin region inference / Cyclone's `rgn_t<`r>`, which the
-thesis names explicitly as the well-trodden prior art that Tycho's contribution is to
-make *implicit* (`docs/thesis.md:26-32`).
+polymorphism. This is Tofte–Talpin region inference / Cyclone's `rgn_t<`r>`, the
+prior art the thesis names as what Tycho makes *implicit* (`docs/thesis.md:26-32`).
 
 **Sideways.** Design A does not merely permit a sideways pointer; permitting one *is*
 the feature. `n` in scope S1 and `m` in sibling scope S2 both point into `r`, which
@@ -229,8 +222,7 @@ takes (`docs/memory-model.md:33-34`). The lowering is nearly free; the entire
 cost is in the source language and the checker.
 
 **Verdict.** This is a lifetime-annotation system with a different keyword. It
-contradicts `docs/thesis.md:10@borrow` ("no lifetime annotations, no borrow checker") not
-incidentally but at the load-bearing joint. Reject.
+contradicts `docs/thesis.md:10@borrow` ("no lifetime annotations, no borrow checker") at the load-bearing joint. Reject.
 
 ### 4.2 Design B — the value-homed arena (the region is a hidden field, never a type variable)
 
@@ -250,7 +242,7 @@ c := get(r, h)                  # deep copy OUT, exactly as today
 remove(r, h)                    # the element's bytes return to r's arena NOW
 ```
 
-The second spelling is worth naming honestly: it is `corelib/pool` with an arena
+The second spelling is `corelib/pool` with an arena
 underneath instead of a `[Slot($T)]` array. The API is already written
 (`corelib/pool/pool.ty:24-70`), including the property that makes it sound — `get`
 returns a copy, so the pool is never aliased (`corelib/pool/pool.ty:43-48`).
@@ -275,7 +267,7 @@ before exiting so nothing leaks with the TLS (`runtime/tycho_rt.c@tycho_pool_flu
 either: a region payload deep-copies into the cell arena like any other value
 (`runtime/tycho_rt.c:1074@payload bytes live here`).
 
-The honest limit is that this makes regions **cheap to free and no cheaper to send**.
+The limit is that this makes regions **cheap to free and no cheaper to send**.
 A 1 GB region crosses a channel as 1 GB of deep copy. Today you would send an index
 instead, and you still would.
 
@@ -434,18 +426,18 @@ tree; §4.2 shows a per-node region is *worse* than the pool it would replace be
 > (`runtime/tycho_rt.c:88@TYCHO_BLOCK_DEFAULT`), and its live
 > count must genuinely shrink, not merely churn at a fixed capacity.
 
-No such benchmark exists today. I checked the full workload table in
-`bench/README.md:12-38`, which is every measured workload in the tree, and opened the
-three closest candidates: `bench/gcscan` retains a large **live** set to make a tracing
+No such benchmark exists today. The full workload table in
+`bench/README.md:12-38` covers every measured workload in the tree; the three
+closest candidates: `bench/gcscan` retains a large **live** set to make a tracing
 GC re-scan it (`bench/gcscan/gcscan.ty:1-11`), `bench/latency` churns a working set
 that the per-iteration arena reset reclaims (`bench/latency/latency.ty:1-5`), and
 `bench/invindex` is build-and-hold growth of live data, closing to ~1.07× C with
 `reserve` (`bench/README.md:20`). All three are *live* retention, which no region
-feature helps. Writing that benchmark is the cheap next step, and it is also the honest
-one: if it cannot be written, the gap is theoretical and the recommendation is
+feature helps. Writing that benchmark is the next step: if it cannot be written,
+the gap is theoretical and the recommendation is
 unconditional.
 
-## 7. Two findings that change the surrounding picture
+## 7. A finding that changes the surrounding picture
 
 **`handle` is the lifecycle object this question was asking for, minus the storage.**
 A typed FFI handle is already an affine value with a compiler-known destructor that runs

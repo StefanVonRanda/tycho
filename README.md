@@ -8,8 +8,7 @@
 # Tycho
 
 **A data-oriented systems language with automatic memory management from
-lexical scope.** Tycho began as an experiment testing one idea — implicit
-hierarchical arenas under value semantics — and that idea now holds. It is built
+lexical scope.** It is built
 for **programs that allocate hard and cannot afford a GC pause** — parsers,
 interpreters, solvers, batch CLIs and long-running services — and its value
 semantics steer data into the flat, index-addressed layouts that data-oriented C
@@ -124,26 +123,14 @@ want a different tool, is
 **[docs/internals/value-semantics-limits.md](docs/internals/value-semantics-limits.md)**;
 [from `malloc` to arenas](docs/from-c-to-arenas.md) is the same ground from C.
 
-> **Status: 0.8.6 — pre-1.0. No stability guarantees yet.** The thesis is
-> proven and the work now is shipping a complete language, not defending an
-> idea. It is pre-1.0 because 1.0 is a promise not to break people, and nobody
-> outside this repo has written enough Tycho to know what that promise costs —
-> that, and an external security review, are the two remaining conditions, and
-> neither is engineering. The
-> engineering is not the open question — see
-> [Architecture](docs/architecture.md) for what each gate proves.
->
-> Until 1.0, expect the language surface and the corelib API to change with a
-> changelog entry and no deprecation window. What is already dependable in
-> practice: the [spec](docs/spec/) is normative and the implementation is gated
-> against it. What is explicitly not: performance tuning and the benches,
-> internal implementation details (the emitted C shape, arena sizes), and the
-> areas the spec or [SECURITY.md](SECURITY.md) mark as sharp edges.
-> [SUPPORT.md](SUPPORT.md) states this as policy — versions, deprecations and
-> which platforms carry a promise.
-> [ROADMAP.md](ROADMAP.md#what-production-ready-requires) lists what production-ready
-> requires; the 1.0 conditions are in the section above it.
-> Versioning is `tychoc --version` + [CHANGELOG.md](CHANGELOG.md).
+> **Status: 0.8.6 — pre-1.0. Expect breaking changes.** Until 1.0, the
+> language surface and the corelib API can change with a changelog entry
+> and no deprecation window. The [spec](docs/spec/) describes the current
+> behavior. Performance numbers, emitted C shape, and arena sizes are
+> explicitly unstable, as are areas the spec or [SECURITY.md](SECURITY.md)
+> mark as sharp edges. See [SUPPORT.md](SUPPORT.md) for the version policy
+> and [ROADMAP.md](ROADMAP.md#what-production-ready-requires) for what 1.0
+> requires. Versioning is `tychoc --version` + [CHANGELOG.md](CHANGELOG.md).
 
 ## Key features
 
@@ -161,8 +148,8 @@ want a different tool, is
   C-interop boundary — all shipping.
 - **Heavily tested.** Every example is built twice — native and sanitized — and
   checked against a committed golden; a fuzzer applies the same differential to
-  random programs under ASan/UBSan and feeds malformed input to prove the
-  compiler fails closed.   seven full programs (below) ran on it with zero compiler or runtime defects.
+  random programs under ASan/UBSan. Six full programs (below) run against it
+  with differential checks.
 
 ## Quick start
 
@@ -343,9 +330,7 @@ language held: no compiler or runtime defect was filed by any of them.
 
 ### Rigor and limits, in one place
 
-A memory model that argues with decades of practice carries an astronomical
-burden of proof, so the successes and the gaps belong on the same page rather
-than one at the top and the other in a build note. Everything below is measured
+Successes and gaps, together. Everything below is measured
 on this tree; nothing is aspirational.
 
 | What is proved | How | What is NOT covered, and where |
@@ -364,7 +349,7 @@ On the allocation-heavy tree workloads Tycho uses the least memory of five
 languages measured head-to-head — 40% of C's on binary-trees, half on
 tree-rewrite — with no GC and no reference counting, only lexical arenas and
 value semantics. A 220-line recursive JSON parser holds a flat 10 MB across
-5,000,000 documents in a loop. The tables, the measurements, and the honest
+5,000,000 documents in a loop. The tables, the measurements, and the
 costs are in **[docs/performance.md](docs/performance.md)**.
 
 ## FAQ
@@ -393,7 +378,7 @@ C. Arenas reclaim at scope exit, not incrementally. The full loss column is in
 a value is provably un-aliased — returns build in the caller's arena,
 `acc = acc + x` grows in place, `b := a` becomes a move when `a` is dead. A copy
 happens only when a value genuinely escapes to two live owners — exactly when a
-GC or refcount would also work. Measured, not asserted: see the performance
+GC or refcount would also work. See the performance
 tables.
 
 **"Where's the package manager?"** There isn't one, on purpose. A package is a

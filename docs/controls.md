@@ -7,9 +7,8 @@ Tycho has no cloud CI, 102 entries in a defect log, and a rule that fell out of
 both — **every gate here has to demonstrate it can redden, and the demonstration
 is part of the gate.**
 
-This page is four times that rule earned its keep. Every number below is from
-[`internals/FRICTION.md`](internals/FRICTION.md), which records defects in this
-project as they were found, including the ones that were embarrassing.
+This page is four cases where that rule paid off. Every number below is from
+[`internals/FRICTION.md`](internals/FRICTION.md), the project's defect log.
 
 ## 1. Sixteen attacks refused, and the gate was measuring nothing
 

@@ -4,8 +4,6 @@ This chapter defines how a Tycho source file is decomposed into a stream of
 **tokens**. The token stream — including the synthetic layout tokens `NEWLINE`,
 `INDENT`, and `DEDENT` — is the input to the phrase grammar ([§4](02-grammar.md)).
 
-> Provenance: the lexer is `src/tychoc.c:386-712` (`lex`), the token kinds
-> `:376-392` (`TokKind`), the keyword table `:427-469` (`keyword`).
 
 ## 3.1 Source text
 
@@ -29,9 +27,6 @@ input) is part of the ending: a CRLF file lexes exactly as its LF twin does,
 file containing a `NUL` byte MUST be rejected — silently truncating at it would
 compile a program the file does not contain.
 
-> Provenance: `src/tychoc.c@AT_EOL`, and the reader's refusal at
-> `src/tychoc.c:15524@memchr`; the same rule in the self-hosted
-> lexer is `compiler/lex/lex.ty@_at_eol`. Gated by `scripts/source_bytes.sh`.
 
 ## 3.2 Logical lines and `NEWLINE`
 
@@ -81,7 +76,6 @@ A comment begins with `#` and runs to the end of the line. Comments do not
 nest, and there is no block-comment form. A `#` inside a string or character
 literal is an ordinary byte, not a comment.
 
-> Provenance: a comment-only line is skipped without touching the indent stack `src/tychoc.c:606@*p == '#') {`; the token loop stops at `#` `:660@*p != '\n' && *p != '#'`; the trailing comment is consumed at `:950@if (*p == '#') while`.
 
 ## 3.4 Indentation (`INDENT` / `DEDENT`)
 
@@ -116,8 +110,6 @@ lines:
 
 A block in the phrase grammar is therefore `INDENT Stmt+ DEDENT` ([§4](02-grammar.md)).
 
-> Provenance: `src/tychoc.c:399-435` (measure + INDENT/DEDENT),
-> `:645@indentation too deep` (depth bound), `:792-793` (EOF flush).
 
 ## 3.5 Tokens
 
@@ -153,12 +145,6 @@ run-time bindings nor uppercase by convention — except for the four constructo
 names §3.7 already excludes. The identifier prefix `Ztycho_` is reserved in
 all name spaces for compiler-generated temporaries and is rejected by the lexer.
 
-> Provenance: one guard at the single point every binding form reaches,
-> `src/tychoc.c@vars_push` — parameters, `:=`, destructuring, loop variables,
-> match binds and `select` binds all pass through it. It runs *after*
-> `src/tychoc.c@match_arm_payload` promotes a bare `Err(A)` from a binding to a
-> pattern, which is why a nullary variant in a payload slot is still written
-> with its own uppercase spelling.
 
 ## 3.6 Keywords
 
@@ -183,17 +169,12 @@ keywords. `or_return` and `or_else` are each matched as a single word (neither
 is `or` followed by `_return` or `_else`).
 
 `soa` is reserved too, but by the parser rather than the lexer: it lexes as an
-ordinary identifier and every expression position that sees it demands a `[`
-(`src/tychoc.c:3354-3357`), so `soa := 5` is accepted and the next mention of the
+ordinary identifier and every expression position that sees it demands a `[`,
+so `soa := 5` is accepted and the next mention of the
 name dies with `expected '[' after soa`. A binding of that name is declarable and
 permanently unusable, which is why [Appendix B](appendix-b-keywords.md#b1-reserved-words)
 lists it with the reserved words and not with the contextual ones.
 
-> Provenance: the complete **lexer** reserved set is exactly `keyword()`,
-> `src/tychoc.c@keyword`. There is no `while` keyword (the loop keyword is
-> `for`, §4); there is no `char` or `void` type keyword (the `char` type arises
-> only from character literals and inference, and `void` is the implicit
-> no-return type).
 
 ## 3.7 Contextual identifiers
 
@@ -245,31 +226,12 @@ bars an uppercase spelling from every run-time binding position. They are
     the unqualified spelling, written inside that package's own body, is taken
     by the builtin.
 
-  > **gap:** the error in the first case is under-enforced. Measured
-  > 2026-08-12 across the 54 names `src/tychoc.c@shadows_builtin` lists: in the
-  > main program 26 are rejected at the declaration with `'X' is already
-  > defined`, and the other 28 are accepted with a warning and then overtaken
-  > by the builtin at the call site — so what a caller sees turns on the
-  > **arguments**, not the name. Arguments the builtin's own contract refuses
-  > produce that builtin's diagnostic (with a two-parameter `hash` declared,
-  > `hash(1, 2)` fails as `hash(x) takes one argument`), which is confusing
-  > since the local's signature fits perfectly. Arguments it accepts are
-  > answered **silently**, the local body never entered: with
-  > `fn to_u8(x: int) -> int` returning `99`, `to_u8(5)` evaluates to `5`.
-  > That silent case is the undiagnosed one, and those 28 declarations are
-  > what this gap covers — each ought to be rejected outright.
-  >
-  > Inside a package all 54 declare successfully and the qualified call reaches
-  > the local in every one. That is the rule above rather than a gap. The
-  > warning still fires, but only when the file being compiled is itself inside
-  > the corelib tree; a consumer's build mutes it (`src/tychoc.c@g_mute_warn`),
-  > the collision not being theirs to fix. The warning is quality of
-  > implementation, not a conformance requirement; **selection** is the
-  > normative part.
+  Some implementations currently warn rather than reject some of these
+  declarations in the main program; the rejection above is the normative rule.
+  A warning on a shadowing declaration is quality of implementation, not a
+  conformance requirement; **selection** of the builtin in an unqualified call
+  is the normative part.
 
-> Provenance: contextual dispatch at `src/tychoc.c:5859-5868` (top level),
-> `:4322@"const"`/`:4345@"delete"` (`const`/`delete`),
-> `:4967@"where"` (`where`), `:4938@"sink"` (`sink`), `:4584@"range"` (`range`, refusal only).
 
 ## 3.8 Operators and punctuation
 
@@ -301,8 +263,6 @@ literal (§3.9.5). The **only** range operator is `..<`; `..` alone is not a
 token, and the `range(…)` form it replaced is gone (§14.4). Operator precedence and associativity are
 defined with the expression grammar in [§4.5](02-grammar.md#45-operator-precedence-and-associativity).
 
-> Provenance: `src/tychoc.c:748-778`. `::` is lexed at `:898@TK_COLONCOLON` but no grammar
-> production consumes it; `..<` at `:896@TK_DOTLT`, tested after `...` so maximal munch holds; `;` at `:921@TK_SEMI`.
 
 ## 3.9 Literals
 
@@ -311,7 +271,6 @@ chains) is limited to a fixed depth; a more deeply nested expression is rejected
 (`expression nesting too deep`) — a fail-closed guard, the expression-level
 counterpart to the indentation-depth bound (§3.4).
 
-> Provenance: `src/tychoc.c:3236-3242`.
 
 ### 3.9.1 Integer literals
 
@@ -343,7 +302,6 @@ relying on defined wraparound — §30). An integer literal adapts to
 a `float`, `u32`, `u64`, or `f32` context by the literal-adaptation rules of the
 type system (§8); it does not change the literal's syntax.
 
-> Provenance: `src/tychoc.c:474-481` (accumulation + overflow check).
 
 ### 3.9.2 Float literals
 
@@ -374,8 +332,6 @@ Two disambiguation rules are normative:
   float, but for a different reason: the `.` is not followed by a digit, so no
   fractional part forms and it tokenizes as `INT(1) "." IDENT(e5)`.
 
-> Provenance: `src/tychoc.c:444-469`; the leading-dot predicate is
-> `tok_postfixable`, `:422-425`.
 
 ### 3.9.3 Character literals
 
@@ -403,10 +359,6 @@ never reaches a C string literal, whereas a string literal's text is carried as
 every escape is exactly two characters. `\0` has the same asymmetry, and for the
 same reason.
 
-> Provenance: `src/tychoc.c:719-748`; the `\x` arm `:876@case 'x'`; the escape
-> table `:875@case '0'`; the fixed-width refusal `:878@two hex digits`.
-> Conformance: `tests/char_hex_escape.ty`, `tests/reject/hex_escape_one_digit.ty`,
-> `tests/reject/hex_escape_in_string.ty`.
 
 ### 3.9.4 String literals
 
@@ -446,7 +398,7 @@ Apart from a raw piece (below) there is no other multi-line string form, and
 there is no backslash line-continuation. An **f-string never joins**
 ([§3.9.5](#395-f-string-interpolated-literals)): it is
 already sugar for a `+` chain, so `f"a" "b"` and `"a" f"b"` are each a syntax
-error, as they were before joining existed. Joining is defined on the literals'
+error. Joining is defined on the literals'
 *escaped source text*, which is sound only because every escape is exactly two
 characters — the reason `\0` and `\xNN` are not in **this** escape set (a greedy
 C-style `\x` would absorb a hex digit across a join, so `"\x4" "1"` would mean one
@@ -488,15 +440,6 @@ Concatenating two string literals with `+` also folds to one literal in a
 `const` ([§12.2](08-declarations.md#122-constants)), so `const TERM = "\r\n" + "\r\n"`
 is a single four-byte literal and not a run-time concatenation.
 
-> Provenance: quoted piece `src/tychoc.c:498-589`; escape set `:554-568`;
-> control-byte rejection `:576-579`; per-piece length bound `:749@char buf[4096]`,`:776@bn + 2 >= (int)sizeof buf`;
-> raw piece `:591-715`, its re-escape table `:803-806`, its control-byte
-> rejection `:603-604`, its per-piece bound `:851@rn + 2 >= (int)sizeof rbuf`,`:854@rn + 1 >= (int)sizeof rbuf`,
-> its unterminated diagnostic `:858@unterminated raw string literal`; adjacent join `:2983-3006`; `const` string fold
-> `:5425-5429`; codegen pastes the escaped text into a C string literal
-> `:12180@TYCHO_LIT`; that literal's decoded length `runtime/tycho_rt.c:1509@sizeof s - 1`.
-> Fixtures: `tests/rawstring.ty`,
-> `tests/reject/rawstring_unterminated.ty`.
 
 ### 3.9.5 f-string (interpolated) literals
 
@@ -512,8 +455,6 @@ Because the desugaring wraps each hole in `str(…)`, a hole expression MUST be 
 a type accepted by `str` (the numeric and string scalars); other hole types are
 rejected with the same diagnostic `str` gives ([§29](16-builtins.md)).
 
-> Provenance: lexing — the identifier scanner declines the `f` of `f"…"` `src/tychoc.c:732@!(c == 'f' && p[1] == '"')`, the string scanner takes it `:498-589`;
-> desugar `interp_join` / `desugar_interp`, `:2853-2928`.
 
 ### 3.9.6 Boolean and pointer literals
 

@@ -5,10 +5,6 @@ in [§4.4–§4.5](02-grammar.md#44-expressions); this chapter defines the meani
 of each operator, the **evaluation order**, and the expression-valued control
 forms.
 
-> Provenance: binary-op resolver `src/tychoc.c:7601-7899`; short-circuit
-> lowering `:11504-11546`; value-control `parse_value_ctrl`/`ctrl_rewrite_tails`;
-> closures `docs/reference/functions.md:80-117`. Evaluation-order rules marked
-> "probed" were resolved by running the compiler (spec-plan.md §6a).
 
 ## 13.1 Place expressions
 
@@ -35,9 +31,8 @@ like `u8`), so the value never escapes the type's range.
 **String concatenation.** `+` on two `string`s concatenates them. As the one
 documented exception to the same-type rule, `string + char` appends the char's
 single byte to the string and yields a `string` (`"ab" + 'c'` → `"abc"`). It is
-deliberately **one-directional**: `char + string` is a type error — you append to
-a string, you do not prepend to a char. For symmetric composition, convert
-explicitly with `str(c)`. `tychoc` implements exactly this.
+**one-directional**: `char + string` is a type error. For symmetric composition, convert
+explicitly with `str(c)`. An implementation MUST implement exactly this.
 
 **`bytes` concatenation.** `+` on two `bytes` concatenates them, and `bytes +
 char` appends the char's single byte — the same two forms `string` has, with the
@@ -62,11 +57,6 @@ their two length-mismatch rules differ; the whole rule — the kinds, the
 mismatches, and literal adaptation of a broadcast scalar — is
 [§16.8](12-aggregates.md#168-element-wise-arithmetic).
 
-> Provenance: array ⊕ array arm `src/tychoc.c:7761-7797`; broadcast arm
-> `src/tychoc.c:7826-7853`; the per-element-type operator set
-> `src/tychoc.c:1570@elem_arith_ok`; the arms an array operand still falls
-> through to — shift `src/tychoc.c:8355@shift operators require integer operands`,
-> modulo/bitwise `src/tychoc.c:8472@modulo / bitwise operators`.
 
 **Comparison** (`== != < > <= >=`) and `in`. Both operands MUST share a type.
 `==`/`!=` apply to any type except `void` and are structural except for function
@@ -112,18 +102,12 @@ the result takes the **left** operand's type. So `x << n` is well-typed for a
 `u32` `x` and an `int` `n`, and yields `u32`. `>>` is an **arithmetic**
 (sign-preserving) shift on signed `int` and a **logical** shift on `u32`/`u64`.
 
-> Provenance: the shift arm accepts any two integers and returns the left type —
-> `src/tychoc.c:7739-7747`, result at `src/tychoc.c:8404@lt`. The bitwise arm is
-> the one that requires a match: `src/tychoc.c:8517@rt`. Exhaustively pinned by
-> `fuzz/run_typeparity.py`, whose shift clause encodes this rule over the full
-> operand matrix.
 
 Per the Go-style precedence (§4.5) `& << >>` bind at the
 multiplicative level and `| ^` at the additive level, so every bitwise operator
 binds tighter than a comparison: `a & b == c` is `(a & b) == c`. A shift **count**
-outside `0 .. width−1` is **defined**, not inherited from C: a count **≥ the
-operand's bit width** yields `0` (every bit is shifted out — matching Go, Odin,
-and Swift), and a **negative** count is a program error that **aborts** at runtime
+outside `0.. width−1` is **defined**: a count **≥ the
+operand's bit width** yields `0` (every bit is shifted out), and a **negative** count is a program error that **aborts** at runtime
 (`tycho: negative shift count`), like division by zero. A negative *constant*
 count is rejected at compile time.
 
@@ -158,14 +142,14 @@ the compiler):
   **source order** (left to right, outermost index first), all of them before the
   RHS: in `g[f()][h()] = e()` and in `bs[f()].v[h()] = e()` the order is `f()`,
   `h()`, then `e()`. Compound assignment orders the same legs the same way.
-- **An f-string's interpolations are sequenced left-to-right** (*probed*): in
+- **An f-string's interpolations are sequenced left-to-right**: in
   `f"{a()}{b()}{c()}"` the holes are evaluated in the order they are written and
   printed. An f-string ([§3.9.5](01-lexical.md#395-f-string-interpolated-literals))
-  desugars to a `+` chain, but its holes are pinned
+  desugars to a `+` chain, but its holes are sequenced
   where the bare `+` operands below are not — a hole is never short-circuited
   against another hole, so the sequencing is cheap and sound, and the printed
-  order made the unpinned order actively misleading.
-- **Argument and operand evaluation order is *unspecified*** (*probed*). Tycho
+  order is left-to-right.
+- **Argument and operand evaluation order is *unspecified***. Tycho
   does not sequence the arguments of a call or the operands of a binary operator
   relative to one another; their order of side effects is inherited from the
   target and MUST NOT be relied on. A program that needs a particular order MUST
@@ -188,9 +172,7 @@ fn main():
 ```
 
 Both lines print `AB`, and each is free to print `call B` before `call A` or
-after it. On the reference compiler as it stands (gcc, measured 2026-08-11) both
-run **B first**; a different backend, optimisation level or release may run `A`
-first, and every combination is conforming. No `output` fence is paired with the
+after it. Both orders are conforming; an implementation may run either first. No `output` fence is paired with the
 example above, deliberately: recording either order would assert what this
 section refuses to guarantee, and a golden over it would be the same mistake a
 program makes when it relies on the order. The value is stable only because
@@ -204,8 +186,7 @@ statements rather than of the backend:
     println(p + q)
 ```
 
-The two pinned exceptions above do not extend to this case. Both were pinned on
-the same two grounds, and an operand list meets neither. A place's index legs
+The two sequenced exceptions above do not extend to this case. A place's index legs
 and an f-string's holes are sequences **no short-circuit can cut across**, so
 sequencing them costs one temporary each and cannot skip an evaluation the
 program expected to skip — whereas an argument may sit inside `f(x, cond and

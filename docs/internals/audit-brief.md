@@ -1,9 +1,11 @@
 # Brief for an external security review
 
+> Status: maintained packet for a third-party reviewer (ROADMAP §7, still open). Scope, threat model, prior passes, and reproducing lanes below; the FFI review and SECURITY.md are pointed at, not summarised.
+
 `ROADMAP.md` §7 asks for a third-party audit and has been open since the roadmap
 was written. It is the last 1.0 condition that no amount of internal work can
 close, and it stayed open partly because "get an audit" is not a task anyone can
-pick up — it needs a scope, a threat model, and an honest account of what has
+pick up — it needs a scope, a threat model, and an account of what has
 already been looked at. **This is that packet.** Hand it to a reviewer.
 
 It deliberately does not summarise
@@ -57,7 +59,7 @@ Ranked by how directly attacker-controlled data reaches hand-written C.
 
 ---
 
-## 3. What has already been measured, and the honest scope of each claim
+## 3. What has already been measured, and the scope of each claim
 
 This is the part that saves a reviewer time, and every row understates rather
 than overstates. Each named lane is runnable — see §5.

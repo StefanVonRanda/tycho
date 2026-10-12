@@ -8,8 +8,6 @@ implementation achieves the contract and why the language needs neither a GC nor
 manual `free`, but an implementation MAY use any strategy with the same
 observable behavior.
 
-> Provenance: `docs/memory-model.md`, `docs/thesis.md` §2–§5; runtime
-> `runtime/tycho_rt.c`; `docs/internals/value-semantics-limits.md`.
 
 ## 9. Value semantics
 
@@ -81,12 +79,8 @@ transparency is guaranteed by the value-semantics asymmetry (§10.4): under valu
 semantics a wrong storage decision can change only when memory is reclaimed,
 never whether a pointer dangles.
 
-The reference implementation verifies this by requiring the emitted C, compiled
-under AddressSanitizer/UBSan, to produce output byte-identical to the native
-`-O2` build across the whole suite (exit 0, clean sanitizers), with per-
-optimization A/B baselines separately confirming each optimization is
-output-invisible; a conforming implementation MUST hold to the same
-observable-equivalence standard.
+A conforming implementation MUST hold to the same
+observable-equivalence standard: optimizations MUST NOT change any observed value, output, or accept/reject decision.
 
 ## 10. Object lifetimes and storage
 

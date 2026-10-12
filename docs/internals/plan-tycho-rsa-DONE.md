@@ -1,8 +1,6 @@
 # What the next program says the language needs
 
-> The program this plan built was DELETED on 2026-09-04: no constant-time
-> routine can be written in Tycho, so a safe RSA would have to be a C shim.
-> This file is kept as the record of what the exercise taught the language.
+**Status: DONE 2026-08-04. Program deleted 2026-09-04: no constant-time routine can be written in Tycho, so a safe RSA would have to be a C shim. Kept as the record of what the exercise taught the language. Outcome: arithmetic held with no language change; hex/binary literals shipped.**
 
 > This plan is a fresh clone, 2026-08-04: the completed tycho-chess plan
 > lives at `docs/internals/plan-tycho-chess-DONE.md`. The rule from that plan
@@ -18,15 +16,14 @@ GCD or primality — those are the work). The language stress is arithmetic
 depth: four programs in, none has done real numeric computation, and bignum
 is the least-exercised corelib (its test is 2^100 by doubling).
 
-The differential is GROUND TRUTH, in the perft sense: RSA has exact published
+The differential is GROUND TRUTH: RSA has exact published
 vectors. The gate asserts: the textbook key (p=61, q=53, n=3233, e=17,
 d=2753: encrypt 65 → 2790), modexp values cross-checked against python's
 pow() at 256/512/2048-bit sizes, and a deterministic-seeded keygen whose
 output (n, e, d, p, q), structural invariants (n = p·q, e·d ≡ 1 mod φ,
 p/q prime) and an encrypt→decrypt round-trip are all golden-locked.
 
-Scope, honestly sized: raw RSA (textbook) — no PKCS#1 padding, noted as a
-deliberate omission (padding is a protocol layer, not arithmetic).
+Scope: raw RSA (textbook) — no PKCS#1 padding, a deliberate omission (padding is a protocol layer, not arithmetic).
 
 ## Phases
 
@@ -37,7 +34,7 @@ Built on core:bignum, which had add/sub/mul/divmod and nothing else:
 limb's low bit since BASE = 10^9 is even), `gcd` (Euclid), `inv_mod`
 (iterative extended Euclid), `is_prime` (trial division by the first 15
 primes, then Miller-Rabin with the first 12 as witnesses -- probabilistic at
-our sizes, honestly stated: the gate's round-trip is the final arbiter, not
+the tested sizes: the gate's round-trip is the final arbiter, not
 is_prime). The language held: no findings. The only tax was qualification
 (the corelib types are `bignum.Big`, not `Big`).
 
@@ -58,7 +55,7 @@ e*d == 1 mod phi, p/q prime, and encrypt->decrypt + sign->verify round-trips
 core:bignum's mag_mul.
 
 **No findings to file** -- the arithmetic-stress axis the plan predicted
-(real numeric computation on core:bignum) held without a language change.
+held without a language change.
 
 ## Findings
 

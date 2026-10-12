@@ -1,13 +1,13 @@
 # Layout/SIMD probe, 2026-09-21 — eight findings on the surface that returned none in September
 
+**Verdict: 8 findings, 1 fixed (`e99b8484`), 1 refuted (finding 2), 6 open. Probed 2026-09-21 on the macOS arm64 laptop with `tychoc 0.8.5` from `main`. Outcome: the instrument lesson — a demo-sized program is not evidence about a surface.**
+
 [probe-simd-2026-09-07.md](probe-simd-2026-09-07.md) aimed at `packed`,
 `align(N)`, `vector[N]T` and swizzling and came back with **zero findings**. This
-is the same four features, two weeks later, and it came back with eight. The
-difference is not the model and not the surface: that probe wrote a 57-line pixel
+is the same four features, two weeks later, with eight. The difference is not the model and not the surface: that probe wrote a 57-line pixel
 kernel, this one wrote a program with an independent checking harness and then
-tried to break each feature on purpose. **A demo-sized program on a surface is
-not evidence about that surface**, which is the most useful thing this round
-established and it is about the instrument, not the language.
+tried to break each feature on purpose. A demo-sized program on a surface is
+not evidence about that surface.
 
 Host: the macOS arm64 laptop, `tychoc 0.8.5` from `main`.
 
@@ -26,14 +26,13 @@ pixel; and macOS `sips` decodes the output TGA to PNG, which a hand-written
 inflater then compares to the same expectation. Plus `cc` measuring the emitted
 structs directly. A 256×256 sweep covers every byte value on every channel.
 
-Then it **broke each feature on purpose and recorded what the checks said** —
+Then it broke each feature on purpose and recorded what the checks said —
 deleting the swizzle fails 30 of 32 pixels, widening one `u8` header field to
 `u16` shifts `size_of$` to 19 and trips the program's own validation, lying about
-the origin byte is caught by the third decoder and by nothing else. It also
-reports a control that turned out not to be one: swapping `width` and `height` in
+the origin byte is caught by the third decoder and by nothing else. Control that turned out not to be one: swapping `width` and `height` in
 the declaration changes nothing observable, because the program reads and writes
-through the same struct and the error cancels. **A round-trip through your own
-layout cannot detect a symmetric layout error.**
+through the same struct and the error cancels. A round-trip through your own
+layout cannot detect a symmetric layout error.
 
 ## The score
 
@@ -83,7 +82,7 @@ worry — is a description of `probe/layout.c`.
 
 [probe-simd-2026-09-07.md](probe-simd-2026-09-07.md) closed with the lesson that
 a report's own citations have to be opened rather than trusted. This is the
-stronger form: **a report's own measurements have to be re-run.** A probe that
+stronger form: a report's own measurements have to be re-run. A probe that
 builds an independent instrument can be wrong about the instrument, and it will
 present that error in exactly the format that makes it most convincing — a
 number, from a second toolchain, against a quoted spec line.

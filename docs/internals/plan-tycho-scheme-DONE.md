@@ -1,5 +1,7 @@
 # What the next program says the language needs
 
+**Status: DONE. Program: `tycho-scheme` — Scheme interpreter in `tools/tycho-scheme/`, first program to use upward closures and recursive value trees at scale. Outcome: 2 phases complete 2026-08-03 — runtime stack guard shipped, 2 stale docs corrected.**
+
 > This plan is a fresh clone, 2026-08-03: the completed tycho-vm plan lives at
 > `docs/internals/plan-tycho-vm-DONE.md`. The rule from that plan holds here:
 > *does anything that is not the program written to want it need this?* A
@@ -10,14 +12,13 @@
 **tycho-scheme** -- a Scheme interpreter in `tools/tycho-scheme/`, the first
 program in the tree to use upward closures (returning a function that captures),
 recursive value trees at interpreter scale, and an environment pool (the
-flat-index idiom the thesis recommends). It is the classic stress test: the
-reader, the evaluator, the printer, and a small standard library all in Tycho,
+flat-index idiom the thesis recommends). Reader, evaluator, printer, and a small standard library all in Tycho,
 gated the tycho-vm way (compile programs, lock goldens byte-identical).
 
 Findings recorded while probing the design, before a line of the interpreter:
 
 - **Upward closures work** (probed: `make_adder` returns a closure, composes,
-  calls correctly -- the spec says capture by deep copy at creation, §09-expressions.md:188-191). The architecture doc's "closures (downward value-capture)" wording is STALE, the same docs-drift pattern as the inout premise. This program is the first upward-closure customer.
+  calls correctly -- the spec says capture by deep copy at creation, §09-expressions.md:188-191). The architecture doc's "closures (downward value-capture)" wording is STALE. This program is the first upward-closure customer.
 - **A recursive enum can carry itself directly** (`VPair(Val, Val)` compiles and
   runs), and a recursive enum is a legal map VALUE (`[]string: Val`). The json
   module's note that "maps don't take a recursive value type here" (corelib/json/json.ty) needs re-checking against that.
@@ -32,7 +33,7 @@ when a second, independent caller needs it.
   counters from one factory stay independent). The architecture doc's "closures
   (downward value-capture)" wording is STALE; the spec's capture-by-deep-copy
   (§09-expressions.md) is the truth. Recorded, not a phase -- the wording fix is
-  a one-line docs correction when the tree is touched next.
+  a one-line docs correction.
 - **No mutable module-level state.** A top-level `g_envs: [Env] = []` is
   rejected ("expected 'fn'"); Tycho's mutable state lives in scopes. The
   interpreter's environment pool is therefore owned by `main` and threaded
@@ -49,9 +50,9 @@ when a second, independent caller needs it.
   the compiler's own parse depth, not the C stack of generated code, and the
   emitted frames for eval-apply-eval blow ~8 MB at ~5k Scheme levels. The
   interpreter's programs stay shallow; the gate records why. **FIXED as phase 1
-  below** -- a runtime stack guard (plan phase 1 [DONE]) turns stack exhaustion
+  below** -- a runtime stack guard turns stack exhaustion
   into a clean fail-closed exit for every generated program, including spawned
-  tasks; the second caller that justified the phase was the json walker
+  tasks; the second caller was the json walker
   (`corelib/json/json.ty@parse_value` recurses per nesting level), which
   segfaulted at ~100k-deep documents (measured: 10,000 nests fine, 100,000
   SIGSEGV).
@@ -62,19 +63,17 @@ when a second, independent caller needs it.
 
 ### Phase 1 -- generated-code recursion must fail closed  [DONE 2026-08-03]
 
-**Why now:** the recursion finding gained its second caller. The compiler fails
+**Why then:** the recursion finding gained its second caller. The compiler fails
 closed on pathological input (`tests/recursion/run.sh`); generated code had
 nothing -- deep recursion in emitted C overflows the C stack and dies with
 SIGSEGV (exit 139), no diagnostic, no cleanup. Two measured callers: the
 interpreter at ~5k Scheme levels (`(sum (range 0 5000))`), and the json walker
-at ~100k nests (10,000 ok / 100,000 SIGSEGV, verified 2026-08-03). The compiler
-side is not the model to copy: `make recursion` guards the compiler's OWN parse
-depth, and it is compiler code, not emitted code.
+at ~100k nests (10,000 ok / 100,000 SIGSEGV, verified 2026-08-03).
 
-**Mechanism -- chosen by measurement, not decree.** The runtime stack guard
-(option 1) won, and the other two are dominated rather than merely outvoted:
+**Mechanism -- chosen by measurement.** The runtime stack guard
+(option 1) won:
 
-- **Measured, option 1** (the winner): a SIGSEGV handler on an alternate stack,
+- **Shipped, option 1**: a SIGSEGV handler on an alternate stack,
   installed once by a runtime constructor; on a fault it compares the faulting
   SP (from the ucontext) against the thread's recorded stack region and, past
   the bottom, prints `tycho: stack overflow -- recursion too deep` and exits 1;
@@ -83,40 +82,36 @@ depth, and it is compiler code, not emitted code.
   nothing runs between the constructor and an overflow. Measured fib(30)x300
   before/after: 2.2568/2.2658/2.2539 s vs 2.2653/2.2545/2.2550 s -- identical
   within noise.
-- **Option 2 (emitted per-call depth counter) is dominated**: every call pays
-  an increment+decrement for a guarantee that is strictly weaker -- it counts
-  function ENTRIES, so a single deep expression `f(f(f(...)))` (100k nested
-  calls in one expression, one function entered once) still blows the stack
+- **Option 2 (emitted per-call depth counter): rejected** -- every call pays
+  an increment+decrement for a strictly weaker guarantee: it counts
+  function ENTRIES, so a single deep expression `f(f(f(...)))` still blows the stack
   unguarded. Option 1 catches that shape.
-- **Option 3 (SCC-only accounting) is dominated**: the same entry-counting
+- **Option 3 (SCC-only accounting): rejected** -- same entry-counting
   weakness, plus a call-graph pass the compiler does not have, for the only
   benefit of sparing non-recursive programs a cost option 1 does not charge.
 
-**The price of covering spawned tasks: +7% on spawn-bound workloads.** A
+**Cost of covering spawned tasks: +7% on spawn-bound workloads.** A
 spawned task runs on its own thread with its own stack, so the trampoline
 (tycho_task_start) installs per-thread bounds AND an alternate stack before the
 task's code runs. Measured 2000 spawn+wait of a trivial fn: 38.7/40.2/40.8 ms
 before vs 42.2/42.6/43.2 ms after (~1.4 us/spawn: pthread_getattr_np + one
 sigaltstack syscall). Everything else (fib, sort, non-spawning programs) shows
 no movement. The trampoline's start struct is bump-allocated in the task's own
-root arena, not malloc'd -- a heap alloc per spawn would have cost more.
+root arena, not malloc'd.
 
-**Two real finds during implementation, both fixed:**
+**Two finds during implementation, both fixed:**
 
 - **sigaltstack is PER-THREAD.** The constructor installs the alternate stack
   on the main thread only; a spawned task's overflow then runs the handler on
   the exhausted stack and dies a SECOND time (SIGSEGV on SIGSEGV, exit 139).
-  The trampoline had to install bounds AND altstack on the new thread. The
-  pre-fix crash and the post-fix clean exit are both in the record above
-  (spawn-deep: 139, then 1).
+  The trampoline installs bounds AND altstack on the new thread.
 - **ASan munmaps whatever altstack is current at thread destroy** -- assuming
-  it is ASan's own. With our static buffer in place, every spawned task under
+  it is ASan's own. With the static buffer in place, every spawned task under
   -fsanitize=address reported `failed to deallocate 0x8000 bytes ... Failed to
   munmap` (EINVAL on a non-mmap'd region) and `make conc` failed 13 ASan
   variants. Fix: clear the altstack (SS_DISABLE) after the task's fn returns,
-  ASan builds only -- destroy then has nothing to unmap. Native builds skip the
-  syscall. (ASan's own stack-overflow detection does NOT fire first for plain
-  deep recursion -- our handler does, so the altstack must stay under ASan too.)
+  ASan builds only. (ASan's own stack-overflow detection does NOT fire first for plain
+  deep recursion -- this handler does, so the altstack stays under ASan too.)
 
 **Where it lives:** `runtime/tycho_rt.c` -- the constructor, the handler, and
 `tycho_task_trampoline`. The runtime is embedded verbatim into every generated
@@ -132,32 +127,24 @@ task's own stack) must compile, then die cleanly -- exit 1-127, empty stdout,
 run and print the right answer. Inputs are generated in the runner, so no
 goldens moved.
 
-**Gates, all green:** `make test` 582/0 (expected count, no drift), `make
-ilp32` 582/0 (the -m32 REG_ESP path compiles and the whole suite passes),
-`make conc` 38/0 (the trampoline's lane), asan-self 599/0 (the compiler under
-ASan+UBSan with the guard live), `make corelib` green and shim-check 12/0 (the
-_GNU_SOURCE widening changed how appended shims compile), the four tool lanes
-(vm/ar/q/scheme) green, and the extended recursion runner green. `make ci`
-once, below.
+**Gates, all green:** `make test` 582/0, `make
+ilp32` 582/0, `make conc` 38/0, asan-self 599/0, `make corelib` green and shim-check 12/0, the four tool lanes
+(vm/ar/q/scheme) green, and the extended recursion runner green.
 
 **What the ci sweep caught (both real, both fixed):**
 
 - **rtparity** — the new `tycho: stack overflow -- recursion too deep`
-  diagnostic is new user-visible runtime surface, and that lane refuses it
-  silently: added to the oracle (`tests/rtparity/run.py`) with its reason,
-  alongside the other runtime traps. New surface is a deliberate act here.
+  diagnostic is new user-visible runtime surface: added to the oracle (`tests/rtparity/run.py`) with its reason.
 - **spec-check was RED AT HEAD** — the scalar-match plan (commit 1a2041f)
   added ScalarPattern/ScalarElem to Appendix A by hand without teaching §4
   (`docs/spec/02-grammar.md`), so the generator could never reproduce the
-  committed appendix. The gate had been failing since that commit, unnoticed
-  (the plan repointed its citations but never regenerated the grammar). §4 is
+  committed appendix. §4 is
   the single source of truth; the productions now live there and the appendix
   matches again.
 
 ### Phase 2 -- correct the two stale docs proven wrong by the program  [DONE 2026-08-03]
 
-Both were recorded as findings while writing the interpreter; both are now
-proven false on this tree, and each is a one-line correction, own commit:
+Both were recorded as findings while writing the interpreter; both proven false on this tree, each a one-line correction:
 
 1. `docs/architecture.md:52` -- "closures (downward value-capture)" is wrong:
    `tools/tycho-scheme/progs/closures.scm` returns closures that capture and
@@ -167,8 +154,6 @@ proven false on this tree, and each is a one-line correction, own commit:
 2. `corelib/json/json.ty:15-17` -- "Objects are parallel key/value arrays
    because tycho's maps don't take a recursive value type here" is wrong: a
    recursive enum as a map value compiles and runs (`[]string: Tree` with
-   `TNode(Tree, Tree)`, probed 2026-08-03). The comment documents a design
-   choice (parallel arrays) as forced. Correct the wording; the parallel-array
-   design itself stays (changing it is not this phase). **Gate: `make corelib`
-   (49s -- the letter of the corelib rule, even though a comment edit cannot
-   redden a compiled golden), plus the two doc gates.**
+   `TNode(Tree, Tree)`, probed 2026-08-03). The parallel-array
+   design itself stays. **Gate: `make corelib`
+   plus the two doc gates.**

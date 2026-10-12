@@ -6,8 +6,8 @@
 <main>
 <h1>Tycho</h1>
 <p>Tycho is a small data-oriented systems language with <strong>value semantics</strong> and an <strong>implicit
-arena</strong> memory model — no garbage collector, no manual <code>free</code>, and memory that's
-competitive with C.</p>
+arena</strong> memory model — no garbage collector, no manual <code>free</code>, and a small
+memory footprint.</p>
 <ul>
 <li>Read the <a href="/blog">blog</a> for notes and benchmarks.</li>
 <li>Browse the <a href="/wiki/getting-started">wiki</a> to get started.</li>
@@ -42,13 +42,15 @@ Markdown through <code>core:markdown</code>.</p>
 <nav><a href="/">Home</a> &middot; <a href="/blog">Blog</a> &middot; <a href="/wiki/getting-started">Wiki</a></nav>
 <main>
 <h1>Hello, Tycho</h1>
-<p>This is the first post. Tycho compiles to C: a dependency-free transpiler
-written <em>in Tycho</em> reproduces its own output byte-for-byte.</p>
+<p>Welcome to the blog. Tycho is a small systems language that compiles to C —
+and the compiler itself is written in Tycho, giving byte-identical output on
+every pass.</p>
 <pre><code>fn main():
     println(&quot;hello, world&quot;)
 </code></pre>
-<p>Value semantics mean you pass a struct and get a copy — no aliasing, no
-<code>free</code>, and the arena reclaims it when the scope ends.</p>
+<p>Values are copied, never aliased, so there is no <code>free</code> to call and no
+collector running behind your back. Each scope's arena is reclaimed when the
+scope ends. That is the whole memory model, and this post is its first demo.</p>
 </main>
 <footer>Served by Tycho.</footer>
 </body></html>
@@ -60,12 +62,13 @@ written <em>in Tycho</em> reproduces its own output byte-for-byte.</p>
 <nav><a href="/">Home</a> &middot; <a href="/blog">Blog</a> &middot; <a href="/wiki/getting-started">Wiki</a></nav>
 <main>
 <h1>Getting Started</h1>
-<p>Build the compiler and run an example:</p>
+<p>Build the compiler and start the example server:</p>
 <pre><code>make
 ./tychoc examples/webserver/main.ty -o server
 ./server --serve
 </code></pre>
-<p>Then open <code>http://127.0.0.1:8080/</code>.</p>
+<p>Then open <code>http://127.0.0.1:8080/</code> in your browser. The welcome page means
+your build works.</p>
 <h2>Next steps</h2>
 <ul>
 <li>Read the <a href="/blog/hello-tycho">Hello, Tycho</a> post.</li>

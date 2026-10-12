@@ -37,7 +37,7 @@ and leave on an `Err` found **76 sites across 17 files**. They split cleanly:
 
 So **42 sites remain** that `or_return` cannot express, because
 [§14.6](../spec/10-statements.md#146-or_return) returns `Err(err)` *unchanged*.
-Every one of them deliberately changes the error, which is the whole point of a
+Every one of them changes the error, which is the whole point of a
 domain error type: a `net.listen` failure surfacing to a caller as a `SrvErr`,
 not as a `NetErr`.
 

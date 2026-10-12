@@ -1,9 +1,8 @@
 # Friction writing `tycho-fold`, from outside
 
-The **third** `ROADMAP.md` §1 program: wrap text to a width, counting codepoints.
-Written 2026-08-15 from `docs/` by someone who did not write the compiler.
+Rule: wrap text to a width counting codepoints. Written 2026-08-15 from `docs/` by someone who did not write the compiler.
 
-The three were chosen to land on different surfaces on purpose —
+The **third** `ROADMAP.md` §1 program. The three were chosen to land on different surfaces on purpose —
 `tycho-diff` a sequential algorithm, `tycho-hash` concurrency, this one UTF-8 —
 because a longer program on one surface would have repeated its own findings.
 **Three programs now exist. §1 asks for three by TWO people, and all three are by
@@ -21,7 +20,7 @@ if nb <= 0:
 ```
 
 The API is right — `(codepoint, nbytes)` is what a decoder should return, and the
-tuple destructures cleanly. What is not obvious from the signature is that a
+tuple destructures cleanly. What the signature does not show is that a
 caller who trusts `nb` on invalid input writes an infinite loop, and the input
 that triggers it is by definition the hostile one. `utf8.valid` exists to check
 first, but a streaming caller cannot afford a second pass.
@@ -31,8 +30,8 @@ Nothing to fix in the library; worth a line in its doc comment.
 ## 2. `len(s)` is bytes, and every ergonomic path leads to it
 
 `len` is the obvious call, `s[i]` is the obvious index, and both are byte-based.
-The codepoint count is `utf8.count(s)`, in a package you must import separately.
-That is the correct layering — a string is bytes — but it means the *natural*
+The codepoint count is `utf8.count(s)`, in a package to import separately.
+That is the correct layering — a string is bytes — but the *natural*
 program is the wrong one, and it is wrong only on input the author probably did
 not test with.
 

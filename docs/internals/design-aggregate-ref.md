@@ -1,9 +1,6 @@
 # Design: a cheap reference to an aggregate
 
-Status: the deliverable of `docs/internals/plan-tycho-vm-DONE.md` Phase 3. Read
-before any implementation starts; this document's recommendation is that the
-answer is **mostly already shipped**, that the plan's premise is stale in one
-measured place, and that the residual gap is not worth a new construct.
+> Status: decided 2026-08-03 — do not build a new reference construct. The compatible cases already ship (`inout` codegen, yielding subscripts); checked against emitted C. Validated 2026-08-03 via the tycho-vm refactor.
 
 ## The premise, and the measured correction
 
@@ -161,8 +158,6 @@ the borrow checker. Three things ARE worth doing, in order:
 
 ## Verification
 
-- This document: both doc gates green.
-- The claims above were measured, not assumed: the emitted C for the
-  VM-shaped `bounded` stack and for the subscript-as-`inout`-argument program
-  was inspected, and both programs ran correctly. The `&`-hole was reproduced
+- Checked against emitted C: the VM-shaped `bounded` stack and the subscript-as-`inout`-argument
+  programs were inspected, and both ran correctly. The `&`-hole was reproduced
   (`r := &a` → invalid C from cc) before being written down.

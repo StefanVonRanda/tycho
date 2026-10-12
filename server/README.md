@@ -1,5 +1,7 @@
 # tycho-httpd
 
+Rule: a peer that is not talking costs a pollfd slot and no worker.
+
 A static web server written in Tycho. Not a fixture and not a demo — build it,
 point it at a directory, and point a browser at that.
 
@@ -39,20 +41,18 @@ and prints the one it got, which is what the test scripts use.
 **The bound, stated plainly: a peer that is not talking costs a pollfd slot and
 no worker at all.** Each of `--workers` runs one `poll(2)` over the listening
 socket and every connection it is holding (`server/main.ty@accept_loop`), and
-reads a connection only when poll calls it readable. So a fresh request waits at
+reads a connection only when poll calls it readable. A fresh request waits at
 most one poll pass — `POLL_TICK_MS`, 100 ms (`server/main.ty@POLL_TICK_MS`) —
 plus the time to serve it, **however many other peers are connected and whatever
 the three deadlines below are set to**. Measured at `--workers 4 --idle-ms 8000
 --first-ms 8000 --conn-ms 0`: a legitimate `GET` is answered in **0–1 ms**
 against 8, 64 and 256 silent peers, and in **0–1 ms** against 8, 64 and 256
-parked keep-alive peers, every one of which was itself answered first.
-`make server-check` gates that at 16 × `--workers` against a 500 ms bound, and
+parked keep-alive peers. `make server-check` gates that at 16 × `--workers` against a 500 ms bound, and
 also asserts the delay does not grow between 2 × and 16 × — a constant is the
-claim, so a leg that only checked one figure would not be checking it.
+claim, so a leg that only checked one figure would not check it.
 
 That bound used to be `ceil(K / workers) x` a deadline, because each accept loop
-served one connection at a time. The old figures are kept here because they are
-what the three dials were written for: 8 silent sockets against 8 workers delayed
+served one connection at a time. The old figures stay because they explain the three dials: 8 silent sockets against 8 workers delayed
 a `GET` by **4.93 s** when `--first-ms` and `--idle-ms` were still one dial, and
 25 of them exhausted the listen backlog so a later request failed outright; 8
 parked peers against 4 workers delayed one by **8192 ms** at `--conn-ms 0`.
@@ -77,7 +77,7 @@ Shutdown is bounded by that same poll pass rather than by `--idle-ms`: a worker
 sees `signal.shutdown_requested()`
 (`corelib/signal/signal.ty:18@shutdown_requested`) within `POLL_TICK_MS` whether
 it is holding connections or not. Measured at `--workers 4 --idle-ms 8000`,
-`SIGTERM` completes in **1 ms** with 0, with 4 and with 64 parked keep-alive
+`SIGTERM` completes in **1 ms** with 0, 4, and 64 parked keep-alive
 peers held. Before the poll loop, four parked peers cost one full idle timeout —
 **5141 ms** at `--idle-ms 5000`. Exit status is 0 and the `stopped after N
 requests` line prints in every case.
@@ -130,13 +130,13 @@ emits an implicit join at the handle's scope exit. Both are still open as
 
 Each worker polls over the listener and every connection it holds, up to
 `MAX_CONNS` of them (`server/main.ty@MAX_CONNS`), so N workers means far more
-than N concurrent connections — see the bound stated under Usage above.
+than N concurrent connections — see the bound under Usage above.
 
-**Recorded measurements, 2026-07-26**, on loopback, 8 workers, `--quiet`. These
+**Measurements, 2026-07-26**, on loopback, 8 workers, `--quiet`. These
 are history, not a gate: no lane reproduces a throughput figure. The only
-wall-clock numbers `make server-check` does assert are the starvation bounds
-above, and they are set two orders of magnitude above what was measured and
-checked for flatness rather than for a value, because timing on a shared machine
+wall-clock numbers `make server-check` asserts are the starvation bounds
+above, set two orders of magnitude above what was measured and
+checked for flatness rather than value, because timing on a shared machine
 is the one flake a CI lane must not have.
 
 | clients | requests | wall | throughput |
@@ -151,8 +151,7 @@ loops are genuinely parallel rather than interleaved.
 
 ## Path traversal
 
-This is the one security property that matters in a static file server, so the
-order of operations in `resolve()` is deliberate:
+Rule: check what the path resolves to, not what it spells. `resolve()` runs these steps in order:
 
 1. cut the query and fragment — `?a=1` and `#frag` are not path
 2. require origin-form — the target must start with `/`, else **400**
@@ -179,9 +178,7 @@ root** could swap a resolved component for a symlink. Closing that needs the ope
 done component-by-component with `O_NOFOLLOW`; this narrows an unconditional
 escape to a race an outside attacker cannot reach.
 
-The split between 400 and 403 is deliberate and it is the order above that
-decides it. A **403** means the path parsed and was declined — understood, and
-not yours. A **400** means it was never a path this server would take: steps 2
+The split between 400 and 403 is deliberate. A **403** means the path parsed and was declined. A **400** means it was never a path this server takes: steps 2
 and 4 fire before there is anything to resolve, so a NUL byte is malformed
 input rather than a refused location.
 
@@ -198,29 +195,27 @@ been banned outright.
 
 ## Deliberately not implemented
 
+Rule: "serve a directory of files to a browser" sets the scope. Each item below was declined, not missed.
+
 TLS (terminate it in front), HTTP/2, compression, virtual hosts, directory
 listings, request pipelining, **`ETag`** — the validator half of conditional
-requests, which `sha256.hex` would make cheap but which is a separate feature the
-costing did not rank — and **multipart ranges**. None of them is load-bearing for
-"serve a directory of files to a browser", and each would have been scope the
-plan did not ask for.
+requests, which `sha256.hex` would make cheap but which is a separate feature — and **multipart ranges**. None is load-bearing for
+"serve a directory of files to a browser".
 
 **Multipart is a decision, not an omission, and it is visible on the wire.**
 `Range: bytes=0-99,200-299` is answered **`200` with the whole file**, which the
-RFC permits (a server may ignore a `Range` header) and which most servers do. A
+RFC permits (a server may ignore a `Range` header). A
 `multipart/byteranges` body is a second serialization format rather than a bigger
 parser, so it was declined. The two alternatives are both worse: `416` would be
 false, since those ranges *are* satisfiable and only this server's response
-format is missing; and returning just the first range would be a lie about what
+format is missing; and returning just the first range would misstate what
 was sent.
 
 ### Five rough edges that were here, and are not any more
 
-The first two were real limitations of the *corelib*, not of this program, and
-both were closed on **2026-07-26**; the third was a gap in the language itself,
-and the last two were `core:io` gaps this program is what exposed — all three
-closed on **2026-07-31**. The history is kept rather than deleted: what was hard
-is worth as much as what is true now, and each of these is why a syscall exists.
+The first two are *corelib* limitations closed on **2026-07-26**; the third is a language gap,
+and the last two are `core:io` gaps this program exposed — all three
+closed on **2026-07-31**. The history stays: each one explains why a syscall exists.
 
 - **An empty directory used to be answered `404`** instead of the `301` to
   `<path>/` a real directory gets. `resolve()` could not ask "is this a
@@ -326,13 +321,12 @@ an HTTP request without it.
 
 ## Two socket fixes this program forced into `core:net`
 
-Both were found by running the server, both are C-level socket properties that
+Both were found by running the server. Both are C-level socket properties that
 **no Tycho program can set** — `SIGPIPE`'s disposition is process-wide and Nagle
-is a `setsockopt` — and both are in `corelib/net/net_shim.c`. That first reason
-is now narrower than it was, and it still holds: `core:signal` gave Tycho a
-signal surface on 2026-07-31, but a deliberately narrow one that arms
+is a `setsockopt` — and both are in `corelib/net/net_shim.c`. `core:signal` gave Tycho a
+signal surface on 2026-07-31, but a narrow one that arms
 `SIGTERM`/`SIGINT` for shutdown and cannot set any other signal's disposition, so
-`MSG_NOSIGNAL` is still the only fix for this. (`getpeername` was a
+`MSG_NOSIGNAL` is still the only fix here. (`getpeername` was a
 third `core:net` addition this program forced, and `io.is_dir`, `io.mtime`,
 `io.read_at` and `io.size` are four more in `core:io`; all five are above, under
 the rough edges they closed.)
@@ -342,7 +336,7 @@ the rough edges they closed.)
   without reading killed the entire server — `SIGPIPE`, signal 13, every worker
   and every in-flight connection gone. The server now survives 100 consecutive
   hostile disconnects and logs them as `write-failed` (`server/main.ty:448@write-failed`);
-  `make server-check` re-runs a 50-disconnect version of that on every CI sweep.
+  `make server-check` re-runs a 50-disconnect version on every CI sweep.
 - **`TCP_NODELAY`** (`corelib/net/net_shim.c:100-101`).
   `httpd.write_response` sends the head and the body as two writes, on purpose,
   so the body is never copied into an intermediate string. With Nagle enabled

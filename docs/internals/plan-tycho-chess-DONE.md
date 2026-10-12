@@ -1,5 +1,7 @@
 # What the next program says the language needs
 
+**Status: DONE 2026-08-04. Program: chess engine (`tools/tycho-chess/`, ~740 lines). Outcome: perft against published ground truth, alpha-beta + parallel root search shipped, `make chess-check` green; no language gap — third zero-defect program in a row.**
+
 > This plan is a fresh clone, 2026-08-03: the completed tycho-kv plan lives at
 > `docs/internals/plan-tycho-kv-DONE.md`. The rule from that plan holds here:
 > *does anything that is not the program written to want it need this?* A
@@ -8,10 +10,8 @@
 ## The program
 
 **A chess engine** -- `tools/tycho-chess/`, bitboards (64-bit ints are the
-natural piece map), move generation, make/unmake, perft, and -- if it
-survives -- alpha-beta search with a transposition table and a PARALLEL root
-search via `parallel for`, the first program to lean on dynamic task fan-out
-(the store's pscan had four named spawns because Task handles are affine).
+natural piece map), move generation, make/unmake, perft, and alpha-beta search with a transposition table and a PARALLEL root
+search via `parallel for`.
 
 **Phase 1 is DONE (2026-08-04):** the engine and its gate. `main.ty` is ~740
 lines: bitboard `Board` (6×2 piece maps + side/castling/ep), attack tables,
@@ -35,18 +35,13 @@ doesn't. The gate also asserts five edge positions (bare castling, king
 endgames, an en-passant capture, both-side promotions) against the
 python-chess oracle -- the standard positions' trees never reach a promotion
 or an ep capture, so the published totals alone cannot see those code paths.
-~3M nodes/sec on this box; the gate runs ~10s.
+~3M nodes/sec; the gate runs ~10s.
 
 **Phase 2 (search) is DONE (2026-08-04):** negamax alpha-beta, quiescence,
 PST eval, exact-only transposition table, `search <depth> [fen]` CLI, and the
 search assertions in `make chess-check` (determinism, TT-invariance, three
-exact tactical probes). **Remaining:** the parallel root search via
-`parallel for` -- the untried dynamic fan-out.
-
-Stress points: bitboard manipulation (shifts/masks over int64), move lists
-as arena arrays under millions of nodes, and the concurrency phase. The
-alpha-beta horizon is shallow, so the recursion guard's workout is modest --
-the plan is honest about that.
+exact tactical probes). Parallel root search via
+`parallel for` shipped — see below.
 
 ## Findings
 
@@ -65,10 +60,9 @@ the plan is honest about that.
   conditions, and all three positions went exact through d5/d4/d6.
 - **Operator precedence is documented and C-like: `a & b != 0` parses as
   `(a & b) != 0`** (`docs/spec/appendix-c-precedence.md`: bitwise `&` binds
-  at level 3, equality at level 2 -- Go-style). The author initially
-  believed the reverse, "fixed" it, and the unchanged totals proved the
-  no-op -- the differential settles precedence questions too. No language
-  gap: bitboard code needs only `&`, `|`, `<<`, `>>`, `~` and parens, all
+  at level 3, equality at level 2 -- Go-style). The initial
+  reading had it backwards; the unchanged totals proved the
+  edit a no-op -- the differential settles precedence questions too. Bitboard code needs only `&`, `|`, `<<`, `>>`, `~` and parens, all
   present.
 - **Value semantics held on a hot path.** `make_move` returns a whole new
   `Board` (6×2 bitboards + flags, ~100 bytes) per node -- no unmake
@@ -78,15 +72,14 @@ the plan is honest about that.
 - **No language gap -- third program in a row.** The engine needed bitboard
   ints, fixed arrays, `&`-masking, struct value copies, string slicing for
   FEN parsing, and match-free branching; all present, zero compiler/runtime
-  defects (tycho-kv was the first zero-defect program; this confirms the
-  streak). The usual syntax tax was paid again: `int64` does not exist (the
-  type is `int`, 64-bit), no hex literals (the castling masks
-  6917529027641081856 and 1008806316530991104 stand as decimal), `while` is
+  defects. The syntax tax: `int64` does not exist (the
+  type is `int`, 64-bit), no hex literals at the time (the castling masks
+  stood as decimal; hex shipped via the RSA plan), `while` is
   `for cond:`.
 
 ## Phases
 
-(none yet -- the program's own milestones below are next; a finding becomes
+(none -- the program's own milestones below are next; a finding becomes
 a phase only when a second, independent caller needs it)
 
 ### Next program milestone -- alpha-beta search + transposition table  [DONE 2026-08-04]
@@ -117,21 +110,20 @@ moves. The gate asserts exactly that (`search` twice is byte-identical and
 `search-nott` reports the same best line) plus three exact tactical probes:
 the rook taking a free queen (+510), a hanging queen (+510), and the
 scholar's mate (Qxf7# = 100000). The PST-only eval keeps quiet-position
-values approximate (depth-5 from the start ties many moves at 0) -- honest,
-and the probes pin the parts that must be exact.
+values approximate (depth-5 from the start ties many moves at 0); the probes pin the parts that must be exact.
 
 ### Next program milestone -- parallel root search  [DONE 2026-08-04]
 
 `search_root_par` fans the root moves out over `parallel for`, one full-window
 search per task, results sent on a `Channel` and merged by (score, index).
-The plan's deferred probe is answered: `parallel for` handles the dynamic
+Result: `parallel for` handles the dynamic
 work set (the root move count), per-item results leave the loop through a
 channel (the only legal outer write beside `+`/`*` reductions), and the
 merged best line equals the serial search's on every gated position, with
 byte-identical repeats. The TT needed no sharing decision: the loop
 deep-copies its captures per chunk, so each task searches with its OWN
 exact-only table from cold -- correct by construction (the TT provably never
-changes a result) and no race. The honest cost: with no shared best-so-far
+changes a result) and no race. Cost: with no shared best-so-far
 to prune against, every task runs a full-window search, so the parallel root
 is a correctness probe, not a speedup -- measured 13s vs 2.8s on kiwipete
 d4; the gate runs it on the fast positions (start d5, pos3 d5, scholar d3).

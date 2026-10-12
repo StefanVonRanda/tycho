@@ -1,6 +1,6 @@
 # Getting Started
 
-Build the compiler and run an example:
+Build the compiler and start the example server:
 
 ```
 make
@@ -8,7 +8,8 @@ make
 ./server --serve
 ```
 
-Then open `http://127.0.0.1:8080/`.
+Then open `http://127.0.0.1:8080/` in your browser. The welcome page means
+your build works.
 
 ## Next steps
 

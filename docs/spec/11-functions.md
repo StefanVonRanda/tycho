@@ -4,9 +4,6 @@ The grammar of function declarations, parameters, and the `where` clause is in
 [§4.1.1](02-grammar.md#411-functions). This chapter defines parameter passing,
 variadics, first-class function values, method-call syntax, and subscripts.
 
-> Provenance: `parse_fn` `src/tychoc.c@parse_fn`; parameter modes and the
-> `sink`/`inout` semantics `docs/reference/basics.md:24-70`,
-> `docs/reference/functions.md`.
 
 ## 15.1 Declarations
 
@@ -19,9 +16,7 @@ parameters (the same cap for an `extern fn`; a *function type*, which is a
 distinct construct, allows up to 8 — [§5.3.8](03-types.md#538-function-types)).
 The 16-parameter cap applies to a **generic template** exactly as it does to a
 concrete function: being generic defers what the parameters *are*, never how
-many there may be (`src/tychoc.c:10329@parameters`, ahead of the template stash; locked by
-`tests/reject/params_17.ty`, `extern_params_17.ty` and
-`generic_params_17.ty`).
+many there may be.
 Exactly one function named `main`, with no parameters and `void` return, is the
 program entry point ([§27](15-program.md)).
 
@@ -44,32 +39,27 @@ A parameter is passed in one of three modes:
   consumed: after passing a variable to a `sink` parameter, the caller MUST NOT
   use that variable again (doing so is a compile error, not a silent copy).
 
-  **The consume rule reaches exactly the heap-bearing types**, because a value
-  with nothing on the heap has nothing to move — `sink` on it is a no-op the
-  compiler accepts and does not enforce. Measured 2026-08-14:
+  **The consume rule applies exactly to the heap-bearing types.** A value
+  with nothing on the heap has nothing to move; `sink` on it is accepted
+  but not enforced.
+
+  Rationale: moving a scalar would copy no heap storage, so there is nothing to protect.
 
   | parameter type | consume rule |
   |---|---|
   | `string`, `[T]`, a struct with any heap field, a newtype over one | enforced |
   | `int`, `float`, `bool`, a struct of scalars only, a newtype over a scalar | **not enforced** — the variable stays usable |
 
-  Two consequences worth knowing before you write one. `sink` on a scalar is
-  legal and means nothing, so it documents an intent the compiler will not hold
-  you to. And **the meaning of a signature can change when a type gains a
-  field**: `fn take(p: sink Point)` over `Point{int, int}` enforces nothing, and
-  starts enforcing consumption on every caller the day `Point` gains a `string`.
-  Neither is a defect — there is genuinely nothing to consume in the first case —
-  but a reader of the signature alone cannot tell which case they are in.
-  ([`src/tychoc.c@sink_arg_into`](../../src/tychoc.c) gates the whole check on
-  the type being heap-bearing.) A fresh literal or a local on
+  `sink` on a scalar is legal and means nothing. **The meaning of a signature
+  can change when a type gains a field**: `fn take(p: sink Point)` over
+  `Point{int, int}` enforces nothing, and starts enforcing consumption on
+  every caller if `Point` gains a `string` field. A fresh literal or a local on
   its last use is adopted with **no copy**; a copy is made only where value
   semantics require independence (the variable is read again after the call, or
   is captured by a closure). **Inside a loop a named variable is neither adopted
   nor silently copied — the call is REFUSED**, because a copy hidden in a loop is
   the one place the move-vs-copy cost is invisible and unbounded; pass a fresh
-  value (a literal, or a call's result) or lift the call out. Until 2026-08-14
-  this paragraph listed "used inside a loop" among the silent-copy cases, which
-  no implementation ever did (`src/tychoc.c@sink_arg_into`). A value that then escapes
+  value (a literal, or a call's result) or lift the call out. A value that then escapes
   (is returned or stored past the call) is still copied to the longer-lived
   storage.
 
@@ -90,11 +80,7 @@ arguments into one array argument, after which it is an ordinary call.
 
 The packing is a property of the CALL, not of how the callee was named: a
 package-qualified call packs identically (`vp.sum(1, 2, 3)`), and so does one
-carrying explicit type arguments. Until 2026-08-14 neither did — the fold was
-skipped for a qualified callee and the call was measured against the single
-declared parameter (`'vp__sum' takes 1 argument(s), got 3`), and the qualified
-`$(…)` spelling did not parse at all. Both are fixed and pinned by
-`tests/pkg/variadic_qual/`.
+carrying explicit type arguments.
 
 ## 15.4 First-class function values
 

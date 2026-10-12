@@ -1,14 +1,14 @@
 # Layout/SIMD probe, 2026-09-07 — four new features, no findings
 
+**Verdict: zero defects, zero doc gaps. Probed 2026-09-07 against `packed`, `align(N)`, `vector[N]T`, and swizzling with a 57-line pixel kernel. Outcome: recorded because a probe that finds nothing is the one most likely to go unwritten.**
+
 The first probe aimed at the surface the freeze was broken for. `packed`,
 `align(N)`, `vector[N]T` and groups/swizzling shipped 2026-09-04 and 2026-09-05;
 every probe record before this one is dated 2026-08-19 or 2026-08-20, so nothing
 outside this repo had driven any of them.
 
 The agent wrote a 57-line pixel kernel using all four, and it worked on the first
-pass. **Zero doc gaps, zero defects.** That is the result, and it is worth
-recording precisely because a probe that finds nothing is the one most likely to
-go unwritten.
+pass. **Zero doc gaps, zero defects.** That is the result.
 
 ## What it exercised
 
@@ -32,7 +32,7 @@ Each was checked against `main` before being dismissed, per
 | no `range` in `for` | documented |
 | `println` is string-only | documented |
 
-The third is the one worth keeping. An agent reporting a doc as wrong, when the
+The third is worth keeping. An agent reporting a doc as wrong, when the
 doc is right and says so two lines from where it looked, is a failure mode a
 probe report will always be able to produce — so a report's own citations have to
 be opened, not trusted.
@@ -43,7 +43,7 @@ be opened, not trusted.
 because the 2026-08-19 run's best finding was never in its log. Done here: the
 emitted C at `-fsanitize=address,undefined -fno-sanitize-recover=all -O1 -fwrapv`
 with `detect_leaks=1` exits 0 and prints output byte-identical to the plain
-build. No equivalent hidden finding this time.
+build. No hidden finding this time.
 
 ## A defect in the procedure itself
 
@@ -54,12 +54,12 @@ oracle for exactly the features under test. It was deleted by hand for this run.
 
 **Every round since `compiler/` entered the tree had this leak.** That weakens
 those records rather than voiding them — an agent that can read a parser is still
-not the author — but it is unmeasured, and the delete list should name
+not the author — but it is unmeasured, and the delete list names
 `compiler`.
 
 ## What this does not establish
 
 One program, one surface, 361 seconds. The agent's own "did not check" list is
-the honest boundary: no non-x86 host, the `packed` pad byte never read back, and
+the boundary: no non-x86 host, the `packed` pad byte never read back, and
 `align(8)`'s trailing padding confirmed in the emitted C but never measured at
 run time. The program was thrown away; this record is the artifact.

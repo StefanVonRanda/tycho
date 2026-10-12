@@ -5,16 +5,15 @@
 > [probe-model-comparison-2026-08-20.md](probe-model-comparison-2026-08-20.md).
 > Every finding below was rebuilt on `main` before being written down, so the
 > findings stand; the independence does not.
-A fresh agent was given a stripped checkout, a compiler built from `main`, and
-one instruction: build a real program using generic functions, a generic
-container of its own, and payload enums with `Option`/`Result`. It produced an
-853-line CSV query engine — lexer, recursive-descent parser over a 6-variant
-recursive `enum Expr`, generic `Index($K,$V)` and `MinHeap($T)`, 18 `or_return`
-sites. **The program is not the artifact — this is.** It was thrown away.
 
-Aimed here because generics, newtypes, `subscript`, `bounded[N]`, `select` and
-the enum error paths had zero non-author programs. It reported five frictions
-and rebuilt every one here before they were written down.
+**Verdict: five documentation gaps, one fixed the same day. Probed 2026-08-19 with a compiler built from `main`. Outcome: the generic-argument rule is now stated in `docs/reference/generics.md` and in the diagnostic.**
+
+The agent built an 853-line CSV query engine — lexer, recursive-descent parser over a 6-variant
+recursive `enum Expr`, generic `Index($K,$V)` and `MinHeap($T)`, 18 `or_return`
+sites. The program was discarded; this record is the artifact.
+
+The probe aimed here because generics, newtypes, `subscript`, `bounded[N]`, `select`, and
+the enum error paths had zero non-author programs. Each finding below was rebuilt here before it was written down.
 
 ## 1. A NULL pointer reaches the `cc` command line
 
@@ -26,18 +25,17 @@ tychoc: C compilation failed (cc -O3 -fwrapv -pthread -I(null) -o hi hi.c -lm )
 ```
 
 `%s` on a NULL path. glibc renders `(null)`, `sh` reads it as a subshell, and the
-user is shown an error about their shell for a compiler that cannot find its
+user sees an error about their shell for a compiler that cannot find its
 standard library. Nothing in the message says corelib, path, or `TYCHO_CORELIB`.
 
 Reproduced both ways: the in-tree compiler, which has `corelib/` beside it,
-builds the same file with `TYCHO_CORELIB` unset. So this only fires when the
-install is broken or the binary has been moved — which is exactly when a clear
-message matters most, and it is the FIRST command a new user runs.
+builds the same file with `TYCHO_CORELIB` unset. So this fires only when the
+install is broken or the binary has been moved — which is when a clear
+message matters most, and it is the first command a new user runs.
 
 ## 2. `-> [T]` is misparsed, but only when a `where` clause follows
 
-The agent reported `-> [T]` as always wrong. It is narrower than that, and the
-narrowing is the finding:
+The agent reported `-> [T]` as always wrong. The trigger is narrower:
 
 | written | result |
 |---|---|
@@ -45,8 +43,8 @@ narrowing is the finding:
 | `fn f(xs: [$T]) -> [$T] where comparable(T):` | compiles |
 | `fn f(xs: [$T]) -> [T]:` (no `where`) | compiles, and runs correctly |
 
-The error names a feature the author never used — fixed-size arrays — so it
-sends them to the wrong page. And `$` is documented as "introduce once, refer to
+The error names a feature the program never used — fixed-size arrays — so it
+sends the reader to the wrong page. And `$` is documented as "introduce once, refer to
 it as `T` after", which holds everywhere except here.
 
 ## 3. A generic struct's type arguments must be all-parameter or all-concrete
@@ -57,7 +55,7 @@ fn idx_c(ix: inout Index($K, [float])) where hashable(K):
 ```
 Both refused with *"a type argument may not partially mention a type parameter"*.
 The second contains no partial mention at all — `$K` is a bare parameter and
-`[float]` is concrete — so the rule is stricter than its own message describes.
+`[float]` is concrete — so the rule is stricter than its message describes.
 The rule appeared nowhere in `docs/reference/generics.md`; the error text was the
 only place it was written down. **Both fixed the same day**: the message now says
 the arguments must be *either* exactly the generic's own parameters in order *or*
@@ -74,8 +72,8 @@ declaration form and the reference does not cross-reference it.
 
 Adding `package main` to a file made a sibling probe file's `Index` collide.
 `docs/reference/packages.md` does say *"A file with an `import` is a package, so
-give it its own directory"* — in the last paragraph, where the agent read it as
-style advice rather than the cause of an error in a file it had not named.
+give it its own directory"* — in the last paragraph, where it reads as
+style advice rather than the cause of an error in a file never named.
 
 ## What went right, in its words
 

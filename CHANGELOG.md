@@ -5,6 +5,13 @@ The version constant lives in `src/tychoc.c` (`TYCHO_VERSION`, printed by
 `tychoc --version`); bump both together. Per-release publishing notes stay in
 `RELEASE_NOTES.md`; this file is the accumulating record.
 
+Names used below: `surface.lock` is the frozen record of keywords, builtins and
+corelib signatures (checked by `make surface-check`); `tychoc` is the reference
+compiler, `tychoc1` the self-hosted compiler. A *lane* is one step of the local
+gate (`make ci`); `FRICTION n` is entry n in the defect log
+(`docs/internals/FRICTION.md`); a *probe* is a small program written against the
+docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
+
 ## [0.8.6] — 2026-09-25
 
 ### Breaking
@@ -119,36 +126,28 @@ names its rule in the diagnostic.
 - **BREAKING: `io.open_lines` returns `Result(LineReader, IoErr)`** instead of a
   bare `ptr` that is null on failure, and `io.read_line` / `io.close_lines` take
   that `LineReader` rather than a `ptr`. Three frozen signatures changed, and
-  `surface.lock` records them deliberately.
+  `surface.lock` records them.
 
-  The old shape was this corelib's own instance of the pattern
-  [`docs/quiet-results.md`](docs/quiet-results.md) §6 exists to document — a call
-  that answers instead of refusing, where the answer is a null you have to
-  remember to check. Seventeen of the twenty-nine functions in `core:io` already
-  returned `Result`; the streaming opener was the odd one out. Failure now says
-  *which* failure: `BadPath` for an interior NUL (nothing was attempted, so a
-  retry is the wrong next move), otherwise `NotFound` / `IsDir` / `Failed`,
-  classified the way `is_dir` classifies.
+  The old shape answered instead of refusing: a null the caller had to remember
+  to check (see [`docs/quiet-results.md`](docs/quiet-results.md) §6). Seventeen
+  of the twenty-nine functions in `core:io` already returned `Result`; the
+  streaming opener was the odd one out. Failure now says *which* failure:
+  `BadPath` for an interior NUL (nothing was attempted, so retrying is wrong),
+  otherwise `NotFound` / `IsDir` / `Failed`, classified the way `is_dir`
+  classifies.
 
-  **`LineReader` is a plain struct with a private C pointer, deliberately not a
-  `handle`.** A `handle` is affine and only an `extern fn` may return one, so
-  using one would move the opener into C and take the interior-NUL guard with
-  it — and that guard has to stay on the Tycho side, because that is the only
-  side that knows the string's length. Go's `os.Open` and Odin's `os.open` both
-  return a (resource, error) pair from an ordinary function for the same reason,
-  and neither has an affine handle either. *(That prior-art claim is recalled,
-  not measured — neither toolchain is installed on the box this was written on.
-  It wants the same re-probe the slice-clamp verdict did before anything leans
-  on it harder than this.)*
+  **`LineReader` is a plain struct with a private C pointer, not a `handle`.**
+  A `handle` is affine and only an `extern fn` may return one, so using one
+  would move the opener into C and take the interior-NUL guard with it — and
+  that guard has to stay on the Tycho side, because that is the only side that
+  knows the string's length.
 
-  **Two costs, both unchanged from the `ptr` this replaces, both now written
-  down.** A `LineReader` is an ordinary value, so `b := r` gives two names for
-  one C reader and closing both is a double free — close exactly one, exactly
-  once. And cleanup is manual: Go and Odin have `defer`, Tycho does not, so a
-  forgotten `close_lines` leaks the C-side reader until the process exits. An
-  affine `handle` would make the first unrepresentable; the bare `ptr` did not,
-  and this does not either. This change is a strict improvement in typing and in
-  error reporting, and neutral on both of those hazards.
+  **Two costs, unchanged from the `ptr` this replaces.** A `LineReader` is an
+  ordinary value, so `b := r` gives two names for one C reader and closing both
+  is a double free — close exactly one, exactly once. And cleanup is manual:
+  Tycho has no `defer`, so a forgotten `close_lines` leaks the C-side reader
+  until the process exits. An affine `handle` would make the first
+  unrepresentable; the bare `ptr` did not, and this does not either.
 
   Migration is mechanical — the null check becomes the `Err` arm:
 
@@ -292,7 +291,7 @@ names its rule in the diagnostic.
   — a short buffer is refused by name, not padded.
 - **`align(N)` as a declaration attribute** — the opposite direction to
   `packed`. `N` is a literal power of two from 1 to 8 (`ef566988`). **8 is the
-  ceiling and it is deliberate**: the arena guarantees 8, and raising it to 16
+  ceiling**: the arena guarantees 8, and raising it to 16
   cost 20–30% more arena bytes across the benchmarks for no measurable time. A
   request the allocator cannot honour is refused at compile time rather than
   silently rounded down.
@@ -391,8 +390,8 @@ names its rule in the diagnostic.
 - **`core:http` refuses `file://` URLs.** A URL taken from anywhere untrusted
   could previously read a local file through the HTTP client (`9124527b`). The
   same commit adds a decompression-bomb ceiling to `core:zip` and closes
-  backslash traversal in `core:path`. `tycho-fetch` grew `--local` for the
-  deliberate case, and refuses a `file://` URL by name.
+  backslash traversal in `core:path`. `tycho-fetch` grew `--local` for that
+  case, and refuses a `file://` URL by name.
 - **`tycho-httpd` refuses ambiguous request framing** — a request carrying both
   `Content-Length` and `Transfer-Encoding`, or two disagreeing lengths, is a
   request-smuggling primitive and is now rejected rather than guessed at
@@ -640,7 +639,7 @@ Four messages that an outside reader hit in the first ten minutes writing
   the moment either file gained a line.
 
 - **A generic struct with a map-of-function field compiles.** `steps:
-  [string: fn($T) -> $T]` emitted C naming an `FnC<id>` that was deliberately
+  [string: fn($T) -> $T]` emitted C naming an `FnC<id>` that was
   never defined, and cc rejected the program with `unknown type name 'FnC0'`.
   The array form of the same field was fixed earlier; the map body loop was the
   only one of five without the guard its siblings had (FRICTION #51).
@@ -723,8 +722,8 @@ Four messages that an outside reader hit in the first ten minutes writing
   both tests fell through: `sign(inf)` and `sign(-inf)` both returned **0**. The
   derived zero stays — `zero$(T)` needs `defaultable(T)`, which does not see
   through a newtype, so it would have stopped `math.sign(Cents(-7))` compiling —
-  and the NaN case is answered where it lands instead. `NaN` still returns 0, now
-  deliberately rather than by fall-through. Int is untouched by construction:
+  and the NaN case is answered where it lands instead. `NaN` still returns 0,
+  now by the NaN branch rather than by fall-through. Int is untouched by construction:
   integer arithmetic cannot produce the NaN that reaches the new branch
   (FRICTION #65).
 - **`fmath.round` rounds.** It documented "round half away from zero" and was
@@ -745,7 +744,7 @@ Four messages that an outside reader hit in the first ten minutes writing
   deficit was counted in bytes and decremented by one per iteration while
   `len(pad)` bytes were appended, so `pad_left("x", 5, "ab")` returned **nine**
   bytes for a width of five, and a UTF-8 pad (`"é"`) did the same — the case a
-  formatter actually reaches for, and the one that looks right in a terminal
+  formatter reaches for, and the one that looks right in a terminal
   while being far too wide. A pad that does not divide the deficit now leaves the
   result **short** of width rather than over, which also keeps it from being split
   mid-codepoint. Every caller in the tree passes a one-byte pad and is
@@ -852,7 +851,7 @@ are mechanical, and each is stated as "what you wrote" → "what you write".
   OCaml/Haskell/Elm/SML approach: the bug class is removed by the grammar rather
   than diagnosed by a special case. The guard sits at one point, `vars_push` in
   `src/tychoc.c`, which all ten runtime binding forms reach, and it sits in the
-  resolver rather than the parser deliberately — a bare `Name` in a payload slot
+  resolver rather than the parser — a bare `Name` in a payload slot
   is indistinguishable from a binding at parse time, so checking after the
   pattern is promoted keeps `Err(NotFound)` legal while still refusing a genuine
   binding.
@@ -990,7 +989,7 @@ are mechanical, and each is stated as "what you wrote" → "what you write".
 
   No export keyword and no new syntax: the leading-underscore rule the language
   already had does the privacy, so `pkg._NAME` is refused unchanged. One
-  position is deliberately left out and marked `gap:` in the source — a
+  position is left out and marked `gap:` in the source — a
   qualified const as a fixed-array length (`[pkg.CAP]int`), because an array
   length is resolved while parsing, when the imported package may not be parsed
   yet; accepting it there would fail or not depending on file order.
@@ -1014,7 +1013,7 @@ are mechanical, and each is stated as "what you wrote" → "what you write".
   `Err(msg)` the message is written to stderr — **bare, with no prefix**, the
   same way `die(msg)` prints a user message — and the process exits 1.
 
-  The error type is `string` and the ok payload is `void`, both deliberately:
+  The error type is `string` and the ok payload is `void`:
   an `Err` reaching the entry point is *printed* and `has_str` admits no enum,
   so the error is the message; and a value in the ok slot would make the exit
   status ambiguous. Both wrong shapes are refused with a diagnostic that names
@@ -1025,7 +1024,7 @@ are mechanical, and each is stated as "what you wrote" → "what you write".
 - **`io.mtime` and `io.set_mtime`.** `mtime(p) -> Result(int, IoErr)` reads a
   modification time in seconds; `set_mtime(p, secs) -> Result(bool, IoErr)`
   writes one. `set_mtime` does not create a missing file — that is
-  `Err(NotFound)` — and a directory is fine. The access time is deliberately
+  `Err(NotFound)` — and a directory is fine. The access time is
   left alone (`utimensat` with `UTIME_OMIT`), so preserving a timestamp is
   `io.set_mtime(dst, io.mtime(src) or_return) or_return` and nothing else moves.
   Closes FRICTION #8; it is what let `tycho-ar` restore mtimes at all.
@@ -1087,8 +1086,8 @@ Four messages stopped pointing at the wrong place or withholding the answer.
   checking an instantiated template printed only the template's own location, so
   a user saw `corelib/result/result.ty:125: error: ...` with nothing connecting
   it to their code. A second line now follows: `./main.ty:9: note: required from
-  here -- this call instantiated the generic`. Which call chose the types is the
-  question a reader actually has.
+  here -- this call instantiated the generic`. That call is what the reader
+  needs.
 
 - **A non-exhaustive `Result` or `Option` match names the uncovered variant.**
   A match that wrote both sides but covered only some `Err` variants got
@@ -1133,10 +1132,10 @@ Four messages stopped pointing at the wrong place or withholding the answer.
   The fix re-derives the index rather than holding the pointer: `int si = (int)(s
   - g_sigs);` once, then `s = &g_sigs[si];` after each `resolve_exp`. Locked by a
   deterministic fixture, `tests/generic_sig_realloc.ty`, which forces 200
-  distinct instantiations inside `print`/`str` arguments with deliberately fat
+  distinct instantiations inside `print`/`str` arguments with large
   bodies so it crosses several reallocation boundaries every run — not left to
   ASan to notice, because a use-after-free that reads plausible garbage is
-  precisely the one a sanitizer-only gate can miss on a lucky allocation.
+  the one a sanitizer-only gate can miss on some allocations.
 
 - **A `bytes` slice's clamping is now specified**, along with the array slice's
   abort, in the spec and in a worked example — behaviour is unchanged, but the
@@ -1174,8 +1173,8 @@ now can**, and two of them were sitting over live holes.
   `path:line` citations — was manual-only and run by neither, and a red citation
   gate had already ridden a commit onto `main`. Both now call it.
 - **The pre-push hook dropped `make ci N=0`.** ~274s on every push taught
-  bypassing, which is worse than no hook. It keeps the sub-second link and
-  citation gate plus a fuzz smoke test, so it is cheap enough to actually run.
+  bypassing. It keeps the sub-second link and
+  citation gate plus a fuzz smoke test.
 - A hard-coded fixture count in `tests/run.sh`'s prose was **dropped rather than
   refreshed** — it was stale by 34 and load-bearing for nothing, and a snapshot
   count in prose is stale again by the next commit.
@@ -1186,7 +1185,7 @@ now can**, and two of them were sitting over live holes.
 split in two until 2026-08-10 — an `[Unreleased]` block on top of a `[0.5.0]`
 block dated 2026-08-05 that was never tagged — which would have shipped a
 changelog that did not describe its own artifact. The 08-05 block is a draft,
-not history, so the two are merged here under the date this actually shipped.
+not history, so the two are merged here under the date this shipped.
 
 Eight entries that were appended here *after* the tag were moved to `[0.6.0]`
 on 2026-08-11; a `v0.5.0` tarball does not contain them.
@@ -1197,8 +1196,7 @@ on 2026-08-11; a `v0.5.0` tarball does not contain them.
   and is **removed in 1.0**. Calling it warns.
 
   This is the deprecation policy in `docs/reference/corelib.md` run end to end for
-  the first time, which is the point — a policy that has never been executed is
-  prose. Step (3), the compiler warning, is now a general mechanism rather than
+  the first time. Step (3), the compiler warning, is now a general mechanism rather than
   a one-off: a `# deprecated: <text>` comment line **directly above** a `fn`
   marks it, and every call site warns with that text. Locked by
   `tests/warn/deprecated.ty`.

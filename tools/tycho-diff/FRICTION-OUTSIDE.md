@@ -1,8 +1,8 @@
 # Friction writing `tycho-diff`, from outside
 
-`ROADMAP.md` §1 asks for programs written by someone who did not write the
-compiler, with the friction recorded. This is one such program: a Myers O(ND)
-line differ with unified output, ~180 lines of Tycho across two packages, written
+Rule: §1 wants programs by someone who did not write the compiler, with the friction recorded. This is one such program.
+
+A Myers O(ND) line differ with unified output, ~180 lines of Tycho across two packages, written
 2026-08-14 against `docs/` only — the tutorial, `docs/reference/builtins.md` and
 the corelib sources — without reading `src/tychoc.c` for any of it.
 
@@ -10,7 +10,7 @@ the corelib sources — without reading `src/tychoc.c` for any of it.
 does not close it; it is a down payment, and the findings below are the point.
 
 Everything here is a first-contact reaction, kept even where the answer turned
-out to be documented somewhere I did not look. That is the data §1 is after: an
+out to be documented somewhere not checked. That is the data §1 is after: an
 author knows where to look.
 
 **All four diagnostics below were fixed the same day**, each with a fixture under
@@ -23,7 +23,7 @@ point of this file is the first-contact experience, not the changelog.
 ## 1. In `package main`, the `die` warning offers a remedy the next line forbids
 
 Naming a helper `fail`-like is the first thing a CLI program does. `die` is a
-builtin, and the compiler says so extremely well — then contradicts itself:
+builtin, and the compiler says so — then contradicts itself:
 
 ```
 warning: `die` collides with the builtin of the same name -- every unqualified
@@ -76,7 +76,7 @@ program's own gate asserts stdout stays empty on all five error paths, which is
 the rule the suggestion quietly breaks.
 
 `eprint` is documented, at `docs/reference/builtins.md:110` — ninety lines below
-`print` and `println` at `docs/reference/builtins.md:16-17`, in a different table. A newcomer reading the
+`print` and `println` at `docs/reference/builtins.md:16-17`, in a different table. A reader going through the
 print family does not scroll past the intervening sections.
 
 Suggested fixes, either alone would do: add `eprintln`, or make the suggestion
@@ -111,7 +111,7 @@ Recorded because a friction log that only complains is not evidence.
 **Value semantics made the hard part of Myers trivial.** The algorithm keeps a
 frontier array `v` and must snapshot it at every edit distance to backtrack later.
 In C that is a `memcpy` per round and a lifetime question; in a GC'd language it
-is a `.clone()` you must remember. Here:
+is a `.clone()` to remember. Here:
 
 <!-- fence-skip: quoted from the program that hit this friction; `trace` belongs to that program, not to this document -->
 ```tycho
@@ -128,7 +128,7 @@ shape an edit script wants — the compiler checked I handled all three arms.
 
 ## 6. Two shell traps, in the gate rather than the language
 
-Not Tycho's fault, recorded because they nearly produced a false verdict about
+Not Tycho's fault. They nearly produced a false verdict about
 Tycho, which is the failure mode this repo cares most about.
 
 - `cmd && bad "..."` under `set -e` **kills the script silently** when `cmd`

@@ -1,8 +1,7 @@
 # Builtins
 
-> **Memory:** Builtins follow the same per-scope arena discipline as any Tycho code.
-> Every builtin that allocates — string operations, channel operations — does so in
-> the caller's arena.
+> **Memory:** builtins follow the same ownership rules as everything else.
+> A builtin that builds a value hands it to the caller.
 
 The built-in functions, by category. These are part of the language — always there, no
 import needed; the importable [standard library](../reference/corelib.md) layers more on top. Anything written
@@ -85,11 +84,11 @@ See [Concurrency](concurrency.md) for semantics.
 
 | Builtin | Type | Notes |
 | --- | --- | --- |
-| `wait(t)` | `Task(T) -> T` | Join a spawned task (result deep-copied out). Exactly once per task. |
-| `ncpu()` | `-> int` | Online CPUs, or `TYCHO_THREADS` when set to an integer >= 1. The *requested* worker count, **not** the fan-out width: `parallel for` clamps to 64 chunk tasks. |
-| `channel(T, cap)` | `-> Channel(T)` | A bounded lock-free queue (`cap` rounds up to a power of two). Legal only as a declaration's direct RHS. |
-| `send(ch, v)` | `(Channel(T), T) -> void` | Deep-copy `v` in; blocks when full; aborts if closed. |
-| `recv(ch)` | `Channel(T) -> Option(T)` | Blocking receive (deep-copied out); `None` means closed **and** drained. |
+| `wait(t)` | `Task(T) -> T` | Join a spawned task (the result is copied out). Each task can be waited exactly once. |
+| `ncpu()` | `-> int` | Online CPUs, or `TYCHO_THREADS` when set to an integer >= 1. The *requested* worker count, **not** the number of parallel tasks: `parallel for` caps at 64 chunk tasks. |
+| `channel(T, cap)` | `-> Channel(T)` | A bounded lock-free queue (`cap` rounds up to a power of two). Legal only as a declaration's direct right-hand side. |
+| `send(ch, v)` | `(Channel(T), T) -> void` | Copy `v` in; blocks when full; aborts if closed. |
+| `recv(ch)` | `Channel(T) -> Option(T)` | Blocking receive (copied out); `None` means closed **and** drained. |
 | `close(ch)` | `Channel(T) -> void` | Receivers drain then see `None`; a further send or second close aborts. |
 | `close(h)` | `handle -> void` | On a typed FFI handle **variable**: run its destructor now and null it, so the scope-exit free does not run it again. A handle **parameter** is a borrow and cannot be closed (a compile error); close it in the scope that owns it. Any later mention of `h` in the same block (a second `close` included) is a compile error; a `close` inside an `if` or loop reaches only that block's end. See [typed handles](ffi.md#typed-handles-safe-by-default-resources). |
 

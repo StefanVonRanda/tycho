@@ -1,21 +1,19 @@
 # Enums, options, and `match`
 
-> **Memory:** Each variant's payload is arena-allocated. A recursive enum
-> (`Expr = Num | Add(Expr, Expr)`) is the hardest shape: deep-copying the tree runs
-> the recursive `copy_into` at every level. `Option`/`Result` stay inside the model —
-> no null pointer, no exceptions.
+> **Memory:** copying an enum copies its whole payload. `Option` and `Result` work the same way — no null, no exceptions.
 
 A *sum type* is a value that is exactly one of several alternatives. Tycho has one
 general form, the user-defined `enum`, plus two built-in special cases for two common
 problems: `Option(T)` (a value that might be absent, without `null`) and `Result(T, E)`
 (failure, without exceptions). You take all three apart the same way — an exhaustive
-`match` — and all three are ordinary values, deep-copied on assignment and compared
+`match` — and all three are ordinary values, copied on assignment and compared
 structurally with `==`, like everything else in the language.
 
 ## `enum` — user-defined sum types
 
 An `enum` declares a type whose value is exactly one of several named **variants**, each
-carrying a payload of zero or more types. It's the tagged union, or algebraic data type:
+carrying a **payload** of zero or more values. It is a tagged union: each value carries a
+tag naming the variant it holds:
 
 ```tycho
 enum Shape:
@@ -37,16 +35,15 @@ You build a value by naming a variant — `Circle(2.0)`, or a bare `Unit` for a 
 one — and take it apart with `match` (below). Variant names are global: you write `Circle`,
 not `Shape.Circle`, and no two enums may share a variant name.
 
-An enum value is a small value-semantic descriptor whose payload lives in the arena, so
-copying one is a **deep copy of the whole payload** and `==` compares two values
-structurally. An enum may appear anywhere a type may — a struct field, an array element
-(`[Shape]`), a map value, a function parameter or return.
+An enum value is an ordinary value: copying one copies the whole payload, and `==`
+compares two values structurally. An enum may appear anywhere a type may — a struct field,
+an array element (`[Shape]`), a map value, a function parameter or return.
 
 ### Recursive enums are ASTs
 
-A variant may carry the enum itself, which makes the type an abstract syntax tree. Because
-the payload is arena-allocated rather than stored inline, a recursive enum is still a finite
-value — no infinitely-large type — and copying one deep-copies the entire tree:
+A variant may carry the enum itself, which makes the type a tree — the shape compilers
+call an abstract syntax tree. Each level holds the rest of the tree, so a recursive enum
+still names a finite value, and copying one copies the entire tree:
 
 ```tycho
 enum Expr:
@@ -68,8 +65,9 @@ fn main():
     print(str(eval(e)))      # -2.0
 ```
 
-An enum may also be **generic** — `enum Tree($T)` — and is then monomorphized like a generic
-struct, including recursive payloads that name the enum itself. See [Generics](generics.md).
+An enum may also be **generic** — `enum Tree($T)` — and is then stamped out per concrete
+type like a generic struct, including recursive payloads that name the enum itself.
+See [Generics](generics.md).
 
 ## `match` — the exhaustive eliminator
 
@@ -150,17 +148,17 @@ _x := match parse(s):            # each arm's value is the result
 Rules: each branch/arm is a **single expression** (its value); a value `if` **must** have an
 `else` (every path must produce a value); a value `match` is exhaustive as always; and all
 branches must have the **same type**, which becomes the type of the whole expression. This is
-sugar for the declare-then-assign-in-each-arm form above — it lowers to exactly that C.
+shorthand for declaring a variable and assigning it in each arm.
 
-Not yet supported (deliberate follow-ups): multi-statement branches, a branch that `return`s
+Not yet supported: multi-statement branches, a branch that `return`s
 instead of yielding a value, and use as a nested sub-expression (e.g. `1 + if …`). Use the
 statement form for those.
 
 ## `Option(T)` — a value, or nothing
 
-`Option(T)` is the built-in enum with variants `Some(x)` and `None`. It's Tycho's take on
-the null-reference problem: a value that may be absent is *typed* as absent, and you can't
-ignore the absence, because reading it requires an exhaustive `match`.
+`Option(T)` is the built-in enum with variants `Some(x)` and `None`. It replaces the null
+reference with a typed absence: a value that may be missing is *typed* as possibly missing,
+and you cannot ignore the absence, because reading it requires an exhaustive `match`.
 
 ```tycho
 fn index_of(xs: [int], target: int) -> Option(int):
@@ -183,7 +181,7 @@ assignment target, or a call argument. A bare `x := None` is a compile error, be
 is nothing to fix `T`.
 
 `T` may be any type, including another option (`Option(Option(int))`); each instantiation is
-a distinct tagged value, deep-copied like any other. An option is a fine struct field
+a distinct tagged value, copied like any other. An option is a fine struct field
 (`age: Option(int)`) or array element (`[Option(int)]` — a list of optionals, where a `None`
 element takes its type from the others, so the first element cannot be a bare `None`).
 
@@ -194,9 +192,9 @@ the absent value first, or use `opt is None` when testing its variant.
 
 ## `Result(T, E)` — success, or an error
 
-`Result(T, E)` is the built-in enum with variants `Ok(value)` and `Err(error)` — Tycho's
-take on error handling without exceptions. A function that can fail returns one, and the
-caller has to handle both outcomes in a `match`:
+`Result(T, E)` is the built-in enum with variants `Ok(value)` and `Err(error)` — error
+handling without exceptions. A function that can fail returns one, and the
+caller handles both outcomes in a `match`:
 
 ```tycho
 fn checked_div(a: int, b: int) -> Result(int, string):
@@ -237,10 +235,10 @@ fn add_two(a: string, b: string) -> Result(int, string):
     return Ok(x + y)
 ```
 
-`or_return` is a postfix operator that binds tighter than any arithmetic, so it is valid
-anywhere the unwrapped value is wanted — `foo(parse(s) or_return)`,
-`return Ok(parse(s) or_return + 1)`, and inside nested blocks. The short-circuited `Err`'s
-payload is promoted into the caller's arena, so it outlives the return.
+`or_return` comes after the expression it applies to and binds tighter than any arithmetic,
+so it is valid anywhere the unwrapped value is wanted — `foo(parse(s) or_return)`,
+`return Ok(parse(s) or_return + 1)`, and inside nested blocks. The short-circuited `Err`
+lives as long as the caller needs it.
 
 The same operator works on `Option`: inside a function that returns `Option(T)`,
 `v := opt or_return` binds `v` on `Some(v)` and returns `None` on `None`.
@@ -284,5 +282,6 @@ expression, never a block. The full rules are [§14.6.1](../spec/10-statements.m
 
 ---
 
-*Design background:* why arena-allocated payloads keep recursive enums finite and copyable,
-and how the tagged value is laid out, is in [the memory model](../memory-model.md).
+How this is implemented — payload layout, why recursive enums stay finite, how the
+value form and the error operators lower — is in [design-enums](../internals/design-enums.md),
+for maintainers.

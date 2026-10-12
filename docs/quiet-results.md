@@ -6,13 +6,12 @@ cleanly rather than proceeding into undefined behavior
 null, `Result` removes exceptions, and an integer divided by zero stops the
 program rather than inventing an answer.
 
-This page is the **complete register of the exceptions** — the handful of
-operations that hand back a value instead of refusing. Every one of them is
-deliberate and has been argued out; none is a bug, and this page is not a list
-of things to be fixed. It exists because the failure they share is the only kind
-the rest of the language works to prevent: a program that keeps running with an
-answer you did not mean. The compiler cannot warn you, the sanitizers see
-nothing wrong, and the tests pass.
+This page lists those exceptions — the few operations that return a value
+instead of stopping. Each one is intentional, and each has a stricter
+alternative listed beside it.
+
+They matter because they fail quietly: the program keeps running with an
+answer you did not mean. No compiler error, no crash, no failing test.
 
 Read it once before your first real program. Every output below is printed by
 the code beside it.
@@ -126,13 +125,9 @@ b[-3:2] len = 2
 b[3:1]  len = 0
 ```
 
-**Why it is this way, since Go and Odin both fault here.** A Tycho `s[a:b]` *is*
-`substr` — the same operation in operator spelling — and `substr` clamps by
-definition, because that is right for the text processing it exists for. Making
-the operator trap would either desynchronise it from `substr` or drag `substr`
-along with it. The divergence was measured against both languages and the clamp
-kept deliberately; `tests/slice_clamp.ty` pins all eight cases so it cannot be
-"fixed" by accident.
+**Why clamping?** In Tycho `s[a:b]` is the `substr` operation in operator
+form, and `substr` clamps — that is the useful behavior for text
+processing. The operator matches it so the two never disagree.
 
 **When the bounds are data** — a length field, an offset from a file or a
 socket — clamping turns a corrupt input into a plausible short read. Use
@@ -233,12 +228,10 @@ fn main():
 Note the third row: a leading space is not tolerated either, so `parse_int` on
 `" 7"` is `0` — indistinguishable from the `0` you get for an absent option.
 
-**This is deliberate for the case it was built for** — `0` is the right answer
-for a missing CLI option, and demanding a `Result` there would be noise. It is
-the wrong answer for a *format*: a damaged length field of `"1x4"` parses as `1`,
-and a wrong length that parses is exactly how a reader ends up hashing the wrong
-span of bytes. A real instance of this shipped a stale build output as current,
-by reading a corrupted mtime out of a stamp file as `17`.
+The lax form exists for one case: a missing option, where `0` is a
+sensible default and a `Result` would be noise. For anything else —
+especially data from a file, a socket, or a user — a partial parse
+like `"1x4"` becoming `1` silently gives you the wrong value.
 
 **The rule: anything that came from a file, a socket, or a user gets the
 `_checked` sibling.** They exist across the corelib and return a `Result` with a

@@ -1,13 +1,15 @@
 date: 2026-07-01
 # Hello, Tycho
 
-This is the first post. Tycho compiles to C: a dependency-free transpiler
-written *in Tycho* reproduces its own output byte-for-byte.
+Welcome to the blog. Tycho is a small systems language that compiles to C —
+and the compiler itself is written in Tycho, giving byte-identical output on
+every pass.
 
 ```tycho
 fn main():
     println("hello, world")
 ```
 
-Value semantics mean you pass a struct and get a copy — no aliasing, no
-`free`, and the arena reclaims it when the scope ends.
+Values are copied, never aliased, so there is no `free` to call and no
+collector running behind your back. Each scope's arena is reclaimed when the
+scope ends. That is the whole memory model, and this post is its first demo.

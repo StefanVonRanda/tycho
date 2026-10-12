@@ -1,5 +1,7 @@
 # What the next program says the language needs
 
+**Status: DONE. Program: bytecode compiler for the Scheme interpreter — `tools/tycho-scheme` grew a `compile` front end lowering Scheme to tycho-vm bytecode. Outcome: differential byte-identical on all six programs; one real compiler bug found and fixed; no language phases.**
+
 > This plan is a fresh clone, 2026-08-03: the completed tycho-scheme plan lives
 > at `docs/internals/plan-tycho-scheme-DONE.md`. The rule from that plan holds
 > here: *does anything that is not the program written to want it need this?* A
@@ -58,8 +60,8 @@ and the output must be byte-identical to the interpreter's golden.
 **The compiler works -- the differential is byte-identical.** All six programs
 (fib, closures, ho, sort, shadow, eqsym) compile to tycho-vm bytecode and the
 VM's run matches the interpreter's golden byte-for-byte, including the two
-counter closures staying independent (`1 2 1`). The gate now asserts that
-differential on every run. What the build found, all tool-level (none becomes
+counter closures staying independent (`1 2 1`). The gate asserts that
+differential on every run. What the build found, all tool-level (none became
 a phase -- nothing outside the compiler wants it):
 
 - **The VM's `CALL` is static and `Val` is int-or-string, so the compiler
@@ -101,5 +103,5 @@ a phase -- nothing outside the compiler wants it):
 
 ## Phases
 
-(none yet -- a finding becomes a phase only when a second, independent caller
+(none -- a finding becomes a phase only when a second, independent caller
 needs it)

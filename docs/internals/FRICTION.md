@@ -1,5 +1,7 @@
 # FRICTION
 
+> Status: running log, open since 2026-07. Each entry records what fought back while writing a real program; entries claiming closure carry `Pinned-by:` commands run by `make friction-check`. Bare `path:line` citations are as-of their entry's date (see note below).
+
 One line per moment the language got in the way while writing a real web server.
 Non-blocking by construction: anything that blocks the server earns a phase in
 `plan.md` instead. This file is a deliverable; fixing everything in it is not.
@@ -1497,7 +1499,7 @@ then exit 1) and `exit(n)`", so "**a non-fatal warning is inexpressible**" — i
 **false, and was false when it was written**. `eprint(s)` is a builtin: registered
 at `src/tychoc.c:6214@eprint`, emitted as `tycho_eprint`, and defined as
 `fputs(s, stderr)` in `runtime/tycho_rt.c@tycho_eprint`. It is specified —
-`docs/spec/16-builtins.md:74@eprint` says "Write `s`'s bytes to stderr; no
+`docs/spec/16-builtins.md:70@eprint` says "Write `s`'s bytes to stderr; no
 newline, **no exit**" — and it was added on 2026-06-14 in `61fa0dc`
 ("+ eprint primitive"), i.e. before this file existed. Nine non-frozen `.ty`
 files in the tree already call it, `corelib/log/log.ty` among them.

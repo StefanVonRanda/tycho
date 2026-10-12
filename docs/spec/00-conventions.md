@@ -31,7 +31,7 @@ implementation is permitted to vary is collected in
 
 ### 1.2 The reference implementation
 
-**`tychoc`** — the transpiler in `src/tychoc.c` — is the **reference
+**`tychoc`** — the transpiler in  — is the **reference
 implementation** of this specification. Where an example, a fixture, or a
 diagnostic is cited below, it is `tychoc`'s.
 
@@ -184,8 +184,7 @@ A **runnable example** is a `tycho` block immediately followed (blank lines
 permitted) by an `output` block: the `tycho` block is then a complete program
 and its standard output MUST equal the `output` block byte-for-byte. The `make
 spec-check` gate ([Appendix E.3](appendix-e-conformance.md)) builds and runs
-every runnable example on the reference `tychoc` and asserts this — the two-compiler oracle of
-[§1.3](#13-conformance) applied to the spec's own examples.
+every runnable example on the reference implementation and asserts this.
 
 Examples are illustrative; a conflict between an example and a normative rule is
 a defect to be corrected in favor of the rule.

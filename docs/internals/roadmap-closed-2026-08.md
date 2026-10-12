@@ -1,5 +1,7 @@
 # Closed 1.0 conditions, August 2026
 
+> Status: history — conditions §2–§6 closed 2026-08-10 through 2026-08-15, moved out of ROADMAP.md 2026-09-02. What is still open (§1, §7) stayed there.
+
 Maintainer material, moved out of [`ROADMAP.md`](../../ROADMAP.md) on 2026-09-02.
 Two relative link targets are rewritten, because the text moved two directories
 down; nothing else is edited. These are conditions §2 through §6 and the
@@ -277,7 +279,7 @@ it did not. It previously rebuilt only the host archive and still printed
 "byte-identical archives", which is how the mingw tarball sat a day behind the
 linux one without anything noticing.
 
-State now, each figure measured rather than assumed:
+State now, each figure measured:
 
 - `make release-check` reports **byte-identical archives** over two builds, and
   rebuilds the mingw archive in the same run.

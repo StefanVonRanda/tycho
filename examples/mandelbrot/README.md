@@ -1,14 +1,14 @@
 # mandelbrot
 
+Rule: per-row sums reduce order-independently, so the result is identical no matter how workers interleave.
+
 A parallel Mandelbrot renderer — about 70 lines of pure Tycho, no FFI. It prints
 a small ASCII preview and the total escape-iteration and in-set pixel counts.
 
-It exists as a dogfood for a corner neither the concurrency benchmarks (int-only)
+It covers a corner neither the concurrency benchmarks (int-only)
 nor the ray tracer (float, sequential) reach: **float compute inside a
-`parallel for` reduction**. `K = ncpu()` workers each own whole rows; because each
-pixel's escape count is a pure function of its coordinates, the per-row sums
-reduce **order-independently** — the result is identical no matter how the workers
-interleave. That determinism is what makes the run a real check on the reduction
+`parallel for` reduction**. `K = ncpu()` workers each own whole rows; each
+pixel's escape count is a pure function of its coordinates. That determinism is what makes the run a real check on the reduction
 and the deep-copy thread boundary:
 
 - **ThreadSanitizer** — no data race on the reduction accumulators.

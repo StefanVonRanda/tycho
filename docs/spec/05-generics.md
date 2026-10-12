@@ -3,15 +3,10 @@
 Tycho's generics are **binding-based monomorphization** over a **closed set of
 constraints**. A generic function, struct, or enum is a template; each distinct
 concrete instantiation produces one specialized instance. Type parameters never
-reach code generation. The constraint mechanism is deliberately **not**
+reach code generation. The constraint mechanism is **not**
 user-extensible — user-defined constraints (traits/typeclasses) are a decided
-non-goal, re-argued 2026-09-11 ([§1.1](00-conventions.md);
-[architecture](../architecture.md)). Generics grow by widening the built-in set.
+non-goal ([§1.1](00-conventions.md)). Generics grow by widening the built-in set.
 
-> Provenance: `instantiate_generic` `src/tychoc.c@instantiate_generic`; constraints
-> `constraint_ok` `src/tychoc.c@constraint_ok`, enforcement `src/tychoc.c:9626-9644`; the `where` clause
-> `src/tychoc.c:4983@where`; type grammar for `$T`/`[$N]T`
-> `src/tychoc.c:2440-2449`,`src/tychoc.c:2538-2562`.
 
 ## 7.1 Type parameters
 

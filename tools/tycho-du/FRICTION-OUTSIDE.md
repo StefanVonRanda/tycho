@@ -1,11 +1,6 @@
 # Friction writing `tycho-du`, from outside
 
-`ROADMAP.md` §1 asks for programs written by someone who did not write the
-compiler, with the friction recorded. This is one: a recursive disk-usage
-reporter whose open directory stream is a typed `handle`, written 2026-09-21
-against `docs/`, `corelib/`, `examples/` and `tools/` only, with no access to
-`src/tychoc.c` or `compiler/` (the probe tree is stripped —
-[`docs/internals/probe-procedure.md`](../../docs/internals/probe-procedure.md)).
+Rule: `ROADMAP.md` §1 wants programs by someone who did not write the compiler, with the friction recorded. This is one: a recursive disk-usage reporter whose open directory stream is a typed `handle`, written 2026-09-21 against `docs/`, `corelib/`, `examples/` and `tools/` only.
 
 **Read this as a first-contact record, not as a description of the tree today.**
 Eight of its fourteen findings were fixed the same day; the wording quoted in
@@ -32,10 +27,8 @@ Two specific corrections, because leaving them unmarked would let this file rot:
 
 First contact with Tycho, 2026-09-21, macOS arm64 (Darwin 27.0.0, Apple clang),
 `tychoc 0.8.5`. Everything below came from `docs/`, `corelib/`, `examples/`,
-`tools/` and `README.md` in this directory, plus measurement. I did not read the
-compiler source, did not search the web, and deliberately did not load the
-`tycho-syntax` skill that this harness offers — that skill is distilled
-second-hand knowledge and using it would have answered exactly the questions
+`tools/` and `README.md` in this directory, plus measurement. No compiler source, no web search, and deliberately no
+`tycho-syntax` skill — that skill answers exactly the questions
 this probe exists to ask.
 
 ## The program
@@ -100,7 +93,7 @@ p18.ty:1: error: expected newline
 p18.ty:3: error: unknown type 'Dir'
 ```
 
-The correct form is two lines, and the only prose that says so is in a *different*
+The correct form is two lines, and the only prose that states it is in a *different*
 document — `docs/reference/ffi.md`:
 
 > a `handle Name:` header over an indented `free: c_fn` line (a block, not
@@ -133,8 +126,8 @@ p6.ty:11: error: a handle variable cannot be reassigned -- it is freed once, at 
 ```
 
 The reference is right and the normative spec documents a feature that does not
-exist. I had planned my walker around reassignment (a loop that re-opens a
-directory into the same variable); I backed that out.
+exist. The planned walker used reassignment (a loop re-opening a
+directory into the same variable); it was rewritten as recursion.
 
 ## 3. `is_null` on a handle exists in exactly one sentence, and the shipped example says it is impossible
 
@@ -167,9 +160,9 @@ int64_t fh_ok(void *h) { return h ? 1 : 0; }
 `is_null(d)` on a `Dir` handle compiles and works — it is what `tydu/main.ty`
 uses, and the permission-denied path in the test tree proves it fires. So the
 tree's one worked example carries a hand-written C function it does not need,
-justified by a comment the reference contradicts. I believed the comment first
-(it was in running code), wrote a `dw_ok` into my shim, then tried `is_null`
-anyway and deleted `dw_ok`.
+justified by a comment the reference contradicts. The comment was believed first
+(it was in running code): a `dw_ok` went into the shim, then `is_null`
+was tried anyway and `dw_ok` deleted.
 
 ## 4. An opener result that is never bound to a variable leaks silently
 
@@ -243,8 +236,8 @@ static int64_t g_closes = 0;  /* closes, ever -- including the null-guarded no-o
  * those separately is what lets the gate tell "closed twice" from "never opened". */
 ```
 
-A NULL never arrives. I wrote my shim's `dw_close` to count null calls on the
-strength of that comment, then had to re-derive the real behaviour by experiment
+A NULL never arrives. The shim's `dw_close` first counted null calls on the
+strength of that comment; the real behaviour had to be re-derived by experiment
 before the leak self-test in `tydu` meant anything.
 
 ## 6. `free:` naming an undeclared function falls through to `cc`
@@ -270,9 +263,8 @@ type for `handle Dir` — and compiles without comment.)
 Line 88: "the full rules are in `[the FFI design note](../reference/ffi.md)`".
 Line 103: "The `[FFI reference](../reference/ffi.md)` is the short version; this
 page is the full rule set." From inside `docs/reference/ffi.md`, both resolve to
-the page you are already reading. The second one told me there was a shorter
-companion page I should read first and a fuller one I was on; I spent time
-looking for the other document before realising there isn't one.
+the page already open. The second one reads as a shorter
+companion page to read first; the other document does not exist.
 
 Related dead links reached from the pages I needed:
 
@@ -303,8 +295,7 @@ adequate message: `close(h) takes a handle variable`.
 
 ## 9. `bytes` is a reserved word and cannot be a struct field name
 
-My first `Stats` struct had a `bytes: int` field, which for a disk-usage tool is
-the obvious name.
+The first `Stats` struct used a `bytes: int` field, the obvious name for a disk-usage tool.
 
 ```
 ./main.ty:27: error: 'bytes' is a reserved keyword and cannot be used as a field name
@@ -313,11 +304,9 @@ the obvious name.
 ```
 
 Correct, and it *is* documented — `docs/spec/appendix-b-keywords.md` §B.1 lists
-all 42. But nothing in the tutorial, `reference/basics.md` or
-`reference/structs-tuples.md` mentions that the reserved set includes the type
-keywords, and a field name shares no namespace with a type. It cost a minute, not
-an hour; I record it because "check appendix B before naming a field" is not
-advice any entry-path page gives. The field is `nbytes` now.
+all 42. But no entry-path page (tutorial, `reference/basics.md`,
+`reference/structs-tuples.md`) mentions that the reserved set includes the type
+keywords, and a field name shares no namespace with a type. The field is `nbytes` now.
 
 ## 10. A value `if` is documented as an expression, and the diagnostic for the case it doesn't cover says nothing about it
 
@@ -332,13 +321,13 @@ println("total " + ... + " directories" +
        |              ^
 ```
 
-This one is my fault — `docs/reference/enums-options.md` says so plainly: "Not
+This one is user error — `docs/reference/enums-options.md` says so plainly: "Not
 yet supported (deliberate follow-ups): … use as a nested sub-expression (e.g.
-`1 + if …`)". I had read it and reached for the C reflex anyway. What is worth
+`1 + if …`)". What is worth
 recording is the *message*: `expected an expression` at the `if`, which reads as
 "an `if` is never an expression" when the rule is "an `if` is an expression only
 as the whole RHS of a `:=`, `x : T =`, `x =` or `return`". Naming the tail
-position would have turned a doc lookup into a one-line fix. Worked around by
+position would turn a doc lookup into a one-line fix. Worked around by
 hoisting to `tail := if …`.
 
 ## 11. `cc` warnings from corelib leak into my build output
@@ -413,9 +402,9 @@ named. I stopped and built `probes/p12.ty` before trusting it.
 
 # What went right
 
-Most of this went well, and several things went better than I expected.
+Most of this went well, and several things went better than expected.
 
-**The affine diagnostics are the best I have seen for a resource-ownership rule.**
+**The affine diagnostics are the best in the tree for a resource-ownership rule.**
 Every violation I tried was refused, at the right line, in language that explains
 the model rather than the parse:
 
@@ -430,19 +419,17 @@ p9.ty:9: error: 'd' is sink, which an affine type cannot be -- it has one owner 
 ```
 
 The `note:` pointing back at the `handle` declaration is exactly right. The
-`sink` message answering the question I would have asked next ("then how do I
-hand it over?" — "pass it plainly: that is already a borrow") saved a doc lookup.
+`sink` message answers the next question ("then how do I
+hand it over?" — "pass it plainly: that is already a borrow") without a doc lookup.
 `probes/p4.ty` (array) and `p5.ty` (`Option`) are refused with the same message.
 
 **The affine rule shaped the program, correctly.** Because `walk` cannot return a
 `Dir`, and cannot store one, the tree walk *had* to be recursive with the handle
-owned by the frame that opened it. That is the right design for this program and
-I would not necessarily have chosen it. `tools/tycho-fh/main.ty` says this out
-loud and it is the most useful comment in the tree: "It CANNOT return the handle,
+owned by the frame that opened it. `tools/tycho-fh/main.ty` states this directly: "It CANNOT return the handle,
 so every function that opens one must also finish with it. That is the affine
 rule doing its job, and it shapes the program."
 
-**RAII holds on every exit, and I can quote the proof.** `walk` has six exits.
+**RAII holds on every exit, with proof.** `walk` has six exits.
 The generated C carries the free on all of them, including the `or_return`:
 
 ```c
@@ -464,9 +451,9 @@ ok
 and 6000 `opendir`s under `ulimit -n 64` complete without a single failure. This
 is the thing the feature promises and it delivers it.
 
-**Spec §24.1.1 told me exactly how to write `dw_stat`, and it was right.** I
-needed a call that returns both a size and a "could not stat" classification. The
-spec has a whole section on it, names the two arrangements, and says which one is
+**Spec §24.1.1 states exactly how to write `dw_stat`.** The call
+needed returns both a size and a "could not stat" classification. The
+spec has a whole section on it, names the two arrangements, and states which one is
 forced:
 
 > A scalar payload can occupy either slot, so nothing above decides it and a
@@ -480,12 +467,12 @@ signature it predicts (`int64_t dw_stat(const char *, int64_t *)`) is the one
 that linked, and the "set it on every path, first" rule is why `*size = 0` is the
 first statement in my shim. This is the best-written page in the documentation.
 
-**Two warnings that named my bug before I wrote it.** From `reference/ffi.md`:
+**Two warnings that name the bug before it is written.** From `reference/ffi.md`:
 
 > `closedir(d); return ent->d_name;` is the shape that gets this wrong: the
 > `dirent` belongs to the stream just closed.
 
-That is *literally* the API I was binding, called out by name. And:
+That is *literally* the API under test, called out by name. And:
 
 > **The copy is all the call site does — it never frees your pointer**, so a
 > `malloc`ed return leaks, silently, in a normal build. … Return a `static` or
@@ -513,16 +500,15 @@ Both fired on scaffolding I had left behind. (The contrast with finding 4 is the
 whole point of listing it here.)
 
 **Keeping the `.c` when `cc` fails is the right call**, and `tychoc --help` says
-so up front: "The .c is KEPT when cc fails, as evidence." It is the only reason I
-could read `if (h_d) dw_shut(h_d);` and settle which side the null guard is on.
+so up front: "The .c is KEPT when cc fails, as evidence." It is the only reason the `if (h_d) dw_shut(h_d);` line could be read to settle which side the null guard is on.
 
-**The obvious spelling was usually the correct one.** `push`, `pop`, `len`,
+**The obvious spelling is usually the correct one.** `push`, `pop`, `len`,
 `keys(m)`, `m.get(k, 0)`, `for x in xs`, `match`/`Ok`/`Err`, `or_return`,
-`struct`, `enum`, `str()` — I wrote all of these from the tutorial on the first
-try and none of them surprised me. `path.join`, `path.ext`, `strings.to_lower`,
+`struct`, `enum`, `str()` — all from the tutorial on the first
+try, none surprising. `path.join`, `path.ext`, `strings.to_lower`,
 `strings.pad_left`, `strings.parse_int_checked`, `sort.argsort_desc` and
-`cli.parse_checked` were all where `docs/reference/corelib.md` said they were,
-with the signatures it gave. The whole non-FFI half of this program compiled
+`cli.parse_checked` are all where `docs/reference/corelib.md` says,
+with the signatures it gives. The whole non-FFI half of this program compiled
 essentially first-try.
 
 **`parse_int_checked` versus `parse_int`.** The corelib page flags it: "the bare
@@ -539,21 +525,20 @@ the point of choice, is better than a note somewhere else.
 - **`handle Dir: free: dw_close` on one line** — the spec's own spelling
   (`probes/p18.ty`). Backed out to the two-line block form. Finding 1.
 - **Reassigning a handle variable** — spec §25 says it frees the previous handle
-  first; the compiler refuses (`probes/p6.ty`). I had a loop design that re-opened
-  into one variable; rewrote it as recursion. Finding 2.
-- **A `dw_ok(void *) -> int` shim function**, copied from
-  `tools/tycho-fh/fh.c`'s `fh_ok`, on the strength of its comment that a handle
-  cannot be null-tested in Tycho. Deleted after `is_null(d)` turned out to compile.
+  first; the compiler refuses (`probes/p6.ty`). The loop design that re-opened
+  into one variable was rewritten as recursion. Finding 2.
+- **A `dw_ok(void *) -> int` shim function**, following
+  `tools/tycho-fh/fh.c`'s `fh_ok` and its comment that a handle
+  cannot be null-tested in Tycho. Deleted after `is_null(d)` compiled.
   Finding 3.
 - **`bytes: int` as a struct field** — reserved word. Finding 9.
 - **A nested `(if … else …)` inside a string concatenation** — hoisted to a
   local. Finding 10.
-- **`take(d: sink Dir)`** — I wanted to express "this function finishes with the
-  handle". Refused, and the message explained that a plain parameter is already
-  the borrow I wanted (`probes/p9.ty`).
+- **`take(d: sink Dir)`** — to express "this function finishes with the
+  handle". Refused, and the message explains that a plain parameter is already
+  the borrow wanted (`probes/p9.ty`).
 - **Storing the handle in the `Stats` struct**, so `walk` would not need two
-  parameters. Refused (`probes/p4.ty`/`p5.ty` are the reduced cases). This is
-  correct and I do not want it back; it is listed because it was my first design.
+  parameters. Refused (`probes/p4.ty`/`p5.ty` are the reduced cases).
 - **`cc -fsanitize=… tydu_gen.c dirwalk.c`** without the corelib shims — undefined
   `_pathx_real`, `_strx_format_g17`. `tychoc --print-shims` is the answer and it
   is not in the FFI docs. Finding 13.
@@ -562,26 +547,25 @@ the point of choice, is better than a note somewhere else.
 
 # What I could not do at all
 
-- **I could not learn, from the documentation, what happens to a handle that is
-  never bound to a variable.** No page states it. I had to add open/close counters
-  to my own shim and measure (finding 4). The answer — it leaks, silently — is the
-  one thing about this feature I would most want written down.
-- **I could not learn which side the null guard is on** without reading generated
+- **No page states what happens to a handle that is
+  never bound to a variable.** The answer had to be measured with open/close counters
+  in the shim (finding 4). The answer — it leaks, silently — is the
+  one thing about this feature most worth writing down.
+- **Which side the null guard is on** is not stated; it took generated
   C from a deliberately broken program (finding 5).
-- **I could not test the handle/struct/enum name-collision rule** that spec §25
-  says is "Locked by `tests/reject/handle_dup_name.ty`" and three siblings. No
-  `tests/` directory is present.
-- **I could not use LeakSanitizer**: `detect_leaks` is unsupported on
-  darwin/arm64, so `examples/sqlite/run.sh`'s sanitizer recipe only gives me ASan
-  and UBSan here. Instead of a leak report I built the counter-based
-  `--selftest` and an `ulimit -n 64` fd-exhaustion stress, which is what
+- **The handle/struct/enum name-collision rule** that spec §25
+  says is "Locked by `tests/reject/handle_dup_name.ty`" and three siblings: no
+  `tests/` directory is present in the probe setup.
+- **LeakSanitizer cannot run**: `detect_leaks` is unsupported on
+  darwin/arm64, so `examples/sqlite/run.sh`'s sanitizer recipe gives ASan
+  and UBSan here. Instead of a leak report the counter-based
+  `--selftest` and an `ulimit -n 64` fd-exhaustion stress apply, which is what
   `tools/tycho-fh/` does and, for this particular claim, is better evidence.
 - **There is no way to ask, in Tycho, whether a handle is still live** after a
   `close(h)` — `is_null` reads the variable, which `close` nulls, so it answers
   "closed" and "never opened" identically. Using a handle after `close` is
   documented as permitted ("a logic bug, **not** memory corruption, and … **not**
-  compile-rejected"); I confirmed it (`probes/p8.ty` prints `none`, because my
-  shim null-checks). For a resource whose whole selling point is static
-  exactly-once release, having the one remaining misuse be undetectable in both
-  directions is a gap I worked around by never calling `close` at all in `tydu` —
-  scope exit does everything I need.
+  compile-rejected"); `probes/p8.ty` confirms it. For a resource whose whole selling point is static
+  exactly-once release, the one remaining misuse is undetectable in both
+  directions; `tydu` works around it by never calling `close` at all —
+  scope exit does everything needed.

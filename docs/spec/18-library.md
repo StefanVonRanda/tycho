@@ -13,9 +13,6 @@ values) are **deferred**; until they are written, the
 [reference pages](../reference/index.md) and each package's source and golden
 tests are the authoritative description of a function's exact behavior.
 
-> Provenance: `docs/reference/corelib.md`; package sources under `corelib/`; tiers
-> [§1.3](00-conventions.md#13-conformance); shim/`deps` mechanics
-> `src/tychoc.c` (`add_pkg_deps`), `corelib/run.sh`.
 
 ## 31. The library contract
 
@@ -31,9 +28,8 @@ arena. Where a package threads mutable state (for example a PRNG seed), it does
 so through an explicit `inout` parameter at the call site, not through a global
 ([§11](07-memory-model.md#11-inout)).
 
-> Provenance: `docs/reference/corelib.md:3-9`.
 
-The one deliberate exception is a **C-owned opaque handle** returned as `ptr`
+The one exception is a **C-owned opaque handle** returned as `ptr`
 (§31.3): such a handle is *not* arena-managed and MUST be released by the
 package's stated free function (for example `regex.release`, `http.release`,
 `image` frees internally). The `ptr` itself is carried by value and is never
@@ -273,14 +269,10 @@ bytes `p` holds, without reading them. `read_at(p, off, n) -> Result(bytes,
 IoErr)` reads at most `n` bytes starting at byte offset `off`, over `pread(2)`,
 which disturbs no file offset. Five semantics are normative for the three:
 
-- **A directory is `Ok` for `mtime` and `Err(IsDir)` for `size`.** The asymmetry
-  is deliberate and is not an inconsistency: a directory HAS a modification time
-  and `stat(2)` reports the real one, so refusing it would discard an answer the
-  kernel already supplied; a directory's `st_size` is the size of its own on-disk
-  entry structure (4096 on ext4, filesystem-dependent elsewhere) and no read can
-  ever produce that many bytes, so reporting it would answer a different
-  question. `IsDir` is likewise absent from `is_dir`, where being a directory is
+- **A directory is `Ok` for `mtime` and `Err(IsDir)` for `size`.** `IsDir` is likewise absent from `is_dir`, where being a directory is
   the answer rather than a failure to give one.
+
+  Rationale: a directory has a modification time the kernel reports, while its `st_size` is filesystem-dependent entry metadata no read can produce.
 - **`size` succeeds on exactly the paths `read_at` can read.** Regular file →
   both `Ok`; directory → both `Err(IsDir)`; a fifo, socket, device or anything
   else unseekable → both `Err(Failed)`. `size(p)` is the length `read_bytes(p)`
@@ -353,7 +345,7 @@ Division is deferred (needs a target scale + rounding policy). Source
 
 ### 32.27 `signal`
 
-Clean shutdown on `SIGTERM`/`SIGINT` — and deliberately nothing else — via a
+Clean shutdown on `SIGTERM`/`SIGINT` — and nothing else — via a
 **libc-only shim** (`signal_shim.c` over `sigaction(2)` and `shutdown(2)`; no
 `deps`, the same self-contained model as `core:os` and `core:net`). Core tier.
 `on_shutdown(fd) -> bool` installs one handler for both signals whose only effect
@@ -369,8 +361,7 @@ state. Source `corelib/signal/signal.ty`, `corelib/signal/signal_shim.c`.
 `signal.on(sig, handler)`, and an implementation **MUST NOT** run Tycho code in
 handler context. Every Tycho value lives in a bump-allocated arena (§31.1,
 [§9](07-memory-model.md)) whose allocator is not re-entrant, and channel
-operations park behind a mutex (`runtime/tycho_rt.c:1144@mu`,
-`runtime/tycho_rt.c:1149@pthread_mutex_lock`); a handler that interrupts the
+operations park behind a mutex ; a handler that interrupts the
 allocator or a lock holder and then allocates or touches a channel corrupts or
 deadlocks the process it was invoked to shut down. A wider surface is therefore a
 language feature rather than a library one, and would need at minimum: an

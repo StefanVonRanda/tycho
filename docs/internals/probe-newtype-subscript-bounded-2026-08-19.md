@@ -5,13 +5,13 @@
 > [probe-model-comparison-2026-08-20.md](probe-model-comparison-2026-08-20.md).
 > Every finding below was rebuilt on `main` before being written down, so the
 > findings stand; the independence does not.
+
+**Verdict: 1 diagnostic bug, 1 index gap (fixed), 1 missing capability, 4 minor gaps. Probed 2026-08-19 with a 600-line limit order book. Outcome: headline is documentation, not language — 3 compiler errors in 600 lines, correct on first run.**
+
 A fresh agent built a 600-line price-time-priority limit order book across two
 packages: newtypes `Price`/`Qty`/`OrderId`/`Trader`, resting orders in
-`bounded[LEVEL_CAP]Order`, three `subscript`s, and a session driver. **The
-program is not the artifact — this is.** It was thrown away.
-
-It hit **three compiler errors in 600 lines**, which is the headline: the
-friction here is documentation, not the language.
+`bounded[LEVEL_CAP]Order`, three `subscript`s, and a session driver. The
+program was discarded; this record is the artifact.
 
 ## 1. An arithmetic message states a rule that is not the rule
 
@@ -26,11 +26,11 @@ describes a different one and sends the reader to convert, which is not the fix.
 ## 2. `bounded[N]T` is missing from the reference index, and nothing shows how to build one
 
 `docs/reference/index.md` claims to catalogue every feature and contains **zero**
-occurrences of `bounded`. All prose lives in spec §5.3.10. The agent reported that no document shows how to CONSTRUCT one. **That part was
-wrong, and so was my first write-up of it** — `docs/reference/arrays-slices.md`
-has a whole section with `b: bounded[4]int = [1, 2]` in it. The real gap is that
-the index row never named `bounded`, so neither the agent nor I found the
-section; both of us grepped and concluded from the miss. Fixed by naming it in
+occurrences of `bounded`. All prose lives in spec §5.3.10. The agent reported that no document shows how to CONSTRUCT one. That part was
+wrong — `docs/reference/arrays-slices.md`
+has a whole section with `b: bounded[4]int = [1, 2]` in it. The gap is that
+the index row never named `bounded`, so neither the agent nor the first write-up found the
+section; both grepped and concluded from the miss. Fixed by naming it in
 the index row.
 
 ## 3. `pop` and slicing are rejected on `bounded`, so it cannot be dequeued

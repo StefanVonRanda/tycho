@@ -37,7 +37,7 @@ others are well exercised:
 |---|---|
 | **Linux x86_64** — supported | the full fixture suite under ASan/UBSan/LeakSanitizer, plus every gate lane; `make status` prints the current fixture count |
 | macOS arm64 — best-effort | gated since 2026-09-19: `make ci` green on `darwin-arm64`, carrying 12 enumerated skips; no LeakSanitizer on the platform |
-| Linux arm64 — best-effort | gated since 2026-09-19: `make test` 1065/1065 on Ubuntu 26.04 / aarch64 |
+| Linux arm64 — best-effort | gated since 2026-09-19: `make test` green on Ubuntu 26.04 / aarch64 |
 | Windows x86_64 — best-effort | `make ci` green natively under MSYS2 + mingw-w64 on one box, carrying 49 enumerated skips; plus six wine lanes including a trap-mode UBSan sweep |
 | macOS x86_64 — best-effort | cross-compiled; **never executed on the platform** |
 | Windows arm64 — best-effort | executed by `make platform-check`; a mingw target |

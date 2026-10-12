@@ -1,12 +1,10 @@
 # Functions and closures
 
-> **Memory:** A closure captures its environment by value (deep copy) and re-homes it
-> into the caller's arena on return — the same cross-arena move as any other value.
-> Function values may therefore outlive the scope that created them.
+> **Memory:** a closure keeps its own copy of what it captures, so it still works after the original is gone.
 
 A function in Tycho can be a first-class value — bound, passed, stored, returned, and called
 indirectly. A closure captures by value, like every other value in the language, which is what
-lets closures escape with no lifetime annotations. And any function can be called in method
+lets a returned closure work with no extra annotations. And any function can be called in method
 position with `x.f(a)`, without classes.
 
 ## Parameter passing modes
@@ -24,20 +22,19 @@ A parameter is passed in one of three modes ([spec §15.2](../spec/11-functions.
   `sink` parameter the caller MUST NOT use it again; that is a compile error, not a silent
   copy. A fresh literal or a call's result is adopted with no copy.
 
-`sink` is stricter than it first reads, and the shape most people try does not work: a sink
-argument must be the variable's **only** mention in the function, and no named variable can be
-adopted inside a loop. So a consuming builder is written point-free —
-`render(join(of(collect()), add(empty(), tag)))` — rather than as `d = add(d, x)` in a loop.
-`tools/tycho-tmpl/` is a worked example, and the reasoning is in
-[spec §15.2](../spec/11-functions.md#152-parameter-passing-modes).
+A sink argument must be the variable's **only** mention in the function, and no named variable can be
+adopted inside a loop. So a consuming builder is written as nested calls —
+`render(join(of(collect()), add(empty(), tag)))` — rather than as `d = add(d, x)` in a loop
+([spec §15.2](../spec/11-functions.md#152-parameter-passing-modes)).
 
 `sink` and `inout` are mutually exclusive, and neither may combine with a variadic parameter.
 
 ## Variadic parameters
 
-A final parameter written `xs: ...T` is **variadic**: inside the body `xs` is a `[T]`, and a
-call packs its trailing arguments into that array. It is sugar over an array — the packed
-`[T]` is a value, deep-copied at the boundary like any array, so it needs no new machinery.
+A final parameter written `xs: ...T` is **variadic**: it takes any number of trailing
+arguments. Inside the body `xs` is a `[T]`, and a call packs its trailing arguments into that
+array. It is shorthand for an array parameter — the packed `[T]` is a value, copied at the
+boundary like any array.
 
 ```tycho
 fn sum(xs: ...int) -> int:
@@ -84,7 +81,7 @@ fn main():
 ```
 
 A function value is either a **reference** to a named function — it captures nothing, so it is
-just a code pointer, zero-cost and immortal — or a **closure** (below). This is what gives you
+just a code pointer that costs nothing extra and never expires — or a **closure** (below). This is what gives you
 `map`/`filter`/`reduce`-style helpers over concrete function arguments without generics. Two
 things cannot become values: builtins (`len`, `push`, …) and functions with `inout` parameters.
 Everything else is first-class — storable in a struct field, array, map value, or tuple.
@@ -105,9 +102,9 @@ fn main():
     print(str(apply(addn, 5)))           # 15
 ```
 
-Closures **capture by value**: the captured variable is deep-copied into the closure when it is
-created, so the closure is independent of any later change to the original. This is what keeps
-the value-semantic model intact — a closure is a plain value, with no shared references.
+Closures **capture by value**: the captured variable is copied into the closure when it is
+created, so the closure is independent of any later change to the original. A closure is a
+plain value, with no shared references.
 
 ```tycho
 a := [10, 20]
@@ -127,10 +124,8 @@ fn main():
     print(str(add5(100)))                # 105
 ```
 
-This stays sound with **no lifetime annotations**: on return, the closure's captured
-environment is deep-copied (re-homed) into the caller's arena, exactly like every other heap
-value that escapes. The closure carries its own env-copy routine, so the move is automatic.
-Function values are full members of the data model — a closure can live in a container and be
+This needs **no lifetime annotations**: a returned closure carries its captured values with
+it, like any other returned value. Function values are full members of the data model — a closure can live in a container and be
 called once stored, and a returned closure can be applied inline:
 
 ```tycho
@@ -139,16 +134,15 @@ print(str(ops[1](5)))                     # 105
 print(str(make_adder(7)(3)))              # 10  (apply a returned closure inline)
 ```
 
-When a container of closures escapes its scope, each closure's captured environment re-homes
-along with it — the same deep copy as any heap value. The common higher-order patterns
-(`map`/`filter`/`reduce`, predicates, comparators, factory functions, dispatch tables) are all
-covered; see [`corelib/iter`](../../corelib/iter/iter.ty).
+When a container of closures outlives its scope, each closure's captured values travel with
+it. The common higher-order patterns (`map`/`filter`/`reduce`, predicates, comparators,
+factory functions, dispatch tables) are all covered.
 
 ## Methods (UFCS)
 
 `x.foo(a)` is sugar for `foo(x, a)` — a "method" is just a free function whose first parameter
-is the receiver. There are no classes, no inheritance, and no `self`: dispatch is static (on
-the receiver's compile-time type), the receiver is passed by value like any argument, and any
+is the receiver (UFCS, uniform function call syntax). There are no classes, no inheritance,
+and no `self`: calls resolve on the receiver's compile-time type, the receiver is passed by value like any argument, and any
 type can be a receiver — a struct, an `int`, anything. Calls chain, including on call results:
 
 ```tycho
@@ -186,12 +180,18 @@ _k := xs.len()           # == len(xs)
 _f := n.to_float()       # == to_float(n)
 ```
 
-`recv.name(args)` on a built-in lowers to `name(recv, args)` and is checked by the exact same
+`recv.name(args)` on a built-in rewrites to `name(recv, args)` and is checked by the exact same
 argument rules as the plain call — a wrong receiver type is rejected, not silently coerced. The
 receiver-first built-ins include `split`, `find`, `len`, `push`, `pop`, `reserve`, `keys`, `str`,
 `substr`, `chr`, the `to_*` conversions, `is_null`, `sqrt`/`pow`/`floor`/`fabs`, and the `map_*`
-forms. Constructors (`Some`/`Ok`/`Err`/`None`) and niladic built-ins (`args`, `now`, `ncpu`, …)
+forms. Constructors (`Some`/`Ok`/`Err`/`None`) and built-ins taking no arguments (`args`, `now`, `ncpu`, …)
 have no receiver and stay plain calls.
 
 One disambiguation rule: if the receiver's struct has a *fn-typed field* with the same name as
 a free function, the field wins — `h.cb(5)` calls the stored function value, not a free `cb`.
+
+---
+
+How this is implemented — capture copies, how escaping closures carry their environment,
+and why `sink` adoption is restricted — is in [design-functions](../internals/design-functions.md),
+for maintainers.

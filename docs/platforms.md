@@ -19,20 +19,15 @@ miscompile stops.
 | clang 14 | Ubuntu 22.04 | **not supported** — builds the compiler, then miscompiles what it emits: eight fixtures come back with empty strings where a string literal was expected |
 | clang 15+ | the floor this repo states | supported |
 | clang 19 | whole fixture corpus, against gcc | agrees on every fixture |
-| clang 22.1.8 | 2026-09-11, whole corpus | builds `tychoc`, bootstraps `tychoc1` through both stages, corpus **1039 / 0** — each fixture built twice, native and under `-fsanitize=address,undefined`, byte-identical output required between them |
+| clang 22.1.8 | whole corpus | builds `tychoc`, bootstraps `tychoc1` through both stages, corpus **1039 / 0** — each fixture built twice, native and under `-fsanitize=address,undefined`, byte-identical output required between them |
 | gcc (C11) | the development default | supported |
-
-Until the 2026-09-11 run, the newest clang anyone had measured was three major
-versions old, so "clang 15 or newer" rested on an untested assumption at the top
-of its range. It no longer does.
 
 MSVC is not a supported C target and is not planned. Native Windows means MSYS2
 + mingw-w64.
 
 ## macOS / Apple Silicon
 
-Gated since 2026-09-19: `make ci` is green on `darwin-arm64`, 267–390s across
-repeated runs — the spread is FRICTION-91. Setup is `xcode-select --install`.
+`make ci` is green on `darwin-arm64`. Setup is `xcode-select --install`.
 
 It carries **12 skips over 7 causes**, each printing its reason: gdb,
 `-Wl,--wrap`, the glibc symbol floor, `ilp32`, `resource.prlimit`, an x86-64
@@ -48,7 +43,7 @@ must be caught there.
 **x86-64** is the development host and the reference platform: the full fixture
 suite under ASan/UBSan/LeakSanitizer, plus every gate lane.
 
-**arm64** is gated since 2026-09-19 — `make test` is 1065/1065 on Ubuntu 26.04 /
+**arm64** is gated — `make test` is 1065/1065 on Ubuntu 26.04 /
 aarch64, run in a VM on the Apple Silicon box at native speed. No Graviton
 artifact is built yet.
 
@@ -98,7 +93,7 @@ Read that green with its scope. It is **one box, one toolchain**, and it carries
   test and the HTTP server's six shutdown cases — because MSYS2's `kill`
   terminates a native Windows program instead of signalling it
 
-**Green there means nothing reddened, not that everything ran.**
+**Green there means every runnable lane passed; 49 lanes skip on this host.**
 
 ### One measured behavioural difference
 
@@ -110,8 +105,7 @@ a bug awaiting a fix; [SECURITY.md](../SECURITY.md) carries the measurement.
 
 ### The sanitizer hole, and what closed most of it
 
-For a long time the Windows-only code paths were the newest code in the tree and
-the only code with no memory-safety checking at all. Installing MSYS2's
+The Windows-only code paths long had no memory-safety checking at all. Installing MSYS2's
 **clang64** toolchain closes most of that — 60 corpus fixtures under ASan+UBSan
 and the 13-program concurrency suite under UBSan all come back clean — but ASan
 itself does not work on threaded programs with that toolchain, so the channel and

@@ -1,15 +1,15 @@
 # The Tycho thesis: value semantics makes implicit arenas work
 
-This is the core idea behind Tycho — the *why*. The
+This document is the core idea behind Tycho — the *why*. The
 [language reference](reference/index.md) describes *what* the language does;
-the [aggregates design note](reference/arrays-slices.md) pushes this argument harder. Here
-I make the case for it, backed by running, measured code.
+the [aggregates design note](reference/arrays-slices.md) pushes this argument harder.
+What follows is the case for it, backed by running, measured code.
 
 Tycho is a small, experimental, ahead-of-time language: Python-looking syntax,
 value semantics, no garbage collector, no `malloc`/`free`, no
-lifetime annotations, no borrow checker. You write code as if memory were
-managed for you, and it is. I'm not claiming "arenas are good" — everyone knows
-that. The claim is sharper:
+lifetime annotations, no borrow checker. Programs are written as if memory were
+managed, and it is. The claim is not "arenas are good" — that is well known.
+The claim is sharper:
 
 > **Value semantics is the missing ingredient that lets hierarchical arena
 > allocation be fully *implicit* — inferred from lexical scope and signatures
@@ -18,6 +18,11 @@ that. The claim is sharper:
 
 This is a proof-of-concept exploration of that claim, not a production system.
 It's data-oriented: built for a domain (see §6) and deliberately not beyond it.
+
+Measurement method: cross-language *ratios* are the claim, not absolute times,
+and every fixture is checked under sanitizers against its golden output. See
+[performance.md](performance.md) and [controls.md](controls.md) for the method;
+it is not repeated per figure below.
 
 ## 1. The idea
 
@@ -97,18 +102,12 @@ analysis — which is why such languages reach for explicit arenas, lifetimes, o
 GC. Removing pointers demotes it to a *performance* knob the transpiler can set
 freely. Every optimization below leans on exactly that asymmetry.
 
-The verification standard for this repo follows from it: every codegen change is
-checked under `cc -fsanitize=address,undefined`, asserting (a) exit 0, (b) clean
-sanitizers, and (c) ASan output byte-identical to native `-O2` output. The full
-`tests/` + `examples/` suite holds to this.
-
 ## 4. Where the abstraction would leak — two optimizations that seal it, and one shape that stays visible
 
 Value semantics buys safety with copies. **Three** patterns make the copies
 bite. Two of them the compiler seals *without making the model visible* — same
 source, same semantics, same bounded memory, no copy; each is the asymmetry in
-§3 applied locally. The third (§4c) it does not seal, and on the evidence below
-it cannot: that one is closed by choosing a different representation, which
+§3 applied locally. The third (§4c) it does not seal: that one is closed by choosing a different representation, which
 means the programmer has to see the copy. It is the largest honest cost in this
 document, so it is written as a shape of its own here and carried into §5 as a
 wall — not left as a footnote to §4b.
@@ -126,7 +125,7 @@ allocating in the parent is always safe; the copy is skipped only when the
 value provably already lives there.
 
 *Measured* (`fn build(n)->[int]` returned 20000×, against the compiler just
-before this optimization): **0.91s → 0.52s (~1.75×)**, output byte-identical.
+before this optimization): **0.91s → 0.52s (~1.75×)**.
 
 ### 4b. Accumulation retention → in-place append
 
@@ -158,151 +157,27 @@ guarantee.
 
 ### 4c. Rebuild-per-operation on a long-lived value — the shape the compiler does not seal
 
-4a and 4b are the good news, and they share a precondition: the compiler can
-*recognize a shape*. A value returned by name, an accumulator on the left of its
-own `+`. Where no shape is recognizable, nothing is sealed, and what is left is
-the plain cost of the value model: **rebuilding a value copies all of it.** Every
-long-lived mutable structure that is *rebuilt* rather than *mutated* pays that
-copy on every single operation, however small the change.
+Where 4a and 4b have a recognizable shape, some programs have none: a
+long-lived mutable value that is *rebuilt* rather than *mutated* pays a full
+copy of the whole value on every operation. The worked case is `tools/tycho-ed/`,
+whose line buffer rebuilds a string per keystroke: per-edit cost drifts ~7×
+over a million edits while four controls (5–35 ns/step, flat) rule out the
+arena, concatenation, and `inout` as the cause. Rebuilding the line as a gap
+buffer — one byte written into a hole per keystroke instead of one copy per
+keystroke — flattens the drift to ~100% with the millionth keystroke ~10×
+cheaper, while peak RSS stays at 95.7 MB in both modes (the resident set is the
+undo journal doing its job, not churn). The full journal with all controls is in
+[internals/editor-churn-2026-08-12.md](internals/editor-churn-2026-08-12.md);
+the representation idiom is in
+[internals/value-semantics-limits.md](internals/value-semantics-limits.md).
 
-The bytes are usually not lost — the runtime recycles an overwritten
-`[string]` element back to its arena (`runtime/tycho_rt.c:2281@MM-9`), so
-this is not primarily a retention story. What it costs is *work*, per operation,
-scaling with the size of the whole value rather than the size of the edit.
-
-`tools/tycho-ed/` is a worked case, measured in both directions.
-
-#### The shape: replacement, which self-append does not cover
-
-Self-append is one way a loop abandons its accumulator. There is another, and a
-text editor is the everyday case of it. Its line buffer does
-
-```
-b.lines[ln] = s[0:c] + t + s[c:len(s)]
-```
-
-on every keystroke. That is not `acc = acc + e` — the old line is not a prefix
-of the new one, it is *replaced* — so the self-append shape does not match and
-nothing grows in place. Each edit allocates a whole new line and abandons the
-previous copy inside a scope that never ends: an editing session is one arena
-that lives as long as the program.
-
-*Measured* on a 16-core box, 2026-08-12, `tychoc tools/tycho-ed/main.ty` then
-`--stress=N` (see `tools/tycho-ed/main.ty@stress`; N edits in ten equal
-buckets, one character each with Enter every 60 so the *line* stays bounded
-while the *document* grows):
-
-| N edits | first bucket | last bucket | last/first | document | peak RSS |
-|---|---|---|---|---|---|
-| 10 000 | 133 ns/edit | 119 ns/edit | 89% | 15 KB | 5.8 MB |
-| 100 000 | 133 ns/edit | 298 ns/edit | 224% | 147 KB | 11.8 MB |
-| 1 000 000 | 214 ns/edit | 1413 ns/edit | 660% | 1.46 MB | 95.7 MB |
-
-Flat through 10 000 edits, already drifting at 100 000, and about 7× slower per
-edit by a million — with 65× more memory resident than the document it is
-holding.
-
-**It is not the arena's allocation cost, and that is what makes the case worth
-recording.** Four controls, each 1 000 000 steps in the same ten-bucket shape:
-pushing a two-field struct onto an array, bounded string concatenation (reset
-every 60 steps, so it measures churn and not quadratic growth), pushing into an
-array field of an `inout` struct, and pushing an enum variant carrying a string.
-All four land between 5 and 35 ns/step and none degrades meaningfully across the
-range — the worst, the enum carrying a string, goes 17 → 35 ns and is still
-*forty times* under what the editor costs at the same point. No single
-ingredient of an edit is slow. What the editor adds is **volume**: a million
-abandoned line copies that nothing reclaims.
-
-The mitigation is the same one 4b already names, in the shape this workload
-needs: **mutate in place instead of rebuilding**. For an editor that means a gap
-buffer — a line held as text-before-cursor, a gap, and text-after-cursor, where
-inserting a character writes one byte into the gap and allocates nothing.
-
-#### The gap buffer, built and measured
-
-`tools/tycho-ed/` now has both. `--backend=gap` keeps the line being edited in a
-mutable `[int]` with a hole in it (`bytes` is immutable, so it cannot be the
-store); a keystroke writes bytes into the hole and allocates nothing, and the
-line is rebuilt as a string once per *focus change* — an Enter, an arrow key —
-instead of once per keystroke. The journal, the API and every other operation
-are the same code in both modes, and `make ed-check` leg [6] re-runs the demo
-transcript and the six-edit undo/redo roundtrip under the gap backend and
-requires them **byte-identical** to the string backend, so this is a change of
-representation and of nothing else.
-
-*Measured* the same day on the same box, three runs of every cell — last bucket
-in ns/edit, and `last/first` as the drift:
-
-| N edits | string, last | gap, last | string last/first | gap last/first |
-|---|---|---|---|---|
-| 10 000 | 145 / 121 / 124 | 114 / 177 / 129 | 96 / 50 / 89 % | 85 / 119 / 96 % |
-| 100 000 | 281 / 267 / 279 | 119 / 120 / 119 | 181 / 161 / 187 % | 69 / 91 / 67 % |
-| 1 000 000 | 1490 / 1443 / 1947 | 141 / 155 / 147 | 764 / 747 / 959 % | **97 / 113 / 103 %** |
-
-**The curve flattens completely.** At a million edits the string backend's last
-bucket costs about 8× its first; the gap backend's costs what its first did, and
-the millionth keystroke is ~10× cheaper in absolute terms. The mitigation §4b
-names is the right one, and the diagnosis it rested on — abandoned line copies,
-not arena allocation cost — is confirmed by the fix working.
-
-**Peak RSS did not move at all**, and that is the part worth keeping. 95.7 MB
-for the string backend at a million edits, 95.7 MB for the gap backend, with a
-million fewer abandoned line copies between them. So the resident set was never
-the churn. A fifth control settles where it does come from: a million pushes of
-the editor's exact journal entry — the `Op` enum plus a `Cursor`, with no buffer
-and no line behind it — reaches **94.0 MB on its own**, at 42–56 ns/step. The
-memory is the **undo journal**, one retained entry per keystroke, which is the
-feature doing its job rather than a leak; and because it is flat in time, it
-never contributed to the drift. Removing the churn was always going to move one
-number and not the other.
-
-The correction matters more than the confirmation. The paragraph above this one
-used to read "a resident set that grows with the session rather than with the
-document" as if it were the same phenomenon as the slowdown. It is not: one is
-churn the arena cannot reclaim and a gap buffer removes, the other is live data
-the program is deliberately holding. Two costs that rose together are not one
-cost, and only building the fix separated them.
-
-Written down here rather than filed as a defect, because it is not one: it is a
-measured instance of a limit this project already concedes. The memory-model
-guide says the same thing in general terms — allocation-churn workloads are
-where the arena is at its weakest, and the honest loss
-([`docs/memory-model.md:109-111`](memory-model.md)). What the
-controls add is the reason to believe the diagnosis: without them, "1 M edits
-got 7× slower" is equally well explained by the arena, by string
-concatenation, or by `inout`, and the fix would be aimed at the wrong one.
-
-#### What it costs the thesis
-
-This is the one place in this document where the abstraction does not hold, and
-the honest statement of it is narrow but real — narrower, in fact, than the
-memory framing this section reached for first. The retained bytes turned out to
-be the undo journal doing its job, and the overwritten lines are recycled. What
-the model actually charged here was a **full copy of the line on every
-keystroke**, and it charged it because the source said to rebuild the line. The
-compiler is not wrong: it has no shape to recognize, and under §3 its only
-freedom is one it may take safely. And the fix works completely — the gap buffer
-flattens the curve to ~100% drift at a million edits.
-
-But the fix was a **representation change made by the programmer**, not an
-optimization applied by the compiler. For this class of program — a long-lived
-mutable structure edited in place over a session — the model asks you to know
-the arena is there and to choose a shape that mutates rather than rebuilds. That
-is a smaller ask than `malloc`/`free`, it is the same ask a data-oriented C
-programmer answers anyway, and it is not zero. "Zero memory cognition" (§6) is
-earned for build-and-return programs and is *not* earned for this one, and the
-two should not be claimed in the same breath.
-
-The boundary is crisp enough to state as a rule of thumb: **if a mutable value
-outlives every scope that would reclaim it, rebuilding it per operation is the
-expensive shape, and mutating it in place is the supported one.** §5 carries
-this as a wall; [the limits note](internals/value-semantics-limits.md) carries
-the representations that answer it.
+The boundary as a rule of thumb: **if a mutable value outlives every scope
+that would reclaim it, rebuilding it per operation is the expensive shape, and
+mutating it in place is the supported one.** §5 carries this as a wall.
 
 ## 5. The walls — what's genuinely hard, honestly mapped
 
-A model is defined as much by what it *can't* do, so I want to be honest about
-the limits. **Four** patterns threaten the model, and they are not equally hard.
+A model is defined as much by what it *can't* do. **Four** patterns threaten the model, and they are not equally hard.
 Two the compiler seals outright. One the compiler cannot seal but a
 representation can, at the cost of the programmer seeing the arena. One is not a
 limit to be lifted at all — it is the thesis.
@@ -320,13 +195,10 @@ whole value, every time. 4a and 4b do not fire — there is no shape to
 recognize — and the arena recycling the old bytes does not refund the copy. It
 is *reachable*: mutate in place instead of rebuilding, and the measured curve
 flattens completely (§4c). But reaching it is a decision the programmer makes,
-which makes this the one place the model is not invisible. Worth stating plainly
-rather than burying: this is the honest price of the thesis, and it is charged
-per-program, not once.
+which makes this the one place the model is not invisible.
 
 **Shared mutable state** is the genuinely hard one — sometimes described as
-"non-tree data: graphs, cycles, caches." Poking at it empirically dissolves most
-of it:
+"non-tree data: graphs, cycles, caches." Most of it dissolves on inspection:
 
 - **Cyclic and graph-shaped data is *not* a wall.** A directed graph *with a
   cycle* is traversed correctly today using **indices instead of references** —
@@ -346,8 +218,7 @@ of it:
 - The real, narrow wall is **shared mutable state threaded through function
   calls** — canonically a memoization table that recursive calls must all
   write to. The thesis-preserving answer is `inout`: an exclusive,
-  copy-in/copy-out mutable borrow (the Swift/Hylo model — *not* a stored
-  reference). `inout` does not break value semantics: it is equivalent to
+  copy-in/copy-out mutable borrow. `inout` does not break value semantics: it is equivalent to
   `x = f(x)`, made safe by an exclusivity rule (the same variable cannot be
   passed to two `inout` parameters of one call). Heap `inout` — `[int]`,
   `[string]`, and heap-bearing structs, including `push`/growth and
@@ -359,7 +230,7 @@ of it:
 
   *Measured*: the naive exponential `fib(40)` computes 102334155 in **0.60s**;
   the memoized version returns the same answer in **under a millisecond** — O(n)
-  vs O(2ⁿ). That collapse is proof the array is truly shared, not copied per call.
+  vs O(2ⁿ).
 
 **This boundary is where the safety comes from.** What stays genuinely
 impossible is *pointer-identity aliasing of two named variables in one scope* —
@@ -371,17 +242,10 @@ deliberately doesn't provide it (it's call-scoped, not storable). That
 forbiddance is *what value semantics is*. Removing it wouldn't extend Tycho; it
 would make it a different language.
 
-**The dispatch case is worth naming on its own, because it is the one people ask
-for.** A trait object — Go's `interface`, Java's, Rust's `dyn Trait` — is *a
-pointer to someone else's value plus a vtable*. Both halves are the thing this
-model does not have: the pointer is a reference into storage the holder does not
-own, and storing it in a field or a list is precisely the escape the syntax is
-supposed to make visible. So a heterogeneous container of implementors, or an
-interface value held in a struct, is not an unimplemented feature here. It is
-the same wall as the observer pattern, wearing different clothes, and no
-constraint system added on top would change that — a `dyn` needs the reference,
-not the constraint.
-
+A trait object — Go's `interface`, Java's, Rust's `dyn Trait` — is *a
+pointer to someone else's value plus a vtable*, which is exactly the aliasing
+value semantics forbids, so a heterogeneous container of implementors or an
+interface value held in a struct is the same wall, not a missing feature.
 Static polymorphism is unaffected and already works: a generic body is
 type-checked after substitution, so a generic can call an ordinary function on
 `$T` and monomorphize per instantiation, with no vtable and no indirection. What
@@ -390,7 +254,7 @@ everything else in this section is.
 
 ## 6. Where that leaves the idea
 
-The honest verdict, backed by measurement rather than intuition:
+The verdict, backed by measurement rather than intuition:
 
 - For **tree-shaped, scope-shaped, build-and-return, accumulate** programs —
   compilers and compiler passes, request handlers, batch transforms, CLI
@@ -412,8 +276,8 @@ The honest verdict, backed by measurement rather than intuition:
   graphs, reference-cyclic structures) it is a poor fit, and no optimization
   changes that — it is the thesis's defining boundary, not a missing feature.
 
-So: data-oriented, not general-purpose, and not trying to be. Within its domain I think the
-wager holds — *value semantics is precisely the constraint that lets the arenas
+So: data-oriented, not general-purpose, and not trying to be. Within its domain
+the wager holds — *value semantics is precisely the constraint that lets the arenas
 disappear* — and the domain is large and real.
 
 ## 7. Reproducing the numbers
@@ -428,11 +292,9 @@ make                                    # build ./tychoc
 #  earlier commit against a regenerated embed header -- is scripted in bench/*/RESULTS.md)
 ```
 
-Peak RSS was read from `/proc/<pid>/status` `VmHWM`; the optimized append
-ceiling was confirmed with an `ulimit -v` ladder (fits under 4 MB at
-N=40 000, under 8 MB at N=400 000 — doesn't scale with N). Every example and
-feature program is checked under `cc -fsanitize=address,undefined` with output
-required to match native `-O2`.
+Peak-RSS and sanitizer method are as stated in [performance.md](performance.md)
+and [controls.md](controls.md): ratios across languages are the claim, and every
+example and feature program is checked against its golden under sanitizers.
 
 Three further things back the thesis up, written up separately.
 

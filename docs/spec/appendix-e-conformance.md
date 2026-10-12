@@ -1,15 +1,13 @@
 # Appendix E — Conformance test map
 
-This appendix maps every normative clause of the specification to at least one
-test that exercises it, so that "conforming" is a checkable claim rather than a
-prose assertion. It is a **living artifact**: the matrix in E.2 is populated and
-every cited fixture is verified to exist; clauses with no dedicated fixture are
-flagged in E.2.1.
+This appendix maps each normative clause of the specification to the fixture(s)
+that exercise it. Every cited fixture exists; clauses with no dedicated fixture
+are flagged in E.2.1.
 
 ## E.1 The conformance oracle
 
 Conformance is defined against **this specification**
-([§1.3](00-conventions.md#13-conformance)), and *checked* against the fixture
+([§1.3](00-conventions.md#13-conformance)), and checked against the fixture
 corpus below: across the conformance suite an implementation MUST accept every
 program the suite records as accepted, reject every program it records as
 must-fail, and reproduce each behavioral fixture's recorded output. The suite is
@@ -51,7 +49,7 @@ drawn from:
 | §5.2.3 | `char` is not `int` | `tests/char_ops`, `reject/char_int_eq`, `reject/char_int_mul`, `reject/char_int_ord` |
 | §5.2.4 | `to_char(n)`: `int -> char`, aborting outside `0..255` | `tests/char_to_char`, `tests/abort/chr_oob` |
 | §16.8 | the `char` row of the element-wise table (`+ -` only), reached by inference since `char` has no keyword | `tests/char_elem_ops`, `reject/char_elem_mul`, `reject/char_elem_div`, `reject/char_elem_mod` |
-| §5.2.6 | `bytes` operators: `b[i]` yields `int` (not a 1-length `bytes`) and is not a place; `b[i:j]` yields `bytes` and clamps; `a + b` and `b + 'c'` concatenate; no implicit `string` mixing; every one byte-safe across an interior `0x00` | `corelib/test/io` (`byte_index`, `byte_slice`, `byte_cat`, `byte_rebuild`), the §5.2.6 example (`scripts/spec_check.sh`), `server/main.ty` (`log_safe`) — no `tests/` fixture, see the note below |
+| §5.2.6 | `bytes` operators: `b[i]` yields `int` (not a 1-length `bytes`) and is not a place; `b[i:j]` yields `bytes` and clamps; `a + b` and `b + 'c'` concatenate; no implicit `string` mixing; every one byte-safe across an interior `0x00` | `corelib/test/io` (`byte_index`, `byte_slice`, `byte_cat`, `byte_rebuild`), the §5.2.6 example (`scripts/spec_check.sh`), `server/main.ty` (`log_safe`); no `tests/` fixture |
 | §5.2.7 | fixed-width `u32`/`u64`/`f32` | `tests/sized_ints`, `tests/sized_family`, `corelib/test/sha256` |
 | §5.3.2 | fixed-size arrays `[N]T` | `tests/fixed_array`, `reject/fixed_array_bad_length`, `reject/fixed_array_zero_size`, `reject/fixed_array_nonconst_size` |
 | §5.3.5 | maps; composite keys | `tests/maps`, `tests/map_literal_composite_key`, `tests/mapstructkey`, `tests/vector_map_key`, `reject/map_as_key`, `reject/map_key_enum_leaf`, `reject/map_key_bytes_top` |
@@ -131,10 +129,10 @@ drawn from:
 | Clause | Requirement (abbrev.) | Fixture(s) |
 |---|---|---|
 | §14.4 | the four loop shapes: condition, infinite, three-clause (ascending and descending), foreach | `tests/foreach`, `tests/while_loop`, `tests/for3`, `tests/for_bare`, `tests/range_negative_step` |
-| §14.4 | all three clauses required; `range()` removed; `0..<N` refused outside `parallel for` | `reject/for3_empty_clause`, `tests/diag/range_removed`, `reject/dotlt_sequential`, `tests/diag/dotlt_sequential` — diagnostics are byte-for-byte, see the note below |
+| §14.4 | all three clauses required; `range()` removed; `0..<N` refused outside `parallel for` | `reject/for3_empty_clause`, `tests/diag/range_removed`, `reject/dotlt_sequential`, `tests/diag/dotlt_sequential` — diagnostic text is pinned byte-for-byte by the `tests/diag/` fixtures |
 | §14.4 | `break` / `continue`; `continue` runs the three-clause post clause | `tests/break_continue`, `tests/loop_return`, `tests/for3` |
 | §19.4 | `match` statement; exhaustive; wildcard-last | `tests/enums`, `tests/matchwild`, `reject/match_non_exhaustive`, `reject/match_dup_arm`, `reject/match_wildcard_not_last` |
-| §14.3.1 | nested patterns on an `Ok`/`Err`/`Some` payload; unqualified variant; refined-before-unrefined ordering; exhaustive by refined coverage | `tests/nested_pattern`, `corelib/test/result` (`why`, `io_why`) — see the note below |
+| §14.3.1 | nested patterns on an `Ok`/`Err`/`Some` payload; unqualified variant; refined-before-unrefined ordering; exhaustive by refined coverage | `tests/nested_pattern`, `corelib/test/result` (`why`, `io_why`) |
 
 ### §15 Functions
 
@@ -155,7 +153,7 @@ drawn from:
 | §16.4 | growth `push`; in-place append; alias guard | `tests/push_fusion`, `tests/append_alias`, `reject/push_scalar` |
 | §16.6 | slices | `tests/slices`, `tests/string_slice`, `reject/slice_inout_alias` |
 | §16.7 | element-type restriction: `void` rejected everywhere; `bool` legal as a dynamic element, rejected in the inline fixed forms | `tests/bool_array`, `tests/cond_stmt_expr`, `reject/fixarr_elem_bool`, `reject/bounded_elem_bool` |
-| §16.8 | element-wise arithmetic; broadcast (order kept, literal adapts); fresh result; `[N]T` mismatch rejected, `[T]` mismatch aborts | `tests/array_arith`, `tests/array_bcast`, `tests/array_arith_fresh`, `tests/array_bcast_fresh`, `tests/abort/array_arith_len`, `reject/array_arith_fixlen`, `tests/diag/array_arith_fixlen`, `tests/diag/array_bcast_widen` — post-freeze, see the note below |
+| §16.8 | element-wise arithmetic; broadcast (order kept, literal adapts); fresh result; `[N]T` mismatch rejected, `[T]` mismatch aborts | `tests/array_arith`, `tests/array_bcast`, `tests/array_arith_fresh`, `tests/array_bcast_fresh`, `tests/abort/array_arith_len`, `reject/array_arith_fixlen`, `tests/diag/array_arith_fixlen`, `tests/diag/array_bcast_widen` |
 | §17.1 | struct construction & fields | `tests/named_fields`, `tests/recursive_structs` |
 | §17.3 | recursion only through a container | `tests/recursive_structs`, `tests/recursive_enum_array` |
 | §17.4 | tuples; index-assign/range rejected | `tests/tuples`, `tests/tuple_assign`, `reject/tuple_elem_index_assign`, `reject/tuple_index_range` |
@@ -201,8 +199,8 @@ drawn from:
 | §29.5 | `char_at` yields `char`; `s[i]` still yields `int`; OOB aborts | `tests/char_at`, `tests/abort/char_at_oob`, `reject/char_at_arg_index_type`, `reject/char_at_arg_recv_type` |
 | §29.6 | array builtins; `len` on scalar rejected | `tests/pop`, `tests/reservecomposite`, `reject/len_scalar` |
 | §29.12 | abnormal termination (`die`) | `tests/die` |
-| §29.12 | `exit(code)` terminates with an explicit status (`0` included) | `server/main.ty` (`--help`) — no `tests/` fixture, see the note below |
-| §29.12.1 | `die`/`exit` are diverging: legal as a value `if`/`match` tail; all-diverging rejected | `server/main.ty` (`srv := match net.listen(...)`) — no `tests/` fixture, see the note below |
+| §29.12 | `exit(code)` terminates with an explicit status (`0` included) | `server/main.ty` (`--help`); no `tests/` fixture |
+| §29.12.1 | `die`/`exit` are diverging: legal as a value `if`/`match` tail; all-diverging rejected | `server/main.ty` (`srv := match net.listen(...)`); no `tests/` fixture |
 | §30.1 | defined two's-complement wraparound | `tests/int_overflow` |
 | §30.2 | the abort set (div0, bounds, empty pop, …) | `tests/abort/div_zero`, `abort/div_overflow`, `abort/mod_zero`, `abort/index_oob`, `abort/chr_oob`, `abort/pop_empty`, `abort/reserve_range` |
 | §30.4 | defined string/map behavior (byte-safe, insertion order) | `tests/string_nul`, `tests/map_insorder`, `tests/maparraykey` |
@@ -217,4 +215,6 @@ The `deps`-tier corelib clauses (§31–33, the `http`/`crypto`/`compress`/`imag
 
 ## E.3 The `make spec-check` gate
 
-The gate exists (`scripts/spec_check.sh`, CI step 17) and grows in tiers:
+`make spec-check` (`scripts/spec_check.sh`) asserts that every fixture cited in
+E.2 exists, and builds and runs every runnable example in the spec against its
+shown output.

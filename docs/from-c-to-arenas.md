@@ -132,9 +132,9 @@ to trade:
   took, whether that was one string or ten thousand, which is why the cost does not scale
   with how many objects you made.
 
-## Step 5 — the honest cost
+## Step 5 — the cost
 
-Value semantics is not free, and pretending otherwise would be the dishonest part:
+Value semantics has real costs:
 
 - **Copies cost.** `b := a` on a big array copies it. The compiler elides copies it can prove
   are unobserved (a returned-and-discarded value is a move, not a copy; `acc = acc + x` in a
@@ -153,7 +153,6 @@ Value semantics is not free, and pretending otherwise would be the dishonest par
 ## What you get for it
 
 No garbage collector and its pauses. No manual `free` and its leaks and use-after-frees. No
-borrow checker and its annotations. Just lexical scope — the same braces you already write —
-deciding when memory is freed, with the compiler doing the placement. Whether that trade is
-worth it is exactly the question this experiment exists to answer; the
-[benchmarks in the thesis](thesis.md) are the evidence so far.
+borrow checker and its annotations. Just lexical scope — the same blocks you already write —
+deciding when memory is freed, with the compiler doing the placement. The
+[thesis](thesis.md) has the measurements so far.

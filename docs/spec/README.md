@@ -1,30 +1,15 @@
 # The Tycho language specification
 
-> **Status: ratified — Tycho 0.5 (ratified 2026-07-13 as "1.0"; renamed
-> 2026-08-09 with the project's demotion to 0.5, no technical content changed),
-> maintained against the current release (0.7.0) — where the two differ,
-> `CHANGELOG.md` records the change.**
-> The formal specification of the
-> Tycho language: the normative contract a conforming implementation must satisfy
-> ([the roadmap](../../ROADMAP.md)).
+> **Status: ratified — Tycho 0.5, maintained against the current release (0.8.6).
+> Where the two differ, `CHANGELOG.md` records the change.**
+> This document is the normative contract a conforming implementation must satisfy.
 >
-> **Every chapter (1–33) and appendix (A–H) is cross-checked against the reference
-> compiler `src/tychoc.c`**, one adversarial audit per chapter with each finding
-> re-verified against source. Internal links, `§`-labels, and section
-> cross-references are verified mechanically; every behavioral corner (float/`char`
-> semantics, evaluation order, `>>` sign behavior, `range` step 0, the concurrency
-> ordering guarantees, the FFI sized-int round-trip) is pinned by differential
-> probing against the implementation. The content is verified against the implementation,
-> not merely asserted.
->
-> The specification is kept honest by the `make spec-check` gate (CI step 17): it
-> regenerates the collected grammar ([Appendix A](appendix-a-grammar.md)) from the
-> defining chapters §3/§4 and diffs it, asserts every fixture the conformance
+> Internal links, `§`-labels, and section cross-references are verified mechanically.
+> The `make spec-check` gate regenerates the collected grammar ([Appendix A](appendix-a-grammar.md)) from
+> the defining chapters §3/§4, asserts every fixture the conformance
 > matrix ([Appendix E](appendix-e-conformance.md)) cites exists, and builds and
 > runs every runnable `tycho`/`output` example
-> ([§2.3](00-conventions.md#23-examples-and-code-fences)) on `tychoc`
-> against its shown output. New material
-> is gated automatically.
+> ([§2.3](00-conventions.md#23-examples-and-code-fences)) against its shown output.
 
 ## What this document is
 

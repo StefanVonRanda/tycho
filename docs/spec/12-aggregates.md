@@ -11,13 +11,6 @@ here. Where an operation reads or writes through part of an aggregate it
 produces a **place** (an lvalue); the general place, borrow, and `inout` rules
 are in [§11](07-memory-model.md#11-inout).
 
-> Provenance: array element restriction `src/tychoc.c:2602-2603`,`:2619-2620`;
-> `pop`-empty abort `:15189@pop from an empty array`,`:15189@pop from an empty array`; `reserve` `:7550-7577`,`:11248-11254`; tuple
-> arity `:2830@a tuple has at most 8 elements`,`:2835@a tuple type needs at least two elements`, index `:6236-6244`; destructuring `:4185-4199`,`:9255-9271`;
-> map read (pure `map_get`, no insert) `:6786-6801`; map place insert+zero
-> `:12300-12309`; `keys()` insertion order — the walk `:15351@m.elive[e]` over the append-only entries array `:15089@m->ecount++`; `delete` → `map_del`
-> `:4047-4071`,`:7578-7584`; subscript parse + rules `:4781-4833`, dispatch
-> `:4856-4864`; `or_return` `:6601-6618`.
 
 ---
 
@@ -68,10 +61,9 @@ element count as an `int`.
 **bounds-checked**: an implementation MUST abort with a diagnostic if
 `i < 0` or `i >= len(a)`, and MUST NOT read or write out-of-range storage. The
 check is normative and always active in a conforming implementation — it is not
-an optional hardening pass. (Rationale: every value lives in one arena block, so
-an unchecked out-of-range access would silently land on other live data rather
-than fault; the check is what makes the abort observable. Program-abort
-semantics are specified in §30.)
+an optional hardening pass. Program-abort semantics are specified in §30.
+
+Rationale: every value lives in one arena block, so an unchecked access would land on other live data rather than fault.
 
 Read as an rvalue, `a[i]` yields the element **by copy** for a composite element
 and by value for a scalar one. Used on the left of an assignment or as the spine
@@ -125,11 +117,11 @@ first argument.
 | `reserve(a, n)` | Grow backing capacity to at least `n`; `len` is unchanged. |
 
 `push` and `pop` require element type equality: `v` MUST have type `T` for a
-`[T]`. `pop(a)` on an **empty** array MUST abort (`src/tychoc.c:15189@pop`); it is not
+`[T]`. `pop(a)` on an **empty** array MUST abort; it is not
 silently zero-returning. `reserve(a, n)` is a capacity hint only — it copies the
 existing elements into a buffer of capacity `≥ n` and is a no-op when
 `n ≤ cap`; it never changes `len` and never inserts elements
-(`src/tychoc.c:14254-14259`).
+.
 
 An array **parameter** is a read-only borrow ([§11](07-memory-model.md#11-inout)):
 passed without a copy, but `push`, `pop`, `reserve`, or an index-write on it is a
@@ -149,11 +141,8 @@ from `[T]` on three points:
   fixed-size array, in which case it coerces (element count and element types
   checked).
 - **No growth or slicing.** `push`, `pop`, `reserve`, and slice expressions
-  (§16.6) are not meaningful on a `[N]T`; use a dynamic `[T]` when the length
-  varies. (In the reference compiler a fixed array is not caught by a dedicated
-  Tycho diagnostic here — it reaches the C backend, which emits no growth/slice
-  operation for it, so the misuse surfaces as a C-compiler error rather than a
-  clean language-level rejection.)
+  (§16.6) MUST be rejected on a `[N]T`; use a dynamic `[T]` when the length
+  varies.
 - **`len` is a compile-time constant.** `len(v)` for `v: [N]T` is the constant
   `N`, with no runtime length field. Indexing is bounds-checked against the
   static `N`; `==` compares element-wise.
@@ -222,21 +211,6 @@ The restriction applies only to the direct element of a bracket type; a `bool`
 may appear inside any array indirectly (e.g. a `struct` field of a `[Struct]`
 element).
 
-> Provenance: dynamic `[T]` admits `bool` because it tests `void` alone —
-> `src/tychoc.c:2913@elem`, and its diagnostic now states that as the whole rule
-> instead of an allow-list (`src/tychoc.c:2933@void`; the loops-cleanup plan). The fixed forms test both:
-> `src/tychoc.c:2459-2460` (`[$N]T`) and `src/tychoc.c:2481-2482` (`[N]T`);
-> `bounded[N]T` at `src/tychoc.c:2364-2365`. Pinned both ways by
-> `tests/bool_array.ty` (accepts, with a golden) and
-> `tests/reject/fixarr_elem_bool.ty` / `tests/reject/bounded_elem_bool.ty`.
-
-> Note: this section previously stated that `bool` MUST be rejected in **every**
-> bracket form, including `[bool]`. That was never implemented — `tests/bool_array.ty`
-> has exercised dynamic bool arrays since the drift hunt, and `tests/cond_stmt_expr.ty`
-> carries a `[bool]` field — so the sentence was a spec defect, corrected here.
-> The reference page `docs/reference/arrays-slices.md` gives only positive array
-> examples and does not state the restriction — an under-documentation gap, not a
-> contradiction. See also [§5.3.1](03-types.md#531-arrays-t).
 
 ### 16.8 Element-wise arithmetic
 
@@ -275,15 +249,9 @@ scalar arithmetic and gets none here. `& | ^ << >>` are **not** element-wise —
 they are not arithmetic — so an array operand reaches the bitwise and shift rules
 of §13.2 and is refused there in their existing wording, unchanged.
 
-The `char` row is the one this table cannot demonstrate by annotation: `char` has
-no type keyword ([§5.2.4](03-types.md#524-char)), so a `[char]` is only ever
-reached by **inference** — an array literal of `char_at` calls, or of character
-literals. Its conformance witnesses are written that way: `tests/char_elem_ops.ty`
-for `+` and `-`, and `tests/reject/char_elem_mul.ty`,
-`tests/reject/char_elem_div.ty`, `tests/reject/char_elem_mod.ty` for the three
-operators the row excludes. `%` leaves by a different gate from `*` and `/`
-(`src/tychoc.c:1571@TK_PERCENT` rather than the `char` arm at
-`:1575@et == T_CHAR`), which is why it has a fixture of its own.
+The `char` row is reached only by **inference**, since `char` has no type
+keyword ([§5.2.4](03-types.md#524-char)): an array literal of `char_at` calls
+or of character literals.
 
 **Both array kinds, and their two different mismatch rules.** For a `[N]T` the
 length is static, so both operands MUST have the same `N` and a mismatch is a
@@ -312,9 +280,9 @@ value-directional restriction of [§8.1](06-conversions.md): a *literal* adapts
 `[1.0, 2.0] * n` is a compile error exactly as `1.0 * n` is). After adaptation
 the scalar's type MUST **equal** the element type, which makes `['a', 'b'] + 1` a
 compile error even though the scalar `'a' + 1` is legal (§13.2's byte-domain
-rule). That narrowing is deliberate: allowing it only in the broadcast direction
-would make broadcast more permissive than the two-array rule above, which already
-refuses `[char] + [int]`.
+rule).
+
+Rationale: the broadcast form is never more permissive than the two-array form.
 
 **The result is a fresh array.** Value semantics (§9) holds: neither operand is
 aliased or mutated, mutating a source after `c := a * b` never changes `c`, and
@@ -327,21 +295,6 @@ by zero`, exit `1`), and `float`/`f32` division by zero stays IEEE (`inf`) — t
 
 Its fixtures are in `tests/` and `tests/abort/` (Appendix E.2.1).
 
-> Provenance: two-array arm `src/tychoc.c:7761-7797`, broadcast arm
-> `src/tychoc.c:7826-7853`; per-element-type operator set
-> `src/tychoc.c:1570@elem_arith_ok`; fixed-length mismatch
-> `src/tychoc.c:8405@on a fixed array requires the same static length`; mixed
-> kinds `src/tychoc.c:8397@cannot mix a fixed array and a growable array`;
-> `bounded`/`[$N]T` `src/tychoc.c:8448@IS_BOUNDED`; element-type mismatch
-> `src/tychoc.c:8390@arr_elem(lt) != arr_elem(rt)`; scalar must land at the
-> element type `src/tychoc.c:8459@requires the scalar to have the array's element type`,
-> its literal adaptation `src/tychoc.c:7837-7843`; the fresh spine
-> `src/tychoc.c:12272@arena_alloc`, the per-element emit shared with the scalar
-> case `src/tychoc.c:12095@gen_arith_op`, operands never reordered
-> `src/tychoc.c:12083@int la = is_array`; the runtime length check, emitted only
-> when both sides are arrays `src/tychoc.c:12127@tycho_ew_len`, and the abort
-> itself `runtime/tycho_rt.c:3304@arithmetic on arrays of different lengths`;
-> literal-zero divisor `src/tychoc.c:8347@division by zero`.
 
 ---
 
@@ -549,7 +502,7 @@ sized. This is a type-formation rule; it is stated normatively in
 
 A tuple `(T1, …, Tn)` is the anonymous product of
 [§5.3.3](03-types.md#533-tuples), with **2 to 8** elements (a 1-element or
-9-element tuple is a compile error, `src/tychoc.c:2835@least` (min) and `:2348@most` (max)). Tuples are first-class
+9-element tuple is a compile error,  (min) and  (max)). Tuples are first-class
 values, not merely a return convention:
 
 - **Construction.** A parenthesized list `(10, 20)`, or a bare `return a, b`,
@@ -558,7 +511,7 @@ values, not merely a return convention:
   several values as one tuple (§15).
 - **Positional access and places.** `t.0`, `t.1`, … read an element; `t.0 = v`
   writes one in place (a tuple element is a writable place). An index out of
-  `0 .. n-1` is a compile error (`src/tychoc.c:6316-6318`).
+  `0.. n-1` is a compile error.
 - **Equality.** Two tuples compare element-wise with `==`
   ([§5.5](03-types.md#55-equality-and-ordering)).
 
@@ -579,12 +532,12 @@ names. Two forms exist, distinguished by the binding operator:
 
 The right-hand side MUST be a tuple, and the number of targets MUST equal the
 tuple's arity; a mismatch is a compile error, as is a duplicate name in a `:=`
-destructuring list (`src/tychoc.c:8859-8882`). At most 8 targets are permitted.
+destructuring list. At most 8 targets are permitted.
 Each target receives its element deep-copied, preserving value semantics.
 
 #### Simultaneous assignment
 
-The parenthesised form `(t1, ..., tn) = e` differs from the bare one in two
+The parenthesised form `(t1,..., tn) = e` differs from the bare one in two
 ways. Its targets are **places** (§4.4) and not only names, so a field, an array
 element or a map value may stand on the left; and its evaluation order is
 specified: **every right-hand side, and every index expression appearing in a
@@ -596,23 +549,18 @@ not to the value.
 
 A target MUST NOT be repeated. With every right-hand side evaluated first the
 two writes have no order to tell them apart, so the statement would have no
-meaning to give. (Go and Odin both accept the repetition and let the last write
-win; Tycho does not.) Two targets are the same place when they are written the
+meaning to give. Two targets are the same place when they are written the
 same way down to a name, a field, a tuple index and a **literal** index: `a` and
 `a`, `p.x` and `p.x`, `xs[0]` and `xs[0]`. Targets that are not decidable this
 way are not compared: whether `xs[i]` and `xs[j]` denote one slot is not
 decidable when the program is compiled.
 
 A user `subscript` call is a place for the single-target form `p = e`, and it
-MUST NOT stand in this list. The restriction is a limit of the present
-implementations, not a property of the form.
+MUST NOT stand in this simultaneous-assignment list.
 
 The form is a statement of its own and MUST NOT appear as the init or post
-clause of a three-clause `for` (§13). It lowers to a prelude that binds every
-right-hand side ahead of the writes, and a `for` clause has nowhere to put one:
-the prelude lands outside the loop, where the post clause's bindings would be
-evaluated once instead of once per iteration, and where the init clause's are
-not in scope at all.
+clause of a three-clause `for` (§13): its bindings would evaluate once outside
+the loop instead of once per iteration, or outside the scope they belong to.
 
 ```tycho
 fn main():
@@ -645,7 +593,7 @@ nothing else, and a struct declaring fields named `x`, `y` or `r` is unaffected
 in every position.
 
 The two spellings MAY be mixed within one swizzle: `v.(x, g)` is lanes 0 and 1.
-`.r .g .b .a` are aliases and not a second kind of component, and a swizzle is
+`.r.g.b.a` are aliases and not a second kind of component, and a swizzle is
 defined below as the tuple of its components written out — `v.(x, g)` IS
 `(v.x, v.g)`, each half of which is legal on its own.
 
@@ -662,7 +610,7 @@ fn main():
 
 #### Swizzling
 
-`v.(c1, ..., cn)` names two to eight **components of one value** and is a
+`v.(c1,..., cn)` names two to eight **components of one value** and is a
 [tuple](#174-tuples) of them, in the order written. A component is a struct
 field name, or an integer **lane index** for an array, a `bounded` or a
 `vector[N]T` — each type's components are spelled the way that type is already
@@ -754,7 +702,7 @@ Writing to `m[k]`:
 - **inserts** the entry if `k` is absent, first initializing the slot to `V`'s
   zero (for a compound `V`, the zero-value is materialized before the write, so a
   field- or element-write lands on a valid zero-initialized value)
-  (`src/tychoc.c:14350-14354`).
+ .
 
 This makes the accumulator idioms one line each; the compiler proves the map is
 uniquely owned at the mutation and updates it in place, so a `+=` loop is O(n)
@@ -782,7 +730,7 @@ key it yields:
 - a **deep copy of the zero value** when `V` is composite.
 
 Either way, an absent-key read leaves the map unchanged
-(`src/tychoc.c:6448-6463`). When a non-zero default is wanted, use `m.get`
+. When a non-zero default is wanted, use `m.get`
 (§18.5).
 
 ### 18.4 Membership, `delete`, `len`
@@ -794,7 +742,7 @@ Either way, an absent-key read leaves the map unchanged
 | `len(m)` | entry count → `int` |
 
 `delete m[k]` is a contextual-keyword statement that lowers to a functional
-map-delete rebinding the map (`src/tychoc.c:4044-4060`,`:7576-7582`); it removes
+map-delete rebinding the map ; it removes
 at most one entry and never aborts on a missing key.
 
 ### 18.5 `m.get`
@@ -812,9 +760,7 @@ counts["ada"] = counts.get("ada", 0) + 1   # equivalent to counts["ada"] += 1
 ### 18.6 `keys(m)`
 
 `keys(m)` returns the map's live keys as an array `[K]` in **insertion order** —
-the order in which each key was first inserted (`src/tychoc.c:14384-14387`; the
-emitted `keys` walks the append-ordered entries array and keeps the live ones —
-order falls out of append order plus an `elive` flag). It is the way to
+the order in which each key was first inserted. It is the way to
 iterate a map; `k in m` only tests membership. For a newtype or fieldless-enum
 key type, `keys` returns the wrapped key values.
 
@@ -877,12 +823,12 @@ fn demo():
 
 The following rules are checked at compile time and MUST be enforced; each fails
 closed (the subscript is rejected, never silently mis-projected)
-(`src/tychoc.c:4633-4684`):
+:
 
 - **Yields a place.** The body MUST be a single `yield &<place>`, where
   `<place>` is a field/index spine; a non-place operand is rejected.
 - **Type match.** The yielded place's type MUST equal the declared `-> inout U`;
-  a mismatch is rejected at the call site (dispatch `:4422-4426`,`:4497-4502`).
+  a mismatch is rejected at the call site (dispatch ).
 - **Rooted in a parameter.** The yielded place MUST be rooted in one of the
   subscript's parameters — it projects *into* an argument, so it cannot dangle. A
   place rooted in a fresh local is rejected.
@@ -890,17 +836,15 @@ closed (the subscript is rejected, never silently mis-projected)
   double-evaluated when substituted.
 - **Concrete receiver.** The receiver (first) parameter's type MUST NOT mention a
   type parameter; `subscript at(p: Pool($T), …)` is rejected at the declaration
-  (`src/tychoc.c@parse_subscript`), whether or not it is ever called.
+ , whether or not it is ever called.
 
 A subscript is a named place-macro on a concrete type, not a type-family
-operation: the receiver selects it by exact type, so a `Pool($T)` receiver could
-never match the monomorphised `Pool(int)` a call site actually presents. Tycho
-follows Go and Odin here — neither has user-defined indexing at all; built-in
-types get built-in indexing and user containers get procedures — so the limit is
-deliberate rather than pending. Declaring the subscript on a concrete instance
-(`subscript at(p: Pool(int), i: int) -> inout int`) is the way out; a generic
-container that needs element access across all its instantiations exposes a
-generic **function** instead.
+operation: the receiver selects it by exact type. Declaring the subscript on a
+concrete instance (`subscript at(p: Pool(int), i: int) -> inout int`) is the
+supported form; a generic container that needs element access across all its
+instantiations exposes a generic **function** instead.
+
+Rationale: a `$T` receiver could never match the monomorphised type a call site presents.
 
 Value semantics is unchanged: a projection is a place into a value already owned
 or borrowed, and the usual mutability rules apply (writing through a projection
@@ -1091,16 +1035,16 @@ On a **`Result`**, `v := expr or_return`:
 - binds `v` to the payload when `expr` is `Ok(v)`; and
 - otherwise returns that `Err` from the **enclosing function**, which MUST itself
   return `Result(_, E)` with the **same** error type `E` — a differing `E` is a
-  compile error (`src/tychoc.c:6944@propagates`).
+  compile error.
 
 On an **`Option`**, `v := opt or_return` binds `v` on `Some(v)` and returns
-`None`; the enclosing function MUST return an `Option` (`src/tychoc.c:6944@or_return`).
+`None`; the enclosing function MUST return an `Option`.
 
 The short-circuited payload (`Err`'s error, or `None`) is promoted into the
 caller's storage, so it outlives the return
 ([§10](07-memory-model.md#10-object-lifetimes-and-storage)). `or_return` MUST NOT
 appear inside a `parallel for` body — a chunk has no early exit
-(`src/tychoc.c:8749@or_return`).
+.
 
 ```tycho
 fn parse_digit(s: string) -> Result(int, string):

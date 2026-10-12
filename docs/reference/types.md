@@ -1,8 +1,7 @@
 # Types
 
-> **Memory:** Newtypes are erased in lowering, and the arena-based deep copy respects
-> type identity. Bidirectional inference means type-driven allocation decisions are
-> never deferred.
+> **Memory:** Newtypes cost nothing at runtime, and every value — scalar or
+> aggregate — copies deeply on assignment.
 
 Tycho is statically typed, and every value has a type known at compile time. This page
 covers the scalar types, the `bytes` buffer, distinct `type` newtypes, and how
@@ -132,8 +131,8 @@ own string literals or a nested f-string — and must evaluate to a value `str` 
 
 `type Meters = float` declares a **distinct** type: same runtime representation as its
 underlying type (zero cost — a `Meters` *is* a `double` in the generated C), but
-type-incompatible with `float` and with every other newtype. This is Odin's
-`distinct` — Tycho has no *transparent* alias, so `type` always means distinct.
+type-incompatible with `float` and with every other newtype. There is no transparent
+alias: `type` always declares a distinct type.
 
 ```tycho
 type Meters = float
@@ -166,7 +165,7 @@ through the wrapper unchanged. A newtype over `string` or `int` is also a valid
 A local infers forward from its initializer — `x := e` gives `x` the type of `e`. In the
 other direction, every position with a known destination type — declarations, assignments,
 call arguments, `return`, stores, literal elements — *checks* the expression against it.
-This is Pierce–Turner local inference, and it lets the annotation-light forms work:
+This local inference lets the annotation-light forms work:
 
 ```tycho
 import "core:iter"
@@ -188,7 +187,7 @@ push(ys, 3)                  # ...until its first grounding use types it ([int])
 
 There are **no type variables and no unification**: every expression is typed at its own
 line, either synthesized from its parts or checked against a known destination. Errors
-stay local, and the memory model's type-driven decisions are never deferred. The cost is
+stay local because each line is typed on its own. The cost is
 that a value with *no* way to determine its type is rejected rather than guessed — a bare
 `x := None` or `x := []` with no grounding use is a compile error; annotate it. Function
 signatures are always explicit: they are the module's interface and the inference's seeds.

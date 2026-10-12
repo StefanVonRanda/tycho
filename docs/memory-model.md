@@ -6,9 +6,10 @@ scope's arena is released whole when it exits. There is no reference type and no
 garbage collector. Why it is designed this way is [thesis.md](thesis.md); what
 it looks like in code is [arrays-structs.md](reference/arrays-slices.md).
 
-The memory model is the central idea this language exists to demonstrate, and the cross-language benchmarks below are encouraging. The
+The memory model is the central idea this language exists to demonstrate. The
 stability contract is in the README's status banner; implementation details
-like arena sizes are deliberately not part of it.
+like arena sizes are deliberately not part of it. Cross-language figures are in
+[performance.md](performance.md).
 
 ## What the compiler emits
 
@@ -120,11 +121,9 @@ reference counts anywhere.
   so the eviction window's dead chunks are reused in O(1).
 
 Together these close the arena's two known weak spots (loop-carried reassignment
-and sliding-window eviction), matching C and landing ahead of Go (GC) and Koka
-(reference counting) on these allocation-churn workloads. (The model's honest loss
+and sliding-window eviction). The model's remaining loss
 is elsewhere — pointer-shaped, structurally-shared data like tries runs ~1.55× C
-in RAM after the compact indexed-dict map layout, down from ~3×; I cover that
-residue in [the thesis](thesis.md) and the
+in RAM after the compact indexed-dict map layout, down from ~3×; that residue is covered in [the thesis](thesis.md) and the
 [value-semantics limits note](internals/value-semantics-limits.md).)
 
 ## Verification
@@ -143,9 +142,6 @@ ways an over-aggressive move or recycle could go wrong:
   compile, so the rule is checked from both sides.
 - **Per-type RSS benchmarks**, wired as perf guards, confirm each type's bytes are
   actually freed.
-> A second implementation used to check the first, and two implementations
-> disagreeing is a sharper signal than one passing its own tests. That check is
-> gone and nothing replaces it.
 
 ## Across threads
 
@@ -167,7 +163,7 @@ For contributors. Because placing one type on arenas while others stay on
 reason about the code generator one type family at a time. This
 appendix records what each mechanism buys for each family. RSS figures are for
 the workload that exercises the named type. Soundness throughout is checked by
-the byte-identical self-build and the sanitizers above.
+the gates in [controls.md](controls.md) and [architecture.md](architecture.md).
 
 **Compound types.** Arrays (~31×), maps (~3.7×), and structs, tuples, and boxes
 (~1.67×) all use the same coupled pattern: allocators take `Arena*`, copies

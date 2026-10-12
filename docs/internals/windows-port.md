@@ -224,7 +224,7 @@ runnable lane (ffi) added to the wine coverage. The VERDICT — `make ci`
 (N=0) green under MSYS2 sh/make on a real Windows environment — is the CI
 leg's, by definition; the four wine lanes plus wine-ffi are its Linux
 approximation. Expected: the goldens are platform-identical; any that cannot
-be are re-recorded deliberately with the reason in the commit.
+be are re-recorded with the reason in the commit.
 
 ### Phase 7 — Close: full sweep, release, and documentation
 
@@ -243,7 +243,7 @@ Gate: the full `make ci` on Windows plus the doc gates
 Windows caveat; the two supported paths are WSL2 (zero setup) and native
 MSYS2.
 
-## Risks and the honest cost
+## Risks and cost
 
 - **The port itself is ~1.5-2 weeks** of focused work (compiler 1d, runtime
   2-3d, corelib 2-3d, tools+debugger 2d, harness+skips 1-2d, golden long
@@ -580,7 +580,7 @@ language surface. WSL2 stays a first-class supported path.
 > resolved path had backslashes and matched none of git's forward-slash paths
 > — every golden reported NOT tracked. Fixed with posixpath.
 >
-> THE RUN, stated as measured, not as a verdict: goldens-check / entrypoints /
+> THE RUN, recorded as measured rather than as a verdict: goldens-check / entrypoints /
 > spec-check / docs-fences / check-links / shim-check green; `make test`
 > 589/591; `make corelib` 43 ok / 2 fail (datetime's POSIX-TZ sign, time's
 > timing bound) / 1 skip (signal); `make conc` 34/38. The 2 + 4 test/conc reds
@@ -592,7 +592,7 @@ language surface. WSL2 stays a first-class supported path.
 > list on an EMULATED Windows box. Nothing here has been run on non-emulated
 > x86-64 Windows, so the emulator class is unseparated from a real port bug by
 > measurement — it is separated only by its signature (a startup crash before
-> main, at a rate that retries clear). That is the honest state.
+> main, at a rate that retries clear). That is the recorded state.
 
 > Phase 7 close (the Linux half) — 2026-08-07.
 >

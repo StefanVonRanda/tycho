@@ -5,8 +5,6 @@ Tycho calls C through `extern` functions. The boundary is deliberately narrow an
 crosses is copied so that Tycho never holds a pointer into C-owned memory nor
 exposes its own storage to C.
 
-> Provenance: `docs/reference/ffi.md`; `parse_extern_fn` `src/tychoc.c@parse_extern_fn`;
-> boundary copy routines `runtime/tycho_rt.c:1324-1384`,`:2001@tycho_arr_int_from_c`,`:2028-2039`.
 
 ## 24. `extern` and the C boundary
 
@@ -83,7 +81,7 @@ after the fact. It applies in every `char*` direction:
 - **each element of a `[string]` parameter** — the length counts pointers, so no
   element length is available to the callee at all;
 - a **`string` return from C** — the arena copy is `strlen`-bounded
-  (`runtime/tycho_rt.c@tycho_str_from_c`), so a C buffer holding `"h\0i"` becomes
+ , so a C buffer holding `"h\0i"` becomes
   a Tycho `string` of length 1.
 
 Given `s := "a" + chr(0) + "c"`, `len(s)` is `3` while a callee declared
@@ -91,13 +89,9 @@ Given `s := "a" + chr(0) + "c"`, `len(s)` is `3` while a callee declared
 memory and still reachable by index through the borrowed pointer; what is lost is
 the *length*, which is the only thing telling the callee they are there.
 
-**This is a deliberate consequence of the borrow, not a defect to be worked
-around in the callee.** Passing `(ptr, len)` per element would mean marshalling a
-parallel length vector, giving up the "nothing is copied" property that is the
-whole point of the `[string]` contract above; scanning each string for a `NUL`
-before every call would turn an O(1) borrow into an O(total bytes) one, and could
-not cover the return direction at all, since a `char*` out of C offers nothing to
-compare against.
+**This follows from the borrow.**
+
+Rationale: passing `(ptr, len)` per element would copy, and scanning for `NUL` before every call would turn an O(1) borrow into an O(total bytes) one.
 
 **Use `bytes` for any payload that may hold a `NUL`.** `bytes` crosses as a
 `(pointer, length)` pair in both directions and preserves interior `NUL`s exactly
@@ -115,18 +109,14 @@ not enforced" is a statement about the ABI, not about a library whose answer is 
 yes/no about untrusted bytes: such a caller must cross as `bytes`, or refuse the
 input by name. `core:regex` does the first — the subject crosses as
 `(pointer, length)` and `REG_STARTEND` bounds the match by it
-(`corelib/regex/regex_shim.c@rx_exec`). `core:io`, `core:net` and `core:os` do the
+`. `core:io`, `core:net` and `core:os` do the
 second, since a path, a host and a command line have no length-bearing syscall to
 cross by: each checks the argument before anything is attempted
-(`corelib/io/io.ty@has_nul`) and refuses — `Err(BadPath)` / `Err(BadAddr)` where
+and refuses — `Err(BadPath)` / `Err(BadAddr)` where
 there is an error channel, and each call's documented "this did not happen"
-sentinel where there is not. Until 2026-08-13 all three acted on the PREFIX:
-`io.exists("h" + chr(0) + "i")` was `true`, `io.read` of it returned the contents
-of `h`, and `io.write` of it created `h` — a caller that validated one path
-reached another. `core:path` is mostly lexical, but `path.real` reaches `realpath`/`GetFullPathNameA` and rejects an interior NUL before crossing its C-string boundary.
+sentinel where there is not. `core:path` is mostly lexical, but `path.real` rejects an interior NUL before crossing its C-string boundary.
 
-The sized-integer conversions truncate or extend by the C cast (probed on both
-compilers). `to_uN` / `to_iN` narrows a value to the type's low `N` bits; widening
+The sized-integer conversions truncate or extend by the C cast. `to_uN` / `to_iN` narrows a value to the type's low `N` bits; widening
 back with `to_int` **sign-extends** the signed types (`i8`/`i16`/`i32`/`i64`) and
 **zero-extends** the unsigned (`u8`/`u16`/`u32`/`u64`): e.g. `to_i32(-1)` → `-1`,
 `to_i32(2^32)` → `0`, `to_u8(-1)` → `255`, `to_u8(256)` → `0`, `to_i8(200)` →
@@ -137,7 +127,7 @@ type (a bare `int` is a type error).
 
 An `extern` return is one value, and `-> Result(T, E)` is **not** a crossable
 return shape: `Result` is a Tycho aggregate with no flat C ABI, and it is absent
-from §24.1 deliberately, not by omission. So a C function whose failure has more
+from §24.1. So a C function whose failure has more
 than one *cause* — `bytes` that came back empty because the peer closed, because
 a timeout expired, or because the read failed — has one documented spelling:
 
@@ -151,9 +141,9 @@ type it already had.
 extern fn netx_read(fd: int, max: int, status: inout int) -> bytes
 ```
 
-**The C ABI, and it is the one rule worth knowing.** Written parameters lower in
-written order, an `inout` becoming a `T*` (§24.1); a `bytes` or array *return*
-lowers to a `void` function with **two trailing** out-params
+**Written parameters are passed in
+written order**, an `inout` becoming a `T*` (§24.1); a `bytes` or array *return*
+is a `void` function with **two trailing** out-params
 (`unsigned char **out, tycho_int *outlen`) appended after all of them. So the
 classification pointer sits **ahead** of the payload out-params even though it is
 written last, and the C definition must match that order exactly:
@@ -192,7 +182,7 @@ one kind of payload:
 
 - **A `bytes` or array payload cannot be an `inout` at all.** The crossable
   `inout` set is int/char/float/bool/ptr (the rule above), and the compiler
-  rejects the rest by name — `src/tychoc.c@ffi_scalar_type` is the predicate and
+  rejects the rest by name —  is the predicate and
   its diagnostic spells out "string/bytes/handle/composite have no trivial
   out-param ABI". So a `bytes` payload has only the return available, and the
   classification takes the `inout` because nothing else is left. That is
@@ -230,20 +220,6 @@ and there is no separate payload, return the code directly and skip the out-para
 `extern fn iox_stat_kind(path: string) -> int` is the same four codes as
 `iox_read_file`'s with no `inout`, because the *kind* is the whole answer.
 
-> Provenance: five uses in the tree — three of the first arrangement and two of the
-> mirror. Payload-in-the-return: `netx_read` (`corelib/net/net_shim.c@netx_read`,
-> declared `corelib/net/net.ty@netx_read`), `iox_read_file`
-> (`corelib/io/io_shim.c@iox_read_file`) and `iox_read_at`
-> (`corelib/io/io_shim.c@iox_read_at`), both declared in `corelib/io/io.ty`.
-> Payload-in-the-`inout`: `corelib/io/io_shim.c@iox_stat_mtime` and
-> `corelib/io/io_shim.c@iox_stat_size`. The ordering rule is
-> `src/tychoc.c@gen_extern_proto`: written params first, the return's out-params
-> appended. The `inout` restriction that forces the split is
-> `src/tychoc.c@ffi_scalar_type`. Written down here because §24.1.1's own shape had
-> been reproduced verbatim from one shim into the other with no spec to copy, and
-> the mirror was doing it again — three cross-referencing comment blocks in
-> `corelib/io/io.ty` deriving by hand what this section now states (docs/internals/FRICTION.md
-> item 11).
 
 ### 24.2 Linking
 

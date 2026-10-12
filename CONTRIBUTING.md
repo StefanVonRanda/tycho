@@ -81,31 +81,7 @@ rather than obvious.
 
 All three are one-time setup, and all three were found by hitting them.
 
-**`make ci` runs under gcc or clang.** It needed gcc specifically until
-2026-09-18, and for three unrelated reasons behind one headline — all three in
-the gate, none in the language. clang always built and ran Tycho fine: measured,
-clang 22.1.8 takes the whole fixture corpus 1039/0 and bootstraps `tychoc1`.
-
-- `vector-check` **no longer blocks it** (fixed 2026-09-18, FRICTION 89). Leg [3]
-  required a plain-`[4]float` control to emit *no* packed arithmetic, which is a
-  gcc property; it now measures the control and asserts the strongest form that
-  control supports, so clang certifies too.
-- `shim-warn` **no longer blocks it either** (fixed 2026-09-18, FRICTION 90).
-  Its baseline `scripts/shim.warn` is empty, meaning "gcc is silent here", and a
-  gcc `-Wunused-function` dodge in `corelib/os/os_shim.c` tripped clang's
-  `-Wunused-variable` instead — the suppression firing, not a defect in the
-  shipped code. It is an `__attribute__((unused))` now, which both compilers
-  read the same way.
-
-- `crypto_hygiene` **was the third** (fixed 2026-09-18, FRICTION 92). Its
-  constant-time leg builds a deliberately *branching* control so memcheck has
-  something to detect; clang if-converted that branch away at `-O1`, so the
-  control could not fire and the leg refused to certify. The control now builds
-  at `-O0`; the subject stays at `-O1`.
-
-None of the three was language portability; all were the gate's, which is the same
-build-versus-gate split this section already draws for the sanitizer runtimes
-and the 32-bit toolchain.
+**`make ci` runs under gcc or clang.**
 
 ## The local CI gate (run it before a PR)
 
@@ -135,19 +111,9 @@ too cheap to argue with. `make ci` before a substantial push is yours to run,
 and it is the only thing that covers the wide lanes — a dogfood link break or a
 cross-package mangling divergence is invisible to `make test`.
 
-**`make ci` measured 899 s on a 16-core box, 2026-08-30** — one run, and the
-sweep prints its own duration on its last line, so a re-run costs nothing to
-record. It keeps growing: 495 s on 2026-08-10, 548 / 551 / 563 s on 2026-08-14,
-626 / 620 s on 2026-08-15. That is despite `make test` falling from ~8 min to
-113 s in the same window — new lanes more than absorbed the saving, and there
-are 77 steps now, including 200 fuzz seeds. **No lane was re-timed alongside the
-899 s run, so which one absorbed the last 4½ minutes is unmeasured.**
-`make ci N=0`, which skips the fuzz lanes, was **~380 s** (383 / 379 / 381 s on
-2026-08-15, 274 s on 2026-08-10) and has not been re-measured since. It
-parallelises (`run_lanes` forks each lane group), though the sweep no longer
-costs "barely more than `make test`" — 899 s against a 113 s `make test` that is
-itself a stale figure, so call it roughly 8x rather than the few percent this
-once claimed.
+**`make ci` takes several minutes** (the sweep prints its duration on its last
+line). `make ci N=0` skips the fuzz lanes for a quicker check. It parallelises
+(`run_lanes` forks each lane group).
 
 **Two different things get confused here.** Running EVERY lane one at a time is
 slower than the sweep — the sum beats the parallel whole, so never do that. Running

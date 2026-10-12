@@ -13,9 +13,6 @@ provide the widths and behavior stated here even where its backend's native
 types differ (for example, a C backend MUST realize `int` as a 64-bit type even
 on a target where C `long` is 32 bits).
 
-> Provenance: scalar tags `src/tychoc.c:833-854`; C lowering `c_type`
-> `:1718-1758`; equality/ordering `:7931-7964`; newtype decl `parse_typedecl`
-> `:5109-5128`.
 
 ## 5.1 The type-identity model
 
@@ -57,7 +54,7 @@ rounding, and special values (signed zero, infinities, NaN) follow IEEE-754.
 `/` is true division and does not trap.
 
 Division never traps: `0.0/0.0` is `NaN`, `1.0/0.0` is `+inf`, and `-1.0/0.0` is
-`-inf` (probed against the implementation). `NaN` is unordered — `NaN == NaN` is `false`,
+`-inf`. `NaN` is unordered — `NaN == NaN` is `false`,
 and every ordering comparison with a `NaN` operand is `false`. The float *values*
 are fully defined by IEEE-754; only the *textual* form `str` produces for
 `NaN`/`inf` (e.g. `-nan`) derives from the C library and is implementation-defined
@@ -83,14 +80,10 @@ than wrapping for an `n` outside `0..255`
 
 **There is no `char` type keyword, and its absence is normative** — it is
 restated at [§3.6](01-lexical.md#36-keywords) and
-[§4.2](02-grammar.md#42-types), and pinned by
-`tests/reject/char_as_type.ty`. Every `char`-valued expression therefore reaches
+[§4.2](02-grammar.md#42-types). Every `char`-valued expression therefore reaches
 its type by inference: a character literal, `char_at`, `to_char`, or arithmetic
-on those. One consequence is worth stating plainly, because it is the rule the
-absence makes hardest to see: `char`'s operator set is **narrower than `int`'s**
-(`+` and `-` only, §13.2), and that narrowness cannot be exercised by a fixture
-that annotates a type, only by one that infers it — `tests/char_elem_ops.ty` and
-`tests/reject/char_elem_mul.ty` are written that way on purpose.
+on those. `char`'s operator set is **narrower than `int`'s**
+(`+` and `-` only, §13.2).
 
 Indexing a `string` does **not** produce a `char`: `s[i]` yields `int` (§5.2.5).
 The `char`-typed reader is the builtin `char_at(s, i)`
@@ -109,15 +102,12 @@ byte as an `int` in `0..255` and aborts if `i` is out of bounds; a `string` is
 not assignable through an index (`s[i] = v` is a compile error). Operations are
 detailed in §16.
 
-`s[i]` yields `int`, not `char`, and this is **normative and deliberate**: the
-byte is most often used arithmetically or as an array index, and a `char` result
-would wrap `s[i] ± n` to `0..255` where `int` does not — a silent change of
-meaning for existing code. The cost is that `s[i] == 'e'` does not type-check.
-The builtin `char_at(s, i)` ([§29.5](16-builtins.md#295-strings)) closes that
-gap: it is the SAME byte read with the SAME out-of-bounds abort, differing only
-in its static type (`char`), so `char_at(s, i) == 'e'` is the supported spelling
-and `to_int(char_at(s, i)) == s[i]` holds for every in-range `i`. Neither form is
-preferred for performance; they compile to the same call.
+`s[i]` yields `int`, not `char`. The builtin `char_at(s, i)` ([§29.5](16-builtins.md#295-strings))
+reads the same byte with the same out-of-bounds abort but with static type
+`char`, so `char_at(s, i) == 'e'` is the supported spelling
+and `to_int(char_at(s, i)) == s[i]` holds for every in-range `i`.
+
+Rationale: an `int` result avoids silent wrapping in arithmetic and indexing.
 
 ### 5.2.6 `bytes`
 
@@ -229,10 +219,6 @@ dynamic element — `[bool]` is a supported array type — and is rejected only 
 the inline fixed-capacity forms `[N]T`, `[$N]T` and `bounded[N]T`, which have no
 bool codegen.
 
-> Provenance: dynamic `[T]` tests `void` alone (`src/tychoc.c:2913@elem`); the
-> fixed forms test both (`src/tychoc.c:2481-2482`), as does `bounded[N]T`
-> (`src/tychoc.c:2364-2365`). Detailed in
-> [§16.7](12-aggregates.md#167-element-type-restriction).
 
 ### 5.3.2 Fixed-size arrays `[N]T`
 
@@ -251,14 +237,12 @@ structurally. Its elements are accessed by position (`t.0`, `t.1`) and are
 assignable places. Multiple return values and destructuring use tuples
 (§17).
 
-**A tuple is the shape for "a value AND a classification."** This is worth stating
-outright because the two obvious alternatives both work and both cost more: an
-`inout` out-parameter (§11.3) makes the caller declare a dummy to receive, and a
-wrapper `struct` adds a nominal type per call site. A tuple needs neither, and
-`a, b := f()` destructuring reads at the call site as two results rather than one
-object. Since §6.2(7) a tuple **literal**'s elements are checked against the
-declared element types, so a `Result` element may be written inline
-(`return (Err(Timeout), buf)`) without a typed local.
+**A tuple is the shape for "a value AND a classification."** Since §6.2(7) a tuple
+**literal**'s elements are checked against the declared element types, so a
+`Result` element may be written inline (`return (Err(Timeout), buf)`) without a
+typed local.
+
+Rationale: a tuple needs neither a caller-declared out-parameter nor a nominal wrapper type per call site.
 
 ```tycho
 # The value and the verdict leave together; nothing is a sentinel.
@@ -287,16 +271,9 @@ fn main():
 0 false
 ```
 
-Worked examples in the corelib, because the shape is easy to miss when the type
-section is the only place it appears: `strings.split_once(s, sep) -> (before, after)`
-(`corelib/strings/strings.ty@split_once`), `path.split_path(p) -> (dir, base)`
-(`corelib/path/path.ty@split_path`), `datetime.parse_offset(s, at) -> (int, bool)` — the
-value-and-verdict form above (`corelib/datetime/datetime.ty@parse_offset`),
-`bignum.divmod(a, b) -> (Big, Big)` (`corelib/bignum/bignum.ty@divmod`), and
-`httpd.read_request_capped(fd, cap) -> (Result(Request, ReqErr), string)`
-(`corelib/httpd/httpd.ty@read_request_capped`), which carries a classification *and* the raw bytes
-that produced it — the classification covering the framing refusals as well as the transport
-ones, and the raw bytes being what lets an access log name a request that would not parse. For a C function that must classify a payload the FFI has its own
+Examples in the corelib use this shape: `strings.split_once`, `path.split_path`,
+`datetime.parse_offset`, `bignum.divmod`, and `httpd.read_request_capped`.
+For a C function that must classify a payload the FFI has its own
 shape, since a tuple does not cross the boundary — see
 [§24.1.1](14-ffi.md#2411-returning-a-payload-and-a-classification).
 
@@ -334,7 +311,6 @@ as a top-level key type.
 Map operations (`m[k]` as a place, absent-key read yielding the value's zero,
 `k in m`, `delete m[k]`, `m.get`) are specified in §18.
 
-> Provenance: `src/tychoc.c@map_of`; `src/tychoc.c@key_hashable`.
 
 ### 5.3.6 Enums, `Option`, `Result`
 
@@ -464,21 +440,19 @@ is a scalar under another spelling. The count is part of the type, so
 `vector[4]float` and `vector[8]float` are distinct types, and both are distinct
 from `[4]float`.
 
-A width no target register holds is **not** an error: the C backend's vector
-attribute takes any power-of-two size and the C compiler splits it across as
-many registers as the machine has. `vector[8]float` is legal on a machine with
-128-bit registers and lowers to two operations there.
+A width no target register holds is **not** an error: an implementation splits
+it across as many registers as the machine has. `vector[8]float` is legal on a
+machine with 128-bit registers.
 
-The element type `T` MUST be `int`, `float` or `f32`. The set is an allow-list
-rather than a refuse-list because every admitted type has to survive being
-applied lane-wise by one operator; a type parameter `$T` is not in it, so a
+The element type `T` MUST be `int`, `float` or `f32`; a type parameter `$T` is not in it, so a
 `vector` never appears in a generic template's own signature.
+
+Rationale: every admitted type must survive lane-wise application by one operator.
 
 Element-wise arithmetic ([§16.8](12-aggregates.md#168-element-wise-arithmetic)) applies with the same operator set a `[N]T` has,
 including the scalar broadcast and its operand order. A `vector` and an array of
 the same element type and length are **distinct** and MUST NOT be mixed in one
-element-wise expression, even though they hold the same values: the two lower
-differently, and the diagnostic says so rather than reporting a length mismatch.
+element-wise expression, even though they hold the same values.
 
 Integer `/` and `%` keep the runtime divide guard of §16.8 and are therefore
 evaluated lane by lane; every other admitted operator is a single vector
@@ -498,7 +472,7 @@ generic accepts one.
 
 Lanes MAY be swizzled: `v.(0, 1) = v.(1, 0)` names two of them at once and
 assigns simultaneously ([§17.5](12-aggregates.md#175-destructuring)). A vector of
-four lanes or fewer also names them `.x .y .z .w`, or `.r .g .b .a` for the same
+four lanes or fewer also names them `.x.y.z.w`, or `.r.g.b.a` for the same
 four, wherever a field access is accepted.
 
 ```tycho
@@ -513,13 +487,6 @@ fn main():
 4 12.0 48.0
 ```
 
-> Provenance: `src/tychoc.c@vec_of`, and the lowering at
-> `src/tychoc.c@gen_ew_arith`; the lane-wise `core:math` instances at
-> `src/tychoc.c@vlane_kind` and `src/tychoc.c@gen_vlane`. The alignment the emitted aggregate asks for is
-> pinned to the 8 bytes `runtime/tycho_rt.c@arena_alloc_slow` guarantees, so a
-> vector-holding value is never under-aligned in an arena. Gated by
-> `scripts/vector_check.sh`, which is the only lane in this tree whose subject
-> is a machine instruction.
 
 ## 5.4 Newtypes
 
@@ -552,12 +519,10 @@ type** (§5.1); `void` values are not comparable. Equality is **structural and
 deep**: scalars compare by value; `string`, `bytes`, arrays, structs, tuples,
 maps, enums, `Option`, and `Result` compare by content, recursing through nesting
 — so `a == b` holds exactly when `b` is an independent deep copy of `a`.
-**Function values are not comparable:** a closure has no structural equality (two
-closures with different captured environments but identical behavior are
-indistinguishable, and comparing thunk pointers would be a non-structural leak),
-so applying `==`/`!=` directly to a function value is a **compile error** — Go,
-Swift, and Odin all reject `fn == fn`. Compare the values a function produces
-instead. A function stored *inside* an aggregate does not block that aggregate's
+**Function values are not comparable:** applying `==`/`!=` directly to a function value is a **compile error**.
+Compare the values a function produces instead.
+
+Rationale: closures with different captured environments but identical behavior are indistinguishable. A function stored *inside* an aggregate does not block that aggregate's
 equality: the aggregate still compares structurally, and a function field within
 it compares by identity. Comparing values of two different types is a compile
 error.
@@ -573,5 +538,3 @@ One asymmetry follows and is intentional: `bool` is comparable and `str`-able bu
 is not ordered. (`char` is comparable, ordered, and `str`-able — its `str` is the
 one-byte glyph.)
 
-> Provenance: `src/tychoc.c:7543-7577` (equality/ordering resolver); function-
-> value identity equality `:11370@identity equality`.

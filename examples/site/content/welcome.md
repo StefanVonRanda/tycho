@@ -4,10 +4,15 @@ author: tycho
 ---
 # Welcome
 
-Tycho is a data-oriented systems language with value semantics and implicit arenas.
+Tycho is a small, data-oriented systems language. Values are copied instead
+of aliased, and every scope gets its own memory arena, reclaimed when the
+scope ends.
 
 ## Why it is different
 
-- no garbage collector
-- no manual free
-- fast and memory-safe
+- no garbage collector pausing your program
+- no manual free to forget
+- no borrow checker to fight
+
+If you can write a function and a loop, you already know enough to start.
+Read on, and welcome.

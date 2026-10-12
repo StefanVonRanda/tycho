@@ -1,5 +1,7 @@
 # Two models, same four surfaces — what a probe's instrument is worth
 
+**Verdict: the four 2026-08-19 probes are not independent — both runs were the author's own model family, and the findings reproduce but the independence claim does not hold. Compared 2026-08-20: Claude subagents vs `mimo-v2.5` via `pi`. Outcome: aim matters more than model.**
+
 The four probes of 2026-08-19 were run twice: once by Claude subagents spawned
 inside the author's own session, and once by `mimo-v2.5` (a different vendor's
 model) driven through the `pi` CLI. Same sanitised checkouts, same briefs, same
@@ -32,7 +34,7 @@ a probe that returned nothing.
 
 ## What the weaker model was better at
 
-Nothing measured here, and that is the finding. The expectation was that a less
+Nothing measured here. The expectation was that a less
 capable model with no Tycho context would behave more like a genuine newcomer.
 What it produced was mostly expectation mismatches against Python and C — "there
 is no `while`", "enum variant names are global", "no module-level variables" —

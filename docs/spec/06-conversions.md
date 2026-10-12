@@ -5,8 +5,6 @@ scalar types never mix in an operation, and no value silently widens or narrows.
 The only implicit adaptation is of **literals** (§8.1); every value-level
 conversion is an explicit builtin call (§8.2).
 
-> Provenance: conversion builtins `src/tychoc.c:7166-7243`; literal adaptation
-> in the binary-op and checking paths `:7916-7930`,`:8220-8232`, and its array-literal element path `:8200-8209`.
 
 ## 8.1 Literal adaptation
 
@@ -24,7 +22,7 @@ and never converts a value at run time. The permitted adaptations are:
 A `char` literal does **not** adapt. Division or modulo by a **literal** zero is
 a compile-time error (a zero *value* at run time aborts, [§30](17-runtime.md)). There is no source-level numeric suffix
 ([§3.9.1](01-lexical.md#391-integer-literals)); the destination type drives
-adaptation. Adaptation **distributes over the elements of an array literal** when the destination is an array type: in `a: [u32] = [1, 2]` each element is checked against `u32` and each literal adapts, exactly as in the fixed `a: [3]u32 = [1, 2, 3]` and bounded `a: bounded[4]u32 = [1, 2]` forms. The dynamic form was refused until 2026-07-30 — it synthesized `[int]` and reported "declared type `[u32]` but value is `[int]`", so `a := []u32` followed by `push` was the only way to build one from literals. A bracket literal with **no** destination still synthesizes its type from its first element.
+adaptation. Adaptation **distributes over the elements of an array literal** when the destination is an array type: in `a: [u32] = [1, 2]` each element is checked against `u32` and each literal adapts, exactly as in the fixed `a: [3]u32 = [1, 2, 3]` and bounded `a: bounded[4]u32 = [1, 2]` forms. A bracket literal with **no** destination still synthesizes its type from its first element.
 
 ## 8.2 Explicit conversion builtins
 

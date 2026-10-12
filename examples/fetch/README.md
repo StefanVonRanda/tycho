@@ -1,5 +1,7 @@
 # fetch — a corelib dogfood
 
+Rule: five corelib modules, one pipeline, no manual memory management. The whole document lives in a per-scope arena freed when `main` exits.
+
 A small CLI that GETs a URL and summarizes + caches the response, composing
 **five** corelib modules end-to-end:
 
@@ -21,10 +23,7 @@ content: text, 559 bytes
 cached : tycho_fetch_ff67a9d764d6a236.txt
 ```
 
-The whole document lives in a per-scope arena and is freed when `main` exits —
-no `malloc`/`free`, no reference counts, no GC anywhere in the pipeline. That's
-the thesis (value semantics + implicit arenas) on a realistic, allocation-heavy
-program rather than a micro-benchmark.
+No `malloc`/`free`, no reference counts, no GC anywhere in the pipeline. That is value semantics + implicit arenas on a realistic, allocation-heavy program rather than a micro-benchmark.
 
 ## Running
 
@@ -33,4 +32,4 @@ program rather than a micro-benchmark.
 offline**, asserts byte-identical output against `expected.out`, and re-runs the
 emitted C under ASan/UBSan (proving the transient libcurl response body is
 copied into the arena before the handle is freed — no use-after-free). It skips
-cleanly if libcurl is absent. I verify a real `https://` GET by hand.
+cleanly if libcurl is absent. A real `https://` GET is verified by hand.

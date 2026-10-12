@@ -1,9 +1,10 @@
 # site — a static-site generator dogfood
 
+Rule: eight corelib modules, no FFI, no external dependencies, zero manual memory management.
+
 A tiny static-site generator, and the second corelib-composing dogfood (after
 [`../fetch`](../fetch)). It reads a site directory and writes one HTML page per
-source file plus a date-sorted index, composing **eight** corelib modules with no
-FFI, no external dependencies, and zero manual memory management:
+source file plus a date-sorted index, composing **eight** corelib modules:
 
 | module          | role                                                        |
 |-----------------|-------------------------------------------------------------|
@@ -37,6 +38,5 @@ $ site <site_dir> <out_dir>
 `make site` (or `sh examples/site/run.sh`) builds the program, runs it
 against this fixture site, and asserts the build report (page list + per-page
 content hashes) byte-identical against `expected.out`. The emitted C is also run
-under ASan/UBSan — a heavy string-building / per-scope-arena workload that
-exercises exactly what the thesis claims. Since it has no external dependency,
+under ASan/UBSan — a heavy string-building / per-scope-arena workload. Since it has no external dependency,
 it's part of `make ci`.

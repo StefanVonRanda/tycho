@@ -1,9 +1,9 @@
 # `handle` probe, 2026-09-21 — 14 findings, eight fixed the same day
 
-The first probe aimed at `handle` as the **subject** rather than as one corner of
-FFI generally ([2026-08-19](probe-ffi-2026-08-19.md) was the earlier one). Host:
-the macOS arm64 laptop, `tychoc 0.8.5` built from `main` per
-[probe-procedure.md](probe-procedure.md).
+**Verdict: 14 findings, 8 fixed the same day, 5 open, 1 refuted class. Probed 2026-09-21 on the macOS arm64 laptop with `tychoc 0.8.5` built from `main` per [probe-procedure.md](probe-procedure.md). Outcome: the program is kept as [`tools/tycho-du/`](../../tools/tycho-du) with gate `make du-check`.**
+
+First probe aimed at `handle` as the subject rather than one corner of
+FFI generally ([2026-08-19](probe-ffi-2026-08-19.md) was the earlier one).
 
 ## The program
 
@@ -13,14 +13,13 @@ heaviest extensions, totals, and an explicit count of what it could not read.
 live/open/close counters), `handle Dir: free: dw_close`, five `extern fn`s, and a
 recursive `walk` returning `Result(int, WalkErr)`.
 
-It ran, and it was checked against something that is not the program: `find(1)`
-agrees on all three totals (616 files, 235 directories, 5573303 bytes). Built
+It ran, and it was checked against `find(1)`:
+616 files, 235 directories, 5573303 bytes agree on all three totals. Built
 from `--emit-c` under `-fsanitize=address,undefined -fno-sanitize-recover=all`
 with the corelib shims from `--print-shims`, it is clean over a 620-file walk and
 over 50 strict-mode error unwinds.
 
-**Why it did not use `list_dir`**, which is the corelib finding arrived at
-sideways: the builtin "returns the same empty array for an empty directory and an
+**Why it did not use `list_dir`:** the builtin "returns the same empty array for an empty directory and an
 unreadable one — which is the one distinction a disk-usage tool must report."
 
 ## The score
@@ -50,9 +49,9 @@ names `rfc/ffi-threading-design-review.md`, `internals/design-aggregate-ref.md`,
 `internals/value-semantics-limits.md`, `internals/README.md`, `rfc/README.md` and
 `tests/reject/handle_dup_name.ty` as unreachable. Every one exists in the tree;
 [probe-procedure.md](probe-procedure.md)'s setup deletes `docs/internals`,
-`docs/rfc` and `tests` on purpose, and `make check-links` is green. **The strip
-guarantees this class of false finding on every future run**, and the procedure
-should say so where it lists the deletions.
+`docs/rfc` and `tests` on purpose, and `make check-links` is green. The strip
+guarantees this class of false finding on every future run, and the procedure
+states it where it lists the deletions.
 
 ## What went right, in the probe's words
 
@@ -60,7 +59,7 @@ should say so where it lists the deletions.
   rule" — every violation refused, at the right line, with the model explained
   rather than the parse, and a `note:` pointing back at the `handle` declaration.
   The `sink` refusal answering the next question unprompted ("pass it plainly:
-  that is already a borrow") was called out as saving a doc lookup.
+  that is already a borrow") saved a doc lookup.
 - **The rule shaped the program, correctly.** Because `walk` can neither return
   nor store a `Dir`, the walk had to be recursive with the handle owned by the
   frame that opened it — "the right design for this program and I would not
@@ -83,8 +82,7 @@ should say so where it lists the deletions.
 ## What it could not do
 
 - Learn from any page what happens to an unbound handle. It added counters to its
-  own shim and measured. That is finding 4, and it is the one the probe said it
-  would most want written down.
+  own shim and measured. That is finding 4.
 - Learn which side the null guard is on without reading generated C from a
   deliberately broken program (finding 5).
 - Distinguish "closed" from "never opened": `is_null` reads the variable, which
@@ -104,8 +102,7 @@ should say so where it lists the deletions.
 "mimo-v2.5" is ambiguous across providers […] No matching provider is
 authenticated.` So the `pi` path did not run this probe and **which model wrote
 it is not recorded anywhere in the directory.**
-[probe-procedure.md](probe-procedure.md) has a whole section on model choice and
-no step that writes the model down; it should.
+[probe-procedure.md](probe-procedure.md) covers model choice and needs a step that writes the model down.
 
 The watchdog itself was defective on this host and was fixed first —
 [FRICTION 122](FRICTION.md).

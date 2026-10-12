@@ -2,16 +2,10 @@
 
 Tycho types every expression **at its own site**. There is no global type
 inference, no Hindley-Milner unification, and no type variables in the checker.
-Inference is **bidirectional and local** (the Pierce-Turner style): a site is
+Inference is **bidirectional and local**: a site is
 either *synthesized* (its type is computed bottom-up from the expression) or
-*checked* against an expected type supplied by its context. This locality is a
-deliberate design property, not a limitation to be lifted
-([§1.1](00-conventions.md); the alternative, global inference, is a decided
-non-goal).
+*checked* against an expected type supplied by its context ([§1.1](00-conventions.md)).
 
-> Provenance: synthesis `resolve_expr`, checking `resolve_exp(e, want)`
-> (`src/tychoc.c@resolve_expr_inner`, `src/tychoc.c@resolve_exp`); declaration
-> handling `src/tychoc.c@S_DECL`.
 
 ## 6.1 Synthesis and checking
 
@@ -83,21 +77,14 @@ use within the same block; a pending type that is **never** grounded is rejected
 None`). The pending mechanism resolves a type with exactly **one** free parameter
 that a single later use can pin — `[]` is `[?T]` and `None` is `Option(?T)`.
 
-The `Result` constructors are a **deliberate exception**: `x := Ok(v)` and
-`x := Err(e)` are **not** pending. A bare constructor pins only one of `Result`'s
-two parameters (`Ok(v)` gives the ok type, `Err(e)` the err type), leaving the
-other free, which a single grounding use in the same block does not generally fix;
-so they are rejected **immediately** at the declaration and MUST be annotated
-(`x : Result(int, string) = Ok(v)`). This is the one place the inference asymmetry
-is visible; the compiler's diagnostic names the required annotation. (Pure
-precedent — Go, Swift, and Odin all reject a bare `nil`/`None` declaration outright
-— would argue for rejecting `None` too, but that would remove the deliberate `[]`
-/ `None` pending convenience, so Tycho keeps it and documents the `Result` limit
-instead.)
+The `Result` constructors are an **exception**: `x := Ok(v)` and
+`x := Err(e)` are **not** pending. A bare constructor fixes only one of `Result`'s
+two parameters, leaving the other free, so they are rejected **immediately**
+at the declaration and MUST be annotated
+(`x : Result(int, string) = Ok(v)`).
 
-> Provenance: pending deferral `src/tychoc.c:8823-8835`, grounding `pend_ground`
-> `:6240-6272`; rejection of ungrounded `None` / immediate rejection of bare
-> `Ok`/`Err` `:9082-9087`.
+Rationale: a single later use generally cannot ground the remaining free parameter.
+
 
 ## 6.5 Branch unification for value `if` / `match`
 

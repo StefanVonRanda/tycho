@@ -29,7 +29,7 @@ compared byte for byte (`make release-check`), then extracted and checked
 (`make release-content`).
 
 Running the gate on macOS for the first time found defects that were not
-specific to macOS. It was simply the first platform to show them:
+macOS-specific. It was the first platform to show them:
 
 - **Every Tycho server refused connections under a burst on macOS.**
   `net.listen` asked for a backlog of 16. When the accept queue is full, Linux
@@ -37,8 +37,8 @@ specific to macOS. It was simply the first platform to show them:
   connection. The backlog is `SOMAXCONN` now.
 - **A server could hang on shutdown**, about one run in eight, because a worker
   blocked in `accept()` never saw SIGTERM.
-- **Floating point could round differently on ARM.** The emitted C left FMA
-  contraction to the C compiler. It fuses `a*b + c` on aarch64 and cannot on
+- **Floating point could round differently on ARM.** The emitted C left fused
+  multiply-add (FMA) contraction to the C compiler. It fuses `a*b + c` on aarch64 and cannot on
   baseline x86-64, so the same program printed `0.30000000000000006` on one and
   `...004` on the other. Contraction is off now, so a program rounds as its
   source says on every host.
@@ -145,12 +145,13 @@ command line tools. Each tarball's SHA-256 is published alongside it.
 
 ## What this release does not have
 
-There has been **no third-party security review**, and the FFI boundary is
+There has been **no third-party security review**, and the FFI
+(foreign-function interface, `extern fn`) boundary is
 unsafe by design. See [SECURITY.md](SECURITY.md), and
 [docs/internals/audit-brief.md](docs/internals/audit-brief.md) if you are
 willing to be one.
 
-Two things are unverified rather than known, because you may hit them:
+Two things are unverified, and you may hit them:
 
 - **This Windows archive has been run under Wine, not on Windows.** Its
   content gate passed under Wine 10 on x86-64 Linux: every `.exe` starts, and a

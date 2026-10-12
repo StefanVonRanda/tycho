@@ -1,21 +1,22 @@
 # SQLite — a real-library FFI dogfood
 
-tycho calling **real SQLite** (in-memory) through its FFI, with **no hand-written
-shim** — every binding is a direct `extern` to a `libsqlite3` symbol. It shows
+Rule: every binding is a direct `extern` to a `libsqlite3` symbol — no hand-written shim.
+
+Tycho calling **real SQLite** (in-memory) through its FFI. It shows
 the whole stack working against a serious C library:
 
 - **out-parameter constructors (`inout ptr`)** — `sqlite3_open(":memory:", &db)` and
   `sqlite3_prepare_v2(..., &st, ...)` write their `sqlite3**` / `sqlite3_stmt**`
-  result through a pointer out-param. tycho declares it `inout ptr` and the transpiler
-  passes the address for you (FFI R4) — the reason this binding no longer needs a
+  result through a pointer out-param. Tycho declares it `inout ptr` and the transpiler
+  passes the address (FFI R4) — the reason this binding needs no
   shim.
 - **`ptr` handles** — the `sqlite3*` db and `sqlite3_stmt*` cursor are opaque
-  `ptr`s tycho holds and passes back, never dereferences.
+  `ptr`s Tycho holds and passes back, never dereferences.
 - **`null` for unused C args** — `sqlite3_exec`'s trailing callback/arg/errmsg
   pointers pass as `null`.
 - **string args** — SQL text passes as a zero-cost `char*`.
 - **arena-copied string returns** — `sqlite3_column_text` returns SQLite's internal
-  text pointer, valid only until the next `step()`/`finalize()`. tycho arena-copies
+  text pointer, valid only until the next `step()`/`finalize()`. Tycho arena-copies
   it on return, so the value outlives the cursor. `run.sh` builds the program under
   ASan/UBSan to prove there's no use-after-free.
 - **integer returns** — `sqlite3_step`'s result code is compared directly to

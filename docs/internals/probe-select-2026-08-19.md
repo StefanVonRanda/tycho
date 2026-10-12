@@ -1,8 +1,10 @@
 # `select` probe, 2026-08-19 — a select that takes no arm at all
 
+**Verdict: 1 real defect — `recv` + `default` with no `closed:` arm goes dead on close. Probed 2026-08-19 with a 474-line parallel source auditor. Outcome: defect recorded with a 100-iteration measurement; program discarded.**
+
 A fresh agent built a 474-line parallel source auditor: 5 channels, 3 `select`
-sites, 4 scanner and 2 aggregator tasks, shutdown by close-ordering. **The
-program is not the artifact — this is.** It was thrown away.
+sites, 4 scanner and 2 aggregator tasks, shutdown by close-ordering. The
+program was discarded; this record is the artifact.
 
 ## The finding: `recv` + `default` with no `closed:` arm goes dead on close
 
@@ -49,4 +51,4 @@ iterations. Tasks returning aggregates — a struct holding arrays of structs
 holding arrays — needed nothing annotated. Tuple returns, recursive `inout`
 parameters, and `push(map[k], v)` on a `[string: [string]]` all worked first
 try. The corelib-not-found message named both search paths and the override
-variable, which is the diagnostic fixed earlier the same day.
+variable.

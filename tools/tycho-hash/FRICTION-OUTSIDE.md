@@ -1,17 +1,17 @@
 # Friction writing `tycho-hash`, from outside
 
-The **second** `ROADMAP.md` §1 program: sha256 over a directory tree, hashed by a
-worker pool, with a report that does not depend on the pool width. Written
-2026-08-14 from `docs/` — the concurrency guide, `docs/reference/builtins.md` and
-the corelib sources — by someone who did not write the compiler.
+Rule: the report must not depend on the pool width. Written 2026-08-14 from `docs/` by someone who did not write the compiler.
 
-`tools/tycho-diff` was deliberately a *sequential* algorithm. This one exists for
+The **second** `ROADMAP.md` §1 program: sha256 over a directory tree, hashed by a
+worker pool, with a report that does not depend on the pool width.
+
+`tools/tycho-diff` was deliberately a *sequential* algorithm. This one covers
 the other half of the surface: `spawn`, channels, backpressure, and the
 determinism question every parallel tool has to answer. **Two of the three
 programs §1 asks for now exist; it wants three, by two people.**
 
-None of the four findings below repeat `tycho-diff`'s, which is the argument for
-writing a second program at all rather than a longer first one.
+None of the four findings below repeats `tycho-diff`'s, which is the argument for
+writing a second program rather than a longer first one.
 
 ---
 
@@ -20,7 +20,7 @@ writing a second program at all rather than a longer first one.
 The function is **`io.list(p) -> [string]`**. Searching the corelib for
 `read_dir`, `list_dir`, `readdir` or `dir` finds `io.is_dir` and `io.make_dir`
 and misses the one that does the listing, because its name contains no "dir".
-I concluded there was no directory listing in corelib at all and went looking for
+The first read concluded there was no directory listing in corelib and went looking for
 how `tycho-ar` shells out — it does not; it calls `io.list`.
 
 Nothing is missing. The cost is entirely in the name.

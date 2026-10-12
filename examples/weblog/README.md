@@ -1,5 +1,7 @@
 # weblog — an access-log analyzer, as a corelib dogfood
 
+Rule: the log streams one line at a time — peak memory is O(longest line), not O(file).
+
 A small [Combined Log Format](https://httpd.apache.org/docs/current/logs.html#combined)
 analyzer written entirely against corelib. It reads an access log, parses each
 record fail-closed, aggregates into string-keyed maps, and reports status
@@ -16,22 +18,19 @@ With no file argument it analyzes an embedded demo log so the output is
 deterministic and can be golden-locked (`sh examples/weblog/run.sh`). `access.log`
 in this directory is the same content as the embedded demo.
 
-This exists less as a tool than as a **dogfood**: build something real against
+This exists as a **dogfood**: build something real against
 corelib and let every rough edge become a ticket. It touches `core:cli`,
 `core:io`, `core:strings`, `core:sort`, the map builtins, and string-keyed maps
-under a real aggregation load (this is the compact indexed-dict map layout doing
-actual work). What it reached for and couldn't get cleanly is the useful output.
+under a real aggregation load. What it reached for and couldn't get cleanly is the useful output.
 
 ## Dogfood findings
 
-1. **`core:io` had no streaming line reader — fixed.** Originally the only option
+1. **`core:io` had no streaming line reader — fixed.** The only option
    was `read_lines(path) -> [string]`, which slurps the whole file into an array, so
-   peak RSS tracked input size instead of the bounded aggregation state — defeating
-   the value-semantic memory story on a large log. Fixed by adding a bounded-memory
+   peak RSS tracked input size instead of the bounded aggregation state. Fixed by adding a bounded-memory
    reader to `core:io` over a libc `getline` shim: `open_lines` → `read_line`
    (`Some`/`None`) → `close_lines`, plus a `fold_lines(path, init, f)` convenience.
-   This program now streams the log one line at a time (peak memory O(longest line),
-   not O(file)); the embedded demo is materialized to a temp file so even the
+   This program now streams the log one line at a time; the embedded demo is materialized to a temp file so even the
    default run flows through the same path.
 
 2. **`core:datetime` could not parse the CLF timestamp — fixed.** It parsed
@@ -50,7 +49,7 @@ actual work). What it reached for and couldn't get cleanly is the useful output.
    adding `ngroups`, `group_start`/`group_end`, `group(re, s, n)` (0 = whole
    match), and `groups(re, s)` over POSIX `regexec`'s `pmatch[]`. This program
    still parses the rigid CLF layout with `strings.split_once` (clearer for a fixed
-   format), but a general log tool can now use groups. (One minor point remains: a
+   format), but a general log tool can now use groups. (One point remains: a
    compiled pattern is a raw `ptr` with manual `release()`, not a RAII `handle`.)
 
 5. **`tychoc` package-mode diagnostics misattributed — fixed.** In a package build,
@@ -61,15 +60,15 @@ actual work). What it reached for and couldn't get cleanly is the useful output.
    left on the last-lexed file — now each file's source is kept and `g_src` points
    at the file being parsed; (b) *resolve*/*codegen* ran on the merged program with
    the filename resting on the last-parsed file, so a semantic error in a non-entry
-   sibling was blamed on the entry file — each proc now carries its own source file
-   (a proc lives in one file), and diagnostics switch to it per proc. Parse,
+   sibling was blamed on the entry file — each proc now carries its own source file,
+   and diagnostics switch to it per proc. Parse,
    resolve, and codegen errors all now name the right file + snippet + caret, in any
    package file. Regression-locked by the `pkgsnip` and `pkgresolve` assertions in
    `scripts/tools_check.sh`.
 
 6. **Map "increment-or-insert" is a three-line idiom.** `if k in m: m[k] = m[k] + 1
-   else: m[k] = 1`, repeated for every counter. A tiny ergonomic (a `map_inc`
-   builtin, or an entry-style API) would remove a lot of noise. (Compounded here by
+   else: m[k] = 1`, repeated for every counter. A small builtin (a `map_inc`
+   builtin, or an entry-style API) would remove noise. (Compounded here by
    #4, which blocks the obvious `inout` helper.)
 
 ## Gotchas hit along the way (not bugs)

@@ -1,30 +1,30 @@
 # Optimizing data structures for the arena model
 > Status: evergreen analysis (current — reflects shipped behaviour).
 
+| workload | cost vs C | idiom |
+|---|---|---|
+| value-shaped trees (`bench/json`: 37 MB vs C 35 MB) | ≈ C | none needed |
+| flat data + libraries (`bench/dbquery`, `bench/invindex`) | ≈ C, < Go | none needed |
+| pointer-shaped structures by value (`bench/trie`) | ~1.55× memory | flat node pool + index children (§1); `core:pool` when nodes are deleted |
+| graphs as adjacency indices (`bench/dijkstra`) | ~1.3× memory, ~1.2× wall | same pool idiom |
+| fixed-capacity LRU as index pool (`bench/lru`) | ~2.8× memory, ~2× wall, ahead of Go | same pool idiom |
+| long-lived scope holding transients | holds high-water mark to scope exit | scope transients in an inner function (§2) |
+| rebuilding a long-lived value per edit (`tools/tycho-ed/`) | one full copy per operation | mutate in place; hold hot text as `[int]` (§2) |
+
 Tycho's model — value semantics with no pointers, memory managed by implicit arenas — shapes
 how you represent data, and the shapes it rewards are not always the ones you'd reach for in C.
-It is a deliberate trade: you give up manual control (and some workloads) to get no
-`malloc`/`free`, no use-after-free, no GC pauses, and value equality that just works. This note
-maps the terrain honestly — where the model is already competitive, and where a workload wants a
-data-oriented representation (a flat pool, an index, a scoped transient) to stay on the
-value-semantics path.
+The trade: no `malloc`/`free`, no use-after-free, no GC pauses, and value equality that just
+works; the price is the table above. All figures measured on one machine (AMD Ryzen 7 7735HS,
+Debian x86-64); where a workload's shape fights the model even after the right representation,
+the note says so and names a different tool.
 
-**Read §2 first if you are reading only one.** The memory ratios in §1 are the
-limit people expect and the one that is easiest to measure, but they are a
-constant factor on a program that works. §2 is the one that changes what a
-program *costs per operation* — rebuilding a long-lived value on every edit pays
-a full copy of it each time — and it is the limit most likely to be hit by
-ordinary code that has nothing graph-shaped in it at all. It is ordered second
-here because §1 is the better introduction to *why* the model behaves as it
-does, not because it matters more. The numbers are measured, not asserted; and where a workload's natural
-shape fights the model even after the right representation, the note says so and points you at a
-different tool. The aim is to make the good representation the obvious one, not to apologize for
-the model's edges.
+**Read §2 first if you are reading only one.** §1 is the better introduction to *why* the model
+behaves as it does, but §2 — rebuilding a long-lived value on every edit pays a full copy each
+time — is the limit most likely to be hit by ordinary code with nothing graph-shaped in it.
 
 ## Where the model is competitive (for context)
 
-Measured head-to-head against hand-written C and Go (`bench/`, one machine — AMD Ryzen 7 7735HS, Debian x86-64 — same
-checksum):
+Measured head-to-head against hand-written C and Go (`bench/`, same checksum):
 
 - **Value-shaped trees** — `bench/json`: parse a 50k-object document into a tagged value
   tree. tycho 37 MB vs C 35 MB vs Go 29 MB. Essentially **C's memory profile with zero
@@ -105,7 +105,7 @@ enters. For graphs, the same pattern (`[Node]` + `[[int]]` adjacency by
 index) is the idiomatic Tycho representation. Use it whenever the C/Go version would lean on
 shared pointers.
 
-This is measured, not asserted: `bench/dijkstra` runs single-source shortest paths on a
+Measured on `bench/dijkstra`, which runs single-source shortest paths on a
 300k-node graph stored as an **adjacency list of indices** (`[[Edge]]`), and tycho lands at
 **~1.3× C memory / ~1.2× wall, ≈ Go** — *competitive*. Expressed the value-semantic way
 (indices, not pointers), the graph is value-shaped — the edge arrays are flat in every
@@ -133,7 +133,7 @@ still does *not* reach C's 38 MB, because each node keeps an `[int: int]` child 
 header + backing arrays dominate. The most compact tries drop the per-node map entirely for
 **first-child / next-sibling links** (each node is a handful of `int`s: child index, sibling
 index, key, flag), which gets within a small factor of C at the cost of linked-list child
-traversal instead of a map lookup. The progression is the honest point: each step toward C's
+traversal instead of a map lookup. The progression is the point: each step toward C's
 memory trades away ergonomics, and you choose how far to walk it.
 
 ### 2. Long-lived scope holding transient garbage ("build-and-hold")
@@ -256,7 +256,7 @@ borrows (does not copy) `match`/`for` bindings that aren't mutated; lean on that
 
 None of these makes Tycho a systems allocator's equal on its worst cases. They keep you on
 the value-semantics path — no `malloc`/`free`, no UAF — for the workloads where that path is
-viable, and tell you honestly when to step off it.
+viable, and tell you when to step off it.
 
 Is the trie/graph cost fundamental to value semantics, or just our implementation? See
 `hylo-mvs-research.md` — the most mature MVS language (Hylo) hits the same wall and answers

@@ -5,7 +5,7 @@ language surface and the corelib API can still change. It has undergone the
 internal security review recorded below — a review of the FFI shims, performed
 by the author, **not a formal third-party audit**. An external review is one of
 the conditions for 1.0 ([ROADMAP](ROADMAP.md#what-10-requires)). Please don't
-use it for anything where a compromise would actually matter.
+use it for anything where a compromise would matter.
 
 A structured pass over the FFI shims by a **non-author** reviewer was done on
 2026-08-14 and is written up in
@@ -16,6 +16,9 @@ reachable on the supported 32-bit target, and redirects followed with no bound
 and no scheme pin). That is still **not** a third-party audit, and the write-up
 names what it did not cover — TLS, regex, the image decoders and compression
 bombs — so the next pass starts there.
+
+`shim` below means the hand-written C behind a corelib `extern fn`; a *lane*
+is one step of `make ci`. See [STATUS](STATUS.md) for the full terms box.
 
 A few sharp edges are inherent, by design:
 
@@ -37,40 +40,40 @@ A few sharp edges are inherent, by design:
   branch is in the lowering, not in your code. Where you need constant time,
   call `core:crypto`, whose primitives run inside OpenSSL.
 - **Native Windows (MSYS2/mingw) keeps a few behavioural gaps** the POSIX build
-  does not have, and they are part of the sharp-edge list rather than the
-  stability contract: `core:signal`'s Windows handler is
-  `SetConsoleCtrlHandler` and whether it wakes a blocked `accept` is
-  Windows-version dependent — the flag is set either way, so a program that
-  polls it is portable and one that relies on the wake is not. Measured
-  2026-08-09 on Windows 11 26200, and it is the sharper half of that gap: a
-  thread parked in `recv` on an ACCEPTED connection is **not** released by the
-  handler's `shutdown()` the way it is on Linux, so shutting down costs one
-  `SO_RCVTIMEO` per parked reader rather than milliseconds
-  (`server/run.sh`'s parked-reader case needs a 15s bound there against 3s on
-  Linux, with an 8s idle timeout). `closesocket()` would release it — the
-  listener already gets both — but a connection fd is churned by its worker,
-  and closing one hands the number back out while another thread may still be
-  blocked on it, which is the hazard `signal_shim.c`'s registry header rejects
-  with measurements. A server on Windows therefore winds down within its idle
-  timeout, not within a millisecond;
-  `core:datetime`'s `local_offset` reads the SYSTEM zone through the CRT and
-  ignores the `TZ` environment variable, and it did not track DST across the
-  instants measured — on a box set to Pacific it answered `-28800` for both a
-  January and a July timestamp under three different `TZ` settings, where the
-  POSIX build tracked each one. Use `offset_at` with an explicit POSIX rule
-  when the answer has to be reproducible; that path parses the rule itself on
-  Windows and was checked against the POSIX build over 108 (zone, instant)
-  pairs, all identical. **Non-ASCII filenames do not survive**: the emitted
-  program uses the narrow (ANSI) CRT and directory APIs, so on the usual
-  code page 1252 a path like `日本語.txt` is written to disk under a mojibake
-  name and `read_dir` cannot return it — round-tripping inside one Tycho
-  program works, but the name on disk is not the name you asked for and any
-  other program sees the corruption. ASCII paths are unaffected.
-  mingw has no `newlocale`, so `float(str)` under a comma-decimal locale falls
-  back to the `localeconv` path and rejects what glibc would accept; `core:os`
-  shells out through `cmd.exe`, which has neither `true`/`false` nor `kill`;
-  and `tycho-debug` cannot interrupt a running inferior with Ctrl-C (`q` still
-  quits). **WSL2 has none of these** — it is the Linux build.
+  does not have. They are sharp edges, not stability promises:
+  - `core:signal`'s Windows handler is `SetConsoleCtrlHandler`, and whether it
+    wakes a blocked `accept` is Windows-version dependent — the flag is set
+    either way, so a program that polls it is portable and one that relies on
+    the wake is not. Measured 2026-08-09 on Windows 11 26200. Sharper still: a
+    thread parked in `recv` on an ACCEPTED connection is **not** released by the
+    handler's `shutdown()` the way it is on Linux, so shutting down costs one
+    `SO_RCVTIMEO` per parked reader rather than milliseconds
+    (`server/run.sh`'s parked-reader case needs a 15s bound there against 3s on
+    Linux, with an 8s idle timeout). `closesocket()` would release it — the
+    listener already gets both — but a connection fd is churned by its worker,
+    and closing one hands the number back out while another thread may still be
+    blocked on it, which is the hazard `signal_shim.c`'s registry header rejects
+    with measurements. A server on Windows therefore winds down within its idle
+    timeout, not within a millisecond.
+  - `core:datetime`'s `local_offset` reads the SYSTEM zone through the CRT and
+    ignores the `TZ` environment variable, and it did not track DST across the
+    instants measured — on a box set to Pacific it answered `-28800` for both a
+    January and a July timestamp under three different `TZ` settings, where the
+    POSIX build tracked each one. Use `offset_at` with an explicit POSIX rule
+    when the answer has to be reproducible; that path parses the rule itself on
+    Windows and was checked against the POSIX build over 108 (zone, instant)
+    pairs, all identical.
+  - **Non-ASCII filenames do not survive**: the emitted program uses the narrow
+    (ANSI) CRT and directory APIs, so on the usual code page 1252 a path like
+    `日本語.txt` is written to disk under a mojibake name and `read_dir` cannot
+    return it — round-tripping inside one Tycho program works, but the name on
+    disk is not the name you asked for and any other program sees the
+    corruption. ASCII paths are unaffected.
+  - mingw has no `newlocale`, so `float(str)` under a comma-decimal locale falls
+    back to the `localeconv` path and rejects what glibc would accept; `core:os`
+    shells out through `cmd.exe`, which has neither `true`/`false` nor `kill`;
+    and `tycho-debug` cannot interrupt a running inferior with Ctrl-C (`q` still
+    quits). **WSL2 has none of these** — it is the Linux build.
 
 ## 1.0 security review — 2026-08-05
 
@@ -97,7 +100,7 @@ they rely on are `docs/spec/14-ffi.md` §24.1 and the codegen they lower to.
 - `core:crypto`: hex returns use a `__thread` recycled buffer (safe under rule
   1, copy at the call site); secret key material stays in an opaque handle and
   is wiped with `OPENSSL_cleanse` on free. `cx_key_export_hex` is the one
-  deliberate re-materialization, documented.
+  documented re-materialization.
 - `core:net` `peer_addr`: `static __thread char buf[INET6_ADDRSTRLEN]` — safe
   under rule 1; the shim comment records why `__thread` (concurrent workers).
 - `core:io` `read_line`: getline's reused buffer, valid until the next call —
@@ -173,7 +176,7 @@ they rely on are `docs/spec/14-ffi.md` §24.1 and the codegen they lower to.
 
 [docs/internals/audit-brief.md](docs/internals/audit-brief.md) is the packet to
 start from: threat model, the entry points where untrusted bytes reach
-hand-written C, what each lane already holds and the honest scope of each claim,
+hand-written C, what each lane already holds and the scope of each claim,
 how to run any of it, and where we would start. It is written for someone who has
 not read this repository.
 

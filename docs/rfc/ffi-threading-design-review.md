@@ -68,7 +68,7 @@ unbounded, and a panic/abort in any task `exit(1)`s the whole process
 1. **First-class immutable `bytes` type crossing as `(ptr,len)`** — removes
    the hex-marshaling tax, the single biggest FFI usability win. Fundamental
    (new type) but fits value semantics cleanly.
-2. **Tighten the safety claim in docs** — cheap, honest, high trust value.
+2. **Tighten the safety claim in docs** — cheap, high trust value.
    State exactly what "race-free by construction" covers and what it does not
    (FFI, global C state, panic). Add an FFI-from-threads guidance section.
 3. **Typed handles with a compiler-known destructor** (`handle "Lib" Db`) —
@@ -262,7 +262,7 @@ opt-out.**
 - **`parallel for` forks `ncpu` threads with full capture copy per chunk.** K =
   `tycho_ncpu()` chunk tasks (`src/tychoc.c:5121-5134`; runtime `:925-932`,
   `TYCHO_THREADS` overrides). Every captured variable is deep-copied into each
-  chunk's root arena — the honest per-chunk cost, documented at
+  chunk's root arena — the per-chunk cost, documented at
   `docs/reference/concurrency.md:59`. For large captures this is real memory and time.
 - **No thread pool, no work-stealing.** Explicitly: "no work-stealing runtime:
   a blocked waiter is a parked OS thread" (`docs/reference/concurrency.md:137-139`).

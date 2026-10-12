@@ -1,22 +1,16 @@
 # Basics
 
-> **Memory:** Every `if`/`else` block and every loop iteration gets its own arena,
-> freed at block exit. This page shows the scope boundaries the compiler sees.
+> **Memory:** each `if`/`else` block and each loop iteration frees its
+> temporary values when it exits.
 
-The procedural core of the language: how you define a procedure, declare and assign
-variables, write expressions, and control flow. This part is deliberately narrow — one
-loop keyword, one procedure form, no `while`, no `do`/`until`, no ternary.
+The procedural core of the language: procedures, variables, expressions,
+and control flow. One loop keyword, one procedure form — no `while`,
+no `do`/`until`, no ternary.
 
-**"One way to do each thing" is true here and not language-wide**, so read it as a claim
-about this page rather than about Tycho. A sequence, for instance, has five spellings:
-growable [`[T]`](../spec/03-types.md#531-arrays-t), fixed
-[`[N]T`](../spec/03-types.md#532-fixed-size-arrays-nt), size-generic `[$N]T`,
-inline variable-count [`bounded[N]T`](../spec/03-types.md#5310-boundednt), and
-[`soa`](../spec/03-types.md#537-soa); a parameter has
-[three passing modes](../spec/11-functions.md#152-parameter-passing-modes). Those are
-distinctions of **representation**, not taste — each names a different memory layout or
-ownership rule, and picking the wrong one is a performance or lifetime bug rather than a
-style preference. What the language avoids is two spellings for the *same* thing.
+Where two spellings could do the same job, Tycho keeps one. Some pages
+list several similar types (for example, the sequence types); those differ
+in memory layout, not style — picking the wrong one is a performance
+or lifetime bug, not a taste choice.
 
 ## Procedures
 
@@ -51,9 +45,7 @@ parameters of one call (that would be overlapping mutable access). `inout` cover
 value structs, and the heap aggregates (`[int]`, `[string]`, heap-bearing structs, maps) —
 including `push`/growth and element/field mutation through the borrow. `inout string` works too:
 the string stays immutable, but reassignment through the borrow (`s = s + "."`) reaches the
-caller, with the new bytes built in the caller's arena. (The copy-in/copy-out wording is the
-semantic contract; the codegen passes a pointer plus the owner arena, so no aggregate is copied
-in or out — see `docs/internals/design-aggregate-ref.md`.)
+caller, with the new bytes living as long as the caller's variable.
 
 A third convention, `sink`, marks a parameter the callee **owns and consumes** — owned, so it
 may mutate the buffer (a plain borrow is read-only); consuming, so the caller gives it up:
@@ -72,14 +64,12 @@ fn main():
     scale2(a)                      # a is dead after this, so it is adopted too — still no copy
 ```
 
-This is the copy-eliding convention, and the elision is the point: `sink` adopts a value the
-caller no longer needs — a fresh literal, or a local on its last use — straight into the call
-with **no copy at all** (verified in the generated C: no `tycho_arr_int_copy` is emitted). It
-falls back to a copy exactly when value semantics demand independence — if the variable is read
-again afterwards, used inside a loop, or captured by a closure. Reusing an owned value *after*
-handing it to a `sink` is a compile error, not a silent copy, so the move is a
-checked guarantee. The one copy `sink` can't elide is escape: a value returned or stored past the
-call must still be copied to a longer-lived arena — a property of the arena model.
+This is the copy-avoiding convention: `sink` takes a value the
+caller no longer needs — a fresh literal, or a local on its last use —
+with **no copy**. It copies only when value semantics require it — if the variable is read
+again afterwards, used inside a loop, or captured by a closure. Reusing a value *after*
+handing it to a `sink` is a compile error, not a silent copy. A value returned or stored past the
+call must still be copied to live longer — that follows from how scopes own memory.
 
 ## Declarations and assignment
 
@@ -185,13 +175,11 @@ fn drain(r: Result(int, string)) -> int:
 named `pass` still works. It is not an expression — it produces no value and cannot be assigned
 ([spec §14.1.1](../spec/10-statements.md#1411-pass)).
 
-There is no counting form and no `range`: `for i in range(a, b, step):` was removed on
-2026-07-29, and a `for` head that names `range` is refused with its replacements. Say the
-direction in the condition (`i > b` with `i -= s`) instead of in the sign of a step. **One
-guarantee was lost with it, deliberately:** `range()` rejected a literal `0` step at compile
-time and aborted on a runtime `0`; a post clause is arbitrary code, so `for i := 0; i < n;
+There is no counting form and no `range`: to count, say the
+direction in the condition (`i > b` with `i -= s`) instead of in the sign of a step. Note the
+trade: a post clause is arbitrary code, so `for i := 0; i < n;
 i += 0:` is an infinite loop that nothing diagnoses. To count in parallel, use
-`parallel for i in 0..<N:`, which steps by 1 implicitly and so has no zero-step case at all.
+`parallel for i in 0..<N:`, which steps by 1 and has no zero-step case.
 
 ## Unused names
 
@@ -204,10 +192,4 @@ than `_` twice.
 
 Parameters, loop variables, and match/select bindings are never reported.
 
-Fences on this page and in the specification use `_name` where a value is bound
-only to show the syntax and reading it would add nothing. The guides do the
-opposite and use what they bind.
-
-A function nothing ever calls is a **warning**, not an error. It is reported
-after code generation, because a callee reached only from a generic body is not
-resolved until that body is instantiated.
+A function nothing ever calls is a **warning**, not an error.

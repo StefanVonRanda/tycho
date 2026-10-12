@@ -16,10 +16,10 @@ program MUST NOT depend on anything in the "unspecified" list.
 | 3 | **Using a typed handle after a `close(h)` nested in a branch or loop** — passes null to C; a logic bug, not memory corruption. A use after a `close(h)` statement in the same block is compile-rejected. | [§25](14-ffi.md#25-typed-handles) | defined boundary |
 | 4 | **Behavior on the far side of the FFI boundary** — C-side global/`static` races and misuse. | [§26](14-ffi.md#26-ffi-and-concurrency) | outside all guarantees |
 
-Two items were formerly in this list and are now defined: an out-of-range **shift
-count** (count ≥ width → `0`, negative → abort — [§13.2](09-expressions.md#132-operators))
-and an out-of-range **`to_int(float)`** (NaN / out-of-range → abort — [§8.5](06-conversions.md#85-out-of-range-conversions);
-the sized conversions are total).
+An out-of-range **shift count** (count ≥ width yields `0`, negative aborts —
+[§13.2](09-expressions.md#132-operators)) and an out-of-range
+**`to_int(float)`** (NaN / out-of-range aborts — [§8.5](06-conversions.md#85-out-of-range-conversions);
+the sized conversions are total) are defined, not unspecified.
 
 ## F.2 Implementation-defined behavior
 
@@ -40,28 +40,14 @@ For the avoidance of doubt, the following are **fixed by this specification** an
 an implementation MUST NOT vary them, even where its backend's native types
 differ:
 
-> **Reference-implementation note (not a spec allowance).** The required 64-bit
-> `int` width above is normative for *every* conforming implementation; it is
-> **not** implementation-defined. The reference compiler (`tychoc`)
-> realizes `int` as a **fixed-width 64-bit** C type — `typedef int64_t tycho_int;`
-> in the emitted prelude, which is the single width authority for `int`, the
-> `int`-carried `char` representation, array/slice length headers, map keys and
-> the FFI crossing signatures — and emit `long long`-suffixed integer literals so
-> that constant arithmetic is evaluated at 64-bit rank. `int64_t` does not vary
-> with the C data model, so the lowering is 64-bit on **LP64**, **LLP64** and
-> **ILP32** alike, and a build in which it were not is rejected outright by the
-> always-on `_Static_assert(sizeof(tycho_int)==8, "tycho int must be 64 bits");`
-> carried in the same prelude. The reference implementation therefore conforms to
-> the 64-bit `int` requirement on all three data models; no target is excluded.
->
-> *Extent of the evidence (so the claim is not read as broader than it is).* The
-> data-model independence above is a property of `int64_t` plus the static
-> assertion, and holds by construction. It is additionally **gated empirically on
-> ILP32**: `make ilp32` rebuilds the emitted C of the whole fixture suite with
-> `gcc -m32` and re-runs it against the unmodified 64-bit goldens on every CI run
-> (`scripts/ci.sh`), so a width regression fails the build (see
-> [Appendix E §5.2.1](appendix-e-conformance.md#5-types)). That lane runs an ILP32
-> data model on an x86-64 host; it is not a test on 64-bit Windows hardware, and
-> **LLP64 is asserted architecturally, not measured**. The ILP32 lane also
-> deliberately omits the sanitizer pass (no 32-bit ASan runtime under multilib);
-> ASan coverage comes from the 64-bit `make test` lane.
+The required 64-bit `int` width is normative for *every* conforming
+implementation; it is **not** implementation-defined. The reference compiler
+(`tychoc`) realizes `int` as a **fixed-width 64-bit** C type — `typedef int64_t
+tycho_int;` in the emitted prelude, which is the single width authority for
+`int`, the `int`-carried `char` representation, array/slice length headers, map
+keys and the FFI crossing signatures — and emits `long long`-suffixed integer
+literals so that constant arithmetic is evaluated at 64-bit rank. `int64_t` does
+not vary with the C data model, so the lowering is 64-bit on **LP64**,
+**LLP64** and **ILP32** alike, and a build in which it is not is rejected
+outright by the always-on `_Static_assert(sizeof(tycho_int)==8, "tycho int must
+be 64 bits");` carried in the same prelude.

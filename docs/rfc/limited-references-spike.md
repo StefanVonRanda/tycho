@@ -13,7 +13,7 @@ Tycho today rejects recursive structs and has no shared mutable reference, so a 
 be a flat `[Node]` linked by integer indices (`docs/internals/value-semantics-limits.md`,
 `bench/dijkstra` ≈ 1.3× C). This spike asks whether limited references change that.
 
-The honest answer below: **no — not without sacrificing the two invariants that *are* the
+The answer below: **no — not without sacrificing the two invariants that *are* the
 project.** But the analysis isolates one genuinely-compatible, smaller increment.
 
 ## What Hylo actually provides (primary sources)
@@ -105,7 +105,7 @@ representation, not a workaround.
 
 ## The one compatible increment: user-defined projections
 
-If we want to *act on* item #1, the tractable slice is **user-defined yielding subscripts** —
+If the goal is to *act on* item #1, the tractable slice is **user-defined yielding subscripts** —
 generalizing the built-in `&m[k]` so a library can expose a zero-copy view into part of a
 value:
 

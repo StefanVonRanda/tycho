@@ -11,12 +11,6 @@ An **abort** terminates the program with a non-zero exit status after writing a
 diagnostic to standard error. The *presence* of the abort is normative; the
 diagnostic text is not ([§1.1](00-conventions.md)).
 
-> Provenance: `tycho_idiv` `runtime/tycho_rt.c@tycho_idiv`, `tycho_imod`
-> `runtime/tycho_rt.c@tycho_imod`, bounds `runtime/tycho_rt.c:1656-1662`,`:1239-1246`,
-> `pop` `runtime/tycho_rt.c@tycho_arr_int_pop`, `substr` `runtime/tycho_rt.c@tycho_str_substr`, string
-> header `:1164-1182`, map hashing `:2252-2255`, channels/tasks `:703-1151`.
-> Behaviors marked *(probed)* were
-> confirmed against the implementation.
 
 ## 30.1 Defined wraparound
 
@@ -57,15 +51,6 @@ A conforming implementation MUST abort on each of the following:
 - **Out of memory.**
 - **`die(msg)`** — the explicit user abort ([§14.8](10-statements.md#148-die-exit-and-termination)).
 
-> **Removed 2026-07-30: "a `range` step of zero".** This list carried a bullet
-> reading "a literal `0` step is a compile error; a step that evaluates to `0` at
-> run time aborts (§10)". `range(a, b, step)` was itself removed on 2026-07-29 and
-> [§14.4](10-statements.md#144-loops) records the loss of that guarantee as a
-> deliberate trade: `for i := 0; i < n; i += 0:` is an infinite loop the
-> implementation does not diagnose, at compile time or at run time. The bullet was
-> therefore a normative promise contradicted by another normative section of this
-> same document, and by the compiler. No implementation owes a zero-step
-> diagnostic.
 
 ## 30.3 Conditions that clamp
 

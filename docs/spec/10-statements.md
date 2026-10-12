@@ -5,9 +5,6 @@ The grammar of statements is in
 meaning. Declarations and assignments are covered in
 [§12](08-declarations.md); this chapter covers control flow.
 
-> Provenance: `parse_stmt` `src/tychoc.c:4025-4591` (`parse_if` `:3826@parse_if`,
-> `parse_match` `:4064@parse_match`, `for` `:4162-4420`, `select` `src/tychoc.c:4404@TK_SELECT`). Loop and `match` behaviors marked
-> "probed" were confirmed against the implementation (spec-plan.md §6a).
 
 ## 14.1 Blocks
 
@@ -175,26 +172,13 @@ the three-clause form; count in parallel with `parallel for i in 0..<N:`
 ([§22](13-concurrency.md#22-parallel-for)), which is the only context where
 `0..<N` is legal — a sequential `for i in 0..<N:` is refused.
 
-**The zero-step guarantee is gone, and that is a deliberate trade, not an
-oversight.** `range()` rejected a literal `0` step at compile time and
-**aborted** on a step that evaluated to `0` at run time — the same fail-closed
-discipline as division by zero. A three-clause `post` is arbitrary code, so no
+**There is no zero-step check.** A three-clause `post` is arbitrary code, so no
 equivalent check exists: `for i := 0; i < n; i += 0:` is an infinite loop and
 the implementation **does not diagnose it**, at compile time or at run time.
-`0..<N` steps by `1` implicitly and so has no zero-step case at all. What was
-bought is a single loop form that says its own direction and amount in the
-source instead of inferring them from the sign of a step expression.
+`0..<N` steps by `1` implicitly and so has no zero-step case at all.
 
-> Provenance: bare `for:` `src/tychoc.c:4498@TK_COLON`; the three-clause header
-> scan and its five required-clause refusals `src/tychoc.c:4093-4138`; `init`
-> parsed by `parse_stmt` itself `src/tychoc.c:4529@parse_stmt`; loop scoping and
-> the post clause resolved outside the body block `src/tychoc.c:9078-9083`;
-> `continue` emitted as `goto _post<id>` `src/tychoc.c:13069-13072` with the
-> label at `src/tychoc.c:13810@_post%d`; the `range()` refusal
-> `src/tychoc.c:4585@was removed: write`. There is no step in the implementation
-> at all: `Stmt` carries `r_start` and `r_stop` only (`src/tychoc.c:1829-1835`)
-> and every `S_FORRANGE` emits `h_i < _stopN; h_i += 1`
-> (`src/tychoc.c:12709-12713`).
+Rationale: a single loop form states its own direction and amount in the source.
+
 
 ## 14.5 `return`
 

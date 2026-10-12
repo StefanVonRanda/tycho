@@ -1,5 +1,7 @@
 # FFI boundary review, 2026-08-14
 
+> Status: executed 2026-08-14 — five findings fixed, three areas measured clean. Not a third-party audit; ROADMAP §7 stays open.
+
 `ROADMAP.md` §7 asks for an external security review, naming the FFI boundary:
 "unsafe by design and nobody outside the project has looked at it."
 
@@ -336,7 +338,7 @@ first bad digit, which timed the *offset* of the error, and it is on the
 key-import path. The digit decode is branch-free now; the proof is valgrind, not
 a stopwatch — the input is marked UNDEFINED and memcheck reports every branch
 derived from it. **The old version scored 7. It scores 0.** Two things are
-declassified on purpose and naming them is the honesty of the claim: the input
+declassified on purpose and naming them bounds the claim: the input
 LENGTH, and the single bit "was the hex well-formed", which the caller must be
 able to branch on. A control built against a copy with a branching digit decode
 still scores 2, so the suppressions are not hiding the subject.
@@ -357,8 +359,8 @@ table-lookup side channels.
 half of every HTTPS request a Tycho program makes, and the only test it had
 connected to a CLOSED LOOPBACK PORT — which cannot tell a refused CERTIFICATE
 from a refused CONNECTION, since both return a null handle. Turning
-`SSL_VERIFY_PEER` into `SSL_VERIFY_NONE` passed every gate in this tree;
-measured, not supposed. `make tls-verify` now runs a real server on the loopback
+`SSL_VERIFY_PEER` into `SSL_VERIFY_NONE` passed every gate in this tree — verified
+by running it, not by reading it. `make tls-verify` now runs a real server on the loopback
 with an untrusted certificate and pins three outcomes that must disagree, so both
 chain validation and the hostname check are held by a leg that reddens on its
 own. That is the whole claim: **nothing here says anything about the tls shim's

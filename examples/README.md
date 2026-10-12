@@ -1,5 +1,7 @@
 # Examples
 
+Rule: single-file examples run directly. Subdirectories are multi-file programs with their own README or `run.sh`.
+
 Runnable Tycho programs, from one-liners to real applications. Single-file examples run
 directly:
 

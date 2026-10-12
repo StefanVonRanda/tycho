@@ -8,7 +8,7 @@
    in five steps from familiar C. The gentlest route to the core idea.
 4. **[Language reference](reference/index.md)** — how each feature behaves.
 5. **[Quiet results](quiet-results.md)** — the seven places the language answers
-   instead of refusing. Short, and worth reading before your first real program.
+   instead of refusing. Short; read it before the first real program.
 
 ## Where to look for what
 
@@ -38,8 +38,7 @@ are the topic pages that are not about one feature.
 - **[`architecture.md`](architecture.md)** — how the project is built and what
   each verification gate proves.
 - **[`internals/`](internals/README.md)** and **[`rfc/`](rfc/README.md)** — design
-  notes, proposals, and the running record of what fought back. Written for
-  maintainers.
+  notes, proposals, and investigation records. Written for maintainers.
 
 ## Contributing
 

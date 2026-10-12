@@ -1,5 +1,8 @@
 # Strings
 
+> **Memory:** Strings are values: assigning or slicing a string copies its bytes,
+> so two variables never share storage.
+
 A `string` is a **byte** string with a known length. It is not a sequence of
 characters, and every indexing operation on it is a byte operation. That is the
 one thing to know before writing anything that touches text you did not type
@@ -114,5 +117,4 @@ fn main():
 | `len`, `chr`, `char_at`, `find` and the other builtins | [Builtins](builtins.md) |
 
 The rule that ties them together: **the language gives you bytes, and `core:utf8`
-gives you characters.** Reaching for the second is a decision you make on
-purpose, and text from outside your program always needs it.
+gives you characters.** Use `core:utf8` for any text that arrives from outside your program.

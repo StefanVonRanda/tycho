@@ -16,11 +16,11 @@ select  soa     spawn   string  struct   true    type    u8
 u16     u32     u64
 ```
 
-42 of the 43 are **lexer** keywords: the set is exactly `keyword()`
-(`src/tychoc.c@keyword`), which never hands back an identifier token for one.
+42 of the 43 are **lexer** keywords: the set is exactly `keyword()`,
+which never hands back an identifier token for one.
 `soa` is the exception — it lexes as an ordinary identifier and is reserved by
 the **parser**, which requires a `[` after it in every expression position
-(`src/tychoc.c:3354-3357`). The difference is invisible to a program and shows
+. The difference is invisible to a program and shows
 only in the diagnostic: `soa := 5` is accepted at its declaration, and the next
 mention of the name dies with `expected '[' after soa`, so the binding is
 declarable and permanently unusable. It is listed here, with the reserved words,

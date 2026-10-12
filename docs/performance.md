@@ -1,9 +1,8 @@
 # Performance and memory
 
-Tycho's claims are measured, not asserted — every program in this file runs on
-`tychoc`, its output checked against a golden, and the figures are
-machine-specific: the cross-language *ratios* are the claim, not the absolute
-times.
+Tycho's claims are measured — every program in this file runs on
+`tychoc`, its output checked against a golden. Cross-language *ratios* are the
+claim, not absolute times.
 
 ## A real program at flat memory
 
@@ -15,8 +14,7 @@ iteration's arena resets. Clean under ASan + LeakSanitizer.
 
 ## Head-to-head, five languages
 
-Measured on an AMD Ryzen 7 7735HS (16 threads), Debian; full toolchains and
-per-workload timings in [`bench/prongB/RESULTS.md`](../bench/prongB/RESULTS.md).
+Per-workload timings are in [`bench/prongB/RESULTS.md`](../bench/prongB/RESULTS.md).
 Peak resident memory (MB) — every binary computes the same checksum; lower is
 better:
 
@@ -40,8 +38,7 @@ is observable directly: `TYCHO_ARENA_STATS=full <program>` prints a one-shot
 summary at exit (`runtime/tycho_rt.c@stats_dump`): peak live bytes (the working-set
 high-water), total bump-allocated bytes, the free-list recycle rate, OS-reserved
 bytes over blocks, the block-pool reuse rate, and a per-function — now
-per-statement, see below — residency table. Measured 2026-08-04 on this machine
-over the bench workloads, at the default 64 KiB block size:
+per-statement, see below — residency table. At the default 64 KiB block size:
 
 | workload | peak live | OS reserved | slack | block reuse | free-list recycle |
 |----------|-----------|-------------|-------|-------------|-------------------|
@@ -79,7 +76,7 @@ Three things the numbers say that the RSS tables cannot:
 
 **Block size is a memory-only knob.** `TYCHO_BLOCK=<bytes>` overrides the
 64 KiB default per run (read once at startup, `runtime/tycho_rt.c:637@TYCHO_BLOCK`). A
-sweep on the three big workloads, same machine:
+sweep on the three big workloads:
 
 | block | interp peak/OS | json peak/OS | lru peak/OS | wall (interp/json/lru) |
 |-------|----------------|--------------|-------------|------------------------|
@@ -95,9 +92,7 @@ default is not retuned.
 Tycho runs in C's class: it is faster than hand-written C on the
 allocation-heavy tree workloads (binary-trees, tree-rewrite) and on the JSON
 parser, and it trails C and Rust on the flat array-pipeline (per-element bounds
-checks, not the memory model). It is *not* a bid to be the fastest language —
-absolute wall times are machine-, governor-, and toolchain-specific, so the
-cross-language *ratios* are the claim, not the times. The in-place append (an
+checks, not the memory model). The in-place append (an
 `acc = acc + x` loop growing one buffer) is guarded by `make bench`: ~1.5 MB
 where the un-optimized path is ~825 MB at the same N, so a 32 MB bound sits
 firmly between working and broken.

@@ -1,12 +1,11 @@
 # Tycho language reference
 
-This reference catalogs every feature of the language and how it behaves. Each
-feature exists to stress-test the arena model in a different dimension — the
-[thesis](../thesis.md) explains the argument; this reference documents the
-evidence.
+How each part of Tycho behaves, with runnable examples. New here?
+Start with the [tutorial](../tutorial.md). Curious why the language
+works this way? Read [From `malloc` to arenas](../from-c-to-arenas.md),
+then the [thesis](../thesis.md) for the full argument.
 
-Start with the thesis for *why*, then come here for *what*. Every example on
-every page compiles and produces the shown output.
+Every example compiles and prints the output shown.
 
 ## Pages
 
@@ -29,13 +28,10 @@ every page compiles and produces the shown output.
 
 ## Conventions
 
-- **One way to do each thing.** Tycho is kept small; where two spellings would do, only
-  one exists. The reference says which.
-- **Everything is a value.** The one idea behind the whole language is that data has
-  *value semantics*: assignment, arguments, and returns copy, and the copy is deep, so
-  two variables never share storage. Each page says how this plays out for its types
-  instead of restating the principle; [the thesis](../thesis.md) explains the claim
-  and the evidence (no GC, no `free`, no data races on owned values).
-- **Examples are real.** Every code sample compiles and runs under `tychoc`, the
-  reference transpiler (see [The testing campaign](../../README.md#the-testing-campaign)). Output shown
+- **One spelling per idea.** Where two spellings could do the same job,
+  Tycho keeps one. Each page names it.
+- **Values copy.** `b := a` gives `b` its own independent copy. Two
+  variables never share mutable storage. Each page shows what that means
+  for its own types.
+- **Examples run.** Every sample compiles under `tychoc`. Output shown
   in a comment is the actual output.

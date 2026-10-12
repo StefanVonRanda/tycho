@@ -53,15 +53,10 @@ resolves to no locations).
 needed for source-level stepping.)
 
 > **Each block is checked on the host that can run it.** `make docs-fences`
-> executes every command block in this repository's docs and requires exit 0.
-> These two cannot both run on one machine: `gdb` is not in the macOS toolchain,
-> and `dsymutil` is Xcode's and writes a Mach-O `.dSYM` that no Linux host can
-> produce. So the lane drives the gdb block on Linux and the lldb block on
-> macOS, and on each platform the *other* one is an enumerated exception in
-> `ALLOWED_SKIPS` (`scripts/docs_fences.py`) rather than an unchecked category —
-> a skip on the platform a block documents is a failure. Both were run: the
-> lldb block was first executed on Darwin 25.5.0 / arm64 on 2026-09-10, and it
-> is what turned up the missing `-c`.
+> executes every command block in the docs and requires exit 0. `gdb` is not in
+> the macOS toolchain and `dsymutil` is Xcode-only, so the gdb block runs on
+> Linux and the lldb block on macOS; on each platform the other block is an
+> enumerated skip in `scripts/docs_fences.py` rather than an unchecked category.
 
 ## `tycho debug` — the gdb adapter
 

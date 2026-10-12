@@ -1,5 +1,7 @@
 # webserver — a web server written in Tycho
 
+Rule: routing is a pure `route(req) -> Response` — testable without a live socket, golden-locked by `run.sh`.
+
 A small HTTP server that serves a site — a landing page, a Markdown **blog**
 (index + posts) and a Markdown **wiki** — over `core:httpd` + `core:net`, rendering
 content through `core:markdown` inside a shared HTML layout. It's the website

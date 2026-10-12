@@ -1,9 +1,6 @@
 # Design: `match` on scalar values
 
-Status: the deliverable of `docs/internals/plan-tycho-vm-DONE.md` Phase 1. Read
-before Phase 2 implements. This document is the contract; the six decisions
-below each carry their reason, and the codegen section carries the numbers
-that justify the choice.
+> Status: decided 2026-08-03 — scalar `match` on `int`/`char`/`bool`, with inclusive ranges, sets, and `_`. An ergonomics feature, not a speed feature; Phase 2 measured −1.8% / −2.4% vs the `if` chain.
 
 ## The demand, measured
 
@@ -66,7 +63,7 @@ int** (`src/tychoc.c:7128@T_BYTES`), so the char-position ladders all compare in
   **compile error at resolve**, with the reason in the message.
 - **`float`** — **refused.** Equality on floats is the classic trap (arms on
   a continuous domain invite NaN and mid-computation surprises), no customer
-  exists, and `if` with comparisons is the honest form. The refusal is
+  exists, and `if` with comparisons is the form to use. The refusal is
   stated, not silent.
 
 ### D2 — `_` and exhaustiveness. `_` is REQUIRED for `int`/`char`; optional for `bool`

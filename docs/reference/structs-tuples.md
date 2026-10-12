@@ -1,8 +1,7 @@
 # Structs and tuples
 
-> **Memory:** A struct with heap-bearing fields (strings, arrays) is deep-copied on a
-> cross-arena move by the recursive `copy_into`, at every nesting level. Tuples
-> participate in the same return-slot optimization as single values.
+> **Memory:** Copying a struct copies its whole tree — strings, arrays, and nested
+> structs included — so two variables never share storage. Tuples copy the same way.
 
 Both are product types — a value made of several fields. A `struct` names its fields and is
 declared as a type; a tuple is anonymous and is how a function returns more than one value.
@@ -56,8 +55,8 @@ Fields are read with `p.x` and written with `p.x = v`, including nested (`r.lo.x
 array-field element (`p.tags[0] = v`). Construction is positional, in declaration order, and
 a struct must be declared before it is used as a type. Two structs compare by value with
 `==`/`!=` — field-wise, recursing into nested structs, arrays, and strings — so `a == b` is
-true exactly when `b` is an independent copy of `a`. A struct may be a "method" receiver; see
-[Functions](functions.md#methods-ufcs).
+true exactly when `b` is an independent copy of `a`. A struct may be a method receiver
+(`r.area()` calls `area(r)`); see [Methods](functions.md#methods-ufcs).
 
 ### Layout: `packed` and `align(N)`
 
@@ -131,6 +130,6 @@ beforehand is unaffected.
 
 ---
 
-*Design background:* if you want the why — why deep-copied aggregates stay sound, and why a
-struct that would contain itself by value is rejected (use indirection through an array) — see
-[the aggregates design note](../reference/arrays-slices.md).
+*Design background:* why deep-copied aggregates stay sound, and why a struct that would
+contain itself by value is rejected (use indirection through an array), is in
+[the aggregates design note](../internals/design-aggregates.md).

@@ -214,7 +214,7 @@ leave a scope in ways the compiler can see in the source (returned up, or passed
 the compiler places every allocation and free itself, from the syntax alone — no garbage
 collector, no manual `free`, and no lifetime annotations to write.
 
-That is the entire idea the language exists to test. The full argument, with the
+That is the core idea behind the language. The full argument, with the
 measurements and the cases where it costs, is in [thesis.md](thesis.md).
 
 ## Next steps

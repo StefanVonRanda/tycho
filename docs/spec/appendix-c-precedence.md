@@ -6,7 +6,7 @@ prefix levels are right-associative.
 
 | Precedence | Operators | Kind | Associativity |
 |---|---|---|---|
-| 1 | `[]` (index/slice) · `.` (field / tuple index) · `()` (call) · `or_return` · `...` | postfix | left |
+| 1 | `[]` (index/slice) · `.` (field / tuple index) · `` (call) · `or_return` · `...` | postfix | left |
 | 2 | `-` · `&` (address-of) · `~` | unary prefix | right |
 | 3 | `*` · `/` · `%` · `<<` · `>>` · `&` (bitwise) | binary | left |
 | 4 | `+` · `-` · `\|` · `^` | binary | left |
