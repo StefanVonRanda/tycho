@@ -24,45 +24,19 @@
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<!-- Direction: the page as a technical document, not a landing page. Title block,
-     table of contents with dotted leaders, numbered FIGURES and LISTINGS with
-     captions, spec-sheet tables, a running section header in the top bar, and a
-     "END OF DOCUMENT" colophon. All IBM Plex Mono, flat and sharp-cornered, in the
-     original warm-olive monochrome (bg #eceee9 / ink #0d0d0c, no accent colour).
-     The hero shows the plain brand mark; one animated figure, FIG. 01 (arena
-     lifetimes), tells the memory story: a stack of scope bars where allocations
-     appear, a value is returned to main, and a scope exit frees its whole arena
-     at once. -->
 <style>
   :root{
-    --paper:#0b0b0c; --ink:#f4f3ef; --ink-soft:#c9c8c3;
-    /* --faint is BRIGHTER than --dim here on purpose (7.26 vs 5.92). Measured
-       2026-08-17, it carries 65 text runs from 8.5px up: 18 at 8.5, 7 at 9,
-       8 at 9.5, 8 at 10, 6 at 11, 13 at 11.5, 5 at 17. --dim carries 12.5px
-       prose. Small type needs more contrast, not less -- the old 4.51 cleared
-       WCAG's floor and still read as barely there. Light theme unchanged. */
-    --dim:#8e8d88; --faint:#9f9d98; --line:#5e5e61;
-    --code-bg:#08080a; --code-fg:#dcdbd6; --code-dim:#787873; --code-line:#5c5c61;
-    --acc:#c6ff3f; --acc-code:#c6ff3f; --acc-on:#0b0b0c; --dot:#404043;
+    --paper:#131109; --ink:#f2ede1; --ink-soft:#cfc8b4;
+    --dim:#a8a28c; --faint:#8b8570; --line:#757065;
+    --code-bg:#0b0a07; --code-fg:#e6e1d2; --code-dim:#8f8875; --code-line:#6b6557;
+    --acc:#d4f542; --acc-code:#d4f542; --acc-on:#131109; --dot:#2a2720;
   }
-  /* The code panel stays dark in BOTH themes, so the light theme needs two
-     accents: --acc is legible on near-white paper, --acc-code on the panel.
-     One green cannot do both -- #4a7c00 scores 4.57 on paper and 3.91 on the
-     panel. --acc-on is the text colour that sits ON the accent fill. */
   :root[data-theme="light"]{
-    --paper:#f5f4f1; --ink:#0b0b0c; --ink-soft:#33322f;
-    --dim:#6b6a66; --faint:#71706c; --line:#8d8d91;
-    --code-bg:#0b0b0c; --code-fg:#dcdbd6; --code-dim:#7a7a75; --code-line:#5d5d62;
-    --acc:#4a7c00; --acc-code:#c6ff3f; --acc-on:#ffffff; --dot:#b2b2bb;
+    --paper:#f7f4ec; --ink:#191712; --ink-soft:#3f3b31;
+    --dim:#5c574a; --faint:#6f695b; --line:#948b74;
+    --code-bg:#0b0a07; --code-fg:#e6e1d2; --code-dim:#8f8875; --code-line:#6b6557;
+    --acc:#33660f; --acc-code:#d4f542; --acc-on:#ffffff; --dot:#cfc9b8;
   }
-  /* ══ TYCHO ═══════════════════════════════════════════════════════════════
-     Terminal-plate layout: a near-black field, hairline rules doing all the
-     dividing, small-caps mono rails pinned to the corners, and display type
-     sitting directly on a dot field. No boxes, no radii, no shadows -- rules
-     and contrast only. Content runs to the right edge: the fixed section
-     index that used to sit there, and the --rail gutter reserved for it,
-     were removed 2026-08-17. The bar's running-section label (#runsec) is
-     driven by its own IntersectionObserver and was never part of it. */
 
   *{box-sizing:border-box}
   html{-webkit-text-size-adjust:100%; scroll-behavior:smooth}
@@ -70,212 +44,167 @@
   body{
     margin:0; background:var(--paper); color:var(--ink-soft); overflow-x:hidden;
     font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
-    font-size:15px; line-height:1.7; letter-spacing:.1px;
+    font-size:16.5px; line-height:1.75; letter-spacing:0;
     -webkit-font-smoothing:antialiased;
   }
   a{color:inherit; text-decoration:none; border:0}
-  .mono,pre,code,.inl,h1,h2,.card h3,.bar,.hrail,section::before,
-  .spec .cell b,.spec .cell span,.contents a,.spec2 .k,.spec2 .cmd,
-  .phead,.btn,.runsec,.themebtn,.idx,.gt,.chead,.fig .fhead,.codecap,
-  footer .fbrand,footer .col a,footer .legal{font-family:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+  a:focus-visible,button:focus-visible{outline:2px solid var(--acc); outline-offset:3px; border-radius:4px}
   ::selection{background:var(--acc); color:var(--acc-on)}
   .skip{position:absolute; left:12px; top:-56px; z-index:100; background:var(--ink);
-    color:var(--paper); padding:10px 16px; font-size:10px; letter-spacing:1.6px;
-    text-transform:uppercase; transition:top .15s ease}
+    color:var(--paper); padding:10px 18px; font-size:12px; border-radius:8px}
   .skip:focus{top:8px}
 
-  :root{ --pad:clamp(16px,2.2vw,44px); --bar:56px; --measure:64ch; }
+  :root{ --pad:clamp(20px,4vw,64px); --bar:60px; --measure:68ch; --col:1120px; }
+  .mono,.bar,.hrail,.kicker,.spec2 .k,.spec2 .cmd,.phead,
+  .btn,.runsec,.themebtn,.contents a,.fig .fhead,.card .idx,.group .gt,
+  footer .fbrand,footer .col a,footer .legal,.inl,pre,code{font-family:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace}
 
-  /* ── top bar: full width, CTA flush into the corner ─────────────────── */
-  .bar{position:sticky; top:0; z-index:50; display:flex; align-items:stretch;
-    height:var(--bar); background:var(--paper); border-bottom:1px solid var(--line)}
-  .bar .brandwrap{display:flex; align-items:stretch; width:100%; min-width:0}
-  .bar .brand{display:flex; align-items:center; gap:10px; padding:0 var(--pad);
-    color:var(--ink); font-size:12px; letter-spacing:.6px}
-  .bar .brand .logo{width:15px; height:15px}
-  .runsec{display:flex; align-items:center; font-size:9.5px; letter-spacing:1.6px;
-    text-transform:uppercase; color:var(--faint)}
+  /* ── top bar ── */
+  .bar{position:sticky; top:0; z-index:50; background:var(--paper);
+    border-bottom:1px solid var(--line)}
+  .bar .brandwrap{display:flex; align-items:stretch; max-width:var(--col);
+    margin:0 auto; padding:0 var(--pad); height:var(--bar); min-width:0}
+  .bar .brand{display:flex; align-items:center; gap:10px; flex:0 0 auto;
+    color:var(--ink); font-size:13px; letter-spacing:.4px}
+  .bar .brand .logo{width:17px; height:17px}
+  .runsec{display:flex; align-items:center; margin-left:14px; white-space:nowrap;
+    font-size:10px; letter-spacing:1.6px; text-transform:uppercase; color:var(--faint)}
   .bar nav{display:flex; align-items:stretch; margin-left:auto; min-width:0;
     overflow-x:auto; scrollbar-width:none}
   .bar nav::-webkit-scrollbar{display:none}
-  .bar nav a{display:flex; align-items:center; flex:0 0 auto; padding:0 clamp(12px,1.5vw,26px);
-    font-size:9.5px; letter-spacing:1.8px; text-transform:uppercase; color:var(--dim)}
-  .bar .brand{flex:0 0 auto}
-  .runsec{white-space:nowrap}
-  .themebtn{flex:0 0 auto}
+  .bar nav a{display:flex; align-items:center; flex:0 0 auto; padding:0 13px;
+    font-size:10.5px; letter-spacing:1.6px; text-transform:uppercase; color:var(--dim)}
   .bar nav a:hover{color:var(--ink)}
-  .bar nav a[aria-current="true"]{color:var(--ink)}
-  /* the last item is a filled block that runs to the very corner */
-  .bar nav a:last-of-type{background:var(--ink); color:var(--paper); font-weight:600;
-    padding-inline:clamp(20px,2.4vw,40px)}
-  .bar nav a:last-of-type:hover{background:var(--acc); color:var(--acc-on)}
+  .bar nav a[aria-current="true"]{color:var(--acc)}
   .themebtn{background:none; border:0; border-left:1px solid var(--line); color:var(--dim);
-    cursor:pointer; font:inherit; font-size:9.5px; letter-spacing:1.6px;
-    text-transform:uppercase; padding:0 clamp(12px,1.4vw,22px)}
+    cursor:pointer; font:inherit; font-size:10.5px; letter-spacing:1.6px; flex:0 0 auto;
+    text-transform:uppercase; padding:0 0 0 18px; margin-left:6px}
   .themebtn:hover{color:var(--ink)}
 
-  .wrap{position:relative}
+  .wrap{max-width:var(--col); margin:0 auto; padding:0 var(--pad); position:relative}
 
-  /* ── hero: one screen, type on a dot field ─────────────────────────── */
-  header.hero{position:relative; min-height:calc(100svh - var(--bar));
-    display:grid; grid-template-rows:auto 1fr auto; overflow:hidden;
+  /* ── hero ── */
+  header.hero{display:grid; grid-template-columns:1.08fr .92fr; gap:clamp(28px,4vw,64px);
+    align-items:center; padding:clamp(56px,8vw,120px) 0 clamp(48px,6vw,96px);
     border-bottom:1px solid var(--line)}
-  /* the field: a dot matrix that fades toward the lower left */
-  header.hero::before{content:""; position:absolute; inset:0; z-index:0; pointer-events:none;
-    background-image:radial-gradient(var(--dot) .9px, transparent 1px);
-    background-size:7px 7px;
-    -webkit-mask-image:radial-gradient(120% 95% at 78% 22%, #000 5%, rgba(0,0,0,.35) 45%, transparent 78%);
-    mask-image:radial-gradient(120% 95% at 78% 22%, #000 5%, rgba(0,0,0,.35) 45%, transparent 78%)}
-  /* corner rails */
-  .hrail{position:relative; z-index:2; display:flex; justify-content:space-between; gap:16px;
-    padding:12px var(--pad); border-bottom:1px solid var(--line);
-    font-size:9.5px; letter-spacing:2px; text-transform:uppercase; color:var(--faint)}
-  .htext{position:relative; z-index:2; align-self:center; padding:clamp(24px,4vw,70px) var(--pad)}
-  .hlabel{display:none}
-  h1{margin:0; font-weight:600; color:var(--ink);
-    font-size:clamp(40px,8.6vw,148px); line-height:.94; letter-spacing:-.055em;
-    text-transform:uppercase; max-width:15ch}
-  h1 .lead{display:block}
-  h1 .tok{border:0; padding:0; color:var(--acc)}
-  /* the action bar across the foot of the screen */
-  .herofoot{position:relative; z-index:2; display:grid;
-    grid-template-columns:minmax(0,1fr) minmax(0,1.5fr); align-items:stretch;
-    border-top:1px solid var(--line)}
-  .herofoot .lede{margin:0; padding:clamp(16px,1.8vw,30px) var(--pad);
-    font-size:16px; line-height:1.7; color:var(--dim); max-width:56ch; align-self:center}
-  .herofoot .lede b{color:var(--ink); font-weight:600}
-  .herofoot .cta{display:grid; grid-template-columns:repeat(3,1fr); margin:0; gap:0;
-    border-left:1px solid var(--line)}
-  @media (max-width:1100px){ .herofoot .cta{grid-template-columns:1fr} 
-    .btn{border-right:0; border-bottom:1px solid var(--line)} }
-  /* .herofoot is two columns and nothing else. The full-width .meta row that
-     used to sit under them was folded into .lede on 2026-08-17: as a third
-     grid row it broke the layout. Its link and <code> spans styled here. */
-  .herofoot .lede a{color:var(--ink); border-bottom:1px solid var(--line)}
-  .herofoot .lede a:hover{border-bottom-color:var(--ink)}
-  .herofoot .lede code{color:var(--ink-soft)}
-  .btn{display:flex; align-items:center; justify-content:space-between; gap:16px;
-    padding:clamp(18px,2vw,30px) clamp(16px,1.8vw,28px);
-    border:0; border-right:1px solid var(--line); background:transparent; color:var(--ink);
-    font-size:11px; letter-spacing:1.6px; text-transform:uppercase; font-weight:600}
+  .hrail{display:flex; justify-content:space-between; gap:16px; grid-column:1/-1;
+    padding-bottom:26px; font-size:10.5px; letter-spacing:2px; text-transform:uppercase; color:var(--faint)}
+  .kicker{display:inline-block; font-size:11.5px; letter-spacing:2.4px; text-transform:uppercase;
+    color:var(--acc); margin-bottom:22px}
+  h1{margin:0 0 24px; font-weight:800; color:var(--ink);
+    font-size:clamp(42px,5.6vw,84px); line-height:1.02; letter-spacing:-.03em; max-width:14ch}
+  h1 .tok{color:var(--acc)}
+  .herofoot .lede,.lede{margin:0 0 32px; font-size:18px; line-height:1.7; color:var(--dim); max-width:52ch}
+  .lede b{color:var(--ink); font-weight:650}
+  .lede a{color:var(--ink); border-bottom:1px solid var(--line)}
+  .lede a:hover{border-bottom-color:var(--ink)}
+  .lede code{color:var(--ink-soft)}
+  .cta{display:flex; flex-wrap:wrap; gap:12px; margin:0}
+  .btn{display:inline-flex; align-items:center; gap:10px; padding:15px 28px;
+    border-radius:999px; border:1px solid var(--line); background:transparent; color:var(--ink);
+    font-size:11.5px; letter-spacing:1.6px; text-transform:uppercase; font-weight:600}
   .btn::after{content:"↗"; color:var(--faint)}
-  .btn:hover{background:var(--ink); color:var(--paper)}
-  .btn:hover::after{color:var(--paper)}
-  .btn.ghost:last-child{border-right:0}
-  @media (max-width:900px){
-    .herofoot{grid-template-columns:1fr}
-    .herofoot .cta{border-left:0; border-top:1px solid var(--line)}
-  }
+  .btn:hover{border-color:var(--ink)}
+  .btn:hover::after{color:var(--ink)}
+  .btn.primary{background:var(--acc); border-color:var(--acc); color:var(--acc-on)}
+  .btn.primary::after{color:var(--acc-on)}
+  .btn.primary:hover{filter:brightness(1.06)}
+  .specimen{border:1px solid var(--line); border-radius:18px; padding:8px 28px;
+    background-image:radial-gradient(var(--dot) 1px, transparent 1.2px); background-size:9px 9px}
+  .specimen .shead{font-size:10.5px; letter-spacing:2.2px; text-transform:uppercase;
+    color:var(--faint); padding:20px 0 6px}
+  .specimen .frow{display:flex; align-items:baseline; justify-content:space-between; gap:20px;
+    padding:13px 0; border-top:1px solid var(--line)}
+  .specimen .frow b{color:var(--ink); font-weight:700; font-size:clamp(19px,2vw,27px);
+    letter-spacing:-.02em; white-space:nowrap}
+  .specimen .frow span{font-size:10.5px; letter-spacing:1.6px; text-transform:uppercase;
+    color:var(--faint); text-align:right}
+  @media (max-width:900px){ header.hero{grid-template-columns:1fr} }
 
-  /* ── plates ─────────────────────────────────────────────────────────── */
-  section{position:relative; border-top:1px solid var(--line);
-    padding:0 0 clamp(30px,3.4vw,64px)}
-  section::before{content:attr(data-n) " / " attr(data-t); display:block;
-    padding:12px var(--pad); border-bottom:1px solid var(--line);
-    font-size:9.5px; letter-spacing:2.2px; text-transform:uppercase; color:var(--faint)}
+  /* ── sections ── */
+  section{position:relative; overflow:hidden; padding:clamp(64px,8vw,128px) 0 clamp(48px,6vw,88px)}
+  section + section{border-top:1px solid var(--line)}
+  section::before{content:attr(data-n) " — " attr(data-t); display:block;
+    margin-bottom:26px; font-size:11px; letter-spacing:2.4px; text-transform:uppercase; color:var(--faint)}
+  section::after{content:attr(data-n); position:absolute; top:-30px; right:-10px;
+    font-weight:600; font-size:clamp(160px,22vw,300px); line-height:1;
+    color:transparent; -webkit-text-stroke:1px var(--line); opacity:.5; pointer-events:none}
   .marker{display:none}
-  h2{margin:clamp(30px,3.6vw,72px) 0 clamp(18px,2vw,36px); padding:0 var(--pad);
-    font-size:clamp(24px,4.2vw,64px); line-height:1; letter-spacing:-.045em;
-    color:var(--ink); font-weight:600; text-transform:uppercase; max-width:19ch}
-  p{margin:0 0 16px; max-width:var(--measure); font-size:15px; line-height:1.7}
-  section > p{padding:0 var(--pad)}
+  h2{margin:0 0 20px; color:var(--ink); font-weight:800;
+    font-size:clamp(30px,4vw,54px); line-height:1.05; letter-spacing:-.025em; max-width:20ch}
+  p{margin:0 0 16px; max-width:var(--measure)}
   p.muted{color:var(--dim)}
-  strong{color:var(--ink); font-weight:600}
-  .inl{border:1px solid var(--line); padding:1px 6px; font-size:.92em; color:var(--ink); white-space:nowrap}
+  strong{color:var(--ink); font-weight:650}
+  .inl{border:1px solid var(--line); border-radius:6px; padding:1px 7px; font-size:.88em; color:var(--ink); white-space:nowrap}
 
-  /* ── readout + index strips ─────────────────────────────────────────── */
-  .spec{border-bottom:1px solid var(--line)}
-  .spec .shead{display:none}
-  .spec .row{display:grid; grid-template-columns:repeat(5,1fr)}
-  .spec .cell{padding:clamp(16px,1.9vw,32px) var(--pad); border-left:1px solid var(--line)}
-  .spec .cell:first-child{border-left:0}
-  .spec .cell b{display:block; color:var(--ink); font-weight:600; text-transform:uppercase;
-    font-size:clamp(17px,2.4vw,38px); line-height:1; letter-spacing:-.035em}
-  .spec .cell span{display:block; margin-top:11px; font-size:8.5px; letter-spacing:1.8px;
-    text-transform:uppercase; color:var(--faint)}
-  .spec .cell:last-child b{color:var(--acc)}
-  @media (max-width:900px){ .spec .row{grid-template-columns:repeat(2,1fr)}
-    .spec .cell{border-top:1px solid var(--line)} }
-
-  .contents{border-bottom:1px solid var(--line)}
-  .contents .chead{padding:11px var(--pad); border-bottom:1px solid var(--line);
-    font-size:9px; letter-spacing:2.2px; text-transform:uppercase; color:var(--faint)}
-  .contents .chead::before{content:none}
-  .contents a{display:flex; align-items:center; gap:16px; padding:12px var(--pad);
-    border-bottom:1px solid var(--line); color:var(--dim);
-    font-size:clamp(12px,1.3vw,17px); text-transform:uppercase; letter-spacing:.6px}
-  .contents a:last-child{border-bottom:0}
-  .contents a:hover{color:var(--paper); background:var(--ink)}
-  .contents a .n{color:var(--faint); font-size:9px; letter-spacing:1.4px; width:3ch; flex:0 0 auto}
-  .contents a:hover .n, .contents a:hover .arr{color:var(--paper)}
+  /* ── contents ── */
+  .contents{margin-top:36px; max-width:720px}
+  .contents .chead{font-size:10.5px; letter-spacing:2.2px; text-transform:uppercase;
+    color:var(--faint); margin-bottom:10px}
+  .contents a{display:flex; align-items:center; gap:16px; padding:15px 18px;
+    border:1px solid transparent; border-radius:12px; color:var(--dim);
+    font-size:14px; text-transform:uppercase; letter-spacing:.6px}
+  .contents a:hover{border-color:var(--line); color:var(--ink)}
+  .contents a .n{color:var(--faint); font-size:10px; letter-spacing:1.4px; width:3ch; flex:0 0 auto}
+  .contents a:hover .n,.contents a:hover .arr{color:var(--acc)}
   .contents a .dots{flex:1; border-bottom:1px dotted var(--line); transform:translateY(-3px)}
   .contents a .arr{color:var(--faint); flex:0 0 auto}
 
-  /* ── registers: cards + feature groups as divided strips ────────────── */
-  .cards,.groups{display:grid; grid-template-columns:repeat(3,1fr);
-    border-top:1px solid var(--line); border-bottom:1px solid var(--line);
-    margin:0 0 clamp(24px,2.6vw,48px)}
-  .card,.group{border:0; border-left:1px solid var(--line); background:transparent;
-    padding:clamp(18px,2vw,32px) var(--pad)}
-  .card:first-child,.group:first-child{border-left:0}
-  .card .idx,.group .gt{display:block; margin-bottom:14px; padding:0; border:0;
-    font-size:8.5px; letter-spacing:2px; text-transform:uppercase; color:var(--faint)}
-  .group .gt::before{content:none}
-  .card h3{margin:0 0 8px; font-size:11px; color:var(--ink); font-weight:600;
-    text-transform:uppercase; letter-spacing:1.4px}
-  .card p{margin:0; font-size:14.5px; line-height:1.7; max-width:none; color:var(--dim)}
+  /* ── cards + groups ── */
+  .cards,.groups{display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin:34px 0 8px}
+  .cards.quad{grid-template-columns:repeat(2,1fr)}
+  .card,.group{border:1px solid var(--line); border-radius:16px; background:transparent;
+    padding:30px 30px 34px}
+  .card:hover{border-color:var(--faint)}
+  .card .idx,.group .gt{display:block; margin-bottom:16px; font-size:10px; letter-spacing:2px;
+    text-transform:uppercase; color:var(--acc)}
+  .card h3{margin:0 0 10px; font-size:13px; color:var(--ink); font-weight:600;
+    text-transform:uppercase; letter-spacing:1.2px}
+  .card p{margin:0; font-size:15px; line-height:1.7; max-width:none; color:var(--dim)}
   .card p a{color:var(--ink); border-bottom:1px solid var(--line)}
   .card p a:hover{border-bottom-color:var(--ink)}
   ul.feat{list-style:none; margin:0; padding:0}
-  ul.feat li{padding:11px 0; border-top:1px solid var(--line); font-size:12.5px; color:var(--dim)}
+  ul.feat li{padding:13px 0; border-top:1px solid var(--line); font-size:14px; color:var(--dim)}
   ul.feat li:first-child{border-top:0}
   ul.feat li b{display:block; margin-bottom:2px; color:var(--ink); font-weight:600;
-    text-transform:uppercase; font-size:10.5px; letter-spacing:1.2px}
-  ul.feat li span{color:var(--faint); font-size:11.5px}
-  @media (max-width:900px){ .cards,.groups{grid-template-columns:1fr}
-    .card,.group{border-left:0; border-top:1px solid var(--line)}
-    .card:first-child,.group:first-child{border-top:0} }
+    text-transform:uppercase; font-size:11.5px; letter-spacing:1.2px}
+  ul.feat li span{color:var(--faint); font-size:12.5px}
+  .group .gt::before{content:none}
+  @media (max-width:900px){ .cards,.groups,.cards.quad{grid-template-columns:1fr} }
 
-  /* ── code: full bleed, framed by rules ──────────────────────────────── */
-  .panel{border:0; border-top:1px solid var(--line); border-bottom:1px solid var(--line);
-    background:var(--code-bg); margin:0}
-  .phead{display:flex; align-items:center; gap:12px; padding:10px var(--pad);
+  /* ── code panels ── */
+  .panel{border:1px solid var(--code-line); border-radius:16px; overflow:hidden;
+    background:var(--code-bg); margin:34px 0 0}
+  .phead{display:flex; align-items:center; gap:12px; padding:12px 20px;
     border-bottom:1px solid var(--code-line); background:transparent}
-  .phead .traf{width:6px; height:6px; background:var(--acc); opacity:.9}
-  .phead .fn{font-size:9.5px; letter-spacing:1.6px; text-transform:uppercase; color:var(--code-dim)}
-  .phead .badge{margin-left:auto; font-size:8.5px; letter-spacing:1.6px; text-transform:uppercase;
-    color:var(--acc-code); border:0; padding:0}
-  pre{margin:0; padding:clamp(18px,2vw,34px) var(--pad); overflow-x:auto;
-    font-size:clamp(11px,.82vw,13.5px); line-height:1.75; color:var(--code-fg)}
+  .phead .traf{width:7px; height:7px; border-radius:50%; background:var(--acc-code)}
+  .phead .fn{font-size:10px; letter-spacing:1.6px; text-transform:uppercase; color:var(--code-dim)}
+  .phead .badge{margin-left:auto; font-size:9px; letter-spacing:1.6px; text-transform:uppercase;
+    color:var(--acc-code)}
+  pre{margin:0; padding:22px 24px; overflow-x:auto;
+    font-size:13px; line-height:1.8; color:var(--code-fg)}
   .k{color:#fff; font-weight:600} .fn{color:#cfd4dc} .s{color:var(--acc-code)}
   .c{color:var(--code-dim)} .g{color:#9aa1ab} .out{color:#8b929c}
-  /* margin-bottom 0 -- set on .codecap, not on .codecap.rv.in: .rv/.in are the
-     reveal-animation state classes, and hanging layout off .in would collapse
-     the margin only once the caption scrolls into view, i.e. a visible jump. */
-  .codecap{margin:0; padding:11px var(--pad);
-    border-bottom:1px solid var(--line);
-    font-size:12.5px; letter-spacing:.1px; line-height:1.65; color:var(--faint); max-width:none}
+  .codecap{margin:0; padding:14px 4px 0; font-size:13.5px; line-height:1.65; color:var(--faint); max-width:none}
   .codecap b{color:var(--dim); font-weight:600}
 
-  /* §02 -- prose against code */
-  .split{display:grid; grid-template-columns:minmax(0,.82fr) minmax(0,1.18fr); align-items:stretch}
-  .split > :first-child{padding:clamp(20px,2.2vw,40px) var(--pad);
-    border-right:1px solid var(--line)}
-  ul.points{list-style:none; margin:0 0 18px; padding:0; display:grid; gap:15px}
-  ul.points li{position:relative; padding-left:20px; font-size:15px; line-height:1.7; color:var(--dim)}
-  ul.points li::before{content:""; position:absolute; left:0; top:7px; width:6px; height:6px;
-    background:var(--acc)}
-  ul.points li b{color:var(--ink); font-weight:600}
-  @media (max-width:1100px){ .split{grid-template-columns:1fr}
-    .split > :first-child{border-right:0; border-bottom:1px solid var(--line)} }
+  /* §02 — points beside code */
+  .split{display:grid; grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr); gap:clamp(24px,3vw,48px);
+    align-items:start; margin-top:8px}
+  ul.points{list-style:none; margin:6px 0 20px; padding:0; display:grid; gap:18px}
+  ul.points li{position:relative; padding-left:22px; font-size:16px; line-height:1.7; color:var(--dim)}
+  ul.points li::before{content:""; position:absolute; left:0; top:11px; width:7px; height:7px;
+    border-radius:50%; background:var(--acc)}
+  ul.points li b{color:var(--ink); font-weight:650}
+  @media (max-width:1100px){ .split{grid-template-columns:1fr} }
 
-  /* ── figure + conformance ───────────────────────────────────────────── */
-  .fig{border:0; border-top:1px solid var(--line); border-bottom:1px solid var(--line);
-    background:transparent; margin:0 0 clamp(22px,2.6vw,46px)}
-  .fig .fhead{display:flex; align-items:center; gap:10px; padding:10px var(--pad);
-    border-bottom:1px solid var(--line); font-size:9px; letter-spacing:2px;
+  /* ── figures ── */
+  .fig{border:1px solid var(--line); border-radius:16px; overflow:hidden;
+    background:transparent; margin:34px 0 8px}
+  .fig .fhead{display:flex; align-items:center; gap:10px; padding:12px 20px;
+    border-bottom:1px solid var(--line); font-size:10px; letter-spacing:2px;
     text-transform:uppercase; color:var(--faint)}
-  .fig .fhead .dot{width:6px; height:6px; background:var(--acc)}
+  .fig .fhead .dot{width:7px; height:7px; border-radius:50%; background:var(--acc)}
   .fig .fhead b{color:var(--dim); font-weight:600}
   .fig canvas{display:block; width:100%}
   .fig svg{display:block; width:100%; height:auto}
@@ -285,52 +214,52 @@
   .fig .slot{fill:none; stroke:currentColor; stroke-width:1.4}
   .fig .edge{stroke:var(--acc); stroke-width:1.4}
   .fig .enum{fill:var(--acc); font-size:12px; letter-spacing:0}
-  .fig .fcap{padding:10px var(--pad); border-top:1px solid var(--line);
-    font-size:12.5px; line-height:1.65; color:var(--faint)}
+  .fig .fcap{padding:14px 20px; border-top:1px solid var(--line);
+    font-size:13.5px; line-height:1.65; color:var(--faint)}
   .fig .fcap b{color:var(--dim); font-weight:600}
   .fig .fcap code{color:var(--ink-soft)}
+  .fig{color:var(--ink-soft)}
   .trace{height:clamp(140px,14vw,240px)}
   .trace figcaption{display:none}
 
-  .spec2{border:0; border-top:1px solid var(--line); border-bottom:1px solid var(--line);
-    margin:0 0 clamp(20px,2.4vw,40px)}
-  .spec2 .row{display:grid; grid-template-columns:clamp(120px,12vw,220px) 1fr;
-    border-top:1px solid var(--line)}
-  .spec2 .row:first-child{border-top:0}
-  .spec2 .row .k{padding:clamp(13px,1.4vw,22px) var(--pad); font-size:9px; letter-spacing:1.8px;
-    text-transform:uppercase; color:var(--dim); font-weight:600; border-right:1px solid var(--line)}
-  .spec2 .row .v{padding:clamp(13px,1.4vw,22px) var(--pad); font-size:14.5px; line-height:1.7;
+  /* ── conformance rows ── */
+  .spec2{margin:34px 0 8px; border:1px solid var(--line); border-radius:16px; overflow:hidden}
+  .spec2 .row{display:grid; grid-template-columns:clamp(140px,16vw,230px) 1fr}
+  .spec2 .row + .row{border-top:1px solid var(--line)}
+  .spec2 .row .k{padding:20px 24px; font-size:10px; letter-spacing:1.8px;
+    text-transform:uppercase; color:var(--dim); font-weight:600}
+  .spec2 .row .v{padding:20px 24px; font-size:15px; line-height:1.7;
     color:var(--dim); min-width:0}
   .spec2 .row .v b{color:var(--ink)}
   .spec2 .row .v .cmd{color:var(--acc)}
   @media (max-width:640px){ .spec2 .row{grid-template-columns:1fr}
-    .spec2 .row .k{border-right:0; border-bottom:1px solid var(--line)} }
+    .spec2 .row .k{padding-bottom:0} }
 
-  /* ── colophon ───────────────────────────────────────────────────────── */
-  footer{border-top:1px solid var(--line); padding:clamp(26px,3vw,52px) var(--pad)}
-  .fgrid{display:grid; grid-template-columns:1.8fr 1fr 1fr 1fr; gap:clamp(20px,2.6vw,48px)}
-  @media (max-width:900px){ .fgrid{grid-template-columns:1fr 1fr; gap:24px} }
-  footer .fbrand{display:flex; align-items:center; gap:9px; color:var(--ink); font-weight:600;
-    font-size:12px; margin-bottom:12px; letter-spacing:1.6px; text-transform:uppercase}
-  footer .fbrand svg{width:15px; height:15px}
-  footer .tagline{color:var(--faint); font-size:13.5px; max-width:38ch; line-height:1.65}
-  footer .col b{display:block; margin-bottom:12px; font-size:8.5px; letter-spacing:2px;
+  /* ── footer ── */
+  footer{border-top:1px solid var(--line); margin-top:40px; padding:56px 0 40px}
+  .fgrid{display:grid; grid-template-columns:1.6fr 1fr 1fr 1fr; gap:clamp(24px,3vw,56px)}
+  @media (max-width:900px){ .fgrid{grid-template-columns:1fr 1fr; gap:28px} }
+  footer .fbrand{display:flex; align-items:center; gap:10px; color:var(--ink); font-weight:600;
+    font-size:14px; margin-bottom:14px; letter-spacing:1.4px; text-transform:uppercase}
+  footer .fbrand svg{width:17px; height:17px}
+  footer .tagline{color:var(--faint); font-size:14px; max-width:36ch; line-height:1.7}
+  footer .col b{display:block; margin-bottom:14px; font-size:10px; letter-spacing:2px;
     text-transform:uppercase; color:var(--faint); font-weight:600}
-  footer .col a{display:block; color:var(--dim); font-size:12px; padding:4px 0;
+  footer .col a{display:block; color:var(--dim); font-size:13px; padding:5px 0;
     text-transform:uppercase; letter-spacing:.8px}
-  footer .col a:hover{color:var(--ink)}
-  footer .legal{margin-top:clamp(22px,2.6vw,44px); padding-top:14px; border-top:1px solid var(--line);
-    display:flex; flex-wrap:wrap; gap:8px 20px; font-size:8.5px; letter-spacing:1.6px;
+  footer .col a:hover{color:var(--acc)}
+  footer .legal{margin-top:44px; padding-top:16px; border-top:1px solid var(--line);
+    display:flex; flex-wrap:wrap; gap:8px 24px; font-size:10px; letter-spacing:1.6px;
     text-transform:uppercase; color:var(--faint)}
 
-  /* ── reveal ─────────────────────────────────────────────────────────── */
+  /* ── reveal ── */
   .rise{opacity:0; animation:rise .5s ease forwards}
   .d1{animation-delay:.04s}.d2{animation-delay:.1s}.d3{animation-delay:.16s}
   .d4{animation-delay:.22s}.d5{animation-delay:.28s}
   @keyframes rise{to{opacity:1}}
   .rv{opacity:0; transition:opacity .45s ease; transition-delay:var(--d,0ms)}
   .rv.in{opacity:1}
-  @media (prefers-reduced-motion:reduce){ .rise{animation:none; opacity:1} .rv{opacity:1} }
+  @media (prefers-reduced-motion:reduce){ html{scroll-behavior:auto} .rise{animation:none; opacity:1} .rv{opacity:1; transition:none} }
 </style>
 
 <div class="bar">
@@ -361,44 +290,36 @@
 
 <main class="wrap" id="main">
   <header class="hero" id="top">
-    <div class="hrail">
-      <span>Tycho / implicit arenas · value semantics</span>
-      <span>transpiles to C / no GC</span>
-    </div>
-    <div class="htext">
-      <div class="hlabel rise d1">
-        <span class="idx">DOC. NO. 001 — MEMORY MODEL</span>
-        <span class="ttl">TYCHO</span>
-        <span class="sub">An experimental systems language · transpiles to C</span>
+    <div>
+      <div class="hrail">
+        <span>Tycho / implicit arenas · value semantics</span>
+        <span>transpiles to C / no GC</span>
       </div>
-      <h1 class="rise d2"><span class="lead">Automatic memory management.</span> No garbage collector, no manual <span class="tok">free</span>.</h1>
-    </div>
-    <div class="herofoot">
+      <span class="kicker rise d1">An experimental systems language</span>
+      <h1 class="rise d2">Automatic memory management. No garbage collector, no manual <span class="tok">free</span>.</h1>
       <p class="lede rise d3">
         A research project testing one idea: <b>implicit hierarchical arenas under value
         semantics</b>. Every scope owns a memory arena, freed on exit. There is no reference
-        type, so the compiler can place every allocation and free from your code's structure
+        type, so the compiler places every allocation and free from your code's structure
         alone. New here? Start with the <a href="https://tycho-lang.com/docs/tutorial.html">tutorial ↗</a>
         — builds with <code>cc</code> and <code>make</code>, nothing else.
       </p>
       <div class="cta rise d4">
-        <a class="btn" href="#start">Get started</a>
+        <a class="btn primary" href="#start">Get started</a>
+        <a class="btn ghost" href="docs/">Docs</a>
         <a class="btn ghost" href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
-        <a class="btn ghost" href="https://tycho-lang.com/docs/thesis.html">The thesis</a>
       </div>
+    </div>
+    <div class="specimen rv">
+      <div class="shead">At a glance</div>
+      <div class="frow"><b><code>v0.8.6</code></b><span>tagged release</span></div>
+      <div class="frow"><b>cc + make</b><span>whole toolchain</span></div>
+      <div class="frow"><b>no GC</b><span>arenas from scope</span></div>
+      <div class="frow"><b>45</b><span>stdlib packages</span></div>
+      <div class="frow"><b>1,100+</b><span>gated fixtures</span></div>
     </div>
   </header>
 
-<div class="spec rise d4" aria-label="Key facts">
-    <div class="shead">Spec — at a glance</div>
-    <div class="row">
-      <div class="cell"><b><code>v0.8.6</code></b><span>tagged release</span></div>
-      <div class="cell"><b>cc + make</b><span>whole toolchain</span></div>
-      <div class="cell"><b>no GC</b><span>arenas from scope</span></div>
-      <div class="cell"><b>45</b><span>stdlib packages</span></div>
-      <div class="cell"><b>1,100+</b><span>gated fixtures</span></div>
-    </div>
-  </div>
 <nav class="contents rise d4" aria-label="Contents">
     <div class="chead">Contents</div>
     <a href="#idea"><span class="n">01</span>The idea<span class="dots"></span><span class="arr">→</span></a>
@@ -413,8 +334,6 @@
   </nav>
 
   <section id="idea" data-n="01" data-t="The idea">
-
-
     <p class="marker rv"><span class="n">§01</span> The idea</p>
     <h2 class="rv">Memory comes from scope, not a runtime.</h2>
     <div class="cards">
@@ -451,13 +370,9 @@
       <canvas class="trace" id="tr1" aria-hidden="true"></canvas>
       <div class="fcap"><b>Arena lifetimes.</b> Each bar is one allocation, drawn from where it is made to where it is freed. A scope's allocations all end on the same line — leaving the scope frees its whole arena in one step. The highlighted value is returned, so it crosses that line and lives on in <code>main</code>'s arena.</div>
     </div>
-  
-  
   </section>
 
   <section id="fast" data-n="02" data-t="Why it stays fast">
-
-
     <p class="marker rv"><span class="n">§02</span> Why it stays fast</p>
     <h2 class="rv">Value semantics, without the copies you'd expect.</h2>
     <div class="split">
@@ -539,13 +454,9 @@
       </svg>
       <div class="fcap"><b>The pool idiom.</b> Left: nodes linked by pointer, scattered. Right: one array; an edge is an integer index. Slots 0 and 3 both name slot 2 — that shared naming is what by-value storage alone cannot express.</div>
     </div>
-  
-  
   </section>
 
   <section id="lang" data-n="03" data-t="The language">
-
-
     <p class="marker rv"><span class="n">§03</span> The language</p>
     <h2 class="rv">Small, and Go/Odin-shaped.</h2>
     <p class="muted rv">Python/Nim-flavored syntax, Go/Odin-like semantics; the value-semantics core comes from <a href="https://www.hylo-lang.org/">Hylo ↗</a>.</p>
@@ -574,13 +485,9 @@
         </ul>
       </div>
     </div>
-  
-  
   </section>
 
   <section id="rigor" data-n="04" data-t="How it's checked">
-
-
     <p class="marker rv"><span class="n">§04</span> How it's checked</p>
     <h2 class="rv">An experiment, but a heavily-checked one.</h2>
     <div class="spec2 rv">
@@ -594,16 +501,12 @@
       <a href="https://tycho-lang.com/docs/internals/value-semantics-limits.html">loss column ↗</a>
       and the <a href="https://tycho-lang.com/docs/performance.html">performance notes ↗</a>.
     </p>
-  
-  
   </section>
 
   <section id="start" data-n="05" data-t="Try it">
-
-
     <p class="marker rv"><span class="n">§05</span> Try it</p>
     <h2 class="rv">A C compiler and make — that's the whole toolchain.</h2>
-<div class="panel rv">
+    <div class="panel rv">
 <div class="phead"><span class="traf"></span><span class="fn">LISTING 02b — terminal</span><span class="badge">prebuilt — nothing to build</span></div>
 <pre><code><span class="c"># Linux x86-64; macOS arm64 and Windows builds are on the same release page</span>
 <span class="g">$</span> curl -fsSLO https://github.com/StefanVonRanda/tycho/releases/download/v0.8.6/tycho-v0.8.6-linux-x86_64.tar.gz
@@ -616,7 +519,7 @@
 <span class="out">what is your name: Ada</span>
 <span class="out">hello Ada</span></code></pre>
 </div>
-<p class="codecap rv"><b>Listing 02b.</b> The prebuilt route: the tarball carries <code>tychoc</code>, the
+    <p class="codecap rv"><b>Listing 02b.</b> The prebuilt route: the tarball carries <code>tychoc</code>, the
 core library and the examples. You still need <code>cc</code> — it is what <code>tychoc</code> hands
 the generated C to. Building from source below ends at the same prompt.</p>
     <div class="panel rv">
@@ -636,8 +539,6 @@ the generated C to. Building from source below ends at the same prompt.</p>
       <a class="btn ghost" href="https://tycho-lang.com/docs/thesis.html">The thesis</a>
       <a class="btn ghost" href="https://tycho-lang.com/docs/reference/index.html">Reference</a>
     </div>
-  
-  
   </section>
 
   <section id="learn" data-n="06" data-t="Learn">
@@ -656,7 +557,7 @@ the generated C to. Building from source below ends at the same prompt.</p>
   <section id="faq" data-n="07" data-t="FAQ">
     <p class="marker rv"><span class="n">§07</span> FAQ</p>
     <h2 class="rv">Asked every time.</h2>
-    <div class="cards">
+    <div class="cards quad">
       <div class="card rv" style="--d:0ms">
         <span class="idx">Q1 /</span>
         <h3>No GC, no borrow checker — how is it safe?</h3>
@@ -746,7 +647,6 @@ the generated C to. Building from source below ends at the same prompt.</p>
     </div>
   </footer>
 
-
 </main>
 
 <script>
@@ -801,8 +701,8 @@ the generated C to. Building from source below ends at the same prompt.</p>
      pairs already diverge from their tokens (ink here is 236,237,230; --ink is
      #f4f3ef). Reading them with getComputedStyle at draw time would fix it. */
   var PAL={
-    light:{ink:[13,13,12], faint:[154,155,146], acc:[74,124,0]},
-    dark:{ink:[236,237,230], faint:[84,85,77], acc:[198,255,63]}
+    light:{ink:[25,23,18], faint:[111,105,91], acc:[51,102,15]},
+    dark:{ink:[242,237,225], faint:[139,133,112], acc:[212,245,66]}
   };
   function col(k,a){ var c=PAL[curTheme()][k]; return 'rgba('+c[0]+','+c[1]+','+c[2]+','+a+')'; }
   function mkState(cv){ return {cv:cv, ctx:cv.getContext('2d'), w:0, h:0, on:true, ready:false}; }
@@ -974,6 +874,5 @@ the generated C to. Building from source below ends at the same prompt.</p>
   document.addEventListener('visibilitychange', function(){ if(document.hidden) stop(); else start(); });
 })();
 </script>
-
 </body>
 </html>
