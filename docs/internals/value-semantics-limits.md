@@ -18,9 +18,9 @@ works; the price is the table above. All figures measured on one machine (AMD Ry
 Debian x86-64); where a workload's shape fights the model even after the right representation,
 the note says so and names a different tool.
 
-**Read §2 first if you are reading only one.** §1 is the better introduction to *why* the model
+**If you read one section, read §2.** §1 is the better introduction to *why* the model
 behaves as it does, but §2 — rebuilding a long-lived value on every edit pays a full copy each
-time — is the limit most likely to be hit by ordinary code with nothing graph-shaped in it.
+time — is the limit ordinary code with nothing graph-shaped in it is most likely to hit.
 
 ## Where the model is competitive (for context)
 
@@ -238,7 +238,7 @@ starting tiny.
 Assigning or passing a large value can deep-copy it. This is correct (value semantics) but
 costs a copy.
 
-**Idiom:** thread large values through `inout` (inout) parameters so they are passed by
+**Idiom:** thread large values through `inout` parameters so they are passed by
 reference and mutated in place, instead of returning rebuilt copies. The compiler already
 borrows (does not copy) `match`/`for` bindings that aren't mutated; lean on that.
 
@@ -258,12 +258,12 @@ None of these makes Tycho a systems allocator's equal on its worst cases. They k
 the value-semantics path — no `malloc`/`free`, no UAF — for the workloads where that path is
 viable, and tell you when to step off it.
 
-Is the trie/graph cost fundamental to value semantics, or just our implementation? See
-`hylo-mvs-research.md` — the most mature MVS language (Hylo) hits the same wall and answers
+Is the trie/graph cost fundamental to value semantics, or just this implementation?
+The most mature mutable-value-semantics language (Hylo) hits the same wall and answers
 it with the same indices-into-a-pool idiom, so it is fundamental, not a Tycho shortfall.
 
-And it can't be sidestepped by quietly adding back references: a spike on stored/"remote"
-references (`../rfc/limited-references-spike.md`) settled this as a decision. A reference that
+And it can't be sidestepped by quietly adding back references: a spike on stored
+references ([limited-references spike](../rfc/limited-references-spike.md)) settled this as a decision. A reference that
 *stores* a graph edge is incompatible with the two invariants that make Tycho what it is — the
 deep-copy thread boundary (a stored pointer can't survive a call's copy-in) and the no-escape
 arena model — so adding it would dismantle the value-semantics guarantees, not extend them. The
