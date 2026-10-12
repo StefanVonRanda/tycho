@@ -81,7 +81,8 @@ expression-bodied; pass a named function where you need a multi-line body.
   (exactly one separator, empty operands drop out), `is_abs`,
   `split_path(p) -> (dir, base)` (the inverse of `join`), and `clean` (lexical
   normalize: collapse `//`, drop `.`, resolve `..` but never above the root or
-  past a leading `..`). `safe_join(base, rel)` is the lexical containment
+  past a leading `..`). `last_slash(s)` is the shared scan helper (index of
+  the last `/`, or -1). `safe_join(base, rel)` is the lexical containment
   prefilter: the cleaned join when an untrusted `rel` stays under `base`, `""`
   when it is absolute, escapes via `..`, or carries a backslash or an `X:` drive
   prefix.
