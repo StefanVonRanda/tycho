@@ -370,7 +370,7 @@
       <div class="cell"><b>cc + make</b><span>whole toolchain</span></div>
       <div class="cell"><b>no GC</b><span>arenas from scope</span></div>
       <div class="cell"><b>45</b><span>stdlib packages</span></div>
-      <div class="cell"><b>723</b><span>gated fixtures</span></div>
+      <div class="cell"><b>1,100+</b><span>gated fixtures</span></div>
     </div>
   </div>
 <nav class="contents rise d4" aria-label="Contents">
@@ -437,7 +437,8 @@
           <li>A value you build and return is allocated straight into the caller's arena — <span class="inl">return</span> <b>moves</b> it, it doesn't copy.</li>
           <li><span class="inl">acc = acc + x</span> in a loop grows <b>one buffer in place</b>: the textbook O(n²) string build becomes O(n).</li>
         </ul>
-        <p class="muted rv">Where the model helps and where it costs are both measured — as machine-specific ratios, with the workloads that produce them — in the <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/performance.md">performance notes ↗</a>. Pointer-shaped data like graphs and trees is where value semantics is least free, and the docs are honest about that.</p>
+        <p class="muted rv">Where the model helps and where it costs are both measured — as machine-specific ratios, with the workloads that produce them — in the <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/performance.md">performance notes ↗</a>. Pointer-shaped data like graphs and trees is where value semantics is least free — the <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/internals/value-semantics-limits.md">loss column ↗</a>
+          names every price, and <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/idioms.md">Thinking in Tycho ↗</a> names the idioms.</p>
       </div>
       <div>
         <div class="panel rv">
@@ -505,13 +506,14 @@
     <h2 class="rv">An experiment, but a heavily-checked one.</h2>
     <div class="spec2 rv">
       <div class="row"><span class="k">Compiler</span><span class="v">One reference implementation, <b>written in C</b>, transpiling to C99 that any host compiler will take.</span></div>
-      <div class="row"><span class="k">Corpus</span><span class="v"><span class="cmd">make test</span> builds and runs <b>723 fixtures</b> against committed goldens, each under ASan/UBSan/LeakSanitizer.</span></div>
+      <div class="row"><span class="k">Corpus</span><span class="v"><span class="cmd">make test</span> builds and runs <b>1,100+ fixtures</b> against committed goldens, each under ASan/UBSan/LeakSanitizer.</span></div>
       <div class="row"><span class="k">Sanitizers</span><span class="v">A fuzzer runs random programs through <b>two builds of each program</b> — native <span class="cmd">-O2</span> against ASan/UBSan — and the disagreement is the oracle; every example is built twice and compared to a golden.</span></div>
       <div class="row"><span class="k">Gate</span><span class="v"><span class="cmd">make ci</span> runs the whole check suite on your own machine — there's no cloud CI to take on faith.</span></div>
     </div>
     <p class="muted rv">
       It's experimental in <em>scope</em>, not in rigor — the honest caveats live in the
-      <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/performance.md">performance notes ↗</a>.
+      <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/internals/value-semantics-limits.md">loss column ↗</a>
+      and the <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/performance.md">performance notes ↗</a>.
     </p>
   
   
@@ -549,7 +551,7 @@ the generated C to. Building from source below ends at the same prompt.</p>
 <span class="out">what is your name: Ada</span>
 <span class="out">hello Ada</span></code></pre>
     </div>
-    <p class="codecap rv"><b>Listing 03.</b> The success-criterion demo: ask for a name, greet it.</p>
+    <p class="codecap rv"><b>Listing 03.</b> The success-criterion demo: ask for a name, greet it. New to the language? Start with the <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/tutorial.md">tutorial ↗</a>.</p>
     <div class="cta rv">
       <a class="btn" href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
       <a class="btn ghost" href="https://github.com/StefanVonRanda/tycho/blob/main/docs/thesis.md">The thesis</a>
@@ -579,13 +581,14 @@ the generated C to. Building from source below ends at the same prompt.</p>
         <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/tutorial.md">Tutorial</a>
         <a href="https://github.com/StefanVonRanda/tycho/tree/main/docs/reference">Reference</a>
         <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/thesis.md">The thesis</a>
-        <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/bootstrap.md">Bootstrap</a>
+        <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/architecture.md">Architecture</a>
       </div>
       <div class="col">
         <b>Guides</b>
         <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/performance.md">Performance &amp; memory</a>
         <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/from-c-to-arenas.md">malloc → arenas</a>
-        <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/guides/memory-model.md">Memory model</a>
+        <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/idioms.md">Thinking in Tycho</a>
+        <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/memory-model.md">Memory model</a>
       </div>
       <div class="col">
         <b>Meta</b>
