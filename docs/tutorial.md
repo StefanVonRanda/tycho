@@ -210,7 +210,8 @@ go?
 
 Every scope — each function call, each loop iteration, each `if` block — owns a memory
 arena. Allocations go into the current scope's arena, and when the scope exits, the whole
-arena is released at once. Because the language has no reference type, a value can only
+arena is released at once. Because the language has no reference type (the rule
+from §2), a value can only
 leave a scope in ways the compiler can see in the source (returned up, or passed down), so
 the compiler places every allocation and free itself, from the syntax alone — no garbage
 collector, no manual `free`, and no lifetime annotations to write.
