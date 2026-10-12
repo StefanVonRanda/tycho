@@ -108,7 +108,7 @@ Value semantics buys safety with copies. **Three** patterns make the copies
 bite. Two of them the compiler seals *without making the model visible* — same
 source, same semantics, same bounded memory, no copy; each is the asymmetry in
 §3 applied locally. The third (§4c) it does not seal: that one is closed by choosing a different representation, which
-means the programmer has to see the copy. It is the largest honest cost in this
+means the programmer has to see the copy. It is the largest cost in this
 document, so it is written as a shape of its own here and carried into §5 as a
 wall — not left as a footnote to §4b.
 
@@ -175,7 +175,7 @@ The boundary as a rule of thumb: **if a mutable value outlives every scope
 that would reclaim it, rebuilding it per operation is the expensive shape, and
 mutating it in place is the supported one.** §5 carries this as a wall.
 
-## 5. The walls — what's genuinely hard, honestly mapped
+## 5. The walls — what's genuinely hard
 
 A model is defined as much by what it *can't* do. **Four** patterns threaten the model, and they are not equally hard.
 Two the compiler seals outright. One the compiler cannot seal but a

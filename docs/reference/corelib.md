@@ -6,8 +6,7 @@
 > caller-managed: release it with that package's own free function.
 
 corelib is Tycho's standard library: a set of packages under `corelib/`, imported with the
-`core:` collection root. It's experimental, like the rest of Tycho, but the modules below
-are usable today.
+`core:` collection root. The modules below are usable today.
 
 ```tycho
 package main

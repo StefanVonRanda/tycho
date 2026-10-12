@@ -307,7 +307,7 @@ rejected just as it is anywhere else in a `parallel for` body.
 
 ### Measured
 
-Concurrency is measured, not asserted: `make bench-conc` runs the same
+`make bench-conc` runs the same
 reduction, pipeline, and pool workloads in Tycho, C, Go, and Rust with
 cross-checked checksums. The numbers live in
 [performance](../performance.md); the full table and its reading are in

@@ -145,7 +145,7 @@ Reading it:
 - **peak live** is the working-set high-water — the number that decides whether
   the program fits in memory. **bump-alloc** is everything ever handed out;
   a large gap between the two is arenas doing their job.
-- **A function's row counts the memory its arena OWNS**, which is the honest
+- **A function's row counts the memory its arena OWNS**, which is the correct
   attribution: a value returned up into the caller's arena is the *caller's*
   residency, not the callee's. So a `main` that holds the whole program value
   dominates, and per-pass rows show each pass's transient working set.
