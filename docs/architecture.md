@@ -6,7 +6,7 @@ shipped, and what's a decided non-goal.
 Tycho tests one claim: value semantics
 makes hierarchical arena allocation fully implicit, with no whole-program analysis. It
 transpiles to C and is MIT-licensed. For the argument itself see [thesis.md](thesis.md);
-for an honest accounting of where the model wins and loses see
+for a full accounting of where the model wins and loses see
 [internals/value-semantics-limits.md](internals/value-semantics-limits.md).
 
 ## The pieces
@@ -21,7 +21,7 @@ definition.
 in itself, built as `tychoc1`.
 [ROADMAP](../ROADMAP.md#the-self-hosted-compiler) tracks its status and the one
 question about it that is not decided. Six packages: `lex`, `parse`, `ast`, `types`,
-`emit`, `driver`. It exists twice over — to prove the language can carry a real
+`emit`, `driver`. It serves two purposes — to prove the language can carry a real
 program, and to be a second opinion on the first. `make parse-check` scores its
 front end against `./tychoc`'s own answers file by file; `make tychoc1-check`
 runs the whole fixture corpus and every tool lane with `TYCHOC=./tychoc1`.
@@ -131,7 +131,7 @@ smoke, so a red `make ci` can't reach `main`: a green `make test` is *not* a gre
 
 ## Decided non-goals
 
-These are deliberate, argued, and settled — please don't propose them:
+These are settled — please don't propose them:
 
 - Traits / typeclasses (re-closed on new grounds — see below)
 - A package manager (re-affirmed 2026-08-15: vendoring, Odin-style —
@@ -142,8 +142,6 @@ These are deliberate, argued, and settled — please don't propose them:
 - Manual memory-management escape hatches as the *idiomatic* path
 - FFI variadics / callbacks-into-Tycho / struct-by-value / auto-bindgen
 - Hosted CI
-
-Each of those stands on a rationale of its own, independent of the one below.
 
 ### Traits / typeclasses — reopened 2026-09-11, re-closed the same day
 
@@ -159,5 +157,5 @@ demand-gated gap ([ROADMAP](../ROADMAP.md#near-term)). The full argument is in
 
 Pointer-shaped, structurally-shared data (tries, graphs) costs ~1.55× C in RAM because
 children are stored by value, with no sharing. The recommended
-idiom (a flat index-pool) is documented but deliberately not presented as "the model."
+idiom (a flat index-pool) is documented but not presented as "the model."
 See [internals/value-semantics-limits.md](internals/value-semantics-limits.md).
