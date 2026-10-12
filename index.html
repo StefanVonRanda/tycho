@@ -69,18 +69,20 @@
   @media (prefers-reduced-motion:reduce){ html{scroll-behavior:auto} }
   body{
     margin:0; background:var(--paper); color:var(--ink-soft); overflow-x:hidden;
-    font-family:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
-    font-size:13px; line-height:1.6; letter-spacing:.3px;
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    font-size:15px; line-height:1.7; letter-spacing:.1px;
     -webkit-font-smoothing:antialiased;
   }
   a{color:inherit; text-decoration:none; border:0}
-  a:focus-visible,button:focus-visible{outline:1px solid var(--ink); outline-offset:2px}
+  .mono,pre,code,.inl,h1,h2,.card h3,.bar,.hrail,section::before,
+  .spec .cell b,.spec .cell span,.contents a,.spec2 .k,.spec2 .cmd,
+  .phead,.btn,.runsec,.themebtn,.idx,.gt,.chead,.fig .fhead,.codecap,
+  footer .fbrand,footer .col a,footer .legal{font-family:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace}
   ::selection{background:var(--acc); color:var(--acc-on)}
   .skip{position:absolute; left:12px; top:-56px; z-index:100; background:var(--ink);
     color:var(--paper); padding:10px 16px; font-size:10px; letter-spacing:1.6px;
     text-transform:uppercase; transition:top .15s ease}
   .skip:focus{top:8px}
-  code{font:inherit}
 
   :root{ --pad:clamp(16px,2.2vw,44px); --bar:56px; --measure:64ch; }
 
@@ -140,7 +142,7 @@
     grid-template-columns:minmax(0,1fr) minmax(0,1.5fr); align-items:stretch;
     border-top:1px solid var(--line)}
   .herofoot .lede{margin:0; padding:clamp(16px,1.8vw,30px) var(--pad);
-    font-size:12.5px; line-height:1.7; color:var(--dim); max-width:56ch; align-self:center}
+    font-size:16px; line-height:1.7; color:var(--dim); max-width:56ch; align-self:center}
   .herofoot .lede b{color:var(--ink); font-weight:600}
   .herofoot .cta{display:grid; grid-template-columns:repeat(3,1fr); margin:0; gap:0;
     border-left:1px solid var(--line)}
@@ -175,7 +177,7 @@
   h2{margin:clamp(30px,3.6vw,72px) 0 clamp(18px,2vw,36px); padding:0 var(--pad);
     font-size:clamp(24px,4.2vw,64px); line-height:1; letter-spacing:-.045em;
     color:var(--ink); font-weight:600; text-transform:uppercase; max-width:19ch}
-  p{margin:0 0 14px; max-width:var(--measure)}
+  p{margin:0 0 16px; max-width:var(--measure); font-size:15px; line-height:1.7}
   section > p{padding:0 var(--pad)}
   p.muted{color:var(--dim)}
   strong{color:var(--ink); font-weight:600}
@@ -221,7 +223,7 @@
   .group .gt::before{content:none}
   .card h3{margin:0 0 8px; font-size:11px; color:var(--ink); font-weight:600;
     text-transform:uppercase; letter-spacing:1.4px}
-  .card p{margin:0; font-size:12px; line-height:1.65; max-width:none; color:var(--dim)}
+  .card p{margin:0; font-size:14.5px; line-height:1.7; max-width:none; color:var(--dim)}
   .card p a{color:var(--ink); border-bottom:1px solid var(--line)}
   .card p a:hover{border-bottom-color:var(--ink)}
   ul.feat{list-style:none; margin:0; padding:0}
@@ -252,7 +254,7 @@
      the margin only once the caption scrolls into view, i.e. a visible jump. */
   .codecap{margin:0; padding:11px var(--pad);
     border-bottom:1px solid var(--line);
-    font-size:10px; letter-spacing:.6px; line-height:1.6; color:var(--faint); max-width:none}
+    font-size:12.5px; letter-spacing:.1px; line-height:1.65; color:var(--faint); max-width:none}
   .codecap b{color:var(--dim); font-weight:600}
 
   /* §02 -- prose against code */
@@ -260,7 +262,7 @@
   .split > :first-child{padding:clamp(20px,2.2vw,40px) var(--pad);
     border-right:1px solid var(--line)}
   ul.points{list-style:none; margin:0 0 18px; padding:0; display:grid; gap:15px}
-  ul.points li{position:relative; padding-left:20px; font-size:12.5px; line-height:1.65; color:var(--dim)}
+  ul.points li{position:relative; padding-left:20px; font-size:15px; line-height:1.7; color:var(--dim)}
   ul.points li::before{content:""; position:absolute; left:0; top:7px; width:6px; height:6px;
     background:var(--acc)}
   ul.points li b{color:var(--ink); font-weight:600}
@@ -277,14 +279,14 @@
   .fig .fhead b{color:var(--dim); font-weight:600}
   .fig canvas{display:block; width:100%}
   .fig svg{display:block; width:100%; height:auto}
-  .fig svg text{font-family:inherit; font-size:10px; letter-spacing:2px; fill:var(--faint); text-transform:uppercase}
+  .fig svg text{font-family:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace; font-size:10px; letter-spacing:2px; fill:var(--faint); text-transform:uppercase}
   .fig .ln{stroke:var(--dim); stroke-width:1}
   .fig .nd{fill:none; stroke:currentColor; stroke-width:1.4}
   .fig .slot{fill:none; stroke:currentColor; stroke-width:1.4}
   .fig .edge{stroke:var(--acc); stroke-width:1.4}
   .fig .enum{fill:var(--acc); font-size:12px; letter-spacing:0}
   .fig .fcap{padding:10px var(--pad); border-top:1px solid var(--line);
-    font-size:10px; line-height:1.6; color:var(--faint)}
+    font-size:12.5px; line-height:1.65; color:var(--faint)}
   .fig .fcap b{color:var(--dim); font-weight:600}
   .fig .fcap code{color:var(--ink-soft)}
   .trace{height:clamp(140px,14vw,240px)}
@@ -297,7 +299,7 @@
   .spec2 .row:first-child{border-top:0}
   .spec2 .row .k{padding:clamp(13px,1.4vw,22px) var(--pad); font-size:9px; letter-spacing:1.8px;
     text-transform:uppercase; color:var(--dim); font-weight:600; border-right:1px solid var(--line)}
-  .spec2 .row .v{padding:clamp(13px,1.4vw,22px) var(--pad); font-size:12.5px; line-height:1.65;
+  .spec2 .row .v{padding:clamp(13px,1.4vw,22px) var(--pad); font-size:14.5px; line-height:1.7;
     color:var(--dim); min-width:0}
   .spec2 .row .v b{color:var(--ink)}
   .spec2 .row .v .cmd{color:var(--acc)}
@@ -311,7 +313,7 @@
   footer .fbrand{display:flex; align-items:center; gap:9px; color:var(--ink); font-weight:600;
     font-size:12px; margin-bottom:12px; letter-spacing:1.6px; text-transform:uppercase}
   footer .fbrand svg{width:15px; height:15px}
-  footer .tagline{color:var(--faint); font-size:11.5px; max-width:38ch; line-height:1.65}
+  footer .tagline{color:var(--faint); font-size:13.5px; max-width:38ch; line-height:1.65}
   footer .col b{display:block; margin-bottom:12px; font-size:8.5px; letter-spacing:2px;
     text-transform:uppercase; color:var(--faint); font-weight:600}
   footer .col a{display:block; color:var(--dim); font-size:12px; padding:4px 0;
