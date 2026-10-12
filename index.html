@@ -17,7 +17,7 @@
 <meta name="twitter:image" content="https://tycho-lang.com/og.png">
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%20100%20100%27%3E%3Ccircle%20cx%3D%2750%27%20cy%3D%2750%27%20r%3D%2736%27%20fill%3D%27none%27%20stroke%3D%27black%27%20stroke-width%3D%276%27/%3E%3Ccircle%20cx%3D%2750%27%20cy%3D%2750%27%20r%3D%276%27%20fill%3D%27black%27/%3E%3C/svg%3E">
 <script>
-  (function(){try{var d=document.documentElement;var e=localStorage.getItem('tycho-theme');if(e){d.dataset.theme=e;}else if(matchMedia('(prefers-color-scheme: dark)').matches){d.dataset.theme='dark';}}catch(e){}})();
+  (function(){try{var d=document.documentElement;var e=localStorage.getItem('tycho-theme');d.dataset.theme=e||'light';}catch(e){}})();
 </script>
 </head>
 <body>
@@ -47,86 +47,70 @@
   .skip{position:absolute; left:12px; top:-56px; z-index:100; background:var(--ink);
     color:var(--paper); padding:10px 18px; font-size:14px}
   .skip:focus{top:8px}
-  .mono,.masthead,.kicker,.phead,.btn,.themebtn,.toc a,.figcap,.codecap,
-  .fact .k,.fig .fhead,footer,.colophon,pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .masthead,.kicker,.phead,.btn,.themebtn,.toc a,.codecap,
+  .fact .k,footer .fbrand,footer .flinks a,footer .legal,pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
   .page{max-width:44rem; margin:0 auto; padding:0 20px}
 
   .masthead{position:sticky; top:0; z-index:50; background:var(--paper); border-bottom:1px solid var(--line)}
   .masthead .in{max-width:44rem; margin:0 auto; padding:14px 20px;
-    display:flex; align-items:center; gap:18px}
+    display:flex; align-items:center; gap:16px}
   .wordmark{color:var(--ink); font-size:15px; font-weight:700; letter-spacing:.12em}
-  .masthead nav{display:flex; align-items:center; gap:2px; margin-left:auto; overflow-x:auto; scrollbar-width:none}
+  .masthead nav{display:flex; align-items:center; gap:4px; margin-left:auto; overflow-x:auto; scrollbar-width:none}
   .masthead nav::-webkit-scrollbar{display:none}
-  .masthead nav a{flex:0 0 auto; padding:6px 10px; font-size:11px; letter-spacing:.12em;
+  .masthead nav a{flex:0 0 auto; padding:8px 12px; font-size:11px; letter-spacing:.12em;
     text-transform:uppercase; color:var(--dim)}
   .masthead nav a:hover{color:var(--ink)}
   .themebtn{background:none; border:0; color:var(--dim); cursor:pointer; font:inherit;
-    font-size:11px; letter-spacing:.12em; text-transform:uppercase; padding:6px 0 6px 10px; flex:0 0 auto}
+    font-size:11px; letter-spacing:.12em; text-transform:uppercase; padding:8px 0 8px 12px; flex:0 0 auto}
   .themebtn:hover{color:var(--ink)}
 
-  header.hero{padding:88px 0 56px; border-bottom:1px solid var(--line)}
-  .kicker{display:block; font-size:12px; letter-spacing:.18em; text-transform:uppercase;
+  header.hero{padding:96px 0 64px; border-bottom:1px solid var(--line)}
+  .kicker{display:block; font-size:12px; letter-spacing:.16em; text-transform:uppercase;
     color:var(--dim); margin-bottom:20px}
-  h1{margin:0 0 22px; color:var(--ink); font-weight:800;
+  h1{margin:0 0 24px; color:var(--ink); font-weight:800;
     font-size:clamp(38px,6vw,60px); line-height:1.05; letter-spacing:-.02em}
-  .lede{margin:0 0 30px; font-size:19px; line-height:1.65; color:var(--dim); max-width:38rem}
+  .lede{margin:0 0 32px; font-size:19px; line-height:1.65; color:var(--dim); max-width:38rem}
   .lede b{color:var(--ink)}
   .lede a{color:var(--ink); text-decoration:underline; text-underline-offset:3px}
   .lede code{color:var(--ink-soft)}
   .cta{display:flex; flex-wrap:wrap; gap:12px}
-  .btn{display:inline-block; padding:14px 26px; border-radius:6px; cursor:pointer;
+  .btn{display:inline-block; padding:14px 28px; border-radius:8px; cursor:pointer;
     background:var(--ink); color:var(--paper); font-size:12px; letter-spacing:.12em;
     text-transform:uppercase; font-weight:700}
   .btn.ghost{background:transparent; color:var(--ink); border:1px solid var(--line)}
   .btn.ghost:hover{border-color:var(--ink)}
-  .herometa{margin-top:36px; padding-top:18px; border-top:1px solid var(--line);
+  .herometa{margin-top:40px; padding-top:20px; border-top:1px solid var(--line);
     font-size:12px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint)}
   .herometa b{color:var(--dim)}
 
-  section{padding:56px 0; border-bottom:1px solid var(--line)}
-  h2{margin:0 0 14px; color:var(--ink); font-weight:800;
+  section{padding:96px 0}
+  section + section{border-top:1px solid var(--line)}
+  h2{margin:0 0 16px; color:var(--ink); font-weight:800;
     font-size:clamp(28px,4vw,40px); line-height:1.1; letter-spacing:-.02em}
-  .sub{margin:0 0 30px; color:var(--dim); font-size:17px; max-width:38rem}
-  .sub a{color:var(--ink); text-decoration:underline; text-underline-offset:3px}
-  p{margin:0 0 14px}
+  p{margin:0 0 16px}
   strong{color:var(--ink)}
 
-  .fact{border-top:1px solid var(--line); margin-top:8px}
+  .fact{border-top:1px solid var(--line); margin-top:32px}
   .fact .row{padding:20px 0; border-bottom:1px solid var(--line)}
   .fact .k{display:block; font-size:11px; letter-spacing:.16em; text-transform:uppercase;
     color:var(--dim); margin-bottom:8px}
-  .fact .v{font-size:16.5px; color:var(--dim); max-width:38rem}
+  .fact .v{font-size:16px; color:var(--dim); max-width:38rem}
   .fact .v b{color:var(--ink)}
   .fact .v a{color:var(--ink); text-decoration:underline; text-underline-offset:3px}
 
-  .panel{border:1px solid var(--code-line); background:var(--code-bg); margin:26px 0 0}
-  .phead{display:flex; align-items:center; gap:12px; padding:10px 18px; border-bottom:1px solid var(--code-line)}
+  .panel{border:1px solid var(--code-line); background:var(--code-bg); margin:32px 0 0}
+  .phead{display:flex; align-items:center; gap:12px; padding:12px 20px; border-bottom:1px solid var(--code-line)}
+  .phead .traf{width:8px; height:8px; background:var(--acc-code); flex:0 0 auto}
   .phead .fn{font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--code-dim)}
   .phead .badge{margin-left:auto; font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--acc-code)}
   pre{margin:0; padding:20px 22px; overflow-x:auto; font-size:13px; line-height:1.8; color:var(--code-fg)}
   .k{color:#fff; font-weight:600} .fn{color:#cfd4dc} .s{color:var(--acc-code)}
   .c{color:var(--code-dim)} .g{color:#9aa1ab} .out{color:#8b929c}
-  .codecap{margin:0; padding:12px 2px 0; font-size:13px; color:var(--faint)}
+  .codecap{margin:0; padding-top:12px; font-size:13px; color:var(--faint)}
   .codecap b{color:var(--dim)}
 
-  .fig{border:1px solid var(--line); margin:26px 0 0}
-  .fig .fhead{padding:10px 18px; border-bottom:1px solid var(--line); font-size:11px;
-    letter-spacing:.16em; text-transform:uppercase; color:var(--faint)}
-  .fig .fhead b{color:var(--dim)}
-  .fig svg{display:block; width:100%; height:auto}
-  .fig svg text{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:11px; fill:var(--faint)}
-  .fig .ln{stroke:var(--dim); stroke-width:1.2}
-  .fig .nd{fill:var(--paper); stroke:var(--dim); stroke-width:1.4}
-  .fig .slot{fill:var(--paper); stroke:var(--dim); stroke-width:1.4}
-  .fig .edge{stroke:var(--acc); stroke-width:1.6; fill:none}
-  .fig .bar{fill:var(--dim)}
-  .fig .bar.acc{fill:var(--acc)}
-  .fig .exit{stroke:var(--faint); stroke-width:1; stroke-dasharray:4 3}
-  .figcap{padding:12px 18px; border-top:1px solid var(--line); font-size:13px; color:var(--faint)}
-  .figcap b{color:var(--dim)}
-
-  .toc{margin-top:8px; max-width:38rem}
-  .toc a{display:flex; align-items:center; gap:14px; padding:13px 4px; border-bottom:1px solid var(--line);
+  .toc{margin-top:32px; max-width:38rem}
+  .toc a{display:flex; align-items:center; gap:16px; padding:12px 4px; border-bottom:1px solid var(--line);
     color:var(--dim); font-size:13px; text-transform:uppercase; letter-spacing:.06em}
   .toc a:first-of-type{border-top:1px solid var(--line)}
   .toc a:hover{color:var(--ink)}
@@ -134,42 +118,31 @@
   .toc a .dots{flex:1; border-bottom:1px dotted var(--line); transform:translateY(-3px)}
   .toc a .arr{color:var(--faint); flex:0 0 auto}
 
-  details{border:1px solid var(--line); margin-bottom:10px; max-width:38rem}
+  details{border:1px solid var(--line); margin-bottom:12px; max-width:38rem}
   details[open]{border-color:var(--faint)}
-  summary{cursor:pointer; list-style:none; padding:18px 20px; font-weight:650; font-size:17px; color:var(--ink)}
+  summary{cursor:pointer; list-style:none; padding:20px; font-weight:650; font-size:17px; color:var(--ink)}
   summary::-webkit-details-marker{display:none}
   summary::before{content:"+ "; color:var(--dim)}
   details[open] summary::before{content:"– "}
   details .a{padding:0 20px 20px; color:var(--dim); font-size:16px}
   details .a a{color:var(--ink); text-decoration:underline; text-underline-offset:3px}
 
-  ul.plain{list-style:none; margin:8px 0 0; padding:0; max-width:38rem}
+  ul.plain{list-style:none; margin:32px 0 0; padding:0; max-width:38rem}
   ul.plain li{padding:12px 0; border-top:1px solid var(--line); color:var(--dim)}
   ul.plain li b{color:var(--ink)}
-  ul.points{list-style:none; margin:8px 0 20px; padding:0; max-width:38rem}
-  ul.points li{padding:10px 0; border-top:1px solid var(--line); color:var(--dim)}
+  ul.points{list-style:none; margin:32px 0 0; padding:0; max-width:38rem}
+  ul.points li{padding:12px 0; border-top:1px solid var(--line); color:var(--dim)}
   ul.points li:first-child{border-top:0}
   ul.points li b{color:var(--ink)}
-  .inl{border:1px solid var(--line); padding:0 6px; font-size:.88em; color:var(--ink); white-space:nowrap}
+  .inl{border:1px solid var(--line); padding:0 8px; font-size:.88em; color:var(--ink); white-space:nowrap}
 
-  footer{padding:48px 0 40px; text-align:center}
-  footer .fbrand{font-size:15px; font-weight:700; letter-spacing:.14em; color:var(--ink); margin-bottom:16px}
-  footer nav{display:flex; flex-wrap:wrap; justify-content:center; gap:4px 20px; margin-bottom:20px}
-  footer nav a{font-size:12px; letter-spacing:.1em; text-transform:uppercase; color:var(--dim); padding:4px 0}
-  footer nav a:hover{color:var(--ink)}
-  footer .legal{font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--faint)}
-
-  section{padding:64px 0}
-  .codecap{margin:0; padding-top:10px; font-size:13px; color:var(--faint)}
-  .codecap b{color:var(--dim)}
-  .fbrand svg{width:20px; height:20px}
-  .tagline{color:var(--faint); font-size:14.5px; max-width:34ch}
-  .group .gt{display:block; margin-bottom:14px; font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--dim)}
-  .lede a{color:var(--ink); text-decoration:underline; text-underline-offset:3px}
-  .lede code{color:var(--ink-soft)}
-  h1 .tok{color:var(--acc)}
-  .fig .fhead .dot{width:8px; height:8px; background:var(--acc)}
-  .wordmark svg{width:20px; height:20px}
+  footer{padding:64px 0 40px; text-align:center; border-top:1px solid var(--line)}
+  .fbrand{font-size:15px; font-weight:700; letter-spacing:.14em; color:var(--ink); margin-bottom:20px}
+  .flinks{display:flex; flex-wrap:wrap; justify-content:center; gap:8px 24px; margin-bottom:24px}
+  .flinks a{font-size:12px; letter-spacing:.1em; text-transform:uppercase; color:var(--dim); padding:4px 0}
+  .flinks a:hover{color:var(--ink)}
+  .tagline{color:var(--faint); font-size:14px; max-width:52ch; margin:0 auto 20px}
+  .legal{font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--faint); display:flex; gap:8px 20px; justify-content:center}
 </style>
 
 <div class="masthead">
@@ -227,7 +200,7 @@
       <li><span class="inl">acc = acc + x</span> grows <b>one buffer in place</b>: the O(n²) string build becomes O(n) — 828 MB down to 4 MB at the same input.</li>
       <li>A copy happens only where a GC would work too. The <a href="https://tycho-lang.com/docs/performance.html">numbers ↗</a> are measured, not asserted.</li>
     </ul>
-    <div class="panel rv">
+    <div class="panel">
       <div class="phead"><span class="traf"></span><span class="fn">LISTING 01 — examples/count.ty</span><span class="badge">one buffer · O(n)</span></div>
       <pre><code><span class="k">fn</span> <span class="fn">main</span>():
     total := <span class="s">""</span>
@@ -238,7 +211,7 @@
     <span class="fn">println</span>(<span class="s">"counted: "</span> + total)   <span class="c"># counted: 1, 2, 3, 4, 5</span></code></pre>
     </div>
     <p class="codecap"><b>Listing 01.</b> The string built inside the loop lives in main's arena — the compiler frees it for you on return.</p>
-    <div class="panel rv">
+    <div class="panel">
           <div class="phead"><span class="traf"></span><span class="fn">LISTING 02 — examples/promote.ty</span><span class="badge">return moves · zero copies</span></div>
           <pre><code><span class="k">struct</span> <span class="fn">Person</span>:
     name: <span class="k">string</span>
@@ -291,7 +264,7 @@
   <section id="try">
     <span class="kicker">06 — Try it</span>
     <h2>A C compiler and make. Nothing else.</h2>
-    <div class="panel rv">
+    <div class="panel">
 <div class="phead"><span class="traf"></span><span class="fn">LISTING 02b — terminal</span><span class="badge">prebuilt — nothing to build</span></div>
 <pre><code><span class="c"># Linux x86-64; macOS arm64 and Windows builds are on the same release page</span>
 <span class="g">$</span> curl -fsSLO https://github.com/StefanVonRanda/tycho/releases/download/v0.8.6/tycho-v0.8.6-linux-x86_64.tar.gz
@@ -305,7 +278,7 @@
 <span class="out">hello Ada</span></code></pre>
 </div>
     <p class="codecap"><b>Prebuilt.</b> The tarball carries <code>tychoc</code>, the core library and the examples. You still need <code>cc</code>.</p>
-    <div class="panel rv">
+    <div class="panel">
       <div class="phead"><span class="traf"></span><span class="fn">LISTING 03 — terminal</span><span class="badge">hello.ty — the success-criterion demo</span></div>
       <pre><code><span class="c"># a `cc` and `make`, nothing else</span>
 <span class="g">$</span> git clone https://github.com/StefanVonRanda/tycho
@@ -367,35 +340,17 @@
   </section>
 
   <footer>
-    <div class="fgrid" style="max-width:none">
-      <div>
-        <div class="fbrand">
-          <svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true">
-            <circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/>
-          </svg>
-          <span>TYCHO</span>
-        </div>
-        <p class="tagline">An experimental systems language. MIT licensed. © Stefan Von Randa.</p>
-      </div>
-      <div class="fcol">
-        <b>Docs</b>
-        <a href="https://tycho-lang.com/docs/tutorial.html">Tutorial</a>
-        <a href="https://tycho-lang.com/docs/reference/index.html">Reference</a>
-        <a href="https://tycho-lang.com/docs/thesis.html">The thesis</a>
-        <a href="https://tycho-lang.com/docs/idioms.html">Thinking in Tycho</a>
-      </div>
-      <div class="fcol">
-        <b>Project</b>
-        <a href="https://github.com/StefanVonRanda/tycho">GitHub</a>
-        <a href="https://tycho-lang.com/docs/changelog.html">Changelog</a>
-        <a href="https://tycho-lang.com/docs/release-notes.html">Release notes</a>
-        <a href="https://github.com/StefanVonRanda/tycho/blob/main/SUPPORT.md">Support policy</a>
-      </div>
-    </div>
-    <div class="colophon">
-      <span>MIT</span>
-      <span>tycho-lang.com</span>
-    </div>
+    <div class="fbrand">TYCHO</div>
+    <nav class="flinks" aria-label="Footer">
+      <a href="https://tycho-lang.com/docs/tutorial.html">Tutorial</a>
+      <a href="https://tycho-lang.com/docs/reference/index.html">Reference</a>
+      <a href="https://tycho-lang.com/docs/thesis.html">The thesis</a>
+      <a href="https://tycho-lang.com/docs/idioms.html">Thinking in Tycho</a>
+      <a href="https://tycho-lang.com/docs/changelog.html">Changelog</a>
+      <a href="https://github.com/StefanVonRanda/tycho">GitHub</a>
+    </nav>
+    <p class="tagline">An experimental systems language. MIT licensed. © Stefan Von Randa.</p>
+    <div class="legal"><span>MIT</span><span>tycho-lang.com</span></div>
   </footer>
 
 </main>
