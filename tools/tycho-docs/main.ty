@@ -477,11 +477,10 @@ fn build(docs_dir: string, out_dir: string):
     root := parent_of(docs_dir)
     xnames := ["CHANGELOG.md", "RELEASE_NOTES.md"]
     xouts := ["changelog.html", "release-notes.html"]
+    xtitles := ["Changelog", "Release notes"]
     for i := 0; i < 2; i += 1:
         text := io.read(path.join(root, xnames[i]))
-        title := title_of(text)
-        if len(title) == 0:
-            title = xnames[i]
+        title := xtitles[i]
         body := render_md(text)
         html := page_html(title, "index.html", esc_html(xnames[i]), body)
         if io.write(path.join(out_dir, xouts[i]), html):
