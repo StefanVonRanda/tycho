@@ -170,7 +170,6 @@
     <p class="lede">
       Memory is managed with <b>implicit arenas</b>: every scope owns one, and it
       empties when the scope ends. No manual <code>free</code>, no borrow checker.
-      It transpiles to C and builds with <code>cc</code> and <code>make</code>.
       Built for parsers, compilers, and batch tools. Not for shared-mutable graphs.
     </p>
     <div class="cta">
@@ -178,7 +177,7 @@
       <a class="btn ghost" href="docs/">Read the docs</a>
     </div>
     <div class="herometa">
-      <span><b>cc + make</b> — whole toolchain</span>
+      <span><b>Transpiles to C</b>, builds with <b>cc + make</b></span>
       <span><b>45</b> stdlib packages</span>
       <span><b>1,100+</b> gated fixtures</span>
     </div>
@@ -186,21 +185,21 @@
 
   <section id="idea">
     <span class="kicker">01 — The idea</span>
-    <h2>Memory comes from scope, not a runtime.</h2>
+    <h2>How it works.</h2>
     <div class="fact">
-      <div class="row"><span class="k">Arenas per scope</span><span class="v">Allocation is a pointer bump. When the scope exits, the whole arena empties in one step. <b>No per-object free exists.</b></span></div>
-      <div class="row"><span class="k">No references</span><span class="v"><span class="inl">b := a</span> copies. With nothing to alias, the compiler reads every value's lifetime from the syntax alone.</span></div>
-      <div class="row"><span class="k">Placed, not managed</span><span class="v">A value leaves a scope only <b>down</b> into a callee or <b>up</b> to a caller. The compiler puts each allocation and each free where it belongs.</span></div>
+      <div class="row"><span class="k">Arenas per scope</span><span class="v">Each scope gets an arena. Allocation bumps a pointer; exiting the scope frees everything at once.</span></div>
+      <div class="row"><span class="k">No references</span><span class="v"><span class="inl">b := a</span> copies. Without aliasing, lifetimes are visible in the syntax.</span></div>
+      <div class="row"><span class="k">Placed, not managed</span><span class="v">A value leaves a scope only <b>down</b> into a callee or <b>up</b> to a caller. The compiler places every allocation and every free.</span></div>
     </div>
   </section>
 
   <section id="fast">
     <span class="kicker">02 — Speed</span>
-    <h2>Value semantics, minus the copies.</h2>
+    <h2>Why it is fast.</h2>
     <ul class="points">
-      <li>A value you build and return is allocated straight into the caller's arena — <span class="inl">return</span> <b>moves</b> it. 1.75× faster than copying it out.</li>
-      <li><span class="inl">acc = acc + x</span> grows <b>one buffer in place</b>: the O(n²) string build becomes O(n) — 828 MB down to 4 MB at the same input.</li>
-      <li>A copy happens only where a GC would work too. The <a href="https://tycho-lang.com/docs/performance.html">numbers ↗</a> are measured, not asserted.</li>
+      <li>Returned values are built in the caller's arena — no copy on the way out (1.75× faster than copying).</li>
+      <li><span class="inl">acc = acc + x</span> grows one buffer: O(n²) becomes O(n). 828 MB becomes 4 MB on the same input.</li>
+      <li>Copies happen only where a collector would do the same work. See the <a href="https://tycho-lang.com/docs/performance.html">numbers ↗</a> are measured.</li>
     </ul>
     <div class="panel">
       <div class="phead"><span class="traf"></span><span class="fn">LISTING 01 — examples/count.ty</span><span class="badge">one buffer · O(n)</span></div>
@@ -212,7 +211,7 @@
             total = total + <span class="s">", "</span>
     <span class="fn">println</span>(<span class="s">"counted: "</span> + total)   <span class="c"># counted: 1, 2, 3, 4, 5</span></code></pre>
     </div>
-    <p class="codecap"><b>Listing 01.</b> The string built inside the loop lives in main's arena — the compiler frees it for you on return.</p>
+    <p class="codecap"><b>Listing 01.</b> Loop garbage that frees itself at scope exit.</p>
     <div class="panel">
           <div class="phead"><span class="traf"></span><span class="fn">LISTING 02 — examples/promote.ty</span><span class="badge">return moves · zero copies</span></div>
           <pre><code><span class="k">struct</span> <span class="fn">Person</span>:
@@ -229,43 +228,44 @@
     older := <span class="fn">promote</span>(ada)
     <span class="fn">println</span>(<span class="fn">str</span>(ada.age) + <span class="s">" "</span> + <span class="fn">str</span>(older.age))   <span class="c"># 36 37</span></code></pre>
         </div>
-    <p class="codecap"><b>Listing 02.</b> <span class="inl">return</span> moves the value into the caller's arena; the copy <span class="inl">q := p</span> stays independent.</p>
+    <p class="codecap"><b>Listing 02.</b> The returned struct is moved, not copied; <span class="inl">q := p</span> stays independent.</p>
   </section>
 
   <section id="costs">
-    <span class="kicker">03 — Costs, stated before you commit</span>
-    <h2>What it can't do.</h2>
+    <span class="kicker">03 — Costs</span>
+    <h2>What it costs.</h2>
     <div class="fact">
-      <div class="row"><span class="k">No references</span><span class="v">Shared-mutable graphs and observers can't be written the pointer way. <b>Pools + indices</b> are the idiom — the cache-friendly one. Trie ~1.55× C, LRU ~2.8×, graph idiom ~1.3×. The <a href="https://tycho-lang.com/docs/internals/value-semantics-limits.html">loss column ↗</a> names every price.</span></div>
-      <div class="row"><span class="k">No interface values</span><span class="v">A heterogeneous list of implementors can't exist here. <b>Closed enums + match</b> cover the known set, generics the static half — the replacements are in <a href="https://tycho-lang.com/docs/idioms.html">Thinking in Tycho ↗</a>.</span></div>
-      <div class="row"><span class="k">Pre-1.0, scope exit</span><span class="v">The surface can still break with a changelog entry and no deprecation window (<a href="https://github.com/StefanVonRanda/tycho/blob/main/SUPPORT.md">policy ↗</a>). Arenas free at scope exit, not incrementally.</span></div>
+      <div class="row"><span class="k">No references</span><span class="v">Pointer-shaped data costs more than C: trie 1.55×, LRU 2.8× memory. The index-pool idiom brings graphs to 1.3×. Full accounting in the <a href="https://tycho-lang.com/docs/internals/value-semantics-limits.html">loss column ↗</a>.</span></div>
+      <div class="row"><span class="k">No interface values</span><span class="v">No interface values. A mixed list of implementors can't exist; closed enums with match cover known sets, generics cover the static case. See <a href="https://tycho-lang.com/docs/idioms.html">Thinking in Tycho ↗</a>.</span></div>
+      <div class="row"><span class="k">Pre-1.0</span><span class="v">Breaking changes ship with a changelog entry and no deprecation window until 1.0 (<a href="https://github.com/StefanVonRanda/tycho/blob/main/SUPPORT.md">policy ↗</a>).</span></div>
+      <div class="row"><span class="k">Scope exit</span><span class="v">Memory returns when the scope exits, never mid-scope.</span></div>
     </div>
   </section>
 
   <section id="lang">
     <span class="kicker">04 — The language</span>
-    <h2>Small. The reference has the rest.</h2>
+    <h2>What is included.</h2>
     <ul class="plain">
       <li><b>Value semantics, generics, sum types</b> — <span class="inl">Option</span> / <span class="inl">Result</span>, <span class="inl">match</span>, <span class="inl">$T</span> monomorphized.</li>
       <li><b>Methods, closures</b> — UFCS, no classes; value capture.</li>
       <li><b>Systems pieces</b> — <span class="inl">spawn</span>, channels, <span class="inl">parallel for</span>; <span class="inl">extern fn</span> FFI; packages with a 45-module corelib.</li>
     </ul>
-    <p>Python-flavored syntax, Go/Odin-like semantics; the value core comes from <a href="https://www.hylo-lang.org/">Hylo ↗</a>. Full coverage is in the <a href="docs/">reference ↗</a>.</p>
+    <p>Python-flavored syntax, Go/Odin-like semantics; the value core comes from <a href="https://www.hylo-lang.org/">Hylo ↗</a>.</p>
   </section>
 
   <section id="rigor">
     <span class="kicker">05 — Verification</span>
-    <h2>Checked, locally, by gates that can fail.</h2>
+    <h2>How it is tested.</h2>
     <div class="fact">
-      <div class="row"><span class="k">Corpus</span><span class="v"><b>1,100+ fixtures</b> built twice — native and sanitized — byte-identical output required, matched against committed goldens. 621 refusals pin every rejection.</span></div>
-      <div class="row"><span class="k">Fuzzed</span><span class="v">Random programs run native <span class="inl">-O2</span> against ASan/UBSan; disagreement is the oracle. Malformed input must fail closed — never crash.</span></div>
-      <div class="row"><span class="k">No cloud CI</span><span class="v"><span class="inl">make ci</span> runs the whole suite on your machine. Nothing taken on faith — and the honest caveats live in the <a href="https://tycho-lang.com/docs/internals/value-semantics-limits.html">loss column ↗</a> and the <a href="https://tycho-lang.com/docs/performance.html">performance notes ↗</a>.</span></div>
+      <div class="row"><span class="k">Corpus</span><span class="v"><b>1,100+ fixtures</b>, each built native and sanitized with byte-identical output, matched to committed goldens. 621 fixtures pin every refusal.</span></div>
+      <div class="row"><span class="k">Fuzzed</span><span class="v">Random programs run native <span class="inl">-O2</span> against ASan/UBSan; any disagreement is a defect. Malformed input must fail closed.</span></div>
+      <div class="row"><span class="k">No cloud CI</span><span class="v"><span class="inl">make ci</span> runs everything on your machine. Caveats are written down in the <a href="https://tycho-lang.com/docs/performance.html">performance notes ↗</a>.</span></div>
     </div>
   </section>
 
   <section id="try">
     <span class="kicker">06 — Try it</span>
-    <h2>A C compiler and make. Nothing else.</h2>
+    <h2>How to try it.</h2>
     <div class="panel">
 <div class="phead"><span class="traf"></span><span class="fn">LISTING 02b — terminal</span><span class="badge">prebuilt — nothing to build</span></div>
 <pre><code><span class="c"># Linux x86-64; macOS arm64 and Windows builds are on the same release page</span>
@@ -308,18 +308,18 @@
 
   <section id="faq">
     <span class="kicker">08 — Questions</span>
-    <h2>Asked every time.</h2>
+    <h2>Questions.</h2>
     <details open>
       <summary>No GC, no borrow checker — how is it safe?</summary>
-      <div class="a">There is no reference type, so a dangling pointer can't be written. Memory frees per scope, <span class="inl">Option</span> removes null, <span class="inl">Result</span> removes exceptions, indexing is bounds-checked.</div>
+      <div class="a">There is no reference type, so a dangling pointer can't be written. Scopes free their arenas; <span class="inl">Option</span> replaces null, <span class="inl">Result</span> replaces exceptions; indexing is bounds-checked.</div>
     </details>
     <details>
       <summary>What does value semantics cost?</summary>
-      <div class="a">Pointer-shaped data stored by value: trie ~1.55× C, LRU ~2.8×, the pool idiom ~1.3×. Arenas free at scope exit, not incrementally. The <a href="https://tycho-lang.com/docs/internals/value-semantics-limits.html">loss column ↗</a> names every price.</div>
+      <div class="a">More memory for pointer-shaped data — figures above. Rule of thumb: if C would use pointers, budget extra or reach for the pool idiom.</div>
     </details>
     <details>
       <summary>Copying everything must be slow?</summary>
-      <div class="a">"Copied" is the model, not the code: returns move, <span class="inl">acc += x</span> grows in place, dead values move. A copy happens only where a GC would work too. The <a href="https://tycho-lang.com/docs/performance.html">numbers ↗</a> are measured.</div>
+      <div class="a">The compiler removes copies it can prove dead: returns, loop appends, last uses. What remains is work a collector would do too.</div>
     </details>
     <details>
       <summary>Where's the package manager?</summary>
@@ -329,7 +329,7 @@
 
   <section id="community">
     <span class="kicker">09 — Community</span>
-    <h2>Built in the open.</h2>
+    <h2>Get involved.</h2>
     <div class="fact">
       <div class="row"><span class="k">Report a bug</span><span class="v">Miscompile, crash, wrong output? A small <span class="inl">.ty</span> repro plus expected-vs-actual is the whole report. <a href="https://github.com/StefanVonRanda/tycho/issues/new?template=bug_report.md">File it ↗</a>.</span></div>
       <div class="row"><span class="k">Ideas</span><span class="v">Rough edges, "I bounced off X", why-does-it-work-this-way — all useful. A few things are out of scope; the <a href="https://tycho-lang.com/docs/architecture.html#decided-non-goals">non-goals ↗</a> name them. <a href="https://github.com/StefanVonRanda/tycho/issues/new?template=idea.md">Speak up ↗</a>.</span></div>
@@ -351,7 +351,7 @@
       <a href="https://tycho-lang.com/docs/changelog.html">Changelog</a>
       <a href="https://github.com/StefanVonRanda/tycho">GitHub</a>
     </nav>
-    <p class="tagline">An experimental systems language. MIT licensed. © Stefan Von Randa.</p>
+    <p class="tagline">MIT licensed. © Stefan Von Randa.</p>
     <div class="legal"><span>MIT</span><span>tycho-lang.com</span></div>
   </footer>
 
