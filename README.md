@@ -181,7 +181,7 @@ corpus, and what each scored, is the
 
 `./tychoc f.ty` transpiles `f.ty` to C and compiles it to a native binary `f`,
 removing the intermediate `f.c` once `cc` succeeds (it is kept when `cc` fails,
-as the evidence); `-o name` names the output, `--emit-c` stops at the C (writing
+for debugging); `-o name` names the output, `--emit-c` stops at the C (writing
 it to stdout unless `-o` names a file) — that is how you keep the C. The
 transpiler is one dependency-free C file. The only optional extras are
 `pkg-config` plus a library for the FFI-backed corelib modules (like
@@ -227,11 +227,9 @@ verifies the whole tree.
 `make test` builds every `examples/*.ty` and `tests/*.ty` twice — native `-O2`
 and `-fsanitize=address,undefined` — runs both on the same stdin, and asserts:
 exit 0, no sanitizer report, **byte-identical output** between the builds, and a
-match against the committed golden `tests/<name>.out`. Byte-identity catches UB
-the optimizer and sanitizer disagree on; the golden catches a miscompile that's
-self-consistently wrong. LeakSanitizer is on — every scope frees its arena at
-exit, so a leak means a real missing free. Goldens are rewritten only by `make
-test-update`, never by a normal run.
+match against the committed golden `tests/<name>.out`. Goldens are rewritten only by `make
+test-update`, never by a normal run. What each check proves is in
+[Architecture](docs/architecture.md).
 
 `make bench` guards the *performance* claims the way `make test` guards
 correctness: each `bench/*.ty` asserts one metric against a generous bound.
@@ -242,7 +240,7 @@ that platform, executed there, not cross-compiled and hoped for.
 | platform | status |
 | --- | --- |
 | **Linux x86-64** | gated — the development host, and the only one that scores leaks |
-| **Linux arm64** | gated since 2026-09-19 — `make test` 1065/1065 on Ubuntu 26.04 / aarch64 |
+| **Linux arm64** | gated since 2026-09-19 — Ubuntu 26.04 / aarch64 |
 | **macOS / Apple Silicon** | gated since 2026-09-19 — `xcode-select --install` is the whole setup |
 | **Windows x86-64** | gated natively under MSYS2 + mingw-w64; **WSL2** needs no setup and behaves exactly like Linux |
 | **Windows arm64** | executed by `make platform-check`; a mingw target |
@@ -264,7 +262,8 @@ one consequence to accept:
 
 The optional FFI-backed corelib packages need their dev libraries (`zlib1g-dev`,
 `libssl-dev`, `libcurl4-openssl-dev`, `libpng-dev`, `libsqlite3-dev`,
-`pkg-config`), or `make shim-warn` refuses rather than passing vacuously.
+`pkg-config`), without which `make shim-warn` refuses to run those checks
+instead of passing without testing anything.
 
 Which lanes skip on which host and why each one does, the C toolchains that have
 been measured against the whole corpus, and the per-platform friction entries are
