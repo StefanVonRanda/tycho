@@ -83,11 +83,10 @@ PAIRS = [
 
 # Tokens that are deliberately not scored. A token is only allowed here with a
 # reason -- "unused" is not one of them, that is a token to delete.
+# (Empty since the 2026-10-12 rebuild deleted the last exempt token, --dot,
+# along with the dot-matrix hero it decorated. If a decorative-only token
+# returns, it needs a reason here.)
 EXEMPT = {
-    "--dot": "decorative dot-matrix field behind the hero, and the 6px terminal "
-             "chrome dots. Both carry no information and convey no state, so "
-             "1.4.11 does not apply. Measured 2026-08-17: no text ever sits on "
-             "either -- if that changes this exemption is wrong.",
 }
 
 
@@ -177,7 +176,7 @@ def selfcheck(argv=()):
     # [c5]: the mutation used by [c1] must NOT trip anything else, or [c1] proves
     # only that some check somewhere fired.
     expect("[c5] an unrelated legal colour change stays clean",
-           re.sub(r"(--ink:)#f4f3ef", r"\1#ffffff", src, count=1), False)
+           re.sub(r"(--ink:)#f4eee0", r"\1#ffffff", src, count=1), False)
 
     print("selfcheck: %s" % ("ok (every leg reddens on its own mutation)" if not bad
                              else "FAILED (%d leg(s) do not behave)" % bad))
