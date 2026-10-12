@@ -1,42 +1,43 @@
 # Tycho documentation
 
-## Start here
+## Learn
 
 1. **[The README](../README.md)** — what Tycho is, and whether it's for you.
-2. **[Tutorial](tutorial.md)** — write and run your first programs.
+2. **[Tutorial](tutorial.md)** — write and run your first programs in about an hour.
 3. **[From `malloc` to implicit arenas](from-c-to-arenas.md)** — the memory model
-   in five steps from familiar C. The gentlest route to the core idea.
-4. **[Language reference](reference/index.md)** — how each feature behaves.
+   in five steps from familiar C. Read this right after the tutorial.
+
+## Use
+
+4. **[Language reference](reference/index.md)** — how each feature behaves, one
+   page per topic, every example runnable.
 5. **[Quiet results](quiet-results.md)** — the seven places the language answers
    instead of refusing. Short; read it before the first real program.
 
-## Where to look for what
-
 | You want | Go to |
 |---|---|
-| What a feature does, precisely | **[`reference/`](reference/)** — one terse page per topic |
-| Why a feature works that way | **[`reference/`](reference/)** — each page ends with a "Working with it" section |
+| What a feature does, precisely | **[`reference/`](reference/)** — one page per topic |
 | The exact rule for an edge case | **[`spec/`](spec/)** — grammar and normative semantics |
 | An operation answered when you expected it to refuse | **[`quiet-results.md`](quiet-results.md)** |
 | A program is misbehaving | **[`debugging.md`](debugging.md)** |
-| The numbers behind the claims | **[`performance.md`](performance.md)** |
-| The idea the language argues for | **[`thesis.md`](thesis.md)** |
-| Whether the evidence can be trusted | **[`controls.md`](controls.md)** — four times a gate was proved unable to fail |
-| A build fails, or your platform is unusual | **[`platforms.md`](platforms.md)** — the gated platforms, the enumerated skips, and the C toolchain matrix |
+| A build fails, or your platform is unusual | **[`platforms.md`](platforms.md)** — gated platforms, skips, C toolchain matrix |
 
-**[`reference/`](reference/)** is the single answer layer: basics, types,
-functions, arrays and slices, structs and tuples, maps, enums and options,
-generics, subscripts, packages, strings, concurrency, FFI, the corelib catalogue,
-and builtins. Each page states the rule first and then how to work with it.
+## Trust
 
-**[`memory-model.md`](memory-model.md)**, **[`perf.md`](perf.md)**,
-**[`quiet-results.md`](quiet-results.md)** and **[`debugging.md`](debugging.md)**
-are the topic pages that are not about one feature.
+The case that the model works, and what it costs:
 
-## Also here
+- **[The thesis](thesis.md)** — the argument: why value semantics makes implicit
+  arenas work, where it doesn't, with measured numbers.
+- **[The memory model](memory-model.md)** — the practitioner's view: what the
+  compiler emits and what to expect in practice.
+- **[Performance](performance.md)** — the measurements behind the claims.
+- **[Controls](controls.md)** — why the evidence is worth reading: four cases
+  where the test gates proved they can fail.
+- **[Architecture](architecture.md)** — how the project is built, what each
+  verification gate proves, what's shipped, and the decided non-goals.
 
-- **[`architecture.md`](architecture.md)** — how the project is built and what
-  each verification gate proves.
+## Maintain
+
 - **[`internals/`](internals/README.md)** and **[`rfc/`](rfc/README.md)** — design
   notes, proposals, and investigation records. Written for maintainers.
 

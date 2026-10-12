@@ -156,3 +156,6 @@ No garbage collector and its pauses. No manual `free` and its leaks and use-afte
 borrow checker and its annotations. Just lexical scope — the same blocks you already write —
 deciding when memory is freed, with the compiler doing the placement. The
 [thesis](thesis.md) has the measurements so far.
+
+Next: the [language reference](reference/index.md) for what each feature does,
+and [quiet results](quiet-results.md) before the first real program.

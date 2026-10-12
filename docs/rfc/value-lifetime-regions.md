@@ -222,7 +222,7 @@ takes (`docs/memory-model.md:33-34`). The lowering is nearly free; the entire
 cost is in the source language and the checker.
 
 **Verdict.** This is a lifetime-annotation system with a different keyword. It
-contradicts `docs/thesis.md:10@borrow` ("no lifetime annotations, no borrow checker") at the load-bearing joint. Reject.
+contradicts `docs/thesis.md:11@borrow` ("no lifetime annotations, no borrow checker") at the load-bearing joint. Reject.
 
 ### 4.2 Design B — the value-homed arena (the region is a hidden field, never a type variable)
 

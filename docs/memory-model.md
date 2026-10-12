@@ -1,14 +1,14 @@
 # The memory model
 
-Tycho's memory model is value semantics over implicit per-scope arenas: every
-binding is a value, every value belongs to the scope that created it, and that
-scope's arena is released whole when it exits. There is no reference type and no
-garbage collector. Why it is designed this way is [thesis.md](thesis.md); what
-it looks like in code is [arrays-structs.md](reference/arrays-slices.md).
+The practitioner's view of Tycho's memory model: value semantics over implicit
+per-scope arenas. Every binding is a value, every value belongs to the scope
+that created it, and that scope's arena is released whole when it exits. There
+is no reference type and no garbage collector. The on-ramp is
+[from-c-to-arenas.md](from-c-to-arenas.md); the argument is [thesis.md](thesis.md);
+what it looks like in code is [arrays and slices](reference/arrays-slices.md).
 
-The memory model is the central idea this language exists to demonstrate. The
-stability contract is in the README's status banner; implementation details
-like arena sizes are deliberately not part of it. Cross-language figures are in
+The stability contract is in the README's status banner; details like arena
+sizes are not part of it. Cross-language figures are in
 [performance.md](performance.md).
 
 ## What the compiler emits

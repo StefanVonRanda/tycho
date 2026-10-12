@@ -35,3 +35,6 @@ Every example compiles and prints the output shown.
   for its own types.
 - **Examples run.** Every sample compiles under `tychoc`. Output shown
   in a comment is the actual output.
+
+Before the first real program, read [Quiet results](../quiet-results.md) —
+the seven places the language answers instead of refusing.

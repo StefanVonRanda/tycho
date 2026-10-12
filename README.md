@@ -283,15 +283,15 @@ language tick. [`docs/`](docs/README.md) is the full index; the map:
   model in five steps, starting from C you already know. The gentlest way in.
 - **[Language reference](docs/reference/index.md)** — every construct, by topic.
   The source of truth; every example compiles.
-- **[Quiet results](docs/quiet-results.md)** — the complete register of
-  operations that answer instead of refusing (bytes vs characters, clamping
-  slices, wraparound, the lax parsers). Each is deliberate; each has a
-  fail-closed sibling. The page to read before trusting a parse.
-- **[The thesis](docs/thesis.md)** — why value semantics makes implicit arenas
-  work, and where it doesn't, with measured numbers.
+- **[Quiet results](docs/quiet-results.md)** — the seven places the language
+  answers instead of refusing (bytes vs characters, clamping
+  slices, wraparound, the lax parsers). Each has a stricter sibling. Read it
+  before trusting a parse.
+- **[The thesis](docs/thesis.md)** — the argument: why value semantics makes
+  implicit arenas work, and where it doesn't, with measured numbers.
+- **[The memory model](docs/memory-model.md)** — the practitioner's view: what
+  the compiler emits and what to expect in practice.
 - **[Performance](docs/performance.md)** — the measurements behind the claims.
-- **[The memory model](docs/memory-model.md)** — why value semantics makes
-  implicit arenas work in practice, and what it costs.
 - **[Architecture & status](docs/architecture.md)** — how it's built, what each
   verification gate proves, what's shipped, and the decided non-goals.
 

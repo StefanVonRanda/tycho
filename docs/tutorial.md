@@ -219,12 +219,14 @@ measurements and the cases where it costs, is in [thesis.md](thesis.md).
 
 ## Next steps
 
-- **Reaching for the core library?** Every program in this tutorial stands alone,
-  so none of them needed a `package` line. The moment you add an `import`, the file
-  becomes a package and must say so — put `package main` on line 1, and give the
-  program its own directory. See **[Packages](reference/packages.md)**.
+- **[From `malloc` to arenas](from-c-to-arenas.md)** — the five-step version of
+  section 8, starting from C. Read this first.
 - **[Language reference](reference/index.md)** — the precise behavior of every feature.
+- **[Quiet results](quiet-results.md)** — seven quiet spots to know before the
+  first real program.
 - **[Examples](../examples/)** — larger runnable programs (a JSON parser, an HTTP client,
   a static-site generator, a ray tracer).
-- **[thesis.md](thesis.md)** — why the language is shaped this way.
 - **[Core library](reference/corelib.md)** — the batteries: strings, math, io, json, http, and more.
+  The moment you add an `import`, the file becomes a package: put
+  `package main` on line 1 and give the program its own directory
+  ([Packages](reference/packages.md)).

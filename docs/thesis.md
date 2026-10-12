@@ -1,11 +1,12 @@
 # The Tycho thesis: value semantics makes implicit arenas work
 
-This document is the core idea behind Tycho — the *why*. The
+This is the *why* behind Tycho. The
 [language reference](reference/index.md) describes *what* the language does;
-the [aggregates design note](reference/arrays-slices.md) pushes this argument harder.
-What follows is the case for it, backed by running, measured code.
+the [aggregates design note](internals/design-aggregates.md) covers how
+deep-copied aggregates stay sound. Here is the case for the model, backed by
+running, measured code.
 
-Tycho is a small, experimental, ahead-of-time language: Python-looking syntax,
+Tycho is a small, ahead-of-time language: Python-looking syntax,
 value semantics, no garbage collector, no `malloc`/`free`, no
 lifetime annotations, no borrow checker. Programs are written as if memory were
 managed, and it is. The claim is not "arenas are good" — that is well known.
@@ -16,8 +17,7 @@ The claim is sharper:
 > alone, with no whole-program analysis and no visible memory constructs —
 > while staying competitive on performance.**
 
-This is a proof-of-concept exploration of that claim, not a production system.
-It's data-oriented: built for a domain (see §6) and deliberately not beyond it.
+It is data-oriented: built for a domain (see §6), not general-purpose.
 
 Measurement method: cross-language *ratios* are the claim, not absolute times,
 and every fixture is checked under sanitizers against its golden output. See
