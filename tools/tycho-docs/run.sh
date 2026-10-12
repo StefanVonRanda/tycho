@@ -21,7 +21,8 @@ if [ "$RECORD" = 1 ]; then cp "$T/got" "$golden"; echo "rec  docs-site"; fi
 [ -f "$golden" ] || bad "[1] no golden -- run RECORD=1"
 cmp -s "$T/got" "$golden" || { bad "[1] transcript != golden"; diff "$golden" "$T/got" | head -8; }
 
-# every .md under docs/ must have its .html beside it in the output
+# every .md under docs/ must have its .html beside it in the output,
+# plus the two project pages and the search index
 missing=0
 while IFS= read -r md; do
     rel="${md#docs/}"
@@ -30,6 +31,9 @@ while IFS= read -r md; do
 done <<EOF
 $(find docs -name '*.md' | sort)
 EOF
+for f in changelog.html release-notes.html search.json; do
+    if [ ! -f "$T/site/$f" ]; then echo "FAIL: no output for $f"; missing=1; fi
+done
 [ "$missing" = 0 ] || fail=1
 
 # --- [2] the output is linked: every page reachable from the index -----------
@@ -65,7 +69,15 @@ if orphans:
     print("orphaned pages (nothing links them):")
     print("\n".join(sorted(orphans)[:10]))
     sys.exit(1)
-print("reachability: every page linked from the index tree")
+import json
+idx = json.load(open(os.path.join(root, "search.json")))
+urls = {p for p in pages}
+missing = sorted(e["u"] for e in idx if e["u"] not in urls)
+if missing:
+    print("search index names pages with no output:")
+    print("\n".join(missing[:10]))
+    sys.exit(1)
+print("reachability: every page linked from the index tree; search index resolves")
 PY
 fi
 

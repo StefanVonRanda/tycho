@@ -1,7 +1,9 @@
 # tycho-docs — the docs tree as a browsable site
 
 Rule: every `.md` under `docs/` becomes one HTML page at the same relative
-path, plus a top-level index and a per-directory alias.
+path, plus a top-level index, a search index, two project pages
+(`CHANGELOG.md` → `changelog.html`, `RELEASE_NOTES.md` → `release-notes.html`),
+and a per-directory alias.
 
 A static-site generator for this repo's own documentation. It walks `docs/`,
 renders each Markdown file with the shared subset (headings with id anchors,
@@ -27,9 +29,13 @@ make docs-site            # docs/ -> build/docs-site/
 
 ## Output
 
-Standalone pages, no assets: one embedded stylesheet (dark terminal-plate
-tokens with a `prefers-color-scheme` light half), a breadcrumb home link
-relative to each page's depth, and a footer naming the build as pre-1.0.
+Standalone pages, no assets: one embedded stylesheet (brutalist tokens, dark
+code panels, `prefers-color-scheme` halves), a shared masthead and footer, a
+breadcrumb home link relative to each page's depth, and a footer naming the
+build as pre-1.0. The index groups pages — Guide, Reference, Specification,
+then Maintainer records (internals, RFCs: written for maintainers, kept
+rendered so reference links resolve), then Project — with a client-side
+search box over a generated `search.json` (titles + capped body text).
 
 ## Limits
 

@@ -289,7 +289,7 @@ fn render_md(body: string) -> string:
     return out
 
 fn page_css() -> string:
-    return ":root{color-scheme:light dark}body{margin:0 auto;max-width:44rem;padding:24px 20px 64px;background:#faf7ef;color:#454034;font-family:system-ui,-apple-system,\"Segoe UI\",Roboto,sans-serif;font-size:17px;line-height:1.7}h1,h2,h3{font-weight:800;color:#1b1811;line-height:1.15;letter-spacing:-.02em}h1{font-size:32px;border-bottom:1px solid #8f8672;padding-bottom:10px}h2{font-size:26px;margin-top:40px}h3{font-size:20px}pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}pre{background:#0d0d0d;color:#ece5d3;border:1px solid #665f52;padding:14px 16px;overflow-x:auto;font-size:13px}code{font-size:.9em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #8f8672;padding:7px 12px;text-align:left}th{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#1b1811}td{font-size:14.5px}a{color:#1b1811;text-decoration:underline;text-underline-offset:3px}blockquote{border-left:2px solid #1b1811;margin:16px 0;padding:2px 0 2px 16px;color:#454034}hr{border:0;border-top:1px solid #8f8672;margin:28px 0}nav.crumb{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:#6b6350;margin-bottom:20px}nav.crumb a{color:#6b6350}footer{margin-top:40px;padding-top:12px;border-top:1px solid #8f8672;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:#6b6350}@media (prefers-color-scheme:dark){body{background:#100e0b;color:#d3c9b2}h1,h2,h3,th{color:#f4eee0}h1{border-color:#6e675a}a{color:#f4eee0}blockquote{border-color:#f4eee0;color:#d3c9b2}th,td{border-color:#6e675a}hr{border-color:#6e675a}nav.crumb,nav.crumb a,footer{color:#a89f86}}}"
+    return ":root{color-scheme:light dark}body{margin:0 auto;max-width:44rem;padding:24px 20px 64px;background:#faf7ef;color:#454034;font-family:system-ui,-apple-system,\"Segoe UI\",Roboto,sans-serif;font-size:17px;line-height:1.7}h1,h2,h3{font-weight:800;color:#1b1811;line-height:1.15;letter-spacing:-.02em}h1{font-size:32px;border-bottom:1px solid #8f8672;padding-bottom:10px}h2{font-size:26px;margin-top:40px}h3{font-size:20px}pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}pre{background:#0d0d0d;color:#ece5d3;border:1px solid #665f52;padding:14px 16px;overflow-x:auto;font-size:13px}code{font-size:.9em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #8f8672;padding:7px 12px;text-align:left}th{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#1b1811}td{font-size:14.5px}a{color:#1b1811;text-decoration:underline;text-underline-offset:3px}blockquote{border-left:2px solid #1b1811;margin:16px 0;padding:2px 0 2px 16px;color:#454034}hr{border:0;border-top:1px solid #8f8672;margin:28px 0}nav.crumb{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:#6b6350;margin-bottom:20px}nav.crumb a{color:#6b6350}input{font:inherit;width:100%;max-width:34em;padding:10px 12px;background:#faf7ef;color:#1b1811;border:1px solid #8f8672}.masthead{position:sticky;top:0;background:#faf7ef;border-bottom:1px solid #8f8672}.masthead .in{padding:12px 0;display:flex;align-items:center;gap:18px}.wordmark{display:flex;align-items:center;gap:8px;color:#1b1811;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;font-weight:700;letter-spacing:.12em}.wordmark svg{width:18px;height:18px}.masthead nav{display:flex;gap:4px;margin-left:auto}.masthead nav a{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#6b6350;padding:6px 10px}.masthead nav a:hover{color:#1b1811}.fbrand{display:flex;align-items:center;gap:8px;color:#1b1811;font-weight:700;font-size:14px;margin-bottom:10px}.fbrand svg{width:18px;height:18px}.tagline{color:#6b6350;font-size:14px}footer{margin-top:40px;padding-top:12px;border-top:1px solid #8f8672;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:#6b6350}@media (prefers-color-scheme:dark){body{background:#100e0b;color:#d3c9b2}h1,h2,h3,th{color:#f4eee0}h1{border-color:#6e675a}a{color:#f4eee0}blockquote{border-color:#f4eee0;color:#d3c9b2}th,td{border-color:#6e675a}hr{border-color:#6e675a}nav.crumb,nav.crumb a,footer{color:#a89f86}.masthead{background:#100e0b;border-color:#6e675a}.wordmark{color:#f4eee0}.masthead nav a{color:#a89f86}.masthead nav a:hover{color:#f4eee0}.fbrand{color:#f4eee0}.tagline{color:#a89f86}input{background:#100e0b;color:#f4eee0;border-color:#6e675a}}}"
 fn up_prefix(rel: string) -> string:
     up := ""
     for i := 0; i < len(rel); i += 1:
@@ -298,8 +298,8 @@ fn up_prefix(rel: string) -> string:
     return up
 
 fn page_html(title: string, home: string, crumb: string, content: string) -> string:
-    h := "<!doctype html>\n<html lang=\"en\">\n<head><meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>" + esc_html(title) + " — Tycho docs</title>\n<style>" + page_css() + "</style>\n</head>\n<body>\n<nav class=\"crumb\"><a href=\"" + home + "\">docs</a> / " + crumb + "</nav>\n"
-    return h + content + "<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>\n</body>\n</html>\n"
+    h := "<!doctype html>\n<html lang=\"en\">\n<head><meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>" + esc_html(title) + " — Tycho docs</title>\n<style>" + page_css() + "</style>\n</head>\n<body>\n<div class=\"masthead\"><div class=\"in\"><a class=\"wordmark\" href=\"" + home + "\"><svg viewBox=\"0 0 200 200\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"14\" aria-hidden=\"true\"><circle cx=\"100\" cy=\"100\" r=\"40\"/><circle cx=\"100\" cy=\"100\" r=\"8\" fill=\"currentColor\" stroke=\"none\"/></svg><span>TYCHO</span></a><nav aria-label=\"Docs\"><a href=\"" + home + "\">Docs</a><a href=\"https://github.com/StefanVonRanda/tycho\">GitHub</a></nav></div></div>\n<main>\n<nav class=\"crumb\"><a href=\"" + home + "\">docs</a> / " + crumb + "</nav>\n"
+    return h + content + "</main>\n<footer><div class=\"fbrand\"><svg viewBox=\"0 0 200 200\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"14\" aria-hidden=\"true\"><circle cx=\"100\" cy=\"100\" r=\"40\"/><circle cx=\"100\" cy=\"100\" r=\"8\" fill=\"currentColor\" stroke=\"none\"/></svg><span>TYCHO</span></div><p class=\"tagline\">Generated from the repo — pre-1.0, subject to change.</p></footer>\n</body>\n</html>\n"
 
 # The page title is the first `# ` heading; empty when the file has none.
 fn title_of(text: string) -> string:
@@ -335,6 +335,92 @@ fn dir_of(rel: string) -> string:
             d = rel[0:i]
     return d
 
+fn parent_of(d: string) -> string:
+    s := d
+    for len(s) > 0 and s[len(s)-1:len(s)] == "/":
+        s = s[0:len(s)-1]
+    p := ""
+    for i := 0; i < len(s); i += 1:
+        if s[i:i+1] == "/":
+            p = s[0:i]
+    if len(p) > 0:
+        return p
+    return "."
+
+# Index of sub in s at or after from, or -1.
+fn find_from(s: string, sub: string, from: int) -> int:
+    i := from
+    for i + len(sub) <= len(s):
+        if s[i:i+len(sub)] == sub:
+            return i
+        i = i + 1
+    return 0 - 1
+
+# Drop a <style>...</style> block so CSS never lands in the search index.
+fn strip_style(s: string) -> string:
+    out := ""
+    i := 0
+    for i < len(s):
+        if i + 7 <= len(s) and s[i:i+7] == "<style>":
+            j := find_from(s, "</style>", i + 7)
+            if j >= 0:
+                i = j + 8
+            else:
+                i = len(s)
+        else:
+            out = out + s[i:i+1]
+            i = i + 1
+    return out
+
+# Drop <...> tags for the search index. Quotes survive; the caller
+# JSON-escapes afterwards.
+fn strip_tags(s: string) -> string:
+    out := ""
+    i := 0
+    for i < len(s):
+        if s[i] == 60:                          # '<'
+            j := find_from(s, ">", i + 1)
+            if j >= 0:
+                i = j + 1
+            else:
+                out = out + s[i:i+1]
+                i = i + 1
+        else:
+            out = out + s[i:i+1]
+            i = i + 1
+    return out
+
+# JSON string escaping for the search index.
+fn json_esc(s: string) -> string:
+    out := ""
+    for i := 0; i < len(s); i += 1:
+        c := s[i]
+        if c == 34:                             # '"'
+            out = out + "\\\""
+        elif c == 92:                           # backslash
+            out = out + "\\\\"
+        elif c == 10:                           # newline
+            out = out + "\\n"
+        elif c == 13:
+            out = out + ""
+        elif c == 9:
+            out = out + " "
+        else:
+            out = out + s[i:i+1]
+    return out
+
+fn search_script() -> string:
+    return "<script>(function(){var box=document.getElementById('q'),res=document.getElementById('r'),idx=null;fetch('search.json').then(function(r){return r.json();}).then(function(j){idx=j;});box.addEventListener('input',function(){var q=box.value.toLowerCase().trim(),out='';if(idx&&q.length>1){var n=0;for(var i=0;i<idx.length&&n<20;i++){var e=idx[i];if(e.t.toLowerCase().indexOf(q)>=0||e.x.toLowerCase().indexOf(q)>=0){out+='<p><a href=\"'+e.u+'\">'+e.t+'</a></p>';n++;}}if(!n)out='<p>No matches.</p>';}res.innerHTML=out;});})();</script>"
+
+fn group_of(d: string) -> string:
+    if len(d) == 0:
+        return "Guide"
+    if d == "reference":
+        return "Reference"
+    if d == "spec":
+        return "Specification"
+    return "Maintainer records"
+
 fn build(docs_dir: string, out_dir: string):
     match io.make_dir_all(out_dir):
         Ok(_):
@@ -344,10 +430,14 @@ fn build(docs_dir: string, out_dir: string):
             return
     got := collect(docs_dir, docs_dir, []string)
     files := sort.asc(got)
+    rels := []string
+    outs := []string
+    titles := []string
+    groups := []string
+    search := "["
+    first_entry := true
     n := 0
-    idx := "<h1>Tycho documentation</h1>\n<p>" + str(len(files)) + " pages, generated from the docs tree.</p>\n"
-    curdir := ""
-    first := true
+    idx := ""
     for i := 0; i < len(files); i += 1:
         rel := files[i]
         text := io.read(path.join(docs_dir, rel))
@@ -367,29 +457,61 @@ fn build(docs_dir: string, out_dir: string):
         html := page_html(title, home, crumb, render_md(text))
         if io.write(path.join(out_dir, html_rel), html):
             n = n + 1
+        push(rels, rel)
+        push(outs, html_rel)
+        push(titles, title)
+        push(groups, group_of(d))
+        x := strip_tags(strip_style(html))
+        if len(x) > 20000:
+            x = x[0:20000]
+        if first_entry:
+            first_entry = false
+        else:
+            search = search + ","
+        search = search + "{\"u\":\"" + html_rel + "\",\"t\":\"" + json_esc(esc_html(title)) + "\",\"x\":\"" + json_esc(x) + "\"}"
         if rel == "README.md":
             io.write(path.join(out_dir, "index.html"), page_html(title, "index.html", crumb, render_md(text)))
         else:
             if path.base(html_rel) == "README.html":
                 io.write(path.join(out_dir, dir_of(html_rel) + "/index.html"), html)
-        if first:
-            first = false
-            if len(d) > 0:
-                idx = idx + "<h2>" + esc_html(d) + "</h2>\n<ul>\n"
-            else:
-                idx = idx + "<h2>top level</h2>\n<ul>\n"
-        elif d != curdir:
+    root := parent_of(docs_dir)
+    xnames := ["CHANGELOG.md", "RELEASE_NOTES.md"]
+    xouts := ["changelog.html", "release-notes.html"]
+    for i := 0; i < 2; i += 1:
+        text := io.read(path.join(root, xnames[i]))
+        title := title_of(text)
+        if len(title) == 0:
+            title = xnames[i]
+        body := render_md(text)
+        html := page_html(title, "index.html", esc_html(xnames[i]), body)
+        if io.write(path.join(out_dir, xouts[i]), html):
+            n = n + 1
+        push(rels, xnames[i])
+        push(outs, xouts[i])
+        push(titles, title)
+        push(groups, "Project")
+        x := strip_tags(strip_style(html))
+        if len(x) > 20000:
+            x = x[0:20000]
+        search = search + ",{\"u\":\"" + xouts[i] + "\",\"t\":\"" + json_esc(esc_html(title)) + "\",\"x\":\"" + json_esc(x) + "\"}"
+    io.write(path.join(out_dir, "search.json"), search + "]")
+    idx = "<h1>Tycho documentation</h1>\n<p>" + str(len(rels)) + " pages, generated from the docs tree. Maintainer records are written for maintainers; start with the Guide.</p>\n"
+    idx = idx + "<p><input id=\"q\" type=\"text\" placeholder=\"Search the docs\"/></p>\n<div id=\"r\"></div>\n"
+    order := ["Guide", "Reference", "Specification", "Maintainer records", "Project"]
+    for g := 0; g < len(order); g += 1:
+        shown := false
+        for i := 0; i < len(rels); i += 1:
+            if groups[i] == order[g]:
+                if shown == false:
+                    idx = idx + "<h2>" + order[g] + "</h2>\n<ul>\n"
+                    shown = true
+                idx = idx + "<li><a href=\"" + outs[i] + "\">" + esc_html(titles[i]) + "</a></li>\n"
+        if shown:
             idx = idx + "</ul>\n"
-            if len(d) > 0:
-                idx = idx + "<h2>" + esc_html(d) + "</h2>\n<ul>\n"
-            else:
-                idx = idx + "<h2>top level</h2>\n<ul>\n"
-        curdir = d
-        idx = idx + "<li><a href=\"" + html_rel + "\">" + esc_html(title) + "</a></li>\n"
-    idx = idx + "</ul>\n"
+    idx = idx + search_script()
     io.write(path.join(out_dir, "index.html"), page_html("Tycho documentation", "index.html", "index", idx))
     println("docs-site: " + str(n) + " pages from " + docs_dir)
-    println("index: index.html (" + str(len(files)) + " links)")
+    println("index: index.html (" + str(len(rels)) + " links)")
 
 fn main():
     a := args()
