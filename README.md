@@ -18,6 +18,10 @@ the language, the compiler sees every value's lifetime from the syntax alone and
 inserts every allocation and free itself. No garbage collector, no manual
 `free`, no borrow checker. It transpiles to C and builds with `cc` and `make`.
 
+**Not for you if** you need shared-mutable graphs, interface values, or 1.0
+stability — see [what you give up](#what-you-give-up) below and the version
+policy in [SUPPORT.md](SUPPORT.md).
+
 [Docs](docs/README.md) · [Tutorial](docs/tutorial.md) ·
 [Reference](docs/reference/index.md) · [Thesis](docs/thesis.md) ·
 [Spec](docs/spec/) · [Performance](docs/performance.md) ·
@@ -39,7 +43,9 @@ fn main():
 
 That last comment is the whole language, and the compiler decides it from the
 shape of the code. `evens` returns `xs`, so there is nothing to free at its
-scope exit and the array is built in the caller's arena from the start:
+scope exit and the array is built in the caller's arena from the start.
+If you don't read C, skip the grey boxes — the sentences around them carry
+the point:
 
 ```c
 TychoArrInt h_evens(Arena *_parent, tycho_int limit) {
@@ -59,9 +65,35 @@ tycho_int h_count_evens(Arena *_parent, tycho_int limit) {
 No annotation chose that, and no runtime worked it out. The lifetime is visible
 in the syntax, so the compiler places every allocation and every free itself.
 
-## What you give up, before anything else
+## Quick start
 
-**There is no reference type.** That is what makes the paragraph above work, and
+**You need `make` and a C11 compiler — gcc, or clang 15 or newer.** That is the
+whole toolchain.
+
+```
+$ git clone https://github.com/StefanVonRanda/tycho
+$ cd tycho
+$ make                                  # builds ./tychoc
+$ ./tychoc examples/hello.ty && ./examples/hello
+what is your name: Ada
+hello Ada
+```
+
+New here? The **[tutorial](docs/tutorial.md)** goes from this to a real program
+in about an hour, and **[from `malloc` to arenas](docs/from-c-to-arenas.md)**
+explains the memory model from C you already know. Full build details are under
+[Trying it](#trying-it). The syntax is Python/Nim-flavored and the semantics
+Go/Odin-like; the value-semantics core comes from
+**[Hylo](https://www.hylo-lang.org/)**.
+
+(clang 14 is the one exclusion, and it is measured: it builds the compiler and
+then miscompiles what it emits. Which compilers have been run against the whole
+corpus, and what each scored, is the
+[toolchain matrix](docs/platforms.md#c-toolchains).)
+
+## What you give up
+
+**There is no reference type.** That is what makes the demo above work, and
 it is the part that will cost you a weekend if you meet it on page 40 instead of
 here. A shared mutable graph, a doubly-linked list, an observer holding a
 pointer back at its subject — none of them can be written in Tycho at all. Not
@@ -80,39 +112,11 @@ works over many types — it just cannot hold two different ones at the same tim
 under one name.
 
 **The idiom that replaces them is a flat node pool.** Hold every node in one
-array; an edge is an integer index into it, not an address. Sharing is two
-indices naming one slot:
-
-```tycho
-struct Node:
-    kids: [int: int]           # next byte -> node INDEX, not a Node by value
-    word: bool
-
-fn insert(pool: inout [Node], s: string):
-    cur := 0
-    for i := 0; i < len(s); i += 1:
-        c := s[i]
-        if not (c in pool[cur].kids):
-            push(pool, Node([]int: int, false))
-            pool[cur].kids[c] = len(pool) - 1
-        cur = pool[cur].kids[c]
-    pool[cur].word = true
-
-fn main():
-    pool := [Node([]int: int, false)]
-    insert(&pool, "ab")
-    insert(&pool, "ac")
-    println(str(len(pool)) + " nodes, root fanout " + str(len(pool[0].kids)))
-```
-
-```output
-4 nodes, root fanout 1
-```
-
-That is the same layout a data-oriented C engine reaches for on purpose — one
-contiguous array, 8-byte indices instead of scattered pointers, traversal that
-walks cache lines instead of chasing them. Value semantics make it the default
-rather than the optimization you remember to apply.
+array; an edge is an integer index into it, not an address — the same layout a
+data-oriented C engine reaches for on purpose, which value semantics make the
+default rather than the optimization you remember to apply. The worked sample,
+with output, is in
+[the limits note](docs/internals/value-semantics-limits.md).
 
 **And it has a measured price.** Pointer-shaped data stored by value costs more
 RAM than C: a recursive trie **~1.55×**, a fixed-capacity LRU **~2.8×**; the
@@ -150,32 +154,6 @@ want a different tool, is
   checked against a committed golden; a fuzzer applies the same differential to
   random programs under ASan/UBSan. Six full programs (below) run against it
   with differential checks.
-
-## Quick start
-
-**You need `make` and a C11 compiler — gcc, or clang 15 or newer.** That is the
-whole toolchain.
-
-```
-$ git clone https://github.com/StefanVonRanda/tycho
-$ cd tycho
-$ make                                  # builds ./tychoc
-$ ./tychoc examples/hello.ty && ./examples/hello
-what is your name: Ada
-hello Ada
-```
-
-New here? The **[tutorial](docs/tutorial.md)** goes from this to a real program
-in about an hour, and **[from `malloc` to arenas](docs/from-c-to-arenas.md)**
-explains the memory model from C you already know. Full build details are under
-[Trying it](#trying-it). The syntax is Python/Nim-flavored and the semantics
-Go/Odin-like; the value-semantics core comes from
-**[Hylo](https://www.hylo-lang.org/)**.
-
-(clang 14 is the one exclusion, and it is measured: it builds the compiler and
-then miscompiles what it emits. Which compilers have been run against the whole
-corpus, and what each scored, is the
-[toolchain matrix](docs/platforms.md#c-toolchains).)
 
 ## Trying it
 
