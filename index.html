@@ -199,7 +199,7 @@
     <ul class="points">
       <li>Returned values are built in the caller's arena — no copy on the way out (1.75× faster than copying).</li>
       <li><span class="inl">acc = acc + x</span> grows one buffer: O(n²) becomes O(n). 828 MB becomes 4 MB on the same input.</li>
-      <li>Copies happen only where a collector would do the same work. See the <a href="https://tycho-lang.com/docs/performance.html">numbers ↗</a> are measured.</li>
+      <li>Copies happen only where a collector would do the same work. See the <a href="https://tycho-lang.com/docs/performance.html">measurements ↗</a>.</li>
     </ul>
     <div class="panel">
       <div class="phead"><span class="traf"></span><span class="fn">LISTING 01 — examples/count.ty</span><span class="badge">one buffer · O(n)</span></div>
@@ -236,7 +236,7 @@
     <h2>What it costs.</h2>
     <div class="fact">
       <div class="row"><span class="k">Pointer-shaped data</span><span class="v">Costs more than C: trie 1.55×, LRU 2.8× memory. The index-pool idiom brings graphs to 1.3×. Full accounting in the <a href="https://tycho-lang.com/docs/internals/value-semantics-limits.html">loss column ↗</a>.</span></div>
-      <div class="row"><span class="k">No interface values</span><span class="v">No interface values. A mixed list of implementors can't exist; closed enums with match cover known sets, generics cover the static case. See <a href="https://tycho-lang.com/docs/idioms.html">Thinking in Tycho ↗</a>.</span></div>
+      <div class="row"><span class="k">No interface values</span><span class="v">A mixed list of implementors can't exist; closed enums with match cover known sets, generics cover the static case. See <a href="https://tycho-lang.com/docs/idioms.html">Thinking in Tycho ↗</a>.</span></div>
       <div class="row"><span class="k">Pre-1.0</span><span class="v">Breaking changes ship with a changelog entry and no deprecation window until 1.0 (<a href="https://github.com/StefanVonRanda/tycho/blob/main/SUPPORT.md">policy ↗</a>).</span></div>
       <div class="row"><span class="k">Scope exit</span><span class="v">A long-lived scope holds its transients until it returns.</span></div>
     </div>
