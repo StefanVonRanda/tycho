@@ -3,142 +3,118 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Tycho — memory that manages itself</title>
-<meta name="description" content="Tycho is an experimental systems language: implicit arenas under value semantics. No garbage collector, no manual free, no borrow checker. It transpiles to C.">
-<meta name="theme-color" content="#faf7ef">
+<title>Tycho — a systems language without a garbage collector</title>
+<meta name="description" content="Tycho is an experimental systems language. Memory is managed with implicit arenas under value semantics: no garbage collector, no manual free, no borrow checker. It transpiles to C.">
+<meta name="theme-color" content="#ffffff">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://tycho-lang.com">
-<meta property="og:title" content="Tycho — memory that manages itself">
+<meta property="og:title" content="Tycho — a systems language without a garbage collector">
 <meta property="og:description" content="Implicit arenas under value semantics. No garbage collector, no manual free. It transpiles to C.">
 <meta property="og:image" content="https://tycho-lang.com/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://tycho-lang.com/og.png">
-<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%20100%20100%27%3E%3Ccircle%20cx%3D%2750%27%20cy%3D%2750%27%20r%3D%2720%27%20fill%3D%27none%27%20stroke%3D%27%231c1c2e%27%20stroke-width%3D%274%27/%3E%3Ccircle%20cx%3D%2750%27%20cy%3D%2750%27%20r%3D%2738%27%20fill%3D%27none%27%20stroke%3D%27%231c1c2e%27%20stroke-width%3D%274%27/%3E%3Ccircle%20cx%3D%2750%27%20cy%3D%2750%27%20r%3D%274.5%27%20fill%3D%27%231c1c2e%27/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%20100%20100%27%3E%3Ccircle%20cx%3D%2750%27%20cy%3D%2750%27%20r%3D%2736%27%20fill%3D%27none%27%20stroke%3D%27black%27%20stroke-width%3D%276%27/%3E%3Ccircle%20cx%3D%2750%27%20cy%3D%2750%27%20r%3D%276%27%20fill%3D%27black%27/%3E%3C/svg%3E">
 <script>
-  (function(){try{var t=localStorage.getItem('tycho-theme')||'light';document.documentElement.dataset.theme=t;}catch(e){document.documentElement.dataset.theme='light';}})();
+  (function(){try{var d=document.documentElement;var e=localStorage.getItem('tycho-theme');if(e){d.dataset.theme=e;}else if(matchMedia('(prefers-color-scheme: dark)').matches){d.dataset.theme='dark';}}catch(e){}})();
 </script>
-<link rel="stylesheet" href="fonts/fonts.css">
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
 <style>
   :root{
-    --paper:#100e0b; --ink:#f4eee0; --ink-soft:#d3c9b2;
-    --dim:#a89f86; --faint:#877f68; --line:#6e675a;
-    --code-bg:#0a0906; --code-fg:#ece5d3; --code-dim:#948b70; --code-line:#665f52;
-    --acc:#d7f651; --acc-code:#d7f651; --acc-on:#100e0b;
+    --paper:#000000; --ink:#ffffff; --ink-soft:#e6e6e6;
+    --dim:#b3b3b3; --faint:#a6a6a6; --line:#808080;
+    --code-bg:#0d0d0d; --code-fg:#f5f5f5; --code-dim:#a3a3a3; --code-line:#616161;
+    --acc:#ffffff; --acc-code:#ffffff; --acc-on:#000000;
   }
   :root[data-theme="light"]{
-    --paper:#faf7ef; --ink:#1b1811; --ink-soft:#454034;
-    --dim:#6b6350; --faint:#746c58; --line:#8f8672;
-    --code-bg:#0a0906; --code-fg:#ece5d3; --code-dim:#948b70; --code-line:#665f52;
-    --acc:#2f5d0c; --acc-code:#d7f651; --acc-on:#ffffff;
+    --paper:#ffffff; --ink:#000000; --ink-soft:#222222;
+    --dim:#4d4d4d; --faint:#595959; --line:#767676;
+    --code-bg:#0d0d0d; --code-fg:#f5f5f5; --code-dim:#a3a3a3; --code-line:#616161;
+    --acc:#000000; --acc-code:#ffffff; --acc-on:#ffffff;
   }
   *{box-sizing:border-box}
   html{-webkit-text-size-adjust:100%; scroll-behavior:smooth}
   @media (prefers-reduced-motion:reduce){ html{scroll-behavior:auto} }
   body{margin:0; background:var(--paper); color:var(--ink-soft);
     font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-    font-size:17px; line-height:1.75; -webkit-font-smoothing:antialiased}
+    font-size:17px; line-height:1.7}
   a{color:inherit; text-decoration:none}
-  a:focus-visible,button:focus-visible,summary:focus-visible{outline:2px solid var(--acc); outline-offset:3px; border-radius:6px}
+  a:focus-visible,button:focus-visible,summary:focus-visible{outline:2px solid var(--acc); outline-offset:3px}
   ::selection{background:var(--acc); color:var(--acc-on)}
-  .skip{position:absolute; left:12px; top:-60px; z-index:100; background:var(--ink);
-    color:var(--paper); padding:10px 18px; font-size:13px; border-radius:8px}
+  .skip{position:absolute; left:12px; top:-56px; z-index:100; background:var(--ink);
+    color:var(--paper); padding:10px 18px; font-size:14px}
   .skip:focus{top:8px}
-  .mono,.masthead,.kicker,.secnum,.fact .k,.phead,.btn,.themebtn,.toc a,
-  .figcap,.codecap,pre,code,.tag,.flinks a,.colophon{font-family:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace}
-  .page{max-width:1180px; margin:0 auto; padding:0 clamp(20px,4vw,56px)}
+  .mono,.masthead,.kicker,.phead,.btn,.themebtn,.toc a,.figcap,.codecap,
+  .fact .k,.fig .fhead,footer,.colophon,pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .page{max-width:44rem; margin:0 auto; padding:0 20px}
 
-  /* masthead */
   .masthead{position:sticky; top:0; z-index:50; background:var(--paper); border-bottom:1px solid var(--line)}
-  .masthead .in{max-width:1180px; margin:0 auto; padding:0 clamp(20px,4vw,56px);
-    height:62px; display:flex; align-items:center; gap:22px}
-  .wordmark{display:flex; align-items:center; gap:10px; color:var(--ink);
-    font-size:15px; font-weight:600; letter-spacing:.14em}
-  .wordmark svg{width:20px; height:20px}
-  .masthead nav{display:flex; align-items:center; gap:4px; margin-left:auto; overflow-x:auto; scrollbar-width:none}
+  .masthead .in{max-width:44rem; margin:0 auto; padding:14px 20px;
+    display:flex; align-items:center; gap:18px}
+  .wordmark{color:var(--ink); font-size:15px; font-weight:700; letter-spacing:.12em}
+  .masthead nav{display:flex; align-items:center; gap:2px; margin-left:auto; overflow-x:auto; scrollbar-width:none}
   .masthead nav::-webkit-scrollbar{display:none}
-  .masthead nav a{flex:0 0 auto; padding:8px 12px; font-size:11px; letter-spacing:.14em;
-    text-transform:uppercase; color:var(--dim); border-radius:8px}
+  .masthead nav a{flex:0 0 auto; padding:6px 10px; font-size:11px; letter-spacing:.12em;
+    text-transform:uppercase; color:var(--dim)}
   .masthead nav a:hover{color:var(--ink)}
-  .themebtn{background:none; border:1px solid var(--line); border-radius:999px; color:var(--dim);
-    cursor:pointer; font:inherit; font-size:11px; letter-spacing:.14em; text-transform:uppercase;
-    padding:8px 16px; margin-left:10px; flex:0 0 auto}
-  .themebtn:hover{color:var(--ink); border-color:var(--dim)}
+  .themebtn{background:none; border:0; color:var(--dim); cursor:pointer; font:inherit;
+    font-size:11px; letter-spacing:.12em; text-transform:uppercase; padding:6px 0 6px 10px; flex:0 0 auto}
+  .themebtn:hover{color:var(--ink)}
 
-  /* hero */
-  .hero{padding:clamp(72px,10vw,150px) 0 clamp(48px,6vw,88px); border-bottom:1px solid var(--line)}
-  .kicker{display:inline-block; font-size:12px; letter-spacing:.22em; text-transform:uppercase;
-    color:var(--acc); border:1px solid var(--line); border-radius:999px; padding:8px 18px; margin-bottom:28px}
-  h1{margin:0 0 26px; color:var(--ink); font-weight:800;
-    font-size:clamp(46px,7vw,104px); line-height:1.0; letter-spacing:-.032em; max-width:16ch}
-  h1 .tok{color:var(--acc)}
-  .lede{margin:0 0 36px; font-size:clamp(18px,2vw,22px); line-height:1.65; color:var(--dim); max-width:56ch}
-  .lede b{color:var(--ink); font-weight:650}
-  .standfirst{font-size:18px; color:var(--dim); max-width:62ch; margin:0 0 36px}
-  .standfirst a{color:var(--ink); border-bottom:1px solid var(--line)}
-  .lede a{color:var(--ink); border-bottom:1px solid var(--line)}
+  header.hero{padding:88px 0 56px; border-bottom:1px solid var(--line)}
+  .kicker{display:block; font-size:12px; letter-spacing:.18em; text-transform:uppercase;
+    color:var(--dim); margin-bottom:20px}
+  h1{margin:0 0 22px; color:var(--ink); font-weight:800;
+    font-size:clamp(38px,6vw,60px); line-height:1.05; letter-spacing:-.02em}
+  .lede{margin:0 0 30px; font-size:19px; line-height:1.65; color:var(--dim); max-width:38rem}
+  .lede b{color:var(--ink)}
+  .lede a{color:var(--ink); text-decoration:underline; text-underline-offset:3px}
   .lede code{color:var(--ink-soft)}
   .cta{display:flex; flex-wrap:wrap; gap:12px}
-  .who{margin:26px 0 0; font-size:14px; color:var(--faint); max-width:52ch}
-  .who b{color:var(--dim)}
-  .btn{display:inline-flex; align-items:center; gap:10px; padding:16px 30px; border-radius:999px;
-    border:1px solid var(--line); color:var(--ink); font-size:12px; letter-spacing:.14em;
-    text-transform:uppercase; font-weight:600}
-  .btn:hover{border-color:var(--ink)}
-  .btn.primary{background:var(--acc); border-color:var(--acc); color:var(--acc-on)}
-  .btn.primary:hover{filter:brightness(1.07)}
-  .herometa{display:flex; flex-wrap:wrap; gap:8px 26px; margin-top:44px; padding-top:22px;
-    border-top:1px solid var(--line); font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:var(--faint)}
+  .btn{display:inline-block; padding:14px 26px; border-radius:6px; cursor:pointer;
+    background:var(--ink); color:var(--paper); font-size:12px; letter-spacing:.12em;
+    text-transform:uppercase; font-weight:700}
+  .btn.ghost{background:transparent; color:var(--ink); border:1px solid var(--line)}
+  .btn.ghost:hover{border-color:var(--ink)}
+  .herometa{margin-top:36px; padding-top:18px; border-top:1px solid var(--line);
+    font-size:12px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint)}
   .herometa b{color:var(--dim)}
 
-  /* chapters */
-  section{padding:clamp(64px,8vw,120px) 0}
-  section + section{border-top:1px solid var(--line)}
-  .secnum{display:block; font-size:12px; letter-spacing:.22em; color:var(--acc); margin-bottom:20px}
-  h2{margin:0 0 18px; color:var(--ink); font-weight:800;
-    font-size:clamp(32px,4.4vw,58px); line-height:1.04; letter-spacing:-.025em; max-width:22ch}
-  .standfirst{margin:0 0 40px; font-size:18px; color:var(--dim); max-width:62ch}
-  .standfirst a{color:var(--ink); border-bottom:1px solid var(--line)}
-  p{margin:0 0 16px; max-width:68ch}
+  section{padding:56px 0; border-bottom:1px solid var(--line)}
+  h2{margin:0 0 14px; color:var(--ink); font-weight:800;
+    font-size:clamp(28px,4vw,40px); line-height:1.1; letter-spacing:-.02em}
+  .sub{margin:0 0 30px; color:var(--dim); font-size:17px; max-width:38rem}
+  .sub a{color:var(--ink); text-decoration:underline; text-underline-offset:3px}
+  p{margin:0 0 14px}
   strong{color:var(--ink)}
 
-  /* fact rows */
-  .fact{border-top:1px solid var(--line)}
-  .fact .row{display:grid; grid-template-columns:220px 1fr; gap:24px; padding:22px 0; border-bottom:1px solid var(--line)}
-  .fact .k{font-size:11.5px; letter-spacing:.18em; text-transform:uppercase; color:var(--acc); padding-top:5px}
-  .fact .v{font-size:16.5px; color:var(--dim); max-width:62ch}
+  .fact{border-top:1px solid var(--line); margin-top:8px}
+  .fact .row{padding:20px 0; border-bottom:1px solid var(--line)}
+  .fact .k{display:block; font-size:11px; letter-spacing:.16em; text-transform:uppercase;
+    color:var(--dim); margin-bottom:8px}
+  .fact .v{font-size:16.5px; color:var(--dim); max-width:38rem}
   .fact .v b{color:var(--ink)}
-  .fact .v a{color:var(--ink); border-bottom:1px solid var(--line)}
-  @media (max-width:640px){ .fact .row{grid-template-columns:1fr; gap:6px} }
+  .fact .v a{color:var(--ink); text-decoration:underline; text-underline-offset:3px}
 
-  /* code */
-  .panel{border:1px solid var(--code-line); border-radius:14px; overflow:hidden;
-    background:var(--code-bg); margin:30px 0 0}
-  .phead{display:flex; align-items:center; gap:12px; padding:12px 20px; border-bottom:1px solid var(--code-line)}
-  .phead .traf{width:8px; height:8px; border-radius:50%; background:var(--acc-code)}
-  .phead .fn{font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--code-dim)}
-  .phead .badge{margin-left:auto; font-size:9.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--acc-code)}
-  pre{margin:0; padding:22px 24px; overflow-x:auto; font-size:13px; line-height:1.8; color:var(--code-fg)}
+  .panel{border:1px solid var(--code-line); background:var(--code-bg); margin:26px 0 0}
+  .phead{display:flex; align-items:center; gap:12px; padding:10px 18px; border-bottom:1px solid var(--code-line)}
+  .phead .fn{font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--code-dim)}
+  .phead .badge{margin-left:auto; font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--acc-code)}
+  pre{margin:0; padding:20px 22px; overflow-x:auto; font-size:13px; line-height:1.8; color:var(--code-fg)}
   .k{color:#fff; font-weight:600} .fn{color:#cfd4dc} .s{color:var(--acc-code)}
   .c{color:var(--code-dim)} .g{color:#9aa1ab} .out{color:#8b929c}
-  .codecap{margin:0; padding:14px 2px 0; font-size:13px; color:var(--faint); max-width:none}
+  .codecap{margin:0; padding:12px 2px 0; font-size:13px; color:var(--faint)}
   .codecap b{color:var(--dim)}
 
-  /* figures */
-  .fig{border:1px solid var(--line); border-radius:14px; overflow:hidden; margin:30px 0 0}
-  .fig .fhead{display:flex; align-items:center; gap:10px; padding:12px 20px;
-    border-bottom:1px solid var(--line); font-size:10.5px; letter-spacing:.18em;
-    text-transform:uppercase; color:var(--faint)}
-  .fig .fhead .dot{width:8px; height:8px; border-radius:50%; background:var(--acc)}
+  .fig{border:1px solid var(--line); margin:26px 0 0}
+  .fig .fhead{padding:10px 18px; border-bottom:1px solid var(--line); font-size:11px;
+    letter-spacing:.16em; text-transform:uppercase; color:var(--faint)}
   .fig .fhead b{color:var(--dim)}
   .fig svg{display:block; width:100%; height:auto}
-  .fig svg text{font-family:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace; font-size:11px; letter-spacing:1.5px; fill:var(--faint)}
-  .fig .enum{fill:var(--acc); font-size:13px}
-  .fig svg text{font-family:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace; font-size:11px; letter-spacing:1.5px; fill:var(--faint)}
+  .fig svg text{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:11px; fill:var(--faint)}
   .fig .ln{stroke:var(--dim); stroke-width:1.2}
   .fig .nd{fill:var(--paper); stroke:var(--dim); stroke-width:1.4}
   .fig .slot{fill:var(--paper); stroke:var(--dim); stroke-width:1.4}
@@ -146,75 +122,65 @@
   .fig .bar{fill:var(--dim)}
   .fig .bar.acc{fill:var(--acc)}
   .fig .exit{stroke:var(--faint); stroke-width:1; stroke-dasharray:4 3}
-  .figcap{padding:14px 20px; border-top:1px solid var(--line); font-size:13.5px; color:var(--faint)}
+  .figcap{padding:12px 18px; border-top:1px solid var(--line); font-size:13px; color:var(--faint)}
   .figcap b{color:var(--dim)}
 
-  /* learn path */
-  .toc{margin-top:8px; max-width:760px}
-  .toc a{display:flex; align-items:center; gap:16px; padding:16px 20px; border:1px solid transparent;
-    border-radius:12px; color:var(--dim); font-size:13px; text-transform:uppercase; letter-spacing:.06em}
-  .toc a:hover{border-color:var(--line); color:var(--ink)}
-  .toc a .n{color:var(--acc); font-size:11px; letter-spacing:.14em; width:3ch; flex:0 0 auto}
+  .toc{margin-top:8px; max-width:38rem}
+  .toc a{display:flex; align-items:center; gap:14px; padding:13px 4px; border-bottom:1px solid var(--line);
+    color:var(--dim); font-size:13px; text-transform:uppercase; letter-spacing:.06em}
+  .toc a:first-of-type{border-top:1px solid var(--line)}
+  .toc a:hover{color:var(--ink)}
+  .toc a .n{color:var(--faint); font-size:11px; width:3ch; flex:0 0 auto}
   .toc a .dots{flex:1; border-bottom:1px dotted var(--line); transform:translateY(-3px)}
   .toc a .arr{color:var(--faint); flex:0 0 auto}
 
-  /* faq */
-  details{border:1px solid var(--line); border-radius:14px; margin-bottom:12px; max-width:760px}
+  details{border:1px solid var(--line); margin-bottom:10px; max-width:38rem}
   details[open]{border-color:var(--faint)}
-  summary{cursor:pointer; list-style:none; padding:20px 24px; font-weight:650; font-size:17px;
-    color:var(--ink); display:flex; gap:14px; align-items:baseline}
+  summary{cursor:pointer; list-style:none; padding:18px 20px; font-weight:650; font-size:17px; color:var(--ink)}
   summary::-webkit-details-marker{display:none}
-  summary::before{content:"+"; color:var(--acc); font-weight:400}
-  details[open] summary::before{content:"–"}
-  details .a{padding:0 24px 24px; color:var(--dim); font-size:16px; max-width:62ch}
-  details .a a{color:var(--ink); border-bottom:1px solid var(--line)}
+  summary::before{content:"+ "; color:var(--dim)}
+  details[open] summary::before{content:"– "}
+  details .a{padding:0 20px 20px; color:var(--dim); font-size:16px}
+  details .a a{color:var(--ink); text-decoration:underline; text-underline-offset:3px}
 
-  /* groups */
-  .groups{display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-top:36px}
-  .group{border:1px solid var(--line); border-radius:14px; padding:26px}
-  .group .gt{display:block; margin-bottom:16px; font-size:10.5px; letter-spacing:.2em;
-    text-transform:uppercase; color:var(--acc)}
-  ul.feat{list-style:none; margin:0; padding:0}
-  ul.feat li{padding:12px 0; border-top:1px solid var(--line); font-size:14.5px; color:var(--dim)}
-  ul.feat li:first-child{border-top:0}
-  ul.feat li b{display:block; color:var(--ink); font-size:13px; text-transform:uppercase; letter-spacing:.1em}
-  ul.feat li span{color:var(--faint); font-size:13px}
-  @media (max-width:900px){ .groups{grid-template-columns:1fr} }
+  ul.plain{list-style:none; margin:8px 0 0; padding:0; max-width:38rem}
+  ul.plain li{padding:12px 0; border-top:1px solid var(--line); color:var(--dim)}
+  ul.plain li b{color:var(--ink)}
+  ul.points{list-style:none; margin:8px 0 20px; padding:0; max-width:38rem}
+  ul.points li{padding:10px 0; border-top:1px solid var(--line); color:var(--dim)}
+  ul.points li:first-child{border-top:0}
+  ul.points li b{color:var(--ink)}
+  .inl{border:1px solid var(--line); padding:0 6px; font-size:.88em; color:var(--ink); white-space:nowrap}
 
-  /* footer */
-  footer{border-top:1px solid var(--line); margin-top:32px; padding:60px 0 36px}
-  .fgrid{display:grid; grid-template-columns:1.5fr 1fr 1fr 1fr; gap:32px}
-  @media (max-width:900px){ .fgrid{grid-template-columns:1fr 1fr} }
-  .fbrand{display:flex; align-items:center; gap:10px; color:var(--ink); font-weight:600; font-size:15px; margin-bottom:14px}
-  .fbrand svg{width:18px; height:18px}
+  footer{padding:48px 0 40px; text-align:center}
+  footer .fbrand{font-size:15px; font-weight:700; letter-spacing:.14em; color:var(--ink); margin-bottom:16px}
+  footer nav{display:flex; flex-wrap:wrap; justify-content:center; gap:4px 20px; margin-bottom:20px}
+  footer nav a{font-size:12px; letter-spacing:.1em; text-transform:uppercase; color:var(--dim); padding:4px 0}
+  footer nav a:hover{color:var(--ink)}
+  footer .legal{font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--faint)}
+
+  section{padding:64px 0}
+  .codecap{margin:0; padding-top:10px; font-size:13px; color:var(--faint)}
+  .codecap b{color:var(--dim)}
+  .fbrand svg{width:20px; height:20px}
   .tagline{color:var(--faint); font-size:14.5px; max-width:34ch}
-  .fcol b{display:block; margin-bottom:14px; font-size:10.5px; letter-spacing:.2em;
-    text-transform:uppercase; color:var(--faint)}
-  .fcol a{display:block; color:var(--dim); font-size:14px; padding:5px 0}
-  .fcol a:hover{color:var(--acc)}
-  .colophon{margin-top:48px; padding-top:16px; border-top:1px solid var(--line);
-    display:flex; flex-wrap:wrap; gap:8px 24px; font-size:10.5px; letter-spacing:.16em;
-    text-transform:uppercase; color:var(--faint)}
-  .inl{border:1px solid var(--line); border-radius:6px; padding:1px 7px; font-size:.88em; color:var(--ink); white-space:nowrap}
-  .tag{display:inline-block; font-size:11px; letter-spacing:.16em; text-transform:uppercase;
-    color:var(--acc); border:1px solid var(--line); border-radius:999px; padding:7px 16px; margin-bottom:22px}
-  .flinks a{display:block; padding:6px 0; font-size:15px}
-  .flinks a:hover{color:var(--acc)}
+  .group .gt{display:block; margin-bottom:14px; font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--dim)}
+  .lede a{color:var(--ink); text-decoration:underline; text-underline-offset:3px}
+  .lede code{color:var(--ink-soft)}
+  h1 .tok{color:var(--acc)}
+  .fig .fhead .dot{width:8px; height:8px; background:var(--acc)}
+  .wordmark svg{width:20px; height:20px}
 </style>
 
 <div class="masthead">
- <div class="in" style="max-width:1180px">
-  <a class="wordmark" href="#top" style="max-width:none"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true">
-        <circle cx="100" cy="100" r="26"/><circle cx="100" cy="100" r="50"/><circle cx="100" cy="100" r="74"/>
-        <circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/>
-      </svg><span>TYCHO</span></a>
+ <div class="in" style="max-width:44rem">
+  <a class="wordmark" href="#top">TYCHO</a>
   <nav aria-label="Sections">
     <a href="#idea">Idea</a>
-    <a href="#fast">Speed</a>
     <a href="#costs">Costs</a>
-    <a href="#faq">FAQ</a>
     <a href="#try">Try</a>
     <a href="#learn">Learn</a>
+    <a href="#faq">FAQ</a>
     <a href="docs/">Docs</a>
     <a href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
   </nav>
@@ -224,21 +190,18 @@
 
 <main class="page" id="main">
   <header class="hero" id="top">
-    <span class="tag">Experimental systems language · v0.8.6</span>
-    <h1>No garbage collector. No manual <span class="tok">free</span>.</h1>
+    <span class="kicker">Experimental systems language · v0.8.6, pre-1.0</span>
+    <h1>Tycho is a systems language without a garbage collector.</h1>
     <p class="lede">
-      Tycho manages memory with <b>implicit arenas</b>: every scope owns one, and it
-      empties when the scope ends. No garbage collector, no manual
-      <code>free</code>, no borrow checker. It transpiles to C and builds with
-      <code>cc</code> and <code>make</code>. New here? Start with the
-      <a href="https://tycho-lang.com/docs/tutorial.html">tutorial ↗</a>.
+      Memory is managed with <b>implicit arenas</b>: every scope owns one, and it
+      empties when the scope ends. No manual <code>free</code>, no borrow checker.
+      It transpiles to C and builds with <code>cc</code> and <code>make</code>.
+      Built for parsers, compilers, and batch tools. Not for shared-mutable graphs.
     </p>
     <div class="cta">
-      <a class="btn primary" href="#try">Try it</a>
-      <a class="btn" href="docs/">Read the docs</a>
-      <a class="btn" href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
+      <a class="btn" href="#try">Try it</a>
+      <a class="btn ghost" href="docs/">Read the docs</a>
     </div>
-    <p class="who">Built for parsers, compilers, batch tools. <b>Not</b> for shared-mutable graphs.</p>
     <div class="herometa">
       <span><b>cc + make</b> — whole toolchain</span>
       <span><b>45</b> stdlib packages</span>
@@ -247,18 +210,18 @@
   </header>
 
   <section id="idea">
-    <span class="secnum">01 — The idea</span>
+    <span class="kicker">01 — The idea</span>
     <h2>Memory comes from scope, not a runtime.</h2>
     <div class="fact">
-      <div class="row"><span class="k">Scopes own arenas</span><span class="v">Allocation is a pointer bump. When the scope exits, the whole arena empties in one step — <b>no per-object free, ever</b>.</span></div>
-      <div class="row"><span class="k">No references</span><span class="v"><span class="inl">b := a</span> copies. With nothing to alias, the compiler reads every value's lifetime straight from the syntax.</span></div>
-      <div class="row"><span class="k">Placed, not managed</span><span class="v">A value leaves a scope only <b>down</b> into a callee or <b>up</b> to a caller. The compiler puts every allocation and every free where it belongs.</span></div>
+      <div class="row"><span class="k">Arenas per scope</span><span class="v">Allocation is a pointer bump. When the scope exits, the whole arena empties in one step. <b>No per-object free exists.</b></span></div>
+      <div class="row"><span class="k">No references</span><span class="v"><span class="inl">b := a</span> copies. With nothing to alias, the compiler reads every value's lifetime from the syntax alone.</span></div>
+      <div class="row"><span class="k">Placed, not managed</span><span class="v">A value leaves a scope only <b>down</b> into a callee or <b>up</b> to a caller. The compiler puts each allocation and each free where it belongs.</span></div>
     </div>
     <div class="fig">
-      <div class="fhead"><span class="dot"></span><b>FIG. 01</b><span>— arena lifetimes</span></div>
+      <div class="fhead"><b>FIG. 01</b><span>— arena lifetimes</span></div>
       <svg viewBox="0 0 640 210" role="img" aria-labelledby="fig01t fig01d">
         <title id="fig01t">Arena lifetimes</title>
-        <desc id="fig01d">Three scopes with allocation bars that all end at their scope exit, except one highlighted value that crosses into the caller.</desc>
+        <desc id="fig01d">Three scopes with allocation bars that all end at their scope exit, except one value that crosses into its caller.</desc>
         <text x="16" y="26">MAIN</text>
         <text x="16" y="96">BUILD</text>
         <text x="16" y="166">LOOP</text>
@@ -271,19 +234,20 @@
         <line class="exit" x1="420" y1="100" x2="420" y2="200"/>
         <line class="exit" x1="380" y1="170" x2="380" y2="200"/>
         <rect class="bar acc" x="300" y="146" width="220" height="12"/>
-        <text x="508" y="200">scope exits free whole arenas — the highlighted value crosses into its caller</text>
+        <text x="508" y="200">exits free whole arenas — the highlighted value crosses into its caller</text>
       </svg>
       <div class="figcap"><b>Arena lifetimes.</b> Every bar ends at its scope's exit line. The highlighted value is returned, so it crosses that line and lives on in its caller.</div>
     </div>
   </section>
+
   <section id="fast">
-    <span class="secnum">02 — Why it stays fast</span>
-    <h2>Value semantics, minus the copies you'd expect.</h2>
-    <div class="fact">
-      <div class="row"><span class="k">Returns move</span><span class="v">A value you build and return is allocated straight into the caller's arena. <span class="inl">return</span> <b>moves</b> it — 1.75× faster than copying it out.</span></div>
-      <div class="row"><span class="k">Loops grow</span><span class="v"><span class="inl">acc = acc + x</span> grows <b>one buffer in place</b>: the textbook O(n²) string build becomes O(n) — 828&nbsp;MB down to 4&nbsp;MB at the same input.</span></div>
-      <div class="row"><span class="k">Dead values move</span><span class="v">A copy happens only where a GC would work too. The <a href="https://tycho-lang.com/docs/performance.html">numbers ↗</a> are measured, not asserted.</span></div>
-    </div>
+    <span class="kicker">02 — Speed</span>
+    <h2>Value semantics, minus the copies.</h2>
+    <ul class="points">
+      <li>A value you build and return is allocated straight into the caller's arena — <span class="inl">return</span> <b>moves</b> it. 1.75× faster than copying it out.</li>
+      <li><span class="inl">acc = acc + x</span> grows <b>one buffer in place</b>: the O(n²) string build becomes O(n) — 828 MB down to 4 MB at the same input.</li>
+      <li>A copy happens only where a GC would work too. The <a href="https://tycho-lang.com/docs/performance.html">numbers ↗</a> are measured, not asserted.</li>
+    </ul>
     <div class="panel rv">
       <div class="phead"><span class="traf"></span><span class="fn">LISTING 01 — examples/count.ty</span><span class="badge">one buffer · O(n)</span></div>
       <pre><code><span class="k">fn</span> <span class="fn">main</span>():
@@ -313,13 +277,14 @@
         </div>
     <p class="codecap"><b>Listing 02.</b> <span class="inl">return</span> moves the value into the caller's arena; the copy <span class="inl">q := p</span> stays independent.</p>
   </section>
+
   <section id="costs">
-    <span class="secnum">03 — The costs</span>
-    <h2>Stated before you commit.</h2>
+    <span class="kicker">03 — Costs, stated before you commit</span>
+    <h2>What it can't do.</h2>
     <div class="fact">
-      <div class="row"><span class="k">No references</span><span class="v">Shared-mutable graphs and observers can't be written the pointer way. <b>Pools + indices</b> are the idiom — the cache-friendly one — and the <a href="https://tycho-lang.com/docs/internals/value-semantics-limits.html">loss column ↗</a> names every price: trie ~1.55× C, LRU ~2.8×, graph idiom ~1.3×.</span></div>
+      <div class="row"><span class="k">No references</span><span class="v">Shared-mutable graphs and observers can't be written the pointer way. <b>Pools + indices</b> are the idiom — the cache-friendly one. Trie ~1.55× C, LRU ~2.8×, graph idiom ~1.3×. The <a href="https://tycho-lang.com/docs/internals/value-semantics-limits.html">loss column ↗</a> names every price.</span></div>
       <div class="row"><span class="k">No interface values</span><span class="v">A heterogeneous list of implementors can't exist here. <b>Closed enums + match</b> cover the known set, generics the static half — the replacements are in <a href="https://tycho-lang.com/docs/idioms.html">Thinking in Tycho ↗</a>.</span></div>
-      <div class="row"><span class="k">Pre-1.0</span><span class="v">The surface can still break with a changelog entry and no deprecation window. The policy is in <a href="https://github.com/StefanVonRanda/tycho/blob/main/SUPPORT.md">SUPPORT ↗</a>. Arenas free at scope exit, not incrementally.</span></div>
+      <div class="row"><span class="k">Pre-1.0, scope exit</span><span class="v">The surface can still break with a changelog entry and no deprecation window (<a href="https://github.com/StefanVonRanda/tycho/blob/main/SUPPORT.md">policy ↗</a>). Arenas free at scope exit, not incrementally.</span></div>
     </div>
     <div class="fig">
       <div class="fhead"><span class="dot"></span><b>FIG. 02</b><span>— the pool idiom</span></div>
@@ -347,8 +312,73 @@
       <div class="figcap"><b>The pool idiom.</b> One array; slots 0 and 3 both name slot 2 — sharing without a single pointer.</div>
     </div>
   </section>
+
+  <section id="lang">
+    <span class="kicker">04 — The language</span>
+    <h2>Small. The reference has the rest.</h2>
+    <ul class="plain">
+      <li><b>Value semantics, generics, sum types</b> — <span class="inl">Option</span> / <span class="inl">Result</span>, <span class="inl">match</span>, <span class="inl">$T</span> monomorphized.</li>
+      <li><b>Methods, closures</b> — UFCS, no classes; value capture.</li>
+      <li><b>Systems pieces</b> — <span class="inl">spawn</span>, channels, <span class="inl">parallel for</span>; <span class="inl">extern fn</span> FFI; packages with a 45-module corelib.</li>
+    </ul>
+    <p style="margin-top:20px">Python-flavored syntax, Go/Odin-like semantics; the value core comes from <a href="https://www.hylo-lang.org/" style="color:var(--ink); text-decoration:underline; text-underline-offset:3px">Hylo ↗</a>. Full coverage is in the <a href="docs/" style="color:var(--ink); text-decoration:underline; text-underline-offset:3px">reference ↗</a>.</p>
+  </section>
+
+  <section id="rigor">
+    <span class="kicker">05 — Verification</span>
+    <h2>Checked, locally, by gates that can fail.</h2>
+    <div class="fact">
+      <div class="row"><span class="k">Corpus</span><span class="v"><b>1,100+ fixtures</b> built twice — native and sanitized — byte-identical output required, matched against committed goldens. 621 refusals pin every rejection.</span></div>
+      <div class="row"><span class="k">Fuzzed</span><span class="v">Random programs run native <span class="inl">-O2</span> against ASan/UBSan; disagreement is the oracle. Malformed input must fail closed — never crash.</span></div>
+      <div class="row"><span class="k">No cloud CI</span><span class="v"><span class="inl">make ci</span> runs the whole suite on your machine. Nothing taken on faith — and the honest caveats live in the <a href="https://tycho-lang.com/docs/internals/value-semantics-limits.html">loss column ↗</a> and the <a href="https://tycho-lang.com/docs/performance.html">performance notes ↗</a>.</span></div>
+    </div>
+  </section>
+
+  <section id="try">
+    <span class="kicker">06 — Try it</span>
+    <h2>A C compiler and make. Nothing else.</h2>
+    <div class="panel rv">
+<div class="phead"><span class="traf"></span><span class="fn">LISTING 02b — terminal</span><span class="badge">prebuilt — nothing to build</span></div>
+<pre><code><span class="c"># Linux x86-64; macOS arm64 and Windows builds are on the same release page</span>
+<span class="g">$</span> curl -fsSLO https://github.com/StefanVonRanda/tycho/releases/download/v0.8.6/tycho-v0.8.6-linux-x86_64.tar.gz
+<span class="g">$</span> curl -fsSLO https://github.com/StefanVonRanda/tycho/releases/download/v0.8.6/tycho-v0.8.6-linux-x86_64.tar.gz.sha256
+<span class="g">$</span> sha256sum -c tycho-v0.8.6-linux-x86_64.tar.gz.sha256
+<span class="out">tycho-v0.8.6-linux-x86_64.tar.gz: OK</span>
+<span class="g">$</span> tar xzf tycho-v0.8.6-linux-x86_64.tar.gz &amp;&amp; cd tycho-v0.8.6-linux-x86_64
+<span class="g">$</span> ./tychoc examples/hello.ty &amp;&amp; ./examples/hello
+<span class="out">built examples/hello</span>
+<span class="out">what is your name: Ada</span>
+<span class="out">hello Ada</span></code></pre>
+</div>
+    <p class="codecap"><b>Prebuilt.</b> The tarball carries <code>tychoc</code>, the core library and the examples. You still need <code>cc</code>.</p>
+    <div class="panel rv">
+      <div class="phead"><span class="traf"></span><span class="fn">LISTING 03 — terminal</span><span class="badge">hello.ty — the success-criterion demo</span></div>
+      <pre><code><span class="c"># a `cc` and `make`, nothing else</span>
+<span class="g">$</span> git clone https://github.com/StefanVonRanda/tycho
+<span class="g">$</span> cd tycho
+<span class="g">$</span> make                                  <span class="c"># builds ./tychoc</span>
+<span class="g">$</span> ./tychoc examples/hello.ty &amp;&amp; ./examples/hello
+<span class="out">built examples/hello</span>
+<span class="out">what is your name: Ada</span>
+<span class="out">hello Ada</span></code></pre>
+    </div>
+    <p class="codecap"><b>From source.</b> Ask for a name, greet it. Then start with the <a href="https://tycho-lang.com/docs/tutorial.html">tutorial ↗</a>.</p>
+  </section>
+
+  <section id="learn">
+    <span class="kicker">07 — Learn</span>
+    <h2>An afternoon to a running program.</h2>
+    <nav class="toc" aria-label="Learn">
+      <a href="https://tycho-lang.com/docs/tutorial.html"><span class="n">01</span>Tutorial — first programs in about an hour<span class="dots"></span><span class="arr">→</span></a>
+      <a href="https://tycho-lang.com/docs/from-c-to-arenas.html"><span class="n">02</span>Arenas — the memory model in five steps<span class="dots"></span><span class="arr">→</span></a>
+      <a href="https://tycho-lang.com/docs/idioms.html"><span class="n">03</span>Idioms — what to reach for instead<span class="dots"></span><span class="arr">→</span></a>
+      <a href="https://tycho-lang.com/docs/reference/index.html"><span class="n">04</span>Reference — every construct, by topic<span class="dots"></span><span class="arr">→</span></a>
+      <a href="https://tycho-lang.com/docs/quiet-results.html"><span class="n">05</span>Quiet results — read before the first real program<span class="dots"></span><span class="arr">→</span></a>
+    </nav>
+  </section>
+
   <section id="faq">
-    <span class="secnum">04 — FAQ</span>
+    <span class="kicker">08 — Questions</span>
     <h2>Asked every time.</h2>
     <details open>
       <summary>No GC, no borrow checker — how is it safe?</summary>
@@ -367,59 +397,9 @@
       <div class="a">There isn't one, on purpose: vendor directories, import by path. No transitive graph you've never read. The <a href="https://tycho-lang.com/docs/reference/packages.html">packages page ↗</a> shows the shape.</div>
     </details>
   </section>
-  <section id="try">
-    <span class="secnum">05 — Try it</span>
-    <h2>A C compiler and make. Nothing else.</h2>
-    <div class="panel rv">
-<div class="phead"><span class="traf"></span><span class="fn">LISTING 02b — terminal</span><span class="badge">prebuilt — nothing to build</span></div>
-<pre><code><span class="c"># Linux x86-64; macOS arm64 and Windows builds are on the same release page</span>
-<span class="g">$</span> curl -fsSLO https://github.com/StefanVonRanda/tycho/releases/download/v0.8.6/tycho-v0.8.6-linux-x86_64.tar.gz
-<span class="g">$</span> curl -fsSLO https://github.com/StefanVonRanda/tycho/releases/download/v0.8.6/tycho-v0.8.6-linux-x86_64.tar.gz.sha256
-<span class="g">$</span> sha256sum -c tycho-v0.8.6-linux-x86_64.tar.gz.sha256
-<span class="out">tycho-v0.8.6-linux-x86_64.tar.gz: OK</span>
-<span class="g">$</span> tar xzf tycho-v0.8.6-linux-x86_64.tar.gz &amp;&amp; cd tycho-v0.8.6-linux-x86_64
-<span class="g">$</span> ./tychoc examples/hello.ty &amp;&amp; ./examples/hello
-<span class="out">built examples/hello</span>
-<span class="out">what is your name: Ada</span>
-<span class="out">hello Ada</span></code></pre>
-</div>
-    <p class="codecap"><b>Prebuilt.</b> The tarball carries <code>tychoc</code>, the core library and the examples. You still need <code>cc</code> — it is what <code>tychoc</code> hands the generated C to.</p>
-    <div class="panel rv">
-      <div class="phead"><span class="traf"></span><span class="fn">LISTING 03 — terminal</span><span class="badge">hello.ty — the success-criterion demo</span></div>
-      <pre><code><span class="c"># a `cc` and `make`, nothing else</span>
-<span class="g">$</span> git clone https://github.com/StefanVonRanda/tycho
-<span class="g">$</span> cd tycho
-<span class="g">$</span> make                                  <span class="c"># builds ./tychoc</span>
-<span class="g">$</span> ./tychoc examples/hello.ty &amp;&amp; ./examples/hello
-<span class="out">built examples/hello</span>
-<span class="out">what is your name: Ada</span>
-<span class="out">hello Ada</span></code></pre>
-    </div>
-    <p class="codecap"><b>From source.</b> Ask for a name, greet it. New to the language? Start with the <a href="https://tycho-lang.com/docs/tutorial.html">tutorial ↗</a>.</p>
-  </section>
-  <section id="learn">
-    <span class="secnum">06 — Learn</span>
-    <h2>An afternoon to a running program.</h2>
-    <p class="standfirst">Python-flavored syntax, Go/Odin-like semantics; the value-semantics core comes from <a href="https://www.hylo-lang.org/">Hylo ↗</a>.</p>
-    <nav class="toc" aria-label="Learn">
-      <a href="https://tycho-lang.com/docs/tutorial.html"><span class="n">01</span>Tutorial — first programs in about an hour<span class="dots"></span><span class="arr">→</span></a>
-      <a href="https://tycho-lang.com/docs/from-c-to-arenas.html"><span class="n">02</span>Arenas — the memory model in five steps<span class="dots"></span><span class="arr">→</span></a>
-      <a href="https://tycho-lang.com/docs/idioms.html"><span class="n">03</span>Idioms — what to reach for instead<span class="dots"></span><span class="arr">→</span></a>
-      <a href="https://tycho-lang.com/docs/reference/index.html"><span class="n">04</span>Reference — every construct, by topic<span class="dots"></span><span class="arr">→</span></a>
-      <a href="https://tycho-lang.com/docs/quiet-results.html"><span class="n">05</span>Quiet results — read before the first real program<span class="dots"></span><span class="arr">→</span></a>
-    </nav>
-  </section>
-  <section id="rigor">
-    <span class="secnum">07 — How it's checked</span>
-    <h2>Experimental in scope. Not in rigor.</h2>
-    <div class="fact">
-      <div class="row"><span class="k">Corpus</span><span class="v"><b>1,100+ fixtures</b> built twice — native and sanitized — byte-identical output required, matched against committed goldens. 621 refusals pin every rejection.</span></div>
-      <div class="row"><span class="k">Fuzzed</span><span class="v">Random programs run native <span class="inl">-O2</span> against ASan/UBSan; disagreement is the oracle. Malformed input must fail closed — never crash.</span></div>
-      <div class="row"><span class="k">Gated, locally</span><span class="v"><span class="inl">make ci</span> runs the whole suite on your machine. No cloud CI to take on faith — and every gate proves it can fail.</span></div>
-    </div>
-  </section>
+
   <section id="community">
-    <span class="secnum">08 — Community</span>
+    <span class="kicker">09 — Community</span>
     <h2>Built in the open.</h2>
     <div class="fact">
       <div class="row"><span class="k">Report a bug</span><span class="v">Miscompile, crash, wrong output? A small <span class="inl">.ty</span> repro plus expected-vs-actual is the whole report. <a href="https://github.com/StefanVonRanda/tycho/issues/new?template=bug_report.md">File it ↗</a>.</span></div>
@@ -433,7 +413,7 @@
   </section>
 
   <footer>
-    <div class="fgrid">
+    <div class="fgrid" style="max-width:none">
       <div>
         <div class="fbrand">
           <svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true">
@@ -441,7 +421,7 @@
           </svg>
           <span>TYCHO</span>
         </div>
-        <p class="tagline">An experimental systems language. The source, the checks, and the honest caveats are all in the repo.</p>
+        <p class="tagline">An experimental systems language. MIT licensed. © Stefan Von Randa.</p>
       </div>
       <div class="fcol">
         <b>Docs</b>
@@ -458,8 +438,7 @@
       </div>
     </div>
     <div class="colophon">
-      <span>MIT licensed</span>
-      <span>© Stefan Von Randa</span>
+      <span>MIT</span>
       <span>tycho-lang.com</span>
     </div>
   </footer>
