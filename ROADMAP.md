@@ -173,10 +173,10 @@ is the packet for the second.
 
 ## Non-goals
 
-Several things are deliberately, permanently out of scope — traits, a package manager, a
+Several things are out of scope — traits, a package manager, a
 C-style ternary, Hindley-Milner inference, refcounting/GC, and hosted CI among them. The
 full list is in [docs/architecture.md](docs/architecture.md#decided-non-goals).
-Please don't open issues proposing them; issues that explore *new* directions are welcome.
+New directions are welcome; re-proposals of these need new evidence.
 
 Traits were reopened and re-closed 2026-09-11; see
 [architecture](docs/architecture.md#traits--typeclasses--reopened-2026-09-11-re-closed-the-same-day).
