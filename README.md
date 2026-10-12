@@ -257,7 +257,7 @@ language tick. [`docs/`](docs/README.md) is the full index; the map:
 
 - **[Tutorial](docs/tutorial.md)** — learn the language by writing and running code.
 - **[From `malloc` to implicit arenas](docs/from-c-to-arenas.md)** — the memory
-  model in five steps, starting from C you already know. The gentlest way in.
+  model in five steps. The gentlest way in, with or without C.
 - **[Language reference](docs/reference/index.md)** — every construct, by topic.
   The source of truth; every example compiles.
 - **[Quiet results](docs/quiet-results.md)** — the seven places the language
@@ -364,7 +364,7 @@ tables.
 
 **"Where's the package manager?"** There isn't one, on purpose. A package is a
 directory of `.ty` files you import by path; the corelib lives under `core:`.
-Adding third-party code is a deliberate manual act — vendor the source — never a
+Adding third-party code is a manual act — vendor the source — never a
 one-line command that pulls a transitive graph you've never read.
 
 ## License
