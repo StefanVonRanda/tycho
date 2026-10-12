@@ -31,8 +31,7 @@ it, not imagined about it.
 
 > **Plan references, removed 2026-08.** This file used to point every closure at
 > the plan that closed it (`docs/internals/plan-*-DONE.md`). Those archives were
-> pruned; the pointers now say "the X plan" with no phase numbers. The full
-> archives remain at `git show docs-archive:docs/internals/plan-*-DONE.md`.
+> pruned; the pointers now say "the X plan" with no phase numbers.
 
 ## The headline
 

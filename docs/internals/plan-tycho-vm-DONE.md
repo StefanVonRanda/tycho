@@ -2,8 +2,7 @@
 
 **Status: DONE. All 5 phases complete 2026-08-03. Program: bytecode VM (`tools/tycho-vm/`, commits 1bb0668, 89909d2, 4782ff8) — the first program here to need a hot dispatch loop and fixed-capacity memory. Outcome: scalar `match` shipped, `&` restricted to `inout` arguments, `inout` docs corrected.**
 
-Previous plan: the four-of-seven plan (archived, then pruned 2026-08-03;
-still at `git show docs-archive:docs/internals/plan-four-of-seven-DONE.md`).
+Previous plan: the four-of-seven plan (archived, then pruned 2026-08-03).
 
 **Five findings came out of it; two became phases.** Rule: *does anything that is not `tycho-vm` need this?* A finding becomes a phase only with a second caller.
 

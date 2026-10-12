@@ -60,8 +60,8 @@ Getting to ~1.6× took four fixes, all driven by this bench:
    array removed the per-slot order list entirely, and delete moved to a **tombstone +
    amortized compaction** scheme — the index is rebuilt when tombstones exceed a fraction of
    the entries, preserving `keys()` order and the churn bound. Peak dropped **40 → 32.6 MB**
-   and wall **569 → 303 ms**, now under Go. Internals:
-   `docs/internals/compact-dict-map-design.md` (archived 2026-08: `git show docs-archive:docs/internals/compact-dict-map-design.md`).
+   and wall **569 → 303 ms**, now under Go. The layout is described in
+   [value-semantics-limits.md](../../docs/internals/value-semantics-limits.md) (§1).
 
 Proof the remaining cost is the churn-free live set, not the delete volume: a no-eviction
 variant holding 600k *live* entries uses more memory than this 200k-live delete-heavy run —

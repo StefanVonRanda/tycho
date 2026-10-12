@@ -25,7 +25,7 @@ this is the state.
 These are ergonomic, not soundness — which is exactly why they must be fixed
 *before* a freeze rather than after, since fixing them later is a breaking
 change. All were recorded by the project itself, in the early plan learnings
-(rotated away; recoverable under the `docs-archive` tag) and in FRICTION:
+(rotated away when closed) and in FRICTION:
 
 - ~~a package-level `len` **shadows the builtin** inside its own package~~ —
   **closed 2026-08-09**, see the probe table below
