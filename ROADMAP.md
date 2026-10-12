@@ -81,9 +81,9 @@ Foundation before feature breadth. In rough priority:
 
 ## What 1.0 requires
 
-Declared 2026-08-05, withdrawn 2026-08-09: the engineering was never the
-problem, but 1.0 is a promise not to break people and there were no people.
-What remains is §1 and §7, neither a task this list can complete — both need a
+A 1.0 date was declared 2026-08-05 and withdrawn 2026-08-09 — there was no one
+to make the promise to yet. What remains is §1 and §7, neither a task this list
+can complete: an outside program and an external review, both needing another
 person.
 
 ### 1. Someone other than the author has written a real program

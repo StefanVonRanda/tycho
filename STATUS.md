@@ -108,10 +108,8 @@ index-pool idiom is the answer; references are refused by decision
 
 ## What this page is not
 
-It is not a promise, and it is not an argument that the project should continue.
-It is the overview that did not exist, so that the decision — whatever it is —
-gets made against what this thing measurably is, rather than against how the
-last stretch of work happened to feel.
+It is not a promise. It is a snapshot of what this thing measurably is, so
+decisions about it use numbers instead of impressions.
 
 See also: [ROADMAP](ROADMAP.md) · [how it is tested](docs/controls.md) ·
 [the friction log](docs/internals/FRICTION.md) · `make status`

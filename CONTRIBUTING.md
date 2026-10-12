@@ -30,6 +30,11 @@ make                 # build ./tychoc
 ./tychoc f.ty && ./f  # compile + run a program
 ```
 
+If `make` fails immediately, the toolchain is missing, not broken: install
+`cc` and `make` (Linux: your distro's build tools; macOS: `xcode-select
+--install`; Windows: MSYS2 + mingw-w64 — see [platforms](docs/platforms.md)).
+Anything failing *after* the build starts is a gate question, answered below.
+
 ### What the GATE needs, beyond that
 
 **Run `make preflight` first.** It probes this machine for everything below and
@@ -94,6 +99,9 @@ make ci              # build · test · ilp32 · asan-self · corelib + examples
                      # perf guard · recursion · spec-check · link+citation check
 make ci N=0          # same, skipping the (slow) fuzz lanes for a quick check
 ```
+
+**Docs-only change?** `make check-links` (~3s) is the whole gate — links,
+reachability, citations, and hashes.
 
 **A change is "green" iff the lanes that can redden for it pass.** Pick them from
 the table below — it maps each part of the tree to the one lane that covers it.
