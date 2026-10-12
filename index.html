@@ -153,6 +153,7 @@
   <nav aria-label="Sections">
     <a href="#idea">Idea</a>
     <a href="#costs">Costs</a>
+    <a href="#proof">Proof</a>
     <a href="#try">Try</a>
     <a href="#learn">Learn</a>
     <a href="#faq">FAQ</a>
@@ -242,8 +243,22 @@
     </div>
   </section>
 
+  <section id="proof">
+    <span class="kicker">04 — Proof</span>
+    <h2>Substantial programs, checked against ground truth.</h2>
+    <div class="fact">
+      <div class="row"><span class="k">tycho-scheme</span><span class="v">Interpreter and bytecode compiler with closures. The same six programs run identically on both — <span class="inl">make scheme-check</span>.</span></div>
+      <div class="row"><span class="k">tycho-vm</span><span class="v">Assembler, disassembler, virtual machine. Disassembly round-trips assembly exactly.</span></div>
+      <div class="row"><span class="k">tycho-kv</span><span class="v">Persistent B+ tree store. Every command script matches a naive map backend exactly.</span></div>
+      <div class="row"><span class="k">tycho-chess</span><span class="v">Bitboards with search. Move generation matches published perft totals.</span></div>
+      <div class="row"><span class="k">tycho-kvsrv</span><span class="v">Concurrent HTTP key-value server. Parallel clients, every write intact.</span></div>
+      <div class="row"><span class="k">tycho-sat</span><span class="v">DPLL/CDCL SAT solver. Pigeonhole cases come back unsat; planted models verify clause by clause.</span></div>
+      <div class="row"><span class="k">Self-hosted</span><span class="v">A ~21,500-line compiler written in Tycho itself, bootstrapped in two stages. Successive generations emit identical C.</span></div>
+    </div>
+  </section>
+
   <section id="lang">
-    <span class="kicker">04 — The language</span>
+    <span class="kicker">05 — The language</span>
     <h2>What is included.</h2>
     <ul class="plain">
       <li><b>Value semantics, generics, sum types</b> — <span class="inl">Option</span> / <span class="inl">Result</span>, <span class="inl">match</span>, <span class="inl">$T</span> monomorphized.</li>
@@ -254,17 +269,18 @@
   </section>
 
   <section id="rigor">
-    <span class="kicker">05 — Verification</span>
+    <span class="kicker">06 — Verification</span>
     <h2>How it is tested.</h2>
     <div class="fact">
       <div class="row"><span class="k">Corpus</span><span class="v"><b>1,100+ fixtures</b>, each built native and sanitized with byte-identical output, matched to committed goldens. 621 fixtures pin every refusal.</span></div>
       <div class="row"><span class="k">Fuzzed</span><span class="v">Random programs run native <span class="inl">-O2</span> against ASan/UBSan; any disagreement is a defect. Malformed input must fail closed.</span></div>
+      <div class="row"><span class="k">Authored evidence</span><span class="v">Most programs above were written by the author. Outside programs are the 1.0 gate — see the <a href="https://github.com/StefanVonRanda/tycho/blob/main/ROADMAP.md#what-production-ready-requires">roadmap ↗</a>.</span></div>
       <div class="row"><span class="k">No cloud CI</span><span class="v"><span class="inl">make ci</span> runs everything on your machine. Caveats are written down in the <a href="https://tycho-lang.com/docs/performance.html">performance notes ↗</a>.</span></div>
     </div>
   </section>
 
   <section id="try">
-    <span class="kicker">06 — Try it</span>
+    <span class="kicker">07 — Try it</span>
     <h2>Two routes.</h2>
     <div class="panel">
 <div class="phead"><span class="traf"></span><span class="fn">LISTING 02b — terminal</span><span class="badge">prebuilt — nothing to build</span></div>
@@ -295,7 +311,7 @@
   </section>
 
   <section id="learn">
-    <span class="kicker">07 — Learn</span>
+    <span class="kicker">08 — Learn</span>
     <h2>Where to start.</h2>
     <nav class="toc" aria-label="Learn">
       <a href="https://tycho-lang.com/docs/tutorial.html"><span class="n">01</span>Tutorial — first programs in about an hour<span class="dots"></span><span class="arr">→</span></a>
@@ -307,7 +323,7 @@
   </section>
 
   <section id="faq">
-    <span class="kicker">08 — Questions</span>
+    <span class="kicker">09 — Questions</span>
     <h2>Short answers.</h2>
     <details open>
       <summary>No GC, no borrow checker — how is it safe?</summary>
@@ -328,7 +344,7 @@
   </section>
 
   <section id="community">
-    <span class="kicker">09 — Community</span>
+    <span class="kicker">10 — Community</span>
     <h2>Get involved.</h2>
     <div class="fact">
       <div class="row"><span class="k">Report a bug</span><span class="v">Miscompile, crash, wrong output? A small <span class="inl">.ty</span> repro plus expected-vs-actual is the whole report. <a href="https://github.com/StefanVonRanda/tycho/issues/new?template=bug_report.md">File it ↗</a>.</span></div>
