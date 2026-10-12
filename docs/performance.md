@@ -1,8 +1,8 @@
 # Performance and memory
 
-Tycho's claims are measured — every program in this file runs on
-`tychoc`, its output checked against a golden. Cross-language *ratios* are the
-claim, not absolute times.
+Every program in this file runs on `tychoc`, its output checked against a
+golden. Cross-language *ratios* matter more than absolute times, which depend
+on the machine.
 
 ## A real program at flat memory
 
@@ -59,7 +59,7 @@ Three things the numbers say that the RSS tables cannot:
    exactly. The 64 KiB block only shows up as slack on toy programs (a 40 B
    peak over a 64 KiB block).
 2. **Free-list recycling is workload-shaped, and now countable.** The
-   liveness-driven recycle (`runtime/tycho_rt.c@arena_recycle`) is zero
+   liveness-driven recycle is zero
    where the working set is held (interp/json/gcscan/trie — trees stay live),
    and up to 17% of allocations where loop-carried rebuilds hand dead buffers
    back (optstr_build, strarr_build, structarr_build, lru). Before the counter
@@ -67,15 +67,13 @@ Three things the numbers say that the RSS tables cannot:
    now an instrumented number.
 3. **Loop scratch peaks near zero.** The per-iteration `arena_reset` keeps a
    loop's live bytes at one iteration's worth: `loop_scratch` bumps 10M
-   allocations and peaks at 40 B. Per-statement attribution (`_scrN.name =
-   "proc:loopN"`, a per-proc loop counter — stable under re-formatting, emitted
-   at the S_WHILE/S_FOR/S_FORRANGE codegen sites) shows it: on json, a loop
+   allocations and peaks at 40 B. Per-statement attribution shows it: on json, a loop
    labeled `main:loop0` bumps 16.4 MiB across 850k allocs with a 344 B peak —
    the per-iteration reset, now visible per statement instead of folded into
    the function total.
 
 **Block size is a memory-only knob.** `TYCHO_BLOCK=<bytes>` overrides the
-64 KiB default per run (read once at startup, `runtime/tycho_rt.c:637@TYCHO_BLOCK`). A
+64 KiB default per run (read once at startup). A
 sweep on the three big workloads:
 
 | block | interp peak/OS | json peak/OS | lru peak/OS | wall (interp/json/lru) |
