@@ -1,0 +1,397 @@
+package main
+import "core:io"
+import "core:path"
+import "core:sort"
+import "core:strings"
+
+# tycho-docs: render a Markdown documentation tree to standalone HTML pages.
+#
+# Rule: one HTML page per `.md` file, same relative path with `.html`, plus a
+# top-level index. The Markdown subset is the examples/site one — `# `/`## `/`### `
+# headings (with id anchors), `- ` lists, `> ` quotes, `| ` tables, ``` fences,
+# `---` rules, blank-separated paragraphs, inline `code`/`**bold**`/[links] —
+# plus two docs-tree rules: `<!-- ... -->` marker lines are dropped, and a
+# relative `X.md` link target becomes `X.html` so the tree browses as-is.
+
+fn esc_html(s: string) -> string:            # &, <, > -> entities (& first)
+    r := strings.replace(s, "&", "&amp;")
+    r = strings.replace(r, "<", "&lt;")
+    r = strings.replace(r, ">", "&gt;")
+    return r
+
+# GitHub-style heading slug: lowercase alphanumerics kept, space/-/_ become
+# `-`, everything else dropped.
+fn slug(s: string) -> string:
+    out := ""
+    for i := 0; i < len(s); i += 1:
+        c := s[i]
+        if c >= 97 and c <= 122:
+            out = out + s[i:i+1]
+        elif c >= 65 and c <= 90:
+            out = out + chr(c + 32)
+        elif c >= 48 and c <= 57:
+            out = out + s[i:i+1]
+        elif c == 32 or c == 45 or c == 95:   # space, '-', '_'
+            out = out + "-"
+    return out
+
+# A relative `X.md` target becomes `X.html` (exact or `X.md#frag` form).
+# Absolute URLs and same-page `#frag` links pass through untouched.
+fn rewrite_link(u: string) -> string:
+    if strings.starts_with(u, "http://"):
+        return u
+    if strings.starts_with(u, "https://"):
+        return u
+    if strings.starts_with(u, "mailto:"):
+        return u
+    if strings.starts_with(u, "#"):
+        return u
+    n := len(u)
+    if n >= 3 and u[n-3:n] == ".md":
+        return u[0:n-3] + ".html"
+    i := 0
+    for i + 3 < n:
+        if u[i:i+3] == ".md" and u[i+3:i+4] == "#":
+            return u[0:i] + ".html" + u[i+3:n]
+        i = i + 1
+    return u
+
+# Split a table row on `|`, trimming cells; a leading or trailing pipe leaves
+# an empty edge cell that is dropped.
+fn split_cells(s: string) -> [string]:
+    cells := []string
+    cur := ""
+    for i := 0; i < len(s); i += 1:
+        if s[i] == 124:                        # '|'
+            push(cells, strings.trim(cur))
+            cur = ""
+        else:
+            cur = cur + s[i:i+1]
+    push(cells, strings.trim(cur))
+    lo := 0
+    hi := len(cells)
+    if hi > 0 and cells[0] == "":
+        lo = 1
+    if hi > lo and cells[hi-1] == "":
+        hi = hi - 1
+    out := []string
+    for i := lo; i < hi; i += 1:
+        push(out, cells[i])
+    return out
+
+# A separator row is only `-` and `:` per cell: `| --- | :--- |`.
+fn is_sep(cells: [string]) -> bool:
+    if len(cells) == 0:
+        return false
+    for i := 0; i < len(cells); i += 1:
+        c := cells[i]
+        if len(c) == 0:
+            return false
+        for j := 0; j < len(c); j += 1:
+            if c[j] != 45 and c[j] != 58:      # '-' and ':'
+                return false
+    return true
+
+# Inline spans over HTML-escaped text (escaping introduces no span
+# characters, so scanning the escaped form is safe): `code`, **bold**,
+# [text](url) with the docs-tree link rewrite. An unmatched opener is
+# emitted literally.
+fn render_inline(s: string) -> string:
+    e := esc_html(s)
+    out := ""
+    i := 0
+    for i < len(e):
+        if e[i] == 96:                          # '`'
+            j := i + 1
+            for j < len(e) and e[j] != 96:
+                j = j + 1
+            if j < len(e):
+                out = out + "<code>" + e[i+1:j] + "</code>"
+                i = j + 1
+            else:
+                out = out + e[i:i+1]
+                i = i + 1
+        elif e[i] == 42 and i + 1 < len(e) and e[i+1] == 42:   # '**'
+            k := i + 2
+            found := 0 - 1
+            for k + 1 < len(e):
+                if e[k] == 42 and e[k+1] == 42:
+                    found = k
+                    break
+                k = k + 1
+            if found >= 0:
+                out = out + "<strong>" + e[i+2:found] + "</strong>"
+                i = found + 2
+            else:
+                out = out + e[i:i+1]
+                i = i + 1
+        elif e[i] == 91:                        # '['
+            k := i + 1
+            for k < len(e) and e[k] != 93:      # ']'
+                k = k + 1
+            if k < len(e) and k + 1 < len(e) and e[k+1] == 40:   # '('
+                m := k + 2
+                for m < len(e) and e[m] != 41:  # ')'
+                    m = m + 1
+                if m < len(e):
+                    out = out + "<a href=\"" + rewrite_link(e[k+2:m]) + "\">" + e[i+1:k] + "</a>"
+                    i = m + 1
+                else:
+                    out = out + e[i:i+1]
+                    i = i + 1
+            else:
+                out = out + e[i:i+1]
+                i = i + 1
+        else:
+            out = out + e[i:i+1]
+            i = i + 1
+    return out
+
+# NOTE (inout): the chunk helpers below take plain parameters and RETURN
+# their HTML; the caller appends it and resets state itself. Passing a
+# loop-grown accumulator through `inout` to a callee that appends loses the
+# callee's bytes while scalar write-backs survive — so no helper here takes
+# `inout` on the output.
+fn close_list_html(in_list: bool) -> string:
+    if in_list:
+        return "</ul>\n"
+    return ""
+
+fn flush_rows_html(rows: [string]) -> string:
+    if len(rows) == 0:
+        return ""
+    head := split_cells(rows[0])
+    out := "<table>\n"
+    start := 0
+    if len(rows) > 1:
+        sep := split_cells(rows[1])
+        if len(sep) == len(head) and is_sep(sep):
+            start = 2
+            out = out + "<tr>"
+            for c := 0; c < len(head); c += 1:
+                out = out + "<th>" + render_inline(head[c]) + "</th>"
+            out = out + "</tr>\n"
+    for r := start; r < len(rows); r += 1:
+        cells := split_cells(rows[r])
+        out = out + "<tr>"
+        for c := 0; c < len(cells); c += 1:
+            out = out + "<td>" + render_inline(cells[c]) + "</td>"
+        out = out + "</tr>\n"
+    return out + "</table>\n"
+
+fn flush_quote_html(quote: [string]) -> string:
+    if len(quote) == 0:
+        return ""
+    out := "<blockquote>\n"
+    for i := 0; i < len(quote); i += 1:
+        out = out + "<p>" + render_inline(quote[i]) + "</p>\n"
+    return out + "</blockquote>\n"
+
+fn render_md(body: string) -> string:
+    out := ""
+    in_list := false
+    in_fence := false
+    rows := []string
+    quote := []string
+    lines := strings.lines(body)
+    for i := 0; i < len(lines); i += 1:
+        t := strings.trim(lines[i])
+        if in_fence:
+            if strings.starts_with(t, "```"):
+                out = out + "</code></pre>\n"
+                in_fence = false
+            else:
+                out = out + esc_html(lines[i]) + "\n"
+        elif strings.starts_with(t, "```"):
+            out = out + close_list_html(in_list)
+            in_list = false
+            out = out + flush_rows_html(rows)
+            rows = []string
+            out = out + flush_quote_html(quote)
+            quote = []string
+            lang := strings.trim(t[3:len(t)])
+            out = out + "<pre><code"
+            if len(lang) > 0:
+                out = out + " class=\"language-" + esc_html(lang) + "\""
+            out = out + ">"
+            in_fence = true
+        elif strings.starts_with(t, "<!--"):
+            out = out + close_list_html(in_list)
+            in_list = false
+            out = out + flush_rows_html(rows)
+            rows = []string
+            out = out + flush_quote_html(quote)
+            quote = []string
+        elif strings.starts_with(t, "|"):
+            out = out + close_list_html(in_list)
+            in_list = false
+            out = out + flush_quote_html(quote)
+            quote = []string
+            push(rows, t)
+        else:
+            out = out + flush_rows_html(rows)
+            rows = []string
+            if len(t) == 0:
+                out = out + close_list_html(in_list)
+                in_list = false
+            elif t == "---":
+                out = out + close_list_html(in_list)
+                in_list = false
+                out = out + flush_quote_html(quote)
+                quote = []string
+                out = out + "<hr/>\n"
+            elif strings.starts_with(t, "### "):
+                out = out + close_list_html(in_list)
+                in_list = false
+                out = out + flush_quote_html(quote)
+                quote = []string
+                h := t[4:len(t)]
+                out = out + "<h3 id=\"" + slug(h) + "\">" + render_inline(h) + "</h3>\n"
+            elif strings.starts_with(t, "## "):
+                out = out + close_list_html(in_list)
+                in_list = false
+                out = out + flush_quote_html(quote)
+                quote = []string
+                h := t[3:len(t)]
+                out = out + "<h2 id=\"" + slug(h) + "\">" + render_inline(h) + "</h2>\n"
+            elif strings.starts_with(t, "# "):
+                out = out + close_list_html(in_list)
+                in_list = false
+                out = out + flush_quote_html(quote)
+                quote = []string
+                h := t[2:len(t)]
+                out = out + "<h1 id=\"" + slug(h) + "\">" + render_inline(h) + "</h1>\n"
+            elif strings.starts_with(t, "> "):
+                out = out + close_list_html(in_list)
+                in_list = false
+                push(quote, strings.trim(t[2:len(t)]))
+            elif strings.starts_with(t, "- "):
+                out = out + flush_quote_html(quote)
+                quote = []string
+                if in_list == false:
+                    out = out + "<ul>\n"
+                    in_list = true
+                out = out + "<li>" + render_inline(t[2:len(t)]) + "</li>\n"
+            else:
+                out = out + close_list_html(in_list)
+                in_list = false
+                out = out + flush_quote_html(quote)
+                quote = []string
+                out = out + "<p>" + render_inline(t) + "</p>\n"
+    out = out + close_list_html(in_list)
+    out = out + flush_rows_html(rows)
+    out = out + flush_quote_html(quote)
+    if in_fence:
+        out = out + "</code></pre>\n"
+    return out
+
+fn page_css() -> string:
+    return ":root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}"
+
+fn up_prefix(rel: string) -> string:
+    up := ""
+    for i := 0; i < len(rel); i += 1:
+        if rel[i:i+1] == "/":
+            up = up + "../"
+    return up
+
+fn page_html(title: string, home: string, crumb: string, content: string) -> string:
+    h := "<!doctype html>\n<html lang=\"en\">\n<head><meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>" + esc_html(title) + " — Tycho docs</title>\n<style>" + page_css() + "</style>\n</head>\n<body>\n<nav class=\"crumb\"><a href=\"" + home + "\">docs</a> / " + crumb + "</nav>\n"
+    return h + content + "<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>\n</body>\n</html>\n"
+
+# The page title is the first `# ` heading; empty when the file has none.
+fn title_of(text: string) -> string:
+    lines := strings.lines(text)
+    for i := 0; i < len(lines); i += 1:
+        t := strings.trim(lines[i])
+        if strings.starts_with(t, "# "):
+            return t[2:len(t)]
+    return ""
+
+# Collect every `.md` file under dir, as paths relative to base, sorted.
+fn collect(dir: string, base: string, acc: [string]) -> [string]:
+    got := acc
+    names := io.list(dir)
+    for i := 0; i < len(names); i += 1:
+        p := path.join(dir, names[i])
+        match io.is_dir(p):
+            Ok(v):
+                if v:
+                    got = collect(p, base, got)
+                else:
+                    if path.ext(names[i]) == ".md":
+                        rel := p[len(base)+1:len(p)]
+                        push(got, rel)
+            Err(_):
+                println("tycho-docs: cannot stat " + p)
+    return got
+
+fn dir_of(rel: string) -> string:
+    d := ""
+    for i := 0; i < len(rel); i += 1:
+        if rel[i:i+1] == "/":
+            d = rel[0:i]
+    return d
+
+fn build(docs_dir: string, out_dir: string):
+    match io.make_dir_all(out_dir):
+        Ok(_):
+            pass
+        Err(e):
+            println("tycho-docs: cannot mkdir " + out_dir)
+            return
+    got := collect(docs_dir, docs_dir, []string)
+    files := sort.asc(got)
+    n := 0
+    idx := "<h1>Tycho documentation</h1>\n<p>" + str(len(files)) + " pages, generated from the docs tree.</p>\n"
+    curdir := ""
+    first := true
+    for i := 0; i < len(files); i += 1:
+        rel := files[i]
+        text := io.read(path.join(docs_dir, rel))
+        title := title_of(text)
+        if len(title) == 0:
+            title = rel
+        html_rel := rel[0:len(rel)-3] + ".html"
+        home := up_prefix(rel) + "index.html"
+        d := dir_of(rel)
+        if len(d) > 0:
+            match io.make_dir_all(path.join(out_dir, d)):
+                Ok(_):
+                    pass
+                Err(e):
+                    println("tycho-docs: cannot mkdir " + d)
+        crumb := esc_html(rel)
+        html := page_html(title, home, crumb, render_md(text))
+        if io.write(path.join(out_dir, html_rel), html):
+            n = n + 1
+        if rel == "README.md":
+            io.write(path.join(out_dir, "index.html"), page_html(title, "index.html", crumb, render_md(text)))
+        else:
+            if path.base(html_rel) == "README.html":
+                io.write(path.join(out_dir, dir_of(html_rel) + "/index.html"), html)
+        if first:
+            first = false
+            if len(d) > 0:
+                idx = idx + "<h2>" + esc_html(d) + "</h2>\n<ul>\n"
+            else:
+                idx = idx + "<h2>top level</h2>\n<ul>\n"
+        elif d != curdir:
+            idx = idx + "</ul>\n"
+            if len(d) > 0:
+                idx = idx + "<h2>" + esc_html(d) + "</h2>\n<ul>\n"
+            else:
+                idx = idx + "<h2>top level</h2>\n<ul>\n"
+        curdir = d
+        idx = idx + "<li><a href=\"" + html_rel + "\">" + esc_html(title) + "</a></li>\n"
+    idx = idx + "</ul>\n"
+    io.write(path.join(out_dir, "index.html"), page_html("Tycho documentation", "index.html", "index", idx))
+    println("docs-site: " + str(n) + " pages from " + docs_dir)
+    println("index: index.html (" + str(len(files)) + " links)")
+
+fn main():
+    a := args()
+    if len(a) < 3:
+        println("usage: docs-site <docs_dir> <out_dir>")
+    else:
+        build(a[1], a[2])
