@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>29. Builtins — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / spec/16-builtins.md</nav>
+<h1 id="29-builtins">29. Builtins</h1>
+<p>A <strong>builtin</strong> is a function that is part of the Tycho *language* rather than of</p>
+<p>its standard library: it is in scope in every module with no <code>import</code>, and its</p>
+<p>name resolves without qualification. This chapter is the complete, normative</p>
+<p>catalog of the builtins — grouped by category, each with its argument and result</p>
+<p>types and a one-line semantics, and each marked <strong>Sig</strong> or <strong>magic</strong> (§29.2).</p>
+<p>The construction, mutation, and place semantics of the aggregates these builtins</p>
+<p>operate on are specified in Part VI (§16–§19); their arena and</p>
+<p>value-copy behavior in <a href="07-memory-model.html">§9</a>; the conversions' full</p>
+<p>accepts→yields table in <a href="06-conversions.html#82-explicit-conversion-builtins">§8.2</a>.</p>
+<p>Operators and keywords that read as calls but are <strong>not</strong> builtins — <code>m[k]</code>,</p>
+<p><code>k in m</code>, <code>delete m[k]</code>, <code>for x in xs</code>, <code>&amp;place</code>, <code>or_return</code> — are specified in</p>
+<p>their own chapters and are out of scope here.</p>
+<h2 id="291-builtins-are-part-of-the-language">29.1 Builtins are part of the language</h2>
+<p>Every builtin named in this chapter is <strong>always available</strong>. A conforming</p>
+<p>implementation MUST make it resolvable in any module with no import and no</p>
+<p>package qualifier, and MUST NOT require a builtin to be declared, imported, or</p>
+<p>enabled by a flag. Builtins share the ordinary call syntax; they are</p>
+<p>distinguished from user functions only by being predefined.</p>
+<p>The line between the <strong>language</strong> and the <strong>corelib</strong> is drawn precisely:</p>
+<ul>
+<li>A name is a <strong>builtin</strong> (part of the language) iff <code>register_builtins</code></li>
+</ul>
+<p>registers it <strong>or</strong> a case in <code>resolve_expr</code> /</p>
+<p>codegen special-cases it by name (§29.2). Such a name is available with no</p>
+<p>import.</p>
+<ul>
+<li>Every other predefined function is a <strong>corelib</strong> procedure, reached only</li>
+</ul>
+<p>through <code>import "core:…"</code> and specified in <a href="README.html">Part XVIII</a> (the</p>
+<p>standard library). Corelib is *layered on* the language; it is</p>
+<p>not part of it.</p>
+<p>This distinction is normative: it fixes which names a conforming implementation</p>
+<p>MUST provide unconditionally (the builtins) versus which it MAY split across the</p>
+<p>core and extended tiers (<a href="00-conventions.html#13-conformance">§1.3</a>).</p>
+<h2 id="292-sig-builtins-and-magic-builtins">29.2 <code>Sig</code> builtins and <code>magic</code> builtins</h2>
+<p>Builtins fall into two kinds, and each entry below is marked with one:</p>
+<ul>
+<li><strong>Sig</strong> — registered in <code>register_builtins</code> with a **fixed, monomorphic</li>
+</ul>
+<p>signature** and resolved by ordinary signature lookup, arity check, and</p>
+<p>argument type-checking, exactly like a user function (§15). A</p>
+<p><code>Sig</code> builtin is never overloaded and takes its arguments by value.</p>
+<ul>
+<li><strong>magic</strong> — recognized <strong>by name in `resolve_expr`</strong> (and in codegen) *before*</li>
+</ul>
+<p>signature lookup. A magic builtin MAY be polymorphic (its result or accepted</p>
+<p>types depend on an argument's type), MAY have a restricted parse form (e.g.</p>
+<p><code>channel</code> only as a declaration RHS), MAY require an lvalue argument, or MAY</p>
+<p>lower to a literal or an operator rather than a call. Because it is intercepted</p>
+<p>ahead of the <code>Sig</code> table, a magic builtin is not an ordinary signature and its</p>
+<p>checking rules are stated per entry.</p>
+<p>Three names — <code>str</code>, <code>to_ptr</code>, <code>to_i32</code> — carry <strong>both</strong> a <code>Sig</code> registration</p>
+<p>and a <code>resolve_expr</code> special-case; the special-case governs. Classification here</p>
+<p>follows observable behavior: <code>str</code> is polymorphic and is marked <strong>magic</strong>;</p>
+<p><code>to_ptr</code> keeps a single fixed <code>int</code> signature and is marked <strong>Sig</strong>; the</p>
+<p>fixed-width conversions <code>to_u8</code>…<code>to_i64</code>/<code>to_f32</code> (including <code>to_i32</code>) are</p>
+<p>numeric-polymorphic like <code>str</code>.</p>
+<h2 id="293-io-and-process">29.3 I/O and process</h2>
+<table>
+<tr><th>Builtin</th><th>Signature</th><th>Kind</th><th>Semantics</th></tr>
+<tr><td><code>print(s)</code></td><td><code>string -&gt; void</code></td><td>Sig</td><td>Write <code>s</code>'s bytes to stdout; no implicit newline.</td></tr>
+<tr><td><code>println(s)</code></td><td><code>string -&gt; void</code></td><td>Sig</td><td><code>print(s)</code> followed by a single <code>"\n"</code>. String-only, like <code>print</code>; use <code>println(str(x))</code> for a non-string.</td></tr>
+<tr><td><code>eprint(s)</code></td><td><code>string -&gt; void</code></td><td>Sig</td><td>Write <code>s</code>'s bytes to stderr; no newline, no exit.</td></tr>
+<tr><td><code>input()</code></td><td><code>-&gt; string</code></td><td>Sig</td><td>Read one line from stdin, with the trailing newline stripped.</td></tr>
+<tr><td><code>read_all()</code></td><td><code>-&gt; string</code></td><td>Sig</td><td>Read all of stdin as one <code>string</code>.</td></tr>
+<tr><td><code>args()</code></td><td><code>-&gt; [string]</code></td><td>Sig</td><td>The command-line arguments; <code>args()[0]</code> is the program name.</td></tr>
+<tr><td><code>getenv(name)</code></td><td><code>string -&gt; string</code></td><td>Sig</td><td>The environment variable's value, or <code>""</code> if unset.</td></tr>
+<tr><td><code>die(msg)</code></td><td><code>string -&gt; void</code></td><td>Sig</td><td>Print <code>msg</code> to stderr and terminate the process with exit status <code>1</code>; never returns (§29.12).</td></tr>
+<tr><td><code>exit(code)</code></td><td><code>int -&gt; void</code></td><td>Sig</td><td>Terminate the process with exit status <code>code</code>, printing nothing; never returns (§29.12).</td></tr>
+</table>
+<p><code>print</code>, <code>println</code>, and <code>eprint</code> accept a <code>string</code> only; they do not implicitly</p>
+<p>stringify. All nine are <code>Sig</code> builtins with fixed signatures.</p>
+<h2 id="294-conversions">29.4 Conversions</h2>
+<p>Tycho performs <strong>no implicit value conversion</strong> (<a href="06-conversions.html">§8</a>); every</p>
+<p>value-level conversion is one of the builtins below. The full <strong>accepts→yields</strong></p>
+<p>table — the exact set of source types each accepts and the type each yields — is</p>
+<p><a href="06-conversions.html#82-explicit-conversion-builtins">§8.2</a> and is <strong>not</strong></p>
+<p>duplicated here; this section states only each builtin's kind and one-line role.</p>
+<table>
+<tr><th>Builtin</th><th>Role</th><th>Kind</th></tr>
+<tr><td><code>str(x)</code></td><td>Polymorphic value → <code>string</code> for <code>int</code>, any sized int, <code>f32</code>, <code>bool</code>, <code>float</code>, <code>string</code> (through <code>base_of</code>); identity on <code>string</code>; a <strong>`char` → its one-byte glyph</strong> string.</td><td>magic</td></tr>
+<tr><td><code>to_int(x)</code></td><td><code>float</code>/<code>u32</code>/<code>u64</code>/<code>f32</code> or an <code>int</code>-newtype → <code>int</code> (float truncates toward zero).</td><td>magic</td></tr>
+<tr><td><code>to_float(n)</code></td><td><code>int</code>/<code>u32</code>/<code>u64</code>/<code>f32</code> or a <code>float</code>-newtype → <code>float</code>.</td><td>magic</td></tr>
+<tr><td><code>to_u32(x)</code> / <code>to_u64(x)</code> / <code>to_f32(x)</code></td><td>Any numeric scalar (<code>int</code>/<code>char</code>/<code>float</code>/<code>u32</code>/<code>u64</code>/<code>f32</code>, through <code>base_of</code>) → the sized type.</td><td>magic</td></tr>
+<tr><td><code>to_str(x)</code></td><td><code>bytes</code>, or a <code>string</code>-newtype → <code>string</code> (zero-cost reinterpret).</td><td>magic</td></tr>
+<tr><td><code>to_bytes(x)</code></td><td><code>string</code>/<code>bytes</code> (through <code>base_of</code>) → <code>bytes</code> (same buffer, distinct type — zero-cost reinterpret); <strong>or `[int]` → `bytes`</strong>, each element truncated <code>&amp; 0xFF</code> into a fresh buffer (the only way to construct a binary <code>bytes</code> with interior <code>0x00</code>); <strong>or a packed struct → `bytes`</strong>, its exact <code>size_of$(T)</code> bytes, little-endian (<a href="12-aggregates.html#171b-the-bytes-bridge">§17.1b</a>).</td><td>magic</td></tr>
+<tr><td><code>to_bool(x)</code></td><td>A <code>bool</code>-newtype → <code>bool</code> (unwrap).</td><td>magic</td></tr>
+<tr><td><code>to_under(x)</code></td><td>Any newtype → its underlying type (generic zero-cost unwrap).</td><td>magic</td></tr>
+<tr><td><code>chr(n)</code></td><td><code>int -&gt; string</code>: the one-byte string for byte value <code>n</code> (<code>0</code>–<code>255</code>); a value outside <code>0..255</code> <strong>aborts</strong>.</td><td>Sig</td></tr>
+<tr><td><code>to_char(n)</code></td><td><code>int -&gt; char</code>: the byte value <code>n</code> (<code>0</code>–<code>255</code>) as a <a href="03-types.html#524-char">`char`</a>; a value outside <code>0..255</code> <strong>aborts</strong>, with <code>chr</code>'s message — it is the same conversion, differing only in whether the byte comes back as a <code>char</code> or as a one-byte <code>string</code>.</td><td>Sig</td></tr>
+<tr><td><code>to_ptr(n)</code></td><td><code>int -&gt; ptr</code>: an opaque FFI sentinel pointer, never dereferenced (<a href="14-ffi.html">§24</a>).</td><td>Sig</td></tr>
+<tr><td><code>to_u8</code>…<code>to_i64</code>, <code>to_f32</code></td><td>numeric <code>-&gt; </code> the named fixed-width type (<a href="03-types.html#527-fixed-width-integers-u8u16u32u64-i8i16i32i64">§5.2.7</a>); narrow/reinterpret, total.</td><td>Sig</td></tr>
+<tr><td><code>is_null(p)</code></td><td><code>ptr -&gt; bool</code>, and <code>handle -&gt; bool</code>: test an opaque FFI pointer or a typed handle for <code>NULL</code> (<a href="14-ffi.html">§24</a>). On a handle it is how an opener's failure is detected, and it reads true after <code>close(h)</code> (<a href="14-ffi.html">§25</a>).</td><td>Sig</td></tr>
+</table>
+<p>The base-specific <code>to_int</code>/<code>to_float</code>/<code>to_str</code>/<code>to_bool</code> and the generic</p>
+<p><code>to_under</code> are the newtype unwrappers (<a href="06-conversions.html#83-newtype-unwrapping">§8.3</a>,</p>
+<p><a href="03-types.html#54-newtypes">§5.4</a>). <code>str(char)</code> yields the char's one-byte glyph</p>
+<p>string (<a href="03-types.html#524-char">§5.2.4</a>).</p>
+<p><code>to_char</code> is the <strong>only</strong> way into <code>char</code> from an <code>int</code>, and its result type</p>
+<p>cannot be written down — <code>char</code> has no type keyword (<a href="03-types.html#524-char">§5.2.4</a>),</p>
+<p>so <code>to_char</code>, like <code>char_at</code>, is reached through inference alone. Its</p>
+<p>out-of-range answer is an <strong>abort</strong>, not a wrap, following <code>chr</code> and</p>
+<p><code>to_int(float)</code>: those are conversions with a *domain*, and a value outside it is</p>
+<p>a program error. The <code>to_u8</code>…<code>to_i64</code> family wraps instead, but those are</p>
+<p>documented as <strong>total</strong> reinterpretations — a different category, not a</p>
+<p>counter-example. Two limits apply:</p>
+<p>the abort message names <code>chr</code> even when the call was <code>to_char</code>, and <code>to_char</code> is not in the UFCS builtin set, so <code>to_char(n)</code> is the</p>
+<p>only spelling — <code>n.to_char()</code> is not.</p>
+<h2 id="295-strings">29.5 Strings</h2>
+<p><code>string</code> is a byte buffer (<a href="03-types.html#525-string">§5.2.5</a>); every string</p>
+<p>builtin is <strong>byte-oriented</strong>, not Unicode-aware. <code>len</code> is the overloaded length</p>
+<p>builtin shared with arrays, bytes, maps, and <code>soa</code> (§29.6); on a <code>string</code> it</p>
+<p>yields the byte count.</p>
+<table>
+<tr><th>Builtin</th><th>Signature</th><th>Kind</th><th>Semantics</th></tr>
+<tr><td><code>len(s)</code></td><td><code>string -&gt; int</code></td><td>magic</td><td>Byte length. Overloaded (§29.6).</td></tr>
+<tr><td><code>substr(s, a, b)</code></td><td><code>(string, int, int) -&gt; string</code></td><td>Sig</td><td>A fresh copy of the byte range <code>[a, b)</code>; out-of-range bounds are <strong>clamped</strong>, not an error.</td></tr>
+<tr><td><code>find(s, sub)</code></td><td><code>(string, string) -&gt; int</code></td><td>Sig</td><td>Byte index of the first occurrence of <code>sub</code>, or <code>-1</code>.</td></tr>
+<tr><td><code>char_at(s, i)</code></td><td><code>(string, int) -&gt; char</code></td><td>Sig</td><td>The byte at <code>i</code> as a <a href="03-types.html#524-char">`char`</a>. Same read and same bounds abort as <code>s[i]</code> (<a href="03-types.html#525-string">§5.2.5</a>); only the STATIC type differs — <code>s[i]</code> yields <code>int</code>. Aborts at run time if <code>i</code> is out of bounds.</td></tr>
+<tr><td><code>split(s, sep)</code></td><td><code>(string, string) -&gt; [string]</code></td><td>Sig</td><td>Split on a non-empty separator; <code>n</code> separators yield <code>n+1</code> fields. An <strong>empty</strong> <code>sep</code> aborts at run time (§29.12).</td></tr>
+</table>
+<p><code>char_at</code> is the <code>char</code>-typed companion to string indexing. <code>s[i]</code> yields <code>int</code></p>
+<p>and MUST keep yielding <code>int</code>, so <code>s[i] == 'e'</code> is a type error; `char_at(s, i) ==</p>
+<p>'e'` is the supported spelling. The two read the same byte with the same checks, so neither is faster or safer than the</p>
+<p>other, and <code>to_int(char_at(s, i)) == s[i]</code> for every in-range <code>i</code>. See</p>
+<p><a href="03-types.html#525-string">§5.2.5</a> for why the wart exists.</p>
+<h2 id="296-arrays">29.6 Arrays</h2>
+<p>All four array builtins are <strong>magic</strong>. <code>len</code> is overloaded across <code>[T]</code>,</p>
+<p><code>string</code>, <code>bytes</code>, maps, and <code>soa</code>. <code>push</code>, <code>pop</code>, and <code>reserve</code> require a</p>
+<p><strong>mutable</strong> aggregate: their first argument MUST resolve to a place whose root is</p>
+<p>a mutable variable or an owned field — a read-only borrowed parameter is</p>
+<p>rejected — so they may grow or shrink the value in the owning arena.</p>
+<table>
+<tr><th>Builtin</th><th>Signature</th><th>Kind</th><th>Semantics</th></tr>
+<tr><td><code>len(a)</code></td><td><code>[T] -&gt; int</code></td><td>magic</td><td>Element count. Also accepts <code>string</code>, <code>bytes</code>, a map, or a <code>soa</code>.</td></tr>
+<tr><td><code>push(a, v)</code></td><td><code>([T], T) -&gt; void</code></td><td>magic</td><td>Append <code>v</code> in place; <code>a</code> MUST be a mutable array (or <code>soa</code>) place. Grounds a still-pending array type to <code>[typeof(v)]</code>.</td></tr>
+<tr><td><code>pop(a)</code></td><td><code>[T] -&gt; T</code></td><td>magic</td><td>Remove and return the last element; aborts at run time if empty. <code>a</code> MUST be mutable.</td></tr>
+<tr><td><code>reserve(a, n)</code></td><td><code>([T], int) -&gt; void</code></td><td>magic</td><td>Capacity hint: preallocate room for <code>n</code> elements. <code>len</code> is unchanged and pushing past <code>n</code> still grows; an unallocatable capacity aborts. Restricted to arrays of scalars, structs, tuples, or nested arrays (not <code>soa</code>), and to <strong>maps</strong> — <code>reserve(m, n)</code> pre-sizes a map's entry + index arrays.</td></tr>
+</table>
+<h2 id="297-maps">29.7 Maps</h2>
+<p>Map key/value rules and the map operators are in <a href="03-types.html#535-maps-k-v">§5.3.5</a></p>
+<p>and §18. The two map builtins proper are <code>keys</code> and the <code>.get</code></p>
+<p>method sugar; both are <strong>magic</strong>.</p>
+<table>
+<tr><th>Builtin</th><th>Signature</th><th>Kind</th><th>Semantics</th></tr>
+<tr><td><code>keys(m)</code></td><td><code>[K: V] -&gt; [K]</code></td><td>magic</td><td>The map's live keys as an array, for iteration; a newtype key stays wrapped.</td></tr>
+<tr><td><code>m.get(k)</code></td><td><code>([K: V], K) -&gt; V</code></td><td>magic</td><td>Value for <code>k</code>, or the value-type <strong>zero</strong> on a miss. Desugars to the <code>m[k]</code> rvalue read.</td></tr>
+<tr><td><code>m.get(k, d)</code></td><td><code>([K: V], K, V) -&gt; V</code></td><td>magic</td><td>Value for <code>k</code>, or the default <code>d</code> if absent.</td></tr>
+<tr><td><code>hash(x)</code></td><td><code>K -&gt; int</code> for any map-key type <code>K</code></td><td>magic</td><td>The hash the map keys use, exposed: equal-by-<code>==</code> values hash equal; returns the full 64-bit hash as a signed <code>int</code>.</td></tr>
+</table>
+<p><code>hash(x)</code> accepts exactly the map-key types (§5.3.5) — <code>int</code>, <code>string</code>, their</p>
+<p>newtypes, fieldless enums, and composites of hashable leaves; a bare</p>
+<p><code>float</code>/<code>bool</code>/<code>char</code>/<code>bytes</code> is refused (it is a hashable *leaf* but not a</p>
+<p>legal top-level key). It is <strong>deterministic</strong> — fixed keys/seed, so the same</p>
+<p>value hashes the same on every run and every machine (equal-by-<code>==</code> values</p>
+<p>always hash equal) — which makes it usable as a checksum / content-address</p>
+<p>over composites, not just an in-process table hash. The MAP's internal</p>
+<p>hashing stays per-process seeded (hash-flooding defense); only the</p>
+<p>user-facing <code>hash(x)</code> is deterministic. A composite arg gets its per-type hash</p>
+<p>function on demand, so hashing a struct that is never a</p>
+<p>map key still works.</p>
+<p><code>m.get</code> is <strong>method sugar</strong> on a map receiver: <code>m.get(k)</code> is equivalent to the <code>m[k]</code></p>
+<p>rvalue read and <code>m.get(k, d)</code> to the default-read form. It resolves on a map receiver only; on</p>
+<p>any non-map type <code>get</code> falls through to ordinary UFCS resolution.</p>
+<p>The map operators <code>m[k]</code> (as a place and as an absent-key read yielding the</p>
+<p>value's zero), <code>k in m</code>, and <code>delete m[k]</code> are <strong>not</strong> builtins — they are</p>
+<p>operators/keywords specified in §18. The former functions</p>
+<p><code>map_set</code>, <code>map_get</code>, <code>map_has</code>, and <code>map_del</code> have been <strong>removed</strong>: a</p>
+<p>user-written call to any of them is a <strong>hard parse error</strong> directing the author</p>
+<p>to <code>m[k] = v</code>, <code>m.get(k, default)</code>, <code>k in m</code>, and <code>delete m[k]</code> respectively.</p>
+<p>(The identically-named nodes that the desugars build internally are not</p>
+<p>user-callable.)</p>
+<h2 id="298-type-builtins">29.8 Type builtins</h2>
+<table>
+<tr><th>Builtin</th><th>Signature</th><th>Kind</th><th>Semantics</th></tr>
+<tr><td><code>zero$(T)</code></td><td><code>-&gt; T</code></td><td>magic</td><td>The zero value of a <strong>defaultable</strong> scalar type <code>T</code>.</td></tr>
+</table>
+<p><code>zero$(T)</code> uses the explicit type-argument call form (<code>name$(T, …)</code>, §7.1) and is</p>
+<p>the one builtin that consumes it specially. <code>T</code> MUST be one of the four</p>
+<p>defaultable scalar types — <code>int</code> (<code>0</code>), <code>float</code> (<code>0.0</code>), <code>bool</code> (<code>false</code>),</p>
+<p><code>string</code> (<code>""</code>) — matching the <code>defaultable</code> <code>where</code>-predicate</p>
+<p>(<a href="05-generics.html">§7.2</a>, <a href="05-generics.html">§7.5</a>); a <strong>newtype</strong> or any other type</p>
+<p>is rejected (fails closed). It takes <strong>no</strong> value arguments and is lowered to the</p>
+<p>scalar zero literal, so it needs no runtime support. It exists to seed a generic</p>
+<p>accumulator (<code>acc := zero$(T)</code>) that must work on an empty input.</p>
+<table>
+<tr><th>Builtin</th><th>Signature</th><th>Kind</th><th>Semantics</th></tr>
+<tr><td><code>size_of$(T)</code></td><td><code>-&gt; int</code></td><td>magic</td><td>The size of the packed or <code>align(N)</code> struct <code>T</code> in bytes (§17.1b).</td></tr>
+<tr><td><code>from_bytes$(T)(b)</code></td><td><code>bytes -&gt; T</code></td><td>magic</td><td>Read a packed struct back out of exactly <code>size_of$(T)</code> bytes.</td></tr>
+</table>
+<p>Both use the same explicit type-argument call form as <code>zero$(T)</code>, and both</p>
+<p>restrict <code>T</code> to a <strong>packed struct</strong> (or a newtype over one) — no other type has</p>
+<p>a stated layout to read or write. <code>from_bytes$(T)</code> requires the length to match</p>
+<p><strong>exactly</strong>; any other length is a runtime error naming the type and both</p>
+<p>lengths. The byte order is little-endian on every host.</p>
+<p><a href="12-aggregates.html#171b-the-bytes-bridge">§17.1b</a> is the normative description.</p>
+<p>There is <strong>no</strong> <code>empty$(T)</code> builtin. An <code>empty()</code> returning <code>[$T]</code> is an ordinary</p>
+<p>user-written generic, and <code>empty$(int)</code> is merely the <code>name$(…)</code> call form</p>
+<p>applied to it (<a href="05-generics.html">§7.5</a>).</p>
+<h2 id="299-concurrency">29.9 Concurrency</h2>
+<p>The concurrency model — tasks, channels, and their ordering guarantees — is</p>
+<p><a href="13-concurrency.html">§20</a>; this section catalogs only the builtins</p>
+<p>and their static rules. <code>Task(T)</code> and <code>Channel(T)</code> are affine, non-storable</p>
+<p>handle types with no type syntax (<a href="03-types.html#539-typed-handles">§5.3.9</a>); the</p>
+<p>builtins below are their only consumers.</p>
+<table>
+<tr><th>Builtin</th><th>Signature</th><th>Kind</th><th>Semantics</th></tr>
+<tr><td><code>wait(t)</code></td><td><code>Task(T) -&gt; T</code></td><td>magic</td><td>Join a spawned task and yield its result, deep-copied into the waiting scope. The argument MUST be a task variable or a <code>spawn</code> expression; exactly one <code>wait</code> per task.</td></tr>
+<tr><td><code>channel(T, cap)</code></td><td><code>-&gt; Channel(T)</code></td><td>magic</td><td>Create a bounded channel of capacity <code>cap</code> (an <code>int</code>). <strong>Legal only as the direct RHS of a declaration</strong> (<code>ch := channel(T, cap)</code>); any other position is a compile error.</td></tr>
+<tr><td><code>send(ch, v)</code></td><td><code>(Channel(T), T) -&gt; void</code></td><td>magic</td><td>Deep-copy <code>v</code> into the channel; blocks when full; aborts if the channel is closed.</td></tr>
+<tr><td><code>recv(ch)</code></td><td><code>Channel(T) -&gt; Option(T)</code></td><td>magic</td><td>Blocking receive (deep-copied out); <code>None</code> means the channel is closed <strong>and</strong> drained.</td></tr>
+<tr><td><code>close(ch)</code></td><td><code>Channel(T) -&gt; void</code></td><td>magic</td><td>Close a channel: receivers drain then see <code>None</code>. Also <code>close(h)</code> on a <strong>handle</strong> variable (<a href="14-ffi.html">§25</a>): run its destructor early and suppress the scope-exit free.</td></tr>
+<tr><td><code>ncpu()</code></td><td><code>-&gt; int</code></td><td>Sig</td><td>The number of online CPUs, or the value of <code>TYCHO_THREADS</code> when that variable is set to an integer ≥ 1. This is the *requested* worker count, <strong>not</strong> the width a <code>parallel for</code> will actually use: the chunk count is <code>min(ncpu(), N)</code> and an implementation MAY cap it further — the reference caps it at 64 (<a href="13-concurrency.html#22-parallel-for">§22</a>). A program that sizes a buffer or a work split from <code>ncpu()</code> MUST NOT assume that many chunks run.</td></tr>
+</table>
+<p><code>send</code>, <code>recv</code>, and <code>close</code> also have method-sugar forms on a channel-typed local</p>
+<p>(<code>ch.send(v)</code>, <code>ch.recv()</code>, <code>ch.close()</code>), rewritten to the free-call forms; <code>wait</code></p>
+<p>likewise as <code>t.wait()</code>. <code>close</code> is overloaded across a channel and an FFI handle;</p>
+<p><code>ncpu</code> is the sole <code>Sig</code> builtin here.</p>
+<h2 id="2910-filesystem-and-time">29.10 Filesystem and time</h2>
+<p>All five are <code>Sig</code> builtins with fixed signatures. The file and directory</p>
+<p>builtins <strong>fail soft</strong> — an unopenable path yields the empty result rather than</p>
+<p>aborting.</p>
+<table>
+<tr><th>Builtin</th><th>Signature</th><th>Kind</th><th>Semantics</th></tr>
+<tr><td><code>read_file(path)</code></td><td><code>string -&gt; string</code></td><td>Sig</td><td>The whole file as a <code>string</code>, or <code>""</code> if it cannot be opened.</td></tr>
+<tr><td><code>write_file(path, s)</code></td><td><code>(string, string) -&gt; bool</code></td><td>Sig</td><td>Write <code>s</code>'s exact bytes, truncating; <code>false</code> if it cannot be opened.</td></tr>
+<tr><td><code>list_dir(path)</code></td><td><code>string -&gt; [string]</code></td><td>Sig</td><td>Entries excluding <code>.</code> and <code>..</code> (filesystem order); empty if the directory cannot be opened.</td></tr>
+<tr><td><code>clock()</code></td><td><code>-&gt; int</code></td><td>Sig</td><td>Monotonic nanoseconds — differences are meaningful; the absolute value is not.</td></tr>
+<tr><td><code>now()</code></td><td><code>-&gt; int</code></td><td>Sig</td><td>Wall-clock seconds since the UNIX epoch.</td></tr>
+</table>
+<h2 id="2911-float-math-libm">29.11 Float math (libm)</h2>
+<p>The float-math builtins are the <strong>entire</strong> libm surface exposed as language</p>
+<p>builtins — exactly the four below, all <code>Sig</code>, all over <code>float</code>:</p>
+<table>
+<tr><th>Builtin</th><th>Signature</th><th>Kind</th></tr>
+<tr><td><code>sqrt(x)</code></td><td><code>float -&gt; float</code></td><td>Sig</td></tr>
+<tr><td><code>pow(x, y)</code></td><td><code>(float, float) -&gt; float</code></td><td>Sig</td></tr>
+<tr><td><code>floor(x)</code></td><td><code>float -&gt; float</code></td><td>Sig</td></tr>
+<tr><td><code>fabs(x)</code></td><td><code>float -&gt; float</code></td><td>Sig</td></tr>
+</table>
+<p>Other numeric functions — <code>min</code>, <code>max</code>, <code>clamp</code>, and the trigonometric functions</p>
+<p>— are <strong>not</strong> builtins; they are provided by the standard library (§31)</p>
+<p>and require an import.</p>
+<h2 id="2912-abnormal-termination">29.12 Abnormal termination</h2>
+<p>Tycho has exactly <strong>two</strong> user-callable process terminators, and both MUST NOT</p>
+<p>return:</p>
+<table>
+<tr><th>Builtin</th><th>Status</th><th>Writes</th><th>Use</th></tr>
+<tr><td><code>die(msg)</code></td><td>always <code>1</code></td><td><code>msg</code> + <code>"\n"</code> to stderr</td><td>an abort with a reason</td></tr>
+<tr><td><code>exit(code)</code></td><td><code>code</code></td><td>nothing</td><td>an ordinary answered exit, including <code>exit(0)</code></td></tr>
+</table>
+<p><code>exit(code)</code> passes <code>code</code> to the host's process-exit facility, so on POSIX only</p>
+<p>the low 8 bits are observable by the parent (<code>wait(2)</code>), exactly as in C. Buffered</p>
+<p>stdout written before the call is flushed. <code>exit</code> exists because <code>die</code> cannot</p>
+<p>answer <code>--help</code>: a program that has done what it was asked needs status <code>0</code>, and</p>
+<p>routing that through <code>die</code> would report failure. There is <strong>no</strong> <code>assert</code>,</p>
+<p><code>panic</code>, or <code>abort</code> builtin — no such name is registered in <code>register_builtins</code></p>
+<p>and none is special-cased in <code>resolve_expr</code> (verified by searching</p>
+<p>).</p>
+<h3 id="29121-both-are-diverging-calls">29.12.1 Both are DIVERGING calls</h3>
+<p><code>die</code> and <code>exit</code> are declared <code>-&gt; void</code> (Tycho has no bottom type), but the</p>
+<p>compiler additionally models them as <strong>diverging</strong>: control does not leave the</p>
+<p>call. A conforming implementation MUST therefore accept either one as the tail of</p>
+<p>a value <code>if</code>/<code>match</code> branch, even though the branch produces no value:</p>
+<pre><code class="language-tycho">import "core:net"
+
+host := "127.0.0.1"
+port := 8080
+
+_srv := match net.listen(host, port):
+    Ok(fd): fd
+    Err(e): die("cannot bind")
+</code></pre>
+<p>A diverging tail takes no part in branch unification (<a href="04-inference.html">§6.5</a>) and</p>
+<p>is not rewritten into an assignment to the destination — it stays the plain</p>
+<p>statement it is. If <strong>every</strong> branch diverges there is nothing to bind and the</p>
+<p>declaration is rejected; write the <code>if</code>/<code>match</code> as a statement instead.</p>
+<p>Divergence is recognized by name, and that is sound rather than convenient:</p>
+<p><code>die</code>/<code>exit</code> are registered builtins, so a program that defines either name is</p>
+<p>rejected (<code>error: 'die' is already defined</code>) and the name cannot mean anything</p>
+<p>else. A qualified <code>pkg.die</code> or a call through a function *value* is not diverging.</p>
+<p>The runtime does abort on its own for defined error conditions — an</p>
+<p>out-of-bounds index, a <code>pop</code> on an empty array, division or modulo by a zero</p>
+<p>*value*, a <code>split</code> on an empty separator, a <code>send</code> on a closed channel, and the</p>
+<p>other cases enumerated in <a href="17-runtime.html">§30</a>. Those aborts are</p>
+<p><strong>internal</strong>: they are emitted by the runtime, not exposed as callable functions,</p>
+<p>and a conforming program cannot invoke them directly. This is the language's</p>
+<p><strong>fail-closed</strong> posture (<a href="00-conventions.html#13-conformance">§1.3</a>) — abnormal</p>
+<p>conditions terminate rather than proceed into undefined behavior.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

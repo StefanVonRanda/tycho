@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Generics — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / reference/generics.md</nav>
+<h1 id="generics">Generics</h1>
+<blockquote>
+<p><strong>Memory:</strong> each instantiation is ordinary concrete code, so the same</p>
+<p>per-scope freeing applies. Generics add no pointers and no aliasing.</p>
+</blockquote>
+<p>A type parameter is written <code>$T</code>. Generic functions, structs, and enums are <strong>monomorphized</strong> —</p>
+<p>the transpiler stamps out a concrete copy per type the code actually uses, so a generic costs nothing at runtime. There are no type</p>
+<p>classes or trait bounds; the small <code>where</code> predicate set is the only way to constrain a parameter.</p>
+<h2 id="generic-functions">Generic functions</h2>
+<p>A function parameterized by <code>$T</code> (introduce the parameter with <code>$</code> once; refer to it as <code>T</code></p>
+<p>after):</p>
+<pre><code class="language-tycho">fn id(x: $T) -&gt; T:
+    return x
+
+fn first(xs: [$T]) -&gt; Option(T):
+    if len(xs) &gt; 0:
+        return Some(xs[0])
+    return None
+</code></pre>
+<p>A <code>where</code> clause constrains the parameter to a fixed predicate set, so an</p>
+<p>operation the body relies on is checked at the call. The set is <strong>closed at five</strong> —</p>
+<p>there is no way to add one:</p>
+<table>
+<tr><th>predicate</th><th>satisfied by</th></tr>
+<tr><td><code>numeric(T)</code></td><td><code>int</code>, <code>float</code></td></tr>
+<tr><td><code>comparable(T)</code></td><td><code>int</code>, <code>char</code>, <code>float</code>, <code>string</code></td></tr>
+<tr><td><code>has_str(T)</code></td><td><code>int</code>, <code>bool</code>, <code>float</code>, <code>string</code></td></tr>
+<tr><td><code>hashable(T)</code></td><td>any legal map key type — and it admits <code>K</code> as a map key *inside* the body</td></tr>
+<tr><td><code>defaultable(T)</code></td><td>exactly <code>int</code>, <code>float</code>, <code>bool</code>, <code>string</code></td></tr>
+</table>
+<p>Several constraints are separated by <strong>commas</strong>, not <code>and</code>:</p>
+<p><code>where defaultable(T), numeric(T)</code>.</p>
+<p>The first four see through a newtype (they test the underlying capability); <code>defaultable</code> does</p>
+<p>not, so <code>zero$(X)</code> fails for a newtype even over a defaultable base.</p>
+<pre><code class="language-tycho">fn maxv(a: $T, b: $T) -&gt; T where comparable(T):
+    if a &gt; b:
+        return a
+    return b
+</code></pre>
+<h2 id="explicit-type-arguments-and-zerot">Explicit type arguments and <code>zero$(T)</code></h2>
+<p>Type arguments are normally inferred from the arguments. Where they cannot be — a payload-less</p>
+<p>generic enum variant, or an empty generic variadic — supply them with <code>name$(T, …)</code>, which</p>
+<p>binds the declaration's parameters in order:</p>
+<pre><code class="language-tycho">fn count(xs: ...$T) -&gt; int:
+    return len(xs)
+
+fn main():
+    println(str(count(1, 2, 3)))    # inferred: T = int
+    println(str(count$(int)()))     # named: nothing to infer from
+</code></pre>
+<p>The name may be package-qualified (<code>vp.pair$(int, string)(1, "a")</code>). <code>zero$(T)</code> is the one builtin that consumes this form: it yields the</p>
+<p>zero value of a <code>defaultable</code> type, which is what lets a fold seed an accumulator without the</p>
+<p>caller supplying one (<code>acc := zero$(T)</code>).</p>
+<h2 id="generic-structs-and-enums">Generic structs and enums</h2>
+<pre><code class="language-tycho">struct Box($T):
+    v: $T
+
+enum Tree($T):
+    Leaf($T)
+    Node([Tree($T)])        # recursive, generic payload through a container
+</code></pre>
+<p>Construct an instance by supplying values; the type argument is inferred from them — <code>Box(7)</code> is</p>
+<p>a <code>Box(int)</code>, and <code>Leaf(7)</code> a <code>Tree(int)</code>. A payload-less variant that cannot fix the parameter</p>
+<p>from a value takes an <strong>explicit type argument</strong>: <code>Empty$(int)</code>.</p>
+<p>Generic enums work like generic structs, including **recursive payloads that</p>
+<p>name the enum itself** — directly (<code>Node(Tree($T), $T, Tree($T))</code>) and through a container</p>
+<p>(<code>Node([Tree($T)])</code>).</p>
+<p><strong>A type argument list is all-parameters or all-concrete.</strong> Applying a generic to</p>
+<p>its own parameters, in order, is a recursive reference and is deferred until the</p>
+<p>instance is built:</p>
+<pre><code class="language-tycho">struct Node($T):
+    v: $T
+    kids: [Node($T)]
+</code></pre>
+<p>Anything else must be entirely concrete — <code>Index(string, [float])</code>. A list that</p>
+<p>mixes the two is refused even when each argument alone would be legal, so</p>
+<p><code>Index($K, [float])</code> does not work in a parameter position and neither does</p>
+<p><code>Index($K, [$V])</code>. Write the helper against the concrete instantiation, or make</p>
+<p>it generic over the whole struct (<code>ix: inout Index($K, $V)</code>).</p>
+<h2 id="composition">Composition</h2>
+<p>A generic type composes with the rest of the language uniformly — a <code>Box(int)</code> may be a map</p>
+<p>value, a channel element, a <code>Task</code> result, a struct field, or another generic's argument</p>
+<p>(<code>Box(Box(int))</code>), and a generic function may return a generic value. Each combination is just</p>
+<p>another monomorphized instance.</p>
+<h2 id="how-inference-works">How inference works</h2>
+<p><code>$T</code> is introduced at its first appearance and inferred from the argument</p>
+<p>by structural match — the parameter pattern and the argument type are walked</p>
+<p>together, and where the pattern says <code>$T</code>, that concrete type is recorded:</p>
+<pre><code class="language-text">pattern:  [ $T ]          arg type: [int]            =&gt;  T := int
+pattern:  Option($T)      arg type: Option(string)   =&gt;  T := string
+pattern:  [$K: $V]        arg type: [string: [int]]  =&gt;  K := string, V := [int]
+</code></pre>
+<ul>
+<li>Each parameter is bound by the first argument that pins it. A later</li>
+</ul>
+<p>argument that disagrees is a call-site type error.</p>
+<ul>
+<li>Inference runs left to right, with no backtracking.</li>
+<li>A parameter that never appears in an argument type cannot be inferred —</li>
+</ul>
+<p>supply it explicitly (<code>empty$(int)</code>).</p>
+<ul>
+<li>The body is substituted and checked as ordinary concrete code. A body</li>
+</ul>
+<p>error points at the instantiation that triggered it; a <code>where</code> clause</p>
+<p>turns it into a signature error instead.</p>
+<pre><code class="language-tycho">fn sum(xs: [$T]) -&gt; T where numeric(T):
+    total := zero$(T)
+    for x in xs:
+        total = total + x
+    return total
+</code></pre>
+<p>A <code>where</code> on a non-generic function, an unknown predicate, or a name that</p>
+<p>is not a type parameter is rejected. A constraint may also be a type set —</p>
+<p><code>where T: int | float</code> — checked at instantiation like the predicates.</p>
+<p>A generic free function works as a method through UFCS: <code>xs.first()</code> is</p>
+<p><code>first(xs)</code>.</p>
+<h2 id="non-goals">Non-goals</h2>
+<p>Not supported, to keep the surface small:</p>
+<ul>
+<li>No runtime generics, boxing, or type erasure — always monomorphized.</li>
+<li>No variance, higher-kinded types, or associated types.</li>
+<li>No user-defined type classes or traits.</li>
+<li>No generic globals.</li>
+<li>No specialization of one generic for particular types.</li>
+<li>No implicit numeric coercion through <code>$T</code> — <code>$T</code> bound to <code>Meters</code></li>
+</ul>
+<p>stays <code>Meters</code>.</p>
+<hr/>
+<p>How this is implemented — binding, interning, determinism — is in</p>
+<p><a href="../internals/design-generics.html">design-generics</a>, for maintainers.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

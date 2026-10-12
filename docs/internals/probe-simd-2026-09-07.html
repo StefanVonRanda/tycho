@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Layout/SIMD probe, 2026-09-07 — four new features, no findings — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / internals/probe-simd-2026-09-07.md</nav>
+<h1 id="layoutsimd-probe-2026-09-07--four-new-features-no-findings">Layout/SIMD probe, 2026-09-07 — four new features, no findings</h1>
+<p><strong>Verdict: zero defects, zero doc gaps. Probed 2026-09-07 against `packed`, `align(N)`, `vector[N]T`, and swizzling with a 57-line pixel kernel. Outcome: recorded because a probe that finds nothing is the one most likely to go unwritten.</strong></p>
+<p>The first probe aimed at the surface the freeze was broken for. <code>packed</code>,</p>
+<p><code>align(N)</code>, <code>vector[N]T</code> and groups/swizzling shipped 2026-09-04 and 2026-09-05;</p>
+<p>every probe record before this one is dated 2026-08-19 or 2026-08-20, so nothing</p>
+<p>outside this repo had driven any of them.</p>
+<p>The agent wrote a 57-line pixel kernel using all four, and it worked on the first</p>
+<p>pass. <strong>Zero doc gaps, zero defects.</strong> That is the result.</p>
+<h2 id="what-it-exercised">What it exercised</h2>
+<p><code>packed struct</code> over four <code>u8</code> fields with a <code>to_bytes</code> / <code>from_bytes</code> round</p>
+<p>trip; <code>align(8) struct</code> over three <code>f32</code>; <code>vector[4]f32</code> multiplied by a</p>
+<p>broadcast scalar; and <code>bright.(r, b) = bright.(b, r)</code>, the swizzle form of</p>
+<p>simultaneous assignment. It read the emitted C and confirmed the four attributes</p>
+<p>landed — <code>packed</code>, <code>aligned(8)</code>, <code>vector_size</code>, and a swizzle lowered as</p>
+<p>read-both-then-write-both.</p>
+<h2 id="the-five-things-it-reported-and-why-none-is-a-finding">The five things it reported, and why none is a finding</h2>
+<p>Each was checked against <code>main</code> before being dismissed, per</p>
+<p><code>docs/internals/probe-procedure.md</code>'s "check each finding against main" step.</p>
+<table>
+<tr><th>reported</th><th>verdict</th></tr>
+<tr><td>no ternary; <code>if</code> is an expression only in tail position</td><td>documented, and the agent quotes the section that says so</td></tr>
+<tr><td><code>vector[N]T</code> elements limited to <code>int</code>/<code>float</code>/<code>f32</code></td><td>documented with its rationale; the agent wanted <code>vector[4]u8</code> for byte work, which is a design objection</td></tr>
+<tr><td><code>to_f32(u8)</code> "worked via implicit widening" against a doc that says <code>float</code></td><td><strong>the agent misread the doc.</strong> <code>docs/reference/builtins.md:121</code> says <code>numeric -&gt; f32</code>, and <code>docs/spec/06-conversions.md:40</code> documents the conversion as <strong>total</strong> over any sized int/float. Re-run here: <code>to_f32</code> on a <code>u8</code> field gives <code>200.0</code>. Nothing undocumented occurred</td></tr>
+<tr><td>no <code>range</code> in <code>for</code></td><td>documented</td></tr>
+<tr><td><code>println</code> is string-only</td><td>documented</td></tr>
+</table>
+<p>The third is worth keeping. An agent reporting a doc as wrong, when the</p>
+<p>doc is right and says so two lines from where it looked, is a failure mode a</p>
+<p>probe report will always be able to produce — so a report's own citations have to</p>
+<p>be opened, not trusted.</p>
+<h2 id="run-under-the-sanitizers-separately">Run under the sanitizers, separately</h2>
+<p><code>docs/internals/probe-procedure.md</code> says to build the agent's code yourself</p>
+<p>because the 2026-08-19 run's best finding was never in its log. Done here: the</p>
+<p>emitted C at <code>-fsanitize=address,undefined -fno-sanitize-recover=all -O1 -fwrapv</code></p>
+<p>with <code>detect_leaks=1</code> exits 0 and prints output byte-identical to the plain</p>
+<p>build. No hidden finding this time.</p>
+<h2 id="a-defect-in-the-procedure-itself">A defect in the procedure itself</h2>
+<p><code>docs/internals/probe-procedure.md</code> states its goal as the agent being unable to</p>
+<p>read compiler source, then lists deletions that leave <code>compiler/</code> in place — 19</p>
+<p>files including <code>compiler/parse/parse.ty</code> and the typechecker, which is a syntax</p>
+<p>oracle for exactly the features under test. It was deleted by hand for this run.</p>
+<p><strong>Every round since `compiler/` entered the tree had this leak.</strong> That weakens</p>
+<p>those records rather than voiding them — an agent that can read a parser is still</p>
+<p>not the author — but it is unmeasured, and the delete list names</p>
+<p><code>compiler</code>.</p>
+<h2 id="what-this-does-not-establish">What this does not establish</h2>
+<p>One program, one surface, 361 seconds. The agent's own "did not check" list is</p>
+<p>the boundary: no non-x86 host, the <code>packed</code> pad byte never read back, and</p>
+<p><code>align(8)</code>'s trailing padding confirmed in the emitted C but never measured at</p>
+<p>run time. The program was thrown away; this record is the artifact.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

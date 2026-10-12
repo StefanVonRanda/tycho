@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What the next program says the language needs — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / internals/plan-tycho-chess-DONE.md</nav>
+<h1 id="what-the-next-program-says-the-language-needs">What the next program says the language needs</h1>
+<p><strong>Status: DONE 2026-08-04. Program: chess engine (`tools/tycho-chess/`, ~740 lines). Outcome: perft against published ground truth, alpha-beta + parallel root search shipped, `make chess-check` green; no language gap — third zero-defect program in a row.</strong></p>
+<blockquote>
+<p>This plan is a fresh clone, 2026-08-03: the completed tycho-kv plan lives at</p>
+<p><code>docs/internals/plan-tycho-kv-DONE.md</code>. The rule from that plan holds here:</p>
+<p>*does anything that is not the program written to want it need this?* A</p>
+<p>finding becomes a phase only when a second, independent caller exists.</p>
+</blockquote>
+<h2 id="the-program">The program</h2>
+<p><strong>A chess engine</strong> -- <code>tools/tycho-chess/</code>, bitboards (64-bit ints are the</p>
+<p>natural piece map), move generation, make/unmake, perft, and alpha-beta search with a transposition table and a PARALLEL root</p>
+<p>search via <code>parallel for</code>.</p>
+<p><strong>Phase 1 is DONE (2026-08-04):</strong> the engine and its gate. <code>main.ty</code> is ~740</p>
+<p>lines: bitboard <code>Board</code> (6×2 piece maps + side/castling/ep), attack tables,</p>
+<p>FEN parser, pseudo-legal movegen, <code>make_move</code> returning a NEW board (value</p>
+<p>semantics, no unmake), legality via make + <code>in_check</code>, perft with per-root</p>
+<p>divide output, CLI <code>perft &lt;depth&gt; [fen]</code>. <code>make chess-check</code> (in <code>make ci</code> as</p>
+<p>step [3j/16]) asserts perft totals against PUBLISHED ground truth, and the</p>
+<p>divide transcript is golden-locked.</p>
+<p>The differential is GROUND TRUTH: perft (legal move counting) has exact</p>
+<p>published values for standard positions. Verified totals (GoBit's</p>
+<p>perft_tests.txt):</p>
+<ul>
+<li>Start: 20 / 400 / 8,902 / 197,281 / <strong>4,865,609</strong></li>
+<li>Kiwipete: 48 / 2,039 / 97,862 / <strong>4,085,603</strong></li>
+<li>Position 3: 14 / 191 / 2,812 / 43,238 / 674,624 / <strong>11,030,083</strong></li>
+</ul>
+<p>perft(5) on the start (4,865,609), Kiwipete(4), and Position 3(6)</p>
+<p>(11,030,083) are the deep checks; the divide goldens lock the per-root</p>
+<p>counts, which move if any subtree's movegen changes even when the total</p>
+<p>doesn't. The gate also asserts five edge positions (bare castling, king</p>
+<p>endgames, an en-passant capture, both-side promotions) against the</p>
+<p>python-chess oracle -- the standard positions' trees never reach a promotion</p>
+<p>or an ep capture, so the published totals alone cannot see those code paths.</p>
+<p>~3M nodes/sec; the gate runs ~10s.</p>
+<p><strong>Phase 2 (search) is DONE (2026-08-04):</strong> negamax alpha-beta, quiescence,</p>
+<p>PST eval, exact-only transposition table, <code>search &lt;depth&gt; [fen]</code> CLI, and the</p>
+<p>search assertions in <code>make chess-check</code> (determinism, TT-invariance, three</p>
+<p>exact tactical probes). Parallel root search via</p>
+<p><code>parallel for</code> shipped — see below.</p>
+<h2 id="findings">Findings</h2>
+<ul>
+<li>**The published-total differential caught a bug the start position cannot</li>
+</ul>
+<p>see.** The first cut matched start/kiwipete/pos3 through the shallow</p>
+<p>depths, then drifted: Kiwipete d3 one over, pos3 d2 +23. The cause was the</p>
+<p>four file-edge guards in pawn attack detection, swapped (<code>sq % 8 != 7</code></p>
+<p>where <code>!= 0</code> belongs, and vice versa). The start position's tree at d1-5</p>
+<p>never contains the shapes that manifest it -- an h-file king escape that</p>
+<p>must be filtered (h4h3 after e2e3, attacked by the g2 pawn) or a check</p>
+<p>the king must answer (g2g3 checking h4: the unfiltered escape moves</p>
+<p>inflated pos3's d2 by 23). Pass all standard positions at shallow depth</p>
+<p>and still be wrong: the edge FENs (ep, promotion, castling, edge-file</p>
+<p>kings) are what made the guard shape observable. The oracle differential</p>
+<p>(python-chess) and the per-root divide both reddened; the fix was four</p>
+<p>conditions, and all three positions went exact through d5/d4/d6.</p>
+<ul>
+<li>**Operator precedence is documented and C-like: <code>a &amp; b != 0</code> parses as</li>
+</ul>
+<p><code>(a &amp; b) != 0</code>** (<code>docs/spec/appendix-c-precedence.md</code>: bitwise <code>&amp;</code> binds</p>
+<p>at level 3, equality at level 2 -- Go-style). The initial</p>
+<p>reading had it backwards; the unchanged totals proved the</p>
+<p>edit a no-op -- the differential settles precedence questions too. Bitboard code needs only <code>&amp;</code>, <code>|</code>, <code>&lt;&lt;</code>, <code>&gt;&gt;</code>, <code>~</code> and parens, all</p>
+<p>present.</p>
+<ul>
+<li><strong>Value semantics held on a hot path.</strong> <code>make_move</code> returns a whole new</li>
+</ul>
+<p><code>Board</code> (6×2 bitboards + flags, ~100 bytes) per node -- no unmake</p>
+<p>machinery, no move undo stack -- and perft still runs ~3M nodes/sec. The</p>
+<p>copy-per-node design the language's value semantics push toward is not a</p>
+<p>perft liability at this scale.</p>
+<ul>
+<li><strong>No language gap -- third program in a row.</strong> The engine needed bitboard</li>
+</ul>
+<p>ints, fixed arrays, <code>&amp;</code>-masking, struct value copies, string slicing for</p>
+<p>FEN parsing, and match-free branching; all present, zero compiler/runtime</p>
+<p>defects. The syntax tax: <code>int64</code> does not exist (the</p>
+<p>type is <code>int</code>, 64-bit), no hex literals at the time (the castling masks</p>
+<p>stood as decimal; hex shipped via the RSA plan), <code>while</code> is</p>
+<p><code>for cond:</code>.</p>
+<h2 id="phases">Phases</h2>
+<p>(none -- the program's own milestones below are next; a finding becomes</p>
+<p>a phase only when a second, independent caller needs it)</p>
+<h3 id="next-program-milestone----alpha-beta-search--transposition-table--done-2026-08-04">Next program milestone -- alpha-beta search + transposition table  [DONE 2026-08-04]</h3>
+<p>The search shipped in the same commit as the engine: negamax alpha-beta with</p>
+<p>an exact-only transposition table (below), a PST-based eval (the classic</p>
+<p>simplified-evaluation tables), and a quiescence search. <code>search &lt;depth&gt; [fen]</code></p>
+<p>reports per-root scores and the best line; <code>make chess-check</code> asserts the</p>
+<p>search properties. Three bugs were caught on the way, all by the differential:</p>
+<p>1. <strong>The negamax leaf sign.</strong> <code>evaluate()</code> is white-positive; the depth-0 leaf</p>
+<p>must return the value from the SIDE-TO-MOVE's perspective. Returning the</p>
+<p>unnegated eval inverted every odd-depth-from-white search -- caught by the</p>
+<p>Rxc2 probe (depth 1 said -500 for winning a free queen, depth 2 said +500).</p>
+<p>2. <strong>The horizon effect (not a search bug, a missing quiescence).</strong> At depth 6</p>
+<p>from the start every move scored -100: the last ply's eval "won" a pawn</p>
+<p>(3...Nxf7) one ply short of the recapture. Quiescence (captures + checks,</p>
+<p>stand-pat cutoff, delta pruning, depth caps) fixed it.</p>
+<p>3. <strong>No quiet-move ordering = no pruning.</strong> order_captures only lifted</p>
+<p>captures; in capture-free positions the alpha-beta degenerated to ~full</p>
+<p>search -- measured 16x per ply (d3 116ms -&gt; d4 1.9s -&gt; d5 26s -&gt; d6 3min).</p>
+<p>PST-aware move ordering collapsed it to the sqrt-shape (d6 3.1s).</p>
+<p>The TT is deliberately EXACT-ONLY and same-depth: bound entries are never</p>
+<p>stored, so a probe returns only the true minimax value at that depth and the</p>
+<p>TT provably cannot change a result -- it cuts transpositions and reorders</p>
+<p>moves. The gate asserts exactly that (<code>search</code> twice is byte-identical and</p>
+<p><code>search-nott</code> reports the same best line) plus three exact tactical probes:</p>
+<p>the rook taking a free queen (+510), a hanging queen (+510), and the</p>
+<p>scholar's mate (Qxf7# = 100000). The PST-only eval keeps quiet-position</p>
+<p>values approximate (depth-5 from the start ties many moves at 0); the probes pin the parts that must be exact.</p>
+<h3 id="next-program-milestone----parallel-root-search--done-2026-08-04">Next program milestone -- parallel root search  [DONE 2026-08-04]</h3>
+<p><code>search_root_par</code> fans the root moves out over <code>parallel for</code>, one full-window</p>
+<p>search per task, results sent on a <code>Channel</code> and merged by (score, index).</p>
+<p>Result: <code>parallel for</code> handles the dynamic</p>
+<p>work set (the root move count), per-item results leave the loop through a</p>
+<p>channel (the only legal outer write beside <code>+</code>/<code>*</code> reductions), and the</p>
+<p>merged best line equals the serial search's on every gated position, with</p>
+<p>byte-identical repeats. The TT needed no sharing decision: the loop</p>
+<p>deep-copies its captures per chunk, so each task searches with its OWN</p>
+<p>exact-only table from cold -- correct by construction (the TT provably never</p>
+<p>changes a result) and no race. Cost: with no shared best-so-far</p>
+<p>to prune against, every task runs a full-window search, so the parallel root</p>
+<p>is a correctness probe, not a speedup -- measured 13s vs 2.8s on kiwipete</p>
+<p>d4; the gate runs it on the fast positions (start d5, pos3 d5, scholar d3).</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

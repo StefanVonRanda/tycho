@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Generics design notes (maintainers) — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / internals/design-generics.md</nav>
+<h1 id="generics-design-notes-maintainers">Generics design notes (maintainers)</h1>
+<p>Why the behavior in <a href="../reference/generics.html">reference/generics.md</a></p>
+<p>is sound. Users don't need this page.</p>
+<h2 id="strategy">Strategy</h2>
+<p>Binding-based monomorphization, no AST cloning. At a call site or type</p>
+<p>use, bind <code>$</code> parameters by structural match, intern</p>
+<p><code>(generic_def, [concrete args])</code> in a side table (same pattern as</p>
+<p><code>opt_of</code> / <code>arr_of</code> / <code>mapc_of</code>), and emit one substituted concrete</p>
+<p>copy on first use. Mangled names carry the args</p>
+<p>(<code>first__int</code>, <code>Pair__int__string</code>). After substitution the body flows</p>
+<p>through resolve + codegen unchanged.</p>
+<h2 id="why-it-fits-the-memory-model">Why it fits the memory model</h2>
+<p>Monomorphization runs before escape analysis. Each instantiation is</p>
+<p>already concrete value-semantic code, so the same per-signature escape</p>
+<p>decision applies to <code>first__int</code> as to hand-written</p>
+<p><code>fn first(xs: [int])</code>. No pointers, no aliasing, no whole-program</p>
+<p>analysis introduced.</p>
+<p>Costs that grow: code size (one copy per distinct type tuple used),</p>
+<p>compile time (substitute + re-resolve per instantiation), error</p>
+<p>locality (body errors surface at the instantiation).</p>
+<h2 id="determinism">Determinism</h2>
+<p>Same program yields the same set and order of definitions on every</p>
+<p>run: instantiation key is <code>(definition, ordered concrete args)</code> in</p>
+<p>canonical spelling; emission order is first-interned order during an</p>
+<p>in-order walk; mangled names are a pure function of the key.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

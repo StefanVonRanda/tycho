@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>12. Declarations, bindings, and scoping — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / spec/08-declarations.md</nav>
+<h1 id="12-declarations-bindings-and-scoping">12. Declarations, bindings, and scoping</h1>
+<p>This chapter defines how names are introduced, assigned, resolved, and scoped</p>
+<p>within function bodies. The grammar of each form is in</p>
+<p><a href="02-grammar.html#431-simple-statements">§4.3.1</a>; this chapter gives their meaning.</p>
+<h2 id="121-binding-forms">12.1 Binding forms</h2>
+<table>
+<tr><th>Form</th><th>Meaning</th></tr>
+<tr><td><code>x := e</code></td><td>Declare <code>x</code>, inferring its type from <code>e</code> (<a href="04-inference.html#63-declarations">§6.3</a>). <code>e</code> MUST NOT be <code>void</code>.</td></tr>
+<tr><td><code>x : T = e</code></td><td>Declare <code>x</code> with explicit type <code>T</code>; <code>e</code> is checked against <code>T</code>.</td></tr>
+<tr><td><code>x = e</code></td><td>Assign to an existing variable <code>x</code>; <code>e</code> is checked against <code>x</code>'s type.</td></tr>
+<tr><td><code>p = e</code></td><td>Assign through a place <code>p</code> (index, field, tuple element, or subscript).</td></tr>
+<tr><td><code>p op= e</code></td><td>Compound assignment (§12.4).</td></tr>
+<tr><td><code>a, b := f()</code></td><td>Declare <code>a</code>, <code>b</code> from a tuple-valued RHS (2–8 targets).</td></tr>
+<tr><td><code>a, b = f()</code></td><td>Assign to existing <code>a</code>, <code>b</code> from a tuple-valued RHS.</td></tr>
+<tr><td><code>(p, q) = e</code></td><td>Assign a tuple-valued RHS into 2–8 places, all right-hand sides first (§17.5).</td></tr>
+</table>
+<p>A <code>:=</code> or <code>x : T =</code> <strong>declares</strong> a new variable; a program MUST NOT declare a</p>
+<p>name already visible in the same block (a nested block may shadow it, §12.3). An</p>
+<p><code>=</code> or place-assignment <strong>requires</strong> the target to already denote a mutable</p>
+<p>variable or place; assigning to an undeclared name is an error. A declaration's</p>
+<p>value form may be an expression or a tail-position value <code>if</code>/<code>match</code></p>
+<p>(<a href="09-expressions.html">§13.5</a>, <a href="10-statements.html">§14.3</a>).</p>
+<h2 id="122-constants">12.2 Constants</h2>
+<pre><code class="language-text">const NAME = ConstExpr
+</code></pre>
+<p>A <code>const</code> binds a name to a compile-time constant, at module top level or inside</p>
+<p>a function body. The right-hand side MUST fold to a single literal at compile</p>
+<p>time: a literal, or (for the folding forms) integer arithmetic, bitwise, and</p>
+<p>unary operations over literals, <code>+</code> over two <strong>string</strong> literals, and — at top</p>
+<p>level — backward references to earlier top-level constants. The string form means</p>
+<p>a constant such as <code>const TERM = "\r\n" + "\r\n"</code> is one literal, not a run-time</p>
+<p>concatenation (<a href="01-lexical.html#394-string-literals">§3.9.4</a>). A <code>const</code> is an immutable named literal, folded at</p>
+<p>each use site (it has no run-time storage). Reassigning a <code>const</code>, or a</p>
+<p>non-constant right-hand side, is an error. A top-level <code>const</code> MUST NOT collide</p>
+<p>with a struct, enum, newtype, handle, variant, function, or another constant of</p>
+<p>the same name. Float arithmetic in a <code>const</code> right-hand side, and a *local* <code>const</code></p>
+<p>referencing another <code>const</code>, are not permitted (only negative float *literals*</p>
+<p>fold).</p>
+<h2 id="123-scope-and-shadowing">12.3 Scope and shadowing</h2>
+<p>Tycho has <strong>lexical block scope</strong>. A variable is visible from its declaration to</p>
+<p>the end of the block that contains it, and each <code>if</code>/<code>elif</code>/<code>else</code> arm, each</p>
+<p><code>match</code> arm, each loop body, and each <code>select</code> arm is a block. A <code>match</code> arm's</p>
+<p>payload bindings are visible only within that arm.</p>
+<p>A declaration in a nested block MAY <strong>shadow</strong> a name from an enclosing block;</p>
+<p>within the nested block the inner binding is the one in scope, and the outer</p>
+<p>binding is unaffected after the block ends. A counting-<code>for</code> loop variable is</p>
+<p>scoped to the loop body. Because Tycho has value semantics, a shadowing</p>
+<p>declaration takes an independent copy; mutating the inner name never affects the</p>
+<p>shadowed outer value.</p>
+<h2 id="124-compound-assignment">12.4 Compound assignment</h2>
+<p><code>p op= e</code> means <code>p = p op e</code> for <code>op</code> in <code>+ - * / % &amp; | ^ &lt;&lt; &gt;&gt;</code>, on any place</p>
+<p><code>p</code> (variable, index, field, tuple element). The place is evaluated for the read</p>
+<p>and the store; a <strong>side-effecting call inside the place is evaluated once</strong> (the</p>
+<p>implementation hoists it), while a pure index sub-expression may be evaluated</p>
+<p>twice — exactly as writing the assignment out longhand would</p>
+<p>(<a href="09-expressions.html#134-evaluation-order">§13.4</a>; resolved by probing, both</p>
+<p>compilers agree).</p>
+<h2 id="125-name-resolution">12.5 Name resolution</h2>
+<p>Within a body, an identifier resolves to (in order) a local variable or</p>
+<p>parameter in scope, a top-level constant, a nullary enum variant, or a</p>
+<p>function/type name. A qualified name <code>pkg.name</code> resolves through the imported</p>
+<p>package's prefix (<a href="15-program.html">§28</a>). All package-level names</p>
+<p>are mangled to one flat namespace by a per-package prefix; this mangling is not</p>
+<p>observable in the source language (a program always uses the unqualified or</p>
+<p><code>pkg.</code>-qualified spelling).</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

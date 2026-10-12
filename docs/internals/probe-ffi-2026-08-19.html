@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FFI probe, 2026-08-19 — what a first-time reader hits — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / internals/probe-ffi-2026-08-19.md</nav>
+<h1 id="ffi-probe-2026-08-19--what-a-first-time-reader-hits">FFI probe, 2026-08-19 — what a first-time reader hits</h1>
+<blockquote>
+<p><strong>Provenance.</strong> This run was a Claude subagent spawned inside the author's</p>
+<p>own session, not an independent third party — see</p>
+<p><a href="probe-model-comparison-2026-08-20.html">probe-model-comparison-2026-08-20.md</a>.</p>
+<p>Every finding below was rebuilt on <code>main</code> before being written down, so the</p>
+<p>findings stand; the independence does not.</p>
+</blockquote>
+<p><strong>Verdict: two defects, both fixed in `669d0a50`. Probed 2026-08-19 on the v0.7.0 tarball against `extern fn`, `handle`, and `soa`. Outcome: `is_null` accepts handles, and `docs/reference/ffi.md` states the returned-pointer lifetime rule.</strong></p>
+<p>The agent built a 245-line directory-size analyser with a 42-line C shim. The program was discarded; this record is the artifact. It is not in the tree and does not need to be.</p>
+<p>The probe aimed at ground no earlier record covered: <code>tools/tycho-diff</code> was algorithms, <code>tools/tycho-hash</code> concurrency, and an earlier markov run maps and structs. The FFI boundary, <code>handle</code>, and <code>soa</code> had never been driven from outside.</p>
+<h2 id="what-it-changed">What it changed</h2>
+<p>Two fixes, both in <code>669d0a50</code>:</p>
+<ul>
+<li><strong>`is_null` refused a handle.</strong> The agent wrote <code>if is_null(d)</code> after an</li>
+</ul>
+<p>opener, got <code>argument 1 of 'is_null' is DirStream, expected ptr</code>, and deleted</p>
+<p>the check — leaving no way to test whether the open succeeded, with the</p>
+<p>destructor then freeing NULL at scope exit. <code>is_null</code> accepts a handle now.</p>
+<ul>
+<li><strong>`docs/reference/ffi.md` did not state that a returned C string must still be live.</strong></li>
+</ul>
+<p>It said the string is "copied into the caller's arena", which reads as</p>
+<p>permission to return anything. The copy happens after the C function returns.</p>
+<h2 id="the-finding-the-agent-did-not-make">The finding the agent did not make</h2>
+<p>Its own shim did <code>closedir(d); return ent-&gt;d_name;</code>. The <code>dirent</code> belongs to the</p>
+<p>stream it had just closed. The plain build printed correct output; ASan reported</p>
+<p>a heap-use-after-free in <code>tycho_str_from_c</code>.</p>
+<p>That is the most useful result of the run, and it is not in the agent's</p>
+<p>log. A probe's report is not its whole yield — the code it wrote has to be</p>
+<p>built and run under the sanitizers too, or the class of defect the FFI boundary</p>
+<p>exists to contain is the one that goes unnoticed.</p>
+<h2 id="reported-and-already-fixed">Reported and already fixed</h2>
+<p><code>bytes</code> as a parameter name was reported as giving <code>expected a parameter name</code>.</p>
+<p>On <code>main</code> it gives `'bytes' is a reserved keyword and cannot be used as a</p>
+<p>parameter name`. The probe ran against the <strong>v0.7.0 tarball</strong>, so part of its</p>
+<p>report was archaeology. Give the next agent a build of <code>main</code>.</p>
+<h2 id="reported-checked-not-defects">Reported, checked, not defects</h2>
+<p><code>chr</code> is byte-ranged; <code>int</code> and <code>float</code> never mix implicitly; structs do not</p>
+<p>cross the FFI; <code>sink</code> consumes. All four are documented and the agent's own log</p>
+<p>records them as things learned, not complaints. The <code>inout</code> overlap refusal on</p>
+<p><code>&amp;stats[j], &amp;stats[j + 1]</code> is real and is the limitation recorded as</p>
+<p>FRICTION #48.</p>
+<h2 id="what-went-right-in-its-words">What went right, in its words</h2>
+<p>The handle pattern once declared; <code>soa</code> being invisible at the use site; the</p>
+<p><code>--shim</code> flag; and "the compiler catches real issues with clear messages — the</p>
+<p>overlapping mutable access error prevented a real aliasing bug." A log that only</p>
+<p>complains is not evidence, and this one does not.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

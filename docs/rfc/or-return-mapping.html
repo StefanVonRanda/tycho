@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>`or_return` with a mapping expression — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / rfc/or-return-mapping.md</nav>
+<h1 id="or-return-with-a-mapping-expression"><code>or_return</code> with a mapping expression</h1>
+<blockquote>
+<p><strong>Status: decided 2026-09-25 — `or_else`, not the `or_return &lt;fn&gt;` form below.</strong></p>
+<p>Built in both compilers (<code>529fe940</code>, tychoc1 <code>4cb884a9</code>) and specified in</p>
+<p><a href="../spec/10-statements.html#1461-or_else">§14.6.1</a>; 79 call sites migrated, shipped</p>
+<p>in 0.8.6. The body below is the proposal as measured, kept for the reasoning.</p>
+</blockquote>
+<h2 id="the-decision">The decision</h2>
+<pre><code class="language-text">x := store.scan(db, t) or_else e: Err(Storage(e))
+r := fetch(u) or_else _: false              # in a fn that returns bool
+</code></pre>
+<p>On failure <code>or_else</code> binds the error and <strong>returns</strong> the value after the <code>:</code></p>
+<p>from the enclosing function; on success it is the payload, like <code>or_return</code>.</p>
+<p>It won over <code>or_return &lt;fn&gt;</code> because the returned value is any expression of</p>
+<p>the function's return type, not only a mapped <code>Err</code>: the same form covers the</p>
+<p>~40 sites that return <code>false</code>, <code>-1</code> or <code>None</code> on failure from a function that</p>
+<p>does not return a <code>Result</code>, which a mapping function cannot. The binding is</p>
+<p>named in place, so the replace shape needs no lambda. It costs one keyword.</p>
+<p><strong>Counts, corrected:</strong> after <code>fdda3c5a</code> migrated the last 11 forwarding</p>
+<p>matches, <strong>54</strong> unwrap-and-leave <code>match</code> sites remain, <strong>43</strong> of them mapping</p>
+<p>the error (wrap or replace). The 34/25/17 split below predates that commit.</p>
+<h2 id="the-measurement">The measurement</h2>
+<p>A sweep of every <code>match</code> block in the tree whose only job is to unwrap an <code>Ok</code></p>
+<p>and leave on an <code>Err</code> found <strong>76 sites across 17 files</strong>. They split cleanly:</p>
+<table>
+<tr><th>shape</th><th>count</th><th>today</th></tr>
+<tr><td><code>Err(e): return Err(e)</code> — same error, forwarded</td><td>34</td><td><strong>`or_return` already does this</strong> — all 34 migrated in <code>f6f1025a</code></td></tr>
+<tr><td><code>Err(e): return Err(Wrap(e))</code> — wrapped</td><td>25</td><td>no form exists</td></tr>
+<tr><td><code>Err(e): return Err(Fresh(...))</code> — replaced</td><td>17</td><td>no form exists</td></tr>
+</table>
+<p>So <strong>42 sites remain</strong> that <code>or_return</code> cannot express, because</p>
+<p><a href="../spec/10-statements.html#146-or_return">§14.6</a> returns <code>Err(err)</code> *unchanged*.</p>
+<p>Every one of them changes the error, which is the whole point of a</p>
+<p>domain error type: a <code>net.listen</code> failure surfacing to a caller as a <code>SrvErr</code>,</p>
+<p>not as a <code>NetErr</code>.</p>
+<p>For scale, the freeze has been broken three times, and <code>packed</code> — the first —</p>
+<p>was justified by 141 sites. This is 42.</p>
+<h2 id="what-the-42-look-like">What the 42 look like</h2>
+<pre><code class="language-text">match net.listen(host, port):
+    Ok(f): fd = f
+    Err(e): return Err(Listen(host, port))
+</code></pre>
+<p>Four lines. The middle one is the only one carrying information.</p>
+<h2 id="the-proposal">The proposal</h2>
+<p><code>or_return</code> takes an optional expression whose value is a **function from the</p>
+<p>callee's error type to the enclosing function's error type**. On <code>Err(e)</code> the</p>
+<p>function is applied and <code>Err(f(e))</code> is returned; on <code>Ok(x)</code> nothing changes.</p>
+<p><strong>No new syntax is required.</strong> Tycho already has function values and lambdas</p>
+<p>(<code>Lambda ::= "fn" "(" LambdaParams? ")" ( "-&gt;" Type )? ":" Expr</code>,</p>
+<p><a href="../spec/02-grammar.html">§4.4</a>), so both spellings below already parse:</p>
+<pre><code class="language-text">fd := net.listen(host, port) or_return fn(e): Listen(host, port)   # replace
+b  := store.read(path)       or_return Storage                     # wrap, by name
+</code></pre>
+<p>The second form works wherever the new error is a one-argument constructor,</p>
+<p>which covers the 25 wrapping sites (<code>Storage(e)</code>, <code>Wal(e)</code>, <code>Plan(e)</code>). The</p>
+<p>lambda form covers the 17 that ignore <code>e</code> and build a fresh error from other</p>
+<p>variables in scope.</p>
+<h3 id="the-grammar-delta">The grammar delta</h3>
+<pre><code class="language-text">ExprStmt ::= ( Call | Call "or_return" Expr? ) NEWLINE
+OrReturn ::= Unary "or_return" Expr?
+</code></pre>
+<p><code>or_return</code> stays a postfix operator binding tighter than any binary operator,</p>
+<p>so <code>f() or_return Wrap + 1</code> does not parse as a mapping of <code>Wrap + 1</code> — the</p>
+<p>expression slot should be restricted to a primary, which is what the two</p>
+<p>spellings above need and nothing more.</p>
+<h2 id="what-it-costs">What it costs</h2>
+<p>The feature touches both compilers. In the shipped one: <code>lex.ty</code> (no new token —</p>
+<p>the keyword exists), <code>parse.ty</code> (the optional expression), <code>tcheck.ty</code> (five</p>
+<p>existing <code>or_return</code> rules gain a mapped-error case), <code>emit.ty</code> (four sites),</p>
+<p><code>zsema.ty</code> (the <code>parallel for</code> restriction is unchanged). <code>src/tychoc.c</code> carries</p>
+<p>19 <code>or_return</code> sites that need the same treatment. Plus spec §14.6, a</p>
+<p><code>surface.lock</code> entry is <strong>not</strong> needed — no new keyword — and fixtures for the</p>
+<p>refusals (a mapping whose type does not match the enclosing error type; a</p>
+<p>mapping on an <code>Option</code>, which has no error to map).</p>
+<h2 id="three-ways-this-could-go-and-what-each-gives-up">Three ways this could go, and what each gives up</h2>
+<p>1. <strong>Build it as proposed.</strong> Covers all 42, subsumes the 34, and adds no</p>
+<p>keyword. The cost is real work in two compilers and one more thing in the</p>
+<p>language to learn.</p>
+<p>2. <strong>Build only the by-name form</strong> (<code>or_return Storage</code>). Covers the 25 wrapping</p>
+<p>sites, is trivially simple to explain, and leaves the 17 replacement sites as</p>
+<p><code>match</code> blocks. Smallest change that removes the most common shape.</p>
+<p>3. <strong>Build nothing.</strong> The 42 stay as four-line <code>match</code> blocks. They are correct</p>
+<p>and readable; they are simply the most repeated shape in the tree, and the</p>
+<p>one a newcomer meets first when they write a program that can fail.</p>
+<h2 id="recommendation">Recommendation</h2>
+<p><strong>(1), and only when a program outside this repository wants it.</strong> The near-term</p>
+<p>roadmap is explicit that library and surface work is demand-gated — *"built</p>
+<p>against a real program that needs it, never ahead of one"*. 42 sites in the</p>
+<p>author's own code is a strong signal and not that trigger; the same standard</p>
+<p>that held <code>packed</code> to 141 measured sites should hold this one to a user who hits</p>
+<p>the wall. The measurement is recorded here so that when one does, the work is</p>
+<p>already scoped.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

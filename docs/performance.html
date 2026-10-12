@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Performance and memory — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="index.html">docs</a> / performance.md</nav>
+<h1 id="performance-and-memory">Performance and memory</h1>
+<p>Every program in this file runs on <code>tychoc</code>, its output checked against a</p>
+<p>golden. Cross-language *ratios* matter more than absolute times, which depend</p>
+<p>on the machine.</p>
+<h2 id="a-real-program-at-flat-memory">A real program at flat memory</h2>
+<p><a href="../examples/json.ty">`examples/json.ty`</a> is a 220-line recursive-descent JSON</p>
+<p>parser over a recursive <code>Json</code> sum type — real recursion, zero</p>
+<p><code>malloc</code>/<code>free</code>/refcount/GC in the source. Parsing <strong>5,000,000</strong> documents in a</p>
+<p>loop holds at a <strong>flat 10 MB</strong>: each document's tree is reclaimed when its loop</p>
+<p>iteration's arena resets. Clean under ASan + LeakSanitizer.</p>
+<h2 id="head-to-head-five-languages">Head-to-head, five languages</h2>
+<p>Per-workload timings are in <a href="../bench/prongB/RESULTS.html">`bench/prongB/RESULTS.md`</a>.</p>
+<p>Peak resident memory (MB) — every binary computes the same checksum; lower is</p>
+<p>better. Figures below are rounded per-round snapshots; the precise log, with</p>
+<p>wall times and hardware, is that RESULTS file.</p>
+<table>
+<tr><th>workload</th><th>tycho</th><th>C</th><th>Rust</th><th>Go (GC)</th><th>Koka (Perceus)</th></tr>
+<tr><td>binary-trees</td><td><strong>13</strong></td><td>33</td><td>33</td><td>36</td><td>14</td></tr>
+<tr><td>tree-rewrite</td><td><strong>6</strong></td><td>13</td><td>9</td><td>22</td><td>7</td></tr>
+<tr><td>array-pipeline</td><td>6</td><td>3</td><td>3</td><td>6</td><td>14</td></tr>
+<tr><td>string-pipeline</td><td>1</td><td>1</td><td>2</td><td>3</td><td>2</td></tr>
+</table>
+<p>On the allocation-heavy tree workloads Tycho uses the least memory of the five —</p>
+<p>40% of C's on binary-trees, half on tree-rewrite — with no GC and no reference</p>
+<p>counting, only lexical arenas and value semantics. Memory is the thesis metric,</p>
+<p>and it is reached with zero manual management.</p>
+<h2 id="arena-internals-measured">Arena internals, measured</h2>
+<p>The peak-RSS tables above are the memory model's *output*. What the model does</p>
+<p>underneath — how much it reserves, how much it reuses, where the live set sits —</p>
+<p>is observable directly: <code>TYCHO_ARENA_STATS=full &lt;program&gt;</code> prints a one-shot</p>
+<p>summary at exit (<code>runtime/tycho_rt.c@stats_dump</code>): peak live bytes (the working-set</p>
+<p>high-water), total bump-allocated bytes, the free-list recycle rate, OS-reserved</p>
+<p>bytes over blocks, the block-pool reuse rate, and a per-function — now</p>
+<p>per-statement, see below — residency table. At the default 64 KiB block size:</p>
+<table>
+<tr><th>workload</th><th>peak live</th><th>OS reserved</th><th>slack</th><th>block reuse</th><th>free-list recycle</th></tr>
+<tr><td>interp (5.6M-node tree interpreter)</td><td>250.6 MiB</td><td>250.8 MiB</td><td>0.08%</td><td>99.8%</td><td>0 of 59.4M (held tree)</td></tr>
+<tr><td>json (recursive-descent parse)</td><td>37.6 MiB</td><td>38.1 MiB</td><td>1.3%</td><td>99.8%</td><td>~0 of 5.5M (held tree)</td></tr>
+<tr><td>gcscan (large held set of small objects)</td><td>63.5 MiB</td><td>64.1 MiB</td><td>0.9%</td><td>37.3%</td><td>0 of 6.0M (held)</td></tr>
+<tr><td>trie (per-node arenas)</td><td>57.2 MiB</td><td>57.5 MiB</td><td>0.5%</td><td>0.1%</td><td>0 of 1.5M (held)</td></tr>
+<tr><td>dijkstra (index-graph)</td><td>44.3 MiB</td><td>44.4 MiB</td><td>0.2%</td><td>0.3%</td><td>16 of 300k</td></tr>
+<tr><td>lru (delete-heavy map churn)</td><td>33.0 MiB</td><td>33.3 MiB</td><td>0.9%</td><td>0.0%</td><td>16 of 89 (18.0%)</td></tr>
+<tr><td>strarr_build (loop-carried rebuild)</td><td>224 B</td><td>64.0 KiB</td><td>—</td><td>50%</td><td>1.0M of 22.0M (4.5%)</td></tr>
+<tr><td>optstr_build (loop-carried rebuild)</td><td>144 B</td><td>64.0 KiB</td><td>—</td><td>50%</td><td>1.0M of 6.0M (16.7%)</td></tr>
+<tr><td>loop_scratch (per-iteration scratch)</td><td>40 B</td><td>64.0 KiB</td><td>—</td><td>50%</td><td>0 of 10.0M</td></tr>
+</table>
+<p>Three things the numbers say that the RSS tables cannot:</p>
+<p>1. <strong>At scale the model is tight.</strong> The big workloads hold their live set within</p>
+<p>0.1–1.3% of what they reserve from the OS; the blocks fit the bump almost</p>
+<p>exactly. The 64 KiB block only shows up as slack on toy programs (a 40 B</p>
+<p>peak over a 64 KiB block).</p>
+<p>2. <strong>Free-list recycling is workload-shaped, and now countable.</strong> The</p>
+<p>liveness-driven recycle is zero</p>
+<p>where the working set is held (interp/json/gcscan/trie — trees stay live),</p>
+<p>and up to 17% of allocations where loop-carried rebuilds hand dead buffers</p>
+<p>back (optstr_build, strarr_build, structarr_build, lru). Before the counter</p>
+<p>existed the only evidence was bench-RSS deltas; the per-workload rate is</p>
+<p>now an instrumented number.</p>
+<p>3. <strong>Loop scratch peaks near zero.</strong> The per-iteration <code>arena_reset</code> keeps a</p>
+<p>loop's live bytes at one iteration's worth: <code>loop_scratch</code> bumps 10M</p>
+<p>allocations and peaks at 40 B. Per-statement attribution shows it: on json, a loop</p>
+<p>labeled <code>main:loop0</code> bumps 16.4 MiB across 850k allocs with a 344 B peak —</p>
+<p>the per-iteration reset, now visible per statement instead of folded into</p>
+<p>the function total.</p>
+<p><strong>Block size is a memory-only knob.</strong> <code>TYCHO_BLOCK=&lt;bytes&gt;</code> overrides the</p>
+<p>64 KiB default per run (read once at startup). A</p>
+<p>sweep on the three big workloads:</p>
+<table>
+<tr><th>block</th><th>interp peak/OS</th><th>json peak/OS</th><th>lru peak/OS</th><th>wall (interp/json/lru)</th></tr>
+<tr><td>8 KiB</td><td>250.6 / 251.5 MiB</td><td>37.6 / 37.8 MiB</td><td>33.0 / 33.0 MiB</td><td>1.11 s / 0.14 s / 0.64 s</td></tr>
+<tr><td>64 KiB</td><td>250.6 / 250.8 MiB</td><td>37.6 / 38.1 MiB</td><td>33.0 / 33.3 MiB</td><td>1.10 s / 0.13 s / 0.66 s</td></tr>
+<tr><td>256 KiB</td><td>250.6 / 251.0 MiB</td><td>37.6 / 38.9 MiB</td><td>33.0 / 34.3 MiB</td><td>1.11 s / 0.14 s / 0.65 s</td></tr>
+</table>
+<p>Peak *live* is identical across sizes — the block size never moves the working</p>
+<p>set, only the slack (≤4% either way here), and wall time is flat. The 64 KiB</p>
+<p>default is not retuned.</p>
+<h2 id="speed">Speed</h2>
+<p>On allocation-heavy tree workloads and the JSON parser Tycho beats hand-written</p>
+<p>C on time and memory; it trails C and Rust on flat array pipelines</p>
+<p>(per-element bounds checks, not the memory model). The in-place append (an</p>
+<p><code>acc = acc + x</code> loop growing one buffer) is guarded by <code>make bench</code>: ~1.5 MB</p>
+<p>where the un-optimized path is ~825 MB at the same N, so a 32 MB bound sits</p>
+<p>firmly between working and broken.</p>
+<h2 id="where-it-costs">Where it costs</h2>
+<p>The full loss column, with the idiom for each case, is in</p>
+<p><a href="internals/value-semantics-limits.html">docs/internals/value-semantics-limits.md</a>.</p>
+<p>The short version: pointer-shaped data (graphs, doubly-linked lists) costs more</p>
+<p>unless you use the flat-pool idiom — hold all nodes in one array and link them</p>
+<p>by integer index, which is also the cache-friendly layout data-oriented engines</p>
+<p>choose on purpose. Arenas reclaim at *scope exit*, not incrementally, so a</p>
+<p>long-lived scope holds its transients until it returns — scope them in an inner</p>
+<p>function.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

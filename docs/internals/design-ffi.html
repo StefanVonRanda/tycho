@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FFI design notes (maintainers) — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / internals/design-ffi.md</nav>
+<h1 id="ffi-design-notes-maintainers">FFI design notes (maintainers)</h1>
+<p>Why the behavior in <a href="../reference/ffi.html">reference/ffi.md</a> is shaped this</p>
+<p>way. Users don't need this page.</p>
+<h2 id="ownership-asymmetry-string-vs-bytes">Ownership asymmetry: <code>string</code> vs <code>bytes</code></h2>
+<p>A returned <code>string</code> is copied into the caller's arena and never freed by the</p>
+<p>call site; a returned <code>bytes</code> is copied into the caller's arena and its C</p>
+<p>buffer *is* freed (<code>runtime/tycho_rt.c@tycho_bytes_from_c</code>). The two directions</p>
+<p>cannot be reasoned about together: a <code>malloc</code>ed string return leaks silently,</p>
+<p>while a <code>bytes</code> return must be <code>malloc</code>ed. Shim guidance: return a <code>static</code> or</p>
+<p><code>__thread</code> buffer for strings (<code>corelib/net/net_shim.c@netx_peer_addr</code> is that</p>
+<p>shape), or hold the pointer in the shim and free it on the next call.</p>
+<h2 id="integers-and-prototypes">Integers and prototypes</h2>
+<p>The emitted prototype for an <code>extern fn</code> lives in a different translation unit</p>
+<p>from the shim, so C never compares the two: a shim written with <code>long</code> where</p>
+<p>the generated declaration says 64-bit returns the wrong number on LLP64/ILP32</p>
+<p>instead of an error. Corelib shims spell signatures with a guarded</p>
+<p><code>typedef int64_t tycho_int</code> as house style; a new shim only needs</p>
+<p><code>#include &lt;stdint.h&gt;</code> and <code>int64_t</code>.</p>
+<h2 id="cheap-by-representation">Cheap by representation</h2>
+<p>A Tycho <code>string</code> is already a NUL-terminated <code>char *</code>, so there is no wrapper</p>
+<p>type and no <code>c_str()</code> conversion at the call site — a fat-pointer string would</p>
+<p>have forced one. A returned <code>string</code> is always arena-copied with <code>NULL</code></p>
+<p>coerced to <code>""</code>, so transient or null C pointers can neither dangle nor crash</p>
+<p>on the Tycho side. The single exception is the read-once borrow: when the</p>
+<p>returned string is the direct argument of <code>len</code>/<code>print</code>/<code>println</code>, the copy is</p>
+<p>skipped and the C pointer is read in place (NULL-guarded); anything that could</p>
+<p>retain it keeps the copy. Output is byte-identical either way.</p>
+<p>The keyword is <code>extern</code> because it reads as "defined elsewhere" and matches C;</p>
+<p>a bare <code>extern fn</code> assumes libc/libm rather than requiring an explicit <code>--link</code>.</p>
+<h2 id="coverage">Coverage</h2>
+<p>The <code>tests/ffi/</code> fixtures (scalar round-trip, string-returning extern,</p>
+<p>NULL-return extern, <code>ptr</code> round-trip, <code>--shim</code> build) run under <code>make ffi</code>,</p>
+<p>ASan-clean and output-identical. Worked bindings: <code>examples/sqlite/</code> (raw</p>
+<p><code>ptr</code>, out-parameter machinery) and <code>tools/tycho-du/</code> (the worked <code>handle</code> +</p>
+<p><code>--shim</code> pairing).</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

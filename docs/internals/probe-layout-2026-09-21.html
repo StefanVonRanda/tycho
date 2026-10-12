@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Layout/SIMD probe, 2026-09-21 — eight findings on the surface that returned none in September — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / internals/probe-layout-2026-09-21.md</nav>
+<h1 id="layoutsimd-probe-2026-09-21--eight-findings-on-the-surface-that-returned-none-in-september">Layout/SIMD probe, 2026-09-21 — eight findings on the surface that returned none in September</h1>
+<p><strong>Verdict: 8 findings, 1 fixed (`e99b8484`), 1 refuted (finding 2), 6 open. Probed 2026-09-21 on the macOS arm64 laptop with `tychoc 0.8.5` from `main`. Outcome: the instrument lesson — a demo-sized program is not evidence about a surface.</strong></p>
+<p><a href="probe-simd-2026-09-07.html">probe-simd-2026-09-07.md</a> aimed at <code>packed</code>,</p>
+<p><code>align(N)</code>, <code>vector[N]T</code> and swizzling and came back with <strong>zero findings</strong>. This</p>
+<p>is the same four features, two weeks later, with eight. The difference is not the model and not the surface: that probe wrote a 57-line pixel</p>
+<p>kernel, this one wrote a program with an independent checking harness and then</p>
+<p>tried to break each feature on purpose. A demo-sized program on a surface is</p>
+<p>not evidence about that surface.</p>
+<p>Host: the macOS arm64 laptop, <code>tychoc 0.8.5</code> from <code>main</code>.</p>
+<h2 id="the-program">The program</h2>
+<p><code>tgagrade</code> — a per-channel gain/bias colour grader for 32-bit uncompressed TGA.</p>
+<p><code>packed struct TgaHeader</code> (18 bytes with a <code>u16</code> starting at byte 3, i.e.</p>
+<p>deliberately misaligned), <code>align(8) struct ChanStat</code> in a <code>[4]</code>, <code>vector[4]f32</code></p>
+<p>for <code>q := px * gain + bias</code>, and <code>px.(r, b) = px.(b, r)</code> as the real BGRA↔RGBA</p>
+<p>conversion rather than a demonstration.</p>
+<p><strong>The checking is the part worth copying.</strong> Three independent oracles, none of</p>
+<p>them the program: Python's own <code>struct.pack</code>/<code>unpack_from</code> writes the input and</p>
+<p>re-parses the output header field by field; a float64 recomputation compares every</p>
+<p>pixel; and macOS <code>sips</code> decodes the output TGA to PNG, which a hand-written</p>
+<p>inflater then compares to the same expectation. Plus <code>cc</code> measuring the emitted</p>
+<p>structs directly. A 256×256 sweep covers every byte value on every channel.</p>
+<p>Then it broke each feature on purpose and recorded what the checks said —</p>
+<p>deleting the swizzle fails 30 of 32 pixels, widening one <code>u8</code> header field to</p>
+<p><code>u16</code> shifts <code>size_of$</code> to 19 and trips the program's own validation, lying about</p>
+<p>the origin byte is caught by the third decoder and by nothing else. Control that turned out not to be one: swapping <code>width</code> and <code>height</code> in</p>
+<p>the declaration changes nothing observable, because the program reads and writes</p>
+<p>through the same struct and the error cancels. A round-trip through your own</p>
+<p>layout cannot detect a symmetric layout error.</p>
+<h2 id="the-score">The score</h2>
+<table>
+<tr><th>#</th><th>finding</th><th>verdict</th></tr>
+<tr><td>7</td><td>on arm64 every wide <code>vector</code> warns about x86-64 and prescribes <code>--target x86-64-v3</code>, which <code>cc</code> then rejects on that same host</td><td><strong>FIXED</strong> <code>e99b8484</code> — <a href="FRICTION.html">FRICTION 124</a></td></tr>
+<tr><td>2</td><td>"<code>packed</code> does not mean packed in memory" — the emitted C carries no <code>__attribute__((packed))</code>, <code>sizeof</code> is 20 not 18, <code>width</code> sits at 14 not 12</td><td><strong>REFUTED</strong> — <a href="FRICTION.html">FRICTION 127</a></td></tr>
+<tr><td>1</td><td><code>size_of$</code> refuses every type <code>align(N)</code> applies to, so <code>align(N)</code> is unobservable from inside the language</td><td><strong>OPEN</strong></td></tr>
+<tr><td>3</td><td>none of the four features appears anywhere in <code>docs/reference/</code>, the layer <code>docs/README.md</code> calls "the single answer layer"</td><td><strong>OPEN</strong></td></tr>
+<tr><td>4</td><td>three of the four have zero users in <code>examples/</code> and <code>corelib/</code>; only <code>packed</code> has any (4)</td><td><strong>OPEN</strong></td></tr>
+<tr><td>6</td><td><code>vector[N]T</code> has no lane-wise min/max, so the clamp — the operation a grading kernel does as often as the multiply — drops out of the vector unit</td><td><strong>OPEN</strong></td></tr>
+<tr><td>8a</td><td>§5.5 omits <code>u8</code> from the ordered types, the mixed-type diagnostic omits <code>char</code>/<code>u32</code>/<code>u64</code>/<code>f32</code>, and the compiler's real rule is in neither</td><td><strong>OPEN</strong></td></tr>
+<tr><td>8b</td><td><code>str()</code> on a vector, and a vector as a struct field, both work and are undocumented</td><td><strong>OPEN</strong></td></tr>
+<tr><td>8c</td><td><code>bytes</code> <code>+</code> and <code>[a:b]</code> are in the spec and not in <code>reference/types.md</code>'s <code>bytes</code> section — correct docs, wrong layer</td><td><strong>OPEN</strong></td></tr>
+<tr><td>8d</td><td>two <code>-Wunused-value</code> warnings out of <code>core:strings</code> in every build</td><td><strong>OPEN</strong> — the <code>handle</code> probe hit the same two</td></tr>
+</table>
+<p>Re-checked against <code>main</code> on 2026-09-22: 1, 3 and 6 reproduce exactly, including</p>
+<p>the error text `'math__clamp' instantiated with T = vector[4]f32, which does not</p>
+<p>satisfy comparable(T)<code> and </code>size_of$(C): only a packed struct has a stated byte</p>
+<p>size`.</p>
+<h2 id="finding-2-is-the-important-one-because-it-is-wrong">Finding 2 is the important one, because it is wrong</h2>
+<p>It was reported as the finding "I would most want a Tycho maintainer to see": a</p>
+<p>normative spec claim (§17.1a, "no padding between fields … each field sits at the</p>
+<p>sum of the sizes before it") contradicted by the compiler's own output, with an</p>
+<p>FFI consequence attached.</p>
+<p>It does not reproduce. <code>tychoc --emit-c</code> on the probe's *own* <code>tgagrade/main.ty</code>,</p>
+<p>run here, ends that struct with <code>} __attribute__((packed));</code>, and <code>cc</code> measuring</p>
+<p>that definition verbatim reports:</p>
+<pre><code class="language-text">emitted-verbatim TgaHeader: sizeof=18 alignof=1 offsetof width=12 height=14 descriptor=17
+</code></pre>
+<p>— which is §17.1a exactly, and exactly the numbers the report called "byte-exact</p>
+<p>would be". The attribute has been emitted since <code>packed</code> shipped (<code>5fff6d5c</code>).</p>
+<p><strong>The defect is in the probe's own apparatus.</strong> <code>probe/layout.c</code>, the file whose</p>
+<p>header says the definitions were "copied VERBATIM out of <code>tychoc --emit-c</code>", has</p>
+<p>the attribute on its <code>align(8)</code> struct and <strong>not</strong> on the packed one. The copy</p>
+<p>dropped one line, <code>cc</code> faithfully measured the mis-copy, and the measurement was</p>
+<p>then read back as a language defect. Every downstream sentence — 20 bytes,</p>
+<p><code>width</code> at 14, "what <code>packed</code> actually buys is the side-table", the §14 FFI</p>
+<p>worry — is a description of <code>probe/layout.c</code>.</p>
+<p><a href="probe-simd-2026-09-07.html">probe-simd-2026-09-07.md</a> closed with the lesson that</p>
+<p>a report's own citations have to be opened rather than trusted. This is the</p>
+<p>stronger form: a report's own measurements have to be re-run. A probe that</p>
+<p>builds an independent instrument can be wrong about the instrument, and it will</p>
+<p>present that error in exactly the format that makes it most convincing — a</p>
+<p>number, from a second toolchain, against a quoted spec line.</p>
+<h2 id="what-went-right">What went right</h2>
+<p>The diagnostics again, in the probe's words "the best part of the system": every</p>
+<p>rejection named the rule, the value and usually the fix. <code>packed</code> and <code>align(N)</code></p>
+<p>together are refused by name; <code>vector[4]u8</code> is refused with the element rule</p>
+<p>stated; a <code>math.clamp</code> on a vector names the constraint it failed. The four</p>
+<p>features themselves all did what the spec said they do — <code>align(8)</code> measurably</p>
+<p>raised size from 12 to 16, the swizzle lowered as read-both-then-write-both, and</p>
+<p>262,144 graded pixels matched an independent float64 recomputation.</p>
+<p><code>corelib/raster/raster.ty</code>'s <code>BmpHeader</code> was singled out: "taught me the whole</p>
+<p>file-format idiom in one read." It is the only in-tree teaching example any of</p>
+<p>these four features has.</p>
+<h2 id="what-it-could-not-do">What it could not do</h2>
+<ul>
+<li>Observe <code>align(N)</code> from inside Tycho at all (finding 1). It left the language</li>
+</ul>
+<p>and ran <code>cc</code>.</p>
+<ul>
+<li>Confirm the little-endian-on-every-host guarantee — both available machines are</li>
+</ul>
+<p>little-endian, so the interesting half of §17.1b is still untested here.</p>
+<ul>
+<li>Keep the clamp in the vector unit (finding 6).</li>
+<li>Find any of the four features from the documentation's own recommended reading</li>
+</ul>
+<p>path (finding 3): "Without the section numbers in the brief I would have</p>
+<p>concluded they do not exist."</p>
+<h2 id="filing">Filing</h2>
+<p>The program is kept out of tree, and the afternoon's other one is not:</p>
+<p><code>tydu</code> came in as <a href="../../tools/tycho-du">`tools/tycho-du/`</a> because it closed a</p>
+<p>named gap (a <code>handle</code> built with <code>--shim</code>, which nothing demonstrated).</p>
+<p><code>tgagrade</code> closes no gap that way — its value was the harness, not the program.</p>
+<p>But finding 4 is the standing argument on the other side: <code>vector[N]T</code>,</p>
+<p><code>align(N)</code> and swizzling have <strong>no worked user anywhere in the tree</strong>, and a</p>
+<p>probe cannot close that by being thrown away. Whatever eventually does close it</p>
+<p>will need a program, and this record is what the next one should be aimed past.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

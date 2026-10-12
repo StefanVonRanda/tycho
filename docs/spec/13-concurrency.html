@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>20. The concurrency model · 21. `spawn`/`Task`/`wait` · 22. `parallel for` · 23. Channels and `select` — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / spec/13-concurrency.md</nav>
+<h1 id="20-the-concurrency-model--21-spawntaskwait--22-parallel-for--23-channels-and-select">20. The concurrency model · 21. <code>spawn</code>/<code>Task</code>/<code>wait</code> · 22. <code>parallel for</code> · 23. Channels and <code>select</code></h1>
+<p>Tycho's concurrency is the ordinary call convention run on another thread. The</p>
+<p>same rule that governs a call — deep-copy arguments in, deep-copy the result out,</p>
+<p>a private arena per activation (<a href="07-memory-model.html">§10</a>) — is already a sound</p>
+<p>thread boundary, so the concurrency constructs need no <code>Sendable</code> marker, no</p>
+<p>lifetime annotations, and no lock machinery in the language.</p>
+<h2 id="20-the-concurrency-model">20. The concurrency model</h2>
+<p>Every value that crosses between threads crosses by <strong>deep copy</strong>, exactly as it</p>
+<p>would across an ordinary call. A spawned task's arguments are copied into the</p>
+<p>task's private storage before it starts running, and its result is copied back</p>
+<p>into the waiting scope's storage when it is joined. After the copy-in, a task</p>
+<p>shares <strong>zero mutable bytes</strong> with its spawner or with any sibling task.</p>
+<p>The normative consequence is <strong>race freedom by construction</strong>: because no two</p>
+<p>threads ever hold the same Tycho storage, there are no data races on Tycho values</p>
+<p>— with no annotations required. The one shared object is a channel</p>
+<p>(§23), whose send/receive operations are themselves defined to deep-copy the</p>
+<p>payload across the boundary, preserving the no-shared-storage invariant. This</p>
+<p>guarantee covers Tycho values only and **does not extend across the FFI</p>
+<p>boundary** (<a href="14-ffi.html">§26</a>): a C function that touches process</p>
+<p>global or <code>static</code> state can race exactly as it would in C.</p>
+<p><strong>Ordering (happens-before).</strong> Each cross-thread transfer establishes a</p>
+<p>synchronizes-with relationship, so the transferred value — and everything the</p>
+<p>source sequenced before it — is visible to the receiving side:</p>
+<ul>
+<li><strong>`spawn` → body:</strong> a task's arguments are deep-copied before its thread</li>
+</ul>
+<p>starts, so the body observes them and every write sequenced before the <code>spawn</code>.</p>
+<ul>
+<li><strong>`send` → `recv`:</strong> a <code>recv</code> that returns a value <code>v</code> synchronizes-with the</li>
+</ul>
+<p><code>send</code> that produced <code>v</code> (a release store paired with an acquire load on the</p>
+<p>ring cell), so every write the sender sequenced before that <code>send</code> is visible</p>
+<p>to the receiver after that <code>recv</code> returns.</p>
+<ul>
+<li><strong>task → `wait`:</strong> a task's body runs-before the <code>wait</code> (or implicit join) that</li>
+</ul>
+<p>observes its result, so the waiter sees all of the task's writes.</p>
+<h2 id="21-spawn-task-wait">21. <code>spawn</code>, <code>Task</code>, <code>wait</code></h2>
+<p><code>spawn f(args)</code> takes a <strong>direct call</strong> and starts <code>f</code> on a new thread, yielding a</p>
+<p><code>Task(T)</code> handle where <code>T</code> is <code>f</code>'s return type. The argument list is the capture</p>
+<p>list: each argument is deep-copied into the task's private root storage before</p>
+<p>the thread begins. <code>wait(t)</code> (also <code>t.wait()</code>) joins the task, deep-copies its</p>
+<p>result into the waiting scope, and yields it.</p>
+<p>A <code>Task(T)</code> handle is <strong>affine and structured</strong>:</p>
+<ul>
+<li>it MUST NOT be copied, reassigned, stored in a container, captured by a</li>
+</ul>
+<p>closure, or discarded;</p>
+<ul>
+<li>it MUST be waited <strong>at most once</strong> (a second <code>wait</code> aborts at run time);</li>
+<li>any task still running when its handle's scope exits — at block end, <code>break</code>,</li>
+</ul>
+<p><code>continue</code>, an early <code>return</code>, or <code>or_return</code> — is <strong>implicitly joined</strong> there.</p>
+<p>Consequently a function can never return while a task it spawned is still</p>
+<p>running, and a spawned task can neither leak nor detach.</p>
+<p>The number of concurrently-live (started-but-not-joined) tasks has a **hard</p>
+<p>ceiling** (default 1024; an implementation MAY expose an override, as the</p>
+<p>reference does via <code>TYCHO_MAX_TASKS</code>). Exceeding the ceiling aborts — a</p>
+<p>fork-bomb fails closed rather than exhausting the system. It is a ceiling, not a</p>
+<p>pool: every admitted task runs immediately, so a task blocked waiting for another</p>
+<p>cannot be starved.</p>
+<p>A <code>Task</code> handle cannot be copied, reassigned, stored in a container, captured by</p>
+<p>a closure, or passed as an argument (it is affine and non-storable). It therefore</p>
+<p>can never reach a thread other than the one that created it, so a task is always</p>
+<p>waited on its spawning thread; waiting a task from another thread is not</p>
+<p>expressible in the language.</p>
+<h2 id="22-parallel-for">22. <code>parallel for</code></h2>
+<p><code>parallel for</code> applies to a <strong>counting</strong> or a <strong>foreach</strong> loop</p>
+<p>(<a href="10-statements.html#144-loops">§14.4</a>) and runs its iterations across worker</p>
+<p>threads. The iteration space is split into chunks; the reference implementation</p>
+<p>uses <code>min(ncpu(), N)</code> chunks, MAY expose an override (<code>TYCHO_THREADS</code>), and MAY</p>
+<p>impose a fixed upper bound on the chunk count — the reference bounds it at <strong>64</strong>,</p>
+<p>so above 64 the fan-out is narrower than <code>ncpu()</code> reports</p>
+<p>(<a href="16-builtins.html#299-concurrency">§29.9</a>).</p>
+<p><strong>The program MAY choose the width: `parallel(W) for …`.</strong> <code>W</code> is an ordinary</p>
+<p>expression of type <code>int</code>, evaluated <strong>once</strong>, at the spawn site, before any</p>
+<p>chunk starts. It replaces <code>ncpu()</code> in the rule above; the <code>min(…, N)</code> and the</p>
+<p>64-chunk bound still apply, so <code>parallel(8) for i in 0..&lt;3:</code> runs 3 chunks.</p>
+<p>An explicit width <strong>overrides `TYCHO_THREADS`</strong> — the variable is the default</p>
+<p>for a program that did not choose. A width outside <code>1..64</code> is refused: a</p>
+<p>literal at compile time, and a computed one aborts at run time rather than</p>
+<p>clamping, because a clamped width answers a different question than the one</p>
+<p>asked. Omitting the width is unchanged in every respect.</p>
+<p>Each chunk's captured values are deep-copied into it, **with one exception: a</p>
+<p><code>Channel(T)</code> capture is a scalar handle and is passed by value.** Every chunk</p>
+<p>therefore shares the one queue rather than receiving a private copy of it. This</p>
+<p>is not a detail of the reference implementation — it is what makes a worker pool</p>
+<p>expressible at all, and an implementation MUST NOT deep-copy a captured channel.</p>
+<p>The counting spelling is <code>parallel for i in 0..&lt;N:</code>, and this is the <strong>only</strong></p>
+<p>context in which <code>0..&lt;N</code> is legal — a sequential <code>for i in 0..&lt;N:</code> is a compile</p>
+<p>error naming the three-clause form as its replacement (<a href="10-statements.html#144-loops">§14.4</a>).</p>
+<p><code>0</code> MUST be a literal <code>0</code> (a non-zero or computed lower bound is a compile</p>
+<p>error), <code>N</code> is an ordinary <code>int</code> expression evaluated <strong>once</strong> at the fan-out,</p>
+<p>the bound is <strong>exclusive</strong>, and the step is implicitly <code>1</code> — so, unlike the</p>
+<p><code>range(a, b, step)</code> form this replaced, there is no step to be zero and nothing</p>
+<p>to diagnose. <code>parallel for x in xs:</code> is the foreach spelling and <code>xs</code> MUST be a</p>
+<p>bare name (an array or a <code>Channel</code>), not an expression.</p>
+<p>The three-clause and infinite <code>for</code> shapes <strong>cannot</strong> be parallel: a chunk is a</p>
+<p>statically shaped sub-range of a known iteration space, and a three-clause</p>
+<p>loop's post clause is arbitrary code, so its iteration count is not knowable</p>
+<p>before the loop runs. <code>parallel for init; cond; post:</code> and <code>parallel for:</code> are</p>
+<p>compile errors.</p>
+<p>The only outer-scope write a <code>parallel for</code> body may perform is into a</p>
+<p><strong>reduction accumulator</strong> — a variable combined with <code>+</code> or <code>*</code> (on <code>int</code> or</p>
+<p><code>float</code>). Each chunk starts the accumulator from the operator's identity and the</p>
+<p>chunk results are folded at an <strong>in-order join</strong>. Therefore:</p>
+<ul>
+<li>an <strong>integer</strong> reduction produces a result <strong>identical for any thread count</strong></li>
+</ul>
+<p>(integer <code>+</code>/<code>*</code> are associative and exact); and</p>
+<ul>
+<li>a <strong>floating-point</strong> reduction <strong>MAY reassociate</strong>, so its result MAY differ</li>
+</ul>
+<p>across thread counts (floating-point <code>+</code>/<code>*</code> are not associative).</p>
+<p>Any other write to an outer-scope variable from a <code>parallel for</code> body is a</p>
+<p><strong>compile error</strong> — there is nothing to race on.</p>
+<h3 id="221-channels-in-a-parallel-for-body">22.1 Channels in a <code>parallel for</code> body</h3>
+<p>The reduction accumulator is the only way a <code>parallel for</code> body may *write* an</p>
+<p>outer variable, so it is not a way to route a per-item result out of the loop.</p>
+<p>A <strong>channel</strong> is. A <code>parallel for</code> body MAY <code>send</code> on, and MAY <code>recv</code> from, a</p>
+<p>channel captured from the enclosing scope — directly or through a <code>select</code></p>
+<p>(<a href="#232-select">§23.2</a>) — and MUST be able to do so, because the capture is the</p>
+<p>shared handle of the paragraph above rather than a per-chunk copy:</p>
+<ul>
+<li><code>send(ch, v)</code> from the body is how a per-item result leaves the loop; it is</li>
+</ul>
+<p>not an outer-scope write and is not subject to the reduction rule. Every</p>
+<p>chunk sends into the same queue, and the channel's capacity is the</p>
+<p>loop's backpressure.</p>
+<ul>
+<li><code>recv(ch)</code> from the body takes the next item from the same queue. Each item</li>
+</ul>
+<p>is taken by <strong>exactly one</strong> chunk (§23.1's MPMC guarantee), so a reduction</p>
+<p>folded from received items is deterministic for integer <code>+</code>/<code>*</code> regardless of</p>
+<p>how the chunks interleave.</p>
+<p><code>parallel for x in ch:</code> (§22's foreach spelling over a <code>Channel</code>) is defined in</p>
+<p>terms of exactly this: it is equivalent to a <code>parallel for</code> over <code>0..&lt;ncpu()</code></p>
+<p>whose body loops on <code>recv(ch)</code> and stops when the channel is closed <strong>and</strong></p>
+<p>drained. The producer MUST <code>close(ch)</code>; without it the chunks never finish and</p>
+<p>the statement never joins.</p>
+<p>The fail-closed rules of §22 are unchanged inside such a body: <code>break</code>,</p>
+<p><code>return</code> and <code>or_return</code> at the parallel-loop level are still compile errors, so</p>
+<p>an early exit can never cross a chunk boundary.</p>
+<h2 id="23-channels-and-select">23. Channels and <code>select</code></h2>
+<h3 id="231-channels">23.1 Channels</h3>
+<p><code>channel(T, cap)</code> creates a <strong>bounded, lock-free</strong> multi-producer/multi-consumer</p>
+<p>queue of <code>T</code>, legal only as the direct right-hand side of a declaration. The</p>
+<p>requested capacity <code>cap</code> MUST be at least 1 and is rounded up to a power of two</p>
+<p>(minimum ring size 2). A <code>Channel(T)</code> cannot be returned, stored in a container,</p>
+<p>or captured; it is freed when its creating scope exits (after implicit task</p>
+<p>joins).</p>
+<ul>
+<li><code>send(ch, v)</code> deep-copies <code>v</code> into the channel and blocks while the channel is</li>
+</ul>
+<p>full. Sending on a closed channel aborts.</p>
+<ul>
+<li><code>recv(ch)</code> blocks for the next value and yields <code>Option(T)</code>: <code>Some(v)</code> for a</li>
+</ul>
+<p>received value (deep-copied into the receiver's storage), or <code>None</code> when the</p>
+<p>channel is <strong>closed and drained</strong>.</p>
+<ul>
+<li><code>close(ch)</code> closes the channel; subsequent <code>recv</code>s drain remaining values and</li>
+</ul>
+<p>then yield <code>None</code>. Closing an already-closed channel aborts.</p>
+<p>Channel memory is bounded by <code>capacity × payload</code>: payload storage is per-cell</p>
+<p>and reclaimed as ring slots are reused.</p>
+<p><strong>Ordering.</strong> A channel delivers each sent value exactly once, and values are</p>
+<p>received in the order their <code>send</code> calls linearized: each <code>send</code> atomically</p>
+<p>acquires the next enqueue ticket, and each <code>recv</code> takes the next dequeue ticket</p>
+<p>in that same order. Consequently a <strong>single</strong> sender's values are received in the</p>
+<p>order it sent them (FIFO). Among <strong>concurrent</strong> senders, the relative order of</p>
+<p>their values is whichever order those sends linearized — a race the language does</p>
+<p>not otherwise order. With multiple receivers, each value is delivered to exactly</p>
+<p>one receiver, in ticket order.</p>
+<h3 id="232-select">23.2 <code>select</code></h3>
+<p><code>select</code> waits on multiple channels:</p>
+<ul>
+<li>a <code>recv(ch, x):</code> arm runs when <code>ch</code> has a value, binding it to <code>x</code>;</li>
+<li>an optional <code>default:</code> arm makes the <code>select</code> non-blocking: it runs when at</li>
+</ul>
+<p>least one channel is still open but no <code>recv</code> arm is ready. The all-closed</p>
+<p>condition is terminal and takes priority over <code>default</code> — if every listed</p>
+<p>channel is closed and drained, the <code>closed</code> arm runs (if present) and the</p>
+<p><code>select</code> exits *without* running <code>default</code>;</p>
+<ul>
+<li>an optional <code>closed:</code> arm runs when every listed channel is closed and drained.</li>
+</ul>
+<p>A <code>select</code> MUST have at least one arm.</p>
+<p>Ready arms are tried in <strong>listed (lexical) order</strong>, and the first ready arm is</p>
+<p>taken; <code>select</code> is not fair, so an earlier-listed ready channel is always</p>
+<p>preferred over a later one. When no <code>recv</code> arm is ready and no <code>default</code> is</p>
+<p>present, <code>select</code> blocks (spinning, then yielding, then briefly sleeping) until</p>
+<p>one becomes ready or the <code>closed</code> condition holds.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

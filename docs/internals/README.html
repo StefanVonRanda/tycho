@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Internals — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / internals/README.md</nav>
+<h1 id="internals">Internals</h1>
+<p>Maintainer notes. Not user documentation — these record decisions, dead ends and</p>
+<p>measurements, and they assume you already know the codebase.</p>
+<h2 id="design-notes">Design notes</h2>
+<ul>
+<li><a href="value-semantics-limits.html">`value-semantics-limits.md`</a> — where the memory</li>
+</ul>
+<p>model costs, and why those costs were accepted.</p>
+<ul>
+<li><a href="design-aggregate-ref.html">`design-aggregate-ref.md`</a> — aggregate references.</li>
+<li><a href="design-aggregates.html">`design-aggregates.md`</a> — how arrays and structs behave</li>
+</ul>
+<p>under value semantics with implicit arenas, and why no borrow checker is needed.</p>
+<ul>
+<li><a href="design-maps.html">`design-maps.md`</a> — map values and in-place mutation.</li>
+<li><a href="design-generics.html">`design-generics.md`</a> — generics monomorphization.</li>
+<li><a href="design-concurrency.html">`design-concurrency.md`</a> — concurrency runtime, channel core, and measurement.</li>
+<li><a href="design-ffi.html">`design-ffi.md`</a> — FFI ownership, prototypes, and coverage.</li>
+<li><a href="design-corelib.html">`design-corelib.md`</a> — corelib handle guards, path layering, and shim conventions.</li>
+<li><a href="design-subscripts.html">`design-subscripts.md`</a> — subscript lowering and rules.</li>
+<li><a href="design-enums.html">`design-enums.md`</a> — enum payloads and error operators.</li>
+<li><a href="design-functions.html">`design-functions.md`</a> — closure capture and <code>sink</code> adoption.</li>
+<li><a href="design-scalar-match.html">`design-scalar-match.md`</a> — scalar patterns in <code>match</code>.</li>
+</ul>
+<h2 id="records">Records</h2>
+<ul>
+<li><a href="FRICTION.html">`FRICTION.md`</a> — the running log of what fought back while</li>
+</ul>
+<p>writing real programs against this language. The primary source for what is</p>
+<p>actually hard here.</p>
+<ul>
+<li><a href="audit-brief.html">`audit-brief.md`</a> — what a third-party reviewer would need.</li>
+<li><a href="ffi-review-2026-08-14.html">`ffi-review-2026-08-14.md`</a> — an FFI boundary review.</li>
+<li><a href="audit-2026-08-16.html">`audit-2026-08-16.md`</a> — security audit across the whole</li>
+</ul>
+<p>threat model: two vulnerabilities found and fixed, and what it did not cover.</p>
+<ul>
+<li><a href="audit-2026-09-25.html">`audit-2026-09-25.md`</a> — a defect hunt across the compilers,</li>
+</ul>
+<p>runtime, shims, network stack, tycho-db and parsers: 90 baseline defects recorded,</p>
+<p>all 90 fixed, none open.</p>
+<ul>
+<li><a href="roadmap-closed-2026-08.html">`roadmap-closed-2026-08.md`</a> — the 1.0 conditions</li>
+</ul>
+<p>closed in August 2026, moved out of <code>ROADMAP.md</code>.</p>
+<ul>
+<li><a href="windows-port.html">`windows-port.md`</a> — the design record of the native</li>
+</ul>
+<p>Windows port. Cited by <code>tests/run.sh</code>, <code>scripts/ci.sh</code> and the wine lanes.</p>
+<h2 id="completed-plans">Completed plans</h2>
+<p>Each <code>plan-*-DONE.md</code> is the finished record of one campaign, kept for its</p>
+<p>evidence rather than its instructions:</p>
+<p><a href="plan-repo-polish-DONE.html">repo-polish</a>,</p>
+<p><a href="plan-tycho-chess-DONE.html">chess</a>,</p>
+<p><a href="plan-tycho-kv-DONE.html">kv</a>,</p>
+<p><a href="plan-tycho-kvsrv-DONE.html">kvsrv</a>,</p>
+<p><a href="plan-tycho-rsa-DONE.html">rsa</a>,</p>
+<p><a href="plan-tycho-sat-DONE.html">sat</a>,</p>
+<p><a href="plan-tycho-scheme-DONE.html">scheme</a>,</p>
+<p><a href="plan-tycho-scheme-compiler-DONE.html">scheme-compiler</a>,</p>
+<p><a href="plan-tycho-vm-DONE.html">vm</a>.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

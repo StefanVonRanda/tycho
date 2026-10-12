@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>3. Lexical structure — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / spec/01-lexical.md</nav>
+<h1 id="3-lexical-structure">3. Lexical structure</h1>
+<p>This chapter defines how a Tycho source file is decomposed into a stream of</p>
+<p><strong>tokens</strong>. The token stream — including the synthetic layout tokens <code>NEWLINE</code>,</p>
+<p><code>INDENT</code>, and <code>DEDENT</code> — is the input to the phrase grammar (<a href="02-grammar.html">§4</a>).</p>
+<h2 id="31-source-text">3.1 Source text</h2>
+<p>A Tycho source file is a sequence of bytes. The lexer is byte-oriented: it</p>
+<p>recognizes ASCII letters (<code>A</code>–<code>Z</code>, <code>a</code>–<code>z</code>), ASCII digits (<code>0</code>–<code>9</code>), and the</p>
+<p>punctuation below; all other bytes are meaningful only inside string, f-string,</p>
+<p>and character literals and in comments, where they are carried as raw bytes.</p>
+<p>There is no byte-order-mark handling and no source-level Unicode escape</p>
+<p>processing. Identifiers and keywords are ASCII (§3.6). <code>string</code> and <code>bytes</code></p>
+<p>*values* are fully byte-safe at run time (interior <code>NUL</code> bytes are preserved),</p>
+<p>but a <code>string</code> *literal* cannot contain a <code>NUL</code> (§3.9.4).</p>
+<p>An implementation MUST accept files terminated by a final newline and files</p>
+<p>whose final line has no trailing newline; the lexer flushes any pending</p>
+<p><code>DEDENT</code>s and appends <code>EOF</code> at end of input either way.</p>
+<p>A line ends at <code>\n</code>, and a <code>\r</code> immediately before that <code>\n</code> (or before end of</p>
+<p>input) is part of the ending: a CRLF file lexes exactly as its LF twin does,</p>
+<p><strong>blank lines included</strong>. A <code>\r</code> anywhere else on a line is whitespace. A source</p>
+<p>file containing a <code>NUL</code> byte MUST be rejected — silently truncating at it would</p>
+<p>compile a program the file does not contain.</p>
+<h2 id="32-logical-lines-and-newline">3.2 Logical lines and <code>NEWLINE</code></h2>
+<p>The lexer is line-oriented. Each non-blank, non-comment-only line produces its</p>
+<p>tokens followed by exactly one <code>NEWLINE</code> terminal. A <strong>blank line</strong> (only</p>
+<p>whitespace) and a <strong>comment-only line</strong> (only whitespace then a comment)</p>
+<p>produce no tokens and do not affect indentation (§3.4).</p>
+<p>There is no line-continuation <strong>character</strong> (no trailing backslash). A logical</p>
+<p>line may still span several physical lines, by two implicit joins:</p>
+<p>1. <strong>Bracket depth.</strong> While any <code>(</code> or <code>[</code> is open, a physical line boundary</p>
+<p>produces no <code>NEWLINE</code> and the next line's leading whitespace is not</p>
+<p>indentation. This has always been the case.</p>
+<p>2. <strong>A trailing operator.</strong> A physical line whose last token cannot *end* an</p>
+<p>expression — an arithmetic, comparison, bitwise, or logical operator, <code>,</code>,</p>
+<p><code>=</code>, or <code>:=</code> — joins the line that follows, provided that line is indented</p>
+<p><strong>strictly deeper</strong> than the first physical line of the statement. The</p>
+<p>continuation's leading whitespace is not indentation.</p>
+<p>Only tokens that cannot end an expression qualify, so no program that was</p>
+<p>accepted before either join can change meaning. <code>:</code> is excluded: it opens a</p>
+<p>block and must end its line.</p>
+<p>**The deeper-indent condition is normative, and it is what preserves the</p>
+<p>diagnostic for a truncated line.** Given</p>
+<pre><code class="language-text">x := 1 +
+print(str(x))
+</code></pre>
+<p>at equal indent, the <code>+</code> does *not* join, and the program is rejected where the</p>
+<p>operand is missing rather than being parsed as <code>x := 1 + print(str(x))</code> and</p>
+<p>rejected later, on the wrong line, for an unrelated reason.</p>
+<p>Multi-line *constructs* are still expressed through indented blocks (§3.4);</p>
+<p>these joins are for a single over-long expression.</p>
+<h2 id="33-comments">3.3 Comments</h2>
+<pre><code class="language-ebnf">Comment ::= "#" (any byte except newline)*
+</code></pre>
+<p>A comment begins with <code>#</code> and runs to the end of the line. Comments do not</p>
+<p>nest, and there is no block-comment form. A <code>#</code> inside a string or character</p>
+<p>literal is an ordinary byte, not a comment.</p>
+<h2 id="34-indentation-indent--dedent">3.4 Indentation (<code>INDENT</code> / <code>DEDENT</code>)</h2>
+<p>Tycho is <strong>indentation-sensitive</strong>. Block structure is expressed by leading</p>
+<p>whitespace, and the lexer emits <code>INDENT</code> and <code>DEDENT</code> tokens to mark it.</p>
+<p>The algorithm, applied per logical line after skipping blank and comment-only</p>
+<p>lines:</p>
+<p>1. <strong>Measure indent depth.</strong> The leading whitespace of a line is a run of space</p>
+<p>(<code>0x20</code>) *or* tab (<code>0x09</code>) bytes. Its <strong>depth</strong> is the *count* of those</p>
+<p>bytes — not a display width. A file indented consistently with all spaces</p>
+<p>and one indented with all tabs nest identically.</p>
+<p>2. <strong>Mixing is an error.</strong> If a single line's leading whitespace contains *both*</p>
+<p>a space and a tab, the program is rejected (`mixed tabs and spaces in</p>
+<p>indentation`). Indentation MUST use one whitespace character consistently</p>
+<p>within each line.</p>
+<p>3. <strong>Compare to the stack.</strong> An indent stack holds the depths of the currently</p>
+<p>open blocks (initially <code>[0]</code>).</p>
+<ul>
+<li>If the new depth is greater than the top, push it and emit one <code>INDENT</code>.</li>
+<li>If it is less, pop levels while the top exceeds the new depth, emitting one</li>
+</ul>
+<p><code>DEDENT</code> per pop. After popping, the new depth MUST equal the (new) top of</p>
+<p>the stack; otherwise the program is rejected (<code>inconsistent indentation</code>).</p>
+<ul>
+<li>If it equals the top, emit neither.</li>
+</ul>
+<p>4. <strong>Depth bound.</strong> The indent stack has a fixed capacity; nesting deeper than</p>
+<p>255 levels is rejected (<code>indentation too deep</code>). This bounds statement</p>
+<p>nesting and, with the expression-nesting bound (§3.9), guarantees the parser</p>
+<p>cannot be driven to stack overflow by crafted input — a *fail-closed*</p>
+<p>requirement (§1.3).</p>
+<p>5. <strong>End of input.</strong> At end of file the lexer emits a <code>DEDENT</code> for every still-</p>
+<p>open level, then <code>EOF</code>.</p>
+<p>A block in the phrase grammar is therefore <code>INDENT Stmt+ DEDENT</code> (<a href="02-grammar.html">§4</a>).</p>
+<h2 id="35-tokens">3.5 Tokens</h2>
+<p>The token kinds are: <code>EOF</code>, <code>NEWLINE</code>, <code>INDENT</code>, <code>DEDENT</code>; the literal and name</p>
+<p>tokens <code>IDENT</code>, <code>INT</code>, <code>FLOAT</code>, <code>STR</code>, <code>CHAR</code>; the keyword tokens (§3.6); and</p>
+<p>the operator and punctuation tokens (§3.8). Whitespace other than the leading</p>
+<p>indentation and newlines separates tokens but is otherwise insignificant.</p>
+<p>Longest-match applies: the lexer forms the longest valid token at each</p>
+<p>position (e.g. <code>&gt;&gt;</code> is one shift token, not two <code>&gt;</code>; <code>:=</code> is one token, not <code>:</code></p>
+<p>then <code>=</code>).</p>
+<h3 id="351-case-and-the-two-name-spaces">3.5.1 Case and the two name spaces</h3>
+<p>An <code>IDENT</code> may hold any letter case in any position; the token shape does not</p>
+<p>depend on it. What the case decides is <strong>which space the name may declare in</strong>:</p>
+<ul>
+<li>A name that starts with an <strong>uppercase letter</strong> <code>A</code>–<code>Z</code> belongs to the</li>
+</ul>
+<p><strong>compile-time</strong> space: types (§8), enum variants (<a href="12-aggregates.html#191-enum-declaration-and-variants">§19.1</a>),</p>
+<p>and <code>const</code> declarations (§14).</p>
+<ul>
+<li>A name bound at <strong>run time</strong> — a local, a parameter (including <code>inout</code>,</li>
+</ul>
+<p><code>sink</code> and variadic parameters and lambda parameters), a destructuring</p>
+<p>target, a <code>for</code> loop variable, a match-arm payload binding, and a <code>select</code></p>
+<p><code>recv</code> binding — <strong>must start with a lowercase letter or `_`</strong>. A conforming</p>
+<p>implementation rejects any other spelling.</p>
+<p>The rule is exclusion, not preference: because no run-time binding can be</p>
+<p>spelled the way a variant is spelled, a binding can never shadow a constructor,</p>
+<p>and a bare <code>Name</code> in a payload slot is unambiguously a <strong>pattern</strong> rather than a</p>
+<p>binding. <code>_</code> and a leading-underscore name stay legal in every binding position</p>
+<p>(<code>_</code> is the discard, §22.4). Procedure names are unaffected — they are neither</p>
+<p>run-time bindings nor uppercase by convention — except for the four constructor</p>
+<p>names §3.7 already excludes. The identifier prefix <code>Ztycho_</code> is reserved in</p>
+<p>all name spaces for compiler-generated temporaries and is rejected by the lexer.</p>
+<h2 id="36-keywords">3.6 Keywords</h2>
+<p>The following words are <strong>reserved</strong>. A reserved word is never an identifier;</p>
+<p>using one where a name is expected is a syntax error.</p>
+<pre><code class="language-text">and     bool    break   bytes   continue elif    else    enum
+f32     false   float   fn      for      handle  i8      i16
+i32     i64     if      in      inout    int     is      match
+not     null    or      or_else  or_return parallel ptr  return
+select  spawn   string  struct  true     type    u8      u16
+u32     u64
+</code></pre>
+<p>Those 42 are the whole of <code>keyword()</code>; the same list is tabulated in</p>
+<p><a href="appendix-b-keywords.html#b1-reserved-words">Appendix B</a>. The words <code>int</code>, <code>bool</code>,</p>
+<p><code>string</code>, <code>float</code>, <code>ptr</code>, <code>bytes</code>, <code>f32</code>, and the fixed-width integers <code>u8</code>,</p>
+<p><code>u16</code>, <code>u32</code>, <code>u64</code>, <code>i8</code>, <code>i16</code>, <code>i32</code>, <code>i64</code> are the primitive **type</p>
+<p>keywords**; the rest are declaration, control-flow, operator, or literal</p>
+<p>keywords. <code>or_return</code> and <code>or_else</code> are each matched as a single word (neither</p>
+<p>is <code>or</code> followed by <code>_return</code> or <code>_else</code>).</p>
+<p><code>soa</code> is reserved too, but by the parser rather than the lexer: it lexes as an</p>
+<p>ordinary identifier and every expression position that sees it demands a <code>[</code>,</p>
+<p>so <code>soa := 5</code> is accepted and the next mention of the</p>
+<p>name dies with <code>expected '[' after soa</code>. A binding of that name is declarable and</p>
+<p>permanently unusable, which is why <a href="appendix-b-keywords.html#b1-reserved-words">Appendix B</a></p>
+<p>lists it with the reserved words and not with the contextual ones.</p>
+<h2 id="37-contextual-identifiers">3.7 Contextual identifiers</h2>
+<p>Several words are significant <strong>only in a specific position</strong> and are ordinary</p>
+<p>identifiers everywhere else. A variable, parameter, or field of the same name</p>
+<p>is unaffected — subject to <a href="#351-case-and-the-two-name-spaces">§3.5.1</a>, which</p>
+<p>bars an uppercase spelling from every run-time binding position. They are</p>
+<p><strong>not</strong> reserved:</p>
+<ul>
+<li><strong>Top-level leaders:</strong> <code>package</code>, <code>import</code>, <code>extern</code>, <code>const</code>, <code>subscript</code>.</li>
+<li><strong>Statement leaders:</strong> <code>const</code> (local), <code>delete</code> — each significant only when</li>
+</ul>
+<p>immediately followed by an identifier.</p>
+<ul>
+<li><strong>Type / expression position:</strong> <code>where</code>, <code>channel</code>, and the built-in generic</li>
+</ul>
+<p>type names <code>Option</code>, <code>Result</code>, <code>Channel</code>. <code>where</code> and <code>channel</code> are genuinely</p>
+<p>unaffected as names; the three uppercase ones are not reserved either, but</p>
+<p>§3.5.1 bars every uppercase spelling from a run-time binding position, so</p>
+<p><code>Option := 5</code> is refused exactly as <code>Foo := 5</code> is. <code>soa</code> is <strong>not</strong> in this</p>
+<p>list — see §3.6.</p>
+<ul>
+<li><strong>Parameter modifier:</strong> <code>sink</code>.</li>
+<li><strong>Construct bodies:</strong> <code>yield</code> (in a <code>subscript</code>), <code>free</code> (in a <code>handle</code>),</li>
+</ul>
+<p><code>range</code> (in the head of a <code>for … in</code>, <strong>only to refuse it</strong> since 2026-07-29).</p>
+<ul>
+<li><strong>Value constructors treated as identifiers:</strong> <code>None</code>, <code>Some</code>, <code>Ok</code>, <code>Err</code>,</li>
+</ul>
+<p>and the match wildcard <code>_</code>. Unlike the builtin functions below, these four</p>
+<p>are refused <strong>everywhere</strong>: a <code>fn</code> or <code>const</code> of one of those names is</p>
+<p>rejected in every package, qualified spelling or not</p>
+<p>(<a href="12-aggregates.html#191-enum-declaration-and-variants">§19.1</a>).</p>
+<ul>
+<li><strong>Built-in functions:</strong> every builtin (<code>len</code>, <code>push</code>, <code>pop</code>, <code>print</code>, <code>str</code>,</li>
+</ul>
+<p><code>to_int</code>, <code>wait</code>, <code>send</code>, <code>recv</code>, <code>close</code>, …) is an ordinary identifier</p>
+<p>resolved as a call; none is reserved (<a href="16-builtins.html">§29</a>).</p>
+<p>A builtin name may <strong>not</strong> be shadowed. In an unqualified call <code>f(...)</code>, if</p>
+<p><code>f</code> names a builtin then the <strong>builtin is selected</strong>, always — whatever else</p>
+<p>the file declares, and including a call written inside a same-named</p>
+<p>procedure's own body, which therefore does not recurse.</p>
+<p>That governs the <strong>call</strong>, and it reaches a declaration only through</p>
+<p>reachability — so the two declaration positions differ:</p>
+<ul>
+<li>In the <strong>main program</strong> — the entry file, whether or not it opens with</li>
+</ul>
+<p><code>package main</code> — a procedure has no spelling other than the unqualified</p>
+<p>one. One named after a builtin could never be called, so declaring it</p>
+<p><strong>is an error</strong>. Pick a different name: <code>core:utf8</code> hit this and renamed</p>
+<p>its <code>len</code> to <code>count</code>.</p>
+<ul>
+<li>In a <strong>package</strong>, <code>pkg.f(...)</code> is a different construct: it names <code>pkg</code>'s</li>
+</ul>
+<p>procedure and never a builtin. Such a declaration stays reachable, and is</p>
+<p>therefore <strong>permitted</strong> — a package MAY export a procedure whose name a</p>
+<p>builtin also owns, and callers MAY call it. <code>core:json</code> does exactly that;</p>
+<p><code>json.keys(j)</code> resolves to <code>corelib/json/json.ty@keys</code> and is legal. Only</p>
+<p>the unqualified spelling, written inside that package's own body, is taken</p>
+<p>by the builtin.</p>
+<p>Some implementations currently warn rather than reject some of these</p>
+<p>declarations in the main program; the rejection above is the normative rule.</p>
+<p>A warning on a shadowing declaration is quality of implementation, not a</p>
+<p>conformance requirement; <strong>selection</strong> of the builtin in an unqualified call</p>
+<p>is the normative part.</p>
+<h2 id="38-operators-and-punctuation">3.8 Operators and punctuation</h2>
+<p>The operator and punctuation tokens, longest-match first:</p>
+<table>
+<tr><th>Spelling</th><th>Role</th></tr>
+<tr><td><code>...</code> <code>..&lt;</code></td><td>variadic parameter (<code>...T</code>) and spread (<code>x...</code>); half-open counting range (<code>0..&lt;N</code>, §22)</td></tr>
+<tr><td><code>:=</code></td><td>declare-and-infer</td></tr>
+<tr><td><code>==</code> <code>!=</code> <code>&lt;=</code> <code>&gt;=</code></td><td>comparison</td></tr>
+<tr><td><code>-&gt;</code></td><td>return-type / function-type arrow</td></tr>
+<tr><td><code>&lt;&lt;</code> <code>&gt;&gt;</code></td><td>left / (logical) right shift</td></tr>
+<tr><td><code>::</code></td><td>reserved token, <strong>currently unused</strong> by the grammar</td></tr>
+<tr><td><code>:</code></td><td>block colon, typed-declaration colon, map-type / slice colon</td></tr>
+<tr><td><code>=</code></td><td>assignment</td></tr>
+<tr><td><code>&lt;</code> <code>&gt;</code></td><td>comparison</td></tr>
+<tr><td><code>+</code> <code>-</code> <code>*</code> <code>/</code> <code>%</code></td><td>arithmetic</td></tr>
+<tr><td><code>&amp;</code></td><td>bitwise-AND (binary) and address-of / <code>inout</code> argument (unary)</td></tr>
+<tr><td>`\</td><td><code> </code>^<code> </code>~`</td><td>bitwise OR, XOR, NOT</td></tr>
+<tr><td><code>(</code> <code>)</code> <code>[</code> <code>]</code></td><td>grouping, calls, tuples; arrays, indexing, slices, maps</td></tr>
+<tr><td><code>.</code></td><td>field / tuple-index access</td></tr>
+<tr><td><code>,</code> <code>;</code></td><td>separator: argument / element lists; three-clause <code>for</code>-header clauses (§14.4)</td></tr>
+<tr><td><code>$</code></td><td>generic type-parameter sigil (<code>$T</code>) and explicit type arguments (<code>f$(T)</code>)</td></tr>
+</table>
+<p>The byte <code>!</code> occurs <strong>only</strong> as part of <code>!=</code>; a bare <code>!</code> is a lexical error.</p>
+<p>Boolean negation is the keyword <code>not</code>, not <code>!</code>. The braces <code>{</code> and <code>}</code> are</p>
+<p><strong>not</strong> tokens of the language; they are significant only inside an f-string</p>
+<p>literal (§3.9.5). The <strong>only</strong> range operator is <code>..&lt;</code>; <code>..</code> alone is not a</p>
+<p>token, and the <code>range(…)</code> form it replaced is gone (§14.4). Operator precedence and associativity are</p>
+<p>defined with the expression grammar in <a href="02-grammar.html#45-operator-precedence-and-associativity">§4.5</a>.</p>
+<h2 id="39-literals">3.9 Literals</h2>
+<p>To bound parser recursion, expression nesting (parentheses and unary operator</p>
+<p>chains) is limited to a fixed depth; a more deeply nested expression is rejected</p>
+<p>(<code>expression nesting too deep</code>) — a fail-closed guard, the expression-level</p>
+<p>counterpart to the indentation-depth bound (§3.4).</p>
+<h3 id="391-integer-literals">3.9.1 Integer literals</h3>
+<pre><code class="language-ebnf">IntLit    ::= DecimalLit | HexLit | BinLit
+DecimalLit ::= [0-9]+
+HexLit    ::= "0" ("x" | "X") HexDigit+
+BinLit    ::= "0" ("b" | "B") BinDigit+
+HexDigit  ::= [0-9a-fA-F]
+BinDigit  ::= [01]
+</code></pre>
+<p>An integer literal is decimal, hexadecimal (<code>0x</code>/<code>0X</code>), or binary</p>
+<p>(<code>0b</code>/<code>0B</code>). The prefixed forms are recognized only when the prefix directly</p>
+<p>follows the digit <code>0</code>, so <code>10x</code> is the integer <code>10</code> followed by an</p>
+<p>identifier — the same tie-break as C and Go — and a prefixed literal is</p>
+<p>always an integer: there is <strong>no</strong> hexadecimal-float form (§3.9.2). A <code>0x</code></p>
+<p>or <code>0b</code> prefix with no following digit is a lexical error, as is a binary</p>
+<p>literal containing a digit other than <code>0</code> or <code>1</code>. There is <strong>no</strong> octal</p>
+<p>form, <strong>no</strong> digit-group separator (<code>_</code>), and <strong>no</strong> type suffix (such as</p>
+<p><code>u32</code> or <code>L</code>). An integer literal denotes a value in the range <code>0</code> through</p>
+<p><code>9223372036854775807</code> (<code>2^63 − 1</code>); a literal larger than that is rejected</p>
+<p>(<code>integer literal out of range</code>).</p>
+<p>Because a literal is non-negative and negation is a separate unary operator</p>
+<p>(§4), the most negative <code>int</code> value, <code>−9223372036854775808</code>, has no literal</p>
+<p>spelling; it is obtained by computation (for example negating a smaller value,</p>
+<p>relying on defined wraparound — §30). An integer literal adapts to</p>
+<p>a <code>float</code>, <code>u32</code>, <code>u64</code>, or <code>f32</code> context by the literal-adaptation rules of the</p>
+<p>type system (§8); it does not change the literal's syntax.</p>
+<h3 id="392-float-literals">3.9.2 Float literals</h3>
+<pre><code class="language-ebnf">FloatLit ::= [0-9]+ "." [0-9]+ Exp?
+           | [0-9]+ Exp
+           | "." [0-9]+ Exp?          /* leading-dot form, position-restricted */
+Exp      ::= ("e" | "E") ("+" | "-")? [0-9]+
+</code></pre>
+<p>A float literal has a fractional part (<code>3.14</code>), an exponent (<code>1e10</code>, <code>2E8</code>), or</p>
+<p>both (<code>1.5e-3</code>), or begins with a dot (<code>.5</code>). The value is that of the C</p>
+<p><code>strtod</code> parse of the same text and denotes an IEEE-754 binary64 (<code>float</code>); a</p>
+<p>float literal adapts to <code>f32</code> by literal adaptation (§8). There is</p>
+<p>no hexadecimal-float form.</p>
+<p>Two disambiguation rules are normative:</p>
+<ul>
+<li><strong>Leading-dot restriction.</strong> A <code>.</code> immediately followed by a digit begins a</li>
+</ul>
+<p>float literal *only* when the preceding token is not value-producing (i.e. not</p>
+<p>an identifier, number, string, character literal, <code>)</code>, or <code>]</code>). After a</p>
+<p>value-producing token, <code>.</code> is the field/tuple-index operator, so <code>t.0</code> is a</p>
+<p>tuple index and <code>x.5</code> is a tuple index (<code>.</code> then the integer <code>5</code>), never a float.</p>
+<ul>
+<li><strong>Malformed exponent.</strong> An <code>e</code>/<code>E</code> not followed by an optional sign and at</li>
+</ul>
+<p>least one digit is not part of the number; the <code>e…</code> is lexed as a separate</p>
+<p>identifier. Thus <code>1e</code> and <code>1e+</code> do not form float literals (<code>1e</code> tokenizes as</p>
+<p><code>INT DOT?</code>… i.e. the <code>e</code> becomes a lone identifier). <code>1.e5</code> also does not form a</p>
+<p>float, but for a different reason: the <code>.</code> is not followed by a digit, so no</p>
+<p>fractional part forms and it tokenizes as <code>INT(1) "." IDENT(e5)</code>.</p>
+<h3 id="393-character-literals">3.9.3 Character literals</h3>
+<pre><code class="language-ebnf">CharLit ::= "'" ( CharEscape | (any byte except "'", "\", newline) ) "'"
+CharEscape ::= "\" ( "n" | "t" | "r" | "0" | "\" | "'" ) | "\x" HexDigit HexDigit
+HexDigit ::= "0".."9" | "a".."f" | "A".."F"
+</code></pre>
+<p>A character literal is delimited by single quotes and denotes exactly **one</p>
+<p>byte** (a value <code>0</code>–<code>255</code>) of type <code>char</code>. The supported escapes are <code>\n</code>, <code>\t</code>,</p>
+<p><code>\r</code>, <code>\0</code>, <code>\\</code>, <code>\'</code>, and <code>\xNN</code>. An empty literal (<code>''</code>), an unterminated</p>
+<p>literal, or one holding more than one byte is a lexical error.</p>
+<p><code>\xNN</code> takes <strong>exactly two</strong> hex digits, in either case: <code>'\x41'</code> is <code>'A'</code> and</p>
+<p><code>'\x0a'</code> is <code>'\n'</code>. The fixed width is normative and is not C's greedy <code>\x</code>;</p>
+<p><code>'\x4'</code> is a lexical error rather than a short read. Together with <code>\0</code> it makes</p>
+<p>every one of the 256 byte values writable as a literal.</p>
+<p><strong>`\xNN` is a character-literal escape only</strong> — a string literal still rejects it</p>
+<p>(<a href="#394-string-literals">§3.9.4</a>), and for a reason that is about representation</p>
+<p>rather than about hex. A character literal is decoded to its byte at lex time and</p>
+<p>never reaches a C string literal, whereas a string literal's text is carried as</p>
+<p>*escaped source* into codegen, where the adjacent-piece join is sound only while</p>
+<p>every escape is exactly two characters. <code>\0</code> has the same asymmetry, and for the</p>
+<p>same reason.</p>
+<h3 id="394-string-literals">3.9.4 String literals</h3>
+<pre><code class="language-ebnf">StrLit ::= StrPiece StrPiece*
+StrPiece ::= QuotedPiece | RawPiece
+QuotedPiece ::= '"' StrElem* '"'
+StrElem ::= StrEscape | (any byte except '"', "\", newline, and raw control bytes below 0x20 other than tab)
+StrEscape ::= "\" ( "n" | "t" | "r" | "\" | '"' )
+RawPiece ::= "`" RawElem* "`"
+RawElem ::= (any byte except "`" and raw control bytes below 0x20 other than tab and newline)
+</code></pre>
+<p>A string literal is delimited by double quotes and denotes a <code>string</code> value. One</p>
+<p>piece is single-line: an embedded newline is an error (`unterminated string</p>
+<p>literal<code>). The supported escapes are exactly </code>\n<code>, </code>\t<code>, </code>\r<code>, </code>\\<code>, and </code>\"` — a</p>
+<p>smaller set than C; any other <code>\</code>-escape is rejected. A raw control byte below</p>
+<p><code>0x20</code> (except tab) is rejected and MUST be written with an escape. A single</p>
+<p>string-literal *piece* is limited to a fixed maximum length (<code>string too long</code></p>
+<p>beyond it). Consequently a string *literal* cannot contain a <code>NUL</code> byte; a</p>
+<p>byte-safe <code>string</code>/<code>bytes</code> *value* containing interior <code>NUL</code>s is produced at run</p>
+<p>time (e.g. via <code>bytes</code>), not written as a literal.</p>
+<p><strong>Adjacent pieces join.</strong> Two or more string literals written next to one another</p>
+<p>are one literal, concatenated left to right at parse time: <code>"ab" "cd"</code> is <code>"abcd"</code>.</p>
+<p>Because the implicit line-join inside <code>(</code>…<code>)</code> and <code>[</code>…<code>]</code></p>
+<p>(<a href="#32-logical-lines-and-newline">§3.2</a>) suppresses the newline, this is how a</p>
+<p><strong>multi-line string</strong> is written:</p>
+<pre><code class="language-tycho">_page := ("&lt;!doctype html&gt;\n"
+         "&lt;title&gt;hello&lt;/title&gt;\n"
+         "&lt;p&gt;body&lt;/p&gt;\n")
+</code></pre>
+<p>Apart from a raw piece (below) there is no other multi-line string form, and</p>
+<p>there is no backslash line-continuation. An <strong>f-string never joins</strong></p>
+<p>(<a href="#395-f-string-interpolated-literals">§3.9.5</a>): it is</p>
+<p>already sugar for a <code>+</code> chain, so <code>f"a" "b"</code> and <code>"a" f"b"</code> are each a syntax</p>
+<p>error. Joining is defined on the literals'</p>
+<p>*escaped source text*, which is sound only because every escape is exactly two</p>
+<p>characters — the reason <code>\0</code> and <code>\xNN</code> are not in <strong>this</strong> escape set (a greedy</p>
+<p>C-style <code>\x</code> would absorb a hex digit across a join, so <code>"\x4" "1"</code> would mean one</p>
+<p>byte where the author wrote two, and a <code>\0</code> would truncate the interned literal,</p>
+<p>whose length comes from <code>strlen</code>). Both are legal in a *character* literal</p>
+<p>(<a href="#393-character-literals">§3.9.3</a>), which is decoded to a byte at lex time and so</p>
+<p>has no such exposure; the asymmetry is deliberate and normative.</p>
+<p><strong>Raw pieces.</strong> A piece delimited by backticks — <code></code> <code>…</code> <code></code> — is a *raw* string</p>
+<p>piece. <strong>No escape is interpreted inside it:</strong> a backslash is a backslash, so</p>
+<p><code></code> <code>a\nb</code> <code></code> is the four characters <code>a</code>, <code>\</code>, <code>n</code>, <code>b</code> and equals <code>"a\\nb"</code>. A</p>
+<p><code>"</code> needs no escape. An embedded <strong>newline is a literal newline byte</strong>, so a raw</p>
+<p>piece is the one literal form that genuinely spans source lines:</p>
+<pre><code class="language-tycho">_page := `&lt;!doctype html&gt;
+&lt;title&gt;hello&lt;/title&gt;`
+</code></pre>
+<p>Because no escape exists, **there is no way to write a backtick inside a raw</p>
+<p>piece** — the first backtick after the opener closes it. A backtick is an</p>
+<p>ordinary byte inside a *quoted* piece, so a literal that needs one is written by</p>
+<p>joining: <code></code>s := <code>a</code> "<code>" </code>b<code> </code><code> is the three characters </code><code> a</code>b <code></code>. A raw</p>
+<p>piece that is never closed before end of file is rejected (`unterminated raw</p>
+<p>string literal<code>, reported at the *opening* line). Raw control bytes below </code>0x20`</p>
+<p>are rejected exactly as in a quoted piece, with tab <strong>and newline</strong> excepted.</p>
+<p>The same fixed per-piece length bound applies (<code>string too long</code>).</p>
+<p>A raw piece <strong>is</strong> a <code>StrPiece</code>, so it joins with adjacent pieces of either kind:</p>
+<p><code></code> <code>raw </code> "and normal" <code></code> and <code></code> "normal and " <code>raw</code> <code></code> are each one literal.</p>
+<p>This is sound under the escaped-source-text rule above because the scanner</p>
+<p>re-escapes a raw piece's bytes into the ordinary two-character escapes as it</p>
+<p>reads them; the token a raw piece produces is an ordinary string token carrying</p>
+<p>escaped text, and nothing downstream can tell which spelling produced it. A raw</p>
+<p>piece is never interpolated: there is no <code></code> f<code>…</code> <code></code> form, and <code>{</code> inside a raw</p>
+<p>piece is an ordinary byte.</p>
+<p>Concatenating two string literals with <code>+</code> also folds to one literal in a</p>
+<p><code>const</code> (<a href="08-declarations.html#122-constants">§12.2</a>), so <code>const TERM = "\r\n" + "\r\n"</code></p>
+<p>is a single four-byte literal and not a run-time concatenation.</p>
+<h3 id="395-f-string-interpolated-literals">3.9.5 f-string (interpolated) literals</h3>
+<p>An f-string is a string literal prefixed with <code>f</code>. Inside it, a <code>{ expr }</code></p>
+<p><strong>hole</strong> interpolates the value of an expression, and <code>{{</code> and <code>}}</code> denote</p>
+<p>literal <code>{</code> and <code>}</code>. Everything outside a hole obeys the string-literal rules of</p>
+<p>§3.9.4; text inside a hole is Tycho source, re-lexed and parsed as an</p>
+<p>expression, and nested string literals inside a hole are permitted.</p>
+<p>An f-string is <strong>syntactic sugar</strong>: at parse time <code>f"a{e}b"</code> becomes the</p>
+<p>concatenation <code>"a" + str(e) + "b"</code>. There is no distinct f-string AST node.</p>
+<p>Because the desugaring wraps each hole in <code>str(…)</code>, a hole expression MUST be of</p>
+<p>a type accepted by <code>str</code> (the numeric and string scalars); other hole types are</p>
+<p>rejected with the same diagnostic <code>str</code> gives (<a href="16-builtins.html">§29</a>).</p>
+<h3 id="396-boolean-and-pointer-literals">3.9.6 Boolean and pointer literals</h3>
+<p><code>true</code> and <code>false</code> are the two <code>bool</code> literals (§3.6). <code>null</code> is the literal of</p>
+<p>the opaque FFI pointer type <code>ptr</code>; it denotes a null pointer and participates</p>
+<p>only in FFI passing, <code>null</code>-comparison, and <code>is_null</code> (<a href="14-ffi.html">§24</a>). There is no <code>bytes</code> literal — a <code>bytes</code> value is produced by</p>
+<p><code>to_bytes</code> from a <code>string</code> or from an <code>[int]</code> of byte values (§8).</p>
+<h2 id="310-non-normative-tree-sitter-grammar">3.10 Non-normative tree-sitter grammar</h2>
+<p>The tree-sitter grammar in <code>editors/zed/grammars/tycho/</code> exists for editor</p>
+<p>syntax highlighting and is <strong>not</strong> part of this specification. It is a flat</p>
+<p>token stream that models no indentation, and it diverges from the language as</p>
+<p>defined here in at least the following ways (all resolved in favor of this</p>
+<p>specification):</p>
+<p>1. it lists <code>while</code> as a keyword — there is no <code>while</code> in the language;</p>
+<p>2. it lists <code>char</code> and <code>void</code> as type keywords — neither is spellable as a type;</p>
+<p>3. it treats <code>import</code>, <code>package</code>, and <code>extern</code> as reserved keywords — they are</p>
+<p>contextual identifiers (§3.7) — and omits the reserved word <code>handle</code>. Its</p>
+<p>fourth entry, <code>soa</code>, is right: <code>soa</code> is reserved (§3.6);</p>
+<p>4. its number pattern does not model exponents or the leading-dot form (§3.9.2);</p>
+<p>5. it lists <code>{</code>/<code>}</code> as punctuation and omits <code>...</code> — braces are not tokens and</p>
+<p><code>...</code> is a real operator (§3.8);</p>
+<p>6. its builtin list is partial and includes the removed names <code>map_get</code>/</p>
+<p><code>map_set</code> (which the language rejects at parse time);</p>
+<p>7. it models no <code>INDENT</code>/<code>DEDENT</code>/<code>NEWLINE</code> (§3.4), so it cannot represent block</p>
+<p>structure.</p>
+<p>A conforming implementation MUST follow §3.1–§3.9; the tree-sitter grammar has</p>
+<p>no normative force.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

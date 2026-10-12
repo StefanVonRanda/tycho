@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Functions and closures — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / reference/functions.md</nav>
+<h1 id="functions-and-closures">Functions and closures</h1>
+<blockquote>
+<p><strong>Memory:</strong> a closure keeps its own copy of what it captures, so it still works after the original is gone.</p>
+</blockquote>
+<p>A function in Tycho can be a first-class value — bound, passed, stored, returned, and called</p>
+<p>indirectly. A closure captures by value, like every other value in the language, which is what</p>
+<p>lets a returned closure work with no extra annotations. And any function can be called in method</p>
+<p>position with <code>x.f(a)</code>, without classes.</p>
+<h2 id="parameter-passing-modes">Parameter passing modes</h2>
+<p>A parameter is passed in one of three modes (<a href="../spec/11-functions.html#152-parameter-passing-modes">spec §15.2</a>):</p>
+<ul>
+<li><strong>Default (by value).</strong> A scalar is copied; a heap-bearing value (a <code>string</code>, array, map or</li>
+</ul>
+<p>heap-bearing struct) is a <strong>read-only borrow</strong> — the callee may read it but not mutate it,</p>
+<p>and mutating it is a compile error. The caller's value is unchanged either way, so this is</p>
+<p>value semantics with the copy elided where nobody can tell.</p>
+<ul>
+<li><strong>`inout`</strong> — an exclusive, call-scoped mutable borrow, written <code>&amp;x</code> at the call site and</li>
+</ul>
+<p>equivalent to <code>x = f(x)</code>. The same variable may not be passed to two <code>inout</code> parameters of</p>
+<p>one call.</p>
+<ul>
+<li><strong>`sink`</strong> — the callee <strong>owns and consumes</strong> the argument. After passing a variable to a</li>
+</ul>
+<p><code>sink</code> parameter the caller MUST NOT use it again; that is a compile error, not a silent</p>
+<p>copy. A fresh literal or a call's result is adopted with no copy.</p>
+<p>A sink argument must be the variable's <strong>only</strong> mention in the function, and no named variable can be</p>
+<p>adopted inside a loop. So a consuming chain is written as nested calls —</p>
+<p>each call's result handed straight to the next — rather than as <code>d = add(d, x)</code> in a loop</p>
+<p>(<a href="../spec/11-functions.html#152-parameter-passing-modes">spec §15.2</a>).</p>
+<p><code>sink</code> and <code>inout</code> are mutually exclusive, and neither may combine with a variadic parameter.</p>
+<h2 id="variadic-parameters">Variadic parameters</h2>
+<p>A final parameter written <code>xs: ...T</code> is <strong>variadic</strong>: it takes any number of trailing</p>
+<p>arguments. Inside the body <code>xs</code> is a <code>[T]</code>, and a call packs its trailing arguments into that</p>
+<p>array. It is shorthand for an array parameter — the packed <code>[T]</code> is a value, copied at the</p>
+<p>boundary like any array.</p>
+<pre><code class="language-tycho">fn sum(xs: ...int) -&gt; int:
+    acc := 0
+    for x in xs:
+        acc = acc + x
+    return acc
+
+sum(1, 2, 3)          # packs [1, 2, 3] -&gt; 6
+sum()                 # []int -&gt; 0
+nums := [4, 5, 6]
+sum(nums...)          # spread: pass an existing array -&gt; 15
+</code></pre>
+<ul>
+<li>Only the <strong>last</strong> parameter may be variadic, and it may follow fixed parameters</li>
+</ul>
+<p>(<code>fn tagged(tag: string, xs: ...int)</code>).</p>
+<ul>
+<li><code>f(a, b, c)</code> <strong>packs</strong>; <code>f(arr...)</code> <strong>spreads</strong> an existing <code>[T]</code> (so a variadic function</li>
+</ul>
+<p>can forward its own args: <code>sum(xs...)</code>). A spread argument must be the sole variadic</p>
+<p>argument; a spread is only valid into a variadic parameter.</p>
+<ul>
+<li>The <strong>generic form</strong> <code>xs: ...$T</code> infers <code>T</code> from the arguments — <code>count(1, 2, 3)</code> binds</li>
+</ul>
+<p><code>T = int</code>, <code>count("a", "b")</code> binds <code>T = string</code>. An empty call has nothing to infer from, so</p>
+<p><code>count()</code> is a compile error — but you can name the type instead: <code>count$(int)()</code> supplies</p>
+<p>the empty <code>[]int</code>.</p>
+<ul>
+<li>Packing is a property of the <strong>call</strong>, not of how the callee was named: <code>vp.sum(1, 2, 3)</code></li>
+</ul>
+<p>through a package qualifier packs identically, and so does a call carrying explicit type</p>
+<p>arguments.</p>
+<h2 id="first-class-function-values">First-class function values</h2>
+<p>A top-level function used as a value has type <code>fn(P1, ..., Pn) -&gt; R</code> (drop the <code>-&gt; R</code> for a</p>
+<p><code>void</code> return):</p>
+<pre><code class="language-tycho">fn dbl(x: int) -&gt; int:
+    return x * 2
+
+fn apply(g: fn(int) -&gt; int, x: int) -&gt; int:   # higher-order: takes a function
+    return g(x)
+
+fn main():
+    f := dbl                       # f : fn(int) -&gt; int
+    print(str(f(5)))               # 10  (indirect call)
+    print(str(apply(dbl, 21)))     # 42
+</code></pre>
+<p>A function value is either a <strong>reference</strong> to a named function — it captures nothing, so it is</p>
+<p>just a code pointer that costs nothing extra and never expires — or a <strong>closure</strong> (below). This is what gives you</p>
+<p><code>map</code>/<code>filter</code>/<code>reduce</code>-style helpers over concrete function arguments without generics. Two</p>
+<p>things cannot become values: builtins (<code>len</code>, <code>push</code>, …) and functions with <code>inout</code> parameters.</p>
+<p>Everything else is first-class — storable in a struct field, array, map value, or tuple.</p>
+<h2 id="closures-lambdas">Closures (lambdas)</h2>
+<p>A <strong>lambda</strong> is an anonymous function written inline; its body is a single expression (an</p>
+<p>implicit return). Parameter and return types are elidable wherever an expected <code>fn</code> type</p>
+<p>supplies them — <code>apply(fn(x): x * 2, 21)</code>:</p>
+<pre><code class="language-tycho">fn apply(f: fn(int) -&gt; int, x: int) -&gt; int:
+    return f(x)
+
+fn main():
+    n := 10
+    addn := fn(x: int) -&gt; int: x + n     # a closure: captures n
+    print(str(apply(addn, 5)))           # 15
+</code></pre>
+<p>Closures <strong>capture by value</strong>: the captured variable is copied into the closure when it is</p>
+<p>created, so the closure is independent of any later change to the original. A closure is a</p>
+<p>plain value, with no shared references.</p>
+<pre><code class="language-tycho">a := [10, 20]
+get_len := fn() -&gt; int: len(a)
+push(a, 30)                  # mutate the original after capture
+print(str(get_len()))        # 2 -- the closure kept its own copy, not 3
+</code></pre>
+<p>A closure can also <strong>escape</strong> — be returned from the function that created it:</p>
+<pre><code class="language-tycho">fn make_adder(n: int) -&gt; fn(int) -&gt; int:
+    return fn(x: int) -&gt; int: x + n      # captures n, then escapes
+
+fn main():
+    add5 := make_adder(5)
+    print(str(add5(100)))                # 105
+</code></pre>
+<p>This needs <strong>no lifetime annotations</strong>: a returned closure carries its captured values with</p>
+<p>it, like any other returned value. Function values are full members of the data model — a closure can live in a container and be</p>
+<p>called once stored, and a returned closure can be applied inline:</p>
+<pre><code class="language-tycho">ops := [make_adder(1), make_adder(100)]   # an array of closures
+print(str(ops[1](5)))                     # 105
+print(str(make_adder(7)(3)))              # 10  (apply a returned closure inline)
+</code></pre>
+<p>When a container of closures outlives its scope, each closure's captured values travel with</p>
+<p>it. The common higher-order patterns (<code>map</code>/<code>filter</code>/<code>reduce</code>, predicates, comparators,</p>
+<p>factory functions, dispatch tables) are all covered.</p>
+<h2 id="methods-ufcs">Methods (UFCS)</h2>
+<p><code>x.foo(a)</code> is sugar for <code>foo(x, a)</code> — a "method" is just a free function whose first parameter</p>
+<p>is the receiver (UFCS, uniform function call syntax). There are no classes, no inheritance,</p>
+<p>and no <code>self</code>: calls resolve on the receiver's compile-time type, the receiver is passed by value like any argument, and any</p>
+<p>type can be a receiver — a struct, an <code>int</code>, anything. Calls chain, including on call results:</p>
+<pre><code class="language-tycho">struct Vec:
+    x: int
+    y: int
+
+fn add(p: Vec, q: Vec) -&gt; Vec:
+    return Vec(p.x + q.x, p.y + q.y)
+
+fn norm1(p: Vec) -&gt; int:
+    return p.x + p.y
+
+fn doubled(k: int) -&gt; int:
+    return k * 2
+
+a := Vec(1, 2)
+b := Vec(3, 4)
+
+_m := a.add(b).norm1()   # == norm1(add(a, b))
+n := 21
+_d := n.doubled()        # == doubled(n) -- an int receiver
+</code></pre>
+<p>This extends to the built-ins that take a receiver-shaped first argument, so the operations you</p>
+<p>reach for most read the same way your own functions do:</p>
+<pre><code class="language-tycho">s := "a,b"
+xs := [1, 2]
+
+_parts := s.split(",")   # == split(s, ",")
+xs.push(9)              # == push(xs, 9)
+_k := xs.len()           # == len(xs)
+_f := n.to_float()       # == to_float(n)
+</code></pre>
+<p><code>recv.name(args)</code> on a built-in rewrites to <code>name(recv, args)</code> and is checked by the exact same</p>
+<p>argument rules as the plain call — a wrong receiver type is rejected, not silently coerced. The</p>
+<p>receiver-first built-ins include <code>split</code>, <code>find</code>, <code>len</code>, <code>push</code>, <code>pop</code>, <code>reserve</code>, <code>keys</code>, <code>str</code>,</p>
+<p><code>substr</code>, <code>chr</code>, the <code>to_*</code> conversions, <code>is_null</code>, <code>sqrt</code>/<code>pow</code>/<code>floor</code>/<code>fabs</code>, and the <code>map_*</code></p>
+<p>forms. Constructors (<code>Some</code>/<code>Ok</code>/<code>Err</code>/<code>None</code>) and built-ins taking no arguments (<code>args</code>, <code>now</code>, <code>ncpu</code>, …)</p>
+<p>have no receiver and stay plain calls.</p>
+<p>One disambiguation rule: if the receiver's struct has a *fn-typed field* with the same name as</p>
+<p>a free function, the field wins — <code>h.cb(5)</code> calls the stored function value, not a free <code>cb</code>.</p>
+<hr/>
+<p>How this is implemented — capture copies, how escaping closures carry their environment,</p>
+<p>and why <code>sink</code> adoption is restricted — is in <a href="../internals/design-functions.html">design-functions</a>,</p>
+<p>for maintainers.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

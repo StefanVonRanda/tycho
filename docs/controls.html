@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Every gate must be able to fail — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="index.html">docs</a> / controls.md</nav>
+<h1 id="every-gate-must-be-able-to-fail">Every gate must be able to fail</h1>
+<p>A green test suite is evidence of nothing until you know each test can go red.</p>
+<p>That sounds obvious and it is routinely untrue: a check that passes because it</p>
+<p>is broken looks exactly like a check that passes because the code is right.</p>
+<p>Tycho has no cloud CI, 102 entries in a defect log, and a rule that fell out of</p>
+<p>both — **every gate here has to demonstrate it can redden, and the demonstration</p>
+<p>is part of the gate.**</p>
+<p>This page is four cases where that rule paid off. Every number below is from</p>
+<p><a href="internals/FRICTION.html">`internals/FRICTION.md`</a>, the project's defect log.</p>
+<h2 id="1-sixteen-attacks-refused-and-the-gate-was-measuring-nothing">1. Sixteen attacks refused, and the gate was measuring nothing</h2>
+<p>The server was probed with sixteen hostile requests — raw <code>../</code>, <code>%2e%2e%2f</code>,</p>
+<p>double-encoded <code>%252e</code>, <code>....//</code>, overlong UTF-8 <code>%c0%af</code>, absolute-form, a NUL</p>
+<p>in the target, an 8000-byte target. All refused. Nothing leaked. The server kept</p>
+<p>serving afterwards.</p>
+<p>Then the control was run: one of the two defence layers was replaced with naive</p>
+<p>string concatenation, to check the probe would notice.</p>
+<p>It still returned 403.</p>
+<p>The defence is two independent layers, and **either one alone refuses every</p>
+<p>payload in the suite**. So deleting one changed no observable behaviour, and</p>
+<p>sixteen green results were compatible with the defence being half gone. Two</p>
+<p>commits, neither of which looks wrong in review, would have taken it to zero</p>
+<p>with every gate still green.</p>
+<p>Nothing was broken. The finding was that nothing *could tell* — which is a</p>
+<p>different and worse problem, because it has no symptom. (<code>FRICTION.md</code> entry 72.)</p>
+<h2 id="2-the-flag-that-quietly-emptied-the-corpus">2. The flag that quietly emptied the corpus</h2>
+<p><code>make ci N=0</code> is documented as "skip the slow fuzz lanes for a quick check".</p>
+<p><code>scripts/format_diff.sh</code> read its corpus size from a bare <code>N=${N:-400}</code>. Make</p>
+<p>exports its variables, so the differential picked up the same <code>N</code>:</p>
+<pre><code>N=0 sh scripts/format_diff.sh   -&gt;  20 paths,   9 refused
+sh scripts/format_diff.sh       -&gt; 420 paths, 129 refused
+</code></pre>
+<p>The quick-check flag cut that lane to <strong>4.8% of its corpus</strong> and said nothing.</p>
+<p>It was caught by luck: the lane happens to exit non-zero if fewer than ten paths</p>
+<p>are refused — a guard written for an unrelated reason — and with <code>N=0</code> the</p>
+<p>corpus fell just past it. Without that accident, <code>make ci N=0</code> would have been a</p>
+<p>green sweep over a twentieth of the evidence. (Entry 84.)</p>
+<h2 id="3-a-control-that-was-optimised-into-its-own-negative">3. A control that was optimised into its own negative</h2>
+<p>Tycho's crypto gate proves a hex decoder does not branch on secret key material.</p>
+<p>Proving an *absence* needs an instrument known to detect the presence, so the</p>
+<p>control is a patched copy of the decoder with the branchless select rewritten as</p>
+<p>an <code>if/else</code> chain. It must redden. If it does not, the leg proves nothing.</p>
+<p>Under gcc at <code>-O1</code> that chain survives and the control reports four</p>
+<p>secret-dependent branches. Under clang at <code>-O1</code> it is if-converted straight back</p>
+<p>into a branchless select — so the control emitted no branch, reported zero, and</p>
+<p>the gate refused to certify.</p>
+<p><strong>The control had been optimised into the thing it was the negative of.</strong> The</p>
+<p>fix is to build the control at <code>-O0</code>, where its branch survives any compiler,</p>
+<p>while the subject stays at <code>-O1</code>, because "the shipped decode has no</p>
+<p>secret-dependent branch" is a claim about optimised code and is worth nothing at</p>
+<p><code>-O0</code>. (Entry 92.)</p>
+<p>Two sibling entries the same day were the same mistake wearing different</p>
+<p>clothes: a packed-instruction count and an unused-symbol suppression, each a</p>
+<p>property of *gcc* that a gate had recorded as a property of *C*. All three</p>
+<p>failed closed, which is the gates working. What none of them could do was say</p>
+<p>"this is a property of the compiler I happen to be." (Entries 89, 90, 92.)</p>
+<h2 id="4-the-class-no-sanitizer-sees">4. The class no sanitizer sees</h2>
+<p>Four sanitizer lanes run here: addresses, undefined behaviour, leaks, races.</p>
+<p>None of them sees a <strong>read of memory that was never written</strong>.</p>
+<p>That gap lands squarely on this design. <code>arena_alloc</code> is a bump pointer over a</p>
+<p><code>malloc</code>'d block, so it hands back memory that is not zeroed and that ASan</p>
+<p>considers perfectly valid, because the enclosing block is live. A codegen path</p>
+<p>reading a field before writing it is invisible to every lane — and it tends to</p>
+<p>*pass a golden*, because a fresh page reads as zeros until the allocation</p>
+<p>pattern shifts.</p>
+<p>So the arena was instrumented under valgrind, every handout marked undefined,</p>
+<p>and the whole corpus swept: the fixtures, every corelib package, every example,</p>
+<p>and all 27 tools driven through their own gates with their real inputs.</p>
+<p><strong>972 programs, 0 uninitialised arena reads.</strong></p>
+<p>The number that makes that worth printing is not 972. It is the control, run in</p>
+<p>both directions: a read of an unwritten arena slot fires `Conditional jump or</p>
+<p>move depends on uninitialised value(s)` and exits 42, and the same slot written</p>
+<p>first is silent and exits 0. Without the first, a clean sweep is indistinguishable</p>
+<p>from a dead detector. Without the second, it is indistinguishable from a detector</p>
+<p>that flags everything. (<code>internals/probe-uninit-arena-2026-09-11.md</code>.)</p>
+<h2 id="the-practice">The practice</h2>
+<ul>
+<li><strong>Every closed entry names a command that would catch its regression.</strong> 93</li>
+</ul>
+<p>closed, 92 pinned by 66 distinct commands, 1 excused with a stated reason, 0</p>
+<p>unpinned — and <code>make friction-check</code> *runs the pins*, so the log is executable</p>
+<p>rather than decorative. An entry claiming a fix that no longer holds turns the</p>
+<p>gate red.</p>
+<ul>
+<li><strong>Skips are enumerated, never silent.</strong> A lane that cannot run on this host</li>
+</ul>
+<p>names itself and the reason; an unenumerated skip is a failure.</p>
+<ul>
+<li><strong>A gate that cannot discriminate refuses to certify</strong> rather than passing</li>
+</ul>
+<p>vacuously. That is why entries 89 and 92 above surfaced as red builds on a</p>
+<p>tree where nothing was wrong.</p>
+<ul>
+<li><strong>The log records the wrong turns too</strong> — theories that were disproved, a</li>
+</ul>
+<p>commit message that was wrong on a point of fact and the entry that corrects</p>
+<p>it, recommendations made without reading the comment above the code.</p>
+<p>None of this makes the language good. It makes the *evidence* about the language</p>
+<p>worth reading, which is the part a stranger cannot take on trust.</p>
+<p>See also: <a href="architecture.html">architecture</a> · <a href="thesis.html">thesis</a> ·</p>
+<p><a href="internals/FRICTION.html">the friction log itself</a></p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

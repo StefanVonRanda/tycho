@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Appendix H — Differences from the reference documentation — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / spec/appendix-h-differences.md</nav>
+<h1 id="appendix-h--differences-from-the-reference-documentation">Appendix H — Differences from the reference documentation</h1>
+<p>Writing this specification against the source of record surfaced points where the</p>
+<p>reader-facing reference (<code>docs/reference/*</code>, <code>docs/reference/corelib.md</code>) was stale,</p>
+<p>incomplete, or contradicted the implementation. On every such point **this</p>
+<p>specification governs** (<a href="00-conventions.html">§1</a>). Each was logged here and has</p>
+<p>since been <strong>reconciled</strong> — the reference-doc corrections landed in <code>cf51e09</code></p>
+<p>("back-port spec-audit findings into the reference docs"), the <code>char</code>-arithmetic</p>
+<p>fix (H4) in the tightening campaign, and the stale compiler message (H2) was</p>
+<p>removed from source. This appendix is retained as the audit trail; the "Fixed</p>
+<p>in" column and the verified reference locations below show each is closed.</p>
+<table>
+<tr><th>#</th><th>Reference said</th><th>Correction (spec governs)</th><th>Reference location (now correct)</th><th>Fixed in</th></tr>
+<tr><td>H1</td><td><code>reference/packages.md</code>: packages have <strong>"no privacy"</strong> — everything visible.</td><td>Cross-package access to a <code>_</code>-prefixed name is <strong>rejected</strong> (leading-underscore package privacy).</td><td><code>reference/packages.md:22-24</code></td><td><code>cf51e09</code></td></tr>
+<tr><td>H2</td><td>A stale <strong>compiler diagnostic</strong> ("int-keyed maps support only int/float values"). *(Not a reference-doc drift — <code>reference/maps.md</code> already states V is any type.)*</td><td>A map's <strong>value type is unrestricted</strong>; only the *key* type is constrained. The false message was removed.</td><td><code>reference/maps.md</code> (already correct); message absent from</td><td>source cleanup</td></tr>
+<tr><td>H3</td><td><code>reference/types.md</code>: f-string holes must be int/float/bool/string.</td><td>A hole may also be <code>u32</code>/<code>u64</code>/<code>f32</code> (it desugars to <code>str</code>, which accepts them).</td><td><code>reference/types.md:78-79</code></td><td><code>cf51e09</code></td></tr>
+<tr><td>H4</td><td><code>reference/types.md</code>: <code>char ± int</code> "stays within a byte."</td><td><strong>Correct</strong>: <code>char</code> arithmetic wraps to a byte (<code>0..255</code>, like <code>u8</code>), so the reference matches the language.</td><td><code>reference/types.md</code> (§ char)</td><td>tightening campaign; <code>tests/char_byte</code></td></tr>
+<tr><td>H5</td><td><code>docs/reference/generics.md</code>: appeared to discuss <code>empty$</code> as though it were a builtin.</td><td><code>empty$</code> is <strong>not</strong> a builtin; <code>empty$(int)</code> is the *explicit call-site type-argument* form (<code>name$(…)</code>) applied to the generic <code>empty()</code>. Only <code>zero$(T)</code> is special-cased.</td><td><code>docs/reference/generics.md:13</code>,  (framed as explicit type args)</td><td>already correct</td></tr>
+<tr><td>H6</td><td><code>reference/builtins.md</code> — the builtin catalog was incomplete.</td><td>Now lists <code>eprint</code>, <code>is_null</code>, <code>to_ptr</code>, <code>to_i32</code>, <code>to_u32</code>, <code>to_u64</code>, <code>to_f32</code> (<code>to_under</code> and <code>keys</code> are cross-referenced on the newtypes/maps pages).</td><td><code>reference/builtins.md</code></td><td><code>cf51e09</code></td></tr>
+<tr><td>H7</td><td><code>docs/reference/corelib.md</code> — six packages were absent from the list.</td><td><code>bignum</code>, <code>decimal</code>, <code>net</code>, <code>compress</code>, <code>image</code>, <code>tls</code> are now documented.</td><td><code>docs/reference/corelib.md:288-293</code> (bignum, decimal), <code>docs/reference/corelib.md:441-465</code> (net), <code>docs/reference/corelib.md:600-619</code> (compress, image, tls)</td><td><code>cf51e09</code></td></tr>
+<tr><td>H8</td><td><code>docs/reference/corelib.md</code> datetime entry.</td><td>The <code>datetime</code> timezone offset functions (<code>local_offset</code>, <code>offset_at</code>, <code>now_local</code>; fixed-offset <code>from_unix_at</code>/<code>to_unix_at</code>/<code>format_iso_tz</code>) are now documented.</td><td><code>docs/reference/corelib.md:183-198</code></td><td><code>cf51e09</code></td></tr>
+</table>
+<h2 id="notes">Notes</h2>
+<ul>
+<li><strong>H1 was a genuine behavioral correction, not just wording:</strong> an implementation</li>
+</ul>
+<p>that allowed cross-package <code>_</code>-name access would be non-conforming. The</p>
+<p>reference page understated the language; it now states the rule.</p>
+<ul>
+<li><strong>H4 is resolved</strong>: <code>char</code> arithmetic was changed to wrap to a byte (tightening</li>
+</ul>
+<p>campaign), so the reference's "stays within a byte" is accurate; the compiler</p>
+<p>agree.</p>
+<ul>
+<li>Corrections H2–H8 do not change any accept/reject or output behavior of a</li>
+</ul>
+<p>*conforming* program; they aligned the reference prose with what the compilers</p>
+<p>already do. H1 changes what a program may write.</p>
+<ul>
+<li><strong>Status: all rows closed.</strong> Each correction has been verified against the</li>
+</ul>
+<p>current reference location cited above. New drifts, if any surface, are appended</p>
+<p>here and reconciled in the same manner.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

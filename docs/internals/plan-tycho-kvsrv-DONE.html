@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What the next program says the language needs — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / internals/plan-tycho-kvsrv-DONE.md</nav>
+<h1 id="what-the-next-program-says-the-language-needs">What the next program says the language needs</h1>
+<p><strong>Status: DONE 2026-08-04. Program: HTTP key-value server (`tools/tycho-kvsrv/`). Outcome: 2 phases complete — actor store + daemon gate (`make kvsrv-check`, ci step [3l/18]); no language findings.</strong></p>
+<blockquote>
+<p>This plan is a fresh clone, 2026-08-04: the completed tycho-rsa plan lives</p>
+<p>at <code>docs/internals/plan-tycho-rsa-DONE.md</code>. The rule from that plan holds</p>
+<p>here: *does anything that is not the program written to want it need this?*</p>
+<p>A finding becomes a phase only when a second, independent caller exists.</p>
+</blockquote>
+<h2 id="the-program----the-http-key-value-server--toolstycho-kvsrv">The program -- the HTTP key-value server  (tools/tycho-kvsrv/)</h2>
+<p>A concurrent HTTP server exposing a key-value store: GET/PUT/DELETE</p>
+<p><code>/kv/&lt;key&gt;</code>, keep-alive connections, status codes, over core:net + core:httpd.</p>
+<p>The stress is networking plus the shared-state concurrency question.</p>
+<p>Rule: there is no shared mutable storage and no lock machinery — race freedom is by</p>
+<p>construction. The store is therefore an ACTOR: one task owns the map, and</p>
+<p>connection handlers reach it through channels. The channel topology follows from the affine/non-storable rules (a <code>Channel</code> cannot be a struct</p>
+<p>field, a container element, or a return): ONE shared command channel whose</p>
+<p>payload carries a worker id, plus one NAMED reply channel per worker, passed</p>
+<p>as spawn arguments — so every channel has exactly one receiver and nothing</p>
+<p>races. The worker count is a named constant (4); the</p>
+<p>worker pool uses tycho-httpd's proven recursive fan-out on the one shared</p>
+<p>listening fd.</p>
+<p>The differential is the daemon-testing pattern from server/run.sh: start</p>
+<p>with --port 0, poll the stderr banner for the real port, drive it with a</p>
+<p>raw-socket python client, assert the responses. The gate asserts the</p>
+<p>round-trips (PUT/GET/DELETE, 404 on a missing key), keep-alive (two</p>
+<p>requests, one connection), a method/path 405/404, and the concurrency probe:</p>
+<p>4 parallel clients PUT distinct keys, all 4 come back intact (the actor</p>
+<p>serializes the map; the assertion proves no command is dropped).</p>
+<p>Scope: the store is IN-MEMORY (no persistence — the B+</p>
+<p>tree lives in the tycho-kv tool and is not a corelib).</p>
+<h2 id="phases">Phases</h2>
+<h3 id="phase-1----the-server-routes-the-actor-store-the-worker-pool--done-2026-08-04">Phase 1 -- the server: routes, the actor store, the worker pool  [DONE 2026-08-04]</h3>
+<p>The server is ~240 lines: core:httpd for request parsing and response</p>
+<p>rendering, core:net for the fds, and the concurrency shape the language</p>
+<p>requires: the store is an ACTOR (one task owns</p>
+<p>the <code>[string: string]</code> map), reachable through ONE shared command channel</p>
+<p>whose payload carries the worker id, plus four NAMED reply channels passed</p>
+<p>as spawn arguments. The rules that require this: a Channel cannot be a</p>
+<p>struct field (compiler-rejected with a clean diagnostic), a container</p>
+<p>element, or a return value; tasks cannot detach (implicit join at scope</p>
+<p>exit). The worker pool is tycho-httpd's recursive fan-out over the one</p>
+<p>shared listening fd, four workers, each serving its accepted connection</p>
+<p>inline.</p>
+<p>Every channel has exactly one receiver, so nothing can race -- by</p>
+<p>construction, not by lock. The gate proves the actor round-trip under</p>
+<p>interleaving: 4 parallel clients PUT distinct keys and all 4 come back</p>
+<p>intact.</p>
+<h3 id="phase-2----the-daemon-gate--done-2026-08-04">Phase 2 -- the daemon gate  [DONE 2026-08-04]</h3>
+<p><code>make kvsrv-check</code> (ci step [3l/18], ~2s) follows the server/run.sh daemon</p>
+<p>pattern: start with --port 0, poll the stderr banner for the bound port</p>
+<p>(the socket is already listening, so the runner never sleeps a fixed</p>
+<p>interval), drive it with one raw-socket python client, assert: the</p>
+<p>round-trips (PUT/GET/DELETE, 404 on a missing key), the protocol (POST</p>
+<p>405, a non-kv path 404), keep-alive (two requests on one connection, both</p>
+<p>answered), and the concurrency probe -- all golden-locked.</p>
+<p><strong>No findings to file.</strong> The networking and shared-state-concurrency axes</p>
+<p>held: the actor shape follows from the documented channel rules, race</p>
+<p>freedom came free, and the only surprise was in the test client (a python</p>
+<p>client that forgot the blank line after the request head -- the server</p>
+<p>correctly waited for it).</p>
+<h2 id="findings">Findings</h2>
+<p>(none -- findings appear here as the program is written)</p>
+<h2 id="phases">Phases</h2>
+<p>(none -- a finding becomes a phase only when a second, independent caller</p>
+<p>needs it)</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

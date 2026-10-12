@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>14. Statements and control flow — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / spec/10-statements.md</nav>
+<h1 id="14-statements-and-control-flow">14. Statements and control flow</h1>
+<p>The grammar of statements is in</p>
+<p><a href="02-grammar.html#43-blocks-and-statements">§4.3</a>; this chapter defines their</p>
+<p>meaning. Declarations and assignments are covered in</p>
+<p><a href="08-declarations.html">§12</a>; this chapter covers control flow.</p>
+<h2 id="141-blocks">14.1 Blocks</h2>
+<p>A block is an indentation-delimited sequence of one or more statements</p>
+<p>(<a href="01-lexical.html#34-indentation-indent--dedent">§3.4</a>). Each block is a scope</p>
+<p>(<a href="08-declarations.html#123-scope-and-shadowing">§12.3</a>). A block cannot be empty;</p>
+<p><code>pass</code> is the no-op that gives one a body (§14.1.1). The bare-expression</p>
+<p>statements permitted are a call, and a call followed by <code>or_return</code> or an</p>
+<p><code>or_else</code> clause when the callee's ok payload is <code>void</code></p>
+<p>(<a href="03-types.html#536-enums-option-result">§5.3.6</a>); a bare variable, index or</p>
+<p>field expression is rejected as having no effect, and so is an <code>or_return</code> or</p>
+<p><code>or_else</code> over any other payload type, which would drop a value.</p>
+<h3 id="1411-pass">14.1.1 <code>pass</code></h3>
+<pre><code class="language-text">pass
+</code></pre>
+<p><code>pass</code> is the statement that does nothing. It is the body to write wherever the</p>
+<p>grammar demands a statement and the program has nothing to do there: a <code>match</code></p>
+<p>arm that deliberately ignores its case, an <code>if</code> branch kept for its comment, a</p>
+<p>loop body whose work is entirely in its head.</p>
+<pre><code class="language-tycho">fn drain(r: Result(int, string)) -&gt; int:
+    match r:
+        Ok(n): return n
+        Err(e): pass          # this case is deliberately ignored
+    return 0
+</code></pre>
+<p><code>pass</code> is <strong>contextual, not reserved</strong> (<a href="appendix-b-keywords.html">Appendix B</a>):</p>
+<p>it is a statement only in statement position, so <code>pass := 0</code> and `pass = pass +</p>
+<p>1<code> remain ordinary code and a variable named </code>pass` keeps working. It is not an</p>
+<p>expression and MUST NOT appear where a value is expected. A hand-written empty</p>
+<p>function called for its emptiness is not the idiom and is not needed.</p>
+<h2 id="142-if--elif--else">14.2 <code>if</code> / <code>elif</code> / <code>else</code></h2>
+<pre><code class="language-text">if C1: … elif C2: … else: …
+</code></pre>
+<p>Each condition MUST be <code>bool</code>. Conditions are tested in order; the first <code>true</code></p>
+<p>condition's block runs and the rest are skipped; if none is true and an <code>else</code> is</p>
+<p>present, its block runs. <code>elif</code> is exactly sugar for an <code>else</code> block containing a</p>
+<p>single nested <code>if</code>. A value-producing <code>if</code> (in tail position) is defined in</p>
+<p><a href="09-expressions.html#135-expression-valued-if-and-match">§13.5</a>.</p>
+<h2 id="143-match">14.3 <code>match</code></h2>
+<pre><code class="language-text">match E: &lt;arm&gt;+
+</code></pre>
+<p><code>match</code> evaluates its subject <code>E</code> <strong>exactly once</strong> (*probed*) and runs the arm</p>
+<p>whose pattern matches. A pattern is a variant name (optionally binding its</p>
+<p>payload into 0–8 names local to the arm), a qualified <code>pkg.Variant</code>, or the</p>
+<p>wildcard <code>_</code>. A <code>match</code> MUST be <strong>exhaustive</strong>: every variant of the subject's</p>
+<p>type MUST be covered, or a <code>_</code> arm MUST be present; a non-exhaustive <code>match</code> is</p>
+<p>rejected at compile time. Payload bindings are visible only within their arm. The</p>
+<p>statement form runs a block per arm; the value form (arms are blocks ending in a</p>
+<p>value expression, tail position) is defined in §13.5.</p>
+<h3 id="1431-nested-patterns">14.3.1 Nested patterns</h3>
+<p>An <code>Ok</code>, <code>Err</code> or <code>Some</code> arm MAY refine its single payload with <strong>one</strong> nested</p>
+<p>pattern instead of binding it: <code>Err(net.Timeout)</code>, <code>Err(Timeout)</code>,</p>
+<p><code>Err(TooBig(n))</code>. The nested pattern names a variant of the payload's enum type</p>
+<p>and MAY bind that variant's own payload into 0–8 names. Nesting is **one level</p>
+<p>deep<strong> and is permitted </strong>only** on an <code>Option</code>/<code>Result</code> payload: inside a plain</p>
+<p>enum arm a nested pattern is rejected, and the payload MUST be matched in its own</p>
+<p><code>match</code>.</p>
+<p>Because the payload's enum type is already known at the pattern, the nested</p>
+<p>variant MAY be written <strong>unqualified</strong> even when its enum belongs to another</p>
+<p>package — <code>Err(Timeout)</code> and <code>Err(net.Timeout)</code> are the same pattern. It follows</p>
+<p>that **a name that is a variant of the payload's enum is always a pattern, never a</p>
+<p>binding**: <code>Err(Timeout)</code> does not bind a variable called <code>Timeout</code>. Where such a</p>
+<p>name is not a legal pattern (it carries a payload but was written bare, or the</p>
+<p>enclosing arm is a plain enum arm) the program is <strong>rejected</strong>; it is never</p>
+<p>silently read as a binding.</p>
+<p>A side of the match (its <code>Ok</code> arms, its <code>Err</code> arms, its <code>Some</code> arms) is an ordered</p>
+<p>decision list: refined arms are tested in source order, then the unrefined arm for</p>
+<p>that side, if any. An unrefined arm therefore MUST come last among its side's</p>
+<p>arms — a refined arm written after one is dead and is rejected as a duplicate. Two</p>
+<p>refined arms naming the same variant are likewise rejected. A side is exhaustive</p>
+<p>when it has an unrefined arm, when its refined arms name every variant of the</p>
+<p>payload's enum, or when a <code>_</code> arm is present.</p>
+<h3 id="1432-scalar-subjects">14.3.2 Scalar subjects</h3>
+<p>A <code>match</code> whose subject is an <code>int</code>, <code>char</code>, or <code>bool</code> takes <strong>scalar arms</strong>: a</p>
+<p>literal (<code>1:</code>, <code>'a':</code>, <code>true:</code>), an inclusive range (<code>1..9:</code>), a set</p>
+<p>(<code>1 | 3 | 5:</code>), a set mixing ranges (<code>45 | 48..57:</code>), or an <code>int</code> constant name</p>
+<p>(<code>OP_ADD:</code>, <code>OP_ADD..OP_GE:</code>). The arm elements must be the subject's own kind:</p>
+<p>an <code>int</code> subject takes int literals and int constants; a <code>char</code> subject takes</p>
+<p>char literals; a <code>bool</code> subject takes <code>true</code>/<code>false</code>. A range's two ends must be</p>
+<p>the same kind, and its start must not exceed its end. The subject is evaluated</p>
+<p>exactly once, as in §14.3.</p>
+<p><code>_</code> is <strong>required</strong> for <code>int</code> and <code>char</code> subjects — the domain is unbounded, so</p>
+<p>exhaustiveness is unprovable — and a non-exhaustive scalar <code>match</code> is rejected</p>
+<p>at compile time, exactly like a non-exhaustive enum <code>match</code>. A <code>bool</code> subject is</p>
+<p>exhaustive when both <code>true</code> and <code>false</code> are covered; <code>_</code> is optional there.</p>
+<p>Duplicate or <strong>overlapping</strong> arms are an error: <code>1..9</code> plus <code>5</code> is a duplicate,</p>
+<p>because an earlier arm would be dead. <code>match</code> on <code>string</code>, <code>bytes</code>, or <code>float</code></p>
+<p>is refused — nothing in the tree dispatches on them; <code>if</code>/<code>elif</code> is the form.</p>
+<p>The statement and value forms are those of §14.3. Codegen: a match with 4+ arms</p>
+<p>emits a C <code>switch</code> (a jump table at <code>-O3</code> when the values are dense); fewer arms</p>
+<p>emit a chain.</p>
+<pre><code class="language-tycho">import "core:httpd"
+
+fn serve(req: httpd.Request):
+    println("served")
+
+fn refuse(code: int):
+    println("refused " + str(code))
+
+fd := 0
+
+match httpd.read_request(fd):
+    Ok(req): serve(req)
+    Err(httpd.TooLarge): refuse(431)
+    Err(httpd.Timeout): refuse(408)
+    Err(e): refuse(500)
+</code></pre>
+<h2 id="144-loops">14.4 Loops</h2>
+<p>Tycho has one loop keyword, <code>for</code>, in four shapes; <code>break</code> and <code>continue</code> are</p>
+<p>valid in every shape and are errors outside a loop.</p>
+<p><strong>Condition (`while`) form</strong> — <code>for C:</code> runs its body while the <code>bool</code> condition</p>
+<p><code>C</code> holds.</p>
+<p><strong>Infinite form</strong> — <code>for:</code> runs its body until a <code>break</code> or a <code>return</code>. It is</p>
+<p>the condition form with a literal <code>true</code> and nothing about it is otherwise</p>
+<p>special.</p>
+<p><strong>Three-clause form</strong> — <code>for init; cond; post:</code> runs <code>init</code> once, then runs the</p>
+<p>body while the <code>bool</code> <code>cond</code> holds, running <code>post</code> after every iteration. <code>init</code></p>
+<p>is a declaration or an assignment and <code>post</code> is an assignment to a variable; a</p>
+<p>variable that <code>init</code> declares is scoped to the loop, and <code>post</code> is evaluated in</p>
+<p>the loop's scope, not the body's, so it cannot read a body-local. **All three</p>
+<p>clauses are required** — this grammar has no empty-statement production to put</p>
+<p>in one — and <code>for:</code> is the only degenerate form. A <code>continue</code> **runs the post</p>
+<p>clause**: it jumps *to* <code>post</code>, not past it, so a loop that advances only in</p>
+<p><code>post</code> still terminates.</p>
+<p><strong>Foreach form</strong> — <code>for x in xs:</code> iterates a collection: an array (binding each</p>
+<p>element) or a <code>string</code> (binding each byte as an <code>int</code>). The **collection is</p>
+<p>evaluated exactly once** before the loop.</p>
+<p>There is <strong>no counting form</strong>, and <code>range</code> is not a name the language knows.</p>
+<p><code>for i in range(a, b, step):</code> was removed on 2026-07-29; a <code>for</code> head that names</p>
+<p><code>range</code> is refused with both replacements spelled out. Count sequentially with</p>
+<p>the three-clause form; count in parallel with <code>parallel for i in 0..&lt;N:</code></p>
+<p>(<a href="13-concurrency.html#22-parallel-for">§22</a>), which is the only context where</p>
+<p><code>0..&lt;N</code> is legal — a sequential <code>for i in 0..&lt;N:</code> is refused.</p>
+<p><strong>There is no zero-step check.</strong> A three-clause <code>post</code> is arbitrary code, so no</p>
+<p>equivalent check exists: <code>for i := 0; i &lt; n; i += 0:</code> is an infinite loop and</p>
+<p>the implementation <strong>does not diagnose it</strong>, at compile time or at run time.</p>
+<p><code>0..&lt;N</code> steps by <code>1</code> implicitly and so has no zero-step case at all.</p>
+<p>Rationale: a single loop form states its own direction and amount in the source.</p>
+<h2 id="145-return">14.5 <code>return</code></h2>
+<p><code>return</code> with no operand returns from a <code>void</code> function. <code>return e</code> returns the</p>
+<p>value of <code>e</code>, checked against the function's return type. <code>return a, b, …</code></p>
+<p>returns a tuple (2–8 elements). <code>return if … / return match …</code> returns the value</p>
+<p>of a tail-position <code>if</code>/<code>match</code> (§13.5). A returned value is produced directly in</p>
+<p>the caller's storage (<a href="07-memory-model.html#102-the-escape-rule">§10.2</a>).</p>
+<h2 id="146-or-return">14.6 <code>or_return</code></h2>
+<p><code>v := e or_return</code> evaluates <code>e</code>, which MUST be an <code>Option</code> or a <code>Result</code>. For a</p>
+<p><code>Result</code>, <code>Ok(x)</code> binds <code>v := x</code> and execution continues, while <code>Err(err)</code> causes</p>
+<p>the enclosing function to <code>return Err(err)</code> immediately — the function MUST return</p>
+<p>a <code>Result(_, E)</code> with the same error type <code>E</code>. For an <code>Option</code>, <code>Some(x)</code> binds</p>
+<p><code>v := x</code> and <code>None</code> causes the enclosing function to <code>return None</code>. The</p>
+<p>short-circuited <code>Err</code>/<code>None</code> payload is promoted into the caller's storage so it</p>
+<p>outlives the return. <code>or_return</code> binds tighter than any binary operator.</p>
+<h3 id="1461-or-else">14.6.1 <code>or_else</code></h3>
+<pre><code class="language-text">OrElse ::= "or_else" IDENT ":" Expr      /* IDENT is a name, or `_` to bind nothing */
+</code></pre>
+<p><code>v := e or_else x: h</code> is <code>or_return</code> with a chosen return value. <code>e</code> MUST be an</p>
+<p><code>Option</code> or a <code>Result</code>. On <code>Ok(v)</code>/<code>Some(v)</code> the expression is the payload, of</p>
+<p>the payload's type, exactly as for <code>or_return</code>. On <code>Err(err)</code>, <code>err</code> is bound to</p>
+<p><code>x</code>, <code>h</code> is evaluated and the enclosing function <strong>returns</strong> <code>h</code>. It never falls</p>
+<p>through as a fallback value — that is <code>result.unwrap_or</code>.</p>
+<ul>
+<li><code>h</code> MUST have the enclosing function's return type, which need not be a</li>
+</ul>
+<p><code>Result</code> or an <code>Option</code>: <code>or_else _: false</code> in a <code>bool</code> function returns</p>
+<p><code>false</code>. A mismatch is a compile error that names both types.</p>
+<ul>
+<li>On an <code>Option</code> the binding MUST be <code>_</code>, since <code>None</code> carries no value.</li>
+<li><code>x</code> is in scope in <code>h</code> only. <code>_</code> binds nothing. An unused <code>x</code> is not an</li>
+</ul>
+<p>error, as for a <code>match</code>-arm binding.</p>
+<ul>
+<li><code>or_else</code> in a function that returns nothing is a compile error; use</li>
+</ul>
+<p><code>or_return</code> or a <code>match</code> there.</p>
+<ul>
+<li><code>h</code> is a whole <code>Expr</code>, so it runs to the end of the line, or to the <code>)</code>, <code>]</code></li>
+</ul>
+<p>or <code>,</code> that closes the surrounding bracket. A block after the <code>:</code> is a syntax</p>
+<p>error.</p>
+<p>In every other respect <code>or_else</code> follows <code>or_return</code>: the operand binds tighter</p>
+<p>than any binary operator; the statement form <code>f() or_else x: h</code> is legal exactly</p>
+<p>when the ok payload is <code>void</code>; <code>h</code> is promoted into the caller's storage before</p>
+<p>the function's scopes are freed; and <code>or_else</code> MUST NOT appear in a `parallel</p>
+<p>for` body.</p>
+<pre><code class="language-tycho">enum IoErr:
+    Denied
+
+enum AppErr:
+    Storage(IoErr)
+    Listen(string, int)
+    Wal(IoErr)
+
+fn read(path: string) -&gt; Result(string, IoErr):
+    return Ok(path)
+
+fn listen(h: string, p: int) -&gt; Result(int, IoErr):
+    return Ok(p)
+
+fn write_at(b: string) -&gt; Result(void, IoErr):
+    return Ok()
+
+fn load(path: string, h: string, p: int) -&gt; Result(int, AppErr):
+    s := read(path) or_else e: Err(Storage(e))      # wrap the error
+    fd := listen(h, p) or_else _: Err(Listen(h, p)) # replace it
+    write_at(s) or_else e: Err(Wal(e))              # Result(void, E): statement
+    return Ok(len(s) + fd)
+</code></pre>
+<h2 id="147-delete">14.7 <code>delete</code></h2>
+<p><code>delete m[k]</code> removes the entry for key <code>k</code> from the map place <code>m</code> (which may be</p>
+<p>a bare variable, a field, or a nested place). Deleting an absent key is a no-op.</p>
+<h2 id="148-die-exit-and-termination">14.8 <code>die</code>, <code>exit</code>, and termination</h2>
+<p><code>die(msg)</code> prints <code>msg</code> to standard error and terminates the program with status</p>
+<p><code>1</code>. <code>exit(code)</code> terminates with status <code>code</code> and prints nothing — that is the</p>
+<p>one for a program that has *answered* (a <code>--help</code> needs <code>0</code>, which <code>die</code> cannot</p>
+<p>give). Both are typed <code>void</code>, so a non-<code>void</code> function that <code>die</code>s in one branch</p>
+<p>still type-checks, <strong>and</strong> both are modelled as <strong>diverging</strong>, so either is legal</p>
+<p>as the tail of a value <code>if</code>/<code>match</code> branch even though it produces no value</p>
+<p>(<a href="16-builtins.html">§29.12.1</a>). <code>die</code> is the only user-callable *abort*</p>
+<p>(<a href="16-builtins.html">§29</a>; there is no <code>assert</code>/<code>panic</code>). Other</p>
+<p>terminating conditions (division by zero, out-of-bounds access, and the like) are</p>
+<p>the defined runtime aborts of <a href="17-runtime.html">§30</a>. Normal</p>
+<p>termination occurs when <code>main</code> returns, after which all program storage is</p>
+<p>reclaimed (<a href="07-memory-model.html#103-observable-storage-guarantees">§10.3</a>).</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

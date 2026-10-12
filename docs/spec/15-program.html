@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>27. Program structure · 28. Packages and modules — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / spec/15-program.md</nav>
+<h1 id="27-program-structure--28-packages-and-modules">27. Program structure · 28. Packages and modules</h1>
+<p>A Tycho <strong>program</strong> is the whole set of definitions reachable from a single</p>
+<p>entry point, gathered across one or more <strong>packages</strong> and compiled as one unit.</p>
+<p>This chapter defines the program's shape — its entry point, its compilation</p>
+<p>unit, its foreign <code>extern</code> declarations, and how it is linked into an</p>
+<p>executable (<a href="#27-program-structure">§27</a>) — and then the package system that</p>
+<p>supplies its definitions: package identity, <code>import</code>, name resolution and</p>
+<p>visibility, import resolution, the multi-file merge, and per-package foreign</p>
+<p>dependencies (<a href="#28-packages-and-modules">§28</a>).</p>
+<p>The type-level meaning of the declarations a program contains is given in</p>
+<p><a href="03-types.html">§5</a>; their scoping within a package is <a href="08-declarations.html">§12</a>;</p>
+<p>the FFI contract an <code>extern</code> declaration participates in — which types may cross</p>
+<p>the C boundary, and how — is <a href="14-ffi.html">§24</a>. This chapter</p>
+<p>specifies only *program- and package-level* structure and does not restate</p>
+<p>those rules.</p>
+<h2 id="27-program-structure">27. Program structure</h2>
+<h3 id="271-the-entry-point">27.1 The entry point</h3>
+<p>A program MUST define exactly one procedure named <code>main</code>, and it MUST take no</p>
+<p>parameters — the command line arrives through the <code>args()</code> builtin</p>
+<p>(<a href="16-builtins.html">§29</a>). <code>main</code> has <strong>two</strong> legal return shapes:</p>
+<ul>
+<li><code>fn main():</code> — returns nothing. The process exits <code>0</code>.</li>
+<li><code>fn main() -&gt; Result(void, string):</code> — so <code>or_return</code></li>
+</ul>
+<p>(<a href="../spec/10-statements.html">§19</a>) works at the entry point. On <code>Ok</code> the process</p>
+<p>exits <code>0</code>; on <code>Err(msg)</code> the implementation MUST write <code>msg</code> followed by a</p>
+<p>newline to standard error and exit with a <strong>non-zero</strong> status (the reference</p>
+<p>exits <code>1</code>).</p>
+<p>The error type MUST be <code>string</code>. An <code>Err</code> reaching the entry point is *printed*,</p>
+<p>and <code>has_str</code> admits no enum, so the message is the error itself. The ok payload</p>
+<p>MUST be <code>void</code>: a value there would make the exit status ambiguous.</p>
+<p>The message is written <strong>bare</strong>, with no implementation-supplied prefix — the</p>
+<p>same treatment <code>die(msg)</code> gives a user message (<a href="16-builtins.html">§29</a>), because</p>
+<p>it is the program's error and not a runtime fault.</p>
+<p>A minimal complete program is therefore:</p>
+<pre><code class="language-tycho">fn main():
+    println("hello from tycho")
+</code></pre>
+<pre><code class="language-output">hello from tycho
+</code></pre>
+<p><code>main</code> is the sole entry point: execution begins by calling it and the program</p>
+<p>terminates when it returns (the runtime allocates the program's root arena</p>
+<p>around this call — <a href="07-memory-model.html">§10</a>). <code>main</code> is an</p>
+<p>ordinary procedure in every other respect; it MAY be called recursively and MAY</p>
+<p>appear in any file of the entry package.</p>
+<p>The program's command-line arguments are obtained through the builtin <code>args()</code>,</p>
+<p>which returns a <code>[string]</code> (<a href="16-builtins.html">§29</a>). The array</p>
+<p>mirrors the process <code>argv</code> exactly, so <code>args()[0]</code> is the <strong>program name</strong> (the</p>
+<p>path by which the executable was invoked) and the operands follow at</p>
+<p><code>args()[1]</code> onward. <code>args()</code> is never empty for a normally-launched</p>
+<p>program.</p>
+<h3 id="272-the-compilation-unit">27.2 The compilation unit</h3>
+<p>A Tycho program is compiled as <strong>one whole-program unit</strong>. The compiler reads</p>
+<p>the entry file, follows every <code>import</code> transitively, merges all reachable</p>
+<p>definitions into a <strong>single</strong> AST, and emits a <strong>single</strong> C translation unit,</p>
+<p>which is compiled and linked into a <strong>single</strong> executable. There is <strong>no</strong></p>
+<p>separate compilation, <strong>no</strong> per-package object file, and <strong>no</strong> linker step</p>
+<p>that joins independently-compiled packages (<a href="../reference/packages.html">packages.md</a> §"How it builds").</p>
+<p>A conforming implementation is not required to transpile to C; the single-unit</p>
+<p>merge, however, is observable and normative — it determines name resolution and</p>
+<p>mangling (§28.3), cross-package type identity (<a href="03-types.html#51-the-type-identity-model">§5.1</a>),</p>
+<p>and the fact that a definition's behavior does not depend on which package it</p>
+<p>came from.</p>
+<p>Whether a source file participates in the package system is decided by the</p>
+<p>presence of a <code>package</code> declaration. The entry file is compiled in **package</p>
+<p>mode** (the whole directory plus its import graph, §28.5) iff it begins with a</p>
+<p><code>package</code> declaration; a file with no <code>package</code> declaration is a **single-file</p>
+<p>program** compiled alone. A single-file program has</p>
+<p>the same entry-point rule (§27.1) and is a degenerate one-package unit.</p>
+<h3 id="273-extern-declarations">27.3 <code>extern</code> declarations</h3>
+<p>An <code>extern</code> declaration introduces a procedure that is <strong>bodyless</strong> and bound to</p>
+<p>a foreign <strong>C symbol</strong> rather than to Tycho code:</p>
+<pre><code class="language-text">extern [ "Lib" ] fn name(p: T, …) [ -&gt; T ]
+</code></pre>
+<p>The following rules are normative:</p>
+<ul>
+<li>An <code>extern</code> declaration has <strong>no body</strong>: it ends at the newline after its</li>
+</ul>
+<p>signature, so a following indented</p>
+<p>block is a parse error.</p>
+<ul>
+<li>Its <code>name</code> is the <strong>literal C symbol</strong> and is <strong>not</strong> package-mangled (§28.3),</li>
+</ul>
+<p>because a C symbol is global. Two <code>extern</code> declarations naming the</p>
+<p>same C symbol therefore refer to the same foreign function regardless of the</p>
+<p>Tycho packages they appear in.</p>
+<ul>
+<li>An <code>extern</code> procedure is invoked <strong>without</strong> the implicit arena argument that</li>
+</ul>
+<p>every Tycho procedure receives (<a href="07-memory-model.html">§10</a>); it</p>
+<p>calls the C symbol directly.</p>
+<ul>
+<li>The optional leading string literal names a <strong>link library</strong> (`extern "Lib"</li>
+</ul>
+<p>fn …<code>), which the implementation adds to the link line as </code>-lLib` (§27.4).</p>
+<p>The set of types an <code>extern</code> parameter or return may name — including the</p>
+<p>fixed-width integer types (<code>u8</code>, <code>u16</code>, <code>i8</code>, <code>i16</code>, <code>i32</code>, <code>i64</code>),</p>
+<p><code>inout</code> out-parameters, and the <code>Option(string)</code> nullable return — is defined by</p>
+<p>the FFI chapter (<a href="14-ffi.html">§24</a>), which is the single normative</p>
+<p>home for the crossable-type rules. This section governs only the *declaration</p>
+<p>form* and its role in program structure.</p>
+<h3 id="274-linking-and-the-c-compiler-invocation">27.4 Linking and the C compiler invocation</h3>
+<p>For a program that is not stopped early (e.g. <code>--emit-c</code>, <code>--symbols</code>), the</p>
+<p>reference implementation compiles the emitted C and links it into the output</p>
+<p>executable with a single C-compiler invocation.</p>
+<p>The invocation has the shape:</p>
+<pre><code class="language-text">cc {-O3 | -O0 -g} -fwrapv [-march=native | -march=&lt;level&gt;] -pthread -o OUT gen.c \
+   &lt;auto shims&gt; -lm &lt;-lLib per extern lib&gt; \
+   &lt;-L/-I/--link/--pkg passthrough&gt; &lt;pkg-config flags from deps&gt;
+</code></pre>
+<p>with these normative properties:</p>
+<ul>
+<li><strong>`-fwrapv` is required semantics, not an optimization flag.</strong> It makes signed</li>
+</ul>
+<p>integer overflow <strong>defined</strong> as two's-complement wrapping rather than C</p>
+<p>undefined behavior, which is precisely Tycho's integer-overflow contract</p>
+<p>(<a href="03-types.html#521-int">§5.2.1</a>): a conforming realization on C MUST compile</p>
+<p>such that signed overflow wraps and never traps or miscompiles</p>
+<p>.</p>
+<ul>
+<li><strong>`-lm` is always passed</strong>, so bare libc math externs (e.g. <code>extern fn sqrt</code>)</li>
+</ul>
+<p>link with no <code>"m"</code> annotation.</p>
+<ul>
+<li><strong>`-pthread` is always passed</strong>, supporting the concurrency runtime</li>
+</ul>
+<p>(<a href="13-concurrency.html">§20</a>).</p>
+<ul>
+<li><strong>Optimization / debug:</strong> <code>-O3</code> is the portable default; <code>-g</code> selects <code>-O0 -g</code></li>
+</ul>
+<p>(unoptimized with debug info) instead.</p>
+<ul>
+<li><strong>`-march=native` is opt-in</strong> via <code>--native</code>. It is host-CPU-specific and MUST</li>
+</ul>
+<p>NOT be assumed portable across machines.</p>
+<ul>
+<li><strong>A raised ISA baseline is opt-in</strong> via <code>--target &lt;level&gt;</code>, whose levels are the</li>
+</ul>
+<p>x86-64 microarchitecture levels <code>x86-64-v2</code>, <code>x86-64-v3</code> and <code>x86-64-v4</code>, plus</p>
+<p><code>baseline</code> for the default. <code>baseline</code> and the absence of the flag add NOTHING</p>
+<p>to this line, so an unflagged build is byte-identical to one made before the</p>
+<p>flag existed; any other level adds <code>-march=&lt;level&gt;</code> and the binary MUST NOT be</p>
+<p>assumed to run on a machine below it. An unknown level, and a level the C</p>
+<p>compiler does not accept, are both hard errors .</p>
+<ul>
+<li>The default C compiler is <code>cc</code>; <code>--cc &lt;compiler&gt;</code></li>
+</ul>
+<p>overrides it.</p>
+<p>Three CLI options let a program splice additional flags onto this line for FFI</p>
+<p>:</p>
+<ul>
+<li><strong>`--link &lt;lib&gt;`</strong> appends a raw <code>-l&lt;lib&gt;</code>.</li>
+<li><strong>`--pkg &lt;name&gt;`</strong> runs <code>pkg-config --cflags --libs &lt;name&gt;</code> and appends the</li>
+</ul>
+<p>result.</p>
+<ul>
+<li><strong>`--shim &lt;file.c&gt;`</strong> adds a companion C source that is compiled and linked</li>
+</ul>
+<p>alongside the generated C.</p>
+<p>A build that stops early at <code>--emit-c</code> and links the generated C itself needs the</p>
+<p>same auto-discovered shim set that §27.4's line would have received. <strong>`--print-shims`</strong></p>
+<p>prints it: the *transitive* closure of companion <code>&lt;pkg&gt;_shim.c</code> sources (§28.6),</p>
+<p>one absolute path per line on stdout, then exits without code generation. The</p>
+<p>closure is not recomputed for the flag — it is the <code>g_shims</code> set that <code>merge_pkg</code></p>
+<p>fills as it walks the import graph, so a shim reached only through an indirect</p>
+<p>import is listed on the same terms as a directly imported one. A program with no</p>
+<p>package prints nothing and exits 0; an empty closure is an answer, not an error.</p>
+<p><strong>`--print-deps`</strong> reads the same walk out the other way: the *transitive* closure</p>
+<p>of pkg-config package <strong>names</strong> declared by each package's <code>deps</code> file (§28.6),</p>
+<p>one per line on stdout, then exits without code generation. It answers a different</p>
+<p>question from <code>--print-shims</code>, for a caller that does not link the C itself — a</p>
+<p>harness that lets the reference compiler build, and only needs to know whether the</p>
+<p>link line *can* resolve on this host, so that a missing library is a skip rather</p>
+<p>than a failure. The names are recorded as the walk enters each package and</p>
+<p><strong>before</strong> resolution is attempted, so they are printed whether or not pkg-config</p>
+<p>can resolve them here; the resolved <code>--cflags --libs</code> form that reaches the cc line</p>
+<p>is empty on exactly the host where the library is absent, which makes it</p>
+<p>indistinguishable from a package that declared no dependencies at all. Duplicates</p>
+<p>are collapsed. A program whose closure declares no <code>deps</code> prints nothing and exits</p>
+<p>0.</p>
+<p><code>-L&lt;dir&gt;</code> and <code>-I&lt;dir&gt;</code> (attached or separated) also accumulate onto the line</p>
+<p>. Every library/package name that reaches the shell — from</p>
+<p><code>extern "Lib"</code>, <code>--link</code>, or <code>--pkg</code> — MUST be restricted to a conservative</p>
+<p>character set (<code>[A-Za-z0-9._+-]</code>) and rejected otherwise, so compiling an</p>
+<p>untrusted source cannot inject a shell command. The <code>extern "Lib"</code> libraries, the auto-discovered</p>
+<p>shims, and the <code>deps</code> flags are contributed automatically by the sources they</p>
+<p>belong to (§27.3, §28.6); the CLI options above are the manual escape hatch.</p>
+<p>The exact command line — flag spelling and order, the choice of <code>cc</code>, and the</p>
+<p><code>--native</code>/<code>-g</code> couplings — belongs to the reference implementation and is outside</p>
+<p>the language proper (<a href="00-conventions.html#11-scope">§1.1</a> excludes the CLI and the</p>
+<p>generated-C layout). The <strong>normative</strong> content of this section is narrow:</p>
+<p><code>-fwrapv</code> two's-complement wrapping is the language's integer contract, and a</p>
+<p>program that names an external link library (via <code>extern "Lib"</code>, a <code>deps</code> entry,</p>
+<p>or <code>--link</code>/<code>--pkg</code>) depends on that library being present at link time. The</p>
+<p>precise realization is implementation-defined</p>
+<p>(<a href="appendix-f-impl-defined.html">Appendix F</a>).</p>
+<h2 id="28-packages-and-modules">28. Packages and modules</h2>
+<h3 id="281-packages-and-namespaces">28.1 Packages and namespaces</h3>
+<p>A <strong>package</strong> is a *directory* of <code>.ty</code> files that all declare the same</p>
+<p><code>package NAME</code> and share <strong>one flat namespace</strong>. Every top-level definition in</p>
+<p>any file of the directory — function, <code>struct</code>, <code>enum</code>, <code>handle</code>, newtype,</p>
+<p><code>const</code>, and enum variant — belongs to that one namespace; the split into files</p>
+<p>is not semantically significant (<a href="../reference/packages.html">packages.md</a> §"Surface</p>
+<p>syntax").</p>
+<p>A package's symbols are reached from another package by a <strong>qualified name</strong></p>
+<p><code>pkg.symbol</code>, where <code>pkg</code> is the importing binding (§28.2). The qualified form</p>
+<p>applies to types, functions, struct/enum constructors, and enum variants alike</p>
+<p>— <code>geom.Point</code>, <code>geom.add</code>, <code>geom.Red</code> ( handles a</p>
+<p>payload-less <code>pkg.Variant</code>).</p>
+<p>Every non-entry package's <code>package NAME</code> MUST equal the final component of the</p>
+<p>import path that reached it — which, for a relative import, is its directory</p>
+<p>name. The <strong>entry package may be named anything</strong>: its name is taken from the</p>
+<p>entry file's own <code>package</code> declaration and is not constrained to the directory</p>
+<p>name.</p>
+<h3 id="282-import-declarations">28.2 Import declarations</h3>
+<p>An import is a top-level declaration in a package's file:</p>
+<p>The plain form binds the package under the final component of its path:</p>
+<pre><code class="language-tycho">package main
+import "core:math"
+
+fn main():
+    println(str(math.abs(-7)))
+</code></pre>
+<pre><code class="language-output">7
+</code></pre>
+<p>The aliased form binds it under the alias instead, and the original name is then</p>
+<p>not in scope:</p>
+<pre><code class="language-tycho">package main
+import m "core:math"
+
+fn main():
+    println(str(m.abs(-7)))
+</code></pre>
+<pre><code class="language-output">7
+</code></pre>
+<p>The grammar is <code>"import" IDENT? STRING NEWLINE</code>. The plain form <code>import "PATH"</code> binds the package</p>
+<p>under the <strong>final component</strong> of <code>PATH</code> (<code>import "math/geom"</code> binds <code>geom</code>); the</p>
+<p>aliased form <code>import ALIAS "PATH"</code> binds the package under <code>ALIAS</code> instead</p>
+<p>.</p>
+<p><code>package</code> and <code>import</code> are <strong>contextual</strong>: they are special only as the leading</p>
+<p>identifier of a top-level item and remain ordinary identifiers elsewhere, so</p>
+<p>they are not reserved words. A bound package name,</p>
+<p>however, is effectively reserved within the file: because a bare <code>pkg.symbol</code></p>
+<p>is disambiguated by treating <code>pkg</code> as an imported package first, a program</p>
+<p>SHOULD NOT shadow an imported binding with a local of the same name</p>
+<p>(<a href="../reference/packages.html">packages.md</a> §"Surface syntax"). **Import cycles are an</p>
+<p>error** (§28.5).</p>
+<h3 id="283-name-resolution-and-visibility">28.3 Name resolution and visibility</h3>
+<p>Within the single merged unit (§27.2), every definition carries a</p>
+<p><strong>per-package prefix</strong>. The entry package uses the <strong>empty</strong> prefix, so its</p>
+<p>symbols keep their plain names; every imported package <code>P</code> uses the prefix</p>
+<p><code>P__</code>, applied uniformly to every definition and every reference — including the</p>
+<p>generated type families for its arrays, tuples, maps, and helper functions</p>
+<p>(<a href="../reference/packages.html">packages.md</a> §"How it builds").</p>
+<p>Two identically-named symbols in different packages are therefore distinct after</p>
+<p>mangling. <code>extern</code> C symbols are the sole exception and are never prefixed</p>
+<p>(§27.3).</p>
+<p><strong>Visibility is by a leading underscore.</strong> A top-level symbol whose name begins</p>
+<p>with <code>_</code> is <strong>private to its own package</strong>: it is usable from any file *within*</p>
+<p>that package, but a qualified <code>pkg._name</code> from another package MUST be rejected</p>
+<p>with a diagnostic. Every other top-level</p>
+<p>symbol is exported and visible to importers. There is no visibility keyword;</p>
+<p>the underscore convention is the whole of the rule.</p>
+<p>That includes <strong>top-level `const`s</strong>: <code>pkg.NAME</code> reads an exported constant and</p>
+<p>is <strong>folded to its literal at the use site</strong>, exactly as an unqualified const</p>
+<p>is, so no runtime global is emitted and the reference costs nothing. A</p>
+<p><code>pkg._NAME</code> is refused by the same underscore rule. A qualified const is</p>
+<p>accepted wherever an expression is; it is <strong>not</strong> accepted as a fixed-array</p>
+<p>length (<code>[pkg.CAP]int</code>), because an array length is resolved while parsing and</p>
+<p>the imported package may not be parsed yet — an unqualified <code>const</code> still works</p>
+<p>there.</p>
+<h3 id="284-import-resolution">28.4 Import resolution</h3>
+<p>An import <code>PATH</code> resolves to a package directory as follows:</p>
+<ul>
+<li><strong>`core:` collection.</strong> If <code>PATH</code> begins with <code>core:</code>, it resolves to</li>
+</ul>
+<p><code>&lt;corelib_root&gt;/&lt;rest&gt;</code> and binds the name <code>&lt;rest&gt;</code>'s final component — e.g.</p>
+<p><code>import "core:strings"</code> resolves to <code>&lt;corelib_root&gt;/strings</code> and binds</p>
+<p><code>strings</code>; <code>import "core:text/utf8"</code> resolves to <code>&lt;corelib_root&gt;/text/utf8</code></p>
+<p>and binds <code>utf8</code> .</p>
+<ul>
+<li><strong>Relative imports.</strong> Any other <code>PATH</code> resolves relative to the **importing</li>
+</ul>
+<p>package's own directory**, independent of the current working</p>
+<p>directory or the entry file's location.</p>
+<p>The <strong>corelib root</strong> is determined in order: the environment variable <code>TYCHO_CORELIB</code> if set and</p>
+<p>non-empty; otherwise <code>&lt;exe_dir&gt;/corelib</code> (next to the compiler binary, so an</p>
+<p>in-tree build needs no configuration); otherwise <code>&lt;exe_dir&gt;/../share/tycho/corelib</code></p>
+<p>(the installed layout); otherwise resolution fails with a diagnostic</p>
+<p>. <code>core:</code> is currently the only collection root</p>
+<p>(<a href="../reference/packages.html">packages.md</a> §"The <code>core:</code> collection").</p>
+<h3 id="285-the-multi-file-merge">28.5 The multi-file merge</h3>
+<p>Package mode assembles the program by a <strong>post-order depth-first traversal</strong> of</p>
+<p>the import graph, merging every reachable package's definitions into one AST</p>
+<p>. For each package directory the</p>
+<p>implementation MUST:</p>
+<p>1. <strong>Enter with cycle and depth checks.</strong> If the directory is already on the</p>
+<p>active DFS path, it is an <strong>import cycle</strong> and MUST be rejected; if it was</p>
+<p>already merged (a shared dependency), it is skipped; the active path is</p>
+<p><strong>capped at 64</strong> and deeper nesting MUST be rejected.</p>
+<p>2. <strong>Scan its `.ty` files in sorted order.</strong> All <code>*.ty</code> files in the directory</p>
+<p>are collected and sorted by name, so the merge order is deterministic and</p>
+<p>independent of directory-listing order. A directory with no <code>.ty</code> files is an</p>
+<p>error.</p>
+<p>3. <strong>Load imports first (post-order).</strong> Every import found in the package's file</p>
+<p>headers is resolved (§28.4) and merged <strong>before</strong> this package's own</p>
+<p>definitions, so a definition's dependencies are already registered when it is</p>
+<p>parsed.</p>
+<p>4. <strong>Require the declared package name.</strong> Every file in the directory MUST carry</p>
+<p>a <code>package</code> declaration, and it MUST equal the package name expected for this</p>
+<p>directory (§28.1); a missing declaration or a mismatch MUST be rejected.</p>
+<p>5. <strong>Append into the one shared AST</strong>, mangling each package's names by its</p>
+<p><code>P__</code> prefix (§28.3) into the single flat namespace.</p>
+<p>The resulting program is then finiteness-checked, resolved, and code-generated</p>
+<p>as a whole (<a href="03-types.html">§5</a>, <a href="04-inference.html">§6</a>).</p>
+<h3 id="286-package-foreign-dependencies-deps-and-shims">28.6 Package foreign dependencies (<code>deps</code> and shims)</h3>
+<p>A package MAY carry C-backed machinery that is built and linked automatically</p>
+<p>when the package is imported:</p>
+<ul>
+<li><strong>Companion shim.</strong> A co-located <code>&lt;pkg&gt;/&lt;pkg&gt;_shim.c</code> is auto-added to the</li>
+</ul>
+<p>link line as a compiled companion source, so a</p>
+<p>C-backed corelib package (e.g. <code>core:regex</code> over <code>&lt;regex.h&gt;</code>) is turnkey with</p>
+<p>no manual <code>--shim</code>. One shim per package; it is deduplicated.</p>
+<ul>
+<li><strong>`deps` file (pkg-config).</strong> The package's sibling</li>
+</ul>
+<p><code>&lt;pkg&gt;/deps</code> file is read: each line names a <strong>pkg-config</strong> package (blank</p>
+<p>lines and lines beginning with <code>#</code> are ignored); for each name the</p>
+<p>implementation runs <code>pkg-config --cflags --libs &lt;name&gt;</code> and splices the result</p>
+<p>onto the C compiler line (§27.4), so a shim that <code>#include</code>s a system header</p>
+<p>builds against the right flags. A <code>deps</code> name</p>
+<p>that pkg-config cannot resolve prints a diagnostic; the missing library</p>
+<p>then surfaces as a link error at the <code>cc</code> stage. A <code>deps</code> file is read</p>
+<p><strong>whether or not the package has a shim</strong>: <code>core:sqlite</code> has none — it binds</p>
+<p>libsqlite3 through <code>extern "sqlite3"</code> — and its dependency is reported and</p>
+<p>linked on the same terms as a shim-backed one.</p>
+<p><code>deps</code>-backed packages are the boundary between the two conformance tiers</p>
+<p>(<a href="00-conventions.html#13-conformance">§1.3</a>). They belong to the **extended</p>
+<p>tier<strong>: a conforming implementation </strong>MAY** omit them and still conform at the</p>
+<p><strong>core tier</strong>, but a program that imports an absent extended package <strong>MUST</strong> be</p>
+<p>diagnosed rather than silently mis-linked. The reference test harness embodies</p>
+<p>this split — it probes the same <code>deps</code> and <strong>skips</strong> (rather than fails) a</p>
+<p>package's tests when the external library is unavailable (<code>corelib/run.sh</code>).</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

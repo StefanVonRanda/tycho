@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Repo polish, after the testing campaign — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / internals/plan-repo-polish-DONE.md</nav>
+<h1 id="repo-polish-after-the-testing-campaign">Repo polish, after the testing campaign</h1>
+<p><strong>Status: DONE 2026-08-04. The eight-program testing campaign is complete: eight programs across six axes, zero compiler/runtime defects, six tool-gate lanes, and the byte-for-byte proof. Outcome: TODO sweep clean, LICENSE/SECURITY/CONTRIBUTING present, README evidence section added, CI stays local-only by owner decision.</strong></p>
+<blockquote>
+<p>2026-08-04: the eight-program testing campaign is declared complete. Eight</p>
+<p>programs across six axes (data structures, bits, arithmetic, networking +</p>
+<p>shared-state concurrency, algorithmic depth, file I/O), zero compiler/runtime</p>
+<p>defects, six tool-gate lanes, and a differential fuzzer, and the</p>
+<p>byte-for-byte proof. The completed plans live at</p>
+<p><code>docs/internals/plan-tycho-sat-DONE.md</code> and the six before it; the fresh</p>
+<p>clone that proposed a build tool (the last untested axis, systems I/O) is</p>
+<p>superseded by this polish turn -- that axis stays filed as the next program</p>
+<p>if testing ever resumes.</p>
+</blockquote>
+<p>&gt;</p>
+<blockquote>
+<p>The rule from the program plans carries over: a finding becomes a phase only</p>
+<p>when a second, independent caller exists.</p>
+</blockquote>
+<h2 id="the-work">The work</h2>
+<p>The repo measures clean (1224 commits, 894 <code>.ty</code> files, ~9 grep hits that</p>
+<p>turn out to be false positives -- see phase 1). The polish gaps, in priority</p>
+<p>order: a LICENSE (the legal blocker), a GitHub Actions workflow running <code>make ci</code>, a README section documenting the seven tool</p>
+<p>programs as the evidence of exercise, and a CONTRIBUTING.md.</p>
+<h2 id="phases">Phases</h2>
+<h3 id="phase-1----sweep-the-todofixme-markers--done-2026-08-04">Phase 1 -- sweep the TODO/FIXME markers  [DONE 2026-08-04]</h3>
+<p>The tree carries <strong>no TODO/FIXME/HACK markers at all</strong>. A whole-word scan of</p>
+<p>every <code>.ty</code>, <code>.md</code>, <code>.c</code>, <code>.sh</code> and <code>.py</code> file (including <code>src/tychoc.c</code> and</p>
+<p><code>runtime/tycho_rt.c</code>) returns zero matches. The ~9 hits that motivated the</p>
+<p>phase are all substring false positives: <code>\uXXXX</code> -- the JSON escape</p>
+<p>notation, which contains <code>XXX</code> -- appears seven times in</p>
+<p><code>corelib/json/json.ty</code>, once in <code>corelib/test/json/main.ty</code> and once in a</p>
+<p><code>docs/internals/FRICTION.md</code> record line; <code>to_XXX</code> in <code>tests/sized_family.ty:2</code> is the</p>
+<p>placeholder spelling for the conversion-function family. None is a marker.</p>
+<p>Nothing to fix; the scan is the deliverable.</p>
+<h3 id="phase-2----license--security--contributing--done-2026-08-04----already-present">Phase 2 -- LICENSE / SECURITY / CONTRIBUTING  [DONE 2026-08-04 -- already present]</h3>
+<h3 id="phase-3----readme-the-seven-tools-as-evidence-of-exercise--done-2026-08-04">Phase 3 -- README: the seven tools as evidence of exercise  [DONE 2026-08-04]</h3>
+<p>Added the "Eight programs that tested the language" subsection under The</p>
+<p>evidence: the seven tool programs with the axis each stressed and its</p>
+<p>ground-truth gate, plus the one finding the campaign did produce (hex</p>
+<p>literals, filed by the chess engine's castling masks).</p>
+<h3 id="phase-4----the-ci-decision--done-2026-08-04----local-only">Phase 4 -- the CI decision  [DONE 2026-08-04 -- local-only]</h3>
+<p>The owner's call: no GitHub Actions. The local-only stance documented in the README and</p>
+<p>CONTRIBUTING stands unchanged; no workflow is added and no claim is</p>
+<p>rewritten. The repo is polished as-is.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Value-lifetime regions — an arena whose lifetime follows a value — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / rfc/value-lifetime-regions.md</nav>
+<h1 id="value-lifetime-regions--an-arena-whose-lifetime-follows-a-value">Value-lifetime regions — an arena whose lifetime follows a value</h1>
+<blockquote>
+<p>Status: <strong>research study, not a proposal to build.</strong> Reaches a recommendation for</p>
+<p>the maintainer — <strong>do not build</strong> (see §6 for the one condition that would</p>
+<p>change that). Nothing here changes the compiler, the runtime, or codegen.</p>
+<p>The companion negative result on *stored references* is</p>
+<p><a href="limited-references-spike.html">`limited-references-spike.md`</a>; this is a different</p>
+<p>question and §1 says how.</p>
+</blockquote>
+<h2 id="1-the-question-and-what-it-is-not">1. The question, and what it is not</h2>
+<p>The reference spike closed one question: can a *stored reference* express a graph</p>
+<p>edge? No — a remote part has no sound deep-copy at the thread boundary, so it fails</p>
+<p>the invariant that makes threads race-free (<code>limited-references-spike.md:81-88</code>), and</p>
+<p>the decision was recorded as final (<code>limited-references-spike.md:133-145</code>). That</p>
+<p>question was about <strong>aliasing</strong>.</p>
+<p>This study asks a question that shares none of that machinery: **can a region — a</p>
+<p>set of allocations reclaimed as a unit — have its lifetime tied to a *value* rather</p>
+<p>than to a *lexical scope*, with no value ever pointing into storage it does not</p>
+<p>own?** Nothing here proposes aliasing, a reference type, or reference counting. The</p>
+<p>whole proposal is a change of *bookkeeping*: today the thing that owns an arena is a</p>
+<p>scope; the question is whether it could be a value.</p>
+<p>The distinction matters because the two questions fail for different reasons, and a</p>
+<p>reader who has internalised the reference spike's "no" will assume this one is</p>
+<p>already answered. It is not. Aliasing fails at the thread boundary. Value-lifetime</p>
+<p>regions, as §5 shows, survive the thread boundary intact and fail — where they fail —</p>
+<p>on arithmetic and on the spec freeze instead.</p>
+<h2 id="2-the-gap-from-this-repo">2. The gap, from this repo</h2>
+<h3 id="21-an-arenas-owner-is-a-scope-and-only-a-scope">2.1 An arena's owner is a scope, and only a scope</h3>
+<p><code>arena_new</code> and <code>arena_child</code> are the only two ways an arena comes into existence</p>
+<p>(<code>runtime/tycho_rt.c@arena_new</code>, <code>runtime/tycho_rt.c@arena_child</code>), and <code>arena_free</code></p>
+<p>is the only way one goes away (<code>runtime/tycho_rt.c@arena_free</code>). Every call site of those three in generated code</p>
+<p>is a *scope* boundary. The runtime's own header states the mapping as the model:</p>
+<p>every proc, every <code>if</code>/<code>else</code> block, every loop gets an arena, and a child is freed</p>
+<p>when its scope ends (<code>runtime/tycho_rt.c:5-13</code>). The emitted shape is four rules —</p>
+<p><code>main</code> opens <code>_root</code>, every function opens <code>Arena _scope = arena_child(_parent)</code>,</p>
+<p>every allocation takes an arena argument, and a return builds into <code>_parent</code></p>
+<p>(<code>docs/memory-model.md:30-38</code>), realised in codegen by a single "current</p>
+<p>arena" string that defaults to <code>&amp;_scope</code> (<code>src/tychoc.c:10718@g_cur_scope</code>) and a</p>
+<p>per-proc stack of enclosing block arenas (<code>src/tychoc.c:12697@g_ascope</code>) freed</p>
+<p>innermost-first at any exit (<code>src/tychoc.c:12696@g_nascope</code>).</p>
+<p>The three exceptions in the tree are the ones that prove the rule, because each is a</p>
+<p>*runtime* object the compiler finalises like a scope, not a user-visible lifetime:</p>
+<ul>
+<li>a task's <code>root</code> arena, created at <code>tycho_task_new</code> and freed at</li>
+</ul>
+<p><code>tycho_task_free</code> (<code>runtime/tycho_rt.c@tycho_task_new</code>,</p>
+<p><code>runtime/tycho_rt.c@tycho_task_free</code>);</p>
+<ul>
+<li>a channel cell's payload arena, one per ring slot, created at channel construction</li>
+</ul>
+<p>and freed when a later send reclaims the slot (<code>runtime/tycho_rt.c:1123@arena_new</code>,</p>
+<p><code>runtime/tycho_rt.c:1173@arena_free</code>);</p>
+<ul>
+<li>a typed FFI handle's destructor, which is emitted into exactly the slot the task</li>
+</ul>
+<p>finaliser uses.</p>
+<p>All three are still lexically scoped from the program's point of view: the compiler</p>
+<p>emits their finaliser at every exit of the scope that declared them.</p>
+<h3 id="22-what-no-pointer-crosses-sideways-means-here">2.2 What "no pointer crosses sideways" means here</h3>
+<p>Data moves between arenas in exactly two directions — <strong>down</strong> as a call argument (a</p>
+<p>pointer into a parent arena, valid for the call, no copy) and <strong>up</strong> as a return or</p>
+<p>an outer assignment (<code>runtime/tycho_rt.c:15-24</code>, <code>docs/memory-model.md:40-44</code>,</p>
+<p>normatively <code>docs/spec/07-memory-model.md:101-118</code>). There is no third direction. A</p>
+<p>value in one scope's arena is never reachable from a sibling scope's arena, because</p>
+<p>neither arena outlives the other in a way the other can observe. That absence is what</p>
+<p>makes the escape decision *local*: the destination of every write is known at the</p>
+<p>write site from the enclosing scopes and the signatures alone</p>
+<p>(<code>docs/memory-model.md:50-59</code>), which is the whole claim of the project</p>
+<p>(<code>docs/thesis.md:14-17</code>, <code>:39-53</code>).</p>
+<p>Throughout this document, <strong>sideways</strong> means a pointer from one value's storage into</p>
+<p>another value's storage where neither strictly contains the other's lifetime. Every</p>
+<p>design in §4 is judged on whether it introduces one.</p>
+<h3 id="23-one-correction-to-the-framing">2.3 One correction to the framing</h3>
+<p>The starting premise says the only way a value outlives its</p>
+<p>scope is "to be copied up into the parent's arena". That overstates the cost.</p>
+<p>Up-escape is <strong>destination-passing first, copy second</strong>: the value is *produced</p>
+<p>directly in the destination's storage* (<code>docs/spec/07-memory-model.md:109-112</code>), and</p>
+<p>the emitted return is `{ T _ret = &lt;built in _parent&gt;; arena_free(&amp;_scope); return</p>
+<p>_ret; }<code> (</code>docs/memory-model.md:36-38<code>, </code>:24-27`). A copy is paid only when</p>
+<p>the value already exists somewhere else and must be duplicated to be independent — and</p>
+<p>even then the tree carries four static mechanisms that remove copies rather than add</p>
+<p>them (<code>docs/memory-model.md:71-106</code>). So "repeated copy-up" is not the</p>
+<p>standing tax on long-lived structures. The standing tax is the one in §3: storage that</p>
+<p>is dead but not reclaimable until the owning scope exits.</p>
+<h2 id="3-how-the-model-handles-long-lived-dynamic-structures-today">3. How the model handles long-lived dynamic structures today</h2>
+<h3 id="31-the-recommended-representation-and-what-it-costs">3.1 The recommended representation, and what it costs</h3>
+<p>For pointer-shaped, structurally-shared data the documented idiom is a flat node pool</p>
+<p>with integer-index children (<code>docs/internals/value-semantics-limits.md:61-94</code>). The</p>
+<p>docs recommend this representation as worth choosing rather than as a constraint to</p>
+<p>satisfy, while not presenting it as the model</p>
+<p>(<code>docs/architecture.md:64-67</code>). Its two named costs are ergonomic: "you index a pool</p>
+<p>instead of following references, and you cannot delete a single node without</p>
+<p>compacting" (<code>docs/internals/value-semantics-limits.md:91-93</code>).</p>
+<p>The cost of *not* using it — the by-value recursive form, which is what a</p>
+<p>naive long-lived structure gets — is <strong>~1.55× C peak RSS</strong>, from a prefix tree where</p>
+<p>each node owns an <code>int -&gt; child</code> map: tycho 58.7 MB vs C 37.8 MB vs Go 33.8 MB</p>
+<p>(<code>docs/internals/value-semantics-limits.md:50-54</code>). The figure is stated identically</p>
+<p>at <code>docs/internals/value-semantics-limits.md:54</code>, <code>docs/memory-model.md:111</code>,</p>
+<p><code>docs/architecture.md:64</code>, <code>README.md:128</code>, <code>bench/README.md:26</code> and</p>
+<p><code>bench/trie/RESULTS.md:28</code>, all of them attributing the halving from ~3.2× (119 MB) to</p>
+<p>the compact indexed-dict map layout. The figure is current.</p>
+<p>Two adjacent measurements bound the shape of the problem. Expressed the value-semantic</p>
+<p>way — a graph as an adjacency list of indices — <code>bench/dijkstra</code> lands at ~1.3× C</p>
+<p>memory and ~1.2× wall, competitive (<code>docs/internals/value-semantics-limits.md:95-104</code>).</p>
+<p>Expressed as a delete-heavy fixed-capacity cache, <code>bench/lru</code> lands at ~2.8× C and</p>
+<p>ahead of Go on both axes (<code>docs/internals/value-semantics-limits.md:105-115</code>), with the</p>
+<p>index pool spelled out in its own header: nodes in one <code>[Node]</code> array, <code>prev</code>/<code>next</code> as</p>
+<p><code>int</code> indices, and the tail slot overwritten in place on eviction so a full cache holds</p>
+<p>steady with zero per-op allocation (<code>bench/lru/lru.ty:4-13</code>).</p>
+<h3 id="32-what-actually-happens-to-a-removed-node">3.2 What actually happens to a removed node</h3>
+<p>At source level, removal works as follows. <code>corelib/pool</code> packages the idiom:</p>
+<p><code>add</code> returns a <code>Handle</code> (a distinct int newtype,</p>
+<p>introducing no aliasing), and every access is checked against a per-slot generation</p>
+<p>counter so a stale handle is caught at runtime (<code>corelib/pool/pool.ty:1-22</code>). It</p>
+<p>improves ergonomics, not memory (<code>corelib/pool/pool.ty:15-18</code>).</p>
+<p><code>remove</code> marks the slot unused, bumps its generation, and pushes the index onto a free</p>
+<p>list (<code>corelib/pool/pool.ty:57-65</code>). It does <strong>not</strong> clear <code>val</code>. So the removed</p>
+<p>value's heap bytes stay owned by the pool's arena until the slot is *reused*: <code>add</code></p>
+<p>reaches <code>p.slots[idx].val = v</code> (<code>corelib/pool/pool.ty:24-32</code>), which is an</p>
+<p>element-overwrite, and element-overwrite recycling hands the evicted element's buffer</p>
+<p>back to the array's arena free list (<code>docs/memory-model.md:101-106</code>), backed by</p>
+<p><code>arena_recycle</code> and its segregated per-size-class lists</p>
+<p>(<code>runtime/tycho_rt.c@arena_recycle</code>, reused on the next allocation at</p>
+<p><code>runtime/tycho_rt.c@arena_alloc</code>).</p>
+<p>The consequence: **a pool's memory tracks the high-water mark of live</p>
+<p>nodes, and never returns below it.** Bytes are recovered on reuse, never on removal.</p>
+<p>For a cache with a fixed capacity that is exactly right and is why <code>bench/lru</code> holds</p>
+<p>steady. For a structure whose live set genuinely shrinks — a server that had 10 000</p>
+<p>connections and now has 10 — nothing shrinks with it until the owning scope exits, and</p>
+<p>for a server the owning scope is <code>main</code>.</p>
+<h3 id="33-the-build-and-hold-case-and-the-idiom-that-already-answers-it">3.3 The build-and-hold case, and the idiom that already answers it</h3>
+<p>The second documented weak spot is a long-lived scope holding a transient: an arena</p>
+<p>reclaims at scope exit, not incrementally, so a function that builds a large parse</p>
+<p>buffer and keeps working holds it until it returns</p>
+<p>(<code>docs/internals/value-semantics-limits.md:127-133</code>). The documented answer is to</p>
+<p>scope the transient in an inner function or block so its arena reclaims before the</p>
+<p>long-lived work continues (<code>docs/internals/value-semantics-limits.md:135-144</code>). That</p>
+<p>answer is O(1) — one <code>arena_free</code> — and needs no new construct. Any proposed region</p>
+<p>feature must beat it, not merely match it.</p>
+<h3 id="34-the-case-the-repo-has-never-actually-hit">3.4 The case the repo has never actually hit</h3>
+<p>The motivating example for value-lifetime regions is a server holding N live</p>
+<p>connections. This repo contains a server, and it does not have that shape. The accept</p>
+<p>loop reads one request, routes it, writes the response, and closes the fd, holding no</p>
+<p>per-connection state across iterations (<code>examples/webserver/main.ty:186-196</code>); the</p>
+<p><code>httpd</code> package is explicit that the caller owns the accept loop and that the package</p>
+<p>supplies only per-request plumbing (<code>corelib/httpd/httpd.ty:5-14</code>). A connection is an</p>
+<p><code>int</code> fd, not a Tycho value with storage. Under the current model each iteration's</p>
+<p>arena is reset per iteration, so the loop runs in bounded memory</p>
+<p>(<code>runtime/tycho_rt.c:10-13</code>, <code>docs/memory-model.md:46-48</code>).</p>
+<p>The gap may still be real. The point stands that **no call site in this</p>
+<p>repository currently pays for it.**</p>
+<h2 id="4-three-designs">4. Three designs</h2>
+<p>Each is judged on four axes: the source surface, the sideways-pointer invariant (§2.2),</p>
+<p>the interaction with <code>spawn</code> and channels, and the C lowering.</p>
+<h3 id="41-design-a--region-variables-region-as-a-named-lifetime-in-the-type">4.1 Design A — region variables (<code>region</code> as a named lifetime in the type)</h3>
+<p><strong>Surface.</strong> A region is created, allocations are directed into it, and it is dropped:</p>
+<pre><code class="language-text">r := region()
+n := Node("root") in r          # n's storage is allocated in r, not in _scope
+m := Node("leaf") in r
+link(r, n, m)
+drop(r)                          # or at r's scope exit
+</code></pre>
+<p>For the compiler to reject <code>escape(n)</code> where <code>n</code> outlives <code>r</code>, the region must appear</p>
+<p>in <code>n</code>'s type — <code>Node@r</code> — and therefore in the signature of every function that</p>
+<p>touches such a value, and a function taking values from two regions needs region</p>
+<p>polymorphism. This is Tofte–Talpin region inference / Cyclone's <code>rgn_t&lt;</code>r&gt;`, the</p>
+<p>prior art the thesis names as what Tycho makes *implicit* (<code>docs/thesis.md:26-32</code>).</p>
+<p><strong>Sideways.</strong> Design A does not merely permit a sideways pointer; permitting one *is*</p>
+<p>the feature. <code>n</code> in scope S1 and <code>m</code> in sibling scope S2 both point into <code>r</code>, which</p>
+<p>outlives both. That is precisely the third direction §2.2 says does not exist, and it</p>
+<p>is what destroys locality: the destination of a write is no longer decidable from</p>
+<p>enclosing scopes and signatures (<code>docs/memory-model.md:50-59</code>) — it needs the</p>
+<p>region variable, which is an annotation on every signature in the transitive closure.</p>
+<p><strong>`spawn` / channels.</strong> A spawn site allocates its argument struct in the task root</p>
+<p>and deep-copies each heap argument into it, after which spawner and task share zero</p>
+<p>bytes (<code>src/tychoc.c:12333-12341</code>, <code>runtime/tycho_rt.c@tycho_task_new</code>); <code>wait</code> copies</p>
+<p>the result out and frees the root eagerly</p>
+<p>(<code>src/tychoc.c:11741@arena_free(&amp;_tk-&gt;root)</code>). A channel does the same per payload</p>
+<p>into a per-cell arena (<code>runtime/tycho_rt.c:1074@payload bytes live here</code>). An <code>@r</code> value</p>
+<p>offers neither option: copying it means copying the whole region (unbounded — the</p>
+<p>region exists *because* it is the long-lived structure), and passing the region pointer</p>
+<p>shares mutable storage across threads, which is the exact hypothesis the race-freedom</p>
+<p>guarantee rests on (<code>docs/spec/13-concurrency.md:16-27</code>). So <code>@r</code> values must be banned</p>
+<p>from spawn arguments and channel payloads — a <code>Sendable</code>-style bifurcation of the type</p>
+<p>system that the spec's opening paragraph specifically claims the model does not need</p>
+<p>(<code>docs/spec/13-concurrency.md:3-7</code>).</p>
+<p><strong>C lowering.</strong> The cheapest part. One extra <code>Arena *</code> parameter per region variable</p>
+<p>per function — structurally identical to the <code>_parent</code> parameter every function already</p>
+<p>takes (<code>docs/memory-model.md:33-34</code>). The lowering is nearly free; the entire</p>
+<p>cost is in the source language and the checker.</p>
+<p><strong>Verdict.</strong> This is a lifetime-annotation system with a different keyword. It</p>
+<p>contradicts <code>docs/thesis.md:11@borrow</code> ("no lifetime annotations, no borrow checker") at the load-bearing joint. Reject.</p>
+<h3 id="42-design-b--the-value-homed-arena-the-region-is-a-hidden-field-never-a-type-variable">4.2 Design B — the value-homed arena (the region is a hidden field, never a type variable)</h3>
+<p><strong>Surface.</strong> No lifetime variables anywhere. A region is an ordinary value whose</p>
+<p>storage happens to be its own arena, and whose contents are reachable only by copy.</p>
+<p>Two spellings, same semantics:</p>
+<pre><code class="language-text">struct Server:
+    conns: owned [Conn]         # this container allocates into its own arena
+</code></pre>
+<pre><code class="language-text">r := region(Conn)               # a generic Region(T)
+h := insert(r, Conn(fd, buf))   # h: Handle -- a pooled index, pointer-free
+c := get(r, h)                  # deep copy OUT, exactly as today
+remove(r, h)                    # the element's bytes return to r's arena NOW
+</code></pre>
+<p>The second spelling is <code>corelib/pool</code> with an arena</p>
+<p>underneath instead of a <code>[Slot($T)]</code> array. The API is already written</p>
+<p>(<code>corelib/pool/pool.ty:24-70</code>), including the property that makes it sound — <code>get</code></p>
+<p>returns a copy, so the pool is never aliased (<code>corelib/pool/pool.ty:43-48</code>).</p>
+<p><strong>Sideways.</strong> None. The rule is that nothing outside the region ever holds a pointer</p>
+<p>into it: reads copy out (already the language's defining invariant,</p>
+<p><code>docs/spec/07-memory-model.md:28-39</code>), writes copy in. The region *value* obeys value</p>
+<p>semantics like any other value — it moves down as an argument and up as a return, and</p>
+<p>its arena travels with it. The two-direction rule of §2.2 is untouched, because a</p>
+<p>region introduces no new direction; it changes only *which* arena an allocation lands</p>
+<p>in, and the compiler already picks that per write site (<code>src/tychoc.c:10718@g_cur_scope</code>,</p>
+<p><code>docs/memory-model.md:50-59</code>).</p>
+<p><strong>`spawn` / channels.</strong> This design survives the boundary, which is the reason it is</p>
+<p>worth writing down at all. Because a region is owned and pointer-free from outside,</p>
+<p><code>copy_into(param, "(&amp;_tk-&gt;root)", arg)</code> (<code>src/tychoc.c:12312@copy_into</code>) generalises without a new</p>
+<p>rule: create a fresh arena inside the task root, deep-copy every live element into it.</p>
+<p>Blocks crossing threads is already the status quo — the block pool is thread-local</p>
+<p>(<code>runtime/tycho_rt.c:650@g_block_pool</code>), blocks are released to whichever thread's pool</p>
+<p>frees them (<code>runtime/tycho_rt.c:682@HBlock *nx</code>), and a spawned thread flushes its pool</p>
+<p>before exiting so nothing leaks with the TLS (<code>runtime/tycho_rt.c@tycho_pool_flush</code>). Channels need nothing new</p>
+<p>either: a region payload deep-copies into the cell arena like any other value</p>
+<p>(<code>runtime/tycho_rt.c:1074@payload bytes live here</code>).</p>
+<p>The limit is that this makes regions <strong>cheap to free and no cheaper to send</strong>.</p>
+<p>A 1 GB region crosses a channel as 1 GB of deep copy. Today you would send an index</p>
+<p>instead, and you still would.</p>
+<p><strong>C lowering.</strong> A region-bearing value carries its <code>Arena</code> inline — 48 bytes on LP64,</p>
+<p>six fields (<code>runtime/tycho_rt.c:291@Arena</code>):</p>
+<pre><code class="language-c">typedef struct { Arena rgn; Arr_Conn conns; } Server;
+</code></pre>
+<p>Allocations for elements of <code>s.conns</code> target <code>&amp;s.rgn</code> instead of the current scope</p>
+<p>string; the deep copy becomes <code>_c.rgn = arena_new(0);</code> followed by the existing</p>
+<p>recursive element copy; and the free is one <code>arena_free(&amp;s.rgn)</code> emitted into exactly</p>
+<p>the finaliser slot tasks and handles already use (<code>src/tychoc.c:12684@g_taskvars</code>),</p>
+<p>which fires at block end, early <code>return</code>, <code>break</code>/<code>continue</code> and <code>or_return</code></p>
+<p>(<code>src/tychoc.c:12811-12814</code>). There is a</p>
+<p>genuine simplification available: <code>inout</code> on a heap value today threads the caller's</p>
+<p>owning scope to the callee as a hidden parameter so an allocating mutation lands where</p>
+<p>the borrowed value lives (<code>docs/spec/07-memory-model.md:186-192</code>). If the value owns</p>
+<p>its arena, that arena is reachable *from the value*, and the hidden parameter is no</p>
+<p>longer needed for region-bearing types.</p>
+<p><strong>The arithmetic that decides it.</strong> <code>arena_new(0)</code> sets <code>blocksz</code> to</p>
+<p><code>TYCHO_BLOCK_DEFAULT</code> = 65536 (<code>runtime/tycho_rt.c:88@TYCHO_BLOCK_DEFAULT</code>,</p>
+<p><code>runtime/tycho_rt.c:689@TYCHO_BLOCK_DEFAULT</code>), and the first allocation in a fresh</p>
+<p>arena takes a block of <code>max(n, blocksz)</code> (<code>runtime/tycho_rt.c@arena_alloc</code>) from the</p>
+<p>thread-local pool or, failing a fit, from <code>malloc</code> (<code>runtime/tycho_rt.c@block_get</code>). So **every live region holds a 64 KiB block</p>
+<p>out of the pool for as long as it lives**, whatever it contains. Resident cost is</p>
+<p>bounded by pages actually touched, not by the full 64 KiB — the block is <code>malloc</code>'d, not</p>
+<p>committed — but the pool's high-water mark rises by one block per concurrently-live</p>
+<p>region regardless.</p>
+<p>That sets the crossover precisely. A region pays off when a single value's payload is</p>
+<p>comparable to or larger than a block *and* the live count fluctuates. One region per</p>
+<p>server: fine. One region per connection holding a few hundred bytes: strictly worse</p>
+<p>than the high-water-mark pool it replaces, since the pool amortises one block across</p>
+<p>thousands of nodes. <code>arena_new</code> does take a block size, so <code>region(1024)</code> is</p>
+<p>expressible — but at that point the programmer is sizing an allocator by hand, and</p>
+<p>"manual memory-management escape hatches as the *idiomatic* path" is a decided</p>
+<p>non-goal (<code>docs/architecture.md:58</code>).</p>
+<p><strong>Verdict.</strong> Sound, buildable, no new analysis, survives the thread boundary. Its win</p>
+<p>is exactly one thing: <strong>bulk reclamation at a point that is not a scope exit.</strong> It does</p>
+<p>not reduce the ~1.55× storage premium (that is value-vs-pointer layout, unchanged) and</p>
+<p>it does not enable sharing (that was settled in <code>limited-references-spike.md:90-102</code>).</p>
+<h3 id="43-design-c--dropx-give-the-value-early-death-with-no-region-object-at-all">4.3 Design C — <code>drop(x)</code>: give the value early death, with no region object at all</h3>
+<p><strong>Surface.</strong> One statement. <code>drop(x)</code> ends <code>x</code>'s lifetime; every later use of <code>x</code> is a</p>
+<p>compile error. This is the minimal reading of the question: rather than an arena</p>
+<p>outliving a value until scope exit, the value's storage dies with the value.</p>
+<p>Every piece of machinery already exists. The runtime primitive is <code>arena_recycle</code>,</p>
+<p>which hands a proven-dead, uniquely-owned buffer back to its arena and is reused by the</p>
+<p>next allocation (<code>runtime/tycho_rt.c@arena_recycle</code>, <code>runtime/tycho_rt.c@arena_alloc</code>),</p>
+<p>guarded by <code>arena_owns</code> so only buffers the arena actually owns are recycled</p>
+<p>(<code>runtime/tycho_rt.c@arena_owns</code>). The</p>
+<p>static precondition is unique ownership, which value semantics already guarantees</p>
+<p>(<code>docs/spec/07-memory-model.md:55-62</code>). The use-after-consume check already ships:</p>
+<p>passing a variable to a <code>sink</code> parameter consumes it, and using it afterwards is a</p>
+<p>compile error, not a silent copy (<code>docs/spec/11-functions.md:35-38</code>). <code>drop(x)</code> is</p>
+<p><code>sink</code> into a callee that does nothing.</p>
+<p><strong>Sideways.</strong> None. <code>drop</code> removes storage; it opens no new path for a pointer.</p>
+<p><strong>`spawn` / channels.</strong> None. <code>drop</code> is intra-scope, and a dropped value cannot be sent</p>
+<p>because it is consumed.</p>
+<p><strong>C lowering.</strong> <code>drop(x)</code> emits a recursive walk over <code>x</code>'s heap-bearing fields calling</p>
+<p><code>arena_recycle</code> on each against <code>x</code>'s home arena. The one-level version of exactly this</p>
+<p>walk already ships as element-overwrite recycling</p>
+<p>(<code>docs/memory-model.md:101-106</code>), and the recursive shape already ships as the</p>
+<p>deep-copy walk emitted at every escape point (<code>docs/memory-model.md:173-178</code>).</p>
+<p><strong>The objection that sinks it.</strong> Correctness in this model rests on a single asymmetry,</p>
+<p>stated normatively: *under value semantics, a wrong escape decision can change only</p>
+<p><strong>when</strong> memory is reclaimed — never <strong>whether</strong> a pointer dangles*</p>
+<p>(<code>docs/spec/07-memory-model.md:141-152</code>). Over-approximating "this might escape" costs</p>
+<p>mild retention and can never be a bug, because there are no aliases to invalidate, and</p>
+<p>there is no symmetric failure. That asymmetry is why the spec can guarantee "no</p>
+<p>dangling ... *by construction*" (<code>docs/spec/07-memory-model.md:122-126</code>) and why the</p>
+<p>§9.5 optimisations can be declared observationally transparent by fiat</p>
+<p>(<code>docs/spec/07-memory-model.md:64-74</code>).</p>
+<p><code>drop</code> introduces the symmetric failure. A wrong <code>drop</code> dangles. The guarantee</p>
+<p>degrades from *by construction* to *by check*, and the check is a new liveness analysis</p>
+<p>the compiler does not have today for arbitrary places — <code>sink</code> tracks consumption of a</p>
+<p>whole variable, not of a place reached through a container or a field. Design C is the</p>
+<p>cheapest to build and the only one that weakens the property the project exists to</p>
+<p>demonstrate.</p>
+<p><strong>Second objection.</strong> Its motivating case — the build-and-hold transient — already has</p>
+<p>an O(1) answer that needs no new construct (§3.3,</p>
+<p><code>docs/internals/value-semantics-limits.md:135-144</code>). <code>drop</code> wins only where the</p>
+<p>transient's lifetime is genuinely not nestable, and no call site in this repo shows</p>
+<p>that shape (§3.4).</p>
+<p><strong>Verdict.</strong> Reject on the asymmetry alone.</p>
+<h2 id="5-compatibility-with-the-10-spec-freeze">5. Compatibility with the 1.0 spec freeze</h2>
+<p>Tycho 1.0 is ratified and is *the freeze*: the spec states that it "defines **Tycho</p>
+<p>1.0**, which is the first *frozen* version", that within a frozen version the document</p>
+<p>is normative and stable, and that corrections changing observable behaviour are issued</p>
+<p>as errata against a named version, "never silently"</p>
+<p>(<code>docs/spec/00-conventions.md:81-89</code>); the spec</p>
+<p>index records it as ratified on 2026-07-13 (<code>docs/spec/README.md:3</code>), and the plan's</p>
+<p>locked decision is that the 1.0 spec *is* the language freeze with date-based versions</p>
+<p>after it. The spec's scope is language <strong>and</strong></p>
+<p>corelib, so a corelib-only addition is a spec change</p>
+<p>too.</p>
+<table>
+<tr><th>Design</th><th>Fits inside the 1.0 freeze?</th><th>Why</th></tr>
+<tr><td><strong>A — region variables</strong></td><td><strong>No, and not post-1.0 either.</strong></td><td>Breaks §9.1 at the root: "Tycho has <strong>no reference type</strong>. A program cannot name, store, or return a pointer into another value's storage" (<code>docs/spec/07-memory-model.md:16-21</code>). An <code>@r</code> value *is* such a pointer. Also breaks §10.1's "Lifetime is lexical … never from a whole-program pointer analysis" (<code>docs/spec/07-memory-model.md:85-91</code>) and §20's no-<code>Sendable</code> claim (<code>docs/spec/13-concurrency.md:3-7</code>). This is not a breaking change to Tycho; it is a different language.</td></tr>
+<tr><td><strong>B — value-homed arena</strong></td><td><strong>Compatible in substance; needs a new dated version in procedure.</strong></td><td>It violates no normative clause. A region value copies deeply (§9.2, <code>docs/spec/07-memory-model.md:28-39</code>), holds no externally-visible pointer (§9.1), keeps unique ownership (§9.4, <code>:55-62</code>), and its own lifetime is still lexical (§10.1), so §10.4's asymmetry survives intact. But it adds a type constructor and a builtin family — new grammar in Ch 4 and new clauses in §16–19 and Part XII — and additions to a frozen version are a new dated release (<code>Tycho 2027</code>), not errata. <strong>Post-1.0, additive.</strong></td></tr>
+<tr><td><strong>C — `drop`</strong></td><td><strong>Needs a breaking change, not merely an addition.</strong></td><td>Same procedural answer as B for the grammar, but worse in substance: §10.3.1 guarantees no dangling *by construction* (<code>docs/spec/07-memory-model.md:122-126</code>) and §10.4 states the asymmetry as the reason (<code>:141-152</code>). <code>drop</code> makes both hold by check instead. Those clauses would have to be reworded, which is a change to observable behaviour of the conformance model — errata against 1.0 in the strict sense the spec forbids doing silently.</td></tr>
+</table>
+<p>One useful negative check: none of the three is reachable as an *implementation*</p>
+<p>detail. §10.1 explicitly says the arena mechanism "is an implementation realization and</p>
+<p>is not observable beyond the guarantees in §10.3"</p>
+<p>(<code>docs/spec/07-memory-model.md:93-99</code>), and §9.5 lets an implementation reuse buffers</p>
+<p>freely so long as nothing observable changes (<code>docs/spec/07-memory-model.md:64-74</code>). A compiler could therefore</p>
+<p>give a container a private sub-arena *today*, with no spec change at all, as long as it</p>
+<p>is invisible. What it could not do is let the programmer name it. Every design in §4</p>
+<p>fails to fit inside the freeze for the same reason: the surface, not the mechanism.</p>
+<h2 id="6-recommendation">6. Recommendation</h2>
+<p><strong>Do not build.</strong> Not Design A, not Design C, and not Design B now.</p>
+<p>Design A is a borrow checker with a different keyword and contradicts the thesis at the</p>
+<p>joint (<code>docs/thesis.md:10</code>, <code>:14-17</code>). Design C buys the least and is the only proposal</p>
+<p>that weakens the asymmetry the whole project exists to demonstrate</p>
+<p>(<code>docs/spec/07-memory-model.md:141-152</code>) — a feature that trades the model's central</p>
+<p>guarantee for a case already answered by an idiom the docs recommend</p>
+<p>(<code>docs/internals/value-semantics-limits.md:135-144</code>) is a bad trade at any price.</p>
+<p>Design B is the only one that is genuinely sound, and it should still not be built yet,</p>
+<p>because its payoff is a single narrow thing — bulk reclamation at a non-scope-exit point</p>
+<p>— and nothing in the repo currently pays the cost that payoff addresses. §3.2 shows the</p>
+<p>existing idiom recovers a removed node's bytes on reuse and holds at the live-set</p>
+<p>high-water mark; §3.4 shows the motivating long-lived-server shape does not exist in the</p>
+<p>tree; §4.2 shows a per-node region is *worse* than the pool it would replace below a</p>
+<p>64 KiB payload.</p>
+<p><strong>The condition under which to build Design B, and only Design B:</strong></p>
+<blockquote>
+<p>A benchmark exists in <code>bench/</code> whose peak RSS is dominated by storage that is dead</p>
+<p>but unreclaimable before scope exit, and which none of the three shipped mechanisms</p>
+<p>recovers: the inner-function transient scope</p>
+<p>(<code>docs/internals/value-semantics-limits.md:135-144</code>), element-overwrite recycling</p>
+<p>(<code>docs/memory-model.md:101-106</code>), or slot reuse in an index pool</p>
+<p>(<code>corelib/pool/pool.ty:24-32</code>). The workload's live values must have payloads</p>
+<p>comparable to or larger than one 64 KiB block</p>
+<p>(<code>runtime/tycho_rt.c:88@TYCHO_BLOCK_DEFAULT</code>), and its live</p>
+<p>count must genuinely shrink, not merely churn at a fixed capacity.</p>
+</blockquote>
+<p>No such benchmark exists today. The full workload table in</p>
+<p><code>bench/README.md:12-38</code> covers every measured workload in the tree; the three</p>
+<p>closest candidates: <code>bench/gcscan</code> retains a large <strong>live</strong> set to make a tracing</p>
+<p>GC re-scan it (<code>bench/gcscan/gcscan.ty:1-11</code>), <code>bench/latency</code> churns a working set</p>
+<p>that the per-iteration arena reset reclaims (<code>bench/latency/latency.ty:1-5</code>), and</p>
+<p><code>bench/invindex</code> is build-and-hold growth of live data, closing to ~1.07× C with</p>
+<p><code>reserve</code> (<code>bench/README.md:20</code>). All three are *live* retention, which no region</p>
+<p>feature helps. Writing that benchmark is the next step: if it cannot be written,</p>
+<p>the gap is theoretical and the recommendation is</p>
+<p>unconditional.</p>
+<h2 id="7-a-finding-that-changes-the-surrounding-picture">7. A finding that changes the surrounding picture</h2>
+<p><strong>`handle` is the lifecycle object this question was asking for, minus the storage.</strong></p>
+<p>A typed FFI handle is already an affine value with a compiler-known destructor that runs</p>
+<p>at every scope exit, built by reusing the task finaliser machinery, and the</p>
+<p>soundness argument for that pattern is that affine ownership plus a scope-exit finaliser plus</p>
+<p>container/escape bans equals no use-after-free, no double-free, no leak.</p>
+<p>Design B is that pattern with</p>
+<p><code>arena_free</code> as the finaliser instead of a C symbol — which is the strongest available</p>
+<p>evidence that it would work, and also the clearest statement of what it would cost: the</p>
+<p>same v1 bans (no storing in containers, no returning) that handles still carry</p>
+<p>would apply to regions on</p>
+<p>day one, and lifting them is precisely the ownership-transfer work that note defers.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>8. Conversions and casts — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / spec/06-conversions.md</nav>
+<h1 id="8-conversions-and-casts">8. Conversions and casts</h1>
+<p>Tycho performs <strong>no implicit conversion of values</strong> between types. Distinct</p>
+<p>scalar types never mix in an operation, and no value silently widens or narrows.</p>
+<p>The only implicit adaptation is of <strong>literals</strong> (§8.1); every value-level</p>
+<p>conversion is an explicit builtin call (§8.2).</p>
+<h2 id="81-literal-adaptation">8.1 Literal adaptation</h2>
+<p>An integer or floating-point <strong>literal</strong> — an <code>int</code>/<code>float</code> literal token, not a</p>
+<p>typed value or variable — adapts to the type expected by its context. Adaptation</p>
+<p>changes the type the literal is compiled to; it never changes a variable's type</p>
+<p>and never converts a value at run time. The permitted adaptations are:</p>
+<ul>
+<li>an integer literal → <code>float</code> (e.g. <code>x: float = 3</code>, or <code>3</code> in <code>3 + y</code> where `y:</li>
+</ul>
+<p>float`);</p>
+<ul>
+<li>an integer literal → <code>u32</code> or <code>u64</code>;</li>
+<li>an integer <strong>or</strong> float literal → <code>f32</code>;</li>
+<li>otherwise the literal keeps its own type (<code>int</code> or <code>float</code>).</li>
+</ul>
+<p>A <code>char</code> literal does <strong>not</strong> adapt. Division or modulo by a <strong>literal</strong> zero is</p>
+<p>a compile-time error (a zero *value* at run time aborts, <a href="17-runtime.html">§30</a>). There is no source-level numeric suffix</p>
+<p>(<a href="01-lexical.html#391-integer-literals">§3.9.1</a>); the destination type drives</p>
+<p>adaptation. Adaptation <strong>distributes over the elements of an array literal</strong> when the destination is an array type: in <code>a: [u32] = [1, 2]</code> each element is checked against <code>u32</code> and each literal adapts, exactly as in the fixed <code>a: [3]u32 = [1, 2, 3]</code> and bounded <code>a: bounded[4]u32 = [1, 2]</code> forms. A bracket literal with <strong>no</strong> destination still synthesizes its type from its first element.</p>
+<h2 id="82-explicit-conversion-builtins">8.2 Explicit conversion builtins</h2>
+<p>Each conversion is a builtin call with a fixed accepted-type set and result</p>
+<p>type. <code>base_of</code> in the "accepts" column means the operand's underlying type is</p>
+<p>consulted (so a newtype over the listed base is accepted).</p>
+<table>
+<tr><th>Builtin</th><th>Accepts</th><th>Yields</th><th>Notes</th></tr>
+<tr><td><code>str(x)</code></td><td><code>int</code>, any sized int, <code>f32</code>, <code>bool</code>, <code>float</code>, <code>string</code>, <code>char</code> (through <code>base_of</code>)</td><td><code>string</code></td><td>polymorphic; identity on <code>string</code>; a <code>char</code> → its one-byte glyph</td></tr>
+<tr><td><code>to_int(x)</code></td><td><code>float</code>, any sized int, <code>f32</code>, <code>char</code>, or an <code>int</code>-newtype</td><td><code>int</code></td><td>truncates toward zero for <code>float</code>; a <code>NaN</code>/out-of-range <code>float</code> <strong>aborts</strong> (§8.5)</td></tr>
+<tr><td><code>to_float(n)</code></td><td><code>int</code>, any sized int, <code>f32</code>, or a <code>float</code>-newtype</td><td><code>float</code></td><td></td></tr>
+<tr><td><code>to_u8</code> … <code>to_i64</code>, <code>to_f32</code></td><td>any numeric scalar: <code>int</code>, <code>char</code>, <code>float</code>, or any sized int/float (through <code>base_of</code>)</td><td>the named fixed-width type</td><td>narrowing / reinterpretation; <strong>total</strong> (defined for every input). <code>to_i32</code> recovers a 32-bit C <code>int</code> return over FFI</td></tr>
+<tr><td><code>to_str(x)</code></td><td><code>bytes</code>, or a <code>string</code>-newtype</td><td><code>string</code></td><td>zero-cost reinterpret (same buffer)</td></tr>
+<tr><td><code>to_bytes(x)</code></td><td><code>string</code>, <code>bytes</code> (through <code>base_of</code>), or <code>[int]</code></td><td><code>bytes</code></td><td><code>string</code>/<code>bytes</code>: same buffer, distinct type (zero-cost reinterpret). <code>[int]</code>: each element truncated <code>&amp; 0xFF</code> into a fresh buffer — builds a binary <code>bytes</code> (interior <code>0x00</code> allowed)</td></tr>
+<tr><td><code>to_bool(x)</code></td><td>a <code>bool</code>-newtype</td><td><code>bool</code></td><td>newtype unwrap</td></tr>
+<tr><td><code>to_under(x)</code></td><td>any newtype</td><td>its underlying type</td><td>generic newtype unwrap, zero-cost</td></tr>
+<tr><td><code>to_ptr(n)</code></td><td><code>int</code></td><td><code>ptr</code></td><td>FFI sentinel pointer; never dereferenced</td></tr>
+<tr><td><code>to_char(n)</code></td><td><code>int</code></td><td><code>char</code></td><td>the byte value as a <code>char</code>; a value outside <code>0..255</code> <strong>aborts</strong> (<a href="16-builtins.html#294-conversions">§29.4</a>) — the same conversion as <code>chr(n)</code>, differing only in whether the byte comes back as a <code>char</code> or a one-byte <code>string</code>. The yielded type has no keyword (<a href="03-types.html#524-char">§5.2.4</a>), so it is only ever inferred</td></tr>
+</table>
+<p>Each takes exactly one argument. <code>str</code> is the conversion used by f-string</p>
+<p>interpolation (<a href="01-lexical.html#395-f-string-interpolated-literals">§3.9.5</a>):</p>
+<p>because a hole desugars to <code>str(hole)</code>, a hole MUST have a type <code>str</code> accepts.</p>
+<h2 id="83-newtype-unwrapping">8.3 Newtype unwrapping</h2>
+<p>A value of a newtype <code>X = U</code> is unwrapped to its <code>U</code> value by the base-specific</p>
+<p>conversion — <code>to_int</code> (<code>U = int</code>), <code>to_float</code> (<code>U = float</code>), <code>to_str</code> (`U =</p>
+<p>string<code>), </code>to_bool<code> (</code>U = bool<code>) — or by the generic </code>to_under`, which yields</p>
+<p>the underlying type of any newtype. Unwrapping is zero-cost (a newtype is erased</p>
+<p>in lowering, <a href="03-types.html#54-newtypes">§5.4</a>).</p>
+<h2 id="84-hard-errors">8.4 Hard errors</h2>
+<p>The following are compile-time type errors, not conversions:</p>
+<ul>
+<li>an arithmetic, comparison, or bitwise operation mixing two distinct scalar</li>
+</ul>
+<p>types (<code>int + float</code>, <code>int == char</code>, a bitwise/shift/modulo op on mixed</p>
+<p>integer widths) — the operands MUST already share a type;</p>
+<ul>
+<li>passing a value of a newtype's underlying type where the newtype is expected,</li>
+</ul>
+<p>or vice versa, without an explicit construct/unwrap.</p>
+<h2 id="85-out-of-range-conversions">8.5 Out-of-range conversions</h2>
+<p>For an in-range operand, <code>to_int(f)</code> truncates <code>f</code> toward zero, and each sized</p>
+<p>conversion narrows by the modular/reinterpreting rule of §8.2. A **<code>to_int</code> of a</p>
+<p><code>float</code>/<code>f32</code> that is <code>NaN</code> or outside the signed 64-bit range aborts** (`tycho:</p>
+<p>float-to-int conversion out of range`) rather than inheriting C's undefined</p>
+<p>float-to-integer behavior — the fail-closed discipline. The sized integer/float</p>
+<p>conversions (<code>to_u8</code> … <code>to_i64</code>, <code>to_f32</code>) are <strong>total</strong>: they narrow by taking</p>
+<p>the low bits or reinterpreting (§8.2), so every input has a defined result.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

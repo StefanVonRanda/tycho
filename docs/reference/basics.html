@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Basics — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / reference/basics.md</nav>
+<h1 id="basics">Basics</h1>
+<blockquote>
+<p><strong>Memory:</strong> each <code>if</code>/<code>else</code> block and each loop iteration frees its</p>
+<p>temporary values when it exits.</p>
+</blockquote>
+<p>The procedural core of the language: procedures, variables, expressions,</p>
+<p>and control flow. One loop keyword, one procedure form — no <code>while</code>,</p>
+<p>no <code>do</code>/<code>until</code>, no ternary.</p>
+<p>Where two spellings could do the same job, Tycho keeps one. Some pages</p>
+<p>list several similar types (for example, the sequence types); those differ</p>
+<p>in memory layout, not style — picking the wrong one is a performance</p>
+<p>or lifetime bug, not a taste choice.</p>
+<h2 id="procedures">Procedures</h2>
+<pre><code class="language-tycho">fn add(a: int, b: int) -&gt; int:
+    return a + b
+
+fn main():               # entry point: exactly `fn main():`, no return value
+    println(str(add(2, 3)))
+</code></pre>
+<p>A <code>fn</code> with no <code>-&gt; type</code> returns nothing. Blocks are indentation-based (tabs or spaces — just</p>
+<p>don't mix the two within one line's indentation), every block header ends with <code>:</code>, and <code>#</code></p>
+<p>starts a comment — like Python's layout.</p>
+<p>Parameters come in three kinds. By default a parameter is a <strong>copy</strong> — for</p>
+<p>large values (arrays, maps, structs holding them) the callee instead gets a</p>
+<p>read-only look that costs nothing. An <code>inout</code> parameter is mutated in place:</p>
+<p>the callee writes back into the caller's variable, marked with <code>&amp;</code> at the</p>
+<p>call site.</p>
+<pre><code class="language-tycho">fn incr(n: inout int):
+    n = n + 1
+
+fn main():
+    x := 41
+    incr(&amp;x)             # x is 42 afterwards
+</code></pre>
+<p>This is copy-in/copy-out (equivalent to <code>x = incr(x)</code>), so it preserves value semantics: the</p>
+<p><code>&amp;</code> argument must name a mutable place — a variable, or a field of one (<code>&amp;b.asks</code>), and the same variable cannot be passed to two <code>inout</code></p>
+<p>parameters of one call (that would be overlapping mutable access). <code>inout</code> covers <code>int</code>, <code>bool</code>,</p>
+<p>value structs, and the heap aggregates (<code>[int]</code>, <code>[string]</code>, heap-bearing structs, maps) —</p>
+<p>including <code>push</code>/growth and element/field mutation through the borrow. <code>inout string</code> works too:</p>
+<p>the string stays immutable, but reassignment through the borrow (<code>s = s + "."</code>) reaches the</p>
+<p>caller, with the new bytes living as long as the caller's variable.</p>
+<p>A third convention, <code>sink</code>, marks a parameter the callee <strong>owns and consumes</strong> — owned, so it</p>
+<p>may mutate the buffer (a plain borrow is read-only); consuming, so the caller gives it up:</p>
+<pre><code class="language-tycho">fn scale2(xs: sink [int]) -&gt; int:
+    s := 0
+    for i := 0; i &lt; len(xs); i += 1:
+        xs[i] = xs[i] * 2          # legal: a sink parameter is mutable
+        s = s + xs[i]
+    return s
+
+fn main():
+    print(str(scale2([5, 5, 5])))  # 30 — the fresh literal is adopted and mutated, ZERO copies
+    a := [1, 2, 3]
+    scale2(a)                      # a is dead after this, so it is adopted too — still no copy
+</code></pre>
+<p>This is the copy-avoiding convention: <code>sink</code> takes a value the</p>
+<p>caller no longer needs — a fresh literal, or a local on its last use —</p>
+<p>with <strong>no copy</strong>. It copies only when value semantics require it — if the variable is read</p>
+<p>again afterwards, used inside a loop, or captured by a closure. Reusing a value *after*</p>
+<p>handing it to a <code>sink</code> is a compile error, not a silent copy. A value returned or stored past the</p>
+<p>call must still be copied to live longer — that follows from how scopes own memory.</p>
+<h2 id="declarations-and-assignment">Declarations and assignment</h2>
+<pre><code class="language-tycho">x := 41          # declare + infer the type from the initializer
+_y : int = 1      # declare with an explicit type
+x = x + 1        # assign (the variable must already exist)
+x += 1           # compound assignment: `x op= e` desugars to `x = x op e`
+</code></pre>
+<p>Compound assignment works for every binary operator (<code>+= -= *= /= %= &amp;= |= ^= &lt;&lt;= &gt;&gt;=</code>) on any</p>
+<p>assignable place — a variable, an array element (<code>a[i] += 1</code>), a struct field (<code>p.x *= 2</code>), or a</p>
+<p>map entry (<code>m[k] += 1</code>).</p>
+<p><strong>Reserved words.</strong> No name — variable, parameter, function or struct field — may be a keyword,</p>
+<p>and the type names are keywords: <code>int</code>, <code>float</code>, <code>bool</code>, <code>string</code>, <code>bytes</code>, <code>ptr</code>, <code>f32</code>, and</p>
+<p>the sized integers <code>u8</code>…<code>u64</code>, <code>i8</code>…<code>i64</code>. So <code>bytes: int</code> is not a legal field and <code>len := …</code></p>
+<p>is (builtin names are not reserved). The full list of 42 is</p>
+<p><a href="../spec/appendix-b-keywords.html#b1-reserved-words">appendix B</a>.</p>
+<h2 id="expressions">Expressions</h2>
+<ul>
+<li><strong>Integers:</strong> <code>+ - * / %</code> (<code>/</code> truncates toward zero, <code>%</code> is the remainder), unary <code>-</code>.</li>
+</ul>
+<p>Bitwise and shift: <code>&amp; | ^ &lt;&lt; &gt;&gt;</code> and unary <code>~</code>. These follow <strong>Go precedence</strong> — <code>% &lt;&lt; &gt;&gt; &amp;</code></p>
+<p>bind at the multiplicative level and <code>| ^</code> at the additive level, so every bitwise operator</p>
+<p>binds *tighter* than a comparison: <code>a &amp; b == c</code> parses as <code>(a &amp; b) == c</code>, with no C surprise.</p>
+<p>Signed overflow is defined as two's-complement wraparound; <code>/0</code> and <code>%0</code> abort.</p>
+<ul>
+<li><strong>Floats:</strong> <code>+ - * /</code> (<code>/</code> is true division), unary <code>-</code>. A float literal is <code>digits.digits</code>,</li>
+</ul>
+<p>a leading-dot <code>.digits</code>, or any of these with an <code>e</code>/<code>E</code> exponent (<code>3.14</code>, <code>.5</code>, <code>1e10</code>,</p>
+<p><code>1.5e-3</code>). <code>int</code> and <code>float</code> never mix implicitly — convert with <code>to_float</code> / <code>to_int</code>.</p>
+<ul>
+<li><strong>Strings:</strong> <code>+</code> concatenates. <code>s[i]</code> reads the byte at index <code>i</code> as an <code>int</code> (<code>0</code>–<code>255</code>),</li>
+</ul>
+<p>bounds-checked; strings are immutable, so <code>s[i] = v</code> is a compile error.</p>
+<ul>
+<li><strong>Comparisons:</strong> <code>== != &lt; &gt; &lt;= &gt;=</code> produce <code>bool</code>. <code>==</code>/<code>!=</code> work on any matching pair</li>
+</ul>
+<p>(recursing structurally through composites); ordering works on two values of one</p>
+<p>numeric type (<code>int</code>, <code>float</code>, or a sized one like <code>u8</code>/<code>i32</code>/<code>f32</code>), two <code>char</code>s, or two</p>
+<p><code>string</code>s (strings compare lexicographically, by byte). <code>bool</code> is not ordered.</p>
+<ul>
+<li><strong>Logic:</strong> <code>and</code>, <code>or</code>, <code>not</code> on <code>bool</code>, producing <code>bool</code>. <code>and</code>/<code>or</code> short-circuit.</li>
+</ul>
+<p>Precedence, tightest first: comparisons, then <code>not</code>, <code>and</code>, <code>or</code> — so <code>a &lt; b and not done</code> is</p>
+<p><code>(a &lt; b) and (not done)</code>.</p>
+<ul>
+<li><strong>Calls:</strong> <code>f(a, b)</code>.</li>
+</ul>
+<h2 id="control-flow">Control flow</h2>
+<p>There is exactly one loop keyword, <code>for</code>, in four shapes — it does everything a <code>while</code> would.</p>
+<pre><code class="language-tycho">cond := true
+other := false
+n := 3
+a := 3
+b := 0
+s := 1
+xs := [10, 20]
+
+if cond:
+    println("then")
+elif other:                 # zero or more elif branches
+    println("elif")
+else:
+    println("else")
+
+for cond:                   # condition form: repeat while cond is true
+    cond = false
+for:                        # infinite form: until a break or a return
+    break
+for i := 0; i &lt; n; i += 1:  # three-clause form: i goes 0 .. n-1
+    println(str(i))
+for i := a; i &gt; b; i -= s:  # counting down — the direction is in the condition
+    println(str(i))
+for x in xs:                # foreach: each element of an array, or each byte of a string
+    println(str(x))
+
+</code></pre>
+<p>Inside a loop body:</p>
+<table>
+<tr><th></th><th></th></tr>
+<tr><td><code>break</code></td><td>exit the nearest enclosing loop</td></tr>
+<tr><td><code>continue</code></td><td>skip to its next iteration (runs the post clause)</td></tr>
+<tr><td><code>pass</code></td><td>do nothing — the body for a block that has no work</td></tr>
+</table>
+<p>In the three-clause form all three clauses are required (<code>for:</code> is the only degenerate form);</p>
+<p>the init is a declaration or an assignment, the post is an assignment to a variable, and a</p>
+<p>variable the init declares is scoped to the loop. <code>continue</code> <strong>runs the post clause</strong>, so a</p>
+<p>loop that advances only there still terminates. The foreach form binds each element of an</p>
+<p>array (<code>[T]</code>) or each byte of a string, evaluating the collection once. The condition form</p>
+<p>takes any <code>bool</code>. <code>break</code> and <code>continue</code> work in every shape and are an error outside a loop.</p>
+<p>No block may be empty, and <strong>`pass` is how you write one that does nothing</strong> — a <code>match</code> arm</p>
+<p>whose case is deliberately ignored, an <code>if</code> branch kept for its comment, a loop whose work is</p>
+<p>all in its head. Reach for it before writing an empty function to call:</p>
+<pre><code class="language-tycho">fn drain(r: Result(int, string)) -&gt; int:
+    match r:
+        Ok(n): return n
+        Err(e): pass          # this case is deliberately ignored
+    return 0
+</code></pre>
+<p><code>pass</code> is contextual, not reserved: it is a statement only in statement position, so a variable</p>
+<p>named <code>pass</code> still works. It is not an expression — it produces no value and cannot be assigned</p>
+<p>(<a href="../spec/10-statements.html#1411-pass">spec §14.1.1</a>).</p>
+<p>There is no counting form and no <code>range</code>: to count, say the</p>
+<p>direction in the condition (<code>i &gt; b</code> with <code>i -= s</code>) instead of in the sign of a step. Note the</p>
+<p>trade: a post clause is arbitrary code, so `for i := 0; i &lt; n;</p>
+<p>i += 0:` is an infinite loop that nothing diagnoses. To count in parallel, use</p>
+<p><code>parallel for i in 0..&lt;N:</code>, which steps by 1 and has no zero-step case.</p>
+<h2 id="unused-names">Unused names</h2>
+<p>A local declared with <code>:=</code> or with an explicit type and never read again is a</p>
+<p>compile <strong>error</strong> — <code>'x' declared and not used</code>. A name whose first character is</p>
+<p><code>_</code> is exempt, which is how you keep a binding whose only job is to own a value</p>
+<p>until the scope ends. <code>_</code> is an ordinary *typed* variable here, not a discard, so</p>
+<p>a scope that drops both an int and a string needs two names (<code>_n</code>, <code>_s</code>) rather</p>
+<p>than <code>_</code> twice.</p>
+<p>Parameters, loop variables, and match/select bindings are never reported.</p>
+<p>A function nothing ever calls is a <strong>warning</strong>, not an error.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

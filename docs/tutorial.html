@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tutorial — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="index.html">docs</a> / tutorial.md</nav>
+<h1 id="tutorial">Tutorial</h1>
+<p>A guided first hour with Tycho. By the end you'll have written a small real program and</p>
+<p>will understand the one idea that makes the language different — where the memory</p>
+<p>management went.</p>
+<p>This assumes you can already build the compiler; if not, see</p>
+<p><a href="../README.html#trying-it">Trying it</a> in the README (it's <code>git clone</code> + <code>make</code>). Every</p>
+<p>snippet below is real, runnable Tycho. Save one to <code>f.ty</code> and run it with:</p>
+<pre><code class="language-sh">$ ./tychoc f.ty &amp;&amp; ./f
+</code></pre>
+<p><code>./tychoc f.ty</code> transpiles to C and compiles a native binary <code>f</code>.</p>
+<h2 id="1-hello">1. Hello</h2>
+<pre><code class="language-tycho">fn greet(name: string) -&gt; string:
+    return "hello " + name
+
+fn main():
+    print("what is your name: ")
+    name := input()
+    println(greet(name))
+</code></pre>
+<p><code>fn</code> declares a function; <code>-&gt; string</code> is its return type; <code>main</code> is the entry point.</p>
+<p><code>name := input()</code> declares a variable and infers its type. Indentation delimits blocks,</p>
+<p>Python-style. <code>print</code>, <code>println</code>, <code>input</code>, <code>str</code>, <code>len</code>, and <code>push</code> are builtins —</p>
+<p>no import needed.</p>
+<h2 id="2-values-and-copies">2. Values, and copies</h2>
+<p>Every binding is an independent value. <code>:=</code> infers the type; <code>x : T = …</code> names it.</p>
+<pre><code class="language-tycho">fn main():
+    a := [1, 2, 3]
+    b := a            # b is a full, independent copy of a
+    b[0] = 99
+    println(str(a[0]) + " " + str(b[0]))   # 1 99  — a is untouched
+</code></pre>
+<p>There is no reference type: you can never hold a pointer into another value's memory.</p>
+<p>Hold that thought — it's the whole trick, and section 8 explains what it buys you.</p>
+<h2 id="3-control-flow">3. Control flow</h2>
+<pre><code class="language-tycho">fn main():
+    for i := 0; i &lt; 5; i += 1:    # 0, 1, 2, 3, 4
+        if i % 2 == 0:
+            println(str(i) + " even")
+        else:
+            println(str(i) + " odd")
+
+    xs := [10, 20, 30]
+    for x in xs:                  # foreach over an array
+        println(str(x))
+</code></pre>
+<p><code>for cond:</code> is the while-loop form, <code>for:</code> loops until a <code>break</code>, and <code>parallel for i in 0..&lt;N:</code> counts in parallel.</p>
+<h2 id="4-collections">4. Collections</h2>
+<p>Arrays are <code>[T]</code>; maps are <code>[K: V]</code>. <code>push</code> appends; <code>m.get(key, default)</code> reads safely.</p>
+<pre><code class="language-tycho">fn main():
+    names := ["Ada", "Bo", "Cy"]
+    push(names, "Di")
+
+    ages : [string: int] = []
+    ages["Ada"] = 36
+    ages["Bo"] = 41
+    println("Ada is " + str(ages.get("Ada", 0)))
+    println(str(len(names)) + " names")
+</code></pre>
+<h2 id="5-structs">5. Structs</h2>
+<pre><code class="language-tycho">struct Student:
+    name: string
+    score: int
+
+fn main():
+    s := Student("Ada", 91)
+    println(s.name + " scored " + str(s.score))
+</code></pre>
+<p>A struct is a value like any other: copying it copies its whole tree, and it's freed when</p>
+<p>its scope ends.</p>
+<h2 id="6-enums-match-and-option">6. Enums, match, and Option</h2>
+<p>An <code>enum</code> is a tagged union; <code>match</code> is exhaustive — every variant needs an arm, checked</p>
+<p>at compile time.</p>
+<pre><code class="language-tycho">enum Grade:
+    A
+    B
+    C
+    F
+
+fn grade_name(g: Grade) -&gt; string:
+    return match g:            # match is an expression: each arm is a value
+        A: "A"
+        B: "B"
+        C: "C"
+        F: "F"
+
+fn main():
+    println(grade_name(A) + grade_name(F))   # AF
+</code></pre>
+<p><code>Option(T)</code> is the built-in enum for "a value or nothing" — variants <code>Some(x)</code> and <code>None</code></p>
+<p>— so there is no null:</p>
+<pre><code class="language-tycho">fn first_even(xs: [int]) -&gt; Option(int):
+    for x in xs:
+        if x % 2 == 0:
+            return Some(x)
+    return None
+
+fn main():
+    match first_even([1, 3, 4, 7]):
+        Some(v): println("found " + str(v))
+        None: println("none")
+</code></pre>
+<h2 id="7-putting-it-together">7. Putting it together</h2>
+<p>Here's a small program that uses all of the above — it grades a list of students and</p>
+<p>tallies how many got each letter. Save it as <code>grades.ty</code> and run it.</p>
+<pre><code class="language-tycho">enum Grade:
+    A
+    B
+    C
+    F
+
+fn letter(score: int) -&gt; Grade:
+    if score &gt;= 90:
+        return A
+    elif score &gt;= 80:
+        return B
+    elif score &gt;= 70:
+        return C
+    else:
+        return F
+
+fn grade_name(g: Grade) -&gt; string:
+    return match g:
+        A: "A"
+        B: "B"
+        C: "C"
+        F: "F"
+
+struct Student:
+    name: string
+    score: int
+
+fn main():
+    students : [Student] = [
+        Student("Ada", 91),
+        Student("Bo", 72),
+        Student("Cy", 88),
+        Student("Di", 55),
+    ]
+
+    tally : [string: int] = []
+    for s in students:
+        g := grade_name(letter(s.score))
+        tally[g] = tally.get(g, 0) + 1
+
+    for s in students:
+        println(s.name + ": " + grade_name(letter(s.score)))
+
+    println("---")
+    for g in ["A", "B", "C", "F"]:
+        println(g + ": " + str(tally.get(g, 0)))
+</code></pre>
+<p>Running it:</p>
+<pre><code class="language-text">Ada: A
+Bo: C
+Cy: B
+Di: F
+---
+A: 1
+B: 1
+C: 1
+F: 1
+</code></pre>
+<h2 id="8-where-the-frees-went">8. Where the frees went</h2>
+<p>Look back at that program: it built an array of structs, a map, and a pile of strings —</p>
+<p>and there is no <code>free</code> anywhere, and no garbage collector running. So where did the memory</p>
+<p>go?</p>
+<p>Every scope — each function call, each loop iteration, each <code>if</code> block — owns a memory</p>
+<p>arena. Allocations go into the current scope's arena, and when the scope exits, the whole</p>
+<p>arena is released at once. Because the language has no reference type (the rule</p>
+<p>from §2), a value can only</p>
+<p>leave a scope in ways the compiler can see in the source (returned up, or passed down), so</p>
+<p>the compiler places every allocation and free itself, from the syntax alone — no garbage</p>
+<p>collector, no manual <code>free</code>, and no lifetime annotations to write.</p>
+<p>That is the core idea behind the language. The full argument, with the</p>
+<p>measurements and the cases where it costs, is in <a href="thesis.html">thesis.md</a>.</p>
+<h2 id="next-steps">Next steps</h2>
+<ul>
+<li><strong>[From `malloc` to arenas](from-c-to-arenas.md)</strong> — the five-step version of</li>
+</ul>
+<p>section 8, starting from C. Read this first.</p>
+<ul>
+<li><strong>[Thinking in Tycho](idioms.md)</strong> — what to reach for instead of references</li>
+</ul>
+<p>and observers. Read this second.</p>
+<ul>
+<li><strong>[Language reference](reference/index.md)</strong> — the precise behavior of every feature.</li>
+<li><strong>[Quiet results](quiet-results.md)</strong> — seven quiet spots to know before the</li>
+</ul>
+<p>first real program.</p>
+<ul>
+<li><strong>[Examples](../examples/)</strong> — larger runnable programs (a JSON parser, an HTTP client,</li>
+</ul>
+<p>a static-site generator, a ray tracer).</p>
+<ul>
+<li><strong>[Core library](reference/corelib.md)</strong> — the batteries: strings, math, io, json, http, and more.</li>
+</ul>
+<p>The moment you add an <code>import</code>, the file becomes a package: put</p>
+<p><code>package main</code> on line 1 and give the program its own directory</p>
+<p>(<a href="reference/packages.html">Packages</a>).</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A width slot for `parallel for` — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / rfc/parallel-for-width.md</nav>
+<h1 id="a-width-slot-for-parallel-for">A width slot for <code>parallel for</code></h1>
+<p>Status: <strong>BUILT 2026-08-13.</strong> What follows is the proposal as written; the</p>
+<p>differences the implementation forced are listed under "What shipped" at the end.</p>
+<p>Written 2026-08-13 to cost open-list item 8 in</p>
+<p><a href="../internals/FRICTION.html">`../internals/FRICTION.md`</a>, which had stood as</p>
+<p>"uncosted, and still the honest core of what is left". It is costed now, and it</p>
+<p>is smaller than the item says.</p>
+<h2 id="the-want-split-in-two">The want, split in two</h2>
+<p>The item's title is "no direct spelling for N workers". Its own 2026-07-31</p>
+<p>narrowing already split that in two, and only one half is a type-system problem:</p>
+<ul>
+<li><strong>(a) The program cannot choose N.</strong> <code>parallel for</code> fans out to <code>ncpu()</code></li>
+</ul>
+<p>tasks and the only knob is the <code>TYCHO_THREADS</code> environment variable, read once</p>
+<p>per process in <code>runtime/tycho_rt.c@tycho_ncpu</code>. A fixture runner that wants</p>
+<p><code>-j 4</code> on a laptop and <code>-j 32</code> in CI cannot say so from inside the language; it</p>
+<p>must be *launched* differently.</p>
+<ul>
+<li><strong>(b) N long-lived workers, each carrying its own identity.</strong> <code>server/main.ty</code></li>
+</ul>
+<p>still pays a recursive fan-out for this: worker k spawns worker k+1 into a</p>
+<p>frame-local, then runs its own accept loop, because a chunk's identity is not</p>
+<p>observable and a task handle cannot be stored in a container</p>
+<p>(<code>src/tychoc.c@task_container_err</code>).</p>
+<p>This RFC proposes (a) only. (b) is discussed at the end because the obvious</p>
+<p>spelling for it now collides with a rule that landed on 2026-08-13.</p>
+<h2 id="why-a-is-not-a-type-system-change">Why (a) is not a type-system change</h2>
+<p>The channel-drain form already lowers to a counting <code>parallel for</code> whose width</p>
+<p>is an ordinary expression node. From the lowering, <code>src/tychoc.c</code> in the</p>
+<p><code>IS_CHAN(src)</code> branch:</p>
+<pre><code>/* K = ncpu() workers, each draining until closed:
+ *   parallel for __pw in range(0, ncpu()):
+ *       for true: select { recv(coll, x): BODY ; closed: break } */
+Expr *nc = new_expr(E_CALL, s-&gt;line); nc-&gt;sval = "ncpu"; nc-&gt;pkg = "";
+s-&gt;name = "__pw"; s-&gt;r_start = z; s-&gt;r_stop = nc;
+</code></pre>
+<p><code>ncpu()</code> is synthesised as an <code>E_CALL</code> node and dropped into <code>r_stop</code>, the same</p>
+<p>slot a user's <code>0..&lt;N</code> fills. **Giving the program a width means substituting the</p>
+<p>user's expression for that node** — no new type, no change to the affine handle</p>
+<p>rule, no container of handles. The counting form needs the matching change one</p>
+<p>layer down: <code>gen_parfor</code> chunks the iteration space into <code>tycho_ncpu()</code> tasks</p>
+<p>(<code>src/tychoc.c@gen_parfor</code>), and that call site becomes the width expression.</p>
+<h2 id="proposed-spelling">Proposed spelling</h2>
+<pre><code class="language-text">parallel(4) for x in work:          # drain `work` with exactly 4 workers
+parallel(w) for i in 0..&lt;n:         # chunk 0..&lt;n into `w` tasks
+parallel for x in work:             # unchanged: ncpu() workers
+</code></pre>
+<p>Grammar, replacing the two productions at <code>docs/spec/02-grammar.md@ParallelFor</code>:</p>
+<pre><code>ParallelFor ::= "parallel" Width? "for" IDENT "in" "0" "..&lt;" Expr ":" NEWLINE Block
+              | "parallel" Width? "for" IDENT "in" IDENT ":" NEWLINE Block
+Width       ::= "(" Expr ")"
+</code></pre>
+<p>Parsed at the existing <code>TK_PARALLEL</code> arm, which today consumes <code>parallel</code> and</p>
+<p>demands <code>for</code> next; the width is an optional parenthesised expression between</p>
+<p>them, carried on the statement beside <code>s-&gt;parallel</code>.</p>
+<h2 id="the-decisions-this-needs-and-the-answer-each-should-get">The decisions this needs, and the answer each should get</h2>
+<p>1. <strong>Evaluated when?</strong> Once, at the spawn site, before any task starts — the</p>
+<p>same rule the counting form's <code>N</code> already has. An expression re-evaluated per</p>
+<p>chunk would make the width unobservable and racy.</p>
+<p>2. <strong>`W &lt; 1`?</strong> Fail closed, not clamp. A literal <code>parallel(0)</code> is refused at</p>
+<p>compile time; a computed <code>W &lt; 1</code> aborts at run time with its own message. The</p>
+<p>precedent is this language's habit of refusing rather than guessing, and the</p>
+<p>counter-precedent is instructive: <code>range()</code>'s zero-step abort was *lost* when</p>
+<p>the three-clause loop replaced it (<code>docs/spec/10-statements.md</code>, "The</p>
+<p>zero-step guarantee is gone"), and that is recorded there as a deliberate</p>
+<p>trade, not a model to copy.</p>
+<p>3. <strong>`W` versus `TYCHO_THREADS`?</strong> The explicit width wins. The environment</p>
+<p>variable is a process-wide default for programs that did not choose; a</p>
+<p>program that says <code>parallel(4)</code> has chosen. Say this in §22 — a reader who</p>
+<p>expects <code>TYCHO_THREADS=1</code> to serialise everything for debugging needs to know</p>
+<p>it no longer does.</p>
+<p>4. <strong>Does `W` bound anything else?</strong> No. It is the fan-out width of this</p>
+<p>statement, not a pool the runtime keeps.</p>
+<h2 id="cost-and-the-gates-that-can-redden">Cost, and the gates that can redden</h2>
+<ul>
+<li><code>src/tychoc.c</code>: the <code>TK_PARALLEL</code> arm, the <code>IS_CHAN</code> lowering's <code>ncpu()</code> node,</li>
+</ul>
+<p>and <code>gen_parfor</code>'s chunk count. Small and local — three sites.</p>
+<ul>
+<li><code>docs/spec/02-grammar.md</code> (the two productions plus <code>Width</code>),</li>
+</ul>
+<p><code>docs/spec/13-concurrency.md</code> §22, <code>docs/reference/concurrency.md</code>.</p>
+<ul>
+<li>Fixtures: a width of 1 must serialise, a width of 2 must still drain the whole</li>
+</ul>
+<p>channel, <code>parallel(0)</code> must be refused, and the *answer* must not depend on the</p>
+<p>width — the property <code>tools/tycho-flow</code>'s lane already asserts for its pipeline.</p>
+<ul>
+<li>Gates: <code>make test</code> (new fixtures), <code>make conc</code>, and <code>sh scripts/entrypoints.sh</code></li>
+</ul>
+<p>if the grammar change touches anything a consumer program spells. A width that</p>
+<p>silently did nothing would pass every one of those except a fixture that</p>
+<p>*counts* workers, so that fixture is the load-bearing one.</p>
+<h2 id="b-closed-2026-08-13--it-was-never-a-type-system-problem">(b) CLOSED 2026-08-13 — it was never a type-system problem</h2>
+<p>Written below as "still open, and now harder to spell", on the assumption that</p>
+<p>per-worker identity needed a second binder or task handles in a container.</p>
+<p>Neither: <strong>the counting form already binds the identity</strong>, and the width slot</p>
+<p>this RFC added supplies the count.</p>
+<pre><code class="language-tycho">struct Config:
+    root: string
+
+fn accept_loop(cfg: Config, srv: int, wid: int) -&gt; int:
+    return wid
+
+nworkers := 4
+cfg := Config(".")
+srv := 0
+
+parallel(4) for wid in 0..&lt;nworkers:   # nworkers workers, each with its own wid
+    accept_loop(cfg, srv, wid)
+</code></pre>
+<p>Probed directly — 4 workers, ids summing to 6 — and then applied to the program</p>
+<p>the item cited: <code>server/main.ty</code>'s recursive fan-out is gone and</p>
+<p><code>make server-check</code> starts the real server and passes. The second-binder analysis</p>
+<p>below still holds; its error is treating the first binder as unavailable.</p>
+<h2 id="the-original-why-b-looked-still-open-and-harder-to-spell">The original: why (b) looked still open, and harder to spell</h2>
+<p>The natural spelling for per-worker identity is a second binder:</p>
+<pre><code class="language-tycho">parallel(4) for x, wid in work:     # NOT proposed
+</code></pre>
+<p>That collides head-on with a rule gated the same day this was written: a <code>for</code></p>
+<p>head binds exactly one name, enforced with its own diagnostic and pinned by</p>
+<p><code>tests/reject/for_two_binders.ty</code>. Both neighbours spend a second binder on the</p>
+<p>*index* (measured 2026-08-13: Go's first binder and Odin's second), so a second</p>
+<p>binder meaning "worker id" would take a slot every reader expects to mean</p>
+<p>something else.</p>
+<p>The alternatives, none costed here: a builtin readable inside a parallel body</p>
+<p>(<code>worker_id()</code>), which is ambient rather than bound; or the</p>
+<p>original ask, task handles in a container, which is the type-system change the</p>
+<p>item names and which nothing in this RFC makes cheaper.</p>
+<h2 id="what-shipped-and-where-it-differs-from-the-proposal-above">What shipped, and where it differs from the proposal above</h2>
+<p>Landed in <code>src/tychoc.c</code> at the three sites this RFC named, plus the two spec</p>
+<p>sections. Two things the proposal did not say, both found by building it:</p>
+<ul>
+<li><strong>The range is `1..64`, not `&gt;= 1`.</strong> 64 is the static <code>_pts[64]</code> task array in</li>
+</ul>
+<p><code>gen_parfor</code>, and it was already the silent ceiling for <code>ncpu()</code>. Silently</p>
+<p>clamping an explicit <code>parallel(100)</code> would run a program nobody asked for, so a</p>
+<p>literal outside the range is refused in the parser (where the caret lands on the</p>
+<p>author's digit) and a computed one aborts at run time via <code>tycho_die</code>.</p>
+<ul>
+<li><strong>The width lands in `r_stop`, not in a new codegen path.</strong> For the</li>
+</ul>
+<p>channel-drain form the iteration space IS the worker count, so the author's</p>
+<p>expression simply replaces the synthesised <code>ncpu()</code> node and every existing</p>
+<p>clamp reads it unchanged.</p>
+<p><strong>What is asserted, and what is not.</strong> <code>tests/conc/parfor_width.ty</code> proves the</p>
+<p>ANSWER does not move with the width (328350 at 1, at 3 and at <code>ncpu()</code>), the two</p>
+<p><code>reject/</code> fixtures pin the literal refusals and <code>abort/parfor_width_computed.ty</code></p>
+<p>pins the runtime one. None of those can show the width is honoured *at all*:</p>
+<p>with no way to observe a worker's identity from inside the loop — item 8b, still</p>
+<p>open — a <code>parallel(3)</code> that quietly ran at <code>ncpu()</code> prints the same bytes. So</p>
+<p><code>tests/conc/run.sh</code> reads the emitted <code>_pk</code> initialiser and requires 1, 3 and</p>
+<p><code>tycho_ncpu()</code> to each appear. Proven to redden: making <code>gen_parfor</code> ignore</p>
+<p><code>s-&gt;par_width</code> fails that leg and the abort fixture, 43 passed / 2 failed</p>
+<p>against 45 / 0.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

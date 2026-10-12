@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Closed 1.0 conditions, August 2026 — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / internals/roadmap-closed-2026-08.md</nav>
+<h1 id="closed-10-conditions-august-2026">Closed 1.0 conditions, August 2026</h1>
+<blockquote>
+<p>Status: history — conditions §2–§6 closed 2026-08-10 through 2026-08-15, moved out of ROADMAP.md 2026-09-02. What is still open (§1, §7) stayed there.</p>
+</blockquote>
+<p>Maintainer material, moved out of <a href="../../ROADMAP.html">`ROADMAP.md`</a> on 2026-09-02.</p>
+<p>Two relative link targets are rewritten, because the text moved two directories</p>
+<p>down; nothing else is edited. These are conditions §2 through §6 and the</p>
+<p>order-of-work list exactly as they were written and closed, kept because each one</p>
+<p>records what was measured and what was refused, not merely that it finished.</p>
+<p>A roadmap is direction. These are history, and they were 351 of ROADMAP's 652</p>
+<p>lines, which put "what remains for 1.0" 460 lines below the heading that asks it.</p>
+<p>What is still open — §1 and §7 — stayed there.</p>
+<h3 id="2-the-daily-papercuts-are-gone--closed-2026-08-15">2. ~~The daily papercuts are gone~~ — <strong>CLOSED 2026-08-15</strong></h3>
+<p><strong>Re-probed at HEAD</strong>, 254 commits after the 2026-08-09/08-14 passes below, in</p>
+<p>one program: <code>pass</code> and the operator line continuation together give 6, both</p>
+<p>typed-empty spellings accept a <code>push</code>, a newtype-of-array supports <code>push</code>/<code>len</code>/</p>
+<p>indexing (2, 7), <code>or_return</code> returns 41 through `fn main() -&gt; Result(void,</p>
+<p>string)<code>, and a package-level </code>len` still draws the collision warning that names</p>
+<p><code>package main</code>'s remedy. A table probed 254 commits ago is a claim, not a state;</p>
+<p>this is the state.</p>
+<p>These are ergonomic, not soundness — which is exactly why they must be fixed</p>
+<p>*before* a freeze rather than after, since fixing them later is a breaking</p>
+<p>change. All were recorded by the project itself, in the early plan learnings</p>
+<p>(rotated away when closed) and in FRICTION:</p>
+<ul>
+<li>~~a package-level <code>len</code> <strong>shadows the builtin</strong> inside its own package~~ —</li>
+</ul>
+<p><strong>closed 2026-08-09</strong>, see the probe table below</p>
+<ul>
+<li>~~no <code>defer</code>~~ — <strong>refused 2026-08-10</strong> (see the probe table); ~~and no bare</li>
+</ul>
+<p><code>pass</code>/no-op statement~~, <strong>closed 2026-08-10</strong></p>
+<ul>
+<li>~~<strong>no expression line continuation</strong>~~ — <strong>closed 2026-08-09</strong></li>
+<li>~~consts do not cross package boundaries, so levels ship as functions~~ —</li>
+</ul>
+<p><strong>closed 2026-08-10</strong>: <code>pkg.NAME</code> reads an exported const, folded at the use</p>
+<p>site. No export keyword; the leading-underscore rule already there does the</p>
+<p>privacy. One position remains open and is marked <code>gap:</code> in the source — a</p>
+<p>qualified const as a fixed-array length, which needs sizes resolved after</p>
+<p>parsing</p>
+<ul>
+<li>~~<code>or_return</code> requires a <code>Result</code>-returning function, which <code>main()</code> is not~~ —</li>
+</ul>
+<p><strong>closed 2026-08-10</strong>: <code>fn main() -&gt; Result(void, string)</code> is a second legal shape</p>
+<ul>
+<li>~~a newtype-of-array blocks <code>push</code>~~ — <strong>closed 2026-08-10</strong>, and it was worse</li>
+</ul>
+<p>than <code>push</code>: every collection operation refused it</p>
+<ul>
+<li>~~an aggregate capturing a still-live binding warns until you write the copy by</li>
+</ul>
+<p>hand (<code>arg := hostile</code>)~~ — <strong>closed 2026-08-10</strong>: that hand-written copy never</p>
+<p>removed a copy, it only silenced the warning (measured); the message now offers</p>
+<p>only the remedy that works</p>
+<ul>
+<li>~~the typed empty is <code>[]string</code>, which nobody guesses first~~ — **not a</li>
+</ul>
+<p>language gap** (see the probe table); the DIAGNOSTIC for the wrong guess was</p>
+<p>fixed 2026-08-10, so <code>[string]</code> now names both working forms instead of</p>
+<p>saying "expected an expression"</p>
+<p>Each is small. Together they are what "the language is unpleasant on day two"</p>
+<p>is made of.</p>
+<p><strong>Re-probed against the compiler on 2026-08-09</strong> rather than trusted from the</p>
+<p>phase-1 notes, because two entries turned out to be wrong:</p>
+<table>
+<tr><th>Papercut</th><th>State</th></tr>
+<tr><td>package-level <code>len</code> shadows the builtin</td><td><strong>closed 2026-08-09</strong> — still legal (§3.7 permits it on purpose), but the compiler now warns at the declaration and names the consequence, so the wrong answer is no longer silent. Fixture <code>tests/warn/shadow_builtin.ty</code>.</td></tr>
+<tr><td>no bare <code>pass</code></td><td><strong>closed 2026-08-10</strong> — <code>pass</code> is the no-op statement. CONTEXTUAL, not reserved: significant only as a whole statement, because <code>pass</code> was already a variable name in <code>corelib/test/testing</code> and <code>tools/prunner</code> and reserving it would have broken the runner that scores <code>make test-fast</code>. Fixtures <code>tests/pass_stmt.ty</code>, <code>tests/reject/pass_as_value.ty</code>.</td></tr>
+<tr><td>no expression line continuation</td><td><strong>closed 2026-08-09</strong> — a line ending on an operator joins the next, when that line is indented deeper. The deeper-indent condition is what keeps a truncated line a truncated line: <code>tests/diag/caret_expr.ty</code> caught the naive version degrading its own diagnostic. Fixture <code>tests/line_continuation.ty</code>.</td></tr>
+<tr><td>no <code>defer</code></td><td><strong>refused 2026-08-10, documented.</strong> Not a papercut: this language has three cleanup mechanisms already and <code>defer</code> would be a fourth. Memory is arena-freed at scope exit; a <code>handle</code> runs its declared <code>free:</code> at scope exit (RAII, affine, §25); a channel/task handle is affine with an implicit join. <code>core:io</code> is path-based and opens nothing. The tree's <code>close(</code> calls are overwhelmingly CHANNEL closes, not resource cleanup. Already found once and filed anyway — <code>docs/internals/plan-tycho-vm-DONE.md:27-32</code>, whose own verdict was "nothing needs it; it was filed because the probe surprised me, which is not a reason."</td></tr>
+<tr><td><code>or_return</code> from <code>main()</code></td><td><strong>closed 2026-08-10</strong> — <code>fn main() -&gt; Result(void, string):</code> is legal, so <code>or_return</code> works at the entry point. <code>Err(msg)</code> prints <code>msg</code> bare to stderr and exits 1; <code>Ok</code> exits 0. The error type is <code>string</code> because the message is what gets printed, and the ok payload is <code>void</code> so the exit status stays unambiguous. Fixtures <code>tests/main_result.ty</code>, <code>tests/abort/main_result_err.ty</code> and three rejects</td></tr>
+<tr><td>newtype-of-array blocks <code>push</code></td><td><strong>closed 2026-08-10</strong> — and the row understated it. A probe found <code>len</code>, indexing, slicing, <code>push</code>, <code>pop</code>, <code>for … in</code>, index-assign and every map builtin ALL refusing a newtype-of-collection: it was write-only unless you went through <code>to_under</code>. Operations now see through the newtype; distinctness at assignment, parameter passing and comparison is unchanged and pinned by <code>tests/reject/newtype_agg_still_distinct.ty</code>. Fixture <code>tests/newtype_agg_ops.ty</code></td></tr>
+<tr><td>aggregate capturing a live binding warns</td><td><strong>closed 2026-08-10 — the warning was right, its advice was not.</strong> Measured on the emitted C: the suggested <code>y := s</code> silences the warning and emits the SAME two copies, while making it the value's last use emits one. The no-op remedy is gone from the message; the one that works is stated plainly. Golden <code>tests/warn/copy_live.err</code></td></tr>
+<tr><td>~~typed empty is <code>[]string</code>~~</td><td><strong>not a defect</strong> — both <code>xs : [string] = []</code> and <code>xs := []string</code> compile. It is a learning-curve item, not a language gap.</td></tr>
+<tr><td>consts across package boundaries</td><td><strong>re-probed 2026-08-14 — closed.</strong> <code>pkg.NAME</code> reads across the boundary for all four base types in every value position, including arithmetic and comparison: a four-const package read from another gave <code>4 lim 1.5 true</code> and <code>arith: 8 cmp: true</code>. The one remaining position is the documented <code>gap:</code> beside <code>size_is_const</code> — a fixed-array LENGTH (<code>[lim.MAX]int</code>), which needs the size at parse time when the imported package may not be parsed yet. Still refused, deliberately, but it used to fall through to a type parse and say <code>unknown type 'lim'</code>, blaming the package rather than the position; it now names the limitation and the two ways out. <code>[pkg.Type]</code> stays a dynamic array of an imported type — the discriminator is the type token after <code>]</code>, and <code>[store.Col]</code>/<code>[money.Account]</code> are everywhere. <code>tests/reject/fixarr_qualified_const.ty</code></td></tr>
+</table>
+<p>Priority inside the list was <code>len</code> shadowing, because it was the only one that</p>
+<p>produced a wrong answer instead of an error message. It is closed; the rest are</p>
+<p>worked top to bottom by cost.</p>
+<h3 id="3-the-expressiveness-gaps-close-or-become-documented-refusals--closed-2026-08-15">3. ~~The expressiveness gaps close, or become documented refusals~~ — <strong>CLOSED 2026-08-15</strong></h3>
+<p><strong>Re-probed at HEAD</strong> in the same program as §2: <code>sort.sort_by</code> with a named</p>
+<p>comparator sorts (1), <code>is</code> answers on both <code>Option</code> and <code>Result</code> (true, true), a</p>
+<p><code>where numeric(T), defaultable(T)</code> generic folds with <code>zero$(T)</code> (6), and</p>
+<p><code>Result(void, string)</code> is the entry point's own return type. The rows below are</p>
+<p>the history of how each closed.</p>
+<p><strong>Re-probed against the tree on 2026-08-11</strong> with one compiled program per row,</p>
+<p>not inherited from the 2026-08-09 pass. Six of the seven rows had gone stale:</p>
+<p>five closed by commits that landed after the check, and the sixth was recorded</p>
+<p>against the wrong mechanism.</p>
+<table>
+<tr><th>Gap</th><th>State</th></tr>
+<tr><td><code>Result(void, E)</code> not expressible</td><td><strong>closed 2026-08-09</strong> — <code>d868083</code> (<code>T_VOID</code> → <code>T_UNBOUND</code>) then <code>760bb83</code> (the spelling). Probe: <code>fn touch(x: int) -&gt; Result(void, string)</code> returning <code>Ok()</code>/<code>Err("neg")</code> compiles and runs. The stated limit still holds exactly — <code>Result(Option(void), E)</code>, <code>fn g(x: void)</code> and <code>v : void = 0</code> are each refused with *"'void' is a type only as a Result's ok payload"*. See below</td></tr>
+<tr><td>no comparator-taking sort</td><td><strong>closed 2026-08-11</strong> — <code>e40f32d</code> added <code>corelib/sort/sort.ty@sort_by</code>, <code>fn sort_by(xs: [$T], cmp: fn($T, $T) -&gt; int) -&gt; [$T]</code>. Probe: sorting a <code>[Emp]</code> by its <code>name</code> field through a comparator gave <code>amy,zoe</code>, and <code>sort.asc</code> on <code>["pear","apple","fig"]</code> gave <code>[apple, fig, pear]</code> — the row's own complaint, sorting by a string key, needs no invented int in either form</td></tr>
+<tr><td>an enum cannot be tested for its variant without binding a payload</td><td><strong>closed 2026-08-11</strong> — <code>308b6d6</code> (<code>is</code> for user enums) and <code>6d275ca</code> (<code>is</code> for Option/Result). Probe: <code>s is Circle</code>/<code>s is Square</code>/<code>s is Dot</code> on a payload-carrying enum gave <code>true false false</code>, and <code>o is Some</code>/<code>r is Ok</code>/<code>r is Err</code> all answer, including on a <code>Result(void, E)</code>. The 2026-08-09 note called this "mitigated, stylistic"; <code>is</code> closed it structurally instead</td></tr>
+<tr><td>two error types cannot share an <code>or_return</code> chain</td><td><strong>closed — and the row named the wrong mechanism.</strong> <code>d806a4d</code> triaged it as WRONG MECHANISM: <code>corelib/result/result.ty@map_err</code> already bridged, and <code>6bc0a29</code> added <code>map_err_with</code> (<code>corelib/result/result.ty@map_err_with</code>) for the cause-preserving case. Probe: one <code>fn chain(k) -&gt; Result(int, string)</code> whose first leg is a <code>Result(string, IoErr)</code> bridged by <code>result.map_err_with(read_it(k), ioerr_to_str) or_return</code> and whose second leg is a native <code>Result(int, string)</code> — both legs propagate through the same chain, the IoErr path surfacing as <code>missing key bad</code>. There was never a language gap here, only a missing combinator</td></tr>
+<tr><td><code>core:iter</code> unusable for a fallible pipeline stage</td><td><strong>closed 2026-08-11</strong> — <code>6d498cf</code> added <code>corelib/iter/iter.ty:12@try_map</code> and <code>:27@try_filter</code>; <code>3bdfabc</code> flipped predicates to <code>bool</code>. Probe: <code>try_map</code> over <code>["1","2","3"]</code> gave <code>[1, 2, 3]</code> and over <code>["1","-2","3"]</code> short-circuited to <code>not positive: -2</code>; <code>try_filter</code> kept <code>[2, 3, 4]</code> and propagated <code>overflow guard</code></td></tr>
+<tr><td><code>core:decimal</code> has no <code>div</code></td><td><strong>closed</strong> — <code>a8c761c</code>, confirmed by <code>b4d28e3</code>. <code>corelib/decimal/decimal.ty@div</code> is <code>fn div(a: Decimal, b: Decimal, scale: int, mode: int) -&gt; Result(Decimal, DivErr)</code>. Probe: <code>div(10, 3, 4, 0)</code> gave <code>3.3333</code></td></tr>
+<tr><td><code>[string]</code> cannot cross the FFI</td><td><strong>CLOSED 2026-08-11 — lifted for the PARAMETER direction, refused for the return.</strong> <code>src/tychoc.c@ffi_arg_arr_ptr_ctype</code> answers <code>"const char *const *"</code> for <code>T_ARRAY_STRING</code>; a <code>[string]</code> argument now emits <code>(const char *const *)xs.data, xs.len</code>, the same <code>(ptr,len)</code> convention <code>[int]</code>/<code>[float]</code> use, <strong>borrowed for the call</strong> (unenforceable — stated in <code>docs/spec/14-ffi.md</code> §24.1). The return gate stayed <code>src/tychoc.c@ffi_arr_ptr_ctype</code>, which never answers for <code>T_ARRAY_STRING</code>, so <code>-&gt; [string]</code> still dies (<code>tests/reject/extern_ret_arr_string.ty</code>). Fixture: <code>tests/ffi/main.ty@ffi_sfold</code>, non-empty and empty. <strong>`core:os` was left alone here</strong> — adopted afterwards by <code>9d63198</code>, which passes argv as a <code>[string]</code> and drops the builder handle</td></tr>
+</table>
+<p>One correction carried forward from 2026-08-09, and one new one.</p>
+<p><code>Result(void, E)</code> was recorded as "not expressible", which overstated it: a</p>
+<p>one-field <code>Unit</code> struct worked with no compiler change, so the gap was</p>
+<p>boilerplate rather than a wall. <strong>CLOSED 2026-08-09</strong>, in two commits.</p>
+<pre><code class="language-tycho">fn touch(x: int) -&gt; Result(void, string):
+    if x &lt; 0:
+        return Err("neg")
+    return Ok()
+</code></pre>
+<p>The blocker named here was <strong>`T_VOID` being overloaded</strong>: it was both the</p>
+<p>no-return type and the sentinel for *unbound generic type parameter*, so</p>
+<p>binding a payload parameter to void would have read as "not yet bound". The</p>
+<p>recommendation below — re-sentinel to <code>T_UNBOUND</code> — was right, and it was</p>
+<p><strong>necessary but not sufficient</strong>, which the table's "Buys" column had wrong.</p>
+<p><code>void</code> was not in the type grammar at all: <code>parse_type_inner</code> had no <code>void</code></p>
+<p>branch, so the three <code>== T_VOID</code> guards inside it were defensive-unreachable</p>
+<p>and the collision was purely latent. Re-sentinelling cleared the trap; the</p>
+<p>spelling still had to be built on top of it.</p>
+<p>What shipped, with the surface chosen by the owner: <code>void</code> is spellable in</p>
+<p>exactly one position, a <code>Result</code>'s ok payload, and it is a type with **no</p>
+<p>values** — constructed by a zero-argument <code>Ok()</code>, matched by a bare <code>Ok:</code> arm,</p>
+<p>never bindable. The permission is one level deep, so <code>Result(Option(void), E)</code></p>
+<p>is still refused. The <code>or_return</code> STATEMENT form (<code>f() or_return</code>, previously</p>
+<p>rejected as a bare expression with no effect) came with it and is not optional:</p>
+<p>with no value to bind there is no <code>x := f() or_return</code> to write, so without it</p>
+<p>the feature would have had no usable propagation form. Spec:</p>
+<p><a href="../spec/03-types.html#536-enums-option-result">§5.3.6</a>.</p>
+<p>The four options as they were tabled, for the record:</p>
+<table>
+<tr><th>Option</th><th>Cost</th><th>Buys</th></tr>
+<tr><td><strong>Re-sentinel `T_VOID` → `T_UNBOUND`</strong> *(taken)*</td><td>6 sites, all reached from the single <code>new_binds()</code> — the estimate of ~8 was close</td><td>it cleared the latent trap. It did NOT buy "the expected spelling": that was the type grammar, the <code>Ok()</code> constructor, the bare <code>Ok:</code> arm, the <code>char okv</code> placeholder in the emitted C, and the <code>or_return</code> statement form — a second commit</td></tr>
+<tr><td>New <code>T_UNIT</code> type</td><td>full compiler surface — codegen, eq, copy, <code>str</code></td><td>not taken: same result, more surface</td></tr>
+<tr><td>Ship <code>Unit</code> in corelib</td><td>tiny</td><td>not taken: removes the boilerplate, leaves the wart visible</td></tr>
+<tr><td>Document the workaround</td><td>none</td><td>not taken</td></tr>
+</table>
+<p>An earlier note in this file called this "a spelling decision as much as a</p>
+<p>type-system one", inferred from the compiler using the word "void" in its own</p>
+<p>diagnostics. That was wrong — diagnostic text is not evidence about the type</p>
+<p>system — and the sentinel collision is why.</p>
+<p>#### A gap the <code>void</code> work left behind — <strong>closed</strong></p>
+<p>This probe found that <code>core:result</code>'s combinators could not be instantiated at</p>
+<p><code>Result(void, E)</code>: <code>is_ok</code> was a <code>match</code> whose <code>Ok(v)</code> arm had no value to bind</p>
+<p>when the ok payload was <code>void</code>. **Both halves are fixed and the claim no longer</p>
+<p>describes the tree.** <code>is_ok</code> is <code>return r is Ok</code></p>
+<p>(<code>corelib/result/result.ty@is_ok</code>) and <code>is_err</code> is <code>return r is Err</code></p>
+<p>(<code>corelib/result/result.ty@is_err</code>) — no <code>match</code>, so nothing to fail to bind. A</p>
+<p><code>touch</code> returning <code>Result(void, string)</code> now compiles through both:</p>
+<p><code>result.is_ok(touch(1))</code> and <code>result.is_err(touch(-1))</code> each answer <code>true</code>.</p>
+<p>The second defect this probe filed — the diagnostic <strong>naming the wrong file</strong>,</p>
+<p>sending a reader to line 71 of an eleven-line <code>main.ty</code> — is also fixed:</p>
+<p><code>cf42e2f</code> made a generic instantiation failure name the corelib file it is</p>
+<p>really in, and <code>4a7cca0</code> added the instantiating call site as a <code>note:</code>, so the</p>
+<p>message now names both the corelib line and the caller's own line.</p>
+<p>#### Sizing <code>[string]</code> across the FFI — both answers, with costs</p>
+<p><strong>Resolved 2026-08-11: lifting was chosen, and the sizing below held</strong> — with one</p>
+<p>correction found while implementing it. <code>ffi_arr_ptr_ctype</code> is also the *return*</p>
+<p>gate, so widening it in place would have made <code>-&gt; [string]</code> compile; the branch</p>
+<p>went into a new param-only <code>ffi_arg_arr_ptr_ctype</code> instead. The rest of this</p>
+<p>section is kept as the record of the two prices that were weighed.</p>
+<p><strong>Lifting it is small — smaller than the row's "open by design" implies.</strong> The</p>
+<p>blocker is not representation. <code>runtime/tycho_rt.c@TychoArrStr</code> is</p>
+<p><code>typedef struct { char **data; tycho_int len; tycho_int cap; } TychoArrStr;</code>, and</p>
+<p><code>runtime/tycho_rt.c:1304@NUL</code> records that a Tycho string is NUL-terminated and its</p>
+<p>pointer is a valid C <code>char *</code> with the header hidden behind it. So a <code>[string]</code>'s</p>
+<p><code>.data</code> <strong>is already a `char </strong>` of ordinary C strings** — no marshalling, no</p>
+<p>copy, no ownership transfer. The change is one branch in</p>
+<p><code>src/tychoc.c@ffi_arr_ptr_ctype</code> returning <code>"const char *const *"</code> for</p>
+<p><code>T_ARRAY_STRING</code>; both call-emit sites (<code>src/tychoc.c@_xa</code> — the direct-call and</p>
+<p>out-param-return emitters) are already generic over that function's result and would</p>
+<p>emit <code>(const char *const *)xs.data, xs.len</code> unchanged. Comparable to <code>308b6d6</code></p>
+<p>(<code>is</code>): one resolver branch, one codegen path already written, a fixture.</p>
+<p>Three things that must be decided with it, not after:</p>
+<p>1. <strong>`(ptr, len)`, not a NULL-terminated argv.</strong> It would follow the</p>
+<p><code>[int]</code>/<code>[float]</code> convention already at <code>src/tychoc.c:11485@arrp</code>. A callee wanting</p>
+<p><code>execv</code> semantics appends its own <code>NULL</code>. Promising argv-shape instead means</p>
+<p>the emitter allocates a terminated copy, and that is a different, larger change.</p>
+<p>2. <strong>Borrow for the call; the callee must not retain.</strong> Same contract</p>
+<p><code>[int]</code>/<code>[float]</code> carry today. Nobody frees, because nothing was allocated.</p>
+<p>3. <strong>The return direction stays refused.</strong> <code>[string]</code> *out* of C has no length</p>
+<p>header to reconstruct — the same reason <code>src/tychoc.c:5233-5234</code> bans a</p>
+<p><code>char **</code> out-param. Lifting the parameter direction does not lift this one,</p>
+<p>and saying so is part of the change.</p>
+<p><strong>Writing the refusal down is cheaper and buys less.</strong> The shape is §4 and §5</p>
+<p>above, both closed on 2026-08-10 as stated limits: a paragraph in</p>
+<p><code>docs/spec/14-ffi.md</code> and the <code>os</code> entry in <code>docs/reference/corelib.md</code>, naming the</p>
+<p>permitted set and the reason, plus a pointer to the builder-handle pattern that</p>
+<p>already works — <code>core:os</code> then declared <code>osx_argv_new</code> / <code>osx_argv_push</code> /</p>
+<p><code>osx_argv_free</code> / <code>osx_exec</code>, four shims and a push loop (retired 2026-08-11</p>
+<p>once the lifting landed; see <code>corelib/os/os.ty</code>). Cost: one doc commit</p>
+<p>and the two doc gates. What it does not buy: every future extern taking a string</p>
+<p>vector pays those four shims again.</p>
+<p>The asymmetry worth noticing is that the refusal was defensible when the cost of</p>
+<p>lifting was unknown. It is now measured, and it is one branch.</p>
+<p>"Documented refusal" is a legitimate answer for any row. An undecided row is</p>
+<p>not.</p>
+<h3 id="4-corenet-gets-a-readiness-call-or-the-cap-becomes-a-stated-limit--closed-2026-08-10-as-a-stated-limit">4. ~~<code>core:net</code> gets a readiness call, or the cap becomes a stated limit~~ — <strong>CLOSED 2026-08-10, as a stated limit</strong></h3>
+<p><code>corelib/net/net_shim.c</code> has 12 exports and not one is <code>poll</code>/<code>select</code>/<code>epoll</code></p>
+<p>or <code>O_NONBLOCK</code>, so a server's worker count is a hard ceiling on concurrent</p>
+<p>connections. That refusal was defensible and stands; what was not defensible</p>
+<p>was leaving it implicit. It is now written where someone reaches for the</p>
+<p>package — <code>docs/reference/corelib.md</code>'s <code>net</code> entry says N workers serve N</p>
+<p>connections and one slow client occupies one worker for its whole request.</p>
+<p>Readiness polling stays un-built: ~283 lines across 4 files plus a redesign of</p>
+<p><code>core:httpd</code>'s blocking read surface, and adding it later is **additive, not</p>
+<p>breaking**, so it does not gate the freeze.</p>
+<h3 id="5-windows-is-at-parity-or-its-differences-are-non-goals--closed-2026-08-10-as-a-documented-limit">5. ~~Windows is at parity or its differences are non-goals~~ — <strong>CLOSED 2026-08-10, as a documented limit</strong></h3>
+<p><code>make ci</code> is green there. The one measured behavioural difference — a thread</p>
+<p>parked in <code>recv</code> is not released by the shutdown handler as it is on Linux, so a</p>
+<p>Windows server winds down within its idle timeout rather than within a</p>
+<p>millisecond — is a <strong>documented platform limit</strong>, not a bug to fix. Nothing is</p>
+<p>lost or corrupted; the wind-down is slower and only that. It is stated in the</p>
+<p>README's platform notes, and the measurement stays in</p>
+<p><a href="../../SECURITY.html">SECURITY.md</a>.</p>
+<h3 id="6-a-release-actually-ships-and-the-support-policy-is-exercised-once--closed-2026-08-15">6. ~~A release actually ships, and the support policy is exercised once~~ — <strong>CLOSED 2026-08-15</strong></h3>
+<p>Both halves are now real. <strong>A release shipped</strong>: v0.7.0, prerelease, Linux and</p>
+<p>mingw tarballs with checksums, verified before and after publishing (see below).</p>
+<p><strong>The support policy was exercised</strong>: <code>sort.by_key</code> carries a <code># deprecated:</code></p>
+<p>marker, every call site draws a warning naming <code>sort_by</code> *and* the removal</p>
+<p>version, and <code>CHANGELOG.md</code> records it — re-probed at HEAD, the warning still</p>
+<p>fires with its replacement text.</p>
+<p><strong>The deprecation half is DONE, 2026-08-10.</strong> <code>sort.by_key</code> is deprecated</p>
+<p>through the full path — a <code>deprecated:</code> notice in its doc comment, a</p>
+<p><code>CHANGELOG.md</code> entry naming <code>sort_by</code> as the replacement, a compiler warning at</p>
+<p>every call site, and removal scheduled for 1.0. Step three stopped being</p>
+<p>special-cased on the way: a <code># deprecated: &lt;text&gt;</code> line directly above a <code>fn</code></p>
+<p>marks it, so the next deprecation costs one comment</p>
+<p>(<code>tests/warn/deprecated.ty</code>).</p>
+<p>v0.7.0 was published on 2026-08-15, alongside v0.5.0 and v0.6.0. Release state</p>
+<p>is <code>gh release list</code>, never this file. The version</p>
+<p>constant is now <code>0.7.0</code> (<code>src/tychoc.c@TYCHO_VERSION</code>), and this section</p>
+<p>described <code>v0.5.0</code> until 2026-08-14.</p>
+<p><strong>Both tarballs were REBUILT from HEAD on 2026-08-14 and verified.</strong> They had</p>
+<p>gone stale in the way that matters: the previous</p>
+<p><code>dist/tycho-v0.6.0-linux-x86_64.tar.gz</code> verified against its <code>.sha256</code> and</p>
+<p>reported <code>0.6.0</code>, yet its <code>tychoc</code> <strong>accepted all four</strong> of</p>
+<p><code>tests/reject/generic_ret_handle.ty</code>, <code>generic_struct_field_chan.ty</code>,</p>
+<p><code>generic_sink_affine.ty</code> and <code>generic_bounded_field_degraded.ty</code>. Two of those</p>
+<p>are run-time memory errors — a double free and an aliased channel — so it would</p>
+<p>have shipped known memory-safety bugs under a version whose CHANGELOG says they</p>
+<p>are fixed. A checksum proves an artifact is intact, never that it is current.</p>
+<p><strong>Rebuilt and re-verified again on 2026-08-15</strong>, and the reason is the same one</p>
+<p>this section already records: four commits landed after the 08-14 build, two of</p>
+<p>them in <code>corelib/crypto/</code>. The tarball on disk verified against its <code>.sha256</code>,</p>
+<p>reported <code>0.6.0</code>, and **shipped a <code>crypto_shim.c</code> that left the plaintext in freed</p>
+<p>heap and decoded key hex in non-constant time** — both fixed in the tree, neither</p>
+<p>in the artifact. Publishing it would have shipped two known crypto defects under a</p>
+<p>version whose CHANGELOG says they are fixed. **A stale artifact is the default</p>
+<p>state of this directory, not an accident**: every commit re-creates it.</p>
+<p><code>make release-check</code> now <strong>rebuilds the Windows archive too</strong>, or says loudly that</p>
+<p>it did not. It previously rebuilt only the host archive and still printed</p>
+<p>"byte-identical archives", which is how the mingw tarball sat a day behind the</p>
+<p>linux one without anything noticing.</p>
+<p>State now, each figure measured:</p>
+<ul>
+<li><code>make release-check</code> reports <strong>byte-identical archives</strong> over two builds, and</li>
+</ul>
+<p>rebuilds the mingw archive in the same run.</p>
+<ul>
+<li>The whole **<code>tests/reject/</code> corpus — is refused by the extracted</li>
+</ul>
+<p><code>tychoc</code>**, not just the six named above. That number means nothing on its own,</p>
+<p>so a POSITIVE CONTROL runs beside it: a program importing <code>core:sort</code> and</p>
+<p><code>core:crypto</code> compiles and runs through the same shipped binary, printing</p>
+<p><code>[apple, fig, pear]</code> and a true AEAD round trip. Without it, "0 accepted" is</p>
+<p>what a compiler that cannot start also reports. **That control is what found the</p>
+<p>cross-file deprecation defect** (<code>3a1b57e5</code>) — it was not looking for it.</p>
+<ul>
+<li>Under wine the extracted <code>tychoc.exe</code> reports <code>0.6.0</code>, refuses all <strong>51</strong></li>
+</ul>
+<p><code>affine_*</code>/<code>generic_*</code> fixtures, and emits C for the positive control. The first</p>
+<p>attempt at this reported "0 wrongly accepted" while every invocation was in fact</p>
+<p><code>command not found</code> — zsh does not word-split an unquoted command string, so the</p>
+<p>sweep was vacuous and the positive control is the only reason that was caught.</p>
+<ul>
+<li>The extracted native <code>tychoc</code> reports <code>0.6.0</code>, <strong>refuses all six</strong> of the</li>
+</ul>
+<p>affine/generics reject fixtures, and still finds <code>corelib</code> beside itself with</p>
+<p>no <code>TYCHO_CORELIB</code>, compiling and running a <code>core:sort</code> program.</p>
+<ul>
+<li>The <code>mingw64</code> cross-build exists again at 0.6.0 (0.5.0 had one, 0.6.0 did not).</li>
+</ul>
+<p>Under wine its <code>tychoc.exe</code> reports <code>0.6.0</code> and refuses the same fixtures.</p>
+<p><strong>Shipped 2026-08-15 as 0.7.0, not 0.6.0.</strong> v0.6.0 had been tagged and released</p>
+<p>on 2026-08-11 and HEAD was 254 commits past it, with breaking changes in</p>
+<p><code>[Unreleased]</code> — a copied <code>handle</code> and a copied channel, both live memory errors,</p>
+<p>stop compiling. Publishing the newer artifacts under the older tag would have put</p>
+<p>binaries on a release whose tag names different source, which is the failure this</p>
+<p>section already records twice. So the version moved instead.</p>
+<p>Verified before publishing, in this order: <code>make release-check</code> (byte-identical</p>
+<p>over two builds, both platforms), the whole <code>tests/reject/</code> corpus through the</p>
+<p><strong>extracted</strong> compiler (333, 0 wrongly accepted) with a positive control that had</p>
+<p>to compile and run, the mingw archive under wine (0.7.0, 51 fixtures, 0</p>
+<p>accepted), and — after publishing — the tarball downloaded back from the release</p>
+<p>page and re-checked. <code>make test</code> (719), <code>asan-self</code> (737), <code>fuzz/run.py 120</code>,</p>
+<p><code>fuzz-shims</code> and <code>ilp32</code> all green at the released tree.</p>
+<p>This section's own rule held again on the way: the version grep used to bump</p>
+<p>0.6→0.7 matched <code>Tycho 0.6</code> and missed <code>Tycho is 0.6</code>, so five files still</p>
+<p>announced the old version after the release was cut. A checksum proves an</p>
+<p>artifact intact and a grep proves only what its pattern can match. <strong>Re-verify before publishing</strong> — extract the tarball and run those reject</p>
+<p>fixtures through the shipped compiler. That check is what caught this, and a</p>
+<p>checksum would not have.</p>
+<h3 id="order-of-work">Order of work</h3>
+<p>Set 2026-08-09, cheapest-and-safest first, so each step is verifiable before the</p>
+<p>next depends on it. Compiler changes are ordered late within each group because</p>
+<p>every one costs a citation re-anchor (~50-110 anchors move) and a full <code>make ci</code>.</p>
+<p>1. ~~<code>len</code> shadowing~~ — <strong>closed</strong>, <code>ec4914f</code>. The only silent-wrong-answer item.</p>
+<p>2. ~~expression line continuation~~ — <strong>closed</strong>, <code>3c2ea6d</code>.</p>
+<p>3. ~~<code>Result(void, E)</code>~~ — <strong>closed</strong>, <code>d868083</code> (re-sentinel) and the commit</p>
+<p>after it (the spelling). The re-anchor cost the table above warned about was</p>
+<p>real: the first commit was written line-count-neutral and moved zero</p>
+<p>citations; the second moved 87 files' worth.</p>
+<p>4. ~~<code>core:sort</code> comparator~~ — <strong>closed</strong>, <code>sort.sort_by(xs, cmp)</code>. The gate</p>
+<p>prediction held exactly: corelib only, no citation moved, <code>make corelib</code> and</p>
+<p><code>make corelib-examples</code> were the whole verification.</p>
+<p>5. ~~<code>pass</code>~~ — <strong>closed 2026-08-10</strong>, and it was NOT a real keyword: two files</p>
+<p>already used the name, so it is contextual like <code>const</code>/<code>delete</code>. Cost was the</p>
+<p>predicted surface minus the lexer: parser, spec, <code>appendix-b-keywords</code>, the</p>
+<p>grammar appendix, <code>tycho-lsp</code>, <code>editors/</code> (both grammars, zed regenerated),</p>
+<p>fixtures, goldens. <code>tychofmt</code> needed nothing — <code>pass</code> is one token on a line.</p>
+<p>~~Then <code>defer</code>~~ — <strong>refused 2026-08-10, and the refusal is the point.</strong> This</p>
+<p>page called it "the largest item on this page" and priced the full keyword</p>
+<p>surface. That was scoping a feature nobody had asked what it was for. An</p>
+<p>arena-scoped language with RAII handles has no work for it: memory is</p>
+<p>arena-freed at scope exit, a <code>handle</code> runs its declared <code>free:</code> at scope exit,</p>
+<p>and channel/task handles are affine with an implicit join. **This was already</p>
+<p>found once** and filed anyway — <code>docs/internals/plan-tycho-vm-DONE.md:27-32</code></p>
+<p>ends "nothing needs it; it was filed because the probe surprised me, which is</p>
+<p>not a reason." Leaving the row open is what made it get re-scoped; it is a</p>
+<p>documented refusal now.</p>
+<p>6. ~~Then the remaining 1.0 conditions: <code>core:net</code> readiness (§4), the Windows</p>
+<p>parked-<code>recv</code> decision (§5), and shipping a release plus one exercised</p>
+<p>deprecation (§6).~~ — <strong>all three closed.</strong> §4 and §5 on 2026-08-10 as stated</p>
+<p>limits; §6 on 2026-08-15, shipping <strong>0.7.0</strong> rather than the 0.5.0 this line</p>
+<p>named when it was written.</p>
+<p><strong>This list is finished.</strong> Every item on it is closed, and §2 and §3 were</p>
+<p>re-probed at HEAD on 2026-08-15 rather than inherited from their tables — 254</p>
+<p>commits had landed since the last pass, and a table probed that long ago is a</p>
+<p>claim about the past.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

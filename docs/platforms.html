@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Platforms and toolchains, in detail — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="index.html">docs</a> / platforms.md</nav>
+<h1 id="platforms-and-toolchains-in-detail">Platforms and toolchains, in detail</h1>
+<p>The <a href="../README.html#building">README</a> says which platforms are gated and names</p>
+<p>the three caveats you can hit in your first hour. This page is the rest: which</p>
+<p>lanes skip on which host, why each one skips, and which C compilers have been</p>
+<p>measured against the corpus. It is written for someone porting, packaging or</p>
+<p>debugging a red gate — not for someone deciding whether to try the language.</p>
+<p>Every skip named here prints its own reason at gate time. An unenumerated skip</p>
+<p>is a gate failure, not a quiet pass (<a href="controls.html#the-practice">controls</a>).</p>
+<h2 id="c-toolchains">C toolchains</h2>
+<p><strong>gcc, or clang 15 or newer.</strong> The floor is not a guess; it is where a measured</p>
+<p>miscompile stops.</p>
+<table>
+<tr><th>toolchain</th><th>measured</th><th>result</th></tr>
+<tr><td>clang 14</td><td>Ubuntu 22.04</td><td><strong>not supported</strong> — builds the compiler, then miscompiles what it emits: eight fixtures come back with empty strings where a string literal was expected</td></tr>
+<tr><td>clang 15+</td><td>the floor this repo states</td><td>supported</td></tr>
+<tr><td>clang 19</td><td>whole fixture corpus, against gcc</td><td>agrees on every fixture</td></tr>
+<tr><td>clang 22.1.8</td><td>whole corpus</td><td>builds <code>tychoc</code>, bootstraps <code>tychoc1</code> through both stages, corpus clean — each fixture built twice, native and under <code>-fsanitize=address,undefined</code>, byte-identical output required between them</td></tr>
+<tr><td>gcc (C11)</td><td>the development default</td><td>supported</td></tr>
+</table>
+<p>MSVC is not a supported C target and is not planned. Native Windows means MSYS2</p>
+<p>+ mingw-w64.</p>
+<h2 id="macos--apple-silicon">macOS / Apple Silicon</h2>
+<p><code>make ci</code> is green on <code>darwin-arm64</code>. Setup is <code>xcode-select --install</code>.</p>
+<p>It carries <strong>12 skips over 7 causes</strong>, each printing its reason: gdb,</p>
+<p><code>-Wl,--wrap</code>, the glibc symbol floor, <code>ilp32</code>, <code>resource.prlimit</code>, an x86-64</p>
+<p><code>--target</code> leg, and LeakSanitizer.</p>
+<p><strong>Apple's AddressSanitizer ships no LeakSanitizer</strong>, so the <code>fuzz-leak</code> lane and</p>
+<p>the raytrace and mandelbrot leak legs do not run on macOS. ASan, UBSan and TSan</p>
+<p>all do. Linux is the only host that scores leaks, which is why a leak regression</p>
+<p>must be caught there.</p>
+<h2 id="linux">Linux</h2>
+<p><strong>x86-64</strong> is the development host and the reference platform: the full fixture</p>
+<p>suite under ASan/UBSan/LeakSanitizer, plus every gate lane.</p>
+<p><strong>arm64</strong> is gated — <code>make test</code> is green on Ubuntu 26.04 /</p>
+<p>aarch64, run in a VM on the Apple Silicon box at native speed. No Graviton</p>
+<p>artifact is built yet.</p>
+<h3 id="the-comma-decimal-locale-friction-111">The comma-decimal locale (FRICTION-111)</h3>
+<p><code>tests/float_lit_locale</code> and <code>float_str_locale</code> prove that float formatting does</p>
+<p>not move when the C locale does, which needs a locale whose decimal point is not</p>
+<p><code>.</code>:</p>
+<pre><code class="language-sh">sudo locale-gen da_DK.UTF-8      # or de_DE.UTF-8 / fr_FR.UTF-8
+</code></pre>
+<p>A stock container or CI image ships only <code>C</code>/<code>POSIX</code>/<code>en_US</code>, so without one</p>
+<p>both fixtures fail with <code>hostile=1 expected, got 0</code> — the fixture refusing to</p>
+<p>pass while proving nothing, which is the correct behaviour for a control that</p>
+<p>cannot discriminate. The cure is the line above.</p>
+<h3 id="optional-corelib-dev-libraries">Optional corelib dev libraries</h3>
+<p>The FFI-backed corelib packages need their dev libraries, or <code>make shim-warn</code></p>
+<p>refuses — it compiles 9 shims, wants 10, and will not read an empty warning file</p>
+<p>as a pass:</p>
+<pre><code class="language-sh">sudo apt-get install zlib1g-dev libssl-dev libcurl4-openssl-dev \
+                     libpng-dev libsqlite3-dev pkg-config
+</code></pre>
+<h2 id="windows">Windows</h2>
+<p>Two supported paths. <strong>WSL2</strong> is the zero-setup one and behaves exactly like</p>
+<p>Linux. <strong>Native Windows is MSYS2 + mingw-w64</strong>, and <code>make ci</code> is green there on</p>
+<p>x86-64 Windows 11 under mingw-w64 gcc.</p>
+<p>Read that green with its scope. It is <strong>one box, one toolchain</strong>, and it carries</p>
+<p><strong>49 Windows-specific skips</strong>, each printing its reason:</p>
+<ul>
+<li>the sanitizer lanes — mingw ships no ASan/UBSan runtime, and gcc has no TSan</li>
+</ul>
+<p>for a Windows target at all</p>
+<ul>
+<li>the fuzzer</li>
+<li>the 32-bit lane</li>
+<li>the <code>LD_PRELOAD</code> locale lane</li>
+<li>the POSIX-only emitted C</li>
+<li>the perf gate</li>
+<li>every lane that needs a POSIX signal delivered to a process — <code>core:signal</code>'s</li>
+</ul>
+<p>test and the HTTP server's six shutdown cases — because MSYS2's <code>kill</code></p>
+<p>terminates a native Windows program instead of signalling it</p>
+<p><strong>Green there means every runnable lane passed; 49 lanes skip on this host.</strong></p>
+<h3 id="one-measured-behavioural-difference">One measured behavioural difference</h3>
+<p>A thread parked in <code>recv</code> on an accepted connection is not released by the</p>
+<p>shutdown handler as it is on Linux, so a Windows server winds down within its</p>
+<p>idle timeout rather than within a millisecond. Nothing is lost or corrupted —</p>
+<p>the wind-down is slower, and only that. This is a documented platform limit, not</p>
+<p>a bug awaiting a fix; <a href="../SECURITY.html">SECURITY.md</a> carries the measurement.</p>
+<h3 id="the-sanitizer-hole-and-what-closed-most-of-it">The sanitizer hole, and what closed most of it</h3>
+<p>The Windows-only code paths long had no memory-safety checking at all. Installing MSYS2's</p>
+<p><strong>clang64</strong> toolchain closes most of that — 60 corpus fixtures under ASan+UBSan</p>
+<p>and the 13-program concurrency suite under UBSan all come back clean — but ASan</p>
+<p>itself does not work on threaded programs with that toolchain, so the channel and</p>
+<p>allocator paths have UBSan coverage only.</p>
+<p>That is not parity with Linux, where everything runs under ASan/UBSan/TSan and a</p>
+<p>fuzz campaign. The behavioural gaps that survive the port — non-ASCII filenames,</p>
+<p><code>TZ</code> handling, <code>core:os</code> through <code>cmd.exe</code>, the debugger's Ctrl-C — are listed in</p>
+<p><a href="../SECURITY.html">SECURITY.md</a>.</p>
+<p><strong>Windows arm64</strong> is a mingw target, executed by <code>make platform-check</code>. A</p>
+<p>subnormal-literal defect there was a toolchain bug that lane found, and it is</p>
+<p>fixed.</p>
+<h2 id="release-artifacts">Release artifacts</h2>
+<p>Release tarballs are built per platform by <code>scripts/release.sh</code> (<code>--mingw</code></p>
+<p>cross-builds the Windows one). <code>make release-check</code> builds and smoke-tests the</p>
+<p>current-version tarball twice and requires byte-identical archives.</p>
+<p>See also: <a href="../SUPPORT.html">SUPPORT.md</a> for which platforms carry a *promise* ·</p>
+<p><a href="controls.html">controls</a> for why every skip is enumerated ·</p>
+<p><a href="internals/FRICTION.html">the friction log</a> for FRICTION-91 and FRICTION-111.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

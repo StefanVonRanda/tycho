@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RFCs — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / rfc/README.md</nav>
+<h1 id="rfcs">RFCs</h1>
+<p>Proposals, resolved and open. Maintainer material — a proposal describes what</p>
+<p>the language might do, which is not the same as what it does. For current</p>
+<p>behaviour, read <a href="../reference/">`../reference/`</a>.</p>
+<ul>
+<li><a href="parallel-for-width.html">`parallel-for-width.md`</a> — **accepted and built</li>
+</ul>
+<p>2026-08-13.** The <code>parallel(W) for</code> width slot; what shipped is recorded at</p>
+<p>the end of the file.</p>
+<ul>
+<li><a href="value-lifetime-regions.html">`value-lifetime-regions.md`</a> — **study, closed</li>
+</ul>
+<p>with a recommendation not to build.** Whether a region lifetime can follow a</p>
+<p>value instead of a scope; the answer is to build nothing yet (§6 states the</p>
+<p>single condition that would change that).</p>
+<ul>
+<li><a href="or-return-mapping.html">`or-return-mapping.md`</a> — <strong>decided 2026-09-25.</strong></li>
+</ul>
+<p>Error-mapping <code>or_return</code> was measured across 42 sites and set aside in</p>
+<p>favour of <code>or_else</code>, which shipped in 0.8.6. The body is the proposal as</p>
+<p>measured, kept for the reasoning.</p>
+<ul>
+<li><a href="limited-references-spike.html">`limited-references-spike.md`</a> — **decided:</li>
+</ul>
+<p>stored references rejected.** The spike behind subscripts, the one</p>
+<p>limited-reference construct that fits the arena model; graphs stay as</p>
+<p>index pools.</p>
+<ul>
+<li><a href="ffi-threading-design-review.html">`ffi-threading-design-review.md`</a> —</li>
+</ul>
+<p><strong>review, mostly shipped.</strong> FFI and threading, reviewed together; the header</p>
+<p>lists which recommendations landed and which stay open.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

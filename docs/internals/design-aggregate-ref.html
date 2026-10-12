@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Design: a cheap reference to an aggregate — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / internals/design-aggregate-ref.md</nav>
+<h1 id="design-a-cheap-reference-to-an-aggregate">Design: a cheap reference to an aggregate</h1>
+<blockquote>
+<p>Status: decided 2026-08-03 — do not build a new reference construct. The compatible cases already ship (<code>inout</code> codegen, yielding subscripts); checked against emitted C. Validated 2026-08-03 via the tycho-vm refactor.</p>
+</blockquote>
+<h2 id="the-premise-and-the-measured-correction">The premise, and the measured correction</h2>
+<p>The plan's brief names three programs, three symptoms, one cause: *"a</p>
+<p>parameter is borrowed read-only, <code>y := a</code> copies, and <code>inout</code> is</p>
+<p>copy-in/copy-out, so nothing can touch part of a large value without copying</p>
+<p>it."* The three symptoms:</p>
+<p>1. <code>tools/tycho-vm/main.ty</code> — <code>vpush(&amp;st, &amp;sp, v)</code> "would copy the entire</p>
+<p>1024-slot stack twice per instruction", so push/pop were inlined</p>
+<p>(<code>tools/tycho-vm/main.ty:475-478</code>).</p>
+<p>2. <code>tools/tycho-ar/main.ty</code> — a streaming digest cannot thread state through</p>
+<p>calls, so <code>core:sha256</code> was one-shot and the archiver wrote its own.</p>
+<p><strong>Closed since this was written:</strong> the trio exists and tycho-ar calls it</p>
+<p>(<code>tools/tycho-ar/main.ty@final_hex</code>).</p>
+<p>3. <code>corelib/decimal/decimal.ty</code> and the corelib generally — return-new</p>
+<p>signature shapes.</p>
+<p>**The premise is wrong about the codegen, and the measurement is the emitted</p>
+<p>C.<strong> `inout` on a heap value already passes a </strong>pointer plus the value's owning</p>
+<p>arena** as a hidden <code>_ina_</code> parameter (<code>src/tychoc.c:10365-10373</code>), and every</p>
+<p>allocating mutation of the parameter allocates into that arena — the caller's,</p>
+<p>where the value lives — not the callee's scope (<code>src/tychoc.c@owner_arena_of</code>).</p>
+<p>The codegen was already in place at the Hier→Tycho rename; nothing in the</p>
+<p>current tree copies an <code>inout</code> aggregate.</p>
+<p>Verified by emitting C for the exact VM shape — <code>bounded[1024]V</code> where <code>V</code> is</p>
+<p>a struct with a <code>string</code> field, plus an <code>inout int</code> counter, in a <code>vpush</code></p>
+<p>helper called in a loop:</p>
+<pre><code class="language-c">h_vm(&amp;_scr2, &amp;_scope, &amp;(h_st), &amp;(h_sp), ((S_V){ 0, h_i, "v" }));
+</code></pre>
+<p>The stack and the counter arrive <strong>by address</strong>; the callee mutates the</p>
+<p>caller's storage in place, and the helper runs (50 pushes, correct result).</p>
+<p>There is no 1024-slot copy in or out. The plan's <code>vpush</code> hypothetical was</p>
+<p>never tested against the codegen; the spec's "copy-in/copy-out" is the</p>
+<p><strong>semantic contract</strong> (<code>docs/spec/07-memory-model.md:23-26</code> — "provably</p>
+<p>equivalent to <code>x = f(x)</code>"), not the implementation, and the</p>
+<p><code>tools/tycho-vm/main.ty:475</code> comment read the contract as the implementation.</p>
+<p>Re-examining the three symptoms against the codegen:</p>
+<ul>
+<li><strong>tycho-vm</strong>: the helper is free today; the machine does not have to live in</li>
+</ul>
+<p>one function. The cost the comment fears was already gone when the comment</p>
+<p>was written. <strong>Validated 2026-08-03:</strong> the dispatch was refactored —</p>
+<p>vpush/vpop/arith are now helpers called from every arm, the gate's golden is</p>
+<p>byte-identical, and the emitted C shows the pointer passes (`&amp;(h_st),</p>
+<p>&amp;(h_sp)`) with no copy. The one boundary the extraction hit was cc inlining,</p>
+<p>not copies: extracting CALL/RET regressed the call-heavy fib program ~4.5%</p>
+<p>in two sessions, so they stay inline. The stale premise was wrong in</p>
+<p>mechanism but the one-function shape had a real reason after all.</p>
+<ul>
+<li><strong>tycho-ar</strong>: <code>inout</code> was the answer — it works on <code>[u32]</code> and on <code>bytes</code>,</li>
+</ul>
+<p>and it forwards. Streaming state threading was never the gap; what was</p>
+<p>missing was <code>core:sha256</code>'s <strong>API</strong>, which was library work rather than</p>
+<p>language work. <strong>Resolved since this was written:</strong> the</p>
+<p><code>init</code>/<code>update</code>/<code>final_hex</code> trio exists and tycho-ar calls it</p>
+<p>(<code>tools/tycho-ar/main.ty@final_hex</code>).</p>
+<ul>
+<li><strong>decimal</strong>: the operations pass operands by value (a borrow — no copy), and</li>
+</ul>
+<p>the fresh results are allocated in the caller's arena (a move, not a copy)</p>
+<p>with move-on-last-use eliding assignment copies. The signatures are shaped</p>
+<p>by taste, not by a missing reference.</p>
+<h2 id="what-the-construct-would-be--and-that-it-already-ships-twice">What the construct would be — and that it already ships, twice</h2>
+<p>The brief asks what the construct is: a borrow, a view, a <code>ref</code> binding, or</p>
+<p>something else. The tree already contains the two compatible answers, both</p>
+<p>measured above:</p>
+<p>1. <strong>In-place `inout`</strong> — an exclusive, call-scoped, non-escaping mutable</p>
+<p>alias. It is not a stored reference; it cannot outlive the call by</p>
+<p>construction (the parameter dies at return); its exclusivity is the</p>
+<p>existing inout rule. Its codegen is the pointer + <code>_ina_</code> arena pass.</p>
+<p>2. <strong>Yielding subscripts</strong> — a scoped, zero-copy place projection into one of</p>
+<p>the receiver's parts (<code>docs/reference/subscripts.md:1-8</code>). Verified: a</p>
+<p>subscript result is usable as an <code>inout</code> argument and mutates the original</p>
+<p>(<code>bump(&amp;g.node(1))</code> — the array element changed in place). Subscripts are</p>
+<p>compile-time place macros with no runtime object, so they carry none of the</p>
+<p>lifetime machinery a stored reference would.</p>
+<p>Both were independently concluded to be "the one compatible increment" by the</p>
+<p>reference spike (<code>docs/rfc/limited-references-spike.md:104-131</code>), and the</p>
+<p>latter half has since shipped. A <code>ref</code> <strong>binding</strong> (<code>r := &amp;a</code>) is the only</p>
+<p>piece of the space that does not exist — and it must not be added (below).</p>
+<h2 id="the-six-questions">The six questions</h2>
+<p>1. <strong>What the construct is.</strong> The compatible forms are a parameter annotation</p>
+<p>(<code>inout</code>, in-place in codegen) and a declaration form (subscripts). A</p>
+<p>general borrow/view/<code>ref</code> binding is the design that should not be built</p>
+<p>(the counter-argument).</p>
+<p>2. <strong>Arena interaction.</strong> In-place <code>inout</code> is sound because the callee's</p>
+<p>allocating mutations route to the caller's arena via <code>_ina_</code></p>
+<p>(<code>src/tychoc.c:10365-10373</code>); the callee's own arena holds only its</p>
+<p>transients and is freed at return. A <code>ref</code> binding would need the same</p>
+<p>owning-arena routing at every use site — the bookkeeping that grows into</p>
+<p>alias analysis the moment the binding can be passed on.</p>
+<p>3. <strong>What stops it outliving its target.</strong> <code>inout</code> is call-scoped by</p>
+<p>construction; subscripts are compile-time. A stored reference fails the</p>
+<p>thread boundary: it has no sound deep-copy, so it breaks the invariant that</p>
+<p>makes tasks race-free — the reference spike's recorded decision</p>
+<p>(<code>docs/rfc/limited-references-spike.md:90-102</code>).</p>
+<p>4. <strong>Type or binding.</strong> Both compatible forms live at the binding/declaration</p>
+<p>level; neither introduces a reference <strong>type</strong>. A reference type would let</p>
+<p>references be stored, composed, and passed on — the escape question the</p>
+<p>thesis exists to make unaskable.</p>
+<p>5. <strong>Corelib signatures.</strong> The one-shot shapes are not copy-taxed; they are</p>
+<p>conventions. The streaming digest the plan wanted (<code>core:sha256</code></p>
+<p>init/update/final) is writable today with in-place <code>inout</code> state, exactly</p>
+<p>as <code>tools/tycho-ar</code> already does it inline. That is a library phase, not a</p>
+<p>language feature.</p>
+<p>6. <strong>The counter-argument.</strong> Value semantics with no references is the</p>
+<p>project's central position, not an oversight (<code>docs/thesis.md</code>). A general</p>
+<p>borrow is Design A of the regions study — "a borrow checker with a</p>
+<p>different keyword" that "contradicts the thesis at the joint"</p>
+<p>(<code>docs/rfc/value-lifetime-regions.md:405-406</code>). The regions study's</p>
+<p>recommendation applies here unchanged: the one genuinely sound increment in</p>
+<p>the space (Design B, value-owned arenas) has no paying customer in the tree,</p>
+<p>and the one compatible ergonomic increment (projections) has shipped. What</p>
+<p>is lost by adding a reference: the compiler must track who may hold a</p>
+<p>pointer and prove it dies first — the whole-program alias reasoning the</p>
+<p>model exists to avoid — and every exception becomes a soundness debt that</p>
+<p>only grows.</p>
+<h2 id="the-recommendation">The recommendation</h2>
+<p><strong>Do not build a new reference construct.</strong> The measured benefit is zero —</p>
+<p>the copy costs the plan premises do not exist in the codegen — and the cost is</p>
+<p>the borrow checker. Three things ARE worth doing, in order:</p>
+<p>1. <strong>Fix the stale documentation.</strong> <code>docs/spec/07-memory-model.md:23-26</code> and</p>
+<p><code>docs/reference/basics.md</code> say <code>inout</code> is copy-in/copy-out; the spec is the</p>
+<p>semantic contract (fine), but it has been read as the implementation, which</p>
+<p>is how the plan's copy-tax premise entered. One sentence per site: the</p>
+<p>contract is <code>x = f(x)</code>; the codegen is an in-place pointer pass with the</p>
+<p>owner arena carried, so no aggregate is copied. Correct</p>
+<p><code>tools/tycho-vm/main.ty:475-478</code> — the helper is free, so the "one big</p>
+<p>function" comment is misleading; the machine could be factored if anyone</p>
+<p>wants to.</p>
+<p>2. <strong>Reject `&amp;` outside argument position.</strong> <code>&amp;</code> parses as a unary <code>E_ADDR</code></p>
+<p>everywhere (<code>src/tychoc.c:3454-3457</code>) and resolves to the place's type</p>
+<p>without position validation (<code>src/tychoc.c:6872-6874</code> — "only valid as an</p>
+<p>inout argument", enforced only at call sites). <code>r := &amp;a</code> therefore compiles</p>
+<p>to invalid C (<code>TychoArrInt h_r = &amp;(h_a);</code> — cc: "invalid initializer"),</p>
+<p>and <code>&amp;a + 1</code> emits garbage. The fix is one check: <code>E_ADDR</code> is legal only as</p>
+<p>the direct argument of an inout parameter, so <code>resolve_expr</code>'s <code>E_ADDR</code></p>
+<p>case must die unless a "resolving a call argument" flag is set. This is the</p>
+<p>only code change this design requests.</p>
+<p>3. <strong>If the demand appears, the streaming API is a library phase.</strong> A</p>
+<p><code>core:sha256</code> init/update/final trio over in-place <code>inout</code> state would close</p>
+<p>the tycho-ar symptom properly and has a real customer (the archiver wrote</p>
+<p>its own). That is <code>corelib</code> work under the demand-gated rule, not language</p>
+<p>work, and it needs no new construct.</p>
+<h2 id="verification">Verification</h2>
+<ul>
+<li>Checked against emitted C: the VM-shaped <code>bounded</code> stack and the subscript-as-<code>inout</code>-argument</li>
+</ul>
+<p>programs were inspected, and both ran correctly. The <code>&amp;</code>-hole was reproduced</p>
+<p>(<code>r := &amp;a</code> → invalid C from cc) before being written down.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

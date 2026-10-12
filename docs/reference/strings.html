@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Strings — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / reference/strings.md</nav>
+<h1 id="strings">Strings</h1>
+<blockquote>
+<p><strong>Memory:</strong> Strings are values: assigning or slicing a string copies its bytes,</p>
+<p>so two variables never share storage.</p>
+</blockquote>
+<p>A <code>string</code> is a <strong>byte</strong> string with a known length. It is not a sequence of</p>
+<p>characters, and every indexing operation on it is a byte operation. That is the</p>
+<p>one thing to know before writing anything that touches text you did not type</p>
+<p>yourself.</p>
+<h2 id="len-indexing-and-slicing-are-all-bytes"><code>len</code>, indexing and slicing are all bytes</h2>
+<pre><code class="language-tycho">fn main():
+    s := "hello"
+    println(str(len(s)))        # 5
+    println(str(s[0]))          # 104 -- a byte VALUE, an int, not a 1-char string
+    println(s[1:3])             # el -- a slice IS a string
+</code></pre>
+<p><code>s[i]</code> is the byte at <code>i</code> as an <code>int</code>. <code>s[a:b]</code> is the half-open byte range as a</p>
+<p>new string. Both are O(1) and neither knows anything about characters.</p>
+<h2 id="the-trap-len-is-not-the-character-count">The trap: <code>len</code> is not the character count</h2>
+<p>Non-ASCII text has more bytes than characters, so the natural program is the</p>
+<p>wrong one — and it is wrong only on input the author often never tries.</p>
+<p>The examples below <code>import</code>, so they open with <code>package main</code> and belong in</p>
+<p>their own directory: a file with an <code>import</code> is a package. A single-file program</p>
+<p>with no imports needs neither.</p>
+<pre><code class="language-tycho">package main
+import "core:utf8"
+
+fn main():
+    s := "héllo"
+    println(str(len(s)))            # 6 -- BYTES
+    println(str(utf8.count(s)))     # 5 -- characters
+    println(s[0:2])                 # h? -- a slice through the middle of `é`
+</code></pre>
+<p>The third line is the failure. <code>s[0:2]</code> cuts <code>é</code> in half and produces a string</p>
+<p>holding one stray continuation byte, which renders as plausible-looking mojibake</p>
+<p>rather than raising anything. Nothing in the language stops you: the slice is a</p>
+<p>valid byte range, and byte ranges are what the language promises.</p>
+<p><strong>`utf8.count(s)` returns `-1` on invalid input</strong> rather than a count, so a</p>
+<p>negative answer is your signal that the bytes are not UTF-8 at all.</p>
+<h2 id="stepping-by-character">Stepping by character</h2>
+<p><code>utf8.decode(s, at)</code> returns the codepoint at a byte offset and how many bytes it</p>
+<p>occupied.</p>
+<pre><code class="language-tycho">package main
+import "core:utf8"
+
+fn main():
+    s := "héllo"
+    i := 0
+    n := 0
+    for i &lt; len(s):
+        cp, nb := utf8.decode(s, i)
+        if nb &lt;= 0:
+            nb = 1          # REQUIRED -- see below
+        i = i + nb
+        n = n + 1
+    println(str(n))         # 5
+</code></pre>
+<p><strong>The `nb &lt;= 0` guard is not optional.</strong> On invalid input <code>decode</code> returns a</p>
+<p>non-positive width, and a loop that adds it never advances — so a caller who</p>
+<p>trusts the return spins forever on exactly the input an attacker controls.</p>
+<p><code>utf8.valid(s)</code> checks a whole string up front, but a streaming caller cannot</p>
+<p>afford the second pass, which is why the guard belongs in the loop.</p>
+<h2 id="validating-before-you-trust">Validating before you trust</h2>
+<pre><code class="language-tycho">package main
+import "core:utf8"
+
+fn main():
+    println(str(utf8.valid("héllo")))               # true
+    println(str(utf8.valid("a" + chr(0xC0) + "b"))) # false -- 0xC0 starts nothing
+</code></pre>
+<p>Validate anything that arrives from a file, a socket or a user before you treat</p>
+<p>it as text. A validator that accepts an overlong encoding is a filter bypass: the</p>
+<p>same character arrives by a spelling the filter above it did not recognise, which</p>
+<p>is why <code>core:utf8</code> rejects overlongs, surrogates and anything above U+10FFFF</p>
+<p>rather than decoding them leniently.</p>
+<h2 id="building-strings">Building strings</h2>
+<p><code>+</code> concatenates and produces a new string; there is no in-place append. Interpolation</p>
+<p>is <code>f"..."</code> with <code>{}</code> holes.</p>
+<pre><code class="language-tycho">fn main():
+    who := "world"
+    n := 3
+    println("hello " + who)         # hello world
+    println(f"{who} x{n}")          # world x3
+</code></pre>
+<h2 id="where-the-rest-lives">Where the rest lives</h2>
+<table>
+<tr><th>You want</th><th>Look in</th></tr>
+<tr><td>case, trim, split, find, replace, padding, parsing</td><td><a href="../reference/corelib.html">`core:strings`</a></td></tr>
+<tr><td>character counts, decoding, validation, encoding</td><td><a href="../reference/corelib.html">`core:utf8`</a></td></tr>
+<tr><td>the byte-level type with no text semantics at all</td><td><a href="types.html">`bytes`</a></td></tr>
+<tr><td><code>len</code>, <code>chr</code>, <code>char_at</code>, <code>find</code> and the other builtins</td><td><a href="builtins.html">Builtins</a></td></tr>
+</table>
+<p>The rule that ties them together: **the language gives you bytes, and <code>core:utf8</code></p>
+<p>gives you characters.** Use <code>core:utf8</code> for any text that arrives from outside your program.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

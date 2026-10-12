@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Two models, same four surfaces — what a probe's instrument is worth — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / internals/probe-model-comparison-2026-08-20.md</nav>
+<h1 id="two-models-same-four-surfaces--what-a-probes-instrument-is-worth">Two models, same four surfaces — what a probe's instrument is worth</h1>
+<p><strong>Verdict: the four 2026-08-19 probes are not independent — both runs were the author's own model family, and the findings reproduce but the independence claim does not hold. Compared 2026-08-20: Claude subagents vs `mimo-v2.5` via `pi`. Outcome: aim matters more than model.</strong></p>
+<p>The four probes of 2026-08-19 were run twice: once by Claude subagents spawned</p>
+<p>inside the author's own session, and once by <code>mimo-v2.5</code> (a different vendor's</p>
+<p>model) driven through the <code>pi</code> CLI. Same sanitised checkouts, same briefs, same</p>
+<p>compiler built from <code>main</code>.</p>
+<p><strong>This document exists because the first round's provenance was wrong.</strong> The</p>
+<p>records <code>probe-ffi-2026-08-19.md</code>, <code>probe-generics-2026-08-19.md</code> and</p>
+<p><code>probe-newtype-subscript-bounded-2026-08-19.md</code> read as independent probes. They</p>
+<p>were Claude subagents — the same model family as the assistant that then</p>
+<p>evaluated their findings, which is much closer to the author's own mental model</p>
+<p>than §1 asks for. Their findings reproduce (each was rebuilt on <code>main</code> before</p>
+<p>being written down) but the independence claim did not hold.</p>
+<h2 id="what-each-instrument-produced">What each instrument produced</h2>
+<table>
+<tr><th></th><th>Claude subagents</th><th>mimo-v2.5 via pi</th></tr>
+<tr><td>program size</td><td>474–853 lines, up to two packages</td><td>~300–350 lines, one file each</td></tr>
+<tr><td>runs that produced a log</td><td>3 of 3</td><td>3 of 4</td></tr>
+<tr><td>genuine defects found</td><td>1 (<code>select</code> takes no arm on a closed channel)</td><td>0</td></tr>
+<tr><td>message-accuracy bugs</td><td>2</td><td>1</td></tr>
+<tr><td>findings that were documented behaviour</td><td>~4</td><td>most</td></tr>
+</table>
+<h2 id="the-failure-worth-recording">The failure worth recording</h2>
+<p>The <code>select</code> run under mimo-v2.5 ended after 35 minutes with</p>
+<p><code>finish_reason: repetition_truncation</code> and <strong>no LOG.md at all</strong>. It produced a</p>
+<p>program that compiles, and no findings. A probe that cannot finish its report is</p>
+<p>a probe that returned nothing.</p>
+<h2 id="what-the-weaker-model-was-better-at">What the weaker model was better at</h2>
+<p>Nothing measured here. The expectation was that a less</p>
+<p>capable model with no Tycho context would behave more like a genuine newcomer.</p>
+<p>What it produced was mostly expectation mismatches against Python and C — "there</p>
+<p>is no <code>while</code>", "enum variant names are global", "no module-level variables" —</p>
+<p>which are documented language choices rather than gaps. It logged one good</p>
+<p>diagnostic (<code>inout string</code> at the FFI, whose message explains precisely why it is</p>
+<p>refused) as friction.</p>
+<p>It did find one real thing the Claude runs missed: <code>const XS = [1, 2, 3]</code> is</p>
+<p>refused with *"const value must be a literal"*, and <code>[1, 2, 3]</code> is a literal. The</p>
+<p>message names the wrong rule, the same class of defect as the arithmetic message.</p>
+<h2 id="what-this-says-about-running-probes">What this says about running probes</h2>
+<p>A probe's value came from <strong>where it was aimed</strong>, not from which model held the</p>
+<p>pen. The <code>select</code> defect was found by aiming at <code>select</code>; the <code>bounded</code></p>
+<p>documentation hole by requiring <code>bounded</code>. Both instruments rediscovered the</p>
+<p>same package-per-directory rule, because both met it the same way.</p>
+<p>Neither instrument is a stranger. Both are a program that read the docs. That is</p>
+<p>worth having — it found real defects twice — and it is not what §1 means by a</p>
+<p>second mental model.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

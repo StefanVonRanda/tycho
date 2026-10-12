@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>6. Type inference — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / spec/04-inference.md</nav>
+<h1 id="6-type-inference">6. Type inference</h1>
+<p>Tycho types every expression <strong>at its own site</strong>. There is no global type</p>
+<p>inference, no Hindley-Milner unification, and no type variables in the checker.</p>
+<p>Inference is <strong>bidirectional and local</strong>: a site is</p>
+<p>either *synthesized* (its type is computed bottom-up from the expression) or</p>
+<p>*checked* against an expected type supplied by its context (<a href="00-conventions.html">§1.1</a>).</p>
+<h2 id="61-synthesis-and-checking">6.1 Synthesis and checking</h2>
+<ul>
+<li><strong>Synthesis.</strong> Given an expression with no expected type, the checker computes</li>
+</ul>
+<p>its type from its form and its already-typed sub-expressions (an integer</p>
+<p>literal synthesizes <code>int</code>, <code>a + b</code> synthesizes from its operands, a call</p>
+<p>synthesizes its callee's return type, and so on).</p>
+<ul>
+<li><strong>Checking.</strong> When a context supplies an <strong>expected type</strong> <code>T</code>, the checker</li>
+</ul>
+<p>verifies the expression against <code>T</code>. Checking is not a separate type</p>
+<p>algorithm; it performs only the things synthesis cannot do on its own</p>
+<p>(§6.2), then falls back to synthesizing and requiring the result to equal <code>T</code>.</p>
+<p>An expected type flows from exactly these contexts: a typed declaration's</p>
+<p>annotation, an assignment's target type, a call argument's parameter type, a</p>
+<p>struct/enum/newtype constructor's field/payload type, a <code>return</code>'s function</p>
+<p>return type, a map/element/field store's slot type, and a tuple or array</p>
+<p>literal's element type.</p>
+<h2 id="62-what-checking-adds-beyond-synthesis">6.2 What checking adds beyond synthesis</h2>
+<p>When checking an expression against an expected type <code>T</code>, and only then, the</p>
+<p>following groundings occur:</p>
+<p>1. <strong>Ground a pending type.</strong> A declaration whose initializer is an</p>
+<p>otherwise-untypeable empty form is *pending* until first use (§6.4); checking</p>
+<p>against <code>T</code> grounds it to <code>T</code>.</p>
+<p>2. <strong>Fill an empty aggregate.</strong> A bare <code>[]</code> takes its element types (array or</p>
+<p>soa) or its key/value types (map) from <code>T</code>.</p>
+<p>3. <strong>Coerce a bracket literal to a fixed-size array.</strong> A <code>[a, b, c]</code> literal</p>
+<p>checked against <code>[N]U</code> becomes a fixed-size array, with the element count and</p>
+<p>element types verified against <code>N</code> and <code>U</code>.</p>
+<p>4. <strong>Adapt a numeric literal.</strong> An integer or float <strong>literal</strong> (not a typed</p>
+<p>value) adapts to <code>T</code> when <code>T</code> is a numeric type it can represent (§8).</p>
+<p>5. <strong>Elide a lambda's types.</strong> A lambda checked against a function type <code>T</code> may</p>
+<p>omit its parameter and return type annotations, taking them from <code>T</code>.</p>
+<p>6. <strong>Fix a bare sum constructor.</strong> A bare <code>None</code>, <code>Ok(v)</code>, or <code>Err(e)</code> takes its</p>
+<p>missing type parameter from <code>T</code> (an <code>Option</code>/<code>Result</code>). A payload-less <code>Ok()</code></p>
+<p>already knows its half — the ok payload is <code>void</code></p>
+<p>(<a href="03-types.html#536-enums-option-result">§5.3.6</a>) — so it takes only the error</p>
+<p>type from <code>T</code>, and fails if <code>T</code>'s ok payload is anything but <code>void</code>.</p>
+<p>7. <strong>Check a tuple literal element-wise.</strong> A tuple literal checked against a tuple</p>
+<p>type of the same arity checks <strong>each element</strong> against the corresponding element</p>
+<p>type, so an <code>Ok</code>/<code>Err</code>/<code>None</code>/<code>[]</code> element grounds inside a tuple exactly as it</p>
+<p>does anywhere else: <code>return (Err(A), "partial")</code> from a</p>
+<p><code>-&gt; (Result(int, E), string)</code> function is well typed.</p>
+<p>If none of these applies, the expression is synthesized and its synthesized type</p>
+<p>MUST equal <code>T</code>; otherwise the program is rejected with a type-mismatch</p>
+<p>diagnostic naming both the expected and the actual type.</p>
+<h2 id="63-declarations">6.3 Declarations</h2>
+<ul>
+<li><code>x := e</code> (declare-and-infer) <strong>synthesizes</strong> the type of <code>e</code> and gives it to</li>
+</ul>
+<p><code>x</code>. The initializer MUST NOT be <code>void</code>.</p>
+<ul>
+<li><code>x : T = e</code> (typed declaration) <strong>checks</strong> <code>e</code> against <code>T</code>. A mismatch — for</li>
+</ul>
+<p>example a <code>U</code> value where a newtype over <code>U</code> is declared — is rejected. This</p>
+<p>is where newtype distinctness (<a href="03-types.html#54-newtypes">§5.4</a>) is enforced.</p>
+<ul>
+<li><code>x = e</code> (assignment) checks <code>e</code> against the existing type of <code>x</code>.</li>
+<li>Function parameter and return types are <strong>always explicit</strong> in the signature;</li>
+</ul>
+<p>they are the fixed points from which inference within a body proceeds.</p>
+<h2 id="64-pending-types">6.4 Pending types</h2>
+<p>Two initializers cannot be typed in isolation: a bare empty array <code>[]</code> and a</p>
+<p>bare <code>None</code>. When used as a declaration initializer without an annotation, the</p>
+<p>variable's type is <strong>pending</strong> and is grounded by the type expected at its first</p>
+<p>use within the same block; a pending type that is <strong>never</strong> grounded is rejected</p>
+<p>(a program MUST annotate or ground it, e.g. <code>x : [int] = []</code>, `x : Option(int) =</p>
+<p>None`). The pending mechanism resolves a type with exactly <strong>one</strong> free parameter</p>
+<p>that a single later use can pin — <code>[]</code> is <code>[?T]</code> and <code>None</code> is <code>Option(?T)</code>.</p>
+<p>The <code>Result</code> constructors are an <strong>exception</strong>: <code>x := Ok(v)</code> and</p>
+<p><code>x := Err(e)</code> are <strong>not</strong> pending. A bare constructor fixes only one of <code>Result</code>'s</p>
+<p>two parameters, leaving the other free, so they are rejected <strong>immediately</strong></p>
+<p>at the declaration and MUST be annotated</p>
+<p>(<code>x : Result(int, string) = Ok(v)</code>).</p>
+<p>Rationale: a single later use generally cannot ground the remaining free parameter.</p>
+<h2 id="65-branch-unification-for-value-if--match">6.5 Branch unification for value <code>if</code> / <code>match</code></h2>
+<p>A value-producing <code>if</code> or <code>match</code> in tail position (<a href="02-grammar.html">§4.3.2</a>,</p>
+<p><a href="09-expressions.html">§13</a>/<a href="10-statements.html">§14</a>) requires **all</p>
+<p>branches to have the same type**, which becomes the type of the whole</p>
+<p>expression. For the <code>:=</code> and typed <code>x : T =</code> forms, unification is <strong>strict</strong></p>
+<p>equality of the independently-synthesized branch types: there is no</p>
+<p>numeric-literal adaptation across branches and no type variable, and a bare</p>
+<p><code>None</code>/<code>Ok</code>/<code>Err</code> branch is rejected (it must be annotated). In the <code>x =</code> /</p>
+<p>place-assignment / <code>return</code> tail positions a destination type flows into each</p>
+<p>branch, so adaptation and bare-sum-constructor fixing apply there. A branch</p>
+<p>whose type cannot be made equal to the others is rejected.</p>
+<p>A branch whose tail is a <strong>diverging</strong> call — <code>die(msg)</code> or <code>exit(code)</code></p>
+<p>(<a href="16-builtins.html">§29.12.1</a>) — is <strong>exempt</strong>: control never leaves it, so it</p>
+<p>carries no type, takes no part in unification, and is not rewritten into an</p>
+<p>assignment to the destination. This is what makes the failure arm of a <code>Result</code></p>
+<p>readable (<code>Err(e): die("cannot bind")</code>) instead of costing a dummy initializer and</p>
+<p>a statement <code>match</code>. If every branch diverges there is no value at all and the</p>
+<p>declaration is rejected.</p>
+<h2 id="66-non-goals-of-inference">6.6 Non-goals of inference</h2>
+<p>A conforming implementation MUST NOT perform inference beyond the local,</p>
+<p>bidirectional rules above. In particular there is no whole-program or</p>
+<p>whole-function unification, no flow across statement boundaries other than the</p>
+<p>within-block pending-grounding of §6.4, and no inference of function signatures.</p>
+<p>Every expression's type is decidable from that expression, the types already</p>
+<p>assigned to its sub-expressions, and at most one expected type supplied by its</p>
+<p>immediate context.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

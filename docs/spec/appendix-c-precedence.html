@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Appendix C — Operator precedence and associativity — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / spec/appendix-c-precedence.md</nav>
+<h1 id="appendix-c--operator-precedence-and-associativity">Appendix C — Operator precedence and associativity</h1>
+<p>Normative definition: <a href="02-grammar.html#45-operator-precedence-and-associativity">§4.5</a>.</p>
+<p>From tightest-binding (1) to loosest (8). Binary levels are left-associative;</p>
+<p>prefix levels are right-associative.</p>
+<table>
+<tr><th>Precedence</th><th>Operators</th><th>Kind</th><th>Associativity</th></tr>
+<tr><td>1</td><td><code>[]</code> (index/slice) · <code>.</code> (field / tuple index) · <code></code> (call) · <code>or_return</code> · <code>...</code></td><td>postfix</td><td>left</td></tr>
+<tr><td>2</td><td><code>-</code> · <code>&amp;</code> (address-of) · <code>~</code></td><td>unary prefix</td><td>right</td></tr>
+<tr><td>3</td><td><code>*</code> · <code>/</code> · <code>%</code> · <code>&lt;&lt;</code> · <code>&gt;&gt;</code> · <code>&amp;</code> (bitwise)</td><td>binary</td><td>left</td></tr>
+<tr><td>4</td><td><code>+</code> · <code>-</code> · `\</td><td><code> · </code>^`</td><td>binary</td><td>left</td></tr>
+<tr><td>5</td><td><code>is</code></td><td>binary, non-associative</td><td>—</td></tr>
+<tr><td>6</td><td><code>==</code> · <code>!=</code> · <code>&lt;</code> · <code>&gt;</code> · <code>&lt;=</code> · <code>&gt;=</code> · <code>in</code></td><td>binary</td><td>left</td></tr>
+<tr><td>7</td><td><code>not</code></td><td>unary prefix</td><td>right</td></tr>
+<tr><td>8</td><td><code>and</code></td><td>binary</td><td>left</td></tr>
+<tr><td>9</td><td><code>or</code></td><td>binary</td><td>left</td></tr>
+</table>
+<p>Notes:</p>
+<ul>
+<li><strong>Go-style precedence:</strong> shifts (<code>&lt;&lt;</code>, <code>&gt;&gt;</code>) and bitwise-AND (<code>&amp;</code>) bind at the</li>
+</ul>
+<p>multiplicative level (3); bitwise-OR/XOR (<code>|</code>, <code>^</code>) bind at the additive level</p>
+<p>(4). Every bitwise operator therefore binds tighter than any comparison, so</p>
+<p><code>a &amp; b == c</code> parses as <code>(a &amp; b) == c</code>.</p>
+<ul>
+<li><strong>`&amp;` is overloaded</strong> across levels: unary address-of / <code>inout</code> argument</li>
+</ul>
+<p>(level 2) and binary bitwise-AND (level 3).</p>
+<ul>
+<li>**Assignment (<code>=</code>), declare-and-infer (<code>:=</code>), and compound assignment are not</li>
+</ul>
+<p>expression operators** — they are statement-level and never appear inside an</p>
+<p>expression (<a href="02-grammar.html#431-simple-statements">§4.3.1</a>).</p>
+<ul>
+<li>The grammar fixes associativity only; the <strong>order of side effects</strong> among</li>
+</ul>
+<p>operands and arguments is unspecified (<a href="09-expressions.html#134-evaluation-order">§13.4</a>,</p>
+<p><a href="appendix-f-impl-defined.html">Appendix F</a>).</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

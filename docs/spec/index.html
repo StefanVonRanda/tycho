@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Tycho language specification — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / spec/README.md</nav>
+<h1 id="the-tycho-language-specification">The Tycho language specification</h1>
+<blockquote>
+<p>**Status: ratified — Tycho 0.5, maintained against the current release (0.8.6).</p>
+<p>Where the two differ, <code>CHANGELOG.md</code> records the change.**</p>
+<p>This document is the normative contract a conforming implementation must satisfy.</p>
+</blockquote>
+<p>&gt;</p>
+<blockquote>
+<p>Internal links, <code>§</code>-labels, and section cross-references are verified mechanically.</p>
+<p>The <code>make spec-check</code> gate regenerates the collected grammar (<a href="appendix-a-grammar.html">Appendix A</a>) from</p>
+<p>the defining chapters §3/§4, asserts every fixture the conformance</p>
+<p>matrix (<a href="appendix-e-conformance.html">Appendix E</a>) cites exists, and builds and</p>
+<p>runs every runnable <code>tycho</code>/<code>output</code> example</p>
+<p>(<a href="00-conventions.html#23-examples-and-code-fences">§2.3</a>) against its shown output.</p>
+</blockquote>
+<h2 id="what-this-document-is">What this document is</h2>
+<p>Where the <a href="../reference/index.html">reference pages</a> teach the language by</p>
+<p>example, this document defines it by rule. On any conflict, **the specification</p>
+<p>governs**, and the divergence is logged in <a href="appendix-h-differences.html">Appendix H</a>.</p>
+<h2 id="how-to-read-it">How to read it</h2>
+<p>The files are numbered in normative reading order. Requirement keywords (MUST,</p>
+<p>SHOULD, MAY) follow <a href="00-conventions.html#14-requirement-keywords">RFC 2119/8174</a>.</p>
+<p>The grammar is W3C-style EBNF over lexer-produced tokens (Tycho is</p>
+<p>indentation-sensitive; see <a href="01-lexical.html">§3</a>).</p>
+<h2 id="contents">Contents</h2>
+<table>
+<tr><th>#</th><th>File</th><th>Chapters</th><th>Status</th></tr>
+<tr><td>—</td><td><a href="README.html">README</a></td><td>index</td><td>—</td></tr>
+<tr><td>00</td><td><a href="00-conventions.html">Conventions</a></td><td>1 Scope &amp; conformance · 2 Notation</td><td><strong>1.0</strong></td></tr>
+<tr><td>01</td><td><a href="01-lexical.html">Lexical structure</a></td><td>3 Source text, tokens, indentation</td><td><strong>1.0</strong></td></tr>
+<tr><td>02</td><td><a href="02-grammar.html">Grammar</a></td><td>4 The phrase grammar</td><td><strong>1.0</strong></td></tr>
+<tr><td>03</td><td><a href="03-types.html">Types</a></td><td>5</td><td><strong>1.0</strong></td></tr>
+<tr><td>04</td><td><a href="04-inference.html">Type inference</a></td><td>6</td><td><strong>1.0</strong></td></tr>
+<tr><td>05</td><td><a href="05-generics.html">Generics</a></td><td>7</td><td><strong>1.0</strong></td></tr>
+<tr><td>06</td><td><a href="06-conversions.html">Conversions</a></td><td>8</td><td><strong>1.0</strong></td></tr>
+<tr><td>07</td><td><a href="07-memory-model.html">Memory &amp; object model</a></td><td>9 Value semantics · 10 Arenas · 11 <code>inout</code></td><td><strong>1.0</strong></td></tr>
+<tr><td>08</td><td><a href="08-declarations.html">Declarations &amp; scoping</a></td><td>12</td><td><strong>1.0</strong></td></tr>
+<tr><td>09</td><td><a href="09-expressions.html">Expressions</a></td><td>13</td><td><strong>1.0</strong></td></tr>
+<tr><td>10</td><td><a href="10-statements.html">Statements &amp; control flow</a></td><td>14</td><td><strong>1.0</strong></td></tr>
+<tr><td>11</td><td><a href="11-functions.html">Functions</a></td><td>15</td><td><strong>1.0</strong></td></tr>
+<tr><td>12</td><td><a href="12-aggregates.html">Aggregates</a></td><td>16 arrays · 17 structs/tuples · 18 maps · 19 enums/match</td><td><strong>1.0</strong></td></tr>
+<tr><td>13</td><td><a href="13-concurrency.html">Concurrency</a></td><td>20–23</td><td><strong>1.0</strong></td></tr>
+<tr><td>14</td><td><a href="14-ffi.html">FFI</a></td><td>24–26</td><td><strong>1.0</strong></td></tr>
+<tr><td>15</td><td><a href="15-program.html">Program &amp; packages</a></td><td>27 Program structure · 28 Packages &amp; modules</td><td><strong>1.0</strong></td></tr>
+<tr><td>16</td><td><a href="16-builtins.html">Builtins</a></td><td>29</td><td><strong>1.0</strong></td></tr>
+<tr><td>17</td><td><a href="17-runtime.html">Runtime behavior</a></td><td>30</td><td><strong>1.0</strong></td></tr>
+<tr><td>18</td><td><a href="18-library.html">Standard library</a></td><td>31–33 corelib</td><td><strong>1.0</strong></td></tr>
+<tr><td>A</td><td><a href="appendix-a-grammar.html">Collected grammar</a></td><td>collected EBNF (§3–§4)</td><td><strong>1.0</strong></td></tr>
+<tr><td>B</td><td><a href="appendix-b-keywords.html">Keywords</a></td><td>reserved + contextual</td><td><strong>1.0</strong></td></tr>
+<tr><td>C</td><td><a href="appendix-c-precedence.html">Precedence</a></td><td>operator table</td><td><strong>1.0</strong></td></tr>
+<tr><td>D</td><td><a href="appendix-d-builtins.html">Builtin index</a></td><td>locator</td><td><strong>1.0</strong></td></tr>
+<tr><td>E</td><td><a href="appendix-e-conformance.html">Conformance map</a></td><td>clause → fixture</td><td><strong>1.0</strong></td></tr>
+<tr><td>F</td><td><a href="appendix-f-impl-defined.html">Impl-defined register</a></td><td>unspecified + impl-defined</td><td><strong>1.0</strong></td></tr>
+<tr><td>G</td><td><a href="appendix-g-glossary.html">Glossary</a></td><td>terms</td><td><strong>1.0</strong></td></tr>
+<tr><td>H</td><td><a href="appendix-h-differences.html">Differences</a></td><td>reference-doc drift log</td><td><strong>1.0</strong></td></tr>
+</table>
+<h2 id="conformance-in-one-paragraph">Conformance in one paragraph</h2>
+<p>An implementation <strong>conforms at the core tier</strong> iff, across the conformance</p>
+<p>suite (<a href="appendix-e-conformance.html">Appendix E</a>), it accepts exactly the</p>
+<p>programs the reference accepts, rejects exactly those it rejects, and produces</p>
+<p>byte-identical program output — for the language and the pure-Tycho + libc-only</p>
+<p>corelib. The <strong>extended tier</strong> additionally provides the <code>deps</code>/pkg-config</p>
+<p>corelib packages (<code>http</code>, <code>crypto</code>, <code>compress</code>, <code>image</code>, <code>tls</code>); an</p>
+<p>implementation MAY omit them and still conform at the core tier</p>
+<p>(<a href="00-conventions.html#13-conformance">§1</a>).</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Running an agent probe — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / internals/probe-procedure.md</nav>
+<h1 id="running-an-agent-probe">Running an agent probe</h1>
+<p><strong>Rule: the probe must not read the compiler, the friction log, or a previous probe's findings. `ROADMAP.md` §1 wants programs written against `docs/` by someone who did not write the compiler. No second human reviewer was found, so the instrument is an LLM agent in a container.</strong></p>
+<h2 id="setup">Setup</h2>
+<pre><code>git clone --depth=1 https://github.com/StefanVonRanda/tycho.git tycho-probe
+cd tycho-probe
+rm -rf src runtime compiler docs/internals docs/rfc .git tests fuzz scripts bench
+rm -f plan.md $(find . -iname '*FRICTION*')
+</code></pre>
+<p>The deletions are the point: the agent then <strong>cannot</strong> read the compiler source,</p>
+<p>the friction log, or a previous probe's findings, so "do not read the compiler"</p>
+<p>stops being an honour rule. Verify with</p>
+<p><code>find . -name 'tychoc.c' -o -path './compiler/*' | wc -l</code> — zero.</p>
+<p><strong>`compiler/` belongs in the list.</strong> Until 2026-09-07 it was missing, so every round before that ran with <code>compiler/parse/parse.ty</code> and the typechecker readable — a syntax oracle for whatever feature was under test. Checking only for <code>tychoc.c</code> is what let it through.</p>
+<p><strong>The strip also guarantees one class of false finding, so discount it on sight.</strong> <code>docs/internals</code>, <code>docs/rfc</code> and <code>tests</code> are gone, and the pages that survive link into all three, so every probe can truthfully report those links as dead. The 2026-09-21 <code>handle</code> round filed six that are not (<a href="probe-handle-2026-09-21.html">record</a>); <code>make check-links</code> is green on the real tree. A link finding counts only if the target is missing from a full checkout.</p>
+<p><strong>Build the compiler from `main`, not the release tarball.</strong> The 2026-08-19 run used v0.7.0 and part of its report described diagnostics already improved since; that half was archaeology.</p>
+<p>The strip removes <code>src/</code> and <code>scripts/</code>, so the probe tree cannot build anything — build in the real checkout and copy the binary in:</p>
+<pre><code>make -C /path/to/tycho tychoc &amp;&amp; cp /path/to/tycho/tychoc tycho-probe/tychoc
+</code></pre>
+<p><code>corelib/</code> survives the strip and <code>tychoc</code> resolves <code>core:</code> from beside itself, so no <code>TYCHO_CORELIB</code> is needed. Check it with a program that imports one — <code>./tychoc</code> on a bare <code>fn main()</code> exercises neither the corelib path nor the package rules, and a probe that fails on its first <code>import "core:…"</code> reports setup as a language defect.</p>
+<h2 id="aim-it-at-something-untouched">Aim it at something untouched</h2>
+<p>Rule: a program over ground already covered returns little — the 2026-08-19 markov run found two doc gaps against tycho-diff's four. Eight rounds since have covered most of the language surface, so the list below is a <strong>shape to re-derive</strong>, not a gap list: when a feature lands, ask which of these it belongs to and whether anything outside this repo has driven it.</p>
+<table>
+<tr><th>surface</th><th>covered by</th></tr>
+<tr><td>algorithms, strings, text</td><td>tycho-diff, tycho-fold, R5 <code>text</code>, R1 <code>core</code></td></tr>
+<tr><td>generics, enums, Option/Result</td><td><a href="probe-generics-2026-08-19.html">generics</a>, R4 <code>gen2</code>, R5 <code>state</code></td></tr>
+<tr><td>newtypes, <code>subscript</code>, <code>bounded</code></td><td><a href="probe-newtype-subscript-bounded-2026-08-19.html">record</a></td></tr>
+<tr><td><code>select</code>, channels, concurrency</td><td><a href="probe-select-2026-08-19.html">select</a>, tycho-hash, R3 <code>conc</code></td></tr>
+<tr><td>FFI, <code>handle</code>, <code>soa</code></td><td><a href="probe-ffi-2026-08-19.html">ffi</a>, <a href="probe-handle-2026-09-21.html">handle</a>, R3–R5 <code>ffi2</code>/<code>ffi3</code>/<code>ffi4</code></td></tr>
+<tr><td>value semantics, arenas</td><td>R1 <code>mem</code>, R3 <code>arena</code>, R7 <code>churn</code></td></tr>
+<tr><td>packages, libraries, visibility</td><td>R1 <code>pkg</code>, R8 <code>lib</code></td></tr>
+<tr><td>numerics, floats</td><td>R1 <code>num</code>, R6 <code>float</code></td></tr>
+<tr><td>sockets, files, argv</td><td>R6 <code>net</code>, R4 <code>io2</code></td></tr>
+<tr><td>unicode</td><td>R8 <code>uni</code></td></tr>
+<tr><td>layout and SIMD — <code>packed</code>, <code>align(N)</code>, <code>vector[N]T</code>, swizzling</td><td><a href="probe-simd-2026-09-07.html">simd</a>, <a href="probe-layout-2026-09-21.html">layout</a></td></tr>
+<tr><td><strong>the compiler itself</strong></td><td>R8 <code>cli</code>, <code>huge</code>, <code>msgs</code></td></tr>
+</table>
+<p><strong>The last row paid best.</strong> Rounds one to seven asked for programs and mostly found doc gaps and message quality; round eight pointed probes at tychoc's own CLI, at generated source, and at the diagnostics as a subject, and returned two real defects and a quadratic codegen path. When choosing where to aim, prefer a surface with no lane over one with no probe — <code>grep &lt;feature&gt; tests/run.sh</code> coming back empty is the strongest signal available.</p>
+<h2 id="the-brief">The brief</h2>
+<p>Name the features the program MUST use, let the agent pick the program, and ask for the log to record what went RIGHT as well as what did not — a log that only complains is not evidence. Do not hand over <code>~/.claude/skills/tycho-syntax</code>; the mistakes it lists are exactly what the probe exists to re-discover.</p>
+<h2 id="which-model-to-use">Which model to use</h2>
+<p>Measured 2026-08-20 by running all four probes twice, once with Claude subagents and once with <code>mimo-v2.5</code> through the <code>pi</code> CLI: <a href="probe-model-comparison-2026-08-20.html">probe-model-comparison-2026-08-20.md</a>. The weaker model did not behave more like a newcomer — it mostly produced expectation mismatches against Python and C, and one of its four runs died at <code>repetition_truncation</code> without writing a log at all. <strong>A probe's value came from where it was aimed, not from which model held the pen.</strong></p>
+<p><strong>Write down which one you used.</strong> Neither 2026-09-21 record can name its model: the directory's <code>pi-run.log</code> holds a failed launch (<code>Model "mimo-v2.5" is ambiguous across providers</code>) and nothing says what ran instead. The model belongs in the first paragraph of the record, beside the host and the <code>tychoc</code> version.</p>
+<h2 id="launching-it">Launching it</h2>
+<p><code>sh scripts/probe_run.sh &lt;probe-dir&gt; "&lt;prompt&gt;" [model]</code> runs the agent under a watchdog and says why it ended. Do not just background <code>pi -p</code> and wait: it does not reliably exit. The 2026-08-20 core-surface probe wrote its last file at 09:36, printed its closing summary, and was still resident at 10:01 at 0.0% CPU.</p>
+<p>From outside, "still working" and "finished but will not exit" look identical. From inside they do not — an agent thinking, or waiting on an API round trip, writes no files but still accrues CPU time; a wedged one accrues none. So the runner requires <strong>both</strong> signals before killing: zero CPU-time delta *and* no write under the probe directory, sustained for <code>QUIET</code> seconds (default 300), with <code>MAX</code> (default 3600) as a hard cap.</p>
+<pre><code>QUIET=240 MAX=3000 sh scripts/probe_run.sh /home/igzo/probe-foo \
+    "Read BRIEF.md in this directory and carry it out completely." mimo-v2.5
+</code></pre>
+<p><strong>Do not replace this with a plain timeout.</strong> The most productive probe of 2026-08-20 ran 993 s and looked stuck at the five-minute mark while four siblings had already finished; it was busy throughout and returned five findings, one a real compiler defect. <code>--selfcheck</code> runs both controls — a wedged process must be caught, a working one must be left alone.</p>
+<p>Across 31 probes the quiescence path has never fired; every one exited on its own. Its evidence is those two controls, not field use.</p>
+<h2 id="reading-the-result">Reading the result</h2>
+<p><strong>Build and run the agent's code under the sanitizers.</strong> The 2026-08-19 run's most valuable finding was not in its log at all: its C shim returned a pointer into a directory stream it had already closed, and the plain build printed correct output. A probe's report is not its whole yield.</p>
+<p>Then check each finding against <code>main</code> before acting — some will already be fixed, and some are documented behaviour the agent simply met for the first time. Both are worth knowing apart.</p>
+<h2 id="filing-it">Filing it</h2>
+<p>If the program is worth keeping, it goes in <code>tools/</code> with a <code>FRICTION-OUTSIDE.md</code> beside it. If it is not — and usually it is not, the record being the artifact — write <code>docs/internals/probe-&lt;surface&gt;-&lt;date&gt;.md</code> instead and throw the program away.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

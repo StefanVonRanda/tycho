@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Types — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / reference/types.md</nav>
+<h1 id="types">Types</h1>
+<blockquote>
+<p><strong>Memory:</strong> Newtypes cost nothing at runtime, and every value — scalar or</p>
+<p>aggregate — copies deeply on assignment.</p>
+</blockquote>
+<p>Tycho is statically typed, and every value has a type known at compile time. This page</p>
+<p>covers the scalar types, the <code>bytes</code> buffer, distinct <code>type</code> newtypes, and how</p>
+<p>inference lets you leave most annotations off. The compound types — arrays, structs, maps, tuples, enums — each have</p>
+<p>their own page.</p>
+<h2 id="scalars">Scalars</h2>
+<table>
+<tr><th>Type</th><th>Values</th></tr>
+<tr><td><code>int</code></td><td>64-bit signed integer</td></tr>
+<tr><td><code>float</code></td><td>64-bit IEEE-754 double</td></tr>
+<tr><td><code>bool</code></td><td><code>true</code> / <code>false</code></td></tr>
+<tr><td><code>string</code></td><td>an immutable, length-counted byte string</td></tr>
+<tr><td><code>char</code></td><td>a single byte (<code>0</code>–<code>255</code>)</td></tr>
+<tr><td><code>u32</code> / <code>u64</code></td><td>32- / 64-bit <strong>unsigned</strong> integer, wraps at 2³² / 2⁶⁴</td></tr>
+<tr><td><code>f32</code></td><td>32-bit IEEE-754 single-precision float</td></tr>
+</table>
+<p><code>int</code> and <code>float</code> never mix implicitly — there is no automatic widening. Convert</p>
+<p>explicitly with <code>to_float(n)</code> and <code>to_int(x)</code> (the latter truncates toward zero). The</p>
+<p>operators each type supports are in <a href="basics.html#expressions">Basics</a>.</p>
+<h3 id="u32--u64--f32"><code>u32</code> / <code>u64</code> / <code>f32</code></h3>
+<p>Fixed-width numerics for bit-twiddling, hashing, and crypto (<code>corelib/sha256</code> is written</p>
+<p>in <code>u32</code>). They behave like <code>int</code>/<code>float</code> but at a defined width:</p>
+<ul>
+<li><strong>Wrap is defined.</strong> <code>u32</code>/<code>u64</code> arithmetic (<code>+ - * &lt;&lt; ~</code> …) wraps modulo 2³²/2⁶⁴ — no</li>
+</ul>
+<p>masking needed. <code>&gt;&gt;</code> is a logical shift; <code>/</code> and <code>%</code> abort cleanly on a zero divisor.</p>
+<ul>
+<li><strong>Distinct and non-mixing</strong>, like <code>char</code>. A <code>u32</code> never silently becomes an <code>int</code>.</li>
+</ul>
+<p>Bridge explicitly with <code>to_u32(x)</code>, <code>to_u64(x)</code>, <code>to_f32(x)</code>, <code>to_int(x)</code>, <code>to_float(x)</code></p>
+<p>(each takes any numeric scalar). A bare <strong>int literal adapts</strong> to a <code>u32</code>/<code>u64</code> operand</p>
+<p>and a numeric literal to <code>f32</code>, so <code>h ^ 16777619</code> and <code>x &amp; 255</code> need no cast on the</p>
+<p>constant; a non-literal <code>int</code> does (<code>state[i]</code> → <code>to_u32(state[i])</code>).</p>
+<ul>
+<li>Arrays (<code>[u32]</code>, <code>[f32]</code>, …), struct fields, <code>str(...)</code>, and f-strings all work.</li>
+<li>They also cross <a href="ffi.html">FFI</a> as their real C type (<code>u32</code> ↔ <code>uint32_t</code>, etc.).</li>
+</ul>
+<h3 id="char"><code>char</code></h3>
+<p>A <code>char</code> is one byte, written with a quoted literal — <code>'x'</code>, with the escapes</p>
+<p><code>\n \t \r \0 \\ \'</code> and <code>\xNN</code> (exactly two hex digits, either case: <code>'\x41'</code> is</p>
+<p><code>'A'</code>). That set is <strong>not</strong> the one a <a href="#string-escapes">string literal</a> takes. It</p>
+<p>interoperates with <code>int</code> deliberately and narrowly:</p>
+<ul>
+<li><code>char ± int</code> is a <code>char</code> (a byte offset — <code>'a' + 1</code> is <code>'b'</code>). The result wraps</li>
+</ul>
+<p>to <code>0..255</code>, like <code>u8</code>: <code>'A' + 255</code> wraps to <code>'@'</code> (64).</p>
+<ul>
+<li><code>string + char</code> appends the byte <strong>in place</strong>, without allocating, so building a string</li>
+</ul>
+<p>one character at a time is a byte-write, not an allocation per character:</p>
+<pre><code class="language-tycho">s := ""
+for d := 0; d &lt; 10; d += 1:
+    s = s + ('0' + d)          # zero-allocation one-byte append per digit
+</code></pre>
+<p><code>char</code> does not silently become <code>int</code> elsewhere — <code>str(c)</code> and <code>c == n</code> (mixing <code>char</code></p>
+<p>and <code>int</code>) are type errors, so the byte/number distinction is never lost by accident.</p>
+<h3 id="bytes"><code>bytes</code></h3>
+<p><code>bytes</code> is an immutable binary buffer. Unlike <code>string</code>, it is not NUL-terminated, so</p>
+<p>interior <code>\0</code> bytes survive — which is what you want for hashing, crypto, and binary I/O.</p>
+<p><code>to_bytes(s)</code> and <code>to_str(b)</code> bridge the two; <code>to_bytes(xs)</code> over an <code>[int]</code> (each</p>
+<p>element <code>&amp; 0xFF</code>) builds a binary buffer from computed bytes — the way to produce a</p>
+<p><code>bytes</code> with interior NULs in pure Tycho. <code>bytes</code> also crosses the <a href="ffi.html">FFI</a></p>
+<p>boundary as a <code>(pointer, length)</code> pair.</p>
+<p>It takes the same operators as <code>string</code>, with the same meanings:</p>
+<table>
+<tr><th>Form</th><th>Result</th><th>Notes</th></tr>
+<tr><td><code>len(b)</code></td><td><code>int</code></td><td>byte count, O(1)</td></tr>
+<tr><td><code>b[i]</code></td><td><code>int</code></td><td>the byte as <code>0..255</code>; out of bounds aborts; not assignable</td></tr>
+<tr><td><code>b[i:j]</code></td><td><code>bytes</code></td><td>a fresh sub-buffer; out-of-range bounds <strong>clamp silently</strong>, like a string slice</td></tr>
+<tr><td><code>a + b</code>, <code>b + 'c'</code></td><td><code>bytes</code></td><td>concatenation; appending a char adds its one byte</td></tr>
+<tr><td><code>a == b</code>, <code>a != b</code></td><td><code>bool</code></td><td>byte-wise</td></tr>
+</table>
+<p>Because the slice clamps, a slice that returned normally does not prove its range</p>
+<p>existed. When that is the thing being checked, use <code>strings.slice_bytes(b, start, stop)</code>,</p>
+<p>which returns an <code>Err</code> instead (<a href="../spec/03-types.html#526-bytes">spec §5.2.6</a>).</p>
+<h2 id="string-escapes">String escapes</h2>
+<p>A string literal takes exactly five escapes; anything else is a compile error that</p>
+<p>names the set — <code>unsupported escape \q (use \n \t \r \\ \")</code>.</p>
+<table>
+<tr><th>escape</th><th>byte</th><th></th></tr>
+<tr><td><code>\n</code></td><td>10</td><td>newline</td></tr>
+<tr><td><code>\t</code></td><td>9</td><td>tab</td></tr>
+<tr><td><code>\r</code></td><td>13</td><td>carriage return</td></tr>
+<tr><td><code>\\</code></td><td>92</td><td>backslash</td></tr>
+<tr><td><code>\"</code></td><td>34</td><td>double quote</td></tr>
+</table>
+<p>There is no <code>\0</code>, <code>\'</code>, <code>\a</code>, <code>\b</code>, <code>\f</code>, <code>\v</code>, <code>\e</code>, <code>\xNN</code> or <code>\uNNNN</code>. A single</p>
+<p>quote needs no escape — <code>"it's"</code> is a valid literal. For any other byte, build it:</p>
+<p><code>chr(27)</code> is a one-byte string holding ESC, and <code>to_bytes(xs)</code> over an <code>[int]</code> is</p>
+<p>the way to a <code>bytes</code> with interior NULs. An <code>f"..."</code> lexes the same five and</p>
+<p>rejects the same rest. A <a href="#char">`char` literal</a> is a <strong>different</strong> set — it takes</p>
+<p><code>\0</code>, <code>\'</code> and <code>\xNN</code>, and refuses <code>\"</code>.</p>
+<pre><code class="language-tycho">fn main():
+    println("tab:\there")
+    println("quote:\" backslash:\\")
+    println(str(len("a\rb")))
+</code></pre>
+<pre><code class="language-output">tab:	here
+quote:" backslash:\
+3
+</code></pre>
+<h2 id="string-interpolation">String interpolation</h2>
+<p>An <code>f"..."</code> string interpolates <code>{expr}</code> holes, desugaring to ordinary concatenation —</p>
+<p><code>f"point=({p.x},{p.y}) sum={a + b}"</code> becomes <code>"point=(" + str(p.x) + ...</code>. A plain</p>
+<p><code>"..."</code> is <strong>never</strong> interpolated, so it needs no brace escaping; inside an <code>f"..."</code>,</p>
+<p><code>{{</code> and <code>}}</code> are literal braces. A hole may hold any expression — including one with its</p>
+<p>own string literals or a nested f-string — and must evaluate to a value <code>str</code> accepts: an</p>
+<p><code>int</code>, a <code>u32</code>/<code>u64</code>/<code>f32</code>, a <code>float</code>, a <code>bool</code> (printed <code>true</code>/<code>false</code>), or a <code>string</code>.</p>
+<h2 id="distinct-newtypes-type">Distinct newtypes (<code>type</code>)</h2>
+<p><code>type Meters = float</code> declares a <strong>distinct</strong> type: same runtime representation as its</p>
+<p>underlying type (zero cost — a <code>Meters</code> *is* a <code>double</code> in the generated C), but</p>
+<p>type-incompatible with <code>float</code> and with every other newtype. There is no transparent</p>
+<p>alias: <code>type</code> always declares a distinct type.</p>
+<pre><code class="language-tycho">type Meters = float
+type Seconds = float
+
+fn area(w: Meters, h: Meters) -&gt; Meters:
+    return w * h               # arithmetic stays in Meters
+
+fn main():
+    w := Meters(3.0)
+    a := area(w, Meters(4.0))
+    print(str(a))              # 12.0 -- str sees the underlying float
+    # area(3.0, 4.0)           -&gt; error: a float is not a Meters
+    # w + Seconds(1.0)         -&gt; error: can't mix two newtypes
+</code></pre>
+<p>A newtype supports its base type's <strong>arithmetic, ordering, `==`, and `str`</strong> — but only</p>
+<p>between two values of the *same* newtype, so <code>Meters</code> and <code>Seconds</code> never mix by accident.</p>
+<p>That is the point: zero-cost unit and ID safety. Construct one with <code>Meters(x)</code>; recover</p>
+<p>the raw value with <code>to_int</code> / <code>to_float</code> / <code>to_str</code> / <code>to_bool</code> per the underlying scalar.</p>
+<p>The underlying type may also be an <strong>aggregate</strong> — <code>type Ids = [int]</code>,</p>
+<p><code>type Env = [string: int]</code>, <code>type Pos = Pt</code> (a struct). Wrap with <code>Ids(v)</code>, unwrap with the</p>
+<p>generic <code>to_under(x)</code> (zero-cost, works on any newtype), and value semantics carries</p>
+<p>through the wrapper unchanged. A newtype over <code>string</code> or <code>int</code> is also a valid</p>
+<p><a href="maps.html#keys">map key</a>.</p>
+<h2 id="type-inference-bidirectional">Type inference (bidirectional)</h2>
+<p>A local infers forward from its initializer — <code>x := e</code> gives <code>x</code> the type of <code>e</code>. In the</p>
+<p>other direction, every position with a known destination type — declarations, assignments,</p>
+<p>call arguments, <code>return</code>, stores, literal elements — *checks* the expression against it.</p>
+<p>This local inference lets the annotation-light forms work:</p>
+<pre><code class="language-tycho">import "core:iter"
+
+fn tally(m: [string: int], extra: [int]) -&gt; int:
+    return len(m) + len(extra)
+
+em := []string: int
+f := 1.5
+
+xs : [int] = []              # bare [] takes the expected array type
+_n := tally(em, [])           # ...in argument position too
+_g := f + 2                   # an int literal adapts to a float context (f : float)
+_doubled := iter.map(xs, fn(x: int) -&gt; int: x * 2)   # lambda params from the expected fn type
+
+ys := []                     # a bare decl stays pending...
+push(ys, 3)                  # ...until its first grounding use types it ([int])
+</code></pre>
+<p>Each line is typed on its own — from its parts, or against the destination it</p>
+<p>feeds — so errors stay local. The cost is</p>
+<p>that a value with *no* way to determine its type is rejected rather than guessed — a bare</p>
+<p><code>x := None</code> or <code>x := []</code> with no grounding use is a compile error; annotate it. Function</p>
+<p>signatures are always explicit: they are the module's interface and the inference's seeds.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

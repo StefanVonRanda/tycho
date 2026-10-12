@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Brief for an external security review — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / internals/audit-brief.md</nav>
+<h1 id="brief-for-an-external-security-review">Brief for an external security review</h1>
+<blockquote>
+<p>Status: maintained packet for a third-party reviewer (ROADMAP §7, still open). Scope, threat model, prior passes, and reproducing lanes below; the FFI review and SECURITY.md are pointed at, not summarised.</p>
+</blockquote>
+<p><code>ROADMAP.md</code> §7 asks for a third-party audit and has been open since the roadmap</p>
+<p>was written. It is the last 1.0 condition that no amount of internal work can</p>
+<p>close, and it stayed open partly because "get an audit" is not a task anyone can</p>
+<p>pick up — it needs a scope, a threat model, and an account of what has</p>
+<p>already been looked at. <strong>This is that packet.</strong> Hand it to a reviewer.</p>
+<p>It deliberately does not summarise</p>
+<p><a href="ffi-review-2026-08-14.html">docs/internals/ffi-review-2026-08-14.md</a> or</p>
+<p><a href="../../SECURITY.html">SECURITY.md</a>; it points at them and adds what a stranger</p>
+<p>needs that an insider would not think to write down.</p>
+<hr/>
+<h2 id="1-what-the-thing-is-in-one-paragraph">1. What the thing is, in one paragraph</h2>
+<p>Tycho is a compiled language whose compiler (<code>src/tychoc.c</code>, a single</p>
+<p>dependency-free C file) <strong>transpiles to C</strong> and hands the result to <code>cc</code>. There</p>
+<p>is no VM and no runtime interpreter. Programs get value semantics, arena</p>
+<p>allocation freed at scope exit, and an affine <code>handle</code> type whose destructor runs</p>
+<p>at scope exit. The standard library (<code>corelib/</code>, 46 packages) is written in Tycho</p>
+<p>except where it binds a system library, and those bindings are the subject below.</p>
+<p><strong>The security-relevant consequence of the design:</strong> a Tycho program's memory</p>
+<p>safety is whatever the emitted C has, plus whatever the hand-written C shims</p>
+<p>have. The first is machine-generated and sanitizer-tested; the second is</p>
+<p>hand-written and is where a reviewer should spend their time.</p>
+<hr/>
+<h2 id="2-threat-model--where-untrusted-bytes-actually-enter">2. Threat model — where untrusted bytes actually enter</h2>
+<p>Ranked by how directly attacker-controlled data reaches hand-written C.</p>
+<table>
+<tr><th>entry point</th><th>package</th><th>reaches</th></tr>
+<tr><td>an HTTP response body</td><td><code>core:http</code> (libcurl)</td><td>a <code>realloc</code> accumulation loop in <code>http_shim.c</code></td></tr>
+<tr><td>a TLS stream</td><td><code>core:tls</code> (OpenSSL)</td><td><code>tls_shim.c</code>, 128 lines, client side only</td></tr>
+<tr><td>a decompressed stream</td><td><code>core:compress</code> (zlib)</td><td>an output-growth loop; reached from <code>tycho-ar</code>, <code>core:zip</code>, any gzip body</td></tr>
+<tr><td>an archive</td><td><code>core:zip</code>, <code>tools/tycho-ar</code></td><td><code>le16</code>/<code>le32</code> offset arithmetic, path handling (zip-slip)</td></tr>
+<tr><td>a PNG</td><td><code>core:image</code> (libpng)</td><td>size arithmetic before a <code>malloc</code></td></tr>
+<tr><td>an HTTP request</td><td><code>core:httpd</code>, <code>server/</code></td><td>request-line and header parsing, connection lifetime</td></tr>
+<tr><td>a text document</td><td><code>core:json</code>, <code>csv</code>, <code>toml</code>, <code>markdown</code>, <code>utf8</code></td><td>pure Tycho, but feeds everything above</td></tr>
+<tr><td>a key or ciphertext</td><td><code>core:crypto</code> (OpenSSL)</td><td>key import, AEAD, memory hygiene</td></tr>
+<tr><td>a SQL parameter</td><td><code>core:sqlite</code></td><td>prepared statements, <code>sqlite3_bind_text</code></td></tr>
+</table>
+<p><strong>Two things a reviewer should know before reading any of it:</strong></p>
+<ul>
+<li><strong>The FFI boundary is unsafe by design.</strong> <code>extern fn</code> declarations are not</li>
+</ul>
+<p>checked against the C they name. A wrong signature is a silent ABI mismatch.</p>
+<p>There are 13 <code>corelib/*/*_shim.c</code> files; <code>wc -l</code> them plus <code>runtime/tycho_rt.c</code></p>
+<p>for the current size.</p>
+<ul>
+<li><strong>`core:os` runs processes without a shell</strong> (<code>posix_spawnp</code> with a real argv</li>
+</ul>
+<p>vector). <code>osx_system</code> exists and is the documented shell API doing what it</p>
+<p>says. That distinction is load-bearing.</p>
+<hr/>
+<h2 id="3-what-has-already-been-measured-and-the-scope-of-each-claim">3. What has already been measured, and the scope of each claim</h2>
+<p>This is the part that saves a reviewer time, and every row understates rather</p>
+<p>than overstates. Each named lane is runnable — see §5.</p>
+<table>
+<tr><th>claim</th><th>how it is held</th><th>what it does NOT cover</th></tr>
+<tr><td><code>core:tls</code> verifies chain AND hostname</td><td><code>make tls-verify</code> — a real <code>openssl s_server</code> on loopback, three outcomes that must disagree</td><td>the tls shim's memory handling, error paths, session lifetime</td></tr>
+<tr><td><code>core:http</code> verifies certificates</td><td><code>make http-verify</code></td><td>anything above the transport; the CA-override env vars are trusted input</td></tr>
+<tr><td>no secret survives in memory the crypto shim released</td><td><code>sh scripts/crypto_hygiene.sh</code> — interposes <code>free</code>, scans released blocks</td><td>memory the shim never owned (OpenSSL's own allocations, the runtime's FFI copy)</td></tr>
+<tr><td>key-import hex decode is constant-time</td><td>same lane, under valgrind with the input marked undefined</td><td>cache-line and table-lookup side channels; everything else in the package</td></tr>
+<tr><td>decompression cannot run away</td><td>a 1 GiB ceiling with its own error, proved to fire at a reduced ceiling</td><td>nothing else in zlib's surface</td></tr>
+<tr><td>the emitted C traps out-of-bounds indexing</td><td>probes with the true length in the message</td><td><code>bytes</code>/<code>string</code> slices CLAMP by design (FRICTION #5)</td></tr>
+<tr><td>Windows undefined behaviour</td><td><code>make wine-ubsan</code> — 361 fixtures, trap-mode UBSan</td><td><strong>use-after-free and heap overflow: mingw-w64 here ships no ASan</strong></td></tr>
+<tr><td>text parsers survive mutation</td><td><code>scripts/fuzz_shims.sh</code></td><td>seed quality is the whole game — see §4</td></tr>
+<tr><td>markdown escapes text, scheme AND attributes</td><td><code>corelib/test/markdown</code>, with the escaper defeated as a control</td><td>raw-HTML passthrough is not a feature, so it is untested rather than proven absent</td></tr>
+</table>
+<p><strong>Nothing here is a substitute for §7 and this table is not a defence.</strong> It is a</p>
+<p>map of which stones have been turned over by someone who chose which stones to</p>
+<p>turn.</p>
+<hr/>
+<h2 id="4-why-an-outside-reviewer-is-expected-to-find-things">4. Why an outside reviewer is expected to find things</h2>
+<p>Not an argument from principle — from the record.</p>
+<ul>
+<li>The <strong>first</strong> structured pass over the shims (2026-08-14) found 5 issues in</li>
+</ul>
+<p>code that was green under every gate: an uncapped response body, a <code>size_t</code></p>
+<p>wrap on ILP32, unbounded redirects with no scheme pin, an unbounded</p>
+<p>decompressor, and an <code>SSL_read</code> length truncation.</p>
+<ul>
+<li>A <strong>second</strong> pass the next day, choosing different targets, found <strong>9 more</strong> —</li>
+</ul>
+<p>plaintext left in freed heap in both AEAD directions, a hex decode that timed</p>
+<p>where the bad digit was, <code>javascript:</code> hrefs emitted live, a strict check</p>
+<p>placed downstream of a lenient parse so it never ran, and others.</p>
+<ul>
+<li>A <strong>third</strong> pass (2026-08-15) is recorded in FRICTION <strong>#65 onward</strong> — the</li>
+</ul>
+<p>count is deliberately not written here, because it went stale inside the same</p>
+<p>session that produced it: this line said "10 more" and nine further entries</p>
+<p>landed after it. <code>grep -c '^### ' docs/internals/FRICTION.md</code> is the number,</p>
+<p>today. It includes a bound SQL parameter truncated at its first NUL and a</p>
+<p>password truncated the same way, both failing by *collision* — two distinct</p>
+<p>values becoming one, which is the mode that does not look like a bug.</p>
+<p>Three passes, three different sets of targets, zero overlap between them. That</p>
+<p>is the shape of a surface that has not been reviewed enough, and</p>
+<p>the reason §7 is written as a hard condition rather than a nice-to-have.</p>
+<p>**The other half of the record is about instruments, and it is the more useful</p>
+<p>warning.** Roughly a third of the time in those passes went into measurements</p>
+<p>that were themselves wrong *and looked like results*: a fuzzing corpus whose</p>
+<p>seeds died at the first byte while reporting 1950 clean mutants; a wine sweep</p>
+<p>where every invocation was <code>command not found</code>; a differential lane that scored</p>
+<p>1197 clean answers while the defect it was built for sat untested in front of it,</p>
+<p>because the corpus was integers and the bug was in floats. **Budget for the</p>
+<p>instrument being the defect.** Every lane added since refuses to score anything</p>
+<p>until a deliberately wrong expectation has been shown to fail.</p>
+<hr/>
+<h2 id="4b-there-is-a-released-artifact-now">4b. There is a released artifact now</h2>
+<p>0.7.0 shipped 2026-08-15 with prebuilt Linux and Windows tarballs, so a reviewer</p>
+<p>does not have to build anything to start:</p>
+<pre><code>gh release download v0.7.0 -R StefanVonRanda/tycho
+sha256sum -c tycho-v0.7.0-linux-x86_64.tar.gz.sha256
+</code></pre>
+<p>The source at tag <code>v0.7.0</code> is what those binaries were built from, verified by</p>
+<p>running the whole <code>tests/reject/</code> corpus through the extracted compiler before</p>
+<p>publishing. Building from source is still the better basis for a review — the</p>
+<p>tarball tells you nothing about how it was made — but the artifact is there if</p>
+<p>you want to reproduce a finding against exactly what users get.</p>
+<h2 id="5-reproducing-anything-here">5. Reproducing anything here</h2>
+<p>No cloud CI, deliberately. Everything runs locally with a C compiler and <code>make</code>.</p>
+<pre><code>make                      # build ./tychoc -- one C file, no dependencies
+make test                 # 1039 fixtures under ASan/UBSan/LeakSanitizer
+make corelib              # every corelib package against its golden
+make ci                   # the whole sweep, four lanes in parallel
+</code></pre>
+<p><strong>Timings are given as ranges, and the ranges are wide on purpose.</strong> Measured</p>
+<p>across four green sweeps on one machine in one afternoon (2026-09-18): the whole</p>
+<p>of <code>make ci</code> between <strong>422s and 1123s</strong>, <code>make test</code> between 82s and 144s,</p>
+<p><code>make corelib</code> between 169s and 379s. Steps that were not touched between runs</p>
+<p>moved by 2x, so a single number here would be an invented precision — see</p>
+<p>FRICTION 91 for the measurement and why no figure in this tree should be read</p>
+<p>off one run. Expect single-digit minutes on a workstation; budget more on a</p>
+<p>shared or throttled box.</p>
+<p><code>make ci</code> runs under <strong>gcc or clang</strong> (both measured green, 2026-09-18). It</p>
+<p>needed gcc specifically until then, for three unrelated reasons that were all</p>
+<p>in the gates rather than the language — FRICTION 89, 90 and 92, each with the</p>
+<p>compiler measurement that closed it.</p>
+<p>Security-specific lanes, each cheap and each with its controls documented in its</p>
+<p>own header:</p>
+<pre><code>make tls-verify           make http-verify          make math-diff
+sh scripts/crypto_hygiene.sh                        sh scripts/fuzz_shims.sh
+make wine-ubsan           # ~13 min, Windows UB only
+sh scripts/asan_self.sh   # the COMPILER under ASan/UBSan over the whole corpus
+</code></pre>
+<p><code>CONTRIBUTING.md</code> has a table mapping each part of the tree to the one lane that</p>
+<p>can redden for it. A package whose system dependency is absent is **skipped, not</p>
+<p>failed**, and the verdict line names it — read the last line, not the exit code.</p>
+<hr/>
+<h2 id="6-where-we-would-start-if-we-were-you">6. Where we would start, if we were you</h2>
+<p>Offered as a starting point, not a scope — a reviewer who picks differently is</p>
+<p>the entire point of the exercise.</p>
+<p>1. <strong>`corelib/zip/` and `tools/tycho-ar`.</strong> Archive parsing is offset arithmetic</p>
+<p>over attacker-controlled integers, and the zip-slip defence rests on</p>
+<p><code>path.safe_join</code>, which has a property test but no adversarial one. The</p>
+<p>fuzzing seeds for this were wrong twice before they reached the parser at all.</p>
+<p>2. <strong>`core:httpd` and `server/`.</strong> Slowloris is bounded, not eliminated, and the</p>
+<p>residual is a design property of connection-per-worker. Request parsing</p>
+<p>survived every malformed shape thrown at it by one person.</p>
+<p>3. <strong>The FFI signature surface itself.</strong> Not any single shim — the fact that</p>
+<p>nothing checks an <code>extern fn</code> against the C it names. A systematic diff of</p>
+<p>declarations against headers is work nobody has done. **Start with the</p>
+<p>interior-NUL class, and take the history as the warning**: the rule is</p>
+<p>normative in <code>docs/spec/14-ffi.md</code>, a deliberate sweep for it ran on</p>
+<p>2026-08-13, three packages carry explicit guards naming each other — and two</p>
+<p>packages that were never on that list both had the bug, one of them collapsing</p>
+<p>two passwords into one derived key (FRICTION #70, #75, #76, #77). Mechanically</p>
+<p>listing all 46 externs that take a <code>string</code> found them in a single pass. Grep</p>
+<p>the declarations; do not reason about which ones matter.</p>
+<p>4. <strong>`core:crypto` beyond the comparison.</strong> <code>cx_ct_equal</code> uses <code>CRYPTO_memcmp</code></p>
+<p>and the key-import decode is constant-time; the rest of the package's</p>
+<p>side-channel surface is unexamined.</p>
+<p>5. <strong>Windows use-after-free.</strong> Structurally uncovered: mingw-w64 here ships no</p>
+<p>ASan, so <code>make wine-ubsan</code> catches undefined behaviour and nothing else.</p>
+<h2 id="7-what-we-want-back">7. What we want back</h2>
+<p>A list of findings with reproductions, and — more valuable — **which classes you</p>
+<p>looked for and found nothing in**, since that is what tells us where the map is</p>
+<p>genuinely blank rather than merely unvisited. Negative results with their</p>
+<p>controls are recorded here as first-class (see the markdown entry at the end of</p>
+<p><code>FRICTION.md</code>), and yours would be too.</p>
+<p>Report privately per <a href="../../SECURITY.html">SECURITY.md</a>.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

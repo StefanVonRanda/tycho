@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Concurrency — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / reference/concurrency.md</nav>
+<h1 id="concurrency">Concurrency</h1>
+<blockquote>
+<p><strong>Memory:</strong> Each task gets its own arena; arguments are deep-copied in and the</p>
+<p>result is copied out, so a task shares nothing with its spawner. This stops at</p>
+<p>the FFI boundary.</p>
+</blockquote>
+<p>Concurrency is the ordinary call convention run on another thread: after the</p>
+<p>copy-in, a task shares nothing with its spawner, so separate tasks cannot race</p>
+<p>on Tycho values. There are four constructs: <code>spawn</code>/<code>wait</code>, <code>parallel for</code>,</p>
+<p>channels, and <code>select</code>.</p>
+<h2 id="the-safety-envelope">The safety envelope</h2>
+<p>The rule first: the race-freedom guarantee covers <strong>pure Tycho values</strong> — the</p>
+<p>values the compiler copies — and nothing past the <a href="ffi.html">FFI</a>.</p>
+<blockquote>
+<p><strong>Calling C drops the guarantee.</strong> The compiler checks the boundary types but</p>
+<p>cannot see what C code touches. If a C function reads or writes shared state,</p>
+<p>two tasks calling it race exactly as two C threads would.</p>
+</blockquote>
+<p>Keep shared C state per thread or serialize the calls, and assume nothing about</p>
+<p>the C side's thread-safety. The analysis behind this rule is in</p>
+<p><a href="../rfc/ffi-threading-design-review.html">`rfc/ffi-threading-design-review.md`</a>.</p>
+<h2 id="spawn-and-wait"><code>spawn</code> and <code>wait</code></h2>
+<p>Rule: <code>spawn f(args)</code> starts the call as a task and returns a <code>Task(T)</code> handle.</p>
+<p>The argument list is the capture list — explicit and by value:</p>
+<pre><code class="language-tycho">fn count(path: string) -&gt; int:
+    return len(path)
+
+t1 := spawn count("a.txt")     # args deep-copied into the task's own arena
+t2 := spawn count("b.txt")     # runs in parallel
+_total := wait(t1) + t2.wait()  # blocks; result deep-copied back out
+</code></pre>
+<p>Tasks are <strong>affine and structured</strong>: a handle cannot be copied, reassigned,</p>
+<p>stored in a container, captured by a closure, or discarded; it is waited at</p>
+<p>most once (a second <code>wait</code> aborts), and any task still running when its</p>
+<p>variable's scope exits — block end, <code>break</code>/<code>continue</code>, early <code>return</code>,</p>
+<p><code>or_return</code> — is joined there. A function can never return while its tasks run,</p>
+<p>and a task can never leak or detach.</p>
+<h2 id="parallel-for"><code>parallel for</code></h2>
+<p>Rule: <code>parallel for</code> runs a loop body as chunk tasks and joins them at the end</p>
+<p>of the statement. Only a reduction accumulator may be written from the body;</p>
+<p>any other write to an outer variable is a compile error:</p>
+<pre><code class="language-tycho">fn score(i: int) -&gt; int:
+    return i % 7
+
+total := 0
+parallel for i in 0..&lt;1000000:      # K = min(ncpu(), 64) chunk tasks (TYCHO_THREADS overrides)
+    total += score(i)               # reduction: chunk-local partials, folded at join
+</code></pre>
+<p>The stricter form names the width at the loop when the default is wrong for</p>
+<p>that loop: <code>parallel(4) for i in 0..&lt;n:</code> runs exactly 4 chunk tasks. The</p>
+<p>literal must be <code>1..64</code> and is checked at compile time; a computed width aborts</p>
+<p>at run time rather than silently clamping. An explicit width beats</p>
+<p><code>TYCHO_THREADS</code>, so it pins the one loop whose shape is known without changing</p>
+<p>how the rest of the program scales.</p>
+<p>A reduction accumulator (<code>+</code> or <code>*</code> on <code>int</code>/<code>float</code>) starts from the</p>
+<p>operator's identity per chunk and folds at the in-order join, so an integer</p>
+<p>result is identical for any thread count.</p>
+<h2 id="channels">Channels</h2>
+<p>Rule: a channel is the one shared object — a bounded queue. <code>send</code></p>
+<p>deep-copies the payload in (blocking when full) and <code>recv</code> copies it out,</p>
+<p>returning <code>Option(T)</code> where <code>None</code> means <strong>closed and drained</strong>:</p>
+<pre><code class="language-tycho">fn consumer(ch: Channel(string)) -&gt; int:
+    return 0
+
+i := 1
+
+ch := channel(string, 256)          # bounded; the creating scope frees it
+w := spawn consumer(ch)             # fn consumer(ch: Channel(string)) -&gt; int
+ch.send("item-" + str(i))           # deep copy in (blocks when full)
+match recv(ch):                     # deep copy out
+    Some(s):
+        println(s)
+    None:                           # closed and drained
+        println("drained")
+close(ch)
+_n := wait(w)
+</code></pre>
+<p>Channel memory is bounded by capacity × payload, for every element type.</p>
+<p>Channels cannot be returned, stored, or captured; the creating scope frees the</p>
+<p>channel after joining its tasks, so the handle can never dangle. A</p>
+<p><code>channel(T, cap)</code> call is legal only as a declaration's direct right-hand side.</p>
+<h2 id="select"><code>select</code></h2>
+<p>Rule: <code>select</code> waits on several channels at once — <code>recv</code> arms, plus an</p>
+<p>optional <code>default</code> (non-blocking) and <code>closed</code> (every listed channel closed and</p>
+<p>drained) arm:</p>
+<pre><code class="language-tycho">fn do_job(j: int):
+    println("job " + str(j))
+
+fn note(e: string):
+    println("event " + e)
+
+jobs := channel(int, 4)
+events := channel(string, 4)
+close(jobs)
+close(events)
+
+for true:
+    select:
+        recv(jobs, j):
+            do_job(j)
+        recv(events, e):
+            note(e)
+        closed:
+            break
+</code></pre>
+<p>Every value crossing a thread boundary is a deep copy — the same rule as an</p>
+<p>ordinary call.</p>
+<h2 id="working-with-it">Working with it</h2>
+<p>The sections above are the whole model. What follows is the full rule set for</p>
+<p>each construct, the three cases the compiler warns about, and the deliberate</p>
+<p>limits. The model removes data races, not deadlock: a <code>recv</code> with no live</p>
+<p>sender and no <code>close</code> parks forever (see <a href="#limits-deliberate">Limits</a>). The</p>
+<p>compiler warns about the three cases it can prove — see</p>
+<p><a href="#what-the-compiler-warns-about">What the compiler warns about</a> — but proving</p>
+<p>the absence of a live sender in general is not attempted.</p>
+<h3 id="spawn--wait--structured-tasks">spawn / wait — structured tasks</h3>
+<pre><code class="language-tycho">fn count(path: string) -&gt; int:
+    return len(path)
+
+t := spawn count("a.txt")     # args deep-copied into the task's arena, then the thread starts
+u := spawn count("b.txt")
+total := wait(t) + u.wait()    # join; result deep-copied into the waiting scope; task arena freed
+println(str(total))
+</code></pre>
+<p><code>spawn</code> takes a <strong>direct call</strong> to a named function — the argument list *is* the</p>
+<p>capture list, explicit and by value. The result is <code>Task(T)</code>, a type with no</p>
+<p>source syntax, so a handle can only live in a local. Tasks are **affine and</p>
+<p>structured**, meaning:</p>
+<ul>
+<li>Copying or rebinding a handle, reassigning it, storing it in any container or</li>
+</ul>
+<p>closure, discarding a bare <code>spawn</code>, or spawning a builtin / extern / <code>void</code></p>
+<p>function / function with <code>inout</code> parameters are all compile errors.</p>
+<ul>
+<li><strong>Implicit join</strong>: any task still unwaited when its variable's scope exits —</li>
+</ul>
+<p>block end, each loop iteration, <code>break</code>, <code>continue</code>, early <code>return</code>,</p>
+<p><code>or_return</code> — is joined and freed right there. A function can never return</p>
+<p>while its tasks run, and an unwaited task can never leak or detach.</p>
+<ul>
+<li>A second <code>wait</code> on the same task aborts at runtime</li>
+</ul>
+<p>(<code>tycho: task already waited</code>) — never undefined behavior.</p>
+<h3 id="parallel-for--fork-join-data-parallelism">parallel for — fork-join data parallelism</h3>
+<pre><code class="language-tycho">total := 0
+parallel for i in 0..&lt;400000000:      # K = ncpu chunk tasks; TYCHO_THREADS overrides
+    total += (i * 31 + 7) % 1000003   # reduction: chunk-local partial, folded at the join
+</code></pre>
+<p>Works over <code>0..&lt;N</code> or a collection. Captures deep-copy into each task, and</p>
+<p>reduction accumulators — <code>acc = acc + e</code> / <code>acc = acc * e</code> and the <code>+=</code>/<code>*=</code></p>
+<p>forms, on outer <code>int</code>/<code>float</code> locals, up to four — start from the operator's</p>
+<p>identity per chunk and fold at the in-order join. Integer results are therefore</p>
+<p><strong>identical for any thread count</strong>; float reductions may reassociate, like every</p>
+<p>parallel reduce. Everything else fails closed: any other write to an outer</p>
+<p>variable, reading an accumulator mid-loop, <code>break</code>/<code>return</code>/<code>or_return</code> at the</p>
+<p>parallel-loop level, an <code>inout</code> of a capture, and range steps are all compile</p>
+<p>errors — there is nothing left to race on. All chunk tasks join inside the</p>
+<p>statement.</p>
+<p><strong>Naming the width.</strong> <code>parallel(W) for …</code> fixes the chunk count for one loop:</p>
+<p><code>parallel(4) for i in 0..&lt;n:</code> runs exactly four. The literal is checked at</p>
+<p>compile time and must be <code>1..64</code>; a computed width aborts at run time rather</p>
+<p>than silently clamping. An explicit width <strong>beats `TYCHO_THREADS`</strong>: it pins the</p>
+<p>one loop whose shape is known (a short body where <code>ncpu()</code> chunks would cost</p>
+<p>more in copy-in than they save) without changing how the rest of the program</p>
+<p>scales. Otherwise the default stands.</p>
+<p>#### Bounded fan-out over a channel</p>
+<p><code>parallel for x in ch:</code> drains a channel with <code>K = ncpu()</code> workers, each pulling</p>
+<p>items until the channel is closed <strong>and</strong> drained:</p>
+<pre><code class="language-tycho">struct Job:
+    id: int
+
+fn work(j: Job) -&gt; int:
+    return j.id
+
+fn produce(ch: Channel(Job), n: int) -&gt; int:
+    for i := 0; i &lt; n; i += 1:
+        send(ch, Job(i))
+    close(ch)
+    return n
+
+n := 8
+results := 0
+
+jobs := channel(Job, 16)            # cap bounds buffered work — backpressure
+pr := spawn produce(jobs, n)         # producer sends, then close(jobs) when done
+parallel for j in jobs:             # K = ncpu() workers share the one queue
+    results = results + work(j)     # ordinary reduction, folded at the join
+wait(pr)                            # join the producer before reporting
+println(str(results))
+</code></pre>
+<p>This is the bounded-fan-out form — items not known up front, at most <code>cap</code></p>
+<p>buffered, work spread across <code>ncpu()</code> workers — without sizing a <code>0..&lt;N</code>.</p>
+<p>Each item is taken by exactly one worker, so integer reductions are</p>
+<p>deterministic. The producer must <code>close(ch)</code> when done or the workers park</p>
+<p>waiting for more. The same fail-closed gates apply and the source must name a</p>
+<p>variable. <code>ncpu()</code> (online CPUs, overridable with <code>TYCHO_THREADS</code>) is also</p>
+<p>callable directly, but it is the *requested* width, not always the width used:</p>
+<p>the chunk count is <code>min(ncpu(), N)</code> and the compiler caps it at 64, so</p>
+<p><code>TYCHO_THREADS=100</code> makes <code>ncpu()</code> report 100 while 64 chunks run.</p>
+<p>A <code>parallel for</code> body may also <code>send</code> on a captured channel — that is how a</p>
+<p>per-item result gets out of a loop whose only permitted outer write is a</p>
+<p>reduction. The capture is a scalar handle, so every chunk sends into the one</p>
+<p>queue; <code>send</code> blocks on a full channel, which is the loop's backpressure.</p>
+<h3 id="channels--the-one-shared-object">Channels — the one shared object</h3>
+<pre><code class="language-tycho">fn consumer(ch: Channel(string)) -&gt; int:
+    return 0
+
+i := 1
+
+ch := channel(string, 256)        # bounded; created here, freed at THIS scope's exit
+w := spawn consumer(ch)           # fn consumer(ch: Channel(string)) -&gt; int
+ch.send("item-" + str(i))         # deep copy IN (blocks when full; dies if closed)
+match recv(ch):                   # deep copy OUT -&gt; Option(T)
+    Some(s): println(s)
+    None:    println("drained")   # closed AND drained
+close(ch)
+n := wait(w)
+println(str(n))
+</code></pre>
+<p>A channel is a bounded queue, internally synchronized so value semantics</p>
+<p>outside it are untouched. <code>send</code> deep-copies the payload in — for *every*</p>
+<p>element type, not just strings — and <code>recv</code> copies it out into the receiver's</p>
+<p>arena, returning <code>Option(T)</code> where <code>None</code> means closed <strong>and</strong> drained. Channel</p>
+<p>memory is bounded by capacity × payload.</p>
+<p>Lifetime is structural. <code>ch := channel(T, cap)</code> is the only legal creation</p>
+<p>form, and the creating scope frees the channel at exit — the implicit task</p>
+<p>joins run first, so the channel outlives every task that uses it. A channel</p>
+<p>cannot be returned, stored in a container/field/closure, or reassigned;</p>
+<p><code>Channel(T)</code> is valid parameter syntax so workers can take one. Send-after-close</p>
+<p>and double-close abort the program.</p>
+<h3 id="select--multi-channel-fan-in">select — multi-channel fan-in</h3>
+<pre><code class="language-tycho">fn do_job(j: int):
+    println("job " + str(j))
+
+fn note(e: string):
+    println("event " + e)
+
+jobs := channel(int, 4)
+events := channel(string, 4)
+close(jobs)
+close(events)
+
+for true:
+    select:
+        recv(jobs, j):
+            do_job(j)
+        recv(events, e):
+            note(e)
+        closed:                   # every listed channel closed AND drained
+            break
+</code></pre>
+<p>Arms are one or more <code>recv(ch, x):</code>, plus at most one <code>default:</code> (runs when</p>
+<p>nothing is immediately ready, making the select non-blocking) and at most one</p>
+<p><code>closed:</code>. Without <code>default</code>, select waits until one arm is ready.</p>
+<p><code>break</code>/<code>continue</code> inside an arm bind to the *user's* enclosing loop.</p>
+<p>A <code>select</code> is also allowed inside a <code>parallel for</code> body, giving parallel</p>
+<p>consumers: the chunk tasks share the captured channels (a channel is a scalar</p>
+<p>handle, passed by value — not deep-copied per chunk), so any chunk can take any</p>
+<p>ready item, and a reduction inside an arm folds at the join like any other. An</p>
+<p>early exit still cannot cross a chunk boundary, so <code>return</code> in an arm is</p>
+<p>rejected just as it is anywhere else in a <code>parallel for</code> body.</p>
+<h3 id="measured">Measured</h3>
+<p><code>make bench-conc</code> runs the same</p>
+<p>reduction, pipeline, and pool workloads in Tycho, C, Go, and Rust with</p>
+<p>cross-checked checksums. The numbers live in</p>
+<p><a href="../performance.html">performance</a>; the full table and its reading are in</p>
+<p><a href="../../bench/conc/RESULTS.html">bench/conc/RESULTS.md</a>.</p>
+<h3 id="what-the-compiler-warns-about">What the compiler warns about</h3>
+<p>A channel handle can only reach code by being passed as an <strong>argument</strong> — it</p>
+<p>cannot be returned, stored in a struct/enum/container, captured by a closure, or</p>
+<p>rebound. So the set of code that can touch one channel is a closed graph rooted</p>
+<p>at its <code>ch := channel(T, cap)</code>, and the compiler can prove that an operation</p>
+<p>appears <strong>nowhere</strong> in it. Three such cases warn:</p>
+<pre><code class="language-tycho">jobs := channel(int, 16)
+p := spawn produce(jobs, 50)
+parallel for j in jobs:              # producer never calls close(jobs)
+    total += j
+</code></pre>
+<pre><code class="language-text">warning: close(jobs) is never called, so this `closed:` arm can never run
+         (a `parallel for` over a channel ends only when it is closed)
+</code></pre>
+<ul>
+<li><strong>Nothing ever sends</strong> on a channel that has a *blocking* receive — <code>recv(ch)</code>,</li>
+</ul>
+<p>or a <code>select</code> arm with no <code>default:</code> (a select with <code>default:</code> polls, so it</p>
+<p>never parks and never warns).</p>
+<ul>
+<li><strong>Nothing ever receives</strong> from a channel that is sent to: the send parks once</li>
+</ul>
+<p>the buffer fills.</p>
+<ul>
+<li><strong>Nothing ever closes</strong> a channel a drain waits on — the <code>parallel for x in ch</code></li>
+</ul>
+<p>hang above.</p>
+<p>These are lints, not errors: they never reject a program. And they are *absence*</p>
+<p>proofs, never "this path might not send" — so a conditional send, a send behind</p>
+<p>a flag, or a send in a loop that may not run all suppress the warning. Anything</p>
+<p>the analysis cannot follow (a call it can't resolve) silences the channel</p>
+<p>entirely. Missing a real deadlock is expected; warning about a working program</p>
+<p>is a bug.</p>
+<h3 id="limits-deliberate">Limits (deliberate)</h3>
+<p>These limits are deliberate:</p>
+<ul>
+<li>No <code>async</code>/<code>await</code> colouring, and no actors — per-task arenas plus channels</li>
+</ul>
+<p>already isolate state.</p>
+<ul>
+<li>No mutex or atomic in the language, and no work-stealing runtime: a blocked</li>
+</ul>
+<p>waiter is a parked OS thread.</p>
+<ul>
+<li>Deadlock is the caller's bug. Beyond the three provable cases above, the</li>
+</ul>
+<p>compiler does not detect it: a <code>recv</code> whose only sender took a branch that</p>
+<p>returns early parks forever and nothing warns. A panic or abort in any task</p>
+<p>kills the whole process.</p>
+<h3 id="verification">Verification</h3>
+<p><code>make conc</code> runs the concurrency fixtures with golden output under</p>
+<p>AddressSanitizer/LeakSanitizer and ThreadSanitizer.</p>
+<hr/>
+<p>How this is implemented — the runtime, the channel core, and the cost of a</p>
+<p><code>spawn</code> — is in <a href="../internals/design-concurrency.html">design-concurrency</a>, for</p>
+<p>maintainers.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

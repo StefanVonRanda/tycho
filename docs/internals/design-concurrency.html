@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Concurrency design notes (maintainers) — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / internals/design-concurrency.md</nav>
+<h1 id="concurrency-design-notes-maintainers">Concurrency design notes (maintainers)</h1>
+<p>Why the behavior in <a href="../reference/concurrency.html">reference/concurrency.md</a></p>
+<p>is sound. Users don't need this page.</p>
+<h2 id="the-ffi-edge">The FFI edge</h2>
+<p>The race-freedom guarantee covers the values the compiler copies and stops at</p>
+<p>the FFI. The concrete case that motivated the envelope wording: two tasks</p>
+<p>calling a stateful C library whose return buffer is a shared <code>static</code> race on</p>
+<p>that buffer even though both Tycho sides look isolated. The <code>core:crypto</code> shim</p>
+<p>isolates per thread instead — its return buffer is thread-local</p>
+<p>(<code>corelib/crypto/crypto_shim.c</code>), so each OS thread gets its own. Shim authors</p>
+<p>should assume nothing about the C side's thread-safety and isolate explicitly.</p>
+<p>Full analysis in <a href="../rfc/ffi-threading-design-review.html">rfc/ffi-threading-design-review.md</a>.</p>
+<h2 id="runtime">Runtime</h2>
+<p>Thread-per-spawn tasks; the block pool is thread-local so allocation never</p>
+<p>contends. A spawned thread flushes its pool before exiting, and <code>wait</code> frees</p>
+<p>the task's arena tree on the waiting thread. A task handle carries its root</p>
+<p>arena, return slot, and a <code>done</code> flag (the double-<code>wait</code> backstop). Generated</p>
+<p>programs define <code>_DEFAULT_SOURCE</code> so <code>clock_gettime</code> / <code>sched_yield</code> /</p>
+<p><code>nanosleep</code> are visible.</p>
+<p>A channel is a Vyukov bounded MPMC ring: each cell has an atomic sequence</p>
+<p>counter and its own arena; one CAS claims a cell, the deep copy then runs with</p>
+<p>no lock held, and a sequence store publishes. Per-cell arenas recycle on reuse;</p>
+<p>capacity rounds up to a power of two. Waiting is spin → <code>sched_yield</code> → 1ms</p>
+<p>timed park with a parked-waiter count gating the wake path, so the uncontended</p>
+<p>path does zero syscalls and the check-then-park race costs at most one extra</p>
+<p>retry. <code>select</code> cannot park on N condition variables, hence the ~1ms worst-case</p>
+<p>wake latency. The finalizer stack is LIFO, so tasks declared after a channel</p>
+<p>join before it frees.</p>
+<p><code>parallel for x in ch:</code> desugars to a <code>parallel for</code> over <code>0..&lt;ncpu()</code> whose</p>
+<p>body is <code>for true: select { recv(ch, x): … ; closed: break }</code>. <code>parallel for</code></p>
+<p>chunks to <code>ncpu()</code> (capped at 64) so the ~20µs per-<code>spawn</code> cost (measured over</p>
+<p>2000 tasks) is paid once per loop, not per iteration: spawn a chunk, not an item.</p>
+<h2 id="lineage">Lineage</h2>
+<p>Structured spawn with no function colouring follows Hylo/Val's</p>
+<p>structured-concurrency work; the expressiveness comes from chunk-copy + merge</p>
+<p>at a copy cost that is the design point. Share-nothing message copying is the</p>
+<p>Erlang/Pony model; the channel core is Vyukov's bounded MPMC queue.</p>
+<h2 id="measurement">Measurement</h2>
+<p><code>make bench-conc</code> runs identical logic with cross-checked checksums in</p>
+<p>Tycho, C, Go, and Rust (reduction, string pipeline, channel worker pool).</p>
+<p>The reduction matches hand-written pthreads at the same peak RSS; the</p>
+<p>channels are competitive with Go's while paying two deep copies per message</p>
+<p>the others skip; the pool one-liner gets the tuned queue for free. Full</p>
+<p>table and reading in <a href="../../bench/conc/RESULTS.html">bench/conc/RESULTS.md</a>.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

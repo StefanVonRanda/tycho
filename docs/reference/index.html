@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tycho language reference — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / reference/index.md</nav>
+<h1 id="tycho-language-reference">Tycho language reference</h1>
+<p>How each part of Tycho behaves, with runnable examples. New here?</p>
+<p>Start with the <a href="../tutorial.html">tutorial</a>. Curious why the language</p>
+<p>works this way? Read <a href="../from-c-to-arenas.html">From `malloc` to arenas</a>,</p>
+<p>then the <a href="../thesis.html">thesis</a> for the full argument.</p>
+<p>Every example compiles and prints the output shown.</p>
+<h2 id="pages">Pages</h2>
+<table>
+<tr><th>Page</th><th>Covers</th></tr>
+<tr><td><a href="basics.html">Basics</a></td><td>procedures, parameters (<code>inout</code>), declarations and assignment, expressions and operators, control flow</td></tr>
+<tr><td><a href="types.html">Types</a></td><td>the scalar types, <code>bytes</code>, string interpolation, distinct <code>type</code> newtypes, bidirectional type inference</td></tr>
+<tr><td><a href="strings.html">Strings</a></td><td>a <code>string</code> is BYTES: <code>len</code>, <code>s[i]</code> as a byte value, byte slicing; <code>utf8.count</code> vs <code>len</code>, stepping by codepoint with the mandatory <code>nb &lt;= 0</code> guard, validating before you trust, and where <code>core:strings</code> and <code>core:utf8</code> divide</td></tr>
+<tr><td><a href="arrays-slices.html">Arrays and slices</a></td><td><code>[T]</code>, nested arrays, element places, slices <code>xs[a:b]</code>, fixed-capacity <code>bounded[N]T</code></td></tr>
+<tr><td><a href="structs-tuples.html">Structs and tuples</a></td><td><code>struct</code>, nested and recursive fields, tuples and multiple return values</td></tr>
+<tr><td><a href="maps.html">Maps</a></td><td><code>[K: V]</code> for scalar and composite keys, any value type, <code>m[k]</code> as a place</td></tr>
+<tr><td><a href="subscripts.html">Subscripts</a></td><td>user-defined projections: <code>subscript … -&gt; inout U: yield &amp;&lt;place&gt;</code>, a zero-copy view generalizing <code>&amp;m[k]</code></td></tr>
+<tr><td><a href="enums-options.html">Enums, options, and `match`</a></td><td>sum types, <code>Option(T)</code>, <code>Result(T, E)</code>, exhaustive <code>match</code>, <code>or_return</code></td></tr>
+<tr><td><a href="functions.html">Functions and closures</a></td><td>first-class function values, closures, methods (UFCS)</td></tr>
+<tr><td><a href="generics.html">Generics</a></td><td><code>$T</code> type parameters over functions, structs, and enums</td></tr>
+<tr><td><a href="concurrency.html">Concurrency</a></td><td><code>spawn</code>/<code>wait</code>, <code>parallel for</code>, channels, <code>select</code></td></tr>
+<tr><td><a href="ffi.html">FFI</a></td><td>calling C: <code>extern fn</code>, handles, bytes across the boundary</td></tr>
+<tr><td><a href="packages.html">Packages</a></td><td>multi-file packages, <code>import</code>, the corelib</td></tr>
+<tr><td><a href="builtins.html">Builtins</a></td><td>the built-in functions, by category</td></tr>
+</table>
+<h2 id="conventions">Conventions</h2>
+<ul>
+<li><strong>One spelling per idea.</strong> Where two spellings could do the same job,</li>
+</ul>
+<p>Tycho keeps one. Each page names it.</p>
+<ul>
+<li><strong>Values copy.</strong> <code>b := a</code> gives <code>b</code> its own independent copy. Two</li>
+</ul>
+<p>variables never share mutable storage. Each page shows what that means</p>
+<p>for its own types.</p>
+<ul>
+<li><strong>Examples run.</strong> Every sample compiles under <code>tychoc</code>. Output shown</li>
+</ul>
+<p>in a comment is the actual output.</p>
+<p>Before the first real program, read <a href="../quiet-results.html">Quiet results</a> —</p>
+<p>the seven places the language answers instead of refusing.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

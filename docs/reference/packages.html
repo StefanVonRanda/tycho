@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Packages — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / reference/packages.md</nav>
+<h1 id="packages">Packages</h1>
+<blockquote>
+<p><strong>One program per directory.</strong> <code>tychoc</code> compiles every <code>.ty</code> file beside the</p>
+<p>entry file as one package. A file with an <code>import</code> is a package: give it</p>
+<p>its own directory, or its declarations collide with whatever else is there.</p>
+<p><strong>Memory:</strong> packages don't change memory rules. All files build as one</p>
+<p>program, so the same per-scope freeing applies everywhere.</p>
+</blockquote>
+<p>A package is a directory of <code>.ty</code> files sharing one namespace. You name it with a <code>package</code></p>
+<p>declaration, pull it in with <code>import</code>, and use its qualified <code>pkg.symbol</code> names — for</p>
+<p>functions, types, and enum variants. An alias renames the prefix.</p>
+<pre><code class="language-tycho">package main
+import g "geom"          # alias; plain `import "geom"` uses the package name
+
+fn main():
+    r := g.add(g.Point(3, 4), g.Point(1, 2))
+</code></pre>
+<p><code>./tychoc pkg/main.ty</code> follows the imports and emits one binary. <code>import "core:strings"</code></p>
+<p>resolves the standard library found next to the transpiler binary, or at <code>TYCHO_CORELIB</code> if set</p>
+<p>(see <a href="../reference/corelib.html">the corelib catalog</a>). Privacy is by leading underscore: a top-level</p>
+<p>name beginning with <code>_</code> is package-private and cannot be reached through a <code>pkg.</code> qualifier</p>
+<p>from another package; every other name is visible to importers.</p>
+<p>A file with an <code>import</code> is a package, so give it its own directory.</p>
+<h2 id="how-it-works">How it works</h2>
+<ul>
+<li><strong>A package is a directory</strong>, not a file. Every <code>.ty</code> file in the directory</li>
+</ul>
+<p>belongs to the same package and adds to one shared namespace.</p>
+<ul>
+<li><strong>Privacy is by leading underscore.</strong> A top-level symbol whose name starts</li>
+</ul>
+<p>with <code>_</code> is private to its own package: you can use it from any file *within*</p>
+<p>the package, but a qualified <code>pkg._name</code> from another package is rejected. Every other top-level symbol is exported.</p>
+<ul>
+<li><strong>There's no separate compilation.</strong> The transpiler follows the import graph</li>
+</ul>
+<p>and emits a single <code>.c</code>.</p>
+<h3 id="surface-syntax">Surface syntax</h3>
+<pre><code class="language-ebnf">file         := package_decl? import_decl* top_def*
+package_decl := "package" IDENT NEWLINE          # first non-comment line
+import_decl  := "import" IDENT? STRING NEWLINE   # optional alias, then the path
+</code></pre>
+<ul>
+<li><strong>A package is a directory.</strong> Every <code>.ty</code> file in it declares the same</li>
+</ul>
+<p><code>package &lt;name&gt;</code>, and <code>&lt;name&gt;</code> must equal the directory name.</p>
+<ul>
+<li><strong>`import "math/geom"`</strong> binds the package under its last path component</li>
+</ul>
+<p>(<code>geom</code>); <strong>`import g "math/geom"`</strong> aliases it to <code>g</code>. Paths resolve relative</p>
+<p>to the importing package's directory.</p>
+<ul>
+<li><strong>`pkg.symbol`</strong> is the qualified form for types, functions, struct/enum</li>
+</ul>
+<p>constructors, and enum variants — <code>geom.Point</code>, <code>geom.add</code>, <code>geom.Red</code>.</p>
+<ul>
+<li>An imported package name is <strong>reserved</strong> in the file: a local or parameter</li>
+</ul>
+<p>with that name is a compile error, so <code>a.b</code> is never ambiguous. Import cycles</p>
+<p>are an error too.</p>
+<h3 id="example">Example</h3>
+<pre><code class="language-text">proj/
+  main.ty            # package main
+  geom/
+    point.ty         # package geom
+    vec.ty           # package geom (same package, second file)
+</code></pre>
+<p><code>geom/point.ty</code></p>
+<pre><code class="language-tycho">package geom
+struct Point:
+    x: int
+    y: int
+fn add(a: Point, b: Point) -&gt; Point:
+    return Point(a.x + b.x, a.y + b.y)
+</code></pre>
+<p><code>main.ty</code></p>
+<pre><code class="language-tycho">package main
+import "geom"
+fn main():
+    r := geom.add(geom.Point(3, 4), geom.Point(1, 2))
+    println("sum = (" + str(r.x) + "," + str(r.y) + ")")   # (4,6)
+</code></pre>
+<p><code>./tychoc proj/main.ty</code> reads the <code>main</code> package, follows <code>import "geom"</code> to</p>
+<p><code>proj/geom/</code>, and builds one binary from both files.</p>
+<h3 id="how-it-builds">How it builds</h3>
+<ul>
+<li>The transpiler reads the entry package, follows every <code>import</code>, and emits</li>
+</ul>
+<p>one <code>.c</code>. There's no linker step and no per-package object file.</p>
+<ul>
+<li><strong>A file with no `package` declaration is a standalone single-file program</strong> —</li>
+</ul>
+<p>provided it imports nothing. An <code>import</code> switches on directory-package mode:</p>
+<p>the file must then declare a package and live in its own directory.</p>
+<ul>
+<li><strong>Main-package symbols keep their plain names.</strong> Imported packages get a</li>
+</ul>
+<p><code>pkg__</code> prefix. You only meet it when reading the generated C.</p>
+<h3 id="the-core-collection">The <code>core:</code> collection</h3>
+<p>The standard library is reached through a <strong>collection</strong> — a named root for</p>
+<p>imports that resolve outside the local directory tree. <code>import "core:strings"</code></p>
+<p>pulls in the corelib package <code>strings</code>, which sits next to the transpiler binary by</p>
+<p>default (or at <code>TYCHO_CORELIB</code> if set) rather than relative to the importer. The</p>
+<p>corelib is documented in <a href="corelib.html">corelib.md</a>.</p>
+<p>Only the <code>core:</code> collection exists today. Vendoring needs no more — see below.</p>
+<h3 id="vendoring">Vendoring</h3>
+<p>Third-party packages are <strong>vendored</strong>: you keep a <code>vendor/</code> directory in your</p>
+<p>project, and the compiler resolves <code>import "vendor/name"</code> the same way it</p>
+<p>resolves any non-<code>core:</code> path — **relative to the importing package's own</p>
+<p>directory**, independent of the current working directory. No registry, no version resolution:</p>
+<p><code>vendor/</code> is just a directory, and the code in it is the code that builds.</p>
+<p>The shape that keeps the <code>../</code> chains at depth one:</p>
+<pre><code>myproj/
+  main.ty            # import "vendor/greet"
+  vendor/
+    greet/greet.ty   # import "../util"  -- relative to greet's own dir
+    util/util.ty
+</code></pre>
+<p>A vendored package imports its siblings with a relative path (<code>../util</code>),</p>
+<p>resolved against <strong>its own</strong> directory — so the vendor tree stays flat (one</p>
+<p>package per top-level entry) and moves as a unit. Vendored packages mix</p>
+<p>freely with <code>core:</code> imports. <code>tycho-fetch &lt;url&gt; &lt;name&gt;</code> downloads a package</p>
+<p>tarball (the single-top-directory shape) into <code>vendor/&lt;name&gt;</code> and prints the</p>
+<p>sha256 of the downloaded bytes; a tarball already on disk is `tycho-fetch</p>
+<p>--local &lt;path&gt; &lt;name&gt;<code>, since </code>file://` is refused rather than fetched over</p>
+<p>HTTP. <code>git clone</code> / <code>cp</code> into <code>vendor/</code> work just as well — the compiler never</p>
+<p>cares how the files got there.</p>
+<h3 id="imports-are-per-file">Imports are per-file</h3>
+<p>An <code>import</code> is visible only in the file that writes it. A second file in the same</p>
+<p>package that names that package must import it as well — using a package this</p>
+<p>file did not import is an error, even when a sibling file already imported it and</p>
+<p>the build therefore resolved it. An import that no file in the build uses is an</p>
+<p>error too.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

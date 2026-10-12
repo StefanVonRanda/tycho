@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Appendix B — Keywords and contextual identifiers — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / spec/appendix-b-keywords.md</nav>
+<h1 id="appendix-b--keywords-and-contextual-identifiers">Appendix B — Keywords and contextual identifiers</h1>
+<p>See <a href="01-lexical.html#36-keywords">§3.6</a> and <a href="01-lexical.html#37-contextual-identifiers">§3.7</a></p>
+<p>for the normative definitions.</p>
+<h2 id="b1-reserved-words">B.1 Reserved words</h2>
+<p>These 43 words are reserved; none may be used as an identifier.</p>
+<pre><code class="language-text">and     bool    break   bytes   continue elif    else    enum
+f32     false   float   fn      for      handle  i8      i16
+i32     i64     if      in      inout    int     is      match
+not     null    or      or_else  or_return parallel ptr  return
+select  soa     spawn   string  struct   true    type    u8
+u16     u32     u64
+</code></pre>
+<p>42 of the 43 are <strong>lexer</strong> keywords: the set is exactly <code>keyword()</code>,</p>
+<p>which never hands back an identifier token for one.</p>
+<p><code>soa</code> is the exception — it lexes as an ordinary identifier and is reserved by</p>
+<p>the <strong>parser</strong>, which requires a <code>[</code> after it in every expression position</p>
+<p>. The difference is invisible to a program and shows</p>
+<p>only in the diagnostic: <code>soa := 5</code> is accepted at its declaration, and the next</p>
+<p>mention of the name dies with <code>expected '[' after soa</code>, so the binding is</p>
+<p>declarable and permanently unusable. It is listed here, with the reserved words,</p>
+<p>because that is what it costs a program — not under B.2, where it sat until</p>
+<p>2026-09-02 under a heading promising the opposite.</p>
+<p><code>is</code> is the variant test, for an enum, an <code>Option</code> or a <code>Result</code></p>
+<p>(<a href="12-aggregates.html#198-is--the-variant-test">§19.8</a>).</p>
+<p>It is <strong>reserved</strong>, not contextual: no <code>.ty</code> file in this tree used <code>is</code> as an</p>
+<p>identifier when it was added, so reserving it broke nothing, and an operator</p>
+<p>keyword shares its position with an ordinary name (<code>x is y</code>) in a way that</p>
+<p><code>pass</code>, a whole statement, does not.</p>
+<p>Of these, the <strong>type keywords</strong> are <code>int</code>, <code>float</code>, <code>bool</code>, <code>string</code>, <code>ptr</code>,</p>
+<p><code>bytes</code>, the fixed-width integers <code>u8</code>, <code>u16</code>, <code>u32</code>, <code>u64</code>, <code>i8</code>, <code>i16</code>, <code>i32</code>,</p>
+<p><code>i64</code>, and <code>f32</code>. There is no <code>while</code>, <code>char</code>, or <code>void</code> keyword.</p>
+<h2 id="b2-contextual-identifiers">B.2 Contextual identifiers</h2>
+<p>Significant only in a specific position; ordinary identifiers elsewhere (a</p>
+<p>variable of the same name is unaffected).</p>
+<table>
+<tr><th>Word</th><th>Significant position</th></tr>
+<tr><td><code>package</code>, <code>import</code>, <code>extern</code>, <code>const</code>, <code>subscript</code></td><td>top-level declaration leader</td></tr>
+<tr><td><code>const</code>, <code>delete</code></td><td>statement leader (when followed by an identifier)</td></tr>
+<tr><td><code>where</code>, <code>channel</code></td><td>type / expression position. Both are genuinely unaffected as names: <code>where := 5</code> and <code>channel := 5</code> compile and print (measured 2026-09-02)</td></tr>
+<tr><td><code>Option</code>, <code>Result</code>, <code>Channel</code></td><td>type / expression position. These are not reserved either, but §3.5.1 bars <strong>every</strong> uppercase name from a run-time binding position, so <code>Option := 5</code> is refused for the same reason <code>Foo := 5</code> is; they remain legal as a user's own type name, which shadows the builtin</td></tr>
+<tr><td><code>void</code></td><td>a <code>Result</code>'s ok payload, and nowhere else (<a href="03-types.html#536-enums-option-result">§5.3.6</a>). Not a primitive type keyword: <code>int</code>/<code>float</code>/<code>bool</code>/<code>string</code>/… are lexed as keywords, <code>void</code> is an ordinary identifier the type parser recognises in that one slot, so a variable named <code>void</code> is still legal</td></tr>
+<tr><td><code>pass</code></td><td>a whole statement, and only then — the no-op (<a href="10-statements.html#141-blocks">§14.1</a>). <code>pass := 0</code> and <code>pass = pass + 1</code> stay ordinary code, which is why it is not reserved: two files in this tree already used the name</td></tr>
+<tr><td><code>packed</code></td><td>immediately before <code>struct</code> in a top-level declaration (<a href="12-aggregates.html#171a-packed-layout">§17.1a</a>). Ordinary everywhere else, including as a field or variable name</td></tr>
+<tr><td><code>sink</code></td><td>parameter modifier</td></tr>
+<tr><td><code>yield</code></td><td><code>subscript</code> body</td></tr>
+<tr><td><code>free</code></td><td><code>handle</code> body</td></tr>
+<tr><td><code>range</code></td><td><code>for … in</code> head — recognised <strong>only to refuse it</strong> since 2026-07-29 (§14.4)</td></tr>
+<tr><td><code>None</code>, <code>Some</code>, <code>Ok</code>, <code>Err</code></td><td>value constructors</td></tr>
+<tr><td><code>_</code></td><td><code>match</code> wildcard pattern</td></tr>
+<tr><td>all builtin names (<code>len</code>, <code>push</code>, <code>str</code>, <code>wait</code>, …)</td><td>resolved as calls; never reserved (<a href="16-builtins.html">§29</a>)</td></tr>
+</table>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

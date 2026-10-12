@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>`handle` probe, 2026-09-21 — 14 findings, eight fixed the same day — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / internals/probe-handle-2026-09-21.md</nav>
+<h1 id="handle-probe-2026-09-21--14-findings-eight-fixed-the-same-day"><code>handle</code> probe, 2026-09-21 — 14 findings, eight fixed the same day</h1>
+<p><strong>Verdict: 14 findings, 8 fixed the same day, 5 open, 1 refuted class. Probed 2026-09-21 on the macOS arm64 laptop with `tychoc 0.8.5` built from `main` per [probe-procedure.md](probe-procedure.md). Outcome: the program is kept as [`tools/tycho-du/`](../../tools/tycho-du) with gate `make du-check`.</strong></p>
+<p>First probe aimed at <code>handle</code> as the subject rather than one corner of</p>
+<p>FFI generally (<a href="probe-ffi-2026-08-19.html">2026-08-19</a> was the earlier one).</p>
+<h2 id="the-program">The program</h2>
+<p><code>tydu</code> — a recursive disk-usage reporter over POSIX <code>dirent</code>: largest files,</p>
+<p>heaviest extensions, totals, and an explicit count of what it could not read.</p>
+<p>280 lines of Tycho, an 84-line shim (<code>opendir</code>/<code>readdir</code>/<code>closedir</code>/<code>lstat</code> plus</p>
+<p>live/open/close counters), <code>handle Dir: free: dw_close</code>, five <code>extern fn</code>s, and a</p>
+<p>recursive <code>walk</code> returning <code>Result(int, WalkErr)</code>.</p>
+<p>It ran, and it was checked against <code>find(1)</code>:</p>
+<p>616 files, 235 directories, 5573303 bytes agree on all three totals. Built</p>
+<p>from <code>--emit-c</code> under <code>-fsanitize=address,undefined -fno-sanitize-recover=all</code></p>
+<p>with the corelib shims from <code>--print-shims</code>, it is clean over a 620-file walk and</p>
+<p>over 50 strict-mode error unwinds.</p>
+<p><strong>Why it did not use `list_dir`:</strong> the builtin "returns the same empty array for an empty directory and an</p>
+<p>unreadable one — which is the one distinction a disk-usage tool must report."</p>
+<h2 id="the-score">The score</h2>
+<table>
+<tr><th>#</th><th>finding</th><th>verdict</th></tr>
+<tr><td>1</td><td>the spec's own one-line spelling of <code>handle</code> does not parse</td><td><strong>FIXED</strong> <code>36fe264d</code> — and the corrected form is now a <strong>compiled fence</strong>, so it cannot drift again</td></tr>
+<tr><td>2</td><td>spec §25 says a handle variable may be reassigned; the compiler refuses and <code>reference/ffi.md</code> agrees with the compiler</td><td><strong>FIXED</strong> <code>4fa16643</code></td></tr>
+<tr><td>3</td><td><code>is_null</code> on a handle exists in one sentence of one page; both normative tables say <code>ptr</code> only, and <code>tools/tycho-fh/fh.c</code> ships a shim justified by a comment saying it is impossible</td><td><strong>FIXED</strong> <code>36fe264d</code></td></tr>
+<tr><td>4</td><td>an opener result never bound to a variable leaks, silently</td><td><strong>FIXED</strong> <code>4fa16643</code> — now refused</td></tr>
+<tr><td>5</td><td>the destructor is never called with NULL; the one shipped handle program's comments assume the opposite</td><td><strong>FIXED</strong> <code>36fe264d</code></td></tr>
+<tr><td>6</td><td><code>free:</code> naming an undeclared function falls through to <code>cc</code>; naming one at the wrong type compiles silently</td><td><strong>FIXED</strong> <code>17ddcbde</code></td></tr>
+<tr><td>7</td><td><code>docs/reference/ffi.md</code> links to itself twice as though it were another page</td><td><strong>FIXED</strong> <code>36fe264d</code></td></tr>
+<tr><td>12</td><td>the worked example the FFI docs name for handles contains no handle</td><td><strong>FIXED</strong> <code>36fe264d</code></td></tr>
+<tr><td>—</td><td>the same report's table of five other "dead links"</td><td><strong>NOT DEFECTS</strong> — see below</td></tr>
+<tr><td>8</td><td><code>close(h)</code> on a handle is absent from <code>reference/builtins.md</code>, the page <code>docs/README.md</code> calls "the single answer layer"</td><td><strong>OPEN</strong></td></tr>
+<tr><td>9</td><td>the reserved set includes the type keywords, so <code>bytes: int</code> is not a legal field; true, documented in appendix B, and named on no entry-path page</td><td><strong>OPEN</strong></td></tr>
+<tr><td>10</td><td><code>expected an expression</code> for a value <code>if</code> in a nested position never says the rule is *tail position only*</td><td><strong>OPEN</strong></td></tr>
+<tr><td>11</td><td>two <code>-Wunused-value</code> warnings out of <code>core:strings</code> land in every user's build output</td><td><strong>OPEN</strong> — the layout probe hit the same two</td></tr>
+<tr><td>13</td><td>three things correct but unfindable: <code>-&gt; Option(string)</code> on an <code>extern</code>, <code>--print-shims</code>, and that <code>tychoc --help</code> beats both FFI pages on the command line</td><td><strong>OPEN</strong></td></tr>
+<tr><td>14</td><td>§25's scope-exit list reads as though a <code>continue</code> frees a handle owned by the enclosing scope</td><td><strong>OPEN</strong></td></tr>
+</table>
+<p>Verified here 2026-09-22: 8, 11, 13 and 14 still reproduce against <code>main</code>.</p>
+<p><strong>The dead-link table is an artifact of the strip, not a defect.</strong> The report</p>
+<p>names <code>rfc/ffi-threading-design-review.md</code>, <code>internals/design-aggregate-ref.md</code>,</p>
+<p><code>internals/value-semantics-limits.md</code>, <code>internals/README.md</code>, <code>rfc/README.md</code> and</p>
+<p><code>tests/reject/handle_dup_name.ty</code> as unreachable. Every one exists in the tree;</p>
+<p><a href="probe-procedure.html">probe-procedure.md</a>'s setup deletes <code>docs/internals</code>,</p>
+<p><code>docs/rfc</code> and <code>tests</code> on purpose, and <code>make check-links</code> is green. The strip</p>
+<p>guarantees this class of false finding on every future run, and the procedure</p>
+<p>states it where it lists the deletions.</p>
+<h2 id="what-went-right-in-the-probes-words">What went right, in the probe's words</h2>
+<ul>
+<li><strong>The affine diagnostics.</strong> "The best I have seen for a resource-ownership</li>
+</ul>
+<p>rule" — every violation refused, at the right line, with the model explained</p>
+<p>rather than the parse, and a <code>note:</code> pointing back at the <code>handle</code> declaration.</p>
+<p>The <code>sink</code> refusal answering the next question unprompted ("pass it plainly:</p>
+<p>that is already a borrow") saved a doc lookup.</p>
+<ul>
+<li><strong>The rule shaped the program, correctly.</strong> Because <code>walk</code> can neither return</li>
+</ul>
+<p>nor store a <code>Dir</code>, the walk had to be recursive with the handle owned by the</p>
+<p>frame that opened it — "the right design for this program and I would not</p>
+<p>necessarily have chosen it."</p>
+<ul>
+<li><strong>RAII held on all six exits of `walk`, including the `or_return`</strong>, proved</li>
+</ul>
+<p>from the emitted C and then measured: 400 unwinds out of a live-handle frame</p>
+<p>give <code>opens 400 closes 400 live 0</code>, and 6000 <code>opendir</code>s under <code>ulimit -n 64</code></p>
+<p>never fail.</p>
+<ul>
+<li>**Spec §24.1.1 predicted the right <code>extern</code> shape for a call returning both a</li>
+</ul>
+<p>size and a classification**, C signature included — "the best-written page in</p>
+<p>the documentation."</p>
+<ul>
+<li><strong>Two `reference/ffi.md` warnings named the probe's bug before it wrote it</strong>:</li>
+</ul>
+<p>the <code>closedir(d); return ent-&gt;d_name;</code> shape, which is literally the API it was</p>
+<p>binding, and the malloc-return leak. Two bug classes pre-empted by prose.</p>
+<ul>
+<li>The non-FFI half compiled essentially first-try, and <code>parse_int_checked</code> was</li>
+</ul>
+<p>chosen over <code>parse_int</code> *because the catalogue names the fail-open at the point</p>
+<p>of choice* — <a href="FRICTION.html">FRICTION #4 and #56</a>'s convention doing its job on a</p>
+<p>stranger.</p>
+<h2 id="what-it-could-not-do">What it could not do</h2>
+<ul>
+<li>Learn from any page what happens to an unbound handle. It added counters to its</li>
+</ul>
+<p>own shim and measured. That is finding 4.</p>
+<ul>
+<li>Learn which side the null guard is on without reading generated C from a</li>
+</ul>
+<p>deliberately broken program (finding 5).</p>
+<ul>
+<li>Distinguish "closed" from "never opened": <code>is_null</code> reads the variable, which</li>
+</ul>
+<p><code>close</code> nulls, so both answer the same. Using a handle after <code>close</code> is</p>
+<p>documented as permitted and is not compile-rejected, so the one remaining</p>
+<p>misuse of an exactly-once resource is undetectable in both directions. The</p>
+<p>probe worked around it by never calling <code>close</code> at all. **Open, and a design</p>
+<p>question rather than a defect.**</p>
+<ul>
+<li>Use LeakSanitizer — unsupported on darwin/arm64, which is the same coverage</li>
+</ul>
+<p>hole <a href="../../STATUS.html">STATUS</a> records for <code>make ci</code> on this platform. It</p>
+<p>substituted counters and an fd-exhaustion stress, which for this claim is</p>
+<p>better evidence.</p>
+<h2 id="the-run-itself">The run itself</h2>
+<p><code>pi-run.log</code> holds one line, and it is a failed launch: `Error: Model</p>
+<p>"mimo-v2.5" is ambiguous across providers […] No matching provider is</p>
+<p>authenticated.<code> So the </code>pi` path did not run this probe and **which model wrote</p>
+<p>it is not recorded anywhere in the directory.**</p>
+<p><a href="probe-procedure.html">probe-procedure.md</a> covers model choice and needs a step that writes the model down.</p>
+<p>The watchdog itself was defective on this host and was fixed first —</p>
+<p><a href="FRICTION.html">FRICTION 122</a>.</p>
+<h2 id="filing">Filing</h2>
+<p><strong>The program is in the tree</strong> as <a href="../../tools/tycho-du">`tools/tycho-du/`</a>, with</p>
+<p>its report beside it as <code>FRICTION-OUTSIDE.md</code> — what</p>
+<p><a href="probe-procedure.html">probe-procedure.md</a> asks for when a probe program is worth</p>
+<p>keeping. The case was finding 12's: it is the tree's <strong>second</strong> <code>handle</code> user and</p>
+<p>its <strong>only</strong> demonstration of <code>handle</code> plus <code>--shim</code> together, which is the pairing</p>
+<p><code>docs/reference/ffi.md</code> recommends and which nothing in the tree showed. Both FFI</p>
+<p>pages now point at it.</p>
+<p><code>make du-check</code> is its gate, lane <code>[4c/35]</code>. The leg that earns it is the one no</p>
+<p>golden can show: 200 strict walks over a <code>chmod 000</code> directory, each unwinding</p>
+<p>through <code>or_return</code> out of a frame that still owns its <code>Dir</code>, all ending <code>live=0</code></p>
+<p>with <code>opens == closes</code>. Both of the gate's load-bearing legs were run against</p>
+<p>deliberate breakage before being trusted — a corrupted golden reddens [1], and a</p>
+<p>destructor that does not decrement the live counter reddens [3a] and [3b] with</p>
+<p><code>live 600</code> and <code>live 200</code>.</p>
+<p>The shim's comment claiming the destructor receives NULL was corrected on the way</p>
+<p>in: it is the same false claim <code>tools/tycho-fh/fh.c</code> carried, which is finding 5,</p>
+<p>and importing it unchanged would have re-seeded the defect this round closed.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

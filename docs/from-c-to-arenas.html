@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>From `malloc` to implicit arenas — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="index.html">docs</a> / from-c-to-arenas.md</nav>
+<h1 id="from-malloc-to-implicit-arenas">From <code>malloc</code> to implicit arenas</h1>
+<p>If you write C, you already know Tycho's memory model — you just have to remove one thing</p>
+<p>from it. If you don't, skip the grey C boxes: each one ends with a plain-English</p>
+<p>sentence that carries the point. This is the idea in five steps, starting from code you've written a hundred times.</p>
+<p>For the rigorous version with benchmarks, see <a href="thesis.html">thesis.md</a>; this is the on-ramp.</p>
+<h2 id="step-1--the-c-you-know">Step 1 — the C you know</h2>
+<pre><code class="language-c">char* greet(const char* name) {
+    size_t n = strlen(name) + 7;
+    char* out = malloc(n);
+    snprintf(out, n, "hello %s", name);
+    return out;          // caller must free() this. miss it -&gt; leak. free twice -&gt; crash.
+}
+</code></pre>
+<p>Every allocation is a promise to free, and the compiler doesn't hold you to it. That's the</p>
+<p>whole tax of manual memory management: the knowledge of *when* to free lives in your head,</p>
+<p>not in the code.</p>
+<h2 id="step-2--arenas-an-old-and-fast-fix">Step 2 — arenas, an old and fast fix</h2>
+<p>An <strong>arena</strong> (or region, or bump allocator) replaces <code>malloc</code>/<code>free</code> with something</p>
+<p>simpler: hand out memory by moving a pointer forward, and free *everything at once* when</p>
+<p>the arena's job is done.</p>
+<pre><code class="language-c">Arena a = arena_new();
+char* x = arena_alloc(&amp;a, 32);   // no individual free
+char* y = arena_alloc(&amp;a, 64);
+// ... use x, y ...
+arena_free(&amp;a);                  // one free reclaims both
+</code></pre>
+<p>Allocation is a pointer bump (nearly free), there's no per-object bookkeeping, and you can't</p>
+<p>leak an individual object. Game engines, compilers, and web servers have used arenas for</p>
+<p>decades. So why isn't every program written this way?</p>
+<h2 id="step-3--the-one-hard-question">Step 3 — the one hard question</h2>
+<p>Because of *escape*. If a value allocated in an arena is still referenced after the arena is</p>
+<p>freed, you have a dangling pointer:</p>
+<pre><code class="language-c">Arena a = arena_new();
+char* p = arena_alloc(&amp;a, 32);
+stash_globally(p);      // p escapes the arena's lifetime...
+arena_free(&amp;a);         // ...and is now a use-after-free.
+</code></pre>
+<p>Knowing whether a value escapes, in a language with pointers, requires **whole-program alias</p>
+<p>analysis** — following every pointer everywhere to prove nothing outlives its arena. That's</p>
+<p>the hard part, and it's why arenas stay a manual, expert-only tool.</p>
+<h2 id="step-4--tychos-move-delete-the-question">Step 4 — Tycho's move: delete the question</h2>
+<p>Tycho removes escape analysis by removing the thing it analyzes: **there is no reference</p>
+<p>type.** You cannot store or return a pointer into another value's memory, and assignment</p>
+<p>copies:</p>
+<pre><code class="language-tycho">a := [1, 2, 3]
+b := a                                  # an independent copy, not an alias
+b[0] = 9
+println(str(a[0]) + " " + str(b[0]))    # 1 9 -- writing b left a alone
+</code></pre>
+<p>Now a value can leave a scope in exactly two ways, and *both are written in the source*:</p>
+<ul>
+<li><strong>down</strong> — passed as an argument to a function it calls, or</li>
+<li><strong>up</strong> — returned to its caller.</li>
+</ul>
+<p>There's no third way, because there are no references to smuggle one out. So the compiler</p>
+<p>can see every value's lifetime from the syntax alone. Here's the C function from Step 1,</p>
+<p>in Tycho:</p>
+<pre><code class="language-tycho">fn greet(name: string) -&gt; string:
+    return "hello " + name
+</code></pre>
+<p>No <code>malloc</code>, no <code>free</code>, no arena handle. Each scope — every function call, every loop</p>
+<p>iteration, every <code>if</code> block — owns an arena. The <code>"hello " + name</code> string is built in</p>
+<p><code>greet</code>'s arena; because it's *returned*, the compiler allocates it in the <strong>caller's</strong></p>
+<p>arena instead, so it's still alive after <code>greet</code> returns and is freed when the caller's</p>
+<p>scope ends. The compiler placed every allocation and every free itself, from the shape of</p>
+<p>the code. No garbage collector runs; no annotations were written.</p>
+<p>Tycho transpiles to C, so you can read exactly the arena</p>
+<p>calls it emits. Here is that <code>greet</code>, run through <code>./tychoc greet.ty --emit-c</code>:</p>
+<pre><code class="language-c">char *h_greet(Arena *_parent, char *h_name) {
+    { char *_ret = tycho_str_concat(_parent, TYCHO_LIT("hello "), h_name); return _ret; }
+}
+</code></pre>
+<p><code>_parent</code> is the <strong>caller's</strong> arena. The string is built there directly, so there is</p>
+<p>nothing to free on the way out and no scope of its own to create.</p>
+<p>Now change one thing, so the string no longer escapes:</p>
+<pre><code class="language-tycho">fn greet_len(name: string) -&gt; int:
+    msg := "hello " + name
+    return len(msg)
+</code></pre>
+<p>Same shape, one line different, and the compiler reaches a different decision:</p>
+<pre><code class="language-c">tycho_int h_greet_len(Arena *_parent, char *h_name) {
+    Arena _scope = arena_child(_parent); _scope.name = "greet_len";
+    char *h_msg = tycho_str_concat(&amp;_scope, TYCHO_LIT("hello "), h_name);
+    { tycho_int _ret = tycho_str_len(h_msg); arena_free(&amp;_scope); return _ret; }
+}
+</code></pre>
+<p>A child arena, the string built inside it, and <code>arena_free</code> on the way out — placed</p>
+<p>without an annotation, a lifetime, or a runtime check. That is the whole mechanism, and</p>
+<p>the diff between the two C functions is the diff between <code>return msg</code> and</p>
+<p><code>return len(msg)</code>.</p>
+<p>Two things worth noticing:</p>
+<ul>
+<li><strong>`greet` creates no arena at all.</strong> A function whose result escapes does not pay for a</li>
+</ul>
+<p>scope it would immediately hand upward. The cheap case is the common one.</p>
+<ul>
+<li><strong>`arena_free` is one call, not one per allocation.</strong> It reclaims everything the scope</li>
+</ul>
+<p>took, whether that was one string or ten thousand, which is why the cost does not scale</p>
+<p>with how many objects you made.</p>
+<h2 id="step-5--the-cost">Step 5 — the cost</h2>
+<p>Value semantics has real costs:</p>
+<ul>
+<li><strong>Copies cost.</strong> <code>b := a</code> on a big array copies it. The compiler elides copies it can prove</li>
+</ul>
+<p>are unobserved (a returned-and-discarded value is a move, not a copy; <code>acc = acc + x</code> in a</p>
+<p>loop grows one buffer in place, turning the textbook O(n²) string build into O(n)) — but</p>
+<p>the ones it can't prove away are real.</p>
+<ul>
+<li><strong>Shared, pointer-shaped data costs more.</strong> A tree or graph whose nodes point at each other</li>
+</ul>
+<p>is stored *by value* here, with no sharing, so a trie costs ~1.55× C's memory and there's no</p>
+<p>way to build a doubly-linked list or an observer the pointer way. The idiom is a **flat node</p>
+<p>pool** — hold all nodes in one array and link them by integer index — which is both the</p>
+<p>value-semantics-friendly shape *and* the cache-friendly one data-oriented engines choose on</p>
+<p>purpose. The full loss column is in</p>
+<p><a href="internals/value-semantics-limits.html">internals/value-semantics-limits.md</a>.</p>
+<ul>
+<li><strong>Arenas reclaim at scope exit, not incrementally.</strong> A long-lived scope holds its transients</li>
+</ul>
+<p>until it returns; the fix is to scope them in an inner function.</p>
+<h2 id="what-you-get-for-it">What you get for it</h2>
+<p>No garbage collector and its pauses. No manual <code>free</code> and its leaks and use-after-frees. No</p>
+<p>borrow checker and its annotations. Just lexical scope — the same blocks you already write —</p>
+<p>deciding when memory is freed, with the compiler doing the placement. The</p>
+<p><a href="thesis.html">thesis</a> has the measurements so far.</p>
+<p>Next: the <a href="reference/index.html">language reference</a> for what each feature does,</p>
+<p>and <a href="quiet-results.html">quiet results</a> before the first real program.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Subscript design notes (maintainers) — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / internals/design-subscripts.md</nav>
+<h1 id="subscript-design-notes-maintainers">Subscript design notes (maintainers)</h1>
+<p>Why the user-facing behavior in <a href="../reference/subscripts.html">reference/subscripts.md</a></p>
+<p>is sound. Users don't need this page.</p>
+<h2 id="lowering">Lowering</h2>
+<p>A subscript is a compile-time place-macro: at a call site <code>g.edge(i)</code> is replaced</p>
+<p>by the yielded place with the arguments substituted (<code>g.nodes[i]</code>), and the</p>
+<p>surrounding read or write flows through the ordinary lvalue machinery. There is</p>
+<p>no runtime object. It generalizes the built-in <code>&amp;m[k]</code> place to user code: a</p>
+<p>scoped, transient projection into part of a value — never a stored reference,</p>
+<p>never crossing the deep-copy thread boundary, needing no lifetime analysis.</p>
+<p>That is what fits it inside the arena + deep-copy model.</p>
+<h2 id="why-each-rule-exists">Why each rule exists</h2>
+<ul>
+<li><strong>Rooted in a parameter.</strong> The projection must reach into an argument, so it</li>
+</ul>
+<p>cannot dangle. A place rooted in a fresh local is rejected. This is the same</p>
+<p>scoping argument as the limited-references spike</p>
+<p>(<a href="../rfc/limited-references-spike.html">limited-references</a>): the one</p>
+<p>limited-reference construct that stays sound is the one that cannot escape.</p>
+<ul>
+<li><strong>Each parameter used at most once.</strong> Substitution duplicates the argument</li>
+</ul>
+<p>expression at each mention, so a double mention would double-evaluate it.</p>
+<p>Multi-use with argument hoisting is the natural future extension. The receiver</p>
+<p>counts, which is why 2-D indexing into a flat array</p>
+<p>(<code>yield &amp;g.cells[r * g.w + c]</code>) is refused; storing rows nested</p>
+<p>(<code>&amp;g.rows[r][c]</code>) mentions the receiver once. <code>tools/tycho-grid/</code> works</p>
+<p>exactly that way.</p>
+<ul>
+<li><strong>Concrete receiver.</strong> Selection is by the receiver's exact monomorphized</li>
+</ul>
+<p>type, so a <code>Pool($T)</code> receiver could never match the <code>Pool(int)</code> a call site</p>
+<p>presents. Rejected at the declaration. The remedy is a generic function —</p>
+<p>which is what Go and Odin do, neither having user-defined indexing at all.</p>
+<ul>
+<li><strong>Scoped and transient.</strong> Never stored in a field, never sent across a</li>
+</ul>
+<p><code>spawn</code>/channel boundary. Storing a reference (a "remote part") is a</p>
+<p>non-goal: it has no sound deep-copy at the thread boundary.</p>
+<h2 id="value-semantics">Value semantics</h2>
+<p>Writing through a projection into a by-value parameter mutates that parameter's</p>
+<p>private copy, exactly like the spelled-out place. The usual mutability rules</p>
+<p>apply unchanged; the projection adds no new storage shape, only ergonomic</p>
+<p>traversal of the index-pool idiom.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

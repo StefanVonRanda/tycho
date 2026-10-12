@@ -1,0 +1,986 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>16. Arrays and slices · 17. Structs, tuples, `soa` · 18. Maps and subscripts · 19. Enums, `Option`, `Result`, `match` — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / spec/12-aggregates.md</nav>
+<h1 id="16-arrays-and-slices--17-structs-tuples-soa--18-maps-and-subscripts--19-enums-option-result-match">16. Arrays and slices · 17. Structs, tuples, <code>soa</code> · 18. Maps and subscripts · 19. Enums, <code>Option</code>, <code>Result</code>, <code>match</code></h1>
+<p>Every aggregate is a <strong>value</strong> (<a href="07-memory-model.html">§9</a>): binding, argument</p>
+<p>passing, and return copy it deeply, so two aggregate variables never share</p>
+<p>storage. This chapter defines the <strong>operations</strong> on the aggregate types —</p>
+<p>construction, indexing, mutation, growth, iteration, elimination — and their</p>
+<p>place semantics. It does <strong>not</strong> redefine the types: their identity, ranges,</p>
+<p>element/key restrictions, and recursion rules are fixed in</p>
+<p><a href="03-types.html#53-composite-types">§5.3</a> and are cross-referenced, not repeated,</p>
+<p>here. Where an operation reads or writes through part of an aggregate it</p>
+<p>produces a <strong>place</strong> (an lvalue); the general place, borrow, and <code>inout</code> rules</p>
+<p>are in <a href="07-memory-model.html#11-inout">§11</a>.</p>
+<hr/>
+<h2 id="16-arrays-and-slices">16. Arrays and slices</h2>
+<h3 id="161-growable-arrays-t">16.1 Growable arrays <code>[T]</code></h3>
+<p><code>[T]</code> is the growable, value-semantic array of <a href="03-types.html#531-arrays-t">§5.3.1</a>.</p>
+<p>An <strong>array literal</strong> <code>[e1, …, en]</code> constructs a <code>[T]</code> whose element type <code>T</code> is</p>
+<p>the common type of the elements (<a href="04-inference.html">§6</a>); every element MUST have</p>
+<p>the same type <code>T</code>. An <strong>empty literal</strong> carries no elements from which to infer</p>
+<p><code>T</code>, so it MAY be written with an explicit element type — <code>[]int</code>, <code>[]string</code>,</p>
+<p><code>[][int]</code>. A bare <code>[]</code> used as a <code>:=</code> initializer is instead *pending*: it is</p>
+<p>grounded by the element type expected at its first use in the block (<code>xs := []</code></p>
+<p>then <code>push(xs, 1)</code> fixes <code>xs</code> to <code>[int]</code>), and is a compile error only if never</p>
+<p>grounded (<a href="04-inference.html#64-pending-types">§6.4</a>). Binding an array</p>
+<p>deep-copies it:</p>
+<pre><code class="language-tycho">xs := [10, 20, 30]      # a [int]
+_ys := []int             # empty; element type required
+_zs := xs                # zs is an independent deep copy — mutating zs never touches xs
+</code></pre>
+<p>A complete program that sums an array by iterating it:</p>
+<pre><code class="language-tycho">fn main():
+    xs := [2, 4, 6, 8]
+    total := 0
+    for x in xs:
+        total = total + x
+    println("sum = " + str(total))
+</code></pre>
+<pre><code class="language-output">sum = 20
+</code></pre>
+<p><code>T</code> MAY be any storable type (<code>int</code>, <code>float</code>, <code>string</code>, a struct, an enum, a</p>
+<p>tuple, a map, another array, …), nested to any depth; the sole exclusions are</p>
+<p><code>void</code> and <code>bool</code> in element-type position (§16.7). <code>len(a)</code> yields the current</p>
+<p>element count as an <code>int</code>.</p>
+<h3 id="162-indexing-and-bounds">16.2 Indexing and bounds</h3>
+<p><code>a[i]</code> denotes the element at zero-based index <code>i</code>, an <code>int</code>. Indexing is</p>
+<p><strong>bounds-checked</strong>: an implementation MUST abort with a diagnostic if</p>
+<p><code>i &lt; 0</code> or <code>i &gt;= len(a)</code>, and MUST NOT read or write out-of-range storage. The</p>
+<p>check is normative and always active in a conforming implementation — it is not</p>
+<p>an optional hardening pass. Program-abort semantics are specified in §30.</p>
+<p>Rationale: every value lives in one arena block, so an unchecked access would land on other live data rather than fault.</p>
+<p>Read as an rvalue, <code>a[i]</code> yields the element <strong>by copy</strong> for a composite element</p>
+<p>and by value for a scalar one. Used on the left of an assignment or as the spine</p>
+<p>of a place, <code>a[i]</code> is a place (§16.3). Indexing a <code>string</code> (<code>s[i]</code>) or a <code>bytes</code></p>
+<p>(<code>b[i]</code>) yields the <code>i</code>-th byte as an <code>int</code> and is <strong>not</strong> a place — see</p>
+<p><a href="03-types.html#525-string">§5.2.5</a> and <a href="03-types.html#526-bytes">§5.2.6</a>.</p>
+<h3 id="163-element-places">16.3 Element places</h3>
+<p>An array element is a <strong>mutable place</strong>: it MAY be written in situ without</p>
+<p>rebuilding the whole element. Writing through an element is a *projection* into</p>
+<p>the backing buffer; no pointer is exposed to Tycho, and the projection is</p>
+<p>bounds-checked exactly as a read is (§16.2). The following are all places:</p>
+<pre><code class="language-tycho">struct Tagged:
+    x: int
+    tags: [string]
+
+fn bump(n: inout int):
+    n = n + 1
+
+a := [1, 2, 3]
+i := 0
+v := 9
+ps := [Tagged(1, ["a"]), Tagged(2, ["b"])]
+grid := [[10, 20], [30, 40]]
+
+a[i] = v                 # replace an element
+ps[0].x = 10             # a field of a struct element
+push(ps[0].tags, "x")    # grow an array-valued field of an element, in place
+grid[1][1] = 60          # an element of a nested array
+bump(&amp;ps[1].x)           # a field of an element passed as an `inout` argument
+</code></pre>
+<p>Value semantics is preserved: after <code>qs := ps</code>, a later <code>ps[0].x = 10</code> leaves</p>
+<p><code>qs</code> untouched, because each owns its buffer. The owning array of a projected</p>
+<p>element MUST be a mutable variable or field; projecting through a **read-only</p>
+<p>borrowed parameter** is rejected (§16.4, <a href="07-memory-model.html#11-inout">§11</a>).</p>
+<h3 id="164-growth-push-pop-reserve">16.4 Growth: <code>push</code>, <code>pop</code>, <code>reserve</code></h3>
+<p>Three built-in operations change an array's length or capacity (the builtins are</p>
+<p>catalogued in §29); each requires a mutable array place as its</p>
+<p>first argument.</p>
+<table>
+<tr><th>Form</th><th>Effect</th></tr>
+<tr><td><code>push(a, v)</code></td><td>Append a deep copy of <code>v</code> as the new last element; <code>len</code> grows by one.</td></tr>
+<tr><td><code>pop(a)</code></td><td>Remove the last element and return it (deep-copied into the caller).</td></tr>
+<tr><td><code>reserve(a, n)</code></td><td>Grow backing capacity to at least <code>n</code>; <code>len</code> is unchanged.</td></tr>
+</table>
+<p><code>push</code> and <code>pop</code> require element type equality: <code>v</code> MUST have type <code>T</code> for a</p>
+<p><code>[T]</code>. <code>pop(a)</code> on an <strong>empty</strong> array MUST abort; it is not</p>
+<p>silently zero-returning. <code>reserve(a, n)</code> is a capacity hint only — it copies the</p>
+<p>existing elements into a buffer of capacity <code>≥ n</code> and is a no-op when</p>
+<p><code>n ≤ cap</code>; it never changes <code>len</code> and never inserts elements</p>
+<p>.</p>
+<p>An array <strong>parameter</strong> is a read-only borrow (<a href="07-memory-model.html#11-inout">§11</a>):</p>
+<p>passed without a copy, but <code>push</code>, <code>pop</code>, <code>reserve</code>, or an index-write on it is a</p>
+<p>compile error. Copy it first (<code>b := a</code>) for a mutable local, or declare the</p>
+<p>parameter <code>inout</code>. A <strong>returned</strong> array is promoted into the caller's storage and</p>
+<p>never dangles (<a href="07-memory-model.html#10-object-lifetimes-and-storage">§10</a>).</p>
+<h3 id="165-fixed-size-arrays-nt">16.5 Fixed-size arrays <code>[N]T</code></h3>
+<p><code>[N]T</code> is the fixed-size array of <a href="03-types.html#532-fixed-size-arrays-nt">§5.3.2</a>:</p>
+<p>exactly <code>N</code> elements, stored inline and copied by value. Its operations differ</p>
+<p>from <code>[T]</code> on three points:</p>
+<ul>
+<li><strong>Literal arity is exact.</strong> A literal bound to a <code>[N]T</code> MUST have exactly <code>N</code></li>
+</ul>
+<p>elements; <code>v: [3]int = [1, 2]</code> is a compile error. A bare literal</p>
+<p><code>[1, 2, 3]</code> is a dynamic <code>[int]</code> <strong>unless</strong> its destination type is a</p>
+<p>fixed-size array, in which case it coerces (element count and element types</p>
+<p>checked).</p>
+<ul>
+<li><strong>No growth or slicing.</strong> <code>push</code>, <code>pop</code>, <code>reserve</code>, and slice expressions</li>
+</ul>
+<p>(§16.6) MUST be rejected on a <code>[N]T</code>; use a dynamic <code>[T]</code> when the length</p>
+<p>varies.</p>
+<ul>
+<li><strong>`len` is a compile-time constant.</strong> <code>len(v)</code> for <code>v: [N]T</code> is the constant</li>
+</ul>
+<p><code>N</code>, with no runtime length field. Indexing is bounds-checked against the</p>
+<p>static <code>N</code>; <code>==</code> compares element-wise.</p>
+<p>A <code>[N]T</code> MAY be a struct field (stored inline), a by-value parameter, and a</p>
+<p>return value. The size-generic form <code>[$N]T</code> — a template inferring <code>N</code> from a</p>
+<p>fixed-array argument, meaningful only as a function parameter — is specified with</p>
+<p>const generics in <a href="05-generics.html">§7.4</a>.</p>
+<h3 id="166-slices-xsab">16.6 Slices <code>xs[a:b]</code></h3>
+<p>A slice expression names a sub-range of a <strong>dynamic</strong> array. Four forms exist,</p>
+<p>each with default bounds:</p>
+<table>
+<tr><th>Form</th><th>Range</th></tr>
+<tr><td><code>xs[a:b]</code></td><td>indices <code>a</code> (inclusive) to <code>b</code> (exclusive)</td></tr>
+<tr><td><code>xs[a:]</code></td><td><code>a</code> to <code>len(xs)</code></td></tr>
+<tr><td><code>xs[:b]</code></td><td><code>0</code> to <code>b</code></td></tr>
+<tr><td><code>xs[:]</code></td><td>the whole array</td></tr>
+</table>
+<p>Every bound is checked: <code>0 ≤ a ≤ b ≤ len(xs)</code> MUST hold, otherwise the program</p>
+<p>aborts. The result is an <strong>ordinary array value</strong> of the same type as <code>xs</code>, so</p>
+<p>its cost is decided entirely by its use:</p>
+<ul>
+<li>Passed to a function that only <strong>reads</strong> its parameter, a slice is a</li>
+</ul>
+<p><strong>zero-copy view</strong> — the descriptor points into <code>xs</code>'s buffer, the same borrow</p>
+<p>an ordinary array argument is; nothing is copied.</p>
+<ul>
+<li><strong>Stored</strong>, <strong>returned</strong>, or <strong>pushed</strong>, a slice deep-copies into an owning</li>
+</ul>
+<p>array, so value semantics holds: mutating <code>xs</code> afterward never touches the</p>
+<p>stored copy.</p>
+<p>That is what keeps the view non-storable — it can never outlive or alias the</p>
+<p>buffer it came from — without a borrow checker. Slices compose (<code>xs[1:5][1:3]</code>).</p>
+<p>One aliasing constraint MUST be enforced: a slice of <code>xs</code> and an <code>inout</code> of <code>xs</code></p>
+<p>MUST NOT be passed to the same call, since the <code>inout</code> could reallocate the</p>
+<p>viewed buffer.</p>
+<p>A <strong>string slice</strong> <code>s[a:b]</code> (with the same <code>s[a:]</code> / <code>s[:b]</code> / <code>s[:]</code> forms)</p>
+<p>also exists, but unlike an array view it <strong>always copies</strong> into a fresh</p>
+<p>substring: there is no zero-copy string view. A string slice also <strong>clamps</strong></p>
+<p>out-of-range bounds rather than aborting (<code>start &lt; 0</code> → <code>0</code>, <code>end &gt; len</code> → <code>len</code>,</p>
+<p><code>end &lt; start</code> → empty) — unlike an array slice, which aborts — because it is</p>
+<p>exactly <code>substr(s, a, b)</code>, the equivalent function form (§29).</p>
+<p>A <strong>`bytes` slice</strong> <code>b[a:b]</code> behaves identically to a string slice — always</p>
+<p>copies, clamps rather than aborts, same four bound forms — and yields <code>bytes</code></p>
+<p>(<a href="03-types.html#526-bytes">§5.2.6</a>). It is the same operation on the same buffer;</p>
+<p>only the static type of the result differs.</p>
+<h3 id="167-element-type-restriction">16.7 Element-type restriction</h3>
+<p><code>void</code> MUST be rejected as a bracket-array element type in every form. <code>bool</code> is</p>
+<p>rejected only in the <strong>inline fixed-capacity</strong> forms — <code>[N]T</code>, <code>[$N]T</code> and</p>
+<p><code>bounded[N]T</code> — which have no bool codegen. A <strong>dynamic</strong> <code>[bool]</code> is legal and</p>
+<p>fully supported: literal, <code>push</code>, index-write, iteration, <code>str</code>, <code>==</code>, as a</p>
+<p><code>struct</code> field, as a map value, and nested.</p>
+<table>
+<tr><th>element form</th><th><code>void</code></th><th><code>bool</code></th></tr>
+<tr><td>dynamic <code>[T]</code></td><td>rejected</td><td><strong>accepted</strong></td></tr>
+<tr><td>fixed <code>[N]T</code>, <code>[$N]T</code></td><td>rejected</td><td>rejected</td></tr>
+<tr><td><code>bounded[N]T</code></td><td>rejected</td><td>rejected</td></tr>
+</table>
+<p>The restriction applies only to the direct element of a bracket type; a <code>bool</code></p>
+<p>may appear inside any array indirectly (e.g. a <code>struct</code> field of a <code>[Struct]</code></p>
+<p>element).</p>
+<h3 id="168-element-wise-arithmetic">16.8 Element-wise arithmetic</h3>
+<p>The five arithmetic operators of <a href="09-expressions.html#132-operators">§13.2</a> apply</p>
+<p>to arrays. <code>a OP b</code> on two arrays yields a <strong>fresh</strong> array whose <code>i</code>-th element</p>
+<p>is <code>a[i] OP b[i]</code>; with one array and one scalar the scalar is <strong>broadcast</strong> over</p>
+<p>every element.</p>
+<pre><code class="language-tycho">fn main():
+    a := [1, 2, 3]
+    b := [2, 2, 2]
+    println(str(a * b))          # element-wise
+    println(str(a * 2))          # broadcast, array on the left
+    println(str(2 - [5, 1]))     # broadcast, scalar on the left — order kept
+</code></pre>
+<pre><code class="language-output">[2, 4, 6]
+[2, 4, 6]
+[-3, 1]
+</code></pre>
+<p><strong>Legality is the scalar rule, element by element.</strong> <code>a OP b</code> is legal <strong>iff</strong></p>
+<p><code>a[i] OP b[i]</code> is legal, so the operator set follows the element type and the</p>
+<p>array form is never more permissive than the scalar form:</p>
+<table>
+<tr><th>element type</th><th>operators</th></tr>
+<tr><td><code>int</code>, and <code>u8</code>/<code>u16</code>/<code>u32</code>/<code>u64</code>/<code>i8</code>/<code>i16</code>/<code>i32</code>/<code>i64</code></td><td><code>+ - * / %</code></td></tr>
+<tr><td><code>float</code>, <code>f32</code>, a newtype over <code>int</code> or <code>float</code></td><td><code>+ - * /</code></td></tr>
+<tr><td><code>char</code></td><td><code>+ -</code></td></tr>
+</table>
+<p>Every other element type (<code>string</code>, <code>bytes</code>, a struct, a nested array, …) has no</p>
+<p>scalar arithmetic and gets none here. <code>&amp; | ^ &lt;&lt; &gt;&gt;</code> are <strong>not</strong> element-wise —</p>
+<p>they are not arithmetic — so an array operand reaches the bitwise and shift rules</p>
+<p>of §13.2 and is refused there in their existing wording, unchanged.</p>
+<p>The <code>char</code> row is reached only by <strong>inference</strong>, since <code>char</code> has no type</p>
+<p>keyword (<a href="03-types.html#524-char">§5.2.4</a>): an array literal of <code>char_at</code> calls</p>
+<p>or of character literals.</p>
+<p><strong>Both array kinds, and their two different mismatch rules.</strong> For a <code>[N]T</code> the</p>
+<p>length is static, so both operands MUST have the same <code>N</code> and a mismatch is a</p>
+<p><strong>compile error</strong> — the same requirement <code>==</code> already makes to compare two fixed</p>
+<p>arrays element-wise (§16.5). For a <code>[T]</code> the lengths are not known until run time,</p>
+<p>so a mismatch <strong>aborts</strong> with a diagnostic naming both lengths (`tycho:</p>
+<p>element-wise arithmetic on arrays of different lengths (3 and 2)`, exit status</p>
+<p><code>1</code>), joining the abort set of §30.2. Neither side is padded and neither is</p>
+<p>truncated: inventing an element would be a silent wrong answer.</p>
+<p><strong>Mixing the kinds is refused.</strong> A <code>[N]T</code> and a <code>[T]</code> cannot agree on a length at</p>
+<p>compile time and carry different mismatch rules, so a mixed expression has no one</p>
+<p>defensible behavior and is a compile error; copy one side into the other's kind</p>
+<p>first. <code>bounded[N]T</code> and the size-generic <code>[$N]T</code> (<a href="05-generics.html">§7.4</a>) are</p>
+<p>refused for the same reason — <code>bounded</code> carries a capacity *and* a separate live</p>
+<p>length, and no element-wise meaning for that pair is settled. The two arrays MUST</p>
+<p>also share an element type: <code>[char] + [int]</code> is a compile error.</p>
+<p><strong>Broadcast, both directions, order preserved.</strong> <code>a OP s</code> and <code>s OP a</code> are both</p>
+<p>defined for every legal operator, including the non-commutative <code>-</code>, <code>/</code> and <code>%</code>,</p>
+<p>and the operands are never reordered: <code>2 - [5, 1]</code> is <code>[-3, 1]</code>, <code>[5, 1] - 2</code> is</p>
+<p><code>[3, -1]</code>. The scalar is evaluated once, not once per element. **Literal</p>
+<p>adaptation<strong> applies to the scalar against the </strong>element** type, with the</p>
+<p>value-directional restriction of <a href="06-conversions.html">§8.1</a>: a *literal* adapts</p>
+<p>(<code>[1.0, 2.0] * 2</code> is <code>[2.0, 4.0]</code>), a *variable* never widens (with <code>n := 2</code>,</p>
+<p><code>[1.0, 2.0] * n</code> is a compile error exactly as <code>1.0 * n</code> is). After adaptation</p>
+<p>the scalar's type MUST <strong>equal</strong> the element type, which makes <code>['a', 'b'] + 1</code> a</p>
+<p>compile error even though the scalar <code>'a' + 1</code> is legal (§13.2's byte-domain</p>
+<p>rule).</p>
+<p>Rationale: the broadcast form is never more permissive than the two-array form.</p>
+<p><strong>The result is a fresh array.</strong> Value semantics (§9) holds: neither operand is</p>
+<p>aliased or mutated, mutating a source after <code>c := a * b</code> never changes <code>c</code>, and</p>
+<p>growing one never grows the other. Every element goes through the same emit a</p>
+<p>scalar operation does, so an element never gets fewer guards than a scalar:</p>
+<p>division or modulo by an integer <strong>literal</strong> <code>0</code> is a compile error, by a zero</p>
+<p>*value* or a zero *element* it aborts (<code>tycho: division by zero</code> / `tycho: modulo</p>
+<p>by zero<code>, exit </code>1<code>), and </code>float<code>/</code>f32<code> division by zero stays IEEE (</code>inf`) — the</p>
+<p>§13.2 rules exactly, not a second set.</p>
+<p>Its fixtures are in <code>tests/</code> and <code>tests/abort/</code> (Appendix E.2.1).</p>
+<hr/>
+<h2 id="17-structs-tuples-soa">17. Structs, tuples, <code>soa</code></h2>
+<h3 id="171-struct-declaration-and-construction">17.1 Struct declaration and construction</h3>
+<p>A <code>struct</code> is the nominal product type of</p>
+<p><a href="03-types.html#534-structs">§5.3.4</a>. It MUST be declared before it is used as a</p>
+<p>type. Construction is <strong>positional in field-declaration order</strong>: <code>Point(1, 2)</code></p>
+<p>sets the first declared field to <code>1</code> and the second to <code>2</code>. Each argument's type</p>
+<p>MUST match its field's type. Binding a struct deep-copies its whole tree — every</p>
+<p>heap-owning field (<code>string</code>, array, map, nested struct, at any depth) is</p>
+<p>duplicated — so two struct variables never share storage.</p>
+<pre><code class="language-tycho">struct Point:
+    x: int
+    y: int
+
+a := Point(1, 2)         # positional, in declaration order
+_b := a                   # deep copy; b.x, b.y independent of a
+</code></pre>
+<p>As a complete program:</p>
+<pre><code class="language-tycho">struct Point:
+    x: int
+    y: int
+
+fn main():
+    p := Point(3, 4)
+    println("(" + str(p.x) + ", " + str(p.y) + ")")
+</code></pre>
+<pre><code class="language-output">(3, 4)
+</code></pre>
+<h3 id="171a-packed-layout">17.1a Packed layout</h3>
+<p>A <code>struct</code> declaration MAY carry the <code>packed</code> attribute. <code>packed</code> is a</p>
+<p>DECLARATION attribute, not a type constructor: it is a property of the</p>
+<p>aggregate, so it does not participate in type identity and never reaches the</p>
+<p>array-type table <code>bounded[N]T</code> uses.</p>
+<p>A packed struct is laid out with **no padding between fields and no trailing</p>
+<p>padding**: its size is exactly the sum of its field sizes, and each field sits</p>
+<p>at the sum of the sizes before it. An unpacked struct's layout is</p>
+<p>implementation-defined (<a href="appendix-f-impl-defined.html">Appendix F</a>).</p>
+<p>Every field of a packed struct MUST be a <strong>fixed-width value type</strong>: <code>int</code>,</p>
+<p><code>float</code>, <code>bool</code>, <code>char</code>, one of <code>u8</code>/<code>u16</code>/<code>u32</code>/<code>u64</code>/<code>i8</code>/<code>i16</code>/<code>i32</code>/<code>i64</code>/<code>f32</code>,</p>
+<p>a newtype over one of those, or another packed struct. A heap-owning field</p>
+<p>(<code>string</code>, <code>bytes</code>, an array, a map, an enum, an <code>Option</code>, a <code>Result</code>, a tuple)</p>
+<p>is refused at the declaration, and so is a <code>$T</code> type parameter. <code>packed</code> on any</p>
+<p>declaration other than a <code>struct</code> is refused.</p>
+<p>Packing only ever REDUCES alignment, so a packed value is storable anywhere an</p>
+<p>unpacked one is; the 8-byte arena rounding of §22 is unaffected.</p>
+<pre><code class="language-tycho">packed struct Ins:          # exactly 9 bytes: 1 + 4 + 4
+    op: u8
+    a: i32
+    b: i32
+
+fn main():
+    i := Ins(to_u8(3), to_i32(-1), to_i32(7))
+    println(str(i.op) + " " + str(i.a) + " " + str(i.b))
+</code></pre>
+<pre><code class="language-output">3 -1 7
+</code></pre>
+<h3 id="171a-2-stated-alignment">17.1a-2 Stated alignment</h3>
+<p>A <code>struct</code> declaration MAY instead carry the <code>align(N)</code> attribute, written</p>
+<p><code>align(N) struct Name:</code>. Like <code>packed</code> it is a DECLARATION attribute and not a</p>
+<p>type constructor, and like <code>packed</code> it does not participate in type identity.</p>
+<p><code>align(N)</code> RAISES the aggregate's alignment to <code>N</code> bytes: the declaration's size</p>
+<p>becomes a multiple of <code>N</code>, so consecutive elements of an array of it stay</p>
+<p>aligned. <code>size_of$(T)</code> reports that size (<a href="#171b-the-bytes-bridge">§17.1b</a>). It never lowers alignment below what the fields already require.</p>
+<p><code>N</code> MUST be a literal power of two, and it MUST NOT exceed <strong>8</strong>. The ceiling is</p>
+<p>the arena's: §22's allocator rounds every allocation to 8 bytes and guarantees</p>
+<p>nothing above that, so an alignment above 8 is refused at the declaration rather</p>
+<p>than accepted and not delivered. Raising the arena's own rounding was measured</p>
+<p>before this rule was written and costs 20-30% more arena bytes on every program.</p>
+<p><code>packed</code> and <code>align(N)</code> on the same declaration are a contradiction -- one</p>
+<p>removes padding and the other adds it -- and are refused. <code>align</code> on any</p>
+<p>declaration other than a <code>struct</code> is refused.</p>
+<pre><code class="language-tycho">align(8) struct Pair:       # every Pair, and every element of a [Pair], is 8-aligned
+    a: u8
+    b: u8
+
+fn main():
+    p := Pair(to_u8(1), to_u8(2))
+    println(str(p.a) + " " + str(p.b))
+</code></pre>
+<pre><code class="language-output">1 2
+</code></pre>
+<h3 id="171b-the-bytes-bridge">17.1b The bytes bridge</h3>
+<p>A packed struct is the only aggregate whose storage a program may move into or</p>
+<p>out of a <code>bytes</code> value. Three forms:</p>
+<ul>
+<li><code>size_of$(T)</code> is the size of the struct <code>T</code> in bytes, an <code>int</code>. <code>T</code> MUST be a</li>
+</ul>
+<p>packed struct or an <code>align(N)</code> struct (or a newtype over either). For a packed</p>
+<p>struct the value is exact, the sum of its field sizes. For an <code>align(N)</code> struct</p>
+<p>it is implementation-defined (<a href="appendix-f-impl-defined.html">Appendix F</a>) but</p>
+<p>always a multiple of <code>N</code>; this is the one place <code>align(N)</code> can be observed</p>
+<p>from inside the language. Every other type's layout is implementation-defined</p>
+<p>and has no size a program can ask for.</p>
+<ul>
+<li><code>to_bytes(v)</code>, where <code>v</code> is a packed struct, yields exactly <code>size_of$(T)</code></li>
+</ul>
+<p>bytes.</p>
+<ul>
+<li><code>from_bytes$(T)(b)</code> reads a <code>bytes</code> value back into a <code>T</code>. <code>len(b)</code> MUST equal</li>
+</ul>
+<p><code>size_of$(T)</code> <strong>exactly</strong>; any other length is a runtime error naming the type</p>
+<p>and both lengths. A shorter buffer is not accepted and padded, and a longer</p>
+<p>one is not accepted and truncated.</p>
+<p><strong>The byte order is LITTLE-ENDIAN on every host</strong>, not the host's own. Each</p>
+<p>field occupies its own width with the least significant byte first, fields in</p>
+<p>declaration order, a nested packed struct flattened in place. So the same</p>
+<p>program writes the same bytes on every target, which is what makes the pair</p>
+<p>usable for a file format rather than only for a same-machine round trip.</p>
+<p>This is safe because §17.1a already bars every heap and pointer field: a packed</p>
+<p>struct is a flat run of fixed-width scalars, so no length, capacity or pointer</p>
+<p>read out of a foreign buffer can be believed by the runtime.</p>
+<pre><code class="language-tycho">packed struct Ins:
+    op: u8
+    a: i32
+    b: i32
+
+fn main():
+    b := to_bytes(Ins(to_u8(3), to_i32(-1), to_i32(7)))
+    println(str(size_of$(Ins)) + " " + str(len(b)) + " " + str(b[1]))
+    r := from_bytes$(Ins)(b)
+    println(str(r.op) + " " + str(r.a) + " " + str(r.b))
+</code></pre>
+<pre><code class="language-output">9 9 255
+3 -1 7
+</code></pre>
+<h3 id="172-field-access-and-places">17.2 Field access and places</h3>
+<p>A field is read with <code>p.x</code> and written with <code>p.x = v</code>. Writes compose through</p>
+<p>nesting and through array-valued fields, and a field MAY be taken as an <code>inout</code></p>
+<p>argument; all of these are <strong>places</strong>:</p>
+<pre><code class="language-tycho">struct Point:
+    x: int
+    y: int
+
+struct Tagged:
+    x: int
+    tags: [string]
+
+struct Span:
+    lo: Point
+    hi: Point
+
+fn bump(n: inout int):
+    n = n + 1
+
+r := Span(Point(0, 0), Point(1, 1))
+p := Tagged(5, ["a"])
+
+r.lo.x = 100             # a nested-struct field, in place
+p.tags[0] = "x"          # an element of an array-valued field
+push(p.tags, "y")        # grow an array-valued field, in place
+bump(&amp;p.x)               # a field as an `inout` argument
+</code></pre>
+<p>Two structs compare with <code>==</code>/<code>!=</code> field-wise, recursing into nested structs,</p>
+<p>arrays, and strings, so <code>a == b</code> holds exactly when <code>b</code> is an independent copy of</p>
+<p><code>a</code> (<a href="03-types.html#55-equality-and-ordering">§5.5</a>). A struct MAY be a method</p>
+<p>(UFCS) receiver (§15).</p>
+<h3 id="173-recursion-only-through-a-container">17.3 Recursion only through a container</h3>
+<p>A struct field MAY be recursive <strong>only through a container</strong> whose elements are</p>
+<p>allocated out of line: <code>children: [Node]</code> inside <code>Node</code> is permitted. A direct</p>
+<p>by-value self-field — <code>next: Node</code>, or <code>next: Option(Node)</code> naming the enclosing</p>
+<p>struct inline — is <strong>rejected</strong>, because it would make the struct infinitely</p>
+<p>sized. This is a type-formation rule; it is stated normatively in</p>
+<p><a href="03-types.html#534-structs">§5.3.4</a> and enforced there.</p>
+<h3 id="174-tuples">17.4 Tuples</h3>
+<p>A tuple <code>(T1, …, Tn)</code> is the anonymous product of</p>
+<p><a href="03-types.html#533-tuples">§5.3.3</a>, with <strong>2 to 8</strong> elements (a 1-element or</p>
+<p>9-element tuple is a compile error,  (min) and  (max)). Tuples are first-class</p>
+<p>values, not merely a return convention:</p>
+<ul>
+<li><strong>Construction.</strong> A parenthesized list <code>(10, 20)</code>, or a bare <code>return a, b</code>,</li>
+</ul>
+<p>builds a tuple.</p>
+<ul>
+<li><strong>Multiple return values.</strong> A function whose return type is a tuple returns</li>
+</ul>
+<p>several values as one tuple (§15).</p>
+<ul>
+<li><strong>Positional access and places.</strong> <code>t.0</code>, <code>t.1</code>, … read an element; <code>t.0 = v</code></li>
+</ul>
+<p>writes one in place (a tuple element is a writable place). An index out of</p>
+<p><code>0.. n-1</code> is a compile error.</p>
+<ul>
+<li><strong>Equality.</strong> Two tuples compare element-wise with <code>==</code></li>
+</ul>
+<p>(<a href="03-types.html#55-equality-and-ordering">§5.5</a>).</p>
+<p>Any element type is allowed, including heap-bearing ones (<code>(string, [int])</code>); a</p>
+<p>tuple is deep-copied on bind like every value.</p>
+<h3 id="175-destructuring">17.5 Destructuring</h3>
+<p>A tuple-returning call (or any tuple value) MAY be destructured into several</p>
+<p>names. Two forms exist, distinguished by the binding operator:</p>
+<table>
+<tr><th>Form</th><th>Meaning</th></tr>
+<tr><td><code>a, b := f()</code></td><td>declares fresh locals <code>a</code> and <code>b</code> (new bindings)</td></tr>
+<tr><td><code>a, b = f()</code></td><td>assigns into existing variables <code>a</code> and <code>b</code></td></tr>
+<tr><td><code>(a, b) = f()</code></td><td>assigns into 2–8 <strong>places</strong>, simultaneously (below)</td></tr>
+<tr><td><code>v.(x, y) = e</code></td><td>assigns into 2–8 components of one value, simultaneously (below)</td></tr>
+</table>
+<p>The right-hand side MUST be a tuple, and the number of targets MUST equal the</p>
+<p>tuple's arity; a mismatch is a compile error, as is a duplicate name in a <code>:=</code></p>
+<p>destructuring list. At most 8 targets are permitted.</p>
+<p>Each target receives its element deep-copied, preserving value semantics.</p>
+<p>#### Simultaneous assignment</p>
+<p>The parenthesised form <code>(t1,..., tn) = e</code> differs from the bare one in two</p>
+<p>ways. Its targets are <strong>places</strong> (§4.4) and not only names, so a field, an array</p>
+<p>element or a map value may stand on the left; and its evaluation order is</p>
+<p>specified: **every right-hand side, and every index expression appearing in a</p>
+<p>target, is evaluated before any target is written.** A swap therefore needs no</p>
+<p>temporary, and <code>(a, b) = (b, a + b)</code> advances a Fibonacci pair in one step —</p>
+<p>the <code>a</code> read on the right is the old one. In <code>(i, xs[i]) = (2, 99)</code> the element</p>
+<p>written is <code>xs[old i]</code>, because an index belongs to the left side's address and</p>
+<p>not to the value.</p>
+<p>A target MUST NOT be repeated. With every right-hand side evaluated first the</p>
+<p>two writes have no order to tell them apart, so the statement would have no</p>
+<p>meaning to give. Two targets are the same place when they are written the</p>
+<p>same way down to a name, a field, a tuple index and a <strong>literal</strong> index: <code>a</code> and</p>
+<p><code>a</code>, <code>p.x</code> and <code>p.x</code>, <code>xs[0]</code> and <code>xs[0]</code>. Targets that are not decidable this</p>
+<p>way are not compared: whether <code>xs[i]</code> and <code>xs[j]</code> denote one slot is not</p>
+<p>decidable when the program is compiled.</p>
+<p>A user <code>subscript</code> call is a place for the single-target form <code>p = e</code>, and it</p>
+<p>MUST NOT stand in this simultaneous-assignment list.</p>
+<p>The form is a statement of its own and MUST NOT appear as the init or post</p>
+<p>clause of a three-clause <code>for</code> (§13): its bindings would evaluate once outside</p>
+<p>the loop instead of once per iteration, or outside the scope they belong to.</p>
+<pre><code class="language-tycho">fn main():
+    a := 1
+    b := 2
+    (a, b) = (b, a + b)            # a = 2, b = 3 -- NOT b = 4
+    println(str(a) + " " + str(b))
+</code></pre>
+<pre><code class="language-output">2 3
+</code></pre>
+<p>#### Lane names</p>
+<p>On a value that stores its elements inline — <code>[N]T</code>, <code>bounded[N]T</code> and</p>
+<p><code>vector[N]T</code> — the first four lanes have names. <code>.x</code>, <code>.y</code>, <code>.z</code> and <code>.w</code> are</p>
+<p>lanes 0, 1, 2 and 3; <code>.r</code>, <code>.g</code>, <code>.b</code> and <code>.a</code> are those same four lanes under a</p>
+<p>second spelling. <code>v.x</code> IS <code>v[0]</code> everywhere a field access is accepted: it is</p>
+<p>read, it is assigned to, and it is a swizzle component, so <code>v.(x, y)</code> and</p>
+<p><code>v.(0, 1)</code> are the same program.</p>
+<p>A name that means a lane the value does not have is rejected as a name rather</p>
+<p>than as an index: <code>.z</code> on a <code>vector[2]int</code> names lane 2 of two. A value with</p>
+<p>more than four lanes has no lane names at all, because four names cannot address</p>
+<p>a wider set; index it instead.</p>
+<p>A struct is never reached by this rule. <code>.x</code> on a struct is the field <code>x</code> and</p>
+<p>nothing else, and a struct declaring fields named <code>x</code>, <code>y</code> or <code>r</code> is unaffected</p>
+<p>in every position.</p>
+<p>The two spellings MAY be mixed within one swizzle: <code>v.(x, g)</code> is lanes 0 and 1.</p>
+<p><code>.r.g.b.a</code> are aliases and not a second kind of component, and a swizzle is</p>
+<p>defined below as the tuple of its components written out — <code>v.(x, g)</code> IS</p>
+<p><code>(v.x, v.g)</code>, each half of which is legal on its own.</p>
+<pre><code class="language-tycho">fn main():
+    v: vector[4]float = [1.0, 2.0, 3.0, 4.0]
+    v.(x, y) = v.(g, r)
+    println(str(v.x) + " " + str(v.y) + " " + str(v.b) + " " + str(v.w))
+</code></pre>
+<pre><code class="language-output">2.0 1.0 3.0 4.0
+</code></pre>
+<p>#### Swizzling</p>
+<p><code>v.(c1,..., cn)</code> names two to eight <strong>components of one value</strong> and is a</p>
+<p><a href="#174-tuples">tuple</a> of them, in the order written. A component is a struct</p>
+<p>field name, or an integer <strong>lane index</strong> for an array, a <code>bounded</code> or a</p>
+<p><code>vector[N]T</code> — each type's components are spelled the way that type is already</p>
+<p>read.</p>
+<p>A swizzle is an ordinary expression: it MAY be read wherever a tuple value is</p>
+<p>accepted, and it MAY stand on the left of a simultaneous assignment, where it is</p>
+<p>the target list of those same components. <code>v.(x, y) = v.(y, x)</code> IS</p>
+<p><code>(v.x, v.y) = (v.y, v.x)</code> and carries that form's evaluation order unchanged, so</p>
+<p>a swizzled swap needs no temporary and a three-component rotation</p>
+<p><code>v.(x, y, z) = v.(z, x, y)</code> is not the same statement as three assignments</p>
+<p>written in order.</p>
+<p>The base is repeated once per component, so it MUST be a variable or a field of</p>
+<p>one; a base that could be evaluated twice, such as a call result, is rejected,</p>
+<p>and so is one that carries an index (<code>vs[i].(x, y)</code>). An indexed base is</p>
+<p>rejected even though the spelled-out <code>(vs[i].x, vs[i].y) = (vs[i].y, vs[i].x)</code></p>
+<p>is accepted: two targets are the same place only when their indices are</p>
+<p>literals, so under a non-literal index the repeated-component rule below could</p>
+<p>not be enforced. A component MUST NOT be repeated on the LEFT, by the rule</p>
+<p>above. On the right a</p>
+<p>repeat is ordinary duplication and is permitted: <code>v.(x, x)</code> is the pair</p>
+<p><code>(v.x, v.x)</code>.</p>
+<pre><code class="language-tycho">struct V:
+    x: int
+    y: int
+    z: int
+
+fn main():
+    v := V(1, 2, 3)
+    v.(x, y, z) = v.(z, x, y)      # a rotation, not three assignments
+    println(str(v.x) + " " + str(v.y) + " " + str(v.z))
+
+    w: vector[4]float = [1.0, 2.0, 3.0, 4.0]
+    w.(0, 1) = w.(1, 0)            # lanes, by index
+    println(str(w[0]) + " " + str(w[1]))
+</code></pre>
+<pre><code class="language-output">3 1 2
+2.0 1.0
+</code></pre>
+<pre><code class="language-tycho">fn divmod(a: int, b: int) -&gt; (int, int):
+    q := a / b
+    return q, a - q * b            # builds (quotient, remainder)
+
+quot, rem := divmod(17, 5)         # fresh locals: quot = 3, rem = 2
+</code></pre>
+<h3 id="176-soa-struct">17.6 <code>soa [Struct]</code></h3>
+<p><code>soa [S]</code> is the struct-of-arrays collection of</p>
+<p><a href="03-types.html#537-soa">§5.3.7</a>: its element type <code>S</code> MUST be a struct, otherwise</p>
+<p>the type is rejected. It presents the <strong>same value-semantic array interface</strong> as</p>
+<p><code>[S]</code> — <code>push</code>, <code>pop</code>, indexing, element places, <code>len</code>, deep-copy on bind — while</p>
+<p>storing each field of <code>S</code> in its own backing array. The externally observable</p>
+<p>behavior of <code>soa [S]</code> MUST match <code>[S]</code>; the difference is storage layout, not</p>
+<p>semantics.</p>
+<hr/>
+<h2 id="18-maps-and-subscripts">18. Maps and subscripts</h2>
+<h3 id="181-map-literals-and-type">18.1 Map literals and type</h3>
+<p>A map <code>[K: V]</code> associates keys with values (<a href="03-types.html#535-maps-k-v">§5.3.5</a>).</p>
+<p>The legal <strong>key types</strong> <code>K</code> and the unrestricted <strong>value type</strong> <code>V</code> are defined</p>
+<p>in §5.3.5 and are not re-derived here. The map type follows from a literal or an</p>
+<p>annotation:</p>
+<pre><code class="language-tycho">_counts := ["ada": 1, "alan": 2]   # a [string: int]
+_empty := []string: int            # empty; key and value types required
+</code></pre>
+<p>A composite key works in literal form too (<code>[Point(1, 2): 10]</code>). <code>len(m)</code> yields</p>
+<p>the entry count.</p>
+<h3 id="182-mk-as-a-place--writing-inserts">18.2 <code>m[k]</code> as a place — writing inserts</h3>
+<p><code>m[k]</code> on the left of an assignment, or as the spine of a place, is a <strong>place</strong>.</p>
+<p>Writing to <code>m[k]</code>:</p>
+<ul>
+<li><strong>overwrites</strong> the value if <code>k</code> is present;</li>
+<li><strong>inserts</strong> the entry if <code>k</code> is absent, first initializing the slot to <code>V</code>'s</li>
+</ul>
+<p>zero (for a compound <code>V</code>, the zero-value is materialized before the write, so a</p>
+<p>field- or element-write lands on a valid zero-initialized value)</p>
+<p>.</p>
+<p>This makes the accumulator idioms one line each; the compiler proves the map is</p>
+<p>uniquely owned at the mutation and updates it in place, so a <code>+=</code> loop is O(n)</p>
+<p>total, not O(n²):</p>
+<pre><code class="language-tycho">struct Account:
+    balance: int
+
+counts := []string: int
+index := []string: [int]
+totals := ["ada": Account(10)]
+
+counts["ada"] += 1                # zero-initialized on first sight, then incremented
+push(index["tycho"], 1)           # grow a [string: [int]] value in place
+totals["ada"].balance = 0         # mutate a struct-valued entry's field in place
+</code></pre>
+<h3 id="183-mk-as-an-rvalue--reading-never-inserts">18.3 <code>m[k]</code> as an rvalue — reading never inserts</h3>
+<p>Read as an rvalue, <code>m[k]</code> returns the value and MUST NOT insert. For an <strong>absent</strong></p>
+<p>key it yields:</p>
+<ul>
+<li>the <strong>value type's zero</strong> when <code>V</code> is scalar; and</li>
+<li>a <strong>deep copy of the zero value</strong> when <code>V</code> is composite.</li>
+</ul>
+<p>Either way, an absent-key read leaves the map unchanged</p>
+<p>. When a non-zero default is wanted, use <code>m.get</code></p>
+<p>(§18.5).</p>
+<h3 id="184-membership-delete-len">18.4 Membership, <code>delete</code>, <code>len</code></h3>
+<table>
+<tr><th>Form</th><th>Meaning</th></tr>
+<tr><td><code>k in m</code></td><td>membership test → <code>bool</code>; does <strong>not</strong> insert and does <strong>not</strong> iterate</td></tr>
+<tr><td><code>delete m[k]</code></td><td>remove the entry for <code>k</code>; a <strong>no-op</strong> if <code>k</code> is absent</td></tr>
+<tr><td><code>len(m)</code></td><td>entry count → <code>int</code></td></tr>
+</table>
+<p><code>delete m[k]</code> is a contextual-keyword statement that lowers to a functional</p>
+<p>map-delete rebinding the map ; it removes</p>
+<p>at most one entry and never aborts on a missing key.</p>
+<h3 id="185-mget">18.5 <code>m.get</code></h3>
+<p><code>m.get(k)</code> is exactly <code>m[k]</code> read as an rvalue (§18.3): it returns <code>V</code>'s zero (or</p>
+<p>a deep copy of it) for an absent key and never inserts. <code>m.get(k, default)</code></p>
+<p>returns <code>default</code> on a miss instead of the zero value — the same read, spelled as</p>
+<p>a method:</p>
+<pre><code class="language-tycho">counts := ["ada": 1]
+counts["ada"] = counts.get("ada", 0) + 1   # equivalent to counts["ada"] += 1
+</code></pre>
+<h3 id="186-keysm">18.6 <code>keys(m)</code></h3>
+<p><code>keys(m)</code> returns the map's live keys as an array <code>[K]</code> in <strong>insertion order</strong> —</p>
+<p>the order in which each key was first inserted. It is the way to</p>
+<p>iterate a map; <code>k in m</code> only tests membership. For a newtype or fieldless-enum</p>
+<p>key type, <code>keys</code> returns the wrapped key values.</p>
+<pre><code class="language-tycho">counts := ["ada": 1, "alan": 2]
+for k in keys(counts):
+    println(k + " = " + str(counts[k]))
+</code></pre>
+<p>A complete program building a map, updating a value in place, and iterating it</p>
+<p>in insertion order (<a href="17-runtime.html#304-defined-string-and-map-behavior">§30.4</a>):</p>
+<pre><code class="language-tycho">fn main():
+    counts := ["ada": 1, "alan": 2]
+    counts["ada"] += 1
+    for k in keys(counts):
+        println(k + " = " + str(counts[k]))
+</code></pre>
+<pre><code class="language-output">ada = 2
+alan = 2
+</code></pre>
+<h3 id="187-subscripts--user-defined-projections">18.7 Subscripts — user-defined projections</h3>
+<p>A <code>subscript</code> declares a <strong>compile-time place-macro</strong>: a reusable, zero-copy</p>
+<p>place into one of its parameters, generalizing the built-in <code>&amp;m[k]</code>. Its grammar</p>
+<p>is given in <a href="02-grammar.html#413-extern-functions-and-subscripts">§4.1.3</a>:</p>
+<pre><code class="language-text">subscript &lt;name&gt;(&lt;recv&gt;: T, &lt;params&gt;…) -&gt; inout U:
+    yield &amp;&lt;place&gt;
+</code></pre>
+<p>A subscript does <strong>not</strong> return a value and has <strong>no runtime object</strong>. At a call</p>
+<p>site <code>recv.name(args)</code> is not a function call: the compiler substitutes the</p>
+<p>arguments into the yielded place <code>&lt;place&gt;</code> and inlines it, after which the</p>
+<p>surrounding read or write flows through the ordinary place machinery. It is</p>
+<p>therefore usable both as a <strong>place</strong> and as an <strong>rvalue</strong>, and callable as a</p>
+<p><strong>method</strong> on its first parameter, whose type selects the subscript:</p>
+<pre><code class="language-tycho">struct Node:
+    weight: int
+
+struct Graph:
+    nodes: [Node]
+
+subscript edge(g: Graph, i: int) -&gt; inout Node:
+    yield &amp;g.nodes[i]
+
+fn demo():
+    g := Graph([Node(1), Node(2)])
+    g.edge(1).weight = 10        # write in place through the projection — no copy
+    w := g.edge(0).weight        # read through it
+    println(str(w))
+</code></pre>
+<p>The following rules are checked at compile time and MUST be enforced; each fails</p>
+<p>closed (the subscript is rejected, never silently mis-projected)</p>
+<p>:</p>
+<ul>
+<li><strong>Yields a place.</strong> The body MUST be a single <code>yield &amp;&lt;place&gt;</code>, where</li>
+</ul>
+<p><code>&lt;place&gt;</code> is a field/index spine; a non-place operand is rejected.</p>
+<ul>
+<li><strong>Type match.</strong> The yielded place's type MUST equal the declared <code>-&gt; inout U</code>;</li>
+</ul>
+<p>a mismatch is rejected at the call site (dispatch ).</p>
+<ul>
+<li><strong>Rooted in a parameter.</strong> The yielded place MUST be rooted in one of the</li>
+</ul>
+<p>subscript's parameters — it projects *into* an argument, so it cannot dangle. A</p>
+<p>place rooted in a fresh local is rejected.</p>
+<ul>
+<li><strong>Each parameter used at most once</strong> in the yielded place, so no argument is</li>
+</ul>
+<p>double-evaluated when substituted.</p>
+<ul>
+<li><strong>Concrete receiver.</strong> The receiver (first) parameter's type MUST NOT mention a</li>
+</ul>
+<p>type parameter; <code>subscript at(p: Pool($T), …)</code> is rejected at the declaration</p>
+<p>, whether or not it is ever called.</p>
+<p>A subscript is a named place-macro on a concrete type, not a type-family</p>
+<p>operation: the receiver selects it by exact type. Declaring the subscript on a</p>
+<p>concrete instance (<code>subscript at(p: Pool(int), i: int) -&gt; inout int</code>) is the</p>
+<p>supported form; a generic container that needs element access across all its</p>
+<p>instantiations exposes a generic <strong>function</strong> instead.</p>
+<p>Rationale: a <code>$T</code> receiver could never match the monomorphised type a call site presents.</p>
+<p>Value semantics is unchanged: a projection is a place into a value already owned</p>
+<p>or borrowed, and the usual mutability rules apply (writing through a projection</p>
+<p>into a by-value parameter mutates that parameter's private copy). A projection is</p>
+<p>scoped and transient — it MUST NOT be stored in a field or sent across a</p>
+<p><code>spawn</code>/channel boundary — which is what keeps it compatible with the value/arena</p>
+<p>model. Subscripts make traversing an index-pool structure ergonomic; they are not</p>
+<p>a stored-reference facility.</p>
+<hr/>
+<h2 id="19-enums-option-result-match">19. Enums, <code>Option</code>, <code>Result</code>, <code>match</code></h2>
+<h3 id="191-enum-declaration-and-variants">19.1 Enum declaration and variants</h3>
+<p>An <code>enum</code> is the nominal sum type of</p>
+<p><a href="03-types.html#536-enums-option-result">§5.3.6</a>: a value that is exactly one of</p>
+<p>several named <strong>variants</strong>, each carrying a payload of zero to eight types.</p>
+<p>Variant names are <strong>package-scoped</strong>: a variant is written bare (<code>Circle</code>, not</p>
+<p><code>Shape.Circle</code>), and <strong>no two enums in one package may share a variant name</strong></p>
+<p>(enums in different packages may reuse a bare name, disambiguated by the package</p>
+<p>qualifier).</p>
+<p>A variant name also shares one namespace with the package's <code>fn</code>, <code>const</code>,</p>
+<p><code>struct</code>, <code>enum</code>, <code>type</code> and <code>handle</code> names: a <code>fn</code> (or <code>const</code>) MUST NOT take</p>
+<p>the name of a variant in the same package, in either declaration order, and an</p>
+<p>implementation MUST reject the program (<code>error: 'Name' is already defined</code>).</p>
+<p>The rule exists because a bare variant wins at the use site, so such a function</p>
+<p>would be silently unreachable by its own name.</p>
+<p>The four builtin constructors <code>Ok</code>, <code>Err</code>, <code>Some</code> and <code>None</code> are covered by the</p>
+<p>same rule in <strong>every</strong> package, not just the one that declares them: they are</p>
+<p>recognised by their spelling wherever they appear, so a declaration of one of</p>
+<p>those names — <code>fn</code>, <code>const</code>, <code>struct</code>, <code>enum</code>, <code>type</code>, <code>handle</code>, or a variant —</p>
+<p>is unreachable everywhere and MUST be rejected with the same diagnostic. The</p>
+<p>§3.7 builtin-name rule reaches the same verdict for the same reason — the</p>
+<p>builtin wins, so the declaration is unreachable by its own name. What differs is</p>
+<p>reach: §3.7 governs the *unqualified* call spelling, while these four are</p>
+<p>recognised by spelling in every position, so the rejection here is</p>
+<p>unconditional. A <code>struct Ok</code> used to declare cleanly and fail only at its first use, with</p>
+<p>a diagnostic about the builtin <code>Result</code> and no mention of the struct.</p>
+<p>A <strong>run-time binding</strong> cannot collide with a variant at all, in any package: a</p>
+<p>local, parameter or pattern binding must start with a lowercase letter or <code>_</code></p>
+<p>(<a href="01-lexical.html#351-case-and-the-two-name-spaces">§3.5.1</a>), so the collision</p>
+<p>this section rules out for <code>fn</code> and <code>const</code> is not expressible for a binding.</p>
+<pre><code class="language-tycho">enum Shape:
+    Circle(float)            # a variant with a payload
+    Rect(float, float)
+    Unit                     # a payload-less variant
+</code></pre>
+<p>An enum value is a small value-semantic descriptor whose payload lives out of</p>
+<p>line, so binding one deep-copies the whole payload and <code>==</code> compares two values</p>
+<p>structurally (<a href="03-types.html#55-equality-and-ordering">§5.5</a>). An enum MAY appear</p>
+<p>anywhere a type may. Recursive payloads (<code>Add(Expr, Expr)</code> inside <code>Expr</code>) are</p>
+<p>permitted and finite because the payload is allocated out of line. A generic</p>
+<p><code>enum Name($T)</code> is monomorphized like a generic struct (<a href="05-generics.html">§7</a>).</p>
+<h3 id="192-construction">19.2 Construction</h3>
+<p>A value is built by naming a variant and supplying its payload —</p>
+<p><code>Circle(2.0)</code>, <code>Rect(3.0, 4.0)</code> — or, for a payload-less variant, by naming it</p>
+<p>bare: <code>Unit</code>. Each payload argument's type MUST match the variant's declared</p>
+<p>payload type.</p>
+<h3 id="193-match--the-exhaustive-eliminator">19.3 <code>match</code> — the exhaustive eliminator</h3>
+<p><code>match</code> dispatches on the variant and binds the payload in one step. To ask only</p>
+<p>which variant a value holds, without binding anything, use <code>is</code> (§19.8). Two</p>
+<p>rules make <code>match</code> safe:</p>
+<ul>
+<li><strong>Exhaustive.</strong> Every variant of the matched type MUST have an arm; a missing</li>
+</ul>
+<p>variant is a <strong>compile error</strong>. A wildcard arm <code>_:</code> matches every remaining</p>
+<p>variant and MAY stand in for the unlisted cases when a catch-all is wanted.</p>
+<ul>
+<li><strong>Arm-local bindings.</strong> A payload binding exists only inside its own arm;</li>
+</ul>
+<p>there is no way to read a payload that does not belong to the current variant.</p>
+<pre><code class="language-tycho">enum Shape:
+    Circle(float)
+    Rect(int, int)
+    Unit
+
+s := Circle(1.5)
+
+match s:
+    Circle(r):               # r bound to the payload
+        println(str(r))
+    Rect(w, h):              # multiple payload fields bind in order
+        println(str(w * h))
+    Unit:                    # no payload, no bindings
+        println("unit")
+</code></pre>
+<h3 id="194-statement-match-versus-value-match">19.4 Statement <code>match</code> versus value <code>match</code></h3>
+<p><code>match</code> exists in two positions:</p>
+<ul>
+<li><strong>Statement `match`</strong> is a compound statement</li>
+</ul>
+<p>(<a href="02-grammar.html#432-compound-statements">§4.3.2</a>); its arms are blocks that may</p>
+<p>contain any statements and produce a value by assigning or <code>return</code>-ing from</p>
+<p>inside each arm.</p>
+<ul>
+<li><strong>Value `match`</strong> stands as the whole right-hand side of a <code>:=</code>, a typed</li>
+</ul>
+<p><code>x: T =</code>, a plain assignment, or a <code>return</code> (tail position). Each arm is a block</p>
+<p>whose <strong>final statement is a value expression</strong> (a bare value expression is the</p>
+<p>one-statement case); leading ordinary statements may precede it. That final</p>
+<p>expression's value becomes the result; all arms MUST have the <strong>same type</strong>,</p>
+<p>which is the type of the whole expression. A value <code>match</code> is</p>
+<p>exhaustive exactly as the statement form is. The value form of <code>if</code> similarly</p>
+<p>requires an <code>else</code> (every path must produce a value). This desugars to the</p>
+<p>declare-then-assign-in-each-arm form (§14).</p>
+<pre><code class="language-tycho">enum Status:
+    Active
+    Idle
+    Done
+
+status := Active
+
+_label := match status:          # value match — each arm ends in a value expression
+    Active:  "on"
+    Idle:    "waiting"
+    Done:    "finished"
+</code></pre>
+<p>The same value <code>match</code> as a complete program, returned from a function:</p>
+<pre><code class="language-tycho">enum Status:
+    Active
+    Idle
+    Done
+
+fn label(s: Status) -&gt; string:
+    return match s:
+        Active: "on"
+        Idle: "waiting"
+        Done: "finished"
+
+fn main():
+    println(label(Idle))
+</code></pre>
+<pre><code class="language-output">waiting
+</code></pre>
+<h3 id="195-optiont">19.5 <code>Option(T)</code></h3>
+<p><code>Option(T)</code> is the built-in enum with variants <code>Some(T)</code> and <code>None</code></p>
+<p>(<a href="03-types.html#536-enums-option-result">§5.3.6</a>). It replaces the null reference:</p>
+<p>an absent value is *typed* absent and cannot be read without an exhaustive</p>
+<p><code>match</code>. <code>T</code> MAY be any type, including a nested <code>Option(Option(int))</code>.</p>
+<p><code>None</code> carries no type of its own, so a bare <code>None</code> is permitted **only where the</p>
+<p>expected type is already known** — a return type, a declaration annotation</p>
+<p>(<code>box: Option(string) = None</code>), an assignment target, or a call argument. A bare</p>
+<p><code>x := None</code> with no annotation is instead *pending* — grounded by its first use</p>
+<p>(e.g. <code>x = Some(5)</code>), and a compile error only if never grounded. (Unlike <code>None</code>,</p>
+<p>a bare <code>x := Ok(1)</code> or <code>x := Err(e)</code> *is* rejected immediately; the <code>Result</code></p>
+<p>constructors are not part of the pending set.) This context-grounding</p>
+<p>of type-incomplete literals is specified in <a href="04-inference.html">§6.4</a>.</p>
+<h3 id="196-resultt-e">19.6 <code>Result(T, E)</code></h3>
+<p><code>Result(T, E)</code> is the built-in enum with variants <code>Ok(T)</code> and <code>Err(E)</code></p>
+<p>(<a href="03-types.html#536-enums-option-result">§5.3.6</a>) — error handling without</p>
+<p>exceptions. A fallible function returns one, and the caller handles both outcomes</p>
+<p>in a <code>match</code>. Both <code>T</code> and <code>E</code> MAY be any type. Like <code>None</code>, a bare <code>Ok(v)</code> fixes</p>
+<p>only <code>T</code> and a bare <code>Err(e)</code> fixes only <code>E</code>; the other parameter is grounded from</p>
+<p>context (<a href="04-inference.html">§6.4</a>), and a bare <code>x := Ok(1)</code> is a compile error.</p>
+<h3 id="197-or-return">19.7 <code>or_return</code></h3>
+<p><code>or_return</code> is a postfix operator that propagates a failure without a <code>match</code>. It</p>
+<p>binds tighter than any arithmetic, so it is valid anywhere the unwrapped value is</p>
+<p>wanted (<code>foo(parse(s) or_return)</code>, <code>return Ok(parse(s) or_return + 1)</code>).</p>
+<p>To return something other than the unchanged failure — a wrapped error, a fresh</p>
+<p>one, or a plain <code>false</code> — use <code>or_else</code></p>
+<p>(<a href="10-statements.html#1461-or_else">§14.6.1</a>).</p>
+<p>On a <strong>`Result`</strong>, <code>v := expr or_return</code>:</p>
+<ul>
+<li>binds <code>v</code> to the payload when <code>expr</code> is <code>Ok(v)</code>; and</li>
+<li>otherwise returns that <code>Err</code> from the <strong>enclosing function</strong>, which MUST itself</li>
+</ul>
+<p>return <code>Result(_, E)</code> with the <strong>same</strong> error type <code>E</code> — a differing <code>E</code> is a</p>
+<p>compile error.</p>
+<p>On an <strong>`Option`</strong>, <code>v := opt or_return</code> binds <code>v</code> on <code>Some(v)</code> and returns</p>
+<p><code>None</code>; the enclosing function MUST return an <code>Option</code>.</p>
+<p>The short-circuited payload (<code>Err</code>'s error, or <code>None</code>) is promoted into the</p>
+<p>caller's storage, so it outlives the return</p>
+<p>(<a href="07-memory-model.html#10-object-lifetimes-and-storage">§10</a>). <code>or_return</code> MUST NOT</p>
+<p>appear inside a <code>parallel for</code> body — a chunk has no early exit</p>
+<p>.</p>
+<pre><code class="language-tycho">fn parse_digit(s: string) -&gt; Result(int, string):
+    if len(s) == 1 and s &gt;= "0" and s &lt;= "9":
+        return Ok(to_int(to_float(s[0]) - to_float("0"[0])))
+    return Err("not a digit: " + s)
+
+fn add_two(a: string, b: string) -&gt; Result(int, string):
+    x := parse_digit(a) or_return    # Ok → bind x; Err → return it from add_two
+    y := parse_digit(b) or_return
+    return Ok(x + y)
+</code></pre>
+<p>A complete program using <code>or_return</code> to thread <code>Result</code> and <code>match</code> to consume</p>
+<p>it:</p>
+<pre><code class="language-tycho">fn checked(n: int) -&gt; Result(int, string):
+    if n &lt; 0:
+        return Err("negative")
+    return Ok(n)
+
+fn add(a: int, b: int) -&gt; Result(int, string):
+    x := checked(a) or_return
+    y := checked(b) or_return
+    return Ok(x + y)
+
+fn main():
+    match add(3, 4):
+        Ok(v): println("ok " + str(v))
+        Err(e): println("err " + e)
+</code></pre>
+<pre><code class="language-output">ok 7
+</code></pre>
+<h3 id="198-is--the-variant-test">19.8 <code>is</code> — the variant test</h3>
+<p><code>match</code> is the eliminator, but it is not a *question*: it dispatches and binds in</p>
+<p>one step, so asking only "which variant is this?" costs an arm per variant. <code>is</code></p>
+<p>is that question as an expression.</p>
+<p><code>v is V</code> yields <code>bool</code> — <code>true</code> iff <code>v</code> currently holds variant <code>V</code></p>
+<p>(<a href="09-expressions.html#132-operators">§13.2</a>). Its rules:</p>
+<ul>
+<li>The left operand MUST be an enum, an <code>Option</code> or a <code>Result</code>. Any other type is</li>
+</ul>
+<p>a compile error.</p>
+<ul>
+<li>The right operand is a <strong>variant name</strong>, not an expression, spelled exactly as</li>
+</ul>
+<p>a <code>match</code> arm spells it: bare <code>V</code> within the declaring package, qualified</p>
+<p><code>pkg.V</code> from outside it (§19.1). A name that is not a variant of that enum is a</p>
+<p><strong>compile error</strong> naming both, never a test that is silently <code>false</code>.</p>
+<ul>
+<li>It binds <strong>nothing</strong>. <code>is</code> answers which variant; <code>match</code> is still the only way</li>
+</ul>
+<p>to read a payload, and remains the only exhaustive form.</p>
+<ul>
+<li>It does not chain (<code>a is X is Y</code> is a compile error).</li>
+</ul>
+<p>Unlike <code>==</code>, it applies to a <strong>payload-carrying</strong> variant: <code>V</code> alone is not a</p>
+<p>value there, so <code>v == V</code> is refused, and before <code>is</code> the only test was a <code>match</code>.</p>
+<p>For a payload-less variant <code>v == V</code> stays legal and means the same thing</p>
+<p>(§13.2).</p>
+<pre><code class="language-tycho">enum Shape:
+    Circle(float)
+    Rect(float, float)
+    Unit
+
+fn main():
+    s := Rect(3.0, 4.0)
+    println(str(s is Rect))
+    println(str(s is Circle))
+    println(str(Unit is Unit))
+    if s is Rect and not (s is Unit):
+        println("a rect, and not the unit")
+</code></pre>
+<pre><code class="language-output">true
+false
+true
+a rect, and not the unit
+</code></pre>
+<p><code>Option</code> and <code>Result</code> answer <code>is</code> on the same terms, with their constructors'</p>
+<p>own names: <code>Some</code> / <code>None</code> for an <code>Option</code> (§19.5), <code>Ok</code> / <code>Err</code> for a <code>Result</code></p>
+<p>(§19.6). Those four names are never package-qualified. A name from the other</p>
+<p>family — <code>r is Some</code> on a <code>Result</code> — is a <strong>compile error</strong> naming the type and</p>
+<p>the two names that are valid, on the same rule as an unknown enum variant above.</p>
+<p><code>or_return</code> still propagates; <code>is</code> only asks.</p>
+<pre><code class="language-tycho">fn lookup(k: int) -&gt; Option(int):
+    if k &gt; 0:
+        return Some(k)
+    return None
+
+fn parse(s: string) -&gt; Result(int, string):
+    if s == "1":
+        return Ok(1)
+    return Err("bad")
+
+fn main():
+    println(str(lookup(3) is Some))
+    println(str(lookup(0) is Some))
+    println(str(parse("1") is Ok))
+    println(str(parse("x") is Err))
+</code></pre>
+<pre><code class="language-output">true
+false
+true
+true
+</code></pre>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

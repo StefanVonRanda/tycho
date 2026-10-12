@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aggregates design note — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / internals/design-aggregates.md</nav>
+<h1 id="aggregates-design-note">Aggregates design note</h1>
+<p>Maintainer background for <a href="../reference/arrays-slices.html">Arrays and slices</a> and</p>
+<p><a href="../reference/structs-tuples.html">Structs and tuples</a>: how aggregates — arrays and</p>
+<p>structs, including heap-bearing and nested fields — behave under value semantics</p>
+<p>with implicit hierarchical arenas and <strong>no pointer or reference type</strong>, and why the</p>
+<p>memory model stays sound without a borrow checker or whole-program alias analysis.</p>
+<p>The question: *do implicit arenas still hold once the</p>
+<p>language has arrays and structs, given strict value semantics and no pointer</p>
+<p>type?* The answer is <strong>yes</strong>, subject to five invariants and three</p>
+<p>costs, both listed below. Two transpiler optimizations (return-slot move,</p>
+<p>in-place append) keep the costs from biting in practice; see</p>
+<p><a href="../thesis.html">thesis.md</a> §4. Arrays, structs, nested struct fields, structural</p>
+<p>equality, and <code>inout</code> all ship as described.</p>
+<h3 id="1-the-model-in-one-paragraph">1. The model in one paragraph</h3>
+<p>Every value is a <strong>wholly-owned tree</strong>: a struct owns its fields, an array</p>
+<p>owns its elements, recursively down to leaves (<code>int</code>, <code>bool</code>, <code>string</code></p>
+<p>bytes). A value and *all* its interior storage live in exactly **one</p>
+<p>arena** — the arena of the variable (slot) that owns the root. There is</p>
+<p><strong>no pointer/reference type</strong>: you cannot name, store, or return a</p>
+<p>reference to a value's interior. Every operation that would create a</p>
+<p>second name for the same storage instead <strong>copies</strong> (deep, by default).</p>
+<p>Mutation happens in place through <code>inout</code> parameters, which are an</p>
+<p>exclusive borrow for the duration of a call and cannot be stored.</p>
+<h3 id="2-types--syntax">2. Types &amp; syntax</h3>
+<pre><code class="language-tycho"># arrays — homogeneous, growable
+xs := [1, 2, 3]          # [int] inferred
+ys := []string            # empty; element type required when empty
+first := xs[0]             # index read
+xs[0] = 9                 # index write (in place)
+n := len(xs)               # length
+push(xs, 4)               # append in place  (xs is inout)
+last := pop(xs)            # remove last, returns it
+println(str(first) + " " + str(n) + " " + str(last) + " " + str(len(ys)))
+
+# structs — nominal, fields are values
+struct Point:
+    x: int
+    y: int
+
+p := Point(1, 2)           # positional construction, fields in declaration order
+px := p.x                   # field read
+p.y = 5                    # field write (in place)
+println(str(px) + " " + str(p.y))
+
+# nesting is just trees of values
+struct Line:
+    a: Point
+    b: Point
+    labels: [string]       # a field that is an array, etc.
+</code></pre>
+<p>No <code>null</code>. "Maybe a value" needs an optional/sum type (see §7); that is a</p>
+<p>companion feature, not part of this spec, but the model assumes it exists.</p>
+<h3 id="3-the-five-invariants-that-keep-it-sound">3. The five invariants that keep it sound</h3>
+<p>1. <strong>Single-arena ownership.</strong> A value's root and every byte it</p>
+<p>transitively owns are allocated in one arena — the owner slot's arena.</p>
+<p><code>acc.items</code>'s backing buffer lives wherever <code>acc</code> lives.</p>
+<p>2. <strong>No aliasing.</strong> <code>b := a</code>, passing by value, and <code>field = v</code> all</p>
+<p>*copy*. After <code>b := a</code>, <code>a</code> and <code>b</code> share nothing.</p>
+<p>3. <strong>Mutation via `inout` only.</strong> <code>fn f(inout xs: [int])</code> borrows the</p>
+<p>caller's value exclusively for the call and writes through it. The</p>
+<p>value never changes arena. The borrow is *not a value* — it can't be</p>
+<p>assigned, stored in a field, or returned.</p>
+<p>4. <strong>No reference type.</strong> There is nothing whose value is "the address of</p>
+<p>another value." This is the keystone: it is *why* invariant 3's borrow</p>
+<p>can't escape, and why no operation can manufacture a lasting second</p>
+<p>reference.</p>
+<p>5. <strong>Cross-arena moves are deep copies.</strong> Returning a value, or assigning</p>
+<p>to a variable in an outer scope, copies the whole tree into the</p>
+<p>destination arena. Correctness never depends on analysis — only speed</p>
+<p>does (see §5).</p>
+<h3 id="4-arena-mechanics-worked">4. Arena mechanics, worked</h3>
+<pre><code class="language-tycho">fn read_lines() -&gt; [string]:
+    lines := []string
+    line := input()
+    for line != "":
+        push(lines, line)     # 'line' (scratch) is COPIED into lines' buffer
+        line = input()
+    return lines              # whole array deep-copied into caller's arena
+
+fn main():
+    ls := read_lines()         # ls owns its buffer + string bytes, in main's arena
+    println(str(len(ls)))
+</code></pre>
+<ul>
+<li><code>push</code> grows <code>lines</code>' backing buffer <strong>in `lines`' arena</strong> (geometric</li>
+</ul>
+<p>growth; old buffers are wasted within the arena — bounded, reclaimed</p>
+<p>when the arena ends).</p>
+<ul>
+<li><code>line</code> lives in the loop's scratch arena, reset each iteration. <code>push</code></li>
+</ul>
+<p>copies its bytes into <code>lines</code>' buffer, so resetting scratch is safe.</p>
+<ul>
+<li><code>return lines</code> deep-copies the array into the caller's arena, then</li>
+</ul>
+<p><code>read_lines</code>' arena is freed. The returned value is fully independent.</p>
+<pre><code class="language-tycho">fn main():
+    acc := []string                 # in main's arena
+    for i := 0; i &lt; 1000000; i += 1:   # no digit separators: `1_000_000` does not lex
+        push(acc, str(i))           # str(i) temp in scratch; copied into acc
+    # scratch stays bounded; acc grows O(n) — intended, not a leak
+</code></pre>
+<h3 id="5-the-three-costs">5. The three costs</h3>
+<p>1. <strong>Deep copy on cross-arena move.</strong> Returning or out-assigning a big</p>
+<p>value is O(size). Mitigated, never for correctness, by:</p>
+<ul>
+<li>*Build-in-destination*: if a local is returned, the compiler</li>
+</ul>
+<p>allocates it in the parent arena from the start → the return needs no copy.</p>
+<p>(The leaf version applies today: a return expression targets the</p>
+<p>parent arena.) It stays conservative when a value *may* be returned on some</p>
+<p>path; still sound, still local.</p>
+<ul>
+<li>*Move on last use*: <code>b := a</code> / <code>b = a</code> where <code>a</code> is a</li>
+</ul>
+<p>uniquely-owned local read exactly once (so this is its last use on every</p>
+<p>path), not inside a loop, and in the same arena as the destination, hands</p>
+<p>off <code>a</code>'s buffer instead of deep-copying it. Conservative and static; a</p>
+<p>parameter (which borrows the caller's buffer) is never moved.</p>
+<ul>
+<li>*Borrow on read*: a by-value parameter the callee only reads is</li>
+</ul>
+<p>passed as a transient borrow (zero copy) — safe because the borrow</p>
+<p>can't be stored (invariant 4) and the caller is suspended.</p>
+<p>The important part: in this model escape analysis is just an <strong>optimization</strong>.</p>
+<p>In a pointer-having language the same analysis is a **soundness</p>
+<p>requirement**. That's why value semantics is viable here.</p>
+<p>2. <strong>No recursive types.</strong> <code>struct Node: next: Node</code> is infinite-size and</p>
+<p>illegal — there is no pointer to break the cycle. Trees, lists, and</p>
+<p>graphs are expressed as <strong>arrays + integer indices</strong> (a node holds an</p>
+<p><code>int</code> index into a <code>[Node]</code>, not a reference). The entire graph is then</p>
+<p>*one value* (the array) with *one* lifetime — which is an excellent fit</p>
+<p>for arenas, and a well-trodden data-oriented pattern. The cost is</p>
+<p>ergonomic: you write <code>nodes[i].next_idx</code> instead of <code>node.next</code>, and</p>
+<p>you need a sentinel or optional for "no node." A generational-handle</p>
+<p>scheme (a pattern you build, not a language built-in) keeps it safe:</p>
+<p>make handles <strong>generational</strong> (index + a generation</p>
+<p>counter; a stale handle fails its generation check instead of silently</p>
+<p>reading a recycled slot). One extra word per handle buys use-after-free</p>
+<p>*detection* for the index-as-pointer pattern, with no pointer type.</p>
+<p>3. <strong>Idiomatic building has to be in place.</strong> The immutable form</p>
+<p><code>total = total + str(i)</code> in a loop leaves dead intermediate buffers in</p>
+<p>the arena (bounded by scope, but wasteful). The form to reach for is</p>
+<p>in-place growth — <code>push(builder, str(i))</code> / <code>inout</code> — which is</p>
+<p>geometric and tight. "One right way" should make in-place building the</p>
+<p>one way; immutable rebuild stays *correct* but is the slow path.</p>
+<h3 id="6-aliasing-and-lifetime-hazards-by-scenario">6. Aliasing and lifetime hazards, by scenario</h3>
+<table>
+<tr><th>Scenario</th><th>Aliasing/lifetime hazard?</th><th>Resolution</th></tr>
+<tr><td><code>b := a</code> (array/struct)</td><td>none</td><td>deep copy; independent</td></tr>
+<tr><td>pass by value, read-only</td><td>transient borrow aliases source</td><td>safe: borrow can't be stored/returned (inv. 4); caller suspended</td></tr>
+<tr><td><code>inout</code> mutate</td><td>exclusive borrow</td><td>safe: in place, same arena, borrow non-storable</td></tr>
+<tr><td>build in loop, return</td><td>value escapes scope</td><td>deep copy up, or build-in-parent (opt.)</td></tr>
+<tr><td>push scratch value into outer array</td><td>element outlives iteration</td><td>safe: push *copies* into outer arena</td></tr>
+<tr><td><code>a[i] = someString</code></td><td>old element becomes garbage</td><td>sound; wasted-in-arena, bounded by <code>a</code>'s life</td></tr>
+<tr><td>array slice <code>xs[a:b]</code></td><td>view aliases parent buffer</td><td>safe: a view only as a read-only arg (zero-copy borrow, like any array param); storing/returning/pushing it deep-copies, so it is non-storable. A slice + a <code>inout</code> of the same var in one call is rejected.</td></tr>
+<tr><td>substring</td><td>view would alias parent buffer</td><td><strong>substr is a copy</strong> (owns its bytes); no aliasing string views (a string slice can't be NUL-terminated)</td></tr>
+<tr><td>recursive/graph types</td><td>would need pointers</td><td>not allowed; use array + indices</td></tr>
+<tr><td>return a reference to a local</td><td>classic dangling</td><td><strong>inexpressible</strong> — no reference type exists</td></tr>
+</table>
+<p>The last row is the key point: the dangling-pointer bug that forces every other</p>
+<p>region system to ship escape analysis *for correctness* isn't expressible in</p>
+<p>Tycho, so it cannot occur.</p>
+<h3 id="7-generics--monomorphized-over-the-built-in-container-machinery">7. Generics — monomorphized over the built-in container machinery</h3>
+<p>Tycho has <strong>monomorphized generics</strong>: a <code>$T</code> type parameter on a</p>
+<p>function or struct, inferred at the use site and stamped out to concrete code at</p>
+<p>compile time. They reuse the *same* per-concrete-type interning + emission the</p>
+<p>transpiler already runs for its built-in parametric types:</p>
+<ul>
+<li><code>[T]</code> — growable array, any element type T (incl. structs, strings).</li>
+<li><code>Option(T)</code> / <code>Result(T, E)</code> — optional / fallible, since there is no <code>null</code></li>
+</ul>
+<p>and no exceptions.</p>
+<ul>
+<li><code>[K: V]</code> — hash map; keys are <code>string</code>, <code>int</code>, a newtype over either, a fieldless enum, or any hashable composite (struct/tuple/array).</li>
+</ul>
+<pre><code class="language-tycho">fn first(xs: [$T]) -&gt; Option(T):        # generic function
+    if len(xs) &gt; 0:
+        return Some(xs[0])
+    return None
+
+struct Box($T):                          # generic struct
+    v: T
+</code></pre>
+<p>You can write <code>struct Box($T)</code> and <code>fn id(x: $T) -&gt; T</code>. The monomorphization</p>
+<p>engine such generics need is the same one that stamps out <code>Option(int)</code> versus</p>
+<p><code>Option(string)</code>. User <code>$T</code> definitions reuse it directly rather than adding a</p>
+<p>new subsystem, and stay memory-model-neutral (§9).</p>
+<p>The full design is in <a href="../reference/generics.html">generics</a>.</p>
+<p>The full set is available: generic functions, generic structs</p>
+<p>(construction + <code>Box(int)</code> type-position annotations), structured patterns</p>
+<p>(<code>[$T]</code> → <code>Option(T)</code>), <code>[$K: $V]</code> map patterns, <code>where</code> constraints</p>
+<p>(<code>numeric</code> / <code>comparable</code> / <code>has_str</code>), and explicit call-site type args</p>
+<p>(<code>empty$(int)</code> for the non-inferable case).</p>
+<p>Companion features that work alongside generics (none of these is generics):</p>
+<ul>
+<li><strong>`inout` parameters</strong> (exclusive mutable borrow) — efficient mutation</li>
+</ul>
+<p>without copies or aliasing.</p>
+<ul>
+<li><strong>`Option(T)` + exhaustive `match`</strong> — no <code>null</code>.</li>
+<li><strong>Slices</strong> (<code>xs[a:b]</code>) — a non-storable view (zero-copy when passed</li>
+</ul>
+<p>to a read-only param, deep-copied when stored), no borrow checker needed.</p>
+<ul>
+<li><strong>`distinct` newtypes</strong> (<code>type Meters = float</code>) — a distinct,</li>
+</ul>
+<p>zero-cost type over <code>int</code>/<code>float</code> (same C rep, type-incompatible with the base</p>
+<p>and other newtypes); arithmetic/ordering/<code>str</code> only between the same newtype.</p>
+<h3 id="8-allocation-strategy-signature-directed-escape">8. Allocation strategy: signature-directed escape</h3>
+<p>One established way to run arenas is to pass each function an implicit arena</p>
+<p>parameter and have the callee allocate into the *caller's* arena, so a</p>
+<p>returned value is already in the right place — <strong>zero-copy returns</strong>. The</p>
+<p>price: a function's throwaway temporaries also live in the caller's arena</p>
+<p>until the caller returns, so you have to claw reclamation back with *visible*</p>
+<p>tools — named sub-arena blocks and pools. That works, but it puts memory</p>
+<p>back in the programmer's face.</p>
+<p>Tycho can do better <strong>because it has no pointers</strong>. With value semantics and</p>
+<p>no reference type, a value escapes a function only by being <strong>returned</strong> or</p>
+<p>written through an <strong>`inout`</strong> parameter — both visible in the signature. A</p>
+<p>callee cannot stash an argument anywhere that outlives the call (there is</p>
+<p>nothing to stash it in). Therefore **escape is decided locally, from</p>
+<p>signatures — no whole-program may-alias analysis**. Concretely:</p>
+<ul>
+<li>allocations that flow into the return value → emit in the caller's arena:</li>
+</ul>
+<p>zero-copy return;</p>
+<ul>
+<li>every other allocation in the call → emit in an auto-created sub-arena</li>
+</ul>
+<p>freed at scope exit: tight reclamation, invisibly;</p>
+<ul>
+<li>loop bodies → non-escaping allocations go in the per-iteration scratch</li>
+</ul>
+<p>(reset each iteration); an escaping <code>push</code> targets the destination's arena.</p>
+<p>This is the synthesis: zero-copy returns *and* per-scope reclamation, with</p>
+<p><strong>no visible memory constructs at all</strong>. It is sound by construction</p>
+<p>because, under value semantics, a wrong escape decision can only change</p>
+<p>*when* memory is freed, never *whether* a pointer dangles. In a</p>
+<p>pointer-having language the same analysis is a correctness obligation with</p>
+<p>alias tracking — which is exactly why such languages reach for explicit</p>
+<p>tools instead. The no-pointer rule turns that hardest problem into a local</p>
+<p>optimization.</p>
+<h3 id="9-why-generics-dont-weaken-the-model">9. Why generics don't weaken the model</h3>
+<p>The arena model holds, and <strong>adding generics does not change that</strong>: each <code>$T</code></p>
+<p>instantiation is monomorphized to concrete, value-semantic code *before* the</p>
+<p>signature-directed escape analysis (§8) runs, so it is ordinary concrete code</p>
+<p>with the same locally-decidable lifetimes — nothing generic survives to analyze.</p>
+<p>Correctness still rests entirely on **"no reference type + copy on cross-arena</p>
+<p>move."** What grows is a substitution pass feeding the *same* per-type</p>
+<p>emission the built-in containers already use — not a new generics engine, and</p>
+<p>not the memory model.</p>
+<p>That keeps every lifetime question locally decidable from signatures, which</p>
+<p>is exactly what lets the arenas stay invisible *and* lets the</p>
+<p>signature-directed escape strategy (§8) reclaim memory without copies. Arena</p>
+<p>allocation itself is well-proven; what Tycho is testing is whether removing pointers</p>
+<p>turns the visible memory tools and whole-program analyses such systems usually</p>
+<p>need into invisible, local ones — and generics, being monomorphized to concrete</p>
+<p>code first, ride along without re-introducing either.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

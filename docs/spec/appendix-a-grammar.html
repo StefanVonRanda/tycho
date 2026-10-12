@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Appendix A — Collected grammar — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / spec/appendix-a-grammar.md</nav>
+<h1 id="appendix-a--collected-grammar">Appendix A — Collected grammar</h1>
+<p>This appendix collects every grammar production of the language into a single</p>
+<p>listing for at-a-glance reference. It is <strong>normative but not authoritative</strong>: the</p>
+<p>productions are reproduced verbatim from their defining chapters, which remain</p>
+<p>the source of truth. On any discrepancy the in-chapter definition governs, and</p>
+<p>the discrepancy is a bug in this appendix (the <code>make spec-check</code> gate exists to</p>
+<p>prevent one — see the invariant note at the end).</p>
+<p>The grammar is defined in two chapters:</p>
+<ul>
+<li>the <strong>lexical grammar</strong> — <a href="01-lexical.html">§3</a>: the token set (§3.5–§3.8) and</li>
+</ul>
+<p>literal productions (§3.9), plus the indentation algorithm (§3.4) that</p>
+<p>produces the <code>INDENT</code>/<code>DEDENT</code>/<code>NEWLINE</code> layout tokens;</p>
+<ul>
+<li>the <strong>phrase grammar</strong> — <a href="02-grammar.html">§4</a>: declarations (§4.1), types</li>
+</ul>
+<p>(§4.2), statements (§4.3), and expressions (§4.4), with the precedence table</p>
+<p>(§4.5), reproduced in <a href="appendix-c-precedence.html">Appendix C</a>.</p>
+<h2 id="a1-notation-and-terminals">A.1 Notation and terminals</h2>
+<p>Productions use the W3C-style EBNF of <a href="00-conventions.html">§2</a>; <code>X?</code> is optional,</p>
+<p><code>X*</code> zero-or-more, <code>X+</code> one-or-more, <code>( … )</code> groups, <code>|</code> alternates, and a</p>
+<p>double-quoted string is a literal token. Grammar terminals are the token kinds of</p>
+<p><a href="01-lexical.html#35-tokens">§3.5</a>: the name/literal tokens <code>IDENT</code>, <code>INT</code>, <code>FLOAT</code>,</p>
+<p><code>STR</code>, <code>CHAR</code>, the layout tokens <code>NEWLINE</code>, <code>INDENT</code>, <code>DEDENT</code>, <code>EOF</code>, and the</p>
+<p>reserved words (<a href="01-lexical.html#36-keywords">§3.6</a>, listed in</p>
+<p><a href="appendix-b-keywords.html">Appendix B</a>). Some words the grammar uses as literal</p>
+<p>terminals — <code>soa</code>, <code>channel</code>, <code>None</code>, <code>Some</code>, <code>Ok</code>, <code>Err</code>, and the builtin names</p>
+<p>— are <strong>contextual identifiers</strong> (<a href="01-lexical.html#37-contextual-identifiers">§3.7</a>),</p>
+<p>not reserved: they are keywords only in the positions shown here.</p>
+<h3 id="a2-lexical-grammar-3">A.2 Lexical grammar (§3)</h3>
+<p>Terminals produced by the lexer and consumed by the phrase grammar are</p>
+<p><code>IDENT</code>, <code>INT</code>, <code>FLOAT</code>, <code>STR</code>, <code>CHAR</code> (§3.5), and the layout tokens</p>
+<p><code>NEWLINE</code>, <code>INDENT</code>, <code>DEDENT</code>, <code>EOF</code> (§3.4). The spellings below define the</p>
+<p>literal terminals; <code>INT</code> is spelled by <code>IntLit</code>, <code>FLOAT</code> by <code>FloatLit</code>,</p>
+<p><code>CHAR</code> by <code>CharLit</code>, <code>STR</code> by <code>StrLit</code>.</p>
+<pre><code class="language-ebnf">Comment ::= "#" (any byte except newline)*
+IntLit    ::= DecimalLit | HexLit | BinLit
+DecimalLit ::= [0-9]+
+HexLit    ::= "0" ("x" | "X") HexDigit+
+BinLit    ::= "0" ("b" | "B") BinDigit+
+HexDigit  ::= [0-9a-fA-F]
+BinDigit  ::= [01]
+FloatLit ::= [0-9]+ "." [0-9]+ Exp?
+           | [0-9]+ Exp
+           | "." [0-9]+ Exp?          /* leading-dot form, position-restricted */
+Exp      ::= ("e" | "E") ("+" | "-")? [0-9]+
+CharLit ::= "'" ( CharEscape | (any byte except "'", "\", newline) ) "'"
+CharEscape ::= "\" ( "n" | "t" | "r" | "0" | "\" | "'" ) | "\x" HexDigit HexDigit
+HexDigit ::= "0".."9" | "a".."f" | "A".."F"
+StrLit ::= StrPiece StrPiece*
+StrPiece ::= QuotedPiece | RawPiece
+QuotedPiece ::= '"' StrElem* '"'
+StrElem ::= StrEscape | (any byte except '"', "\", newline, and raw control bytes below 0x20 other than tab)
+StrEscape ::= "\" ( "n" | "t" | "r" | "\" | '"' )
+RawPiece ::= "`" RawElem* "`"
+RawElem ::= (any byte except "`" and raw control bytes below 0x20 other than tab and newline)
+</code></pre>
+<h3 id="a3-phrase-grammar-4">A.3 Phrase grammar (§4)</h3>
+<pre><code class="language-ebnf">Program   ::= TopDecl*
+TopDecl   ::= PackageDecl | ImportDecl | ExternFn | ConstDecl
+            | Subscript | Struct | Enum | Handle | TypeDecl | Fn
+PackageDecl ::= "package" IDENT NEWLINE
+ImportDecl  ::= "import" IDENT? STR NEWLINE
+ConstDecl   ::= "const" IDENT "=" ConstExpr NEWLINE
+Fn         ::= "fn" IDENT "(" ParamList? ")" ( "-&gt;" Type )? WhereClause? ":" NEWLINE Block
+ParamList  ::= Param ( "," Param )*
+Param      ::= IDENT ":" ( "inout" | "sink" )? "..."? Type
+WhereClause ::= "where" Constraint ( "," Constraint )*
+Constraint  ::= Predicate "(" IDENT ")"
+              | IDENT ":" Type ( "|" Type )*
+Predicate   ::= "numeric" | "comparable" | "has_str" | "hashable" | "defaultable"
+Struct     ::= "packed"? "struct" IDENT TypeParams? ":" NEWLINE INDENT FieldDecl+ DEDENT
+FieldDecl  ::= IDENT ":" Type NEWLINE
+Enum       ::= "enum" IDENT TypeParams? ":" NEWLINE INDENT VariantDecl+ DEDENT
+VariantDecl::= IDENT ( "(" Type ( "," Type )* ")" )? NEWLINE
+Handle     ::= "handle" IDENT ":" NEWLINE INDENT "free" ":" IDENT NEWLINE DEDENT
+TypeDecl   ::= "type" IDENT "=" Type NEWLINE
+TypeParams ::= "(" "$" IDENT ( "," "$" IDENT )* ")"
+ExternFn   ::= "extern" STR? "fn" IDENT "(" ExternParamList? ")" ( "-&gt;" Type )? NEWLINE
+Subscript  ::= "subscript" IDENT "(" ParamList? ")" "-&gt;" "inout" Type ":" NEWLINE
+               INDENT "yield" "&amp;" Place NEWLINE DEDENT
+Type      ::= "$" IDENT                                        /* type parameter */
+            | "soa" "[" Type "]"                               /* struct-of-arrays */
+            | "bounded" "[" ( INT | IDENT ) "]" Type            /* bounded[N]T / bounded[C]T, C an int const */
+            | "vector" "[" ( INT | IDENT ) "]" Type             /* vector[N]T, N a power of two 2..64 */
+            | "fn" "(" ( Type ( "," Type )* )? ")" ( "-&gt;" Type )?
+            | "(" Type ( "," Type )+ ")"                       /* tuple, 2..8 elements */
+            | "[" ArrayOrMap
+            | "Option" "(" Type ")"
+            | "Result" "(" ( Type | "void" ) "," Type ")"   /* void: ok payload only */
+            | "Channel" "(" Type ")"
+            | QualName TypeArgs?                               /* struct/enum/newtype/handle */
+            | PrimType
+ArrayOrMap::= "$" IDENT "]" Type                              /* [$N]T  size-parameter array */
+            | INT "]" Type                                     /* [N]T   fixed-size array */
+            | IDENT "]" Type                                   /* [C]T   fixed size named by an int const */
+            | Type "]"                                         /* [T]    dynamic array */
+            | Type ":" Type "]"                                /* [K:V]  map */
+TypeArgs  ::= "(" Type ( "," Type )* ")"
+QualName  ::= IDENT ( "." IDENT )?                            /* Name or pkg.Name */
+PrimType  ::= "int" | "float" | "bool" | "string" | "ptr" | "bytes"
+            | "u32" | "u64" | "f32"
+Block ::= INDENT Stmt+ DEDENT
+Stmt  ::= ConstStmt | DeleteStmt | Return | Break | Continue | PassStmt
+        | Select | Match | If | ParallelFor | For
+        | MultiDecl | MultiAssign | SimulAssign
+        | Decl | TypedDecl | Assign | PlaceAssign | CompoundAssign
+        | ExprStmt
+ConstStmt      ::= "const" IDENT "=" ConstExpr NEWLINE
+DeleteStmt     ::= "delete" Postfix NEWLINE            /* Postfix MUST be an index m[k] */
+Return         ::= "return" ( Expr ( "," Expr )* )? NEWLINE
+                 | "return" ValueCtrl
+Break          ::= "break" NEWLINE
+Continue       ::= "continue" NEWLINE
+PassStmt       ::= "pass" NEWLINE                       /* the no-op; contextual, see App. B */
+Decl           ::= IDENT ":=" ( Expr | ValueCtrl ) NEWLINE
+TypedDecl      ::= IDENT ":" Type "=" ( Expr | ValueCtrl ) NEWLINE
+Assign         ::= IDENT "=" ( Expr | ValueCtrl ) NEWLINE
+MultiDecl      ::= IDENT ( "," IDENT )+ ":=" Expr NEWLINE
+MultiAssign    ::= IDENT ( "," IDENT )+ "=" Expr NEWLINE
+SimulAssign    ::= "(" Place ( "," Place )+ ")" "=" Expr NEWLINE
+PlaceAssign    ::= Place "=" ( Expr | ValueCtrl ) NEWLINE
+CompoundAssign ::= Place CompoundOp "=" Expr NEWLINE
+CompoundOp     ::= "+" | "-" | "*" | "/" | "%" | "&amp;" | "|" | "^" | "&lt;&lt;" | "&gt;&gt;"
+ExprStmt       ::= ( Call | Call "or_return" | Call OrElse ) NEWLINE   /* or_return/or_else form: ok payload must be void */
+If          ::= "if" Expr ":" NEWLINE Block
+                ( "elif" Expr ":" NEWLINE Block )*
+                ( "else" ":" NEWLINE Block )?
+Match       ::= "match" Expr ":" NEWLINE INDENT MatchArm+ DEDENT
+MatchArm    ::= Pattern ":" NEWLINE Block
+Pattern     ::= VariantName ( "(" IDENT ( "," IDENT )* ")" )?   /* variant, with 0..8 bindings */
+              | VariantName "(" SubPattern ")"               /* Ok/Err/Some: one nested level */
+              | ScalarPattern                                /* int/char/bool subject */
+              | "_"                                          /* wildcard */
+VariantName ::= IDENT | IDENT "." IDENT                       /* Variant or pkg.Variant */
+SubPattern  ::= VariantName ( "(" IDENT ( "," IDENT )* ")" )?
+ScalarPattern ::= ScalarElem ( ".." ScalarElem )? ( "|" ScalarElem ( ".." ScalarElem )? )*
+ScalarElem  ::= "-"? ( INT | CHAR | TRUE | FALSE ) | IDENT    /* IDENT: an int constant */
+For         ::= "for" ForInit ";" Expr ";" ForPost ":" NEWLINE Block  /* three-clause; all three REQUIRED */
+              | "for" IDENT "in" Expr ":" NEWLINE Block               /* foreach */
+              | "for" Expr ":" NEWLINE Block                          /* condition */
+              | "for" ":" NEWLINE Block                               /* infinite */
+ForInit     ::= Decl | TypedDecl | Assign | CompoundAssign  /* the ';' supplies the clause's NEWLINE */
+ForPost     ::= Assign | CompoundAssign                     /* the ':' supplies it; target MUST be a variable */
+ParallelFor ::= "parallel" Width? "for" IDENT "in" "0" "..&lt;" Expr ":" NEWLINE Block  /* counting; the `0` is a literal */
+              | "parallel" Width? "for" IDENT "in" IDENT ":" NEWLINE Block           /* foreach; the source MUST be a name */
+Width       ::= "(" Expr ")"                                  /* fan-out width, 1..64; omitted = ncpu() */
+Select      ::= "select" ":" NEWLINE INDENT SelectArm+ DEDENT
+SelectArm   ::= "recv" "(" Expr "," IDENT ")" ":" NEWLINE Block
+              | "default" ":" NEWLINE Block
+              | "closed" ":" NEWLINE Block
+ValueCtrl   ::= If | Match              /* value form: block branches ending in a value expression, tail position */
+Expr      ::= OrExpr
+OrExpr    ::= AndExpr ( "or" AndExpr )*
+AndExpr   ::= NotExpr ( "and" NotExpr )*
+NotExpr   ::= "not" NotExpr | CmpExpr
+CmpExpr   ::= IsExpr ( ( "==" | "!=" | "&lt;" | "&gt;" | "&lt;=" | "&gt;=" | "in" ) IsExpr )*
+IsExpr    ::= AddExpr ( "is" VariantName )?             /* variant test; does NOT chain */
+AddExpr   ::= MulExpr ( ( "+" | "-" | "|" | "^" ) MulExpr )*
+MulExpr   ::= UnaryExpr ( ( "*" | "/" | "%" | "&lt;&lt;" | "&gt;&gt;" | "&amp;" ) UnaryExpr )*
+UnaryExpr ::= ( "-" | "&amp;" | "~" ) UnaryExpr | Postfix
+Postfix   ::= Primary PostfixOp* ( "or_return" | OrElse )? "..."?
+OrElse    ::= "or_else" IDENT ":" Expr                  /* IDENT or `_`; returns Expr on failure (§14.6.1) */
+PostfixOp ::= "[" Expr "]"                              /* index */
+            | "[" Expr? ":" Expr? "]"                   /* slice (either bound optional) */
+            | "." IDENT                                 /* field access */
+            | "." INT                                   /* tuple index */
+            | "." "(" Component ( "," Component )* ")"  /* swizzle, 2-8 components (§17.5) */
+            | "." IDENT CallTypeArgs? "(" ArgList? ")"  /* qualified pkg call (on a bare identifier) */
+            | "." IDENT CallTypeArgs                    /* ... with no value arguments */
+            | "(" ArgList? ")"                          /* call */
+ArgList   ::= Expr ( "," Expr )*
+Component ::= IDENT | INT                               /* a struct field, or a lane of an array / bounded / vector */
+Place ::= IDENT ( "[" Expr "]" | "." IDENT | "." INT | "(" ArgList? ")" )*
+Primary ::= INT | FLOAT | STR | CHAR
+          | "true" | "false" | "null"
+          | "(" Expr ")"                                /* grouping */
+          | "(" Expr ( "," Expr )+ ")"                  /* tuple literal, 2..8 */
+          | ArrayOrMapLit                               /* [ ... ] forms (§16, §18) */
+          | "soa" "[" "]" Type                          /* empty soa literal */
+          | "channel" "(" Type "," Expr ")"             /* only as a declaration RHS */
+          | "spawn" Call                                /* spawn a direct call */
+          | Lambda
+          | "None" | "Some" "(" Expr ")" | "Ok" "(" Expr? ")" | "Err" "(" Expr ")"
+          | IDENT CallTypeArgs ( "(" ArgList? ")" )?    /* explicit type args */
+          | IDENT "(" ArgList? ")"                      /* named call */
+          | IDENT                                       /* variable, or nullary enum variant */
+CallTypeArgs ::= "$" "(" Type ( "," Type )* ")"  /* at least one; `f$()` is an error */
+Lambda  ::= "fn" "(" LambdaParams? ")" ( "-&gt;" Type )? ":" Expr
+LambdaParams ::= IDENT ( ":" Type )? ( "," IDENT ( ":" Type )? )*
+</code></pre>
+<p><strong>Note — `RawPiece` ([§3.9.4](01-lexical.md#394-string-literals)).</strong> The</p>
+<p><code>RawElem</code> production above says which *bytes* a backtick-delimited piece may</p>
+<p>contain; the rule it cannot express is that <strong>no escape is interpreted</strong> inside</p>
+<p>one. A backslash is a backslash, so <code></code> <code>a\nb</code> <code></code> is four characters, and an</p>
+<p>embedded newline is a literal newline byte — <code>RawPiece</code> is the only literal</p>
+<p>terminal that spans source lines. Having no escape at all, it has no backtick</p>
+<p>escape either, so it cannot contain a backtick; one is written by joining a</p>
+<p><code>QuotedPiece</code>, in which a backtick is an ordinary byte. <code>RawPiece</code> is a</p>
+<p><code>StrPiece</code>, so it joins with adjacent pieces of either kind, and there is no</p>
+<p><code></code> f<code>…</code> <code></code> interpolated raw form.</p>
+<h2 id="a4-non-terminals-defined-in-prose-elsewhere">A.4 Non-terminals defined in prose elsewhere</h2>
+<p>Four names appearing on the right-hand sides above are defined by prose in their</p>
+<p>feature chapters rather than by a <code>::=</code> production, and so are not repeated in the</p>
+<p>listing:</p>
+<ul>
+<li><strong>`Call`</strong> — a <code>Postfix</code> (§4.4) whose outermost operator is a call <code>( … )</code>;</li>
+</ul>
+<p>used by <code>ExprStmt</code> and after <code>spawn</code> (<a href="02-grammar.html#44-expressions">§4.4</a>).</p>
+<ul>
+<li><strong>`ConstExpr`</strong> — an expression that folds to a single literal at compile time</li>
+</ul>
+<p>(integer arithmetic, bitwise, unary, and backward references to earlier</p>
+<p>top-level consts), defined in</p>
+<p><a href="02-grammar.html#41-program-and-top-level-declarations">§4.1</a> and</p>
+<p><a href="08-declarations.html">§12</a>.</p>
+<ul>
+<li><strong>`ArrayOrMapLit`</strong> — the <code>[ … ]</code> array, map, and <code>soa</code> literal forms, defined</li>
+</ul>
+<p>with their element/key typing rules in <a href="12-aggregates.html">§16</a> (arrays) and</p>
+<p><a href="12-aggregates.html#18-maps-and-subscripts">§18</a> (maps).</p>
+<ul>
+<li><strong>`ExternParamList`</strong> — the parameter list of an <code>extern fn</code>, defined with the</li>
+</ul>
+<p>FFI-permitted parameter types in <a href="14-ffi.html">§24</a>.</p>
+<h2 id="a5-the-identical-to-source-invariant">A.5 The identical-to-source invariant</h2>
+<p>Everything between the <code>BEGIN GENERATED</code> / <code>END GENERATED</code> markers above is</p>
+<p>produced mechanically by <code>scripts/gen_grammar.sh</code>, which extracts every fenced</p>
+<p>grammar block (any block containing a <code>::=</code> production) from</p>
+<p><a href="01-lexical.html">§3</a> and <a href="02-grammar.html">§4</a> verbatim, in source order. The</p>
+<p><code>make spec-check</code> gate re-runs the generator and diffs its output against this</p>
+<p>region; any drift between a production here and its defining chapter fails the</p>
+<p>build. This appendix therefore cannot silently become a stale second source of</p>
+<p>truth — it is a checked projection of the chapters, not a parallel copy.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

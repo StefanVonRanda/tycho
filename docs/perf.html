@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Performance: the compiler and the C it emits — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="index.html">docs</a> / perf.md</nav>
+<h1 id="performance-the-compiler-and-the-c-it-emits">Performance: the compiler and the C it emits</h1>
+<blockquote>
+<p>This page is about <code>src/tychoc.c</code>, <code>runtime/tycho_rt.c</code> and the C they emit —</p>
+<p>how the arena model is kept cheap, and what each mechanism does. For the</p>
+<p>language's performance story, read <a href="performance.html">performance.md</a> and</p>
+<p><a href="thesis.html">the thesis</a>.</p>
+</blockquote>
+<p>&gt;</p>
+<blockquote>
+<p><strong>It carries one reproducible number</strong>, the transpile time below. Everything</p>
+<p>else describes a mechanism rather than timing one. For figures you can</p>
+<p>reproduce, <code>make bench</code> runs 17 benchmarks and each <code>bench/*/RESULTS.md</code></p>
+<p>records its own hardware.</p>
+</blockquote>
+<h2 id="transpile-time">Transpile time</h2>
+<p><code>bench/transpile/run.sh</code> measures how long <code>tychoc</code> takes to turn one <code>.ty</code> file</p>
+<p>into C. It generates a syntax-stable input, verifies the compile <strong>succeeds</strong></p>
+<p>before timing it (a compile that dies is faster than one that works, so an</p>
+<p>unchecked input reports the failure path as a speed-up), discards a warm-up run,</p>
+<p>and reports the minimum of N with median and max beside it.</p>
+<p><strong>11 ms</strong> minimum of 10 timed runs over a 4.2k-line input — flat, no regression</p>
+<p>across the measured window.</p>
+<h2 id="what-to-run">What to run</h2>
+<ul>
+<li><code>make bench</code> runs the 17-benchmark suite. Each <code>bench/*/RESULTS.md</code> records</li>
+</ul>
+<p>its own hardware and per-workload numbers.</p>
+<ul>
+<li><code>bench/transpile/run.sh</code> measures transpile time as described above.</li>
+<li><code>TYCHO_ARENA_STATS=full &lt;program&gt;</code> prints a one-shot residency summary at</li>
+</ul>
+<p>exit (peak live bytes, bump-allocated bytes, free-list recycle rate,</p>
+<p>OS-reserved bytes, block-pool reuse, per-statement residency). See</p>
+<p><a href="debugging.html#where-the-memory-lives-tycho_arena_stats">debugging.md</a> and</p>
+<p><a href="performance.html#arena-internals-measured">performance.md</a>.</p>
+<h2 id="what-the-bounds-mean">What the bounds mean</h2>
+<ul>
+<li><strong>Transpile time</strong> is bounded by the figure above; <code>make bench</code> fails on</li>
+</ul>
+<p>regression.</p>
+<ul>
+<li><strong>Memory</strong> is bounded per workload by the peak-RSS tables in</li>
+</ul>
+<p><a href="performance.html">performance.md</a>: the in-place append (<code>acc = acc + x</code></p>
+<p>growing one buffer) holds ~1.5 MB where the unoptimized path needs ~825 MB</p>
+<p>at the same N, so the <code>make bench</code> guard sits between working and broken.</p>
+<ul>
+<li><strong>Cross-language ratios, not absolute times</strong>, are the claim throughout:</li>
+</ul>
+<p>absolute wall times move with machine, governor, and toolchain. See</p>
+<p><a href="performance.html">performance.md</a>.</p>
+<h2 id="how-the-cost-is-kept-down-summary">How the cost is kept down (summary)</h2>
+<p>The arena model wins by orders of magnitude where it was designed to (the</p>
+<p><code>acc = acc + s</code> loop, rewritten to an in-place O(n) append), and pays a</p>
+<p>per-scope tax everywhere else: every block scope and call does</p>
+<p><code>arena_child</code> / <code>arena_reset</code> / <code>arena_free</code>. Four mechanisms keep that tax</p>
+<p>off the hot path:</p>
+<ul>
+<li><strong>Block pool</strong> (<code>runtime/tycho_rt.c</code>): freed blocks go to a process-global</li>
+</ul>
+<p>free-list instead of <code>free</code>; allocation takes from it first. Per-scope block</p>
+<p>churn becomes O(1) pointer traffic with no page re-faulting; peak live</p>
+<p>memory is unchanged.</p>
+<ul>
+<li><strong>Block-retaining reset</strong>: a loop's scratch arena keeps its head block and</li>
+</ul>
+<p>rewinds it, so a one-block-per-iteration loop does zero pool traffic.</p>
+<ul>
+<li><strong>Elided child arenas</strong>: <code>if</code>/<code>match</code> blocks use the enclosing scope's arena;</li>
+</ul>
+<p>escaping values promote to <code>_parent</code> either way. Smaller emitted C, same</p>
+<p>wall-clock and RSS.</p>
+<ul>
+<li><strong>Borrowed read-only params</strong>: a heap-bearing struct parameter the body never</li>
+</ul>
+<p>mutates is borrowed, not deep-copied — removing the dominant copy cost on</p>
+<p>compiler-shaped workloads (the symbol-table clone).</p>
+<ul>
+<li><strong>Push-loop fusion</strong>: a loop that only <code>push</code>es to a local array keeps the</li>
+</ul>
+<p>descriptor in C locals across the loop, closing most of the gap to</p>
+<p>hand-written C on push-dominated loops.</p>
+<p>The tuning diary behind these — profiler notes, blind alleys, and the</p>
+<p><code>Ctx</code>-reconstruction and O(n²) fixes — is in</p>
+<p><a href="internals/runtime-tuning.html">internals/runtime-tuning.md</a>.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

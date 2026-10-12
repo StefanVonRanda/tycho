@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Appendix E — Conformance test map — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / spec/appendix-e-conformance.md</nav>
+<h1 id="appendix-e--conformance-test-map">Appendix E — Conformance test map</h1>
+<p>This appendix maps each normative clause of the specification to the fixture(s)</p>
+<p>that exercise it. Every cited fixture exists; clauses with no dedicated fixture</p>
+<p>are flagged in E.2.1.</p>
+<h2 id="e1-the-conformance-oracle">E.1 The conformance oracle</h2>
+<p>Conformance is defined against <strong>this specification</strong></p>
+<p>(<a href="00-conventions.html#13-conformance">§1.3</a>), and checked against the fixture</p>
+<p>corpus below: across the conformance suite an implementation MUST accept every</p>
+<p>program the suite records as accepted, reject every program it records as</p>
+<p>must-fail, and reproduce each behavioral fixture's recorded output. The suite is</p>
+<p>drawn from:</p>
+<ul>
+<li>the existing golden fixtures under <code>tests/</code> (behavioral) and <code>tests/reject/</code></li>
+</ul>
+<p>(must-fail);</p>
+<ul>
+<li>the corelib fixtures under <code>corelib/test/</code>;</li>
+<li>the fuzz corpora under <code>fuzz/</code> (random well-typed programs, whose optimized and</li>
+</ul>
+<p>sanitized builds must agree; malformed input, which must be refused without a</p>
+<p>crash and without emitting invalid C);</p>
+<ul>
+<li>new probe fixtures written to pin previously-untested corners (the resolved</li>
+</ul>
+<p>items in <code>spec-plan.md §6a</code> each become a fixture).</p>
+<h2 id="e2-the-coverage-matrix">E.2 The coverage matrix</h2>
+<h3 id="3-lexical-structure">§3 Lexical structure</h3>
+<table>
+<tr><th>Clause</th><th>Requirement (abbrev.)</th><th>Fixture(s)</th></tr>
+<tr><td>§3.2</td><td>one logical statement per line</td><td><code>tests/reject/two_stmts_one_line</code>, <code>reject/bare_expr_stmt</code></td></tr>
+<tr><td>§3.4</td><td>indentation; mixed tabs/spaces rejected</td><td><code>tests/tab_indent</code>, <code>reject/tab_mix</code>, <code>reject/tab_mix2</code></td></tr>
+<tr><td>§3.5.1</td><td>a run-time binding must start lowercase or <code>_</code></td><td><code>tests/reject/upper_local</code>, <code>tests/reject/upper_param</code>, <code>tests/match_expr</code>, <code>tests/nested_pattern</code></td></tr>
+<tr><td>§3.9.1</td><td>integer literals; overflow rejected</td><td><code>tests/float_int_lit</code>, <code>reject/int_literal_overflow</code></td></tr>
+<tr><td>§3.9.2</td><td>float literals (exp / leading-dot forms)</td><td><code>tests/float_exp</code>, <code>tests/float_dot</code>, <code>reject/float_exp_bad</code></td></tr>
+<tr><td>§3.9.3</td><td>character literals</td><td><code>tests/char_basic</code>, <code>tests/char_byte</code></td></tr>
+<tr><td>§3.9.3</td><td><code>\xNN</code>: exactly two hex digits, either case; char literals only</td><td><code>tests/char_hex_escape</code>, <code>reject/hex_escape_one_digit</code>, <code>reject/hex_escape_in_string</code></td></tr>
+<tr><td>§3.9.4</td><td>string literals; escapes; interior NUL</td><td><code>tests/multiline_literals</code>, <code>tests/string_nul</code>, <code>reject/string_escape</code></td></tr>
+<tr><td>§3.9.4</td><td><code>\r</code> escape; adjacent-literal join (multi-line string)</td><td><code>tests/crlf_adjacent</code>, plus <code>corelib/test/csv</code>, <code>corelib/test/httpd</code> (<code>\r</code>) and <code>server/main.ty</code>'s <code>error_body</code>/<code>usage</code> (join)</td></tr>
+<tr><td>§3.9.5</td><td>f-string escape rule</td><td><code>tests/reject/fstring_escape</code></td></tr>
+</table>
+<h3 id="5-types">§5 Types</h3>
+<table>
+<tr><th>Clause</th><th>Requirement (abbrev.)</th><th>Fixture(s)</th></tr>
+<tr><td>§5.1</td><td>distinct type identity (no erasure)</td><td><code>tests/reject/char_as_type</code>, <code>reject/newtype_key_mix</code>, <code>reject/newtype_agg_mix</code></td></tr>
+<tr><td>§5.2.1</td><td><code>int</code> = required 64-bit two's-complement (range, defined wrap)</td><td><code>tests/int_overflow</code></td></tr>
+<tr><td>§5.2.1</td><td><code>int</code> stays 64-bit under a non-LP64 C data model (no truncation of values, literal arithmetic or length headers)</td><td><code>tests/int64_width</code>, the <code>make ilp32</code> lane (whole suite rebuilt <code>gcc -m32</code>, 64-bit goldens unchanged)</td></tr>
+<tr><td>§5.2.3</td><td><code>char</code> is not <code>int</code></td><td><code>tests/char_ops</code>, <code>reject/char_int_eq</code>, <code>reject/char_int_mul</code>, <code>reject/char_int_ord</code></td></tr>
+<tr><td>§5.2.4</td><td><code>to_char(n)</code>: <code>int -&gt; char</code>, aborting outside <code>0..255</code></td><td><code>tests/char_to_char</code>, <code>tests/abort/chr_oob</code></td></tr>
+<tr><td>§16.8</td><td>the <code>char</code> row of the element-wise table (<code>+ -</code> only), reached by inference since <code>char</code> has no keyword</td><td><code>tests/char_elem_ops</code>, <code>reject/char_elem_mul</code>, <code>reject/char_elem_div</code>, <code>reject/char_elem_mod</code></td></tr>
+<tr><td>§5.2.6</td><td><code>bytes</code> operators: <code>b[i]</code> yields <code>int</code> (not a 1-length <code>bytes</code>) and is not a place; <code>b[i:j]</code> yields <code>bytes</code> and clamps; <code>a + b</code> and <code>b + 'c'</code> concatenate; no implicit <code>string</code> mixing; every one byte-safe across an interior <code>0x00</code></td><td><code>corelib/test/io</code> (<code>byte_index</code>, <code>byte_slice</code>, <code>byte_cat</code>, <code>byte_rebuild</code>), the §5.2.6 example (<code>scripts/spec_check.sh</code>), <code>server/main.ty</code> (<code>log_safe</code>); no <code>tests/</code> fixture</td></tr>
+<tr><td>§5.2.7</td><td>fixed-width <code>u32</code>/<code>u64</code>/<code>f32</code></td><td><code>tests/sized_ints</code>, <code>tests/sized_family</code>, <code>corelib/test/sha256</code></td></tr>
+<tr><td>§5.3.2</td><td>fixed-size arrays <code>[N]T</code></td><td><code>tests/fixed_array</code>, <code>reject/fixed_array_bad_length</code>, <code>reject/fixed_array_zero_size</code>, <code>reject/fixed_array_nonconst_size</code></td></tr>
+<tr><td>§5.3.5</td><td>maps; composite keys</td><td><code>tests/maps</code>, <code>tests/map_literal_composite_key</code>, <code>tests/mapstructkey</code>, <code>tests/vector_map_key</code>, <code>reject/map_as_key</code>, <code>reject/map_key_enum_leaf</code>, <code>reject/map_key_bytes_top</code></td></tr>
+<tr><td>§5.3.9</td><td>typed handles (affine, RAII free)</td><td><code>tests/ffi</code> (<code>use_res_close</code>), <code>reject/close_handle_nonvar</code></td></tr>
+<tr><td>§5.3.10</td><td><code>bounded[N]T</code> inline fixed capacity; runtime count; push traps when full</td><td><code>tests/bounded</code>, <code>tests/bounded_const_cap</code>, <code>reject/fixarr_into_bounded_arg</code>, <code>reject/bounded_nonconst_cap</code>, <code>reject/bounded_const_cap_zero</code>, <code>reject/bounded_chan_elem</code>, <code>reject/bounded_task_elem</code></td></tr>
+<tr><td>§5.4</td><td>newtypes; unwrap; key/agg mixing rejected</td><td><code>tests/newtypes</code>, <code>tests/newtype_key</code>, <code>reject/newtype_key_mix</code></td></tr>
+<tr><td>§5.5</td><td>structural <code>==</code>; functions not comparable</td><td><code>tests/map_eq</code>, <code>tests/option_eq</code>, <code>eqparity</code> lane, <code>reject/fn_eq</code></td></tr>
+</table>
+<h3 id="6-type-inference">§6 Type inference</h3>
+<table>
+<tr><th>Clause</th><th>Requirement (abbrev.)</th><th>Fixture(s)</th></tr>
+<tr><td>§6.3</td><td><code>:=</code> / typed-decl synthesis</td><td><code>tests/inference</code>, <code>reject/result_bare_decl</code></td></tr>
+<tr><td>§6.4</td><td>pending (ungrounded) types rejected</td><td><code>tests/reject/infer_bare_empty</code>, <code>reject/infer_use_before_ground</code></td></tr>
+<tr><td>§6.2(7)</td><td>a tuple literal is checked element-wise (a <code>Result</code> element grounds)</td><td><code>tests/result_tuple</code>, <code>corelib/test/result</code> (<code>outcome</code>)</td></tr>
+<tr><td>§6.5</td><td>branch unification for value <code>if</code>/<code>match</code></td><td><code>tests/if_expr</code>, <code>tests/match_expr</code>, <code>reject/if_expr_type_mismatch</code></td></tr>
+</table>
+<h3 id="7-generics">§7 Generics</h3>
+<table>
+<tr><th>Clause</th><th>Requirement (abbrev.)</th><th>Fixture(s)</th></tr>
+<tr><td>§7.2</td><td><code>where</code> predicate accept/reject</td><td><code>tests/generic_where</code>, <code>reject/where_numeric</code>, <code>reject/where_unknown_pred</code>, <code>reject/where_nongeneric</code></td></tr>
+<tr><td>§7.2</td><td><code>hashable</code>/<code>defaultable</code> predicates</td><td><code>tests/generic_hashable</code>, <code>tests/generic_defaultable</code>, <code>reject/where_hashable_bad</code>, <code>reject/zero_bad_type</code></td></tr>
+<tr><td>§7.4</td><td>const generics <code>[N]T</code> / <code>[$N]T</code></td><td><code>tests/const_generic_size</code>, <code>reject/const_generic_size_return_only</code>, <code>reject/const_generic_size_struct_field</code>, <code>reject/const_generic_size_dynamic_arg</code></td></tr>
+<tr><td>§7.5</td><td>explicit type args <code>f$(T)</code></td><td><code>tests/generic_explicit</code>, <code>reject/explicit_count</code>, <code>reject/explicit_noarg</code>, <code>reject/explicit_nongeneric</code></td></tr>
+<tr><td>§7.6</td><td>generic UFCS method-style calls</td><td><code>tests/generic_ufcs</code></td></tr>
+<tr><td>§7.7</td><td>variadic (generic) parameters</td><td><code>tests/variadic</code>, <code>reject/variadic_not_last</code>, <code>reject/variadic_empty_generic</code>, <code>reject/variadic_spread_mixed</code></td></tr>
+</table>
+<h3 id="8-conversions">§8 Conversions</h3>
+<table>
+<tr><th>Clause</th><th>Requirement (abbrev.)</th><th>Fixture(s)</th></tr>
+<tr><td>§8.1</td><td>literal adaptation to context type</td><td><code>typeparity</code> lane, <code>tests/floats</code></td></tr>
+<tr><td>§8.3</td><td>newtype unwrapping</td><td><code>tests/newtype_elem_unwrap</code>, <code>tests/newtype_strbool</code></td></tr>
+<tr><td>§8.4</td><td>no implicit narrowing (hard error)</td><td><code>tests/reject/coerce_annot_narrow</code>, <code>reject/coerce_arg_narrow</code>, <code>reject/coerce_return_narrow</code>, <code>reject/coerce_array_mixed</code></td></tr>
+<tr><td>§8.5</td><td>out-of-range conversion aborts</td><td><code>tests/abort/to_int_oob</code></td></tr>
+</table>
+<h3 id="911-memory--object-model">§9–11 Memory &amp; object model</h3>
+<table>
+<tr><th>Clause</th><th>Requirement (abbrev.)</th><th>Fixture(s)</th></tr>
+<tr><td>§9.2</td><td>copy on assign / argument / return</td><td><code>tests/value_semantics</code>, <code>tests/move</code>, <code>tests/ctor_move</code></td></tr>
+<tr><td>§9.3</td><td>structural <code>==</code> mirrors the copy</td><td><code>tests/map_eq</code>, <code>tests/option_eq</code>, <code>eqparity</code> lane</td></tr>
+<tr><td>§10.2</td><td>escape rule (closures re-home)</td><td><code>tests/closures</code>, <code>tests/closure_fncap</code>, <code>tests/closure_loop_fuse</code></td></tr>
+<tr><td>§11.1</td><td><code>inout</code> copy-in / copy-out</td><td><code>tests/inout_string</code>, <code>tests/scalar_elem_inout</code></td></tr>
+<tr><td>§11.2</td><td><code>inout</code> exclusivity (aliasing rejected)</td><td><code>tests/reject/inout_alias</code>, <code>reject/inout_byval_alias</code>, <code>reject/slice_inout_alias</code></td></tr>
+<tr><td>§11.4</td><td><code>sink</code> move convention</td><td><code>tests/sink</code>, <code>reject/sink_use_after</code></td></tr>
+<tr><td>§11.5</td><td>types that cannot be <code>inout</code> (channel, function value)</td><td><code>tests/reject/chan_inout_param</code>, <code>reject/inout_fnvalue</code>, <code>tests/chan_param_recv</code></td></tr>
+</table>
+<h3 id="12-declarations--scoping">§12 Declarations &amp; scoping</h3>
+<table>
+<tr><th>Clause</th><th>Requirement (abbrev.)</th><th>Fixture(s)</th></tr>
+<tr><td>§12.2</td><td><code>const</code> (literal/folded); reassign/nonliteral rejected</td><td><code>tests/const_toplevel</code>, <code>tests/const_expr</code>, <code>reject/const_reassign</code>, <code>reject/const_expr_divzero</code>, <code>reject/const_expr_localref</code></td></tr>
+<tr><td>§12.2</td><td><code>const</code> folds <code>+</code> over two string literals</td><td><code>tests/crlf_adjacent</code> (<code>GREET</code>)</td></tr>
+<tr><td>§12.3</td><td>scope &amp; shadowing rules</td><td><code>tests/shadow_string</code>, <code>tests/shadow_call</code>, <code>reject/param_shadow</code>, <code>reject/dup_local</code></td></tr>
+<tr><td>§12.4</td><td>compound assignment</td><td><code>tests/compound_assign</code>, <code>tests/compound_index_eval</code></td></tr>
+<tr><td>§12.5</td><td>name resolution; unknown name rejected</td><td><code>tests/reject/unknown_var</code>, <code>reject/unknown_type</code>, <code>reject/unknown_fn_stmt</code></td></tr>
+</table>
+<h3 id="13-expressions">§13 Expressions</h3>
+<table>
+<tr><th>Clause</th><th>Requirement (abbrev.)</th><th>Fixture(s)</th></tr>
+<tr><td>§13.1</td><td>place expressions</td><td><code>tests/delete_place</code>, <code>tests/option_place_store</code>, <code>tests/projections</code></td></tr>
+<tr><td>§13.2</td><td>binary operators; <code>in</code> membership</td><td><code>tests/bitops</code>, <code>tests/logic</code>, <code>reject/in_array</code>, <code>reject/in_string</code>, <code>reject/in_wrong_key</code></td></tr>
+<tr><td>§13.3</td><td>unary <code>-</code> <code>~</code> <code>not</code></td><td><code>tests/shift_edge</code>, <code>unaryparity</code> lane</td></tr>
+<tr><td>§13.4</td><td>evaluation order; subject evaluated once</td><td><code>tests/compound_index_eval</code>, <code>tests/match_subject_once</code></td></tr>
+<tr><td>§13.4</td><td>place-evaluation order: every place leg left-to-right, before the RHS</td><td><code>tests/place_eval_order</code>, <code>tests/eval_order</code></td></tr>
+<tr><td>§13.4</td><td>compound assignment through a user subscript: the argument is evaluated once</td><td><code>tests/compound_subscript_eval</code></td></tr>
+<tr><td>§13.4</td><td>f-string holes are sequenced left-to-right</td><td><code>tests/fstring_eval_order</code></td></tr>
+<tr><td>§13.5</td><td>expression-valued <code>if</code>/<code>match</code> (tail)</td><td><code>tests/if_expr</code>, <code>tests/match_expr</code>, <code>tests/match_inline</code>, <code>reject/if_expr_no_else</code>, <code>reject/match_expr_nonexhaustive</code></td></tr>
+<tr><td>§13.5</td><td>multi-statement value arms (block ending in a value expr)</td><td><code>tests/if_expr_block</code>, <code>tests/match_expr_block</code>, <code>reject/value_arm_no_tail</code></td></tr>
+<tr><td>§13.6</td><td>closures &amp; function values</td><td><code>tests/closures</code>, <code>tests/funcvalues</code>, <code>tests/combinator</code>, <code>reject/infer_lambda_param</code></td></tr>
+</table>
+<h3 id="14-statements--control-flow">§14 Statements &amp; control flow</h3>
+<table>
+<tr><th>Clause</th><th>Requirement (abbrev.)</th><th>Fixture(s)</th></tr>
+<tr><td>§14.4</td><td>the four loop shapes: condition, infinite, three-clause (ascending and descending), foreach</td><td><code>tests/foreach</code>, <code>tests/while_loop</code>, <code>tests/for3</code>, <code>tests/for_bare</code>, <code>tests/range_negative_step</code></td></tr>
+<tr><td>§14.4</td><td>all three clauses required; <code>range()</code> removed; <code>0..&lt;N</code> refused outside <code>parallel for</code></td><td><code>reject/for3_empty_clause</code>, <code>tests/diag/range_removed</code>, <code>reject/dotlt_sequential</code>, <code>tests/diag/dotlt_sequential</code> — diagnostic text is pinned byte-for-byte by the <code>tests/diag/</code> fixtures</td></tr>
+<tr><td>§14.4</td><td><code>break</code> / <code>continue</code>; <code>continue</code> runs the three-clause post clause</td><td><code>tests/break_continue</code>, <code>tests/loop_return</code>, <code>tests/for3</code></td></tr>
+<tr><td>§19.4</td><td><code>match</code> statement; exhaustive; wildcard-last</td><td><code>tests/enums</code>, <code>tests/matchwild</code>, <code>reject/match_non_exhaustive</code>, <code>reject/match_dup_arm</code>, <code>reject/match_wildcard_not_last</code></td></tr>
+<tr><td>§14.3.1</td><td>nested patterns on an <code>Ok</code>/<code>Err</code>/<code>Some</code> payload; unqualified variant; refined-before-unrefined ordering; exhaustive by refined coverage</td><td><code>tests/nested_pattern</code>, <code>corelib/test/result</code> (<code>why</code>, <code>io_why</code>)</td></tr>
+</table>
+<h3 id="15-functions">§15 Functions</h3>
+<table>
+<tr><th>Clause</th><th>Requirement (abbrev.)</th><th>Fixture(s)</th></tr>
+<tr><td>§15.1</td><td>declaration; duplicate/no-main rejected</td><td><code>tests/early_return_main</code>, <code>reject/dup_fn</code>, <code>reject/no_main</code></td></tr>
+<tr><td>§15.1</td><td>at most 16 parameters (<code>fn</code> and <code>extern fn</code>)</td><td><code>tests/params_16_max</code>, <code>reject/params_17</code>, <code>reject/extern_params_17</code></td></tr>
+<tr><td>§15.2</td><td>parameter passing modes</td><td><code>tests/inout_string</code>, <code>tests/sink</code>, <code>reject/mut_arg_no_amp</code></td></tr>
+<tr><td>§15.3</td><td>variadic parameters</td><td><code>tests/variadic</code></td></tr>
+<tr><td>§15.5</td><td>methods (UFCS)</td><td><code>tests/methods</code>, <code>tests/pkg/methods</code>, <code>tests/pkg/methodscalar</code></td></tr>
+<tr><td>§15.6</td><td>subscripts (yielding projections)</td><td><code>tests/subscript</code>, <code>reject/subscript_dangling</code>, <code>reject/subscript_not_place</code>, <code>reject/subscript_param_twice</code>, <code>reject/subscript_type_mismatch</code></td></tr>
+</table>
+<h3 id="1619-aggregates">§16–19 Aggregates</h3>
+<table>
+<tr><th>Clause</th><th>Requirement (abbrev.)</th><th>Fixture(s)</th></tr>
+<tr><td>§16.2</td><td>indexing &amp; bounds; OOB aborts</td><td><code>tests/abort/index_oob</code>, <code>tests/bounds_elision</code></td></tr>
+<tr><td>§16.4</td><td>growth <code>push</code>; in-place append; alias guard</td><td><code>tests/push_fusion</code>, <code>tests/append_alias</code>, <code>reject/push_scalar</code></td></tr>
+<tr><td>§16.6</td><td>slices</td><td><code>tests/slices</code>, <code>tests/string_slice</code>, <code>reject/slice_inout_alias</code></td></tr>
+<tr><td>§16.7</td><td>element-type restriction: <code>void</code> rejected everywhere; <code>bool</code> legal as a dynamic element, rejected in the inline fixed forms</td><td><code>tests/bool_array</code>, <code>tests/cond_stmt_expr</code>, <code>reject/fixarr_elem_bool</code>, <code>reject/bounded_elem_bool</code></td></tr>
+<tr><td>§16.8</td><td>element-wise arithmetic; broadcast (order kept, literal adapts); fresh result; <code>[N]T</code> mismatch rejected, <code>[T]</code> mismatch aborts</td><td><code>tests/array_arith</code>, <code>tests/array_bcast</code>, <code>tests/array_arith_fresh</code>, <code>tests/array_bcast_fresh</code>, <code>tests/abort/array_arith_len</code>, <code>reject/array_arith_fixlen</code>, <code>tests/diag/array_arith_fixlen</code>, <code>tests/diag/array_bcast_widen</code></td></tr>
+<tr><td>§17.1</td><td>struct construction &amp; fields</td><td><code>tests/named_fields</code>, <code>tests/recursive_structs</code></td></tr>
+<tr><td>§17.3</td><td>recursion only through a container</td><td><code>tests/recursive_structs</code>, <code>tests/recursive_enum_array</code></td></tr>
+<tr><td>§17.4</td><td>tuples; index-assign/range rejected</td><td><code>tests/tuples</code>, <code>tests/tuple_assign</code>, <code>reject/tuple_elem_index_assign</code>, <code>reject/tuple_index_range</code></td></tr>
+<tr><td>§17.5</td><td>destructuring; simultaneous assignment; swizzling</td><td><code>tests/multiassign_scope</code>, <code>tests/tuple_assign</code>, <code>tests/multi_assign</code>, <code>tests/swizzle</code>, <code>tests/lane_names</code>, <code>reject/lane_past_end</code>, <code>reject/lane_too_many</code>, <code>reject/massign_dup_target</code>, <code>reject/massign_not_a_place</code>, <code>reject/massign_for_clause</code>, <code>reject/swizzle_dup_field</code>, <code>reject/swizzle_one_component</code>, <code>reject/swizzle_base_not_place</code>, <code>reject/swizzle_base_indexed</code>, <code>reject/massign_subscript_target</code></td></tr>
+<tr><td>§18.2–18.6</td><td><code>m[k]</code> place/rvalue, <code>delete</code>, <code>keys</code>, <code>m.get</code></td><td><code>tests/map_mutation</code>, <code>tests/map_delete</code>, <code>tests/map_get_method</code>, <code>tests/map_insorder</code>, <code>reject/map_del_removed</code>, <code>reject/map_key_wrong_read</code></td></tr>
+<tr><td>§18.7</td><td>user-defined subscripts</td><td><code>tests/subscript</code></td></tr>
+<tr><td>§19.1–19.3</td><td>enums, <code>Option</code>, <code>Result</code>; construction</td><td><code>tests/enums</code>, <code>tests/options</code>, <code>tests/results</code>, <code>reject/genenum_bare_nullary</code>, <code>reject/sum_ctor_payload_mismatch</code></td></tr>
+<tr><td>§14.1.1</td><td><code>pass</code>, the no-op statement; contextual, so the name still binds</td><td><code>tests/pass_stmt</code>, <code>reject/pass_as_value</code></td></tr>
+<tr><td>§28.3</td><td>a top-level <code>const</code> is exported and folded at the use site; <code>_name</code> stays private</td><td><code>tests/pkg/const_export</code>, <code>reject/pkg/const_private</code></td></tr>
+<tr><td>§15</td><td><code>main</code>'s two shapes; <code>Err</code> out of the entry point prints bare and exits non-zero</td><td><code>tests/main_result</code>, <code>tests/abort/main_result_err</code>, <code>reject/main_result_int</code>, <code>reject/main_result_enum_err</code>, <code>reject/main_params</code></td></tr>
+<tr><td>§19.8, §13.2</td><td><code>is</code> — the variant test: nullary and payload-carrying alike, inside a boolean expression, and the two compile-time rejections</td><td><code>tests/enum_is</code>, <code>reject/enum_is_unknown_variant</code>, <code>reject/enum_is_not_an_enum</code></td></tr>
+<tr><td>§19.8, §19.5, §19.6</td><td><code>is</code> on <code>Option</code> and <code>Result</code>: all four names, on a call result, and a name from the other family rejected</td><td><code>tests/optres_is</code>, <code>reject/optres_is_wrong_family</code></td></tr>
+<tr><td>§19.x</td><td><code>or_return</code> propagation</td><td><code>tests/or_return</code>, <code>tests/or_return_option</code>, <code>tests/or_return_frees</code></td></tr>
+<tr><td>§5.3.6</td><td><code>Result(void, E)</code>: <code>Ok()</code>, a bare <code>Ok:</code> arm, the <code>or_return</code> statement form</td><td><code>tests/result_void</code>, <code>reject/void_not_a_type</code>, <code>reject/option_void</code>, <code>reject/result_void_err</code>, <code>reject/result_void_ok_arg</code>, <code>reject/ok_empty_nonvoid</code>, <code>reject/err_empty</code>, <code>reject/result_void_bind</code>, <code>reject/result_void_arm_binds</code>, <code>reject/match_result_void_missing_err</code>, <code>reject/orreturn_stmt_value</code></td></tr>
+</table>
+<h3 id="2126-concurrency--ffi">§21–26 Concurrency &amp; FFI</h3>
+<table>
+<tr><th>Clause</th><th>Requirement (abbrev.)</th><th>Fixture(s)</th></tr>
+<tr><td>§21</td><td>spawn / Task / wait (affine, implicit join)</td><td><code>tests/conc/basic</code>, <code>tests/conc/implicit</code>, <code>reject/task_copy</code></td></tr>
+<tr><td>§22</td><td>parallel-for (<code>0..&lt;N</code> counting form and foreach); channel-drain</td><td><code>tests/conc/parfor</code>, <code>tests/conc/parfor_dotlt</code>, <code>tests/conc/parfor_chan</code>, <code>tests/conc/select_parfor</code>, <code>parforparity</code> lane</td></tr>
+<tr><td>§23</td><td>channels (Vyukov, capacity, select)</td><td><code>tests/conc/chan</code>, <code>tests/conc/chancap1</code>, <code>tests/conc/select</code>, <code>reject/send_wrong_type</code>, <code>reject/chan_reassign</code></td></tr>
+<tr><td>§24.1</td><td>FFI crossable types (scalars/str/bytes/handles/sized)</td><td><code>tests/ffi</code>, <code>examples/sqlite/demo.ty</code></td></tr>
+<tr><td>§24.1</td><td><code>[string]</code> param crosses as <code>(const char *const *, long)</code>, borrowed; empty array</td><td><code>tests/ffi</code> (<code>ffi_sfold</code>, <code>ffi_spick</code>)</td></tr>
+<tr><td>§24.1</td><td>a <code>[string]</code> *return* stays rejected</td><td><code>tests/reject/extern_ret_arr_string.ty</code></td></tr>
+<tr><td>§24.2</td><td>linking / cc invocation</td><td><code>tests/ffi/run.sh</code>, <code>examples/sqlite</code></td></tr>
+<tr><td>§25</td><td>typed handle decl: name must not collide with a struct/enum/newtype/handle</td><td><code>tests/reject/handle_dup_name</code></td></tr>
+</table>
+<h3 id="2728-program--packages">§27–28 Program &amp; packages</h3>
+<table>
+<tr><th>Clause</th><th>Requirement (abbrev.)</th><th>Fixture(s)</th></tr>
+<tr><td>§27.1</td><td>entry point <code>main</code>; missing rejected</td><td><code>tests/reject/no_main</code>, <code>tests/early_return_main</code></td></tr>
+<tr><td>§28.1–28.5</td><td>packages, import, multi-file merge</td><td><code>tests/pkg/multifile</code>, <code>tests/pkg/alias</code>, <code>tests/pkg/variant</code>, <code>tests/pkg/shapes</code></td></tr>
+<tr><td>§28.3</td><td>visibility / privacy</td><td><code>tests/pkg/privacy</code></td></tr>
+</table>
+<h3 id="2930-builtins--runtime">§29–30 Builtins &amp; runtime</h3>
+<table>
+<tr><th>Clause</th><th>Requirement (abbrev.)</th><th>Fixture(s)</th></tr>
+<tr><td>§29.3</td><td>I/O &amp; process builtins</td><td><code>tests/io_builtins</code>, <code>tests/println</code>, <code>tests/write_file</code></td></tr>
+<tr><td>§29.5</td><td>string builtins</td><td><code>tests/strbuild</code>, <code>tests/str_fuse</code>, <code>tests/str_index</code>, <code>tests/strbytes</code></td></tr>
+<tr><td>§29.5</td><td><code>char_at</code> yields <code>char</code>; <code>s[i]</code> still yields <code>int</code>; OOB aborts</td><td><code>tests/char_at</code>, <code>tests/abort/char_at_oob</code>, <code>reject/char_at_arg_index_type</code>, <code>reject/char_at_arg_recv_type</code></td></tr>
+<tr><td>§29.6</td><td>array builtins; <code>len</code> on scalar rejected</td><td><code>tests/pop</code>, <code>tests/reservecomposite</code>, <code>reject/len_scalar</code></td></tr>
+<tr><td>§29.12</td><td>abnormal termination (<code>die</code>)</td><td><code>tests/die</code></td></tr>
+<tr><td>§29.12</td><td><code>exit(code)</code> terminates with an explicit status (<code>0</code> included)</td><td><code>server/main.ty</code> (<code>--help</code>); no <code>tests/</code> fixture</td></tr>
+<tr><td>§29.12.1</td><td><code>die</code>/<code>exit</code> are diverging: legal as a value <code>if</code>/<code>match</code> tail; all-diverging rejected</td><td><code>server/main.ty</code> (<code>srv := match net.listen(...)</code>); no <code>tests/</code> fixture</td></tr>
+<tr><td>§30.1</td><td>defined two's-complement wraparound</td><td><code>tests/int_overflow</code></td></tr>
+<tr><td>§30.2</td><td>the abort set (div0, bounds, empty pop, …)</td><td><code>tests/abort/div_zero</code>, <code>abort/div_overflow</code>, <code>abort/mod_zero</code>, <code>abort/index_oob</code>, <code>abort/chr_oob</code>, <code>abort/pop_empty</code>, <code>abort/reserve_range</code></td></tr>
+<tr><td>§30.4</td><td>defined string/map behavior (byte-safe, insertion order)</td><td><code>tests/string_nul</code>, <code>tests/map_insorder</code>, <code>tests/maparraykey</code></td></tr>
+</table>
+<h3 id="e21-clauses-without-a-dedicated-fixture-flagged">E.2.1 Clauses without a dedicated fixture (flagged)</h3>
+<p>These are covered by construction or by design rather than a single fixture, and</p>
+<p>are flagged here so the gap is explicit rather than hidden:</p>
+<p>The <code>deps</code>-tier corelib clauses (§31–33, the <code>http</code>/<code>crypto</code>/<code>compress</code>/<code>image</code>/</p>
+<p><code>tls</code> packages) map to <code>corelib/test/&lt;pkg&gt;</code> and are <strong>extended-tier</strong> only.</p>
+<h2 id="e3-the-make-spec-check-gate">E.3 The <code>make spec-check</code> gate</h2>
+<p><code>make spec-check</code> (<code>scripts/spec_check.sh</code>) asserts that every fixture cited in</p>
+<p>E.2 exists, and builds and runs every runnable example in the spec against its</p>
+<p>shown output.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>7. Generics — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / spec/05-generics.md</nav>
+<h1 id="7-generics">7. Generics</h1>
+<p>Tycho's generics are <strong>binding-based monomorphization</strong> over a **closed set of</p>
+<p>constraints**. A generic function, struct, or enum is a template; each distinct</p>
+<p>concrete instantiation produces one specialized instance. Type parameters never</p>
+<p>reach code generation. The constraint mechanism is <strong>not</strong></p>
+<p>user-extensible — user-defined constraints (traits/typeclasses) are a decided</p>
+<p>non-goal (<a href="00-conventions.html">§1.1</a>). Generics grow by widening the built-in set.</p>
+<h2 id="71-type-parameters">7.1 Type parameters</h2>
+<p>A type parameter is introduced by the <code>$</code> sigil in a type position: <code>$T</code> in a</p>
+<p>parameter, field, or variant-payload type binds <code>T</code> as a parameter of the</p>
+<p>enclosing function, struct, or enum. A signature mentioning any <code>$T</code> (or a <code>$N</code></p>
+<p>size parameter, §7.4) is <strong>generic</strong>. At most 16 type parameters and 16 size</p>
+<p>parameters may be introduced per generic.</p>
+<p>At a call, each parameter is bound by <strong>structurally matching</strong> the parameter's</p>
+<p>type pattern against the concrete argument type. Matching handles a bare <code>$T</code>,</p>
+<p>and <code>$T</code> nested inside <code>[$T]</code>, <code>Option($T)</code>, <code>Result($T, $E)</code>, <code>Channel($T)</code>, a</p>
+<p>function type, and recursive self-references; every occurrence of a given <code>$T</code></p>
+<p>MUST bind to the same concrete type. A generic is instantiated once per distinct</p>
+<p>binding of its parameters.</p>
+<p>A <code>Channel($T)</code> parameter therefore composes like any other pattern, and a</p>
+<p>generic body may create its own channel with <code>channel($T, cap)</code>. Because the</p>
+<p>element type is concrete at each instantiation, the deep copy a channel performs</p>
+<p>at the thread boundary (<a href="13-concurrency.html#231-channels">§23.1</a>) selects the</p>
+<p>copier for that element type — a generic channel is a monomorphized channel, not</p>
+<p>an erased one. The one carve-out is borrowing: <code>inout Channel($T)</code> is rejected at</p>
+<p>the declaration, for the reason given in</p>
+<p><a href="07-memory-model.html#115-types-that-cannot-be-inout">§11.5</a>.</p>
+<p>Explicit type arguments may be supplied with the <code>name$(T, …)</code> form (§7.5),</p>
+<p>which binds the parameters in declaration order; this is required when a</p>
+<p>parameter is not inferable from the arguments (for example a payload-less</p>
+<p>generic enum variant).</p>
+<h2 id="72-constraints-where">7.2 Constraints (<code>where</code>)</h2>
+<pre><code class="language-ebnf">WhereClause ::= "where" Constraint ( "," Constraint )*
+Constraint  ::= Predicate "(" IDENT ")" | IDENT ":" Type ( "|" Type )*
+Predicate   ::= "numeric" | "comparable" | "has_str" | "hashable" | "defaultable"
+</code></pre>
+<p>The predicate set is <strong>closed</strong> — exactly these five names, each a capability the</p>
+<p>language already enforces elsewhere. Their meaning, checked against the concrete</p>
+<p>type bound to the parameter at instantiation:</p>
+<table>
+<tr><th>Predicate</th><th>Satisfied by (underlying scalar unless noted)</th></tr>
+<tr><td><code>numeric(T)</code></td><td><code>int</code>, <code>float</code></td></tr>
+<tr><td><code>comparable(T)</code></td><td><code>int</code>, <code>char</code>, <code>float</code>, <code>string</code></td></tr>
+<tr><td><code>has_str(T)</code></td><td><code>int</code>, <code>bool</code>, <code>float</code>, <code>string</code></td></tr>
+<tr><td><code>hashable(T)</code></td><td>any legal map key type (<a href="03-types.html#535-maps-k-v">§5.3.5</a>)</td></tr>
+<tr><td><code>defaultable(T)</code></td><td><strong>exactly</strong> <code>int</code>, <code>float</code>, <code>bool</code>, <code>string</code></td></tr>
+</table>
+<p><strong>`hashable(K)` admits `K` as a map key inside the generic.</strong> A body carrying it</p>
+<p>MAY write <code>[]$K: V</code> and index the result with a <code>$K</code> value; the key check is</p>
+<p>deferred to instantiation, where the concrete type is known and a violation is</p>
+<p>reported against the call (`'f' instantiated with K = float, which does not</p>
+<p>satisfy \<code>hashable(K)\</code><code>). The same holds for the DECLARED type </code>[$K: $V]`. An</p>
+<p>empty ARRAY literal likewise takes the parameter form, <code>[]$T</code>.</p>
+<p><code>numeric</code>, <code>comparable</code>, <code>has_str</code>, and <code>hashable</code> see through a newtype (they</p>
+<p>test the underlying capability). <code>defaultable</code> does <strong>not</strong>: it is satisfied</p>
+<p>only by the four bare scalar types, so <code>defaultable</code> fails for a newtype even</p>
+<p>over a defaultable base — and therefore <code>zero$(X)</code> (§7.5) fails for such a</p>
+<p>newtype <code>X</code>. An unknown predicate is rejected at parse time.</p>
+<p>The <strong>type-set</strong> form <code>T: A | B | …</code> (up to 16 types) constrains <code>T</code> so that its</p>
+<p>underlying scalar equals the underlying scalar of one of the listed types. A</p>
+<p><code>where</code> clause requires a generic function and allows at most 8 constraints.</p>
+<p>Constraints are enforced <strong>at instantiation</strong>, up front, yielding a clear</p>
+<p>signature error (`'f' instantiated with T = string, which does not satisfy</p>
+<p>numeric(T)`) rather than a deep error inside the substituted body.</p>
+<p>Two predicates that might be expected do <strong>not</strong> exist, by design: <code>ordered(T)</code></p>
+<p>would duplicate <code>comparable</code> (which already gates <code>&lt; &gt; &lt;= &gt;=</code>), and no</p>
+<p><code>equatable(T)</code> is needed because <code>==</code>/<code>!=</code> already works on any two values of</p>
+<p>the same type (<a href="03-types.html#55-equality-and-ordering">§5.5</a>).</p>
+<h2 id="73-generic-structs-and-enums">7.3 Generic structs and enums</h2>
+<p><code>struct Name($T, …)</code> and <code>enum Name($T, …)</code> are generic aggregates. Applying one</p>
+<p>to concrete type arguments in a type position (<code>Box(int)</code>) yields a concrete</p>
+<p>instance; applying it to exactly its own type parameters inside its own</p>
+<p>definition (<code>LL($T)</code> within <code>struct LL($T)</code>) is a recursive self-reference,</p>
+<p>deferred until the instance is built. A type argument MUST be either fully</p>
+<p>concrete or a whole own-parameter reference; it may not *partially* mention a</p>
+<p>type parameter. Generic aggregates monomorphize per distinct instantiation and</p>
+<p>compose with generic functions, containers, channels, and tasks.</p>
+<p><strong>"Its own parameters" means the aggregate's, by name.</strong> The check compares each</p>
+<p>argument against the type parameters on the *declaration* being applied, so</p>
+<p><code>Item($T)</code> is admitted inside <code>struct Item($T)</code> — and, because a <code>$Name</code> interns</p>
+<p>to one type program-wide, inside any generic function that happens to spell its</p>
+<p>parameter <code>$T</code> as well. Any other spelling is refused:</p>
+<blockquote>
+<p>`error: generic struct 'Item': a type argument may not partially mention a</p>
+<p>type parameter; use the generic applied to its own parameters (a recursive</p>
+<p>reference) or to concrete types`</p>
+</blockquote>
+<p><code>Item($A)</code> and <code>Item($U)</code> both hit this, so **a generic stage that CHANGES the</p>
+<p>parameter is inexpressible**: `fn relabel(it: Item($T), f: fn($T) -&gt; $U) -&gt;</p>
+<p>Item($U)` is rejected on its return type, and every generic function over a</p>
+<p>generic aggregate must therefore be *endomorphic* — same instantiation in and</p>
+<p>out. Tuples are no way around it: a pattern that mentions a type parameter</p>
+<p>inside a tuple, <code>(int, $T)</code> or <code>Channel((int, $T))</code>, does not match a</p>
+<p><code>(int, int)</code> or <code>Channel((int, int))</code> argument either.</p>
+<p>This is a restriction of the type *representation*, not a soundness rule. An</p>
+<p>applied aggregate type is one interned id naming either the template or a</p>
+<p>completed instance; there is no third form carrying pending arguments to be</p>
+<p>substituted when the enclosing function's bindings are known. <code>Item($T)</code> works</p>
+<p>because it takes the recursive-self-reference path, which keeps the template and</p>
+<p>lets <code>subst_type</code> finish the job — not because the parameter was in scope.</p>
+<p>Lifting it means adding that deferred-application type and teaching every</p>
+<p>consumer of an aggregate type about it; it is not planned.</p>
+<h2 id="74-const-generics-nt-nt">7.4 Const generics (<code>[N]T</code>, <code>[$N]T</code>)</h2>
+<p>A fixed-size array type <code>[N]T</code> has its length <code>N</code> fixed at compile time by an</p>
+<p>integer literal or an <code>int</code> <code>const</code> (§5.3.2). The generic form <strong>`[$N]T`</strong></p>
+<p>introduces a <strong>size parameter</strong> <code>N</code>: its length is inferred from the (fixed-size</p>
+<p>array) argument at each call, and one instance is monomorphized per distinct</p>
+<p>length. Inside the body, <code>N</code> is an <code>int</code> constant. <code>[$N]$T</code> infers both the size</p>
+<p>and the element type. A <code>$N</code> array is rejected in every stored position (struct</p>
+<p>field, enum payload, newtype) and as a return-only parameter with nothing to</p>
+<p>infer it from — it MUST be inferable from an argument. The argument MUST be a</p>
+<p>fixed-size array (a dynamic <code>[T]</code> has no compile-time length).</p>
+<h2 id="75-zerot-and-namet-">7.5 <code>zero$(T)</code> and <code>name$(T, …)</code></h2>
+<p><code>zero$(T)</code> yields the <strong>zero value</strong> of a defaultable type <code>T</code> — <code>0</code> for <code>int</code>,</p>
+<p><code>0.0</code> for <code>float</code>, <code>false</code> for <code>bool</code>, <code>""</code> for <code>string</code> — lowered to the scalar</p>
+<p>zero literal. It accepts exactly the four defaultable scalar types (§7.2) and</p>
+<p>fails closed for any other type, including a newtype. It lets a generic</p>
+<p>accumulator seed from the zero (<code>acc := zero$(T)</code>) and so operate on an empty</p>
+<p>input.</p>
+<p><code>name$(T1, …)</code> is the <strong>explicit type-argument</strong> call form (§7.1); <code>zero$</code> is the</p>
+<p>one built-in that consumes it specially. There is <strong>no</strong> <code>empty$(T)</code> builtin: an</p>
+<p><code>empty()</code> returning <code>[$T]</code> is an ordinary user-written generic, and <code>empty$(int)</code></p>
+<p>is just <code>name$(…)</code> applied to it.</p>
+<p>The name may be <strong>package-qualified</strong>: <code>vp.ident$(int)(5)</code>, and with several type</p>
+<p>parameters <code>vp.pair$(int, string)(1, "a")</code>. Type arguments bind the declaration's</p>
+<p>type parameters in order and the count must match, whichever spelling is used.</p>
+<p>The value-argument list is optional after <code>$(…)</code>, which is what lets an empty</p>
+<p>call to a generic variadic name its element type (<code>vp.count$(int)()</code>, §15.3).</p>
+<p>The qualified spelling was a parse error until 2026-08-14 — the <code>$</code> was read as a</p>
+<p>field access — so no program in the tree used it; <code>tests/pkg/variadic_qual/</code> and</p>
+<p>its two reject siblings pin it now.</p>
+<h2 id="76-ufcs-and-generic-method-style-calls">7.6 UFCS and generic method-style calls</h2>
+<p>A generic free function is callable in method position: <code>x.f(a)</code> means <code>f(x, a)</code>,</p>
+<p>dispatched by matching the receiver against the template's first-parameter</p>
+<p>pattern and then instantiating. Explicit type arguments on a non-generic call</p>
+<p>are an error. Method-call resolution for generics runs before the ordinary</p>
+<p>signature lookup (<a href="11-functions.html">§15</a>).</p>
+<h2 id="77-variadic-generics-t">7.7 Variadic generics (<code>...$T</code>)</h2>
+<p>A final variadic parameter <code>...$T</code> has type <code>[T]</code>; a call packs its trailing</p>
+<p>arguments into that array, inferring <code>T</code> from them, and an existing <code>[T]</code> may be</p>
+<p>forwarded with the spread form <code>xs...</code>. An empty variadic supplied to a generic</p>
+<p>element type is an error (nothing to infer <code>T</code> from). A variadic parameter</p>
+<p>cannot also be <code>inout</code> or <code>sink</code> (§15).</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

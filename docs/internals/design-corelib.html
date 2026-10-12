@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>corelib design notes (maintainers) — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / internals/design-corelib.md</nav>
+<h1 id="corelib-design-notes-maintainers">corelib design notes (maintainers)</h1>
+<p>Why the behavior in <a href="../reference/corelib.html">reference/corelib.md</a> is shaped</p>
+<p>this way. Users don't need this page.</p>
+<h2 id="paths-why-the-check-is-layered">Paths: why the check is layered</h2>
+<p><code>safe_join</code> is a lexical prefilter; it cannot see symlinks. <code>resolve_under</code></p>
+<p>resolves the longest existing ancestor and checks containment, so a missing</p>
+<p>path reports "not found" rather than "forbidden", while a dangling symlink is</p>
+<p>refused. Residual TOCTOU: between the check and the caller's own open, an</p>
+<p>attacker with write access inside the root could swap a resolved component for</p>
+<p>a symlink. Closing it needs the open done inside the check with <code>O_NOFOLLOW</code></p>
+<p>per component. That narrows an unconditional escape to a race an outside</p>
+<p>attacker cannot reach; it does not remove it.</p>
+<h2 id="numbers-why-crypto-binds-openssl">Numbers: why crypto binds OpenSSL</h2>
+<p>Pure-Tycho 32-bit arithmetic (in <code>rand</code>, <code>hash</code>, <code>md5</code>, <code>sha256</code>) is kept</p>
+<p>overflow-free with masks and <code>*</code>/<code>/</code>/<code>%</code> over non-negative values. But <code>/</code> and</p>
+<p><code>%</code> lower to a runtime helper that branches on its operands</p>
+<p>(<code>runtime/tycho_rt.c@tycho_imod</code>), so a routine written over secret values</p>
+<p>branches on those values however the source is written. Constant-time code</p>
+<p>needs guarantees no high-level language makes about its own arithmetic — the</p>
+<p>same reason Go ships <code>crypto/subtle</code>. Hence <code>core:crypto</code> binds OpenSSL rather</p>
+<p>than reimplementing. Pointer-shaped storage costs ~1.55× C in this model</p>
+<p>(fundamental; see <a href="value-semantics-limits.html">value-semantics-limits</a>);</p>
+<p><code>core:pool</code> removes the index-plus-generation bookkeeping, not the cost.</p>
+<h2 id="io-why-the-spellings-differ"><code>io</code>: why the spellings differ</h2>
+<p><code>exists</code> is one <code>stat(2)</code>, not a parent listing (O(entries) and blind under an</p>
+<p>unlistable parent). <code>make_dir</code>/<code>remove</code> split <code>EEXIST</code> into <code>Ok(false)</code> for</p>
+<p>"already a directory" vs <code>Err(Exists)</code> for "something else is in the way".</p>
+<p><code>make_dir_all</code> is a separate name on purpose — no corelib name is secretly</p>
+<p>recursive — and there is deliberately no <code>remove_all</code>: a recursive delete is</p>
+<p>the one where a wrong path costs unrecoverable data. <code>read_at</code> allocates</p>
+<p><code>min(n, size - off)</code>, never <code>n</code>, so a length off the wire cannot over-allocate.</p>
+<p>Writers that can only succeed or fail return <code>Result(void, …)</code> (an <code>Ok(false)</code></p>
+<p>would be unreachable); <code>make_dir</code>/<code>remove</code> return a bool because <code>Ok(false)</code></p>
+<p>is a real second answer there.</p>
+<h2 id="os--net-ffi-details-callers-dont-need"><code>os</code> / <code>net</code>: FFI details callers don't need</h2>
+<p>An argv vector crosses as one borrowed <code>[string]</code>; the shim appends the <code>NULL</code></p>
+<p><code>execv</code> wants to a copy it owns. On Windows the vector is joined by the</p>
+<p><code>CommandLineToArgvW</code> quoting rules and round-tripped through the real splitter</p>
+<p>(<code>corelib/os/os_argv_quotecheck.c</code>, a <code>make shim-check</code> leg). Callee-side</p>
+<p>remains: a program parsing its own command line by other rules (a <code>.bat</code> file)</p>
+<p>can still read it differently. <code>net</code>'s readiness calls are <code>poll(2)</code>, not</p>
+<p><code>select(2)</code>, which cannot represent a descriptor ≥ 1024 (<code>make net-poll-check</code></p>
+<p>scores that leg).</p>
+<h2 id="httpd-refused-framing-no-pipelining"><code>httpd</code>: refused framing, no pipelining</h2>
+<p>Framing is refused, never guessed: chunked bodies are not decoded, conflicting</p>
+<p>or <code>Transfer-Encoding</code>-mixed framings are <code>Err(Malformed)</code>, and the connection</p>
+<p>must not be reused — the request-smuggling shape. Pipelining is unsupported</p>
+<p>because handing the leftover back would need a per-connection buffer the</p>
+<p>signatures do not carry; the leftover is discarded, never glued onto the body.</p>
+<h2 id="signal-why-shutdown-not-close"><code>signal</code>: why shutdown, not close</h2>
+<p>No Tycho code runs in handler context: the handler is only async-signal-safe C</p>
+<p>that shuts down the listening socket. <code>shutdown</code> on a listening socket was</p>
+<p>chosen by measurement — it released 4/4 blocked accept loops where <code>close(fd)</code></p>
+<p>released 1/4 and recycled the fd number. It is a Linux behavior, not a POSIX</p>
+<p>guarantee, and backlogged connections are dropped, not drained. Normative text:</p>
+<p><code>docs/spec/18-library.md</code> §32.27.</p>
+<h2 id="handle-guards-cost-and-the-rejected-alternative">Handle guards: cost and the rejected alternative</h2>
+<p><code>crypto</code>/<code>tls</code>/<code>http</code>/<code>image</code> keep each freed handle's header with a DEAD</p>
+<p>sentinel, so a double free or use-after-free aborts by name instead of reading</p>
+<p>freed memory. Headers are never reused (a stale handle can never alias a new</p>
+<p>one) and never freed: a few dozen bytes per handle ever opened (32 per <code>crypto</code></p>
+<p>key, 48 per <code>image</code> handle, 55 per <code>tls</code> connection, 61 per <code>http</code> response on</p>
+<p>Linux x86-64/glibc; below ~40k handles it hides under the libraries'</p>
+<p>high-water mark). The rejected alternative — a bounded ring that really frees</p>
+<p>the oldest header — would cap the cost but drop the diagnosis for old handles;</p>
+<p>nothing shipped opens handles in a loop long enough to need it. Lane: `make</p>
+<p>handle-guard`.</p>
+<h2 id="compress-determinism-callers-may-rely-on"><code>compress</code>: determinism callers may rely on</h2>
+<p><code>compress</code> is byte-deterministic per zlib build (the MTIME header field is held</p>
+<p>at zero); <code>tools/tycho-ar</code>'s archive-twice-<code>cmp</code>-identical gate holds it. The</p>
+<p>compressed *length* is a zlib tuning detail and is not stable across versions.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

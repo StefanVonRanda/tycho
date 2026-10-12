@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Tycho thesis: value semantics makes implicit arenas work — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="index.html">docs</a> / thesis.md</nav>
+<h1 id="the-tycho-thesis-value-semantics-makes-implicit-arenas-work">The Tycho thesis: value semantics makes implicit arenas work</h1>
+<p>This is the *why* behind Tycho. The</p>
+<p><a href="reference/index.html">language reference</a> describes *what* the language does;</p>
+<p>the <a href="internals/design-aggregates.html">aggregates design note</a> covers how</p>
+<p>deep-copied aggregates stay sound. Here is the case for the model, backed by</p>
+<p>running, measured code.</p>
+<p>Tycho is a small, ahead-of-time language: Python-looking syntax,</p>
+<p>value semantics, no garbage collector, no <code>malloc</code>/<code>free</code>, no</p>
+<p>lifetime annotations, no borrow checker. Programs are written as if memory were</p>
+<p>managed, and it is. The claim is not "arenas are good" — that is well known.</p>
+<p>The claim is sharper:</p>
+<blockquote>
+<p>**Value semantics is the missing ingredient that lets hierarchical arena</p>
+<p>allocation be fully *implicit* — inferred from lexical scope and signatures</p>
+<p>alone, with no whole-program analysis and no visible memory constructs —</p>
+<p>at 40% of C's memory on tree workloads, with no GC and no reference</p>
+<p>counting (§4, <a href="performance.html">performance.md</a>).**</p>
+</blockquote>
+<p>It is data-oriented: built for a domain (see §6), not general-purpose.</p>
+<p>Measurement method: cross-language *ratios* are the claim, not absolute times,</p>
+<p>and every fixture is checked under sanitizers against its golden output. See</p>
+<p><a href="performance.html">performance.md</a> and <a href="controls.html">controls.md</a> for the method;</p>
+<p>it is not repeated per figure below.</p>
+<h2 id="1-the-idea">1. The idea</h2>
+<p>Two old ideas, and the hinge between them.</p>
+<p><strong>Hierarchical arenas.</strong> Every scope — each function, each <code>if</code>/<code>else</code> block,</p>
+<p>each loop body — owns an arena: a bump allocator backed by a linked list of</p>
+<p>blocks. Allocation is a pointer increment. Reclamation is freeing the whole</p>
+<p>arena at scope exit; nothing is freed individually. A loop body's arena is</p>
+<p>*reset* each iteration, so a million iterations of throwaway temporaries run in</p>
+<p>constant memory. This is well-trodden ground (region inference, MLKit, Cyclone,</p>
+<p>arena-per-request servers, every game engine's frame allocator).</p>
+<p><strong>Value semantics.</strong> There is <strong>no reference type</strong>. You cannot name, store, or</p>
+<p>return a pointer into another value's storage. Two variables never share</p>
+<p>mutable state: <code>b := a</code> copies (deeply), so mutating <code>b</code> can never be observed</p>
+<p>through <code>a</code>. Assignment, parameters, and returns all copy.</p>
+<p><strong>The hinge.</strong> Arenas are usually *explicit* — you pick the arena, you scope it</p>
+<p>— precisely because, in a language with pointers, the compiler cannot in</p>
+<p>general prove where a value may escape to. That needs whole-program may-alias</p>
+<p>analysis, which is exactly the hard problem. **Value semantics dissolves that</p>
+<p>problem.** With no reference type, a value can escape a scope in only two ways,</p>
+<p>both visible in the syntax:</p>
+<p>1. <strong>Down</strong> — passed as an argument to a callee (whose arena is a child, so the</p>
+<p>value outlives the call). No copy.</p>
+<p>2. <strong>Up</strong> — returned, or assigned to an outer-scope variable (allocated</p>
+<p>directly in that destination's arena, so it survives the inner scope's</p>
+<p>collapse).</p>
+<p>That's the whole escape rule, and it's *locally decidable* — from the</p>
+<p>statement and the signature, never from a global analysis. So the transpiler can</p>
+<p>insert every allocation, promotion, and free itself. The arenas become</p>
+<p>invisible. **The no-pointer rule turns the arena allocator's hardest</p>
+<p>prerequisite into something easy.** That's the thesis in one sentence.</p>
+<h2 id="2-the-seam-and-the-one-invariant-that-governs-everything">2. The seam, and the one invariant that governs everything</h2>
+<p>Building the language out — strings, then <code>[int]</code>/<code>[string]</code> arrays, then</p>
+<p>heap-bearing and nested structs — kept hitting the same hazard at every level,</p>
+<p>and every level wanted the same fix. Call it <strong>the seam</strong>:</p>
+<blockquote>
+<p>A heap-backed value (a string's bytes, an array's buffer, recursively a</p>
+<p>struct's heap fields) moved into a longer-lived place must have its bytes in</p>
+<p>*that place's* arena.</p>
+</blockquote>
+<p>A bare variable read allocates nothing — it's a pointer copy. So returning or</p>
+<p>assigning a bare local heap value, naively, leaves a pointer into a scope</p>
+<p>that's about to be freed: a use-after-free. The fix is **deep copy on</p>
+<p>cross-arena move** (<code>copy_into</code> in the transpiler; per-struct <code>tycho_copy_S_X</code></p>
+<p>deep-copy functions generated into the output C). It nests: copying a</p>
+<p><code>[string]</code> copies the buffer *and* every element's bytes; copying a struct</p>
+<p>copies each heap field, recursing. Structural equality (<code>==</code>) is the mirror</p>
+<p>image — compare by content, recursing the same way (<code>gen_eq</code>,</p>
+<p><code>tycho_eq_S_X</code>) — so <code>a == b</code> is true exactly when <code>b</code> is an independent copy</p>
+<p>of <code>a</code>.</p>
+<p>Immutability is not a substitute for this copy. Immutability makes *aliasing*</p>
+<p>safe (no one can mutate a shared buffer); it does nothing for *lifetime* (a</p>
+<p>frozen buffer in a freed arena is still freed). The invariant above is what</p>
+<p>actually holds the model together, and it is the same at every level of</p>
+<p>nesting.</p>
+<h2 id="3-why-its-sound-said-precisely">3. Why it's sound, said precisely</h2>
+<p>Correctness rests on a single property:</p>
+<blockquote>
+<p>Under value semantics, a wrong *escape* decision can only change <strong>when</strong></p>
+<p>memory is freed — never <strong>whether</strong> a pointer dangles.</p>
+</blockquote>
+<p>Over-approximate "this might escape" and you allocate in a longer-lived arena</p>
+<p>than strictly needed: mild retention, never a bug. There's no symmetric</p>
+<p>disaster, because there are no aliases to invalidate. In a pointer-having</p>
+<p>language the same decision is a *correctness* obligation backed by alias</p>
+<p>analysis — which is why such languages reach for explicit arenas, lifetimes, or</p>
+<p>GC. Removing pointers demotes it to a *performance* knob the transpiler can set</p>
+<p>freely. Every optimization below leans on exactly that asymmetry.</p>
+<h2 id="4-where-the-abstraction-would-leak--two-optimizations-that-seal-it-and-one-shape-that-stays-visible">4. Where the abstraction would leak — two optimizations that seal it, and one shape that stays visible</h2>
+<p>Value semantics buys safety with copies. <strong>Three</strong> patterns make the copies</p>
+<p>bite. Two of them the compiler seals *without making the model visible* — same</p>
+<p>source, same semantics, same bounded memory, no copy; each is the asymmetry in</p>
+<p>§3 applied locally. The third (§4c) it does not seal: that one is closed by choosing a different representation, which</p>
+<p>means the programmer has to see the copy. It is the largest cost in this</p>
+<p>document, so it is written as a shape of its own here and carried into §5 as a</p>
+<p>wall — not left as a footnote to §4b.</p>
+<h3 id="4a-the-return-path-copy-tax--return-slot-move">4a. The return-path copy tax → return-slot move</h3>
+<p>"Build a value locally, then return it" (<code>r := []int; …; return r</code>) naively</p>
+<p>deep-copies the whole result into the caller on the way out. But a function</p>
+<p>escape analysis (<code>collect_escapes</code>) can see that <code>r</code> is returned by name and</p>
+<p>allocate it in the *caller's* arena from birth — so the <code>return</code> is a header</p>
+<p>move, not an O(n) copy. It composes across call frames: a value returned up</p>
+<p>several levels is built once, in the final consumer's arena, with **zero copy</p>
+<p>call-sites** (destination-passing, emergent). Soundness comes from §3:</p>
+<p>allocating in the parent is always safe; the copy is skipped only when the</p>
+<p>value provably already lives there.</p>
+<p>*Measured* (<code>fn build(n)-&gt;[int]</code> returned 20000×, against the compiler just</p>
+<p>before this optimization): <strong>0.91s → 0.52s (~1.75×)</strong>.</p>
+<h3 id="4b-accumulation-retention--in-place-append">4b. Accumulation retention → in-place append</h3>
+<p><code>acc = acc + e</code> in a loop is the textbook O(n²) trap: each step allocates a</p>
+<p>fresh buffer, copies the whole accumulator, and abandons the old one in the</p>
+<p>bump arena (which can't reclaim it) — O(n²) in *both* time and memory. Tycho</p>
+<p>recognizes the *self-append* shape (<code>acc</code> on the left of <code>+</code>, reassigned to</p>
+<p><code>acc</code>) and grows <code>acc</code>'s buffer in place with geometric capacity, exactly like</p>
+<p>an array's <code>push</code>. This is the Tycho analog of Perceus reuse — and the</p>
+<p>uniqueness check Perceus needs reference counting to perform is <strong>free here</strong>:</p>
+<p>value semantics already guarantees <code>acc</code> is uniquely owned at the rebind (any</p>
+<p><code>b := acc</code> took its own deep copy), so growing it in place is invisible to</p>
+<p>everyone else.</p>
+<p>*Measured* (<code>acc = acc + "x"</code>, peak RSS, baseline vs optimized):</p>
+<table>
+<tr><th>N</th><th>baseline</th><th>optimized</th></tr>
+<tr><td>10 000</td><td>33 MB</td><td>(flat)</td></tr>
+<tr><td>20 000</td><td>191 MB</td><td>(flat)</td></tr>
+<tr><td>40 000</td><td>828 MB</td><td><strong>&lt; 4 MB</strong></td></tr>
+<tr><td>400 000</td><td>(would be ~80 GB)</td><td><strong>&lt; 8 MB</strong></td></tr>
+</table>
+<p>Quadratic → linear, and the optimized memory does not scale with N.</p>
+<p>The pattern across 4a/4b: **the optimization is the model's own asymmetry,</p>
+<p>applied locally.** Neither touches the source language or the value-semantic</p>
+<p>guarantee.</p>
+<h3 id="4c-rebuild-per-operation-on-a-long-lived-value--the-shape-the-compiler-does-not-seal">4c. Rebuild-per-operation on a long-lived value — the shape the compiler does not seal</h3>
+<p>Where 4a and 4b have a recognizable shape, some programs have none: a</p>
+<p>long-lived mutable value that is *rebuilt* rather than *mutated* pays a full</p>
+<p>copy of the whole value on every operation. The worked case is <code>tools/tycho-ed/</code>,</p>
+<p>whose line buffer rebuilds a string per keystroke: per-edit cost drifts ~7×</p>
+<p>over a million edits while four controls (5–35 ns/step, flat) rule out the</p>
+<p>arena, concatenation, and <code>inout</code> as the cause. Rebuilding the line as a gap</p>
+<p>buffer — one byte written into a hole per keystroke instead of one copy per</p>
+<p>keystroke — flattens the drift to ~100% with the millionth keystroke ~10×</p>
+<p>cheaper, while peak RSS stays at 95.7 MB in both modes (the resident set is the</p>
+<p>undo journal doing its job, not churn). The full journal with all controls is in</p>
+<p><a href="internals/editor-churn-2026-08-12.html">internals/editor-churn-2026-08-12.md</a>;</p>
+<p>the representation idiom is in</p>
+<p><a href="internals/value-semantics-limits.html">internals/value-semantics-limits.md</a>.</p>
+<p>The boundary as a rule of thumb: **if a mutable value outlives every scope</p>
+<p>that would reclaim it, rebuilding it per operation is the expensive shape, and</p>
+<p>mutating it in place is the supported one.** §5 carries this as a wall.</p>
+<h2 id="5-the-walls--whats-genuinely-hard">5. The walls — what's genuinely hard</h2>
+<p>A model is defined as much by what it *can't* do. <strong>Four</strong> patterns threaten the model, and they are not equally hard.</p>
+<p>Two the compiler seals outright. One the compiler cannot seal but a</p>
+<p>representation can, at the cost of the programmer seeing the arena. One is not a</p>
+<p>limit to be lifted at all — it is the thesis.</p>
+<p><strong>The return copy tax</strong> and <strong>accumulation retention</strong> are sealed, in §4a and</p>
+<p>§4b respectively. They cost the reader a paragraph each and the programmer</p>
+<p>nothing.</p>
+<p><strong>Rebuild-per-operation on a long-lived value</strong> (§4c) is the one that stays</p>
+<p>visible, and it is the wall a working programmer is most likely to hit, because</p>
+<p>unlike the next one it shows up in ordinary tree-shaped code with nothing</p>
+<p>graph-shaped about it. An editor's buffer, a session cache, a server's</p>
+<p>accumulated state: change one byte by rebuilding the value and you copy the</p>
+<p>whole value, every time. 4a and 4b do not fire — there is no shape to</p>
+<p>recognize — and the arena recycling the old bytes does not refund the copy. It</p>
+<p>is *reachable*: mutate in place instead of rebuilding, and the measured curve</p>
+<p>flattens completely (§4c). But reaching it is a decision the programmer makes,</p>
+<p>which makes this the one place the model is not invisible.</p>
+<p><strong>Shared mutable state</strong> is the genuinely hard one — sometimes described as</p>
+<p>"non-tree data: graphs, cycles, caches." Most of it dissolves on inspection:</p>
+<ul>
+<li><strong>Cyclic and graph-shaped data is *not* a wall.</strong> A directed graph *with a</li>
+</ul>
+<p>cycle* is traversed correctly today using <strong>indices instead of references</strong> —</p>
+<p>CSR adjacency arrays plus a <code>visited[]</code> array. (BFS over a literal 3-cycle</p>
+<p>works; this is also how cache-efficient graph code is written anyway.) Value</p>
+<p>semantics forbids *pointer* cycles, not *modeled* cycles. *Measured*: a</p>
+<p>by-value recursive trie costs <strong>~1.55× C's memory</strong> (children stored inline,</p>
+<p>not shared by pointer — down from ~3.2× once its per-node maps moved to a</p>
+<p>compact indexed-dict layout), and the same shape as a flat <code>[Node]</code> pool</p>
+<p>linked by integer indices is <strong>~1.3× C</strong> on a 300k-node graph (<code>bench/trie</code>,</p>
+<p><code>bench/dijkstra</code>). Even the naive by-value form is now within a small factor</p>
+<p>of C; the index-pool idiom closes the rest and is what makes genuine *sharing*</p>
+<p>(DAGs, cycles) expressible at all. The full measured loss column with the</p>
+<p>idiom for each case is in</p>
+<p><a href="internals/value-semantics-limits.html">the value-semantics limits note</a>.</p>
+<ul>
+<li>The real, narrow wall is **shared mutable state threaded through function</li>
+</ul>
+<p>calls** — canonically a memoization table that recursive calls must all</p>
+<p>write to. The thesis-preserving answer is <code>inout</code>: an exclusive,</p>
+<p>copy-in/copy-out mutable borrow. <code>inout</code> does not break value semantics: it is equivalent to</p>
+<p><code>x = f(x)</code>, made safe by an exclusivity rule (the same variable cannot be</p>
+<p>passed to two <code>inout</code> parameters of one call). Heap <code>inout</code> — <code>[int]</code>,</p>
+<p><code>[string]</code>, and heap-bearing structs, including <code>push</code>/growth and</p>
+<p>element/field mutation through the borrow — lets the callee share and mutate</p>
+<p>the caller's aggregate in place, so a memo table (or a recursive output</p>
+<p>collector, or a mutable context object) is genuinely shared across all</p>
+<p>frames. The owning arena is threaded as a hidden parameter, so an allocating</p>
+<p>mutation lands where the value lives and survives the call.</p>
+<p>*Measured*: the naive exponential <code>fib(40)</code> computes 102334155 in <strong>0.60s</strong>;</p>
+<p>the memoized version returns the same answer in <strong>under a millisecond</strong> — O(n)</p>
+<p>vs O(2ⁿ).</p>
+<p><strong>This boundary is where the safety comes from.</strong> What stays genuinely</p>
+<p>impossible is *pointer-identity aliasing of two named variables in one scope* —</p>
+<p>two handles to one mutable object, a write through one seen through the other,</p>
+<p>held beyond any single call. The observer pattern, a shared mutable cache held</p>
+<p>in a field, doubly-linked structures by reference, **and dynamic dispatch</p>
+<p>through an interface value<strong>. This is forbidden </strong>by construction**, and <code>inout</code></p>
+<p>doesn't provide it (it's call-scoped, not storable). That</p>
+<p>forbiddance is *what value semantics is*. Removing it wouldn't extend Tycho; it</p>
+<p>would make it a different language.</p>
+<p>A trait object — Go's <code>interface</code>, Java's, Rust's <code>dyn Trait</code> — is *a</p>
+<p>pointer to someone else's value plus a vtable*, which is exactly the aliasing</p>
+<p>value semantics forbids, so a heterogeneous container of implementors or an</p>
+<p>interface value held in a struct is the same wall, not a missing feature.</p>
+<p>Static polymorphism is unaffected and already works: a generic body is</p>
+<p>type-checked after substitution, so a generic can call an ordinary function on</p>
+<p><code>$T</code> and monomorphize per instantiation, with no vtable and no indirection. What</p>
+<p>is refused is the *dynamic* form, and it is refused for the same one reason</p>
+<p>everything else in this section is.</p>
+<h2 id="6-where-that-leaves-the-idea">6. Where that leaves the idea</h2>
+<p>The verdict:</p>
+<ul>
+<li>For <strong>tree-shaped, scope-shaped, build-and-return, accumulate</strong> programs —</li>
+</ul>
+<p>compilers and compiler passes, request handlers, batch transforms, CLI</p>
+<p>tools, frame-loop logic — the model delivers **zero memory cognition at 40%</p>
+<p>of C's memory on binary-trees**. The two optimizations move it from "cute"</p>
+<p>to there — a 1.75× return path and an 828 MB → 4 MB append (§4a/§4b) — and</p>
+<p>they were free because the model's safety asymmetry hands them over.</p>
+<ul>
+<li>For <strong>long-lived mutable structures edited over a session</strong> — an editor</li>
+</ul>
+<p>buffer, a session cache, a server's accumulated state — it works, and it is</p>
+<p>the one case where the model is <strong>not invisible</strong>. Rebuilding the value per</p>
+<p>operation copies the whole value per operation; mutating it in place copies</p>
+<p>nothing and flattens the curve (§4c, measured). Both compile, both are safe,</p>
+<p>and only one is cheap — so here the programmer, not the compiler, makes the</p>
+<p>decision. Zero memory cognition is claimed for the bullet above this one and</p>
+<p>is not claimed for this one.</p>
+<ul>
+<li>For <strong>shared-mutable-graph</strong> programs (long-lived shared caches, observer</li>
+</ul>
+<p>graphs, reference-cyclic structures) it is a poor fit, and no optimization</p>
+<p>changes that — it is the thesis's defining boundary, not a missing feature.</p>
+<p>So: data-oriented, not general-purpose, and not trying to be. Within its domain</p>
+<p>the wager holds — *value semantics is precisely the constraint that lets the arenas</p>
+<p>disappear* — and the domain is large and real.</p>
+<h2 id="7-reproducing-the-numbers">7. Reproducing the numbers</h2>
+<p>The figures above are measured on the committed compiler. To reproduce:</p>
+<pre><code class="language-sh">make                                    # build ./tychoc
+./tychoc examples/accumulate_big.ty     # in-place append, large N
+./tychoc examples/memo.ty               # inout memoized fib(40)
+# (the return-slot A/B -- this compiler vs a pre-return-slot baseline built from an
+#  earlier commit against a regenerated embed header -- is scripted in bench/*/RESULTS.md)
+</code></pre>
+<p>Peak-RSS and sanitizer method are as stated in <a href="performance.html">performance.md</a></p>
+<p>and <a href="controls.html">controls.md</a>: ratios across languages are the claim, and every</p>
+<p>example and feature program is checked against its golden under sanitizers.</p>
+<p>Three further things back the thesis up, written up separately.</p>
+<p><strong>Head-to-head performance.</strong> The cross-language benchmark suite under <code>bench/</code></p>
+<p>(Tycho vs C, Go, Rust, and Koka's Perceus reference-counting) and</p>
+<p>the compiler and codegen numbers are in <a href="perf.html">docs/perf.md</a>.</p>
+<p><strong>Concurrency reuses the call convention.</strong> The same call convention — deep-copy in, copy</p>
+<p>out, a private arena per call — is already a sound thread boundary, so</p>
+<p><code>spawn</code>/<code>wait</code>, <code>parallel for</code>, channels, and <code>select</code> are just that convention run</p>
+<p>on threads: race-free by construction, with no Sendable/lifetime/lock machinery</p>
+<p>in the language. Measured: <code>parallel for</code> at C-pthreads parity on a</p>
+<p>compute-bound reduction; and a lock-free-channel pipeline that runs ~9× faster than a</p>
+<p>hand-written C *mutex-ring* baseline (73 ms vs 654 ms) — a design-expressiveness result</p>
+<p>(lock-free vs mutex), not a throughput claim over optimal C, and still paying the</p>
+<p>value-semantic copies C doesn't (<a href="reference/concurrency.html">reference/concurrency.md</a>, <code>bench/conc/</code>).</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

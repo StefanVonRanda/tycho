@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>newtype / `subscript` / `bounded` probe, 2026-08-19 — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / internals/probe-newtype-subscript-bounded-2026-08-19.md</nav>
+<h1 id="newtype--subscript--bounded-probe-2026-08-19">newtype / <code>subscript</code> / <code>bounded</code> probe, 2026-08-19</h1>
+<blockquote>
+<p><strong>Provenance.</strong> This run was a Claude subagent spawned inside the author's</p>
+<p>own session, not an independent third party — see</p>
+<p><a href="probe-model-comparison-2026-08-20.html">probe-model-comparison-2026-08-20.md</a>.</p>
+<p>Every finding below was rebuilt on <code>main</code> before being written down, so the</p>
+<p>findings stand; the independence does not.</p>
+</blockquote>
+<p><strong>Verdict: 1 diagnostic bug, 1 index gap (fixed), 1 missing capability, 4 minor gaps. Probed 2026-08-19 with a 600-line limit order book. Outcome: headline is documentation, not language — 3 compiler errors in 600 lines, correct on first run.</strong></p>
+<p>A fresh agent built a 600-line price-time-priority limit order book across two</p>
+<p>packages: newtypes <code>Price</code>/<code>Qty</code>/<code>OrderId</code>/<code>Trader</code>, resting orders in</p>
+<p><code>bounded[LEVEL_CAP]Order</code>, three <code>subscript</code>s, and a session driver. The</p>
+<p>program was discarded; this record is the artifact.</p>
+<h2 id="1-an-arithmetic-message-states-a-rule-that-is-not-the-rule">1. An arithmetic message states a rule that is not the rule</h2>
+<pre><code class="language-text">error: arithmetic requires two ints or two floats (got Price, Qty)
+</code></pre>
+<p><code>Price</code> and <code>Qty</code> are both newtypes over <code>int</code>, so by the message's own terms</p>
+<p>they ARE two ints. Confirmed here: <code>Price * Price</code> compiles; <code>Price * Qty</code> does</p>
+<p>not. The real rule is that both sides must be the SAME type — the message</p>
+<p>describes a different one and sends the reader to convert, which is not the fix.</p>
+<h2 id="2-boundednt-is-missing-from-the-reference-index-and-nothing-shows-how-to-build-one">2. <code>bounded[N]T</code> is missing from the reference index, and nothing shows how to build one</h2>
+<p><code>docs/reference/index.md</code> claims to catalogue every feature and contains <strong>zero</strong></p>
+<p>occurrences of <code>bounded</code>. All prose lives in spec §5.3.10. The agent reported that no document shows how to CONSTRUCT one. That part was</p>
+<p>wrong — <code>docs/reference/arrays-slices.md</code></p>
+<p>has a whole section with <code>b: bounded[4]int = [1, 2]</code> in it. The gap is that</p>
+<p>the index row never named <code>bounded</code>, so neither the agent nor the first write-up found the</p>
+<p>section; both grepped and concluded from the miss. Fixed by naming it in</p>
+<p>the index row.</p>
+<h2 id="3-pop-and-slicing-are-rejected-on-bounded-so-it-cannot-be-dequeued">3. <code>pop</code> and slicing are rejected on <code>bounded</code>, so it cannot be dequeued</h2>
+<p>A fixed-capacity queue cannot be drained from the front. The agent invented</p>
+<p>tombstone-and-rebuild. Both refusals carry a workaround in the message; the docs</p>
+<p>state only the prohibition, so a reader learns the shape by hitting it.</p>
+<h2 id="4-smaller-all-confirmed">4. Smaller, all confirmed</h2>
+<ul>
+<li>The <code>inout</code> docs say the argument "must name a mutable variable"; the compiler</li>
+</ul>
+<p>also accepts a field place (<code>&amp;b.asks</code>). The doc is narrower than the language,</p>
+<p>so the agent wrote an unnecessary fallback.</p>
+<ul>
+<li>Forwarding an <code>inout</code> parameter still needs <code>&amp;</code> at the inner call, and no doc</li>
+</ul>
+<p>example shows it.</p>
+<ul>
+<li>Cross-package <code>subscript</code> calls are undocumented — <code>b.ask(i)</code> works, including</li>
+</ul>
+<p>nested (<code>b.bid(0).resting(0).qty = ...</code>, checked at runtime).</p>
+<ul>
+<li>The "subscript rooted in a fresh local" rule is unreachable: the single-<code>yield</code></li>
+</ul>
+<p>rule fires first.</p>
+<h2 id="what-went-right">What went right</h2>
+<p>Three errors in 600 lines, and the program was correct on its first run. The</p>
+<p>work shipped earlier the same day showed up in the agent's own account: **batched</p>
+<p>errors with quoted source<strong>, and </strong>diagnostics carrying a second location with</p>
+<p>the unmangled type and its declaration**.</p>
+<p>Newtype distinctness held across the package boundary. <code>bounded</code> refused the 9th</p>
+<p>order into an 8-slot level by name, with the cap in the message. The <code>subscript</code></p>
+<p>behaved as a real place and chained through an <code>inout</code> array element. Zero</p>
+<p>warnings on the final build.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

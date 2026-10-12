@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>1. Scope and conformance · 2. Notation — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / spec/00-conventions.md</nav>
+<h1 id="1-scope-and-conformance--2-notation">1. Scope and conformance · 2. Notation</h1>
+<h2 id="1-scope-and-conformance">1. Scope and conformance</h2>
+<h3 id="11-scope">1.1 Scope</h3>
+<p>This document specifies the syntax and semantics of the Tycho programming</p>
+<p>language and its standard library (the *corelib*). It defines:</p>
+<ul>
+<li>the lexical and phrase grammar of a Tycho source program (<a href="01-lexical.html">§3</a>,</li>
+</ul>
+<p><a href="02-grammar.html">§4</a>);</p>
+<ul>
+<li>the type system, type inference, and generic instantiation;</li>
+<li>the memory and object model — value semantics and the implicit hierarchical</li>
+</ul>
+<p>arena model on which the language rests;</p>
+<ul>
+<li>the meaning of every declaration, statement, and expression;</li>
+<li>the concurrency model and its ordering guarantees;</li>
+<li>the foreign-function interface (FFI) to C;</li>
+<li>the built-in functions and the standard library.</li>
+</ul>
+<p>It does <strong>not</strong> specify: the compiler's command-line interface, its diagnostic</p>
+<p>message text, the layout of generated C, or the performance of any construct</p>
+<p>(performance characteristics are described informatively in</p>
+<p><a href="../thesis.html">docs/thesis.md</a> and <a href="../perf.html">docs/perf.md</a>).</p>
+<p>Tycho is defined <strong>abstractly</strong>: scalar widths and behavior are fixed</p>
+<p>independently of any compilation target (§5). The reference</p>
+<p>implementation transpiles to C; that lowering is *one conforming realization*,</p>
+<p>never the definition. The single, minimal register of behavior an</p>
+<p>implementation is permitted to vary is collected in</p>
+<p><a href="appendix-f-impl-defined.html">Appendix F</a>.</p>
+<h3 id="12-the-reference-implementation">1.2 The reference implementation</h3>
+<p><strong>`tychoc`</strong> — the transpiler in  — is the **reference</p>
+<p>implementation** of this specification. Where an example, a fixture, or a</p>
+<p>diagnostic is cited below, it is <code>tychoc</code>'s.</p>
+<p>This document is nonetheless *normative* and <code>tychoc</code> is not: where the two</p>
+<p>disagree, it is a defect in one of them, to be reconciled. The specification</p>
+<p>does not defer to the implementation, and no implementation's behavior</p>
+<p>establishes a requirement this document does not state.</p>
+<h3 id="13-conformance">1.3 Conformance</h3>
+<p>A <strong>conforming program</strong> is a Tycho source program (or package) that this</p>
+<p>specification permits, together with any inputs it reads.</p>
+<p>A <strong>conforming implementation</strong> is one that:</p>
+<p>1. accepts every conforming program this specification requires to be accepted,</p>
+<p>and rejects (with a diagnostic, before producing an executable) every program</p>
+<p>this specification requires to be rejected; and</p>
+<p>2. for an accepted program, produces an executable whose observable behavior</p>
+<p>(its output, exit status, and externally-visible effects) is one this</p>
+<p>specification permits for that program on its inputs.</p>
+<p>Conformance is defined at two tiers:</p>
+<ul>
+<li><strong>Core tier.</strong> The language (<a href="01-lexical.html">§3</a> onward) and the corelib</li>
+</ul>
+<p>packages that are pure Tycho or depend only on the C standard library. A</p>
+<p>core-tier implementation MUST provide all of these.</p>
+<ul>
+<li><strong>Extended tier.</strong> Additionally the corelib packages that depend on an</li>
+</ul>
+<p>external C library via <code>pkg-config</code> (<code>http</code> → libcurl, <code>crypto</code> → libcrypto,</p>
+<p><code>compress</code> → zlib, <code>image</code> → libpng, <code>tls</code> → openssl). An implementation MAY</p>
+<p>omit the extended tier and still conform at the core tier; a program that</p>
+<p>imports an absent extended package MUST be diagnosed, not silently mis-linked.</p>
+<p>The reference test harness already embodies this split: <code>deps</code>-gated package</p>
+<p>tests skip (rather than fail) when the external library is absent.</p>
+<p>An implementation MUST NOT accept a program this specification requires to be</p>
+<p>rejected. <strong>Failing closed</strong> — rejecting a doubtful program rather than</p>
+<p>compiling it to undefined behavior — is a normative principle of this language</p>
+<p>(<a href="17-runtime.html">§30</a>), inherited from the reference</p>
+<p>implementation's design.</p>
+<p>Conformance is a claim about <strong>this specification</strong>, not about agreement with any</p>
+<p>particular compiler. It is *checked* against the reference implementation and the</p>
+<p>golden fixture corpus of <a href="appendix-e-conformance.html">Appendix E</a> — a fixture</p>
+<p>records the behavior this document requires, so a second implementation that</p>
+<p>reproduces the corpus and this document's requirements conforms whether or not it</p>
+<p>resembles <code>tychoc</code> internally.</p>
+<h3 id="14-requirement-keywords">1.4 Requirement keywords</h3>
+<p>The key words <strong>MUST</strong>, <strong>MUST NOT</strong>, <strong>REQUIRED</strong>, <strong>SHALL</strong>, <strong>SHALL NOT</strong>,</p>
+<p><strong>SHOULD</strong>, <strong>SHOULD NOT</strong>, <strong>RECOMMENDED</strong>, <strong>MAY</strong>, and <strong>OPTIONAL</strong> in this</p>
+<p>document are to be interpreted as described in RFC 2119 and RFC 8174 when, and</p>
+<p>only when, they appear in all capitals.</p>
+<p>Two further terms are used, always explicitly and collected in</p>
+<p><a href="appendix-f-impl-defined.html">Appendix F</a>:</p>
+<ul>
+<li><strong>unspecified</strong> — behavior for which this specification imposes no</li>
+</ul>
+<p>requirement and provides no choices. A conforming program MUST NOT depend on</p>
+<p>it; different conforming implementations may behave differently, and the same</p>
+<p>implementation may behave differently on different occasions.</p>
+<ul>
+<li><strong>implementation-defined</strong> — behavior an implementation is permitted to</li>
+</ul>
+<p>choose but MUST document. Tycho's abstract-exact policy keeps this register</p>
+<p>deliberately small.</p>
+<h3 id="15-versioning">1.5 Versioning</h3>
+<p>This specification defines <strong>Tycho 0.5</strong> and is maintained against the current</p>
+<p>release (0.8.6); where the two differ, <code>CHANGELOG.md</code> records the change. It was</p>
+<p>ratified on 2026-07-13 under the</p>
+<p>name *Tycho 1.0* and renamed on 2026-08-09 when the project was demoted to 0.5;</p>
+<p>no technical content changed with the rename.</p>
+<p><strong>0.5 is NOT a frozen version.</strong> The freeze was the substance of the 1.0 claim,</p>
+<p>and it is withdrawn with it: until 1.0, a change to observable behavior is issued</p>
+<p>as a changelog entry against a named version rather than as an erratum, and there</p>
+<p>is no deprecation window. The document remains normative — the implementation is</p>
+<p>gated against it, so a divergence is a bug in one of the two, not a licence to</p>
+<p>ignore the spec.</p>
+<p>From 1.0 onward the original scheme applies: the version is frozen, subsequent</p>
+<p>releases are named by year (e.g. <code>Tycho 2027</code>), a release names the language</p>
+<p>version it specifies, a conforming implementation states which version it</p>
+<p>implements, and corrections that change observable behavior are issued as errata</p>
+<p>against a named version, never silently.</p>
+<h2 id="2-notation">2. Notation</h2>
+<h3 id="21-grammar-notation">2.1 Grammar notation</h3>
+<p>Tycho's grammar is presented in two layers.</p>
+<ul>
+<li>The <strong>lexical grammar</strong> (<a href="01-lexical.html">§3</a>) maps source *characters* to</li>
+</ul>
+<p>*tokens*, including the synthetic layout tokens <code>NEWLINE</code>, <code>INDENT</code>, and</p>
+<p><code>DEDENT</code>. Tycho is indentation-sensitive, so this layer is not context-free</p>
+<p>and is described partly by prose (the indentation algorithm, §3.4).</p>
+<ul>
+<li>The <strong>phrase grammar</strong> (<a href="02-grammar.html">§4</a>) maps *tokens* to program</li>
+</ul>
+<p>structure. Its terminals are token kinds, written in <code>UPPER_CASE</code> (e.g.</p>
+<p><code>IDENT</code>, <code>INT</code>, <code>NEWLINE</code>) or as the literal spelling of punctuation and</p>
+<p>keywords in double quotes (e.g. <code>"fn"</code>, <code>":="</code>, <code>"-&gt;"</code>).</p>
+<p>Both use a W3C-style EBNF:</p>
+<table>
+<tr><th>Form</th><th>Meaning</th></tr>
+<tr><td><code>A ::= …</code></td><td>production defining nonterminal <code>A</code></td></tr>
+<tr><td><code>"x"</code></td><td>a literal terminal (keyword or punctuation spelling)</td></tr>
+<tr><td><code>UPPER</code></td><td>a terminal token kind</td></tr>
+<tr><td><code>A B</code></td><td><code>A</code> followed by <code>B</code></td></tr>
+<tr><td>&lt;code&gt;A &amp;#124; B&lt;/code&gt;</td><td><code>A</code> or <code>B</code></td></tr>
+<tr><td><code>A?</code></td><td>zero or one <code>A</code></td></tr>
+<tr><td><code>A*</code></td><td>zero or more <code>A</code></td></tr>
+<tr><td><code>A+</code></td><td>one or more <code>A</code></td></tr>
+<tr><td><code>( … )</code></td><td>grouping</td></tr>
+<tr><td><code>[abc]</code>, <code>[0-9]</code></td><td>a character class (lexical grammar only)</td></tr>
+<tr><td><code>/* … */</code></td><td>a comment on the production, non-normative</td></tr>
+</table>
+<p>Where the grammar accepts a form that a later static rule then rejects (for</p>
+<p>example, a value <code>if</code> with no <code>else</code>), the grammar production is annotated and</p>
+<p>the rejecting rule is stated in the relevant semantic section. The grammar</p>
+<p>alone does not define validity; a program is valid only if it also satisfies</p>
+<p>the static-semantic rules.</p>
+<h3 id="22-source-of-record">2.2 Source of record</h3>
+<p>The tree-sitter grammar under <code>editors/zed/</code> is a <strong>non-normative</strong> editor</p>
+<p>highlighter. It does not model indentation and is known to diverge from the</p>
+<p>language in several places (enumerated in <a href="01-lexical.html#310-non-normative-tree-sitter-grammar">§3.10</a>);</p>
+<p>it MUST NOT be treated as a grammar of record.</p>
+<h3 id="23-examples-and-code-fences">2.3 Examples and code fences</h3>
+<p>Fenced code blocks carry a language tag identifying their kind:</p>
+<ul>
+<li><strong>`ebnf`</strong> — a grammar production (see §2.1). The collected grammar in</li>
+</ul>
+<p><a href="appendix-a-grammar.html">Appendix A</a> is generated from these blocks.</p>
+<ul>
+<li><strong>`tycho`</strong> — Tycho source. Most such blocks are *illustrative fragments* — a</li>
+</ul>
+<p>declaration, an expression, or a few statements shown in isolation, often</p>
+<p>referring to names defined in the surrounding prose. A fragment is not a</p>
+<p>complete program and is not executed.</p>
+<ul>
+<li><strong>`output`</strong> — the exact expected standard output of the immediately preceding</li>
+</ul>
+<p><code>tycho</code> block.</p>
+<ul>
+<li><strong>`text`</strong> — a keyword list, a shell/<code>cc</code> invocation, or *meta-syntax*: prose</li>
+</ul>
+<p>notation that is not literal Tycho. Meta-syntax uses <code>…</code> for elision, <code>&lt;name&gt;</code></p>
+<p>for a placeholder, <code>{ a | b }</code> for a choice, and <code>[ x ]</code> for an optional part.</p>
+<p>A <strong>runnable example</strong> is a <code>tycho</code> block immediately followed (blank lines</p>
+<p>permitted) by an <code>output</code> block: the <code>tycho</code> block is then a complete program</p>
+<p>and its standard output MUST equal the <code>output</code> block byte-for-byte. The `make</p>
+<p>spec-check` gate (<a href="appendix-e-conformance.html">Appendix E.3</a>) builds and runs</p>
+<p>every runnable example on the reference implementation and asserts this.</p>
+<p>Examples are illustrative; a conflict between an example and a normative rule is</p>
+<p>a defect to be corrected in favor of the rule.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

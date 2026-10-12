@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quiet results — where Tycho answers instead of refusing — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="index.html">docs</a> / quiet-results.md</nav>
+<h1 id="quiet-results--where-tycho-answers-instead-of-refusing">Quiet results — where Tycho answers instead of refusing</h1>
+<p>Tycho's stated principle is to <strong>fail closed</strong>: a doubtful operation aborts</p>
+<p>cleanly rather than proceeding into undefined behavior</p>
+<p>(<a href="spec/17-runtime.html">spec §30</a>). Indexing is bounds-checked, <code>Option</code> removes</p>
+<p>null, <code>Result</code> removes exceptions, and an integer divided by zero stops the</p>
+<p>program rather than inventing an answer.</p>
+<p>This page lists those exceptions — the few operations that return a value</p>
+<p>instead of stopping. Each one is intentional, and each has a stricter</p>
+<p>alternative listed beside it.</p>
+<p>They matter because they fail quietly: the program keeps running with an</p>
+<p>answer you did not mean. No compiler error, no crash, no failing test.</p>
+<p>Read it once before your first real program. Every output below is printed by</p>
+<p>the code beside it.</p>
+<table>
+<tr><th>What you write</th><th>What you get</th><th>The fail-closed form</th></tr>
+<tr><td>§1 <code>len(s)</code>, <code>s[i]</code>, <code>s[a:b]</code></td><td><strong>bytes</strong>, not characters</td><td><code>core:utf8</code> (<code>utf8.count</code>)</td></tr>
+<tr><td>§2 <code>utf8.decode</code> on bad input</td><td>width <strong>`0`</strong> — <code>at += w</code> never advances</td><td>test <code>w == 0</code> before advancing</td></tr>
+<tr><td>§3 <code>s[a:b]</code> out of range</td><td>a <strong>clamped</strong> slice, no trap</td><td><code>strings.slice_str</code> / <code>slice_bytes</code> → <code>Result</code></td></tr>
+<tr><td>§4 <code>a + b</code> past the integer range</td><td><strong>wraparound</strong>, never a trap</td><td>check the operands before the operation</td></tr>
+<tr><td>§5 <code>c + n</code> on a <code>char</code></td><td><strong>wraps to a byte</strong> (<code>0..255</code>)</td><td>treat <code>char</code> as a byte, because it is one</td></tr>
+<tr><td>§6 <code>strings.parse_int("3x")</code></td><td><code>3</code> — stops at the garbage</td><td><code>strings.parse_int_checked</code> → <code>Result</code></td></tr>
+<tr><td>§7 <code>_</code></td><td>an <strong>ordinary variable</strong>, not a discard</td><td>call the function as a statement</td></tr>
+</table>
+<p>Everything else in the language that can go wrong <strong>aborts</strong> — a real bounds</p>
+<p>violation, division by zero, an out-of-range <code>chr</code>, a second <code>wait</code> on a task, a</p>
+<p>stale <code>core:pool</code> handle. Those you will find out about immediately, which is</p>
+<p>why they are not on this page. The register of what aborts is</p>
+<p><a href="spec/17-runtime.html">spec §30.2</a>; what wraps is §30.1 and what clamps is §30.3.</p>
+<p>The corelib entries (§2, §6) are library behavior rather than language rules, so</p>
+<p>they are not in the spec's register; they are here because the failure they</p>
+<p>produce is the same one.</p>
+<h2 id="1-len-indexing-and-slicing-are-byte-operations">1. <code>len</code>, indexing and slicing are byte operations</h2>
+<p>A <code>string</code> is a length-prefixed byte buffer, and every length-sensitive</p>
+<p>operation uses that length (<a href="spec/17-runtime.html">spec §30.4</a>). On ASCII the</p>
+<p>distinction never shows. On anything else, the natural program is the wrong one</p>
+<p>and it is wrong silently.</p>
+<pre><code class="language-tycho">package main
+import "core:utf8"
+
+fn main():
+    s := "héllo"
+    println("len       = " + str(len(s)))
+    println("utf8.count= " + str(utf8.count(s)))
+</code></pre>
+<pre><code class="language-output">len       = 6
+utf8.count= 5
+</code></pre>
+<p><code>s[i]</code> yields one byte as an <code>int</code> in <code>0..255</code>, so indexing into multi-byte text</p>
+<p>gives you half a character. Reach for <a href="reference/strings.html">`core:utf8`</a> the</p>
+<p>moment the input is not known to be ASCII.</p>
+<h2 id="2-utf8decode-reports-invalid-input-with-a-zero-width">2. <code>utf8.decode</code> reports invalid input with a zero width</h2>
+<p>The companion to §1, and the only entry on this page whose failure is a <strong>hang</strong></p>
+<p>rather than a wrong value. <code>utf8.decode(s, at)</code> returns <code>(codepoint, width)</code>, and</p>
+<p>on anything it cannot decode it returns <code>(-1, 0)</code>. A caller who advances with</p>
+<p><code>at = at + width</code> — the obvious loop — never advances at all.</p>
+<pre><code class="language-tycho">package main
+import "core:utf8"
+
+fn main():
+    good := utf8.decode("é", 0)
+    println("whole  'é'      -&gt; cp=" + str(good.0) + " width=" + str(good.1))
+    half := "é"[1:2]                      # the second byte, on its own
+    bad := utf8.decode(half, 0)
+    println("half   'é'[1:2] -&gt; cp=" + str(bad.0) + " width=" + str(bad.1))
+    at := 0
+    steps := 0
+    for at &lt; len(half) and steps &lt; 3:     # `steps` is the only reason this ends
+        d := utf8.decode(half, at)
+        at = at + d.1
+        steps = steps + 1
+    println("3 iterations later, at=" + str(at) + " len=" + str(len(half)))
+</code></pre>
+<pre><code class="language-output">whole  'é'      -&gt; cp=233 width=2
+half   'é'[1:2] -&gt; cp=-1 width=0
+3 iterations later, at=0 len=1
+</code></pre>
+<p>Note where the bad input came from: slicing a string at a byte offset that falls</p>
+<p>inside a character — §1 and this entry are the same mistake, one step apart.</p>
+<p><strong>Always test the width before advancing</strong>, and treat <code>width == 0</code> as "this input</p>
+<p>is not UTF-8" rather than as a character to skip. A <code>-1</code> codepoint is easy to</p>
+<p>notice; a <code>0</code> width is not, because nothing about the loop looks wrong.</p>
+<h2 id="3-a-slice-clamps--it-is-not-a-bounds-check">3. A slice clamps — it is not a bounds check</h2>
+<p>This is the one bounds situation in the language that does not abort</p>
+<p>(<a href="spec/17-runtime.html">spec §30.3</a>). <code>start &lt; 0</code> becomes <code>0</code>, <code>end &gt; len</code> becomes</p>
+<p><code>len</code>, and an inverted range yields empty.</p>
+<pre><code class="language-tycho">package main
+
+fn at(n: int) -&gt; int:
+    return n
+
+fn main():
+    b := "abc"
+    println("b[1:99] len = " + str(len(b[at(1):at(99)])))
+    println("b[-3:2] len = " + str(len(b[at(0)-3:at(2)])))
+    println("b[3:1]  len = " + str(len(b[at(3):at(1)])))
+</code></pre>
+<pre><code class="language-output">b[1:99] len = 2
+b[-3:2] len = 2
+b[3:1]  len = 0
+</code></pre>
+<p><strong>Why clamping?</strong> In Tycho <code>s[a:b]</code> is the <code>substr</code> operation in operator</p>
+<p>form, and <code>substr</code> clamps — that is the useful behavior for text</p>
+<p>processing. The operator matches it so the two never disagree.</p>
+<p><strong>When the bounds are data</strong> — a length field, an offset from a file or a</p>
+<p>socket — clamping turns a corrupt input into a plausible short read. Use</p>
+<p><code>strings.slice_str</code> or <code>strings.slice_bytes</code>, which take the same `(start,</p>
+<p>stop)<code> and return </code>Result(_, SliceErr)<code> distinguishing </code>OutOfBounds` from</p>
+<p><code>Inverted</code>.</p>
+<blockquote>
+<p>An <strong>array</strong> slice is different: <code>a[2:10]</code> on a 5-element array aborts. The</p>
+<p>clamp is a string and <code>bytes</code> behavior, not a general one.</p>
+</blockquote>
+<h2 id="4-integer-overflow-wraps-and-an-over-wide-shift-is-zero">4. Integer overflow wraps, and an over-wide shift is zero</h2>
+<p>Signed overflow is <strong>defined</strong> two's-complement wraparound and never traps</p>
+<p>(<a href="spec/17-runtime.html">spec §30.1</a>) — the reference compiles with <code>-fwrapv</code>, so</p>
+<p>this is a guarantee rather than the C accident it looks like. A shift count at</p>
+<p>or past the operand's width is defined as <code>0</code>.</p>
+<pre><code class="language-tycho">package main
+
+fn at(n: int) -&gt; int:
+    return n
+
+fn main():
+    big := at(9223372036854775807)
+    println("intmax + 1 = " + str(big + at(1)))
+    println("1 &lt;&lt; 64    = " + str(at(1) &lt;&lt; at(64)))
+</code></pre>
+<pre><code class="language-output">intmax + 1 = -9223372036854775808
+1 &lt;&lt; 64    = 0
+</code></pre>
+<p>Defined is not the same as intended. There is no checked-arithmetic form in the</p>
+<p>language, so a sum that could exceed the range is a thing to test for before you</p>
+<p>compute it, not after.</p>
+<h2 id="5-char-arithmetic-wraps-to-a-byte">5. <code>char</code> arithmetic wraps to a byte</h2>
+<p>A <code>char</code> is a byte, and arithmetic on one stays in <code>0..255</code> — it does not widen</p>
+<p>to an <code>int</code> and it does not abort on the way past the end.</p>
+<pre><code class="language-tycho">package main
+
+fn at(n: int) -&gt; int:
+    return n
+
+fn main():
+    c := char_at("A", 0)
+    println("'A' + 1   = " + str(c + at(1)))
+    println("'A' + 255 = " + str(c + at(255)))
+</code></pre>
+<pre><code class="language-output">'A' + 1   = B
+'A' + 255 = @
+</code></pre>
+<p><code>65 + 255</code> is <code>320</code>, which wraps to <code>64</code> — <code>@</code>. For anything that is arithmetic</p>
+<p>rather than character stepping, convert to <code>int</code> first.</p>
+<h2 id="6-the-bare-corelib-parsers-fail-open">6. The bare corelib parsers fail open</h2>
+<p><code>strings.parse_int</code> stops at the first character it cannot use and returns what</p>
+<p>it had, with no way to tell that from a clean parse.</p>
+<pre><code class="language-tycho">package main
+import "core:strings"
+
+fn show(s: string):
+    match strings.parse_int_checked(s):
+        Ok(v): println("  checked -&gt; ok " + str(v))
+        Err(EmptyInput): println("  checked -&gt; EmptyInput")
+        Err(Garbage): println("  checked -&gt; Garbage")
+        Err(OutOfRange): println("  checked -&gt; OutOfRange")
+
+fn main():
+    println("[3x]  lax -&gt; " + str(strings.parse_int("3x")))
+    show("3x")
+    println("[]    lax -&gt; " + str(strings.parse_int("")))
+    show("")
+    println("[ 7]  lax -&gt; " + str(strings.parse_int(" 7")))
+    show(" 7")
+</code></pre>
+<pre><code class="language-output">[3x]  lax -&gt; 3
+  checked -&gt; Garbage
+[]    lax -&gt; 0
+  checked -&gt; EmptyInput
+[ 7]  lax -&gt; 0
+  checked -&gt; Garbage
+</code></pre>
+<p>Note the third row: a leading space is not tolerated either, so <code>parse_int</code> on</p>
+<p><code>" 7"</code> is <code>0</code> — indistinguishable from the <code>0</code> you get for an absent option.</p>
+<p>The lax form exists for one case: a missing option, where <code>0</code> is a</p>
+<p>sensible default and a <code>Result</code> would be noise. For anything else —</p>
+<p>especially data from a file, a socket, or a user — a partial parse</p>
+<p>like <code>"1x4"</code> becoming <code>1</code> silently gives you the wrong value.</p>
+<p>**The rule: anything that came from a file, a socket, or a user gets the</p>
+<p><code>_checked</code> sibling.** They exist across the corelib and return a <code>Result</code> with a</p>
+<p>named error:</p>
+<table>
+<tr><th>Lax</th><th>Fail-closed</th></tr>
+<tr><td><code>strings.parse_int</code></td><td><code>strings.parse_int_checked</code></td></tr>
+<tr><td><code>decimal.from_str</code></td><td><code>decimal.from_str_checked</code></td></tr>
+<tr><td><code>json.parse</code></td><td><code>json.parse_checked</code></td></tr>
+<tr><td><code>cli.parse</code></td><td><code>cli.parse_checked</code></td></tr>
+<tr><td><code>io.list</code></td><td><code>io.list_checked</code></td></tr>
+</table>
+<p>Most are drop-in; <code>cli.parse_checked</code> is not — it additionally takes the valued</p>
+<p>and boolean option names, because validating a command line requires knowing</p>
+<p>which flags expect a value.</p>
+<p><code>decimal.from_str</code> is further along than the others: it is <strong>deprecated</strong>, the</p>
+<p>compiler warns on every call naming the exact failure (<code>"12.5x"</code> returns <code>1.25</code>),</p>
+<p>and it is removed in 1.0.</p>
+<h2 id="7---is-an-ordinary-variable-not-a-discard">7. <code>_</code> is an ordinary variable, not a discard</h2>
+<p>Tycho has no discard pattern. <code>_</code> is a name like any other, which means it</p>
+<p>declares, it holds a value, and it can only be declared once per scope.</p>
+<pre><code class="language-tycho">package main
+
+fn main():
+    _ := 41
+    println("_ holds " + str(_ + 1))
+</code></pre>
+<pre><code class="language-output">_ holds 42
+</code></pre>
+<p>In a destructuring bind <code>_, b := f()</code> it reads like a discard and behaves like</p>
+<p>one, because the value genuinely goes nowhere afterward — that spelling is fine</p>
+<p>and is the idiom. What does not work is treating it as a keyword: a second <code>_</code></p>
+<p>in one list, or <code>_ = f()</code> as a way to drop a return value. The compiler refuses</p>
+<p>both and says why. To drop a function's result, call it as a statement.</p>
+<h2 id="related">Related</h2>
+<ul>
+<li><a href="spec/17-runtime.html">spec §30</a> — the normative register: what wraps, what</li>
+</ul>
+<p>aborts, what clamps, what is unspecified.</p>
+<ul>
+<li><a href="reference/strings.html">`reference/strings.md`</a> — bytes, <code>substr</code>, and the</li>
+</ul>
+<p>checked slice functions.</p>
+<ul>
+<li><a href="debugging.html">`debugging.md`</a> — when a program is already misbehaving.</li>
+</ul>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

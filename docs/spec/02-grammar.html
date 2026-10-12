@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>4. Grammar — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / spec/02-grammar.md</nav>
+<h1 id="4-grammar">4. Grammar</h1>
+<p>This chapter defines the <strong>phrase grammar</strong> — the mapping from the token stream</p>
+<p>(§3) to program structure. Terminals are token kinds in <code>UPPER_CASE</code> (<code>IDENT</code>,</p>
+<p><code>INT</code>, <code>FLOAT</code>, <code>STR</code>, <code>CHAR</code>, <code>NEWLINE</code>, <code>INDENT</code>, <code>DEDENT</code>) or the literal</p>
+<p>spellings of keywords and punctuation in double quotes. The notation is defined</p>
+<p>in <a href="00-conventions.html#21-grammar-notation">§2.1</a>.</p>
+<p>The grammar defines *shape*, not *validity*: some productions accept forms that</p>
+<p>a later static rule rejects (for example, a value <code>if</code> without an <code>else</code>, §4.4).</p>
+<p>Such forms are flagged here and constrained in the semantic chapters. A program</p>
+<p>is valid only if it parses <strong>and</strong> satisfies every static-semantic rule.</p>
+<h2 id="41-program-and-top-level-declarations">4.1 Program and top-level declarations</h2>
+<p>A compilation input is a sequence of top-level declarations. Blank lines</p>
+<p>between them are insignificant.</p>
+<pre><code class="language-ebnf">Program   ::= TopDecl*
+TopDecl   ::= PackageDecl | ImportDecl | ExternFn | ConstDecl
+            | Subscript | Struct | Enum | Handle | TypeDecl | Fn
+</code></pre>
+<p>The leader disambiguates: <code>package</code>, <code>import</code>, <code>const</code>, <code>subscript</code> (contextual</p>
+<p>identifiers, §3.7), <code>extern</code> (contextual, when not immediately followed by <code>(</code>),</p>
+<p>and the keywords <code>struct</code>, <code>enum</code>, <code>handle</code>, <code>type</code> each select their</p>
+<p>declaration; anything else begins a function.</p>
+<pre><code class="language-ebnf">PackageDecl ::= "package" IDENT NEWLINE
+ImportDecl  ::= "import" IDENT? STR NEWLINE
+ConstDecl   ::= "const" IDENT "=" ConstExpr NEWLINE
+</code></pre>
+<p><code>ImportDecl</code>'s optional <code>IDENT</code> is an alias for the imported package's prefix;</p>
+<p>the <code>STR</code> is the path (a <code>core:</code> prefix selects the corelib root). <code>ConstExpr</code></p>
+<p>is an expression that folds to a single literal at compile time (integer</p>
+<p>arithmetic, bitwise, unary, and backward references to earlier top-level</p>
+<p>constants); its rules are given in §8 and §13. Package resolution,</p>
+<p>visibility, and merging are specified in §28.</p>
+<h3 id="411-functions">4.1.1 Functions</h3>
+<pre><code class="language-ebnf">Fn         ::= "fn" IDENT "(" ParamList? ")" ( "-&gt;" Type )? WhereClause? ":" NEWLINE Block
+ParamList  ::= Param ( "," Param )*
+Param      ::= IDENT ":" ( "inout" | "sink" )? "..."? Type
+</code></pre>
+<p>A parameter is a name, a colon, an optional passing mode (<code>inout</code> for a</p>
+<p>copy-in/copy-out borrow, or the contextual <code>sink</code> for an owned/consumed</p>
+<p>parameter — §15), an optional <code>...</code> marking a <strong>variadic</strong></p>
+<p>parameter, and its type. A variadic parameter has type <code>[T]</code> (the call packs</p>
+<p>its trailing arguments into it) and MUST be the last parameter; it cannot also</p>
+<p>be <code>inout</code> or <code>sink</code>. A missing <code>-&gt;</code> return type means the function returns</p>
+<p>nothing (<code>void</code>). A function MUST NOT return a <code>handle</code> (§25).</p>
+<p>Type parameters are introduced *inside* <code>Type</code> by the <code>$</code> sigil (§4.2); a</p>
+<p>function that mentions any <code>$T</code> type parameter or <code>$N</code> size parameter in its</p>
+<p>signature is <strong>generic</strong>. A <code>WhereClause</code> constrains a generic function:</p>
+<pre><code class="language-ebnf">WhereClause ::= "where" Constraint ( "," Constraint )*
+Constraint  ::= Predicate "(" IDENT ")"
+              | IDENT ":" Type ( "|" Type )*
+Predicate   ::= "numeric" | "comparable" | "has_str" | "hashable" | "defaultable"
+</code></pre>
+<p>The predicate set is <strong>closed</strong> (exactly the five names above; an unknown</p>
+<p>predicate is rejected) — see §7 for constraints. The type-set form <code>T: A | B | …</code> constrains <code>T</code> to one of a listed</p>
+<p>set (up to 16 types). A <code>where</code> clause requires a generic function; at most 8</p>
+<p>constraints are allowed.</p>
+<h3 id="412-structs-enums-newtypes-handles">4.1.2 Structs, enums, newtypes, handles</h3>
+<pre><code class="language-ebnf">Struct     ::= "packed"? "struct" IDENT TypeParams? ":" NEWLINE INDENT FieldDecl+ DEDENT
+FieldDecl  ::= IDENT ":" Type NEWLINE
+Enum       ::= "enum" IDENT TypeParams? ":" NEWLINE INDENT VariantDecl+ DEDENT
+VariantDecl::= IDENT ( "(" Type ( "," Type )* ")" )? NEWLINE
+Handle     ::= "handle" IDENT ":" NEWLINE INDENT "free" ":" IDENT NEWLINE DEDENT
+TypeDecl   ::= "type" IDENT "=" Type NEWLINE
+TypeParams ::= "(" "$" IDENT ( "," "$" IDENT )* ")"
+</code></pre>
+<p>A <code>struct</code> has one or more fields; an <code>enum</code> has one or more variants, each with</p>
+<p>an optional payload of up to 8 types. A <code>handle</code> names an opaque FFI resource</p>
+<p>and its C free function (§25). A <code>type</code> declaration introduces a</p>
+<p>distinct <strong>newtype</strong> over an underlying type; the permitted underlying types are</p>
+<p>constrained in §5. Recursion through a struct field is permitted</p>
+<p>only via a container (e.g. <code>[Node]</code>), never as a direct by-value self-field</p>
+<p>(§17).</p>
+<h3 id="413-extern-functions-and-subscripts">4.1.3 Extern functions and subscripts</h3>
+<pre><code class="language-ebnf">ExternFn   ::= "extern" STR? "fn" IDENT "(" ExternParamList? ")" ( "-&gt;" Type )? NEWLINE
+Subscript  ::= "subscript" IDENT "(" ParamList? ")" "-&gt;" "inout" Type ":" NEWLINE
+               INDENT "yield" "&amp;" Place NEWLINE DEDENT
+</code></pre>
+<p>An <code>ExternFn</code> is bodyless and binds to a C symbol; its optional <code>STR</code> names a</p>
+<p>link library. Its parameter and return types are restricted to the</p>
+<p>FFI-crossable set — the scalars (<code>int</code>, <code>char</code>, <code>float</code>, <code>bool</code>), <code>string</code>,</p>
+<p><code>bytes</code>, <code>ptr</code>, <code>[int]</code>/<code>[float]</code>, typed handles, the first-class fixed-width</p>
+<p>numerics <code>u8</code>…<code>u64</code> / <code>i8</code>…<code>i64</code> / <code>f32</code>, plus <code>inout</code> <strong>scalar</strong> out-parameters (not</p>
+<p><code>string</code>) and an <code>Option(string)</code> return (<a href="14-ffi.html">§24</a>).</p>
+<p>A <code>Subscript</code> declares a user-defined projection: it yields a place (an lvalue)</p>
+<p>rooted in one of its parameters. Its rules — the place must be rooted in a</p>
+<p>parameter, each parameter used at most once — are given in §18.</p>
+<p><code>Place</code> is defined in §4.4.</p>
+<h2 id="42-types">4.2 Types</h2>
+<pre><code class="language-ebnf">Type      ::= "$" IDENT                                        /* type parameter */
+            | "soa" "[" Type "]"                               /* struct-of-arrays */
+            | "bounded" "[" ( INT | IDENT ) "]" Type            /* bounded[N]T / bounded[C]T, C an int const */
+            | "vector" "[" ( INT | IDENT ) "]" Type             /* vector[N]T, N a power of two 2..64 */
+            | "fn" "(" ( Type ( "," Type )* )? ")" ( "-&gt;" Type )?
+            | "(" Type ( "," Type )+ ")"                       /* tuple, 2..8 elements */
+            | "[" ArrayOrMap
+            | "Option" "(" Type ")"
+            | "Result" "(" ( Type | "void" ) "," Type ")"   /* void: ok payload only */
+            | "Channel" "(" Type ")"
+            | QualName TypeArgs?                               /* struct/enum/newtype/handle */
+            | PrimType
+ArrayOrMap::= "$" IDENT "]" Type                              /* [$N]T  size-parameter array */
+            | INT "]" Type                                     /* [N]T   fixed-size array */
+            | IDENT "]" Type                                   /* [C]T   fixed size named by an int const */
+            | Type "]"                                         /* [T]    dynamic array */
+            | Type ":" Type "]"                                /* [K:V]  map */
+TypeArgs  ::= "(" Type ( "," Type )* ")"
+QualName  ::= IDENT ( "." IDENT )?                            /* Name or pkg.Name */
+PrimType  ::= "int" | "float" | "bool" | "string" | "ptr" | "bytes"
+            | "u32" | "u64" | "f32"
+</code></pre>
+<p>Notes (constrained further in §5–§7):</p>
+<ul>
+<li>A <code>$IDENT</code> after <code>[</code> denotes a <strong>size parameter</strong> (<code>[$N]T</code>, a const-generic</li>
+</ul>
+<p>array) — and is distinguished from a dynamic <code>[$T]</code> (type-parameter element)</p>
+<p>by whether a *type* follows the <code>]</code>. A dynamic <code>[$T]</code> return followed by a</p>
+<p><code>where</code> clause is disambiguated because <code>where</code> is not a type.</p>
+<ul>
+<li>A <code>[N]T</code> or <code>[C]T</code> (integer literal, or an <code>int</code> const name, before <code>]</code></li>
+</ul>
+<p>followed by an element type) is a <strong>fixed-size array</strong>; a bare <code>[T]</code> is a</p>
+<p><strong>dynamic array</strong>.</p>
+<ul>
+<li><code>bounded [N] T</code> is the inline fixed-capacity collection of</li>
+</ul>
+<p><a href="03-types.html#5310-boundednt">§5.3.10</a>. Its capacity MUST denote a positive</p>
+<p>integer: either an integer <strong>literal</strong>, or — exactly as a fixed-size <code>[C]T</code></p>
+<p>admits — the name of an <code>int</code> <code>const</code> (§5.3.10). <code>bounded</code> is *contextual*: it</p>
+<p>is a type constructor only when an <code>[</code> follows, and remains usable as an</p>
+<p>ordinary identifier elsewhere.</p>
+<ul>
+<li><code>vector [N] T</code> is the SIMD-lowered fixed array of</li>
+</ul>
+<p><a href="03-types.html#5311-vectornt">§5.3.11</a>. Its count MUST be a power of two</p>
+<p>between 2 and 64, written as an integer literal or the name of an <code>int</code></p>
+<p><code>const</code>, and its element MUST be <code>int</code>, <code>float</code> or <code>f32</code>. <code>vector</code> is</p>
+<p>*contextual* in exactly the way <code>bounded</code> is: it is a word only in type</p>
+<p>position and stays a legal identifier everywhere else.</p>
+<ul>
+<li>A tuple type has 2–8 elements. A function type has up to 8 parameters. No</li>
+</ul>
+<p>element or parameter may be <code>void</code>.</p>
+<ul>
+<li><code>QualName TypeArgs</code> applies a generic struct or enum to concrete type</li>
+</ul>
+<p>arguments (<code>Box(int)</code>); applying a generic to exactly its own type parameters</p>
+<p>is a recursive self-reference.</p>
+<ul>
+<li>There is no <code>char</code> or <code>void</code> type spelling (§3.6).</li>
+</ul>
+<h2 id="43-blocks-and-statements">4.3 Blocks and statements</h2>
+<p>A block is a newline-introduced, indentation-delimited sequence of statements:</p>
+<pre><code class="language-ebnf">Block ::= INDENT Stmt+ DEDENT
+Stmt  ::= ConstStmt | DeleteStmt | Return | Break | Continue | PassStmt
+        | Select | Match | If | ParallelFor | For
+        | MultiDecl | MultiAssign | SimulAssign
+        | Decl | TypedDecl | Assign | PlaceAssign | CompoundAssign
+        | ExprStmt
+</code></pre>
+<h3 id="431-simple-statements">4.3.1 Simple statements</h3>
+<pre><code class="language-ebnf">ConstStmt      ::= "const" IDENT "=" ConstExpr NEWLINE
+DeleteStmt     ::= "delete" Postfix NEWLINE            /* Postfix MUST be an index m[k] */
+Return         ::= "return" ( Expr ( "," Expr )* )? NEWLINE
+                 | "return" ValueCtrl
+Break          ::= "break" NEWLINE
+Continue       ::= "continue" NEWLINE
+PassStmt       ::= "pass" NEWLINE                       /* the no-op; contextual, see App. B */
+Decl           ::= IDENT ":=" ( Expr | ValueCtrl ) NEWLINE
+TypedDecl      ::= IDENT ":" Type "=" ( Expr | ValueCtrl ) NEWLINE
+Assign         ::= IDENT "=" ( Expr | ValueCtrl ) NEWLINE
+MultiDecl      ::= IDENT ( "," IDENT )+ ":=" Expr NEWLINE
+MultiAssign    ::= IDENT ( "," IDENT )+ "=" Expr NEWLINE
+SimulAssign    ::= "(" Place ( "," Place )+ ")" "=" Expr NEWLINE
+PlaceAssign    ::= Place "=" ( Expr | ValueCtrl ) NEWLINE
+CompoundAssign ::= Place CompoundOp "=" Expr NEWLINE
+CompoundOp     ::= "+" | "-" | "*" | "/" | "%" | "&amp;" | "|" | "^" | "&lt;&lt;" | "&gt;&gt;"
+ExprStmt       ::= ( Call | Call "or_return" | Call OrElse ) NEWLINE   /* or_return/or_else form: ok payload must be void */
+</code></pre>
+<ul>
+<li><code>Decl</code> (<code>x := e</code>) declares a variable and infers its type; <code>TypedDecl</code></li>
+</ul>
+<p>(<code>x: T = e</code>) declares with an explicit type; <code>Assign</code> (<code>x = e</code>) assigns to an</p>
+<p>existing variable. <code>MultiDecl</code>/<code>MultiAssign</code> destructure a tuple-valued RHS</p>
+<p>into 2–8 names.</p>
+<ul>
+<li><code>SimulAssign</code> (<code>(a, b) = (b, a)</code>) assigns a tuple-valued RHS into 2–8</li>
+</ul>
+<p><strong>places</strong>, not just names, and every right-hand side is evaluated before any</p>
+<p>target is written (§17.5). It is a statement of its own: it MUST NOT appear as</p>
+<p>the init or post clause of a three-clause <code>for</code>.</p>
+<ul>
+<li><code>PlaceAssign</code> and <code>CompoundAssign</code> write through a <strong>place</strong> (§4.4): an index,</li>
+</ul>
+<p>a field, a tuple element, or a user-subscript call. In <code>CompoundAssign</code>, a</p>
+<p>side-effecting call inside the place is evaluated once (hoisted); a pure index</p>
+<p>sub-expression may be evaluated twice, as writing the form out longhand would</p>
+<p>(this single-vs-double evaluation is specified in §13).</p>
+<ul>
+<li><code>DeleteStmt</code> removes a map element; the <code>Postfix</code> MUST be an index <code>m[k]</code>.</li>
+<li>The valid bare-expression statements are a call, and a call followed by</li>
+</ul>
+<p><code>or_return</code> or an <code>or_else</code> clause when the callee's ok payload is <code>void</code></p>
+<p>(<a href="03-types.html#536-enums-option-result">§5.3.6</a>). A bare variable, index or</p>
+<p>field expression is rejected as having no effect, and so is an <code>or_return</code></p>
+<p>over any other payload type — that one would silently drop the value. The</p>
+<p>parser accepts the shape and the resolver enforces the payload type, because</p>
+<p>only the resolver knows it.</p>
+<ul>
+<li><code>ConstExpr</code> and <code>ValueCtrl</code> are defined in §4.1 and §4.3.2.</li>
+</ul>
+<h3 id="432-compound-statements">4.3.2 Compound statements</h3>
+<pre><code class="language-ebnf">If          ::= "if" Expr ":" NEWLINE Block
+                ( "elif" Expr ":" NEWLINE Block )*
+                ( "else" ":" NEWLINE Block )?
+Match       ::= "match" Expr ":" NEWLINE INDENT MatchArm+ DEDENT
+MatchArm    ::= Pattern ":" NEWLINE Block
+Pattern     ::= VariantName ( "(" IDENT ( "," IDENT )* ")" )?   /* variant, with 0..8 bindings */
+              | VariantName "(" SubPattern ")"               /* Ok/Err/Some: one nested level */
+              | ScalarPattern                                /* int/char/bool subject */
+              | "_"                                          /* wildcard */
+VariantName ::= IDENT | IDENT "." IDENT                       /* Variant or pkg.Variant */
+SubPattern  ::= VariantName ( "(" IDENT ( "," IDENT )* ")" )?
+ScalarPattern ::= ScalarElem ( ".." ScalarElem )? ( "|" ScalarElem ( ".." ScalarElem )? )*
+ScalarElem  ::= "-"? ( INT | CHAR | TRUE | FALSE ) | IDENT    /* IDENT: an int constant */
+For         ::= "for" ForInit ";" Expr ";" ForPost ":" NEWLINE Block  /* three-clause; all three REQUIRED */
+              | "for" IDENT "in" Expr ":" NEWLINE Block               /* foreach */
+              | "for" Expr ":" NEWLINE Block                          /* condition */
+              | "for" ":" NEWLINE Block                               /* infinite */
+ForInit     ::= Decl | TypedDecl | Assign | CompoundAssign  /* the ';' supplies the clause's NEWLINE */
+ForPost     ::= Assign | CompoundAssign                     /* the ':' supplies it; target MUST be a variable */
+ParallelFor ::= "parallel" Width? "for" IDENT "in" "0" "..&lt;" Expr ":" NEWLINE Block  /* counting; the `0` is a literal */
+              | "parallel" Width? "for" IDENT "in" IDENT ":" NEWLINE Block           /* foreach; the source MUST be a name */
+Width       ::= "(" Expr ")"                                  /* fan-out width, 1..64; omitted = ncpu() */
+Select      ::= "select" ":" NEWLINE INDENT SelectArm+ DEDENT
+SelectArm   ::= "recv" "(" Expr "," IDENT ")" ":" NEWLINE Block
+              | "default" ":" NEWLINE Block
+              | "closed" ":" NEWLINE Block
+ValueCtrl   ::= If | Match              /* value form: block branches ending in a value expression, tail position */
+</code></pre>
+<ul>
+<li><code>elif</code> is sugar for an <code>else</code> block containing a single nested <code>if</code>.</li>
+<li>The four <code>for</code> shapes are: <strong>three-clause</strong> (<code>for init; cond; post:</code>),</li>
+</ul>
+<p><strong>foreach</strong> (<code>for x in collection</code>, over an array or a string's bytes),</p>
+<p><strong>condition</strong> (<code>for cond:</code>, the while-loop form), and <strong>infinite</strong> (<code>for:</code>).</p>
+<p><code>break</code>/<code>continue</code> are valid in every shape and only inside a loop.</p>
+<ul>
+<li>In the three-clause form the <code>;</code> and the block <code>:</code> stand in for the <code>NEWLINE</code></li>
+</ul>
+<p>that <code>Decl</code>/<code>TypedDecl</code>/<code>Assign</code>/<code>CompoundAssign</code> would otherwise end with:</p>
+<p>the clauses are parsed by the ordinary statement parser, so a typed init</p>
+<p>(<code>i: int = 0</code>) and every compound <code>op=</code> form come along without a second copy</p>
+<p>of the assignment grammar. <strong>All three clauses are required</strong> — this grammar</p>
+<p>has no empty-statement production to put in one — and <code>for:</code> is the only</p>
+<p>degenerate form. A <code>continue</code> runs the post clause (§14.4).</p>
+<ul>
+<li>There is <strong>no counting form</strong>. <code>for i in range(a[, b[, step]])</code> and the</li>
+</ul>
+<p>contextual name <code>range</code> were removed on 2026-07-29 (§14.4); a <code>for</code> head that</p>
+<p>names <code>range</code> is refused with its replacements. <code>..&lt;</code> appears in exactly one</p>
+<p>production, <code>ParallelFor</code> — a sequential <code>for i in 0..&lt;N:</code> is refused (§22).</p>
+<ul>
+<li><code>parallel for</code> applies only to the <code>0..&lt;N</code> counting form or the foreach form,</li>
+</ul>
+<p>and its foreach source must be a bare name, not an expression (§22).</p>
+<ul>
+<li><code>match</code> is exhaustive; a bare variant name is a nullary-variant pattern, a</li>
+</ul>
+<p>parenthesized list binds a variant's payload, <code>pkg.Variant</code> matches a</p>
+<p>qualified variant, and <code>_</code> is the wildcard (§19).</p>
+<ul>
+<li><strong>`ValueCtrl`</strong> is the value-producing form of <code>if</code>/<code>match</code>: it may appear only</li>
+</ul>
+<p>as the tail of a declaration (<code>:=</code>, typed <code>=</code>), an assignment, a place</p>
+<p>assignment, or a <code>return</code>. Each branch/arm is an indented block whose final</p>
+<p>statement is a value expression (a bare value expression is the one-statement</p>
+<p>case), <strong>or</strong> a diverging call — <code>die</code>/<code>exit</code>, which produces no value because</p>
+<p>control leaves the program (<a href="16-builtins.html">§29.12.1</a>); a value <code>if</code> MUST have</p>
+<p>an <code>else</code>; a value <code>match</code> MUST be exhaustive; all non-diverging branches MUST</p>
+<p>unify to one type, and at least one branch MUST be non-diverging. These rules</p>
+<p>are given in §13/§14.</p>
+<h2 id="44-expressions">4.4 Expressions</h2>
+<p>The expression grammar encodes precedence and associativity by nesting: each</p>
+<p>level parses the next-tighter level and then, left-associatively, its own</p>
+<p>operators (except the prefix levels, which are right-recursive).</p>
+<pre><code class="language-ebnf">Expr      ::= OrExpr
+OrExpr    ::= AndExpr ( "or" AndExpr )*
+AndExpr   ::= NotExpr ( "and" NotExpr )*
+NotExpr   ::= "not" NotExpr | CmpExpr
+CmpExpr   ::= IsExpr ( ( "==" | "!=" | "&lt;" | "&gt;" | "&lt;=" | "&gt;=" | "in" ) IsExpr )*
+IsExpr    ::= AddExpr ( "is" VariantName )?             /* variant test; does NOT chain */
+AddExpr   ::= MulExpr ( ( "+" | "-" | "|" | "^" ) MulExpr )*
+MulExpr   ::= UnaryExpr ( ( "*" | "/" | "%" | "&lt;&lt;" | "&gt;&gt;" | "&amp;" ) UnaryExpr )*
+UnaryExpr ::= ( "-" | "&amp;" | "~" ) UnaryExpr | Postfix
+Postfix   ::= Primary PostfixOp* ( "or_return" | OrElse )? "..."?
+OrElse    ::= "or_else" IDENT ":" Expr                  /* IDENT or `_`; returns Expr on failure (§14.6.1) */
+PostfixOp ::= "[" Expr "]"                              /* index */
+            | "[" Expr? ":" Expr? "]"                   /* slice (either bound optional) */
+            | "." IDENT                                 /* field access */
+            | "." INT                                   /* tuple index */
+            | "." "(" Component ( "," Component )* ")"  /* swizzle, 2-8 components (§17.5) */
+            | "." IDENT CallTypeArgs? "(" ArgList? ")"  /* qualified pkg call (on a bare identifier) */
+            | "." IDENT CallTypeArgs                    /* ... with no value arguments */
+            | "(" ArgList? ")"                          /* call */
+ArgList   ::= Expr ( "," Expr )*
+Component ::= IDENT | INT                               /* a struct field, or a lane of an array / bounded / vector */
+</code></pre>
+<p>The <strong>place</strong> grammar (assignable lvalues, §4.3.1) is the subset of <code>Postfix</code></p>
+<p>whose spine is an index, field, tuple-index, or subscript call rooted in a</p>
+<p>variable:</p>
+<pre><code class="language-ebnf">Place ::= IDENT ( "[" Expr "]" | "." IDENT | "." INT | "(" ArgList? ")" )*
+</code></pre>
+<p>Primary expressions:</p>
+<pre><code class="language-ebnf">Primary ::= INT | FLOAT | STR | CHAR
+          | "true" | "false" | "null"
+          | "(" Expr ")"                                /* grouping */
+          | "(" Expr ( "," Expr )+ ")"                  /* tuple literal, 2..8 */
+          | ArrayOrMapLit                               /* [ ... ] forms (§16, §18) */
+          | "soa" "[" "]" Type                          /* empty soa literal */
+          | "channel" "(" Type "," Expr ")"             /* only as a declaration RHS */
+          | "spawn" Call                                /* spawn a direct call */
+          | Lambda
+          | "None" | "Some" "(" Expr ")" | "Ok" "(" Expr? ")" | "Err" "(" Expr ")"
+          | IDENT CallTypeArgs ( "(" ArgList? ")" )?    /* explicit type args */
+          | IDENT "(" ArgList? ")"                      /* named call */
+          | IDENT                                       /* variable, or nullary enum variant */
+CallTypeArgs ::= "$" "(" Type ( "," Type )* ")"  /* at least one; `f$()` is an error */
+Lambda  ::= "fn" "(" LambdaParams? ")" ( "-&gt;" Type )? ":" Expr
+LambdaParams ::= IDENT ( ":" Type )? ( "," IDENT ( ":" Type )? )*
+</code></pre>
+<p>A lambda parameter's type is <strong>optional</strong> (inferred from the expected function</p>
+<p>type when omitted, §6.2), and a lambda parameter may <strong>not</strong> carry <code>inout</code>,</p>
+<p><code>sink</code>, or <code>...</code> — so a lambda uses <code>LambdaParams</code>, not the <code>ParamList</code> of §4.1.1.</p>
+<p><code>Call</code> in <code>ExprStmt</code> and after <code>spawn</code> denotes a <code>Postfix</code> whose outermost</p>
+<p>operation is a call <code>(...)</code>. A <code>Subscript</code> (§4.1.3) parameter is likewise plain</p>
+<p><code>IDENT ":" Type</code> (no passing modes).</p>
+<ul>
+<li>The array/map literal forms (<code>[e, …]</code>, <code>[k: v, …]</code>, empty typed <code>[]T</code> /</li>
+</ul>
+<p><code>[]K:V</code>) and the pending bare <code>[]</code>/<code>None</code> grounding are detailed in §16/§18</p>
+<p>.</p>
+<ul>
+<li>A lambda's body is a single expression. A closure captures by deep copy at</li>
+</ul>
+<p>creation (§13).</p>
+<ul>
+<li><code>IDENT $ ( Type … )</code> supplies explicit type arguments to a generic call (e.g.</li>
+</ul>
+<p><code>zero$(int)</code>); it is the only use of <code>$</code> in expression position.</p>
+<ul>
+<li><code>spawn</code> and <code>channel(…)</code> are restricted in where they may appear (§23): <code>spawn</code> takes a direct call; <code>channel(T, cap)</code> is legal only as</li>
+</ul>
+<p>the direct right-hand side of a declaration.</p>
+<ul>
+<li>Assignment (<code>=</code>), declare-and-infer (<code>:=</code>), and compound assignment are</li>
+</ul>
+<p><strong>statement-level</strong> (§4.3.1); they are <strong>not</strong> expression operators and never</p>
+<p>appear inside <code>Expr</code>.</p>
+<h2 id="45-operator-precedence-and-associativity">4.5 Operator precedence and associativity</h2>
+<p>From tightest-binding to loosest. Every binary level is left-associative; the</p>
+<p>prefix levels are right-associative.</p>
+<table>
+<tr><th>Precedence</th><th>Operators</th><th>Kind</th><th>Assoc</th></tr>
+<tr><td>1 (tightest)</td><td><code>[]</code> index/slice · <code>.</code> field/tuple-index · <code></code> call · <code>or_return</code> · <code>or_else</code> · <code>...</code></td><td>postfix</td><td>left</td></tr>
+<tr><td>2</td><td><code>-</code> <code>&amp;</code> <code>~</code></td><td>unary prefix</td><td>right</td></tr>
+<tr><td>3</td><td><code>*</code> <code>/</code> <code>%</code> <code>&lt;&lt;</code> <code>&gt;&gt;</code> <code>&amp;</code></td><td>binary</td><td>left</td></tr>
+<tr><td>4</td><td><code>+</code> <code>-</code> `\</td><td><code> </code>^`</td><td>binary</td><td>left</td></tr>
+<tr><td>5</td><td><code>is</code></td><td>binary, non-associative</td><td>—</td></tr>
+<tr><td>6</td><td><code>==</code> <code>!=</code> <code>&lt;</code> <code>&gt;</code> <code>&lt;=</code> <code>&gt;=</code> <code>in</code></td><td>binary</td><td>left</td></tr>
+<tr><td>7</td><td><code>not</code></td><td>unary prefix</td><td>right</td></tr>
+<tr><td>8</td><td><code>and</code></td><td>binary</td><td>left</td></tr>
+<tr><td>9 (loosest)</td><td><code>or</code></td><td>binary</td><td>left</td></tr>
+</table>
+<p>This is <strong>Go's precedence</strong>: the shift operators (<code>&lt;&lt;</code>, <code>&gt;&gt;</code>) and bitwise-AND</p>
+<p>(<code>&amp;</code>) bind at the multiplicative level, and bitwise-OR/XOR (<code>|</code>, <code>^</code>) bind at the</p>
+<p>additive level — so every bitwise operator binds *tighter* than any comparison.</p>
+<p>Consequently <code>a &amp; b == c</code> parses as <code>(a &amp; b) == c</code>. The unary <code>&amp;</code> (address-of /</p>
+<p><code>inout</code> argument) and binary <code>&amp;</code> (bitwise-AND) share a spelling but occupy</p>
+<p>different precedence levels (2 and 3). <code>is</code> is <strong>non-associative</strong>: its right</p>
+<p>operand is a variant name rather than an expression, so <code>a is X is Y</code> does not</p>
+<p>parse (§19.8). <code>and</code>/<code>or</code> short-circuit (§13). Evaluation order within a precedence level, and the order of</p>
+<p>argument and place sub-expression evaluation, is specified in §13 —</p>
+<p>the grammar fixes only associativity, not side-effect order.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

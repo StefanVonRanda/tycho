@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Builtins — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / reference/builtins.md</nav>
+<h1 id="builtins">Builtins</h1>
+<blockquote>
+<p><strong>Memory:</strong> builtins follow the same ownership rules as everything else.</p>
+<p>A builtin that builds a value hands it to the caller.</p>
+</blockquote>
+<p>The built-in functions, by category. These are part of the language — always there, no</p>
+<p>import needed; the importable <a href="../reference/corelib.html">standard library</a> layers more on top. Anything written</p>
+<p>as an operator or keyword (<code>m[k]</code>, <code>k in m</code>, <code>delete</code>, <code>for x in xs</code>) lives on its own topic page.</p>
+<h2 id="output-and-input">Output and input</h2>
+<table>
+<tr><th>Builtin</th><th>Type</th><th>Notes</th></tr>
+<tr><td><code>print(s)</code></td><td><code>string -&gt; void</code></td><td>No implicit newline; add <code>"\n"</code>.</td></tr>
+<tr><td><code>println(s)</code></td><td><code>string -&gt; void</code></td><td><code>print(s)</code> plus a trailing newline. String-only, like <code>print</code> — use <code>println(str(x))</code> for non-strings.</td></tr>
+<tr><td><code>input()</code></td><td><code>-&gt; string</code></td><td>One line from stdin (newline stripped).</td></tr>
+<tr><td><code>read_all()</code></td><td><code>-&gt; string</code></td><td>All of stdin as one string.</td></tr>
+<tr><td><code>args()</code></td><td><code>-&gt; [string]</code></td><td>Command-line arguments; <code>args()[0]</code> is the program name.</td></tr>
+<tr><td><code>getenv(name)</code></td><td><code>string -&gt; string</code></td><td>The variable's value, or <code>""</code> if unset.</td></tr>
+<tr><td><code>die(msg)</code></td><td><code>string -&gt; void</code></td><td>Print <code>msg</code> to stderr and exit with status 1.</td></tr>
+<tr><td><code>exit(code)</code></td><td><code>int -&gt; void</code></td><td>Terminate with status <code>code</code>, printing nothing; never returns. <code>exit(0)</code> is an ordinary answered exit, not a failure.</td></tr>
+</table>
+<h2 id="conversions">Conversions</h2>
+<table>
+<tr><th>Builtin</th><th>Type</th><th>Notes</th></tr>
+<tr><td><code>str(x)</code></td><td><code>int</code>/<code>float</code>/<code>bool</code> <code>-&gt; string</code></td><td>A <strong>finite</strong> float prints as the shortest decimal (15, 16 or 17 significant digits) that reads back as the same <code>float</code>, always with a <code>.</code>; a bool prints <code>true</code>/<code>false</code>. NaN and the infinities are the exception — see below.</td></tr>
+<tr><td><code>to_float(n)</code></td><td><code>int -&gt; float</code></td><td>Widen.</td></tr>
+<tr><td><code>to_int(x)</code></td><td><code>float -&gt; int</code></td><td>Truncate toward zero.</td></tr>
+<tr><td><code>to_bytes(s)</code> / <code>to_str(b)</code></td><td><code>string &lt;-&gt; bytes</code></td><td>Same byte buffer; <code>bytes</code> may carry interior NULs.</td></tr>
+<tr><td><code>to_bytes(xs)</code></td><td><code>[int] -&gt; bytes</code></td><td>Each element <code>&amp; 0xFF</code> into a fresh buffer — builds a binary <code>bytes</code> (interior NULs and all) that a <code>string</code> can't hold.</td></tr>
+<tr><td><code>to_bytes(v)</code></td><td>packed struct <code>-&gt; bytes</code></td><td>Exactly <code>size_of$(T)</code> bytes, little-endian, fields in declaration order.</td></tr>
+<tr><td><code>size_of$(T)</code></td><td><code>-&gt; int</code></td><td>The byte size of a packed struct, exact. Also takes an <code>align(N)</code> struct, whose size is implementation-defined but a multiple of <code>N</code>.</td></tr>
+<tr><td><code>from_bytes$(T)(b)</code></td><td><code>bytes -&gt; T</code></td><td>Read a packed struct back. <code>len(b)</code> must equal <code>size_of$(T)</code> exactly; any other length aborts, naming the type and both lengths.</td></tr>
+<tr><td><code>chr(n)</code></td><td><code>int -&gt; string</code></td><td>The one-byte string for byte value <code>n</code> (<code>0</code>–<code>255</code>).</td></tr>
+<tr><td><code>to_char(n)</code></td><td><code>int -&gt; char</code></td><td>The byte value <code>n</code> as a <code>char</code>. Outside <code>0..255</code> it <strong>aborts</strong> — where <code>chr(n)</code> returns a one-byte *string*, this returns a <code>char</code>.</td></tr>
+</table>
+<p><strong>NaN and the infinities do not round-trip.</strong> <code>str</code> hands those three to the host C</p>
+<p>library, which on glibc spells them <code>-nan</code>, <code>inf</code> and <code>-inf</code> — no decimal point, and not</p>
+<p>the same text on every platform. <code>strings.parse_float</code> refuses all three by design, so a</p>
+<p>float written with <code>str</code> and read back with <code>parse_float</code> survives only if it was finite.</p>
+<p><code>x == x</code> is false for exactly NaN, and <code>x - x == 0.0</code> is false for exactly NaN and the</p>
+<p>infinities, which is how to check before serialising.</p>
+<p>(A newtype's <code>to_int</code> / <code>to_float</code> / <code>to_str</code> / <code>to_bool</code> / <code>to_under</code> unwrappers are on the</p>
+<p><a href="types.html#distinct-newtypes-type">Types</a> page.)</p>
+<h2 id="strings">Strings</h2>
+<p>Strings are byte buffers; <code>len</code>, <code>s[i]</code>, <code>substr</code>, and <code>find</code> are all byte-oriented (not</p>
+<p>Unicode-aware). String escapes: <code>\n \t \r \\ \"</code> — those five and no others, with the</p>
+<p><code>char</code> set and the rejected spellings on the <a href="types.html#string-escapes">Types</a> page.</p>
+<table>
+<tr><th>Builtin</th><th>Type</th><th>Notes</th></tr>
+<tr><td><code>len(s)</code></td><td><code>string -&gt; int</code></td><td>Byte length.</td></tr>
+<tr><td><code>substr(s, a, b)</code></td><td><code>(string, int, int) -&gt; string</code></td><td>Substring <code>[a, b)</code>, a fresh copy. Out-of-range bounds are <strong>clamped</strong>, not an error.</td></tr>
+<tr><td><code>find(s, sub)</code></td><td><code>(string, string) -&gt; int</code></td><td>Byte index of the first <code>sub</code>, or <code>-1</code>.</td></tr>
+<tr><td><code>char_at(s, i)</code></td><td><code>(string, int) -&gt; char</code></td><td>The byte at <code>i</code> as a <code>char</code> — the same read and the same bounds abort as <code>s[i]</code>.</td></tr>
+<tr><td><code>split(s, sep)</code></td><td><code>(string, string) -&gt; [string]</code></td><td>Split on a non-empty separator; <code>n</code> separators yield <code>n+1</code> fields. An empty separator aborts.</td></tr>
+</table>
+<h2 id="arrays">Arrays</h2>
+<table>
+<tr><th>Builtin</th><th>Type</th><th>Notes</th></tr>
+<tr><td><code>len(a)</code></td><td><code>[T] -&gt; int</code></td><td>Element count.</td></tr>
+<tr><td><code>push(a, v)</code></td><td><code>([T], T) -&gt; void</code></td><td>Append in place (needs a mutable array).</td></tr>
+<tr><td><code>pop(a)</code></td><td><code>[T] -&gt; T</code></td><td>Remove and return the last element; aborts if empty.</td></tr>
+<tr><td><code>reserve(a, n)</code></td><td><code>([T], int) -&gt; void</code></td><td>Capacity hint (also works on a map place <code>m[k]</code>): preallocate room for <code>n</code>. A hint, not a length — <code>len</code> is unchanged and pushing past <code>n</code> still grows; an unallocatable capacity aborts.</td></tr>
+</table>
+<h2 id="maps">Maps</h2>
+<p><code>len(m)</code>, <code>m[k] = v</code>, <code>k in m</code>, <code>delete m[k]</code>, and <code>keys(m)</code> are documented on the</p>
+<p><a href="maps.html">Maps</a> page. The default-valued read is a method on the map:</p>
+<table>
+<tr><th>Builtin</th><th>Type</th><th>Notes</th></tr>
+<tr><td><code>m.get(k, d)</code></td><td><code>(map, K, V) -&gt; V</code></td><td>Value for <code>k</code>, or default <code>d</code> if absent. <code>m.get(k)</code> is <code>m[k]</code> (value-type zero on a miss).</td></tr>
+<tr><td><code>hash(x)</code></td><td><code>K -&gt; int</code> for any map-key type</td><td>The hash the maps themselves use, exposed: values equal by <code>==</code> hash equal. Returns the full 64-bit value.</td></tr>
+</table>
+<h2 id="concurrency">Concurrency</h2>
+<p>See <a href="concurrency.html">Concurrency</a> for semantics.</p>
+<table>
+<tr><th>Builtin</th><th>Type</th><th>Notes</th></tr>
+<tr><td><code>wait(t)</code></td><td><code>Task(T) -&gt; T</code></td><td>Join a spawned task (the result is copied out). Each task can be waited exactly once.</td></tr>
+<tr><td><code>ncpu()</code></td><td><code>-&gt; int</code></td><td>Online CPUs, or <code>TYCHO_THREADS</code> when set to an integer &gt;= 1. The *requested* worker count, <strong>not</strong> the number of parallel tasks: <code>parallel for</code> caps at 64 chunk tasks.</td></tr>
+<tr><td><code>channel(T, cap)</code></td><td><code>-&gt; Channel(T)</code></td><td>A bounded lock-free queue (<code>cap</code> rounds up to a power of two). Legal only as a declaration's direct right-hand side.</td></tr>
+<tr><td><code>send(ch, v)</code></td><td><code>(Channel(T), T) -&gt; void</code></td><td>Copy <code>v</code> in; blocks when full; aborts if closed.</td></tr>
+<tr><td><code>recv(ch)</code></td><td><code>Channel(T) -&gt; Option(T)</code></td><td>Blocking receive (copied out); <code>None</code> means closed <strong>and</strong> drained.</td></tr>
+<tr><td><code>close(ch)</code></td><td><code>Channel(T) -&gt; void</code></td><td>Receivers drain then see <code>None</code>; a further send or second close aborts.</td></tr>
+<tr><td><code>close(h)</code></td><td><code>handle -&gt; void</code></td><td>On a typed FFI handle <strong>variable</strong>: run its destructor now and null it, so the scope-exit free does not run it again. A handle <strong>parameter</strong> is a borrow and cannot be closed (a compile error); close it in the scope that owns it. Any later mention of <code>h</code> in the same block (a second <code>close</code> included) is a compile error; a <code>close</code> inside an <code>if</code> or loop reaches only that block's end. See <a href="ffi.html#typed-handles-safe-by-default-resources">typed handles</a>.</td></tr>
+</table>
+<h2 id="filesystem-and-time">Filesystem and time</h2>
+<table>
+<tr><th>Builtin</th><th>Type</th><th>Notes</th></tr>
+<tr><td><code>read_file(path)</code></td><td><code>string -&gt; string</code></td><td>Whole file as a string, or <code>""</code> if it can't be opened.</td></tr>
+<tr><td><code>write_file(path, s)</code></td><td><code>(string, string) -&gt; bool</code></td><td>Write <code>s</code>'s exact bytes (truncating); <code>false</code> if it can't be opened.</td></tr>
+<tr><td><code>list_dir(path)</code></td><td><code>string -&gt; [string]</code></td><td>Entries excluding <code>.</code>/<code>..</code> (filesystem order); empty if it can't be opened.</td></tr>
+<tr><td><code>clock()</code></td><td><code>-&gt; int</code></td><td>Monotonic nanoseconds (differences are meaningful; the absolute value is not).</td></tr>
+<tr><td><code>now()</code></td><td><code>-&gt; int</code></td><td>Wall-clock seconds since the UNIX epoch.</td></tr>
+</table>
+<h2 id="float-math-libm">Float math (libm)</h2>
+<table>
+<tr><th>Builtin</th><th>Type</th></tr>
+<tr><td><code>sqrt(x)</code> / <code>pow(x, y)</code> / <code>floor(x)</code> / <code>fabs(x)</code></td><td><code>float… -&gt; float</code></td></tr>
+</table>
+<h2 id="ffi-and-sized-integer-helpers">FFI and sized-integer helpers</h2>
+<p>Supporting the <a href="ffi.html">FFI boundary</a> and the sized numeric types; always available, no import.</p>
+<table>
+<tr><th>Builtin</th><th>Type</th><th>Meaning</th></tr>
+<tr><td><code>eprint(s)</code></td><td><code>string -&gt; void</code></td><td>Write <code>s</code> to standard error (no newline, no exit).</td></tr>
+<tr><td><code>is_null(p)</code></td><td><code>ptr -&gt; bool</code>, <code>handle -&gt; bool</code></td><td>Test an opaque FFI <code>ptr</code>, or a typed handle, for null. On a handle: true when the opener failed, and true after <code>close(h)</code>. After a <code>close(h)</code> statement in the same block it is a compile error (it could only be <code>true</code>); after a <code>close</code> in a branch it cannot tell "closed" from "never opened".</td></tr>
+<tr><td><code>to_ptr(n)</code></td><td><code>int -&gt; ptr</code></td><td>Make a sentinel <code>ptr</code> from an int (e.g. <code>(void*)-1</code>); Tycho never dereferences it.</td></tr>
+<tr><td><code>to_i32(n)</code></td><td><code>int -&gt; i32</code></td><td>Explicitly narrow to the signed 32-bit integer type.</td></tr>
+<tr><td><code>to_u32(x)</code> / <code>to_u64(x)</code> / <code>to_f32(x)</code></td><td>numeric <code>-&gt; u32</code>/<code>u64</code>/<code>f32</code></td><td>Convert any numeric scalar to the sized type.</td></tr>
+</table>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

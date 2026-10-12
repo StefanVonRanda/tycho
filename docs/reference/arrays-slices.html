@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arrays and slices — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="../index.html">docs</a> / reference/arrays-slices.md</nav>
+<h1 id="arrays-and-slices">Arrays and slices</h1>
+<blockquote>
+<p><strong>Memory:</strong> Assigning an array copies it fully, so two variables never share</p>
+<p>storage. Passing an array to a function that only reads it costs nothing;</p>
+<p>storing a slice copies it.</p>
+</blockquote>
+<p>An array <code>[T]</code> is a growable, ordered sequence of values of one element type. Like every</p>
+<p>Tycho value it has value semantics: assigning an array deep-copies it, so the copy and the</p>
+<p>original never share storage. The element type <code>T</code> can be <code>int</code>, <code>float</code>, <code>string</code>, a</p>
+<p>struct, or another array — nested as deep as you like.</p>
+<pre><code class="language-tycho">xs := [10, 20, 30]      # literal
+_ys := []int             # empty (element type required)
+push(xs, 40)            # append in place
+_last := pop(xs)         # remove and return the last element (aborts if empty)
+len(xs)                 # length -&gt; int
+xs[0]                   # index read (bounds-checked)
+xs[0] = 99              # index write (bounds-checked)
+_zs := xs                # value semantics: zs is an independent deep copy
+</code></pre>
+<p>An out-of-bounds index aborts with a message rather than reading stray memory. The</p>
+<p>check is always on. Assignment is a <strong>deep</strong> copy: copying a <code>[string]</code>, <code>[Point]</code>, or <code>[[int]]</code> duplicates the element</p>
+<p>bytes, nested structs, and inner buffers too, so mutating the copy never touches the</p>
+<p>original.</p>
+<pre><code class="language-tycho">struct Point:
+    x: int
+    y: int
+    tags: [string]
+
+fn bump(n: inout int):
+    n = n + 1
+
+ps := [Point(1, 2, []), Point(3, 4, [])]   # array of structs
+push(ps, Point(5, 6, []))
+_total := ps[1].x + ps[1].y         # index, then read a field
+
+grid := [][int]                    # array of arrays
+push(grid, [1, 2, 3])
+push(grid, [4, 5, 6])
+_cell := grid[0][2]                 # 3
+</code></pre>
+<h2 id="elements-are-places">Elements are places</h2>
+<p>A composite-array element is a <strong>mutable place</strong> — you can write through it in place rather</p>
+<p>than rebuilding the whole element. You get the element's place in the array,</p>
+<p>bounds-checked; there is no pointer type in Tycho.</p>
+<pre><code class="language-tycho">struct Point:
+    x: int
+    y: int
+    tags: [string]
+
+fn bump(n: inout int):
+    n = n + 1
+
+ps := [Point(1, 2, []), Point(3, 4, [])]
+grid := [[10, 20, 30], [40, 50, 60]]
+
+ps[0].x = 10                       # a field of an element
+push(ps[0].tags, "extra")          # grow an element's array field in place
+grid[1][2] = 60                    # a nested-array element
+bump(&amp;ps[1].x)                     # an element field as a `inout` argument
+</code></pre>
+<p>Value semantics still holds: after <code>qs := ps</code>, mutating <code>ps[0].x</code> leaves <code>qs</code> untouched —</p>
+<p>each owns its buffer. The element's owning array must be a mutable variable or field; you</p>
+<p>cannot project through a read-only borrowed parameter.</p>
+<h2 id="crossing-function-boundaries">Crossing function boundaries</h2>
+<p>An array parameter is a <strong>read-only borrow</strong> — passed without a copy, but you may only read</p>
+<p>it. Mutating a borrowed array (a <code>push</code> or an index-set) is a compile error; copy it first</p>
+<p>(<code>b := a</code>) if you want a mutable local, or take the parameter <code>inout</code>. A returned array is</p>
+<p>promoted into the caller's arena, so it never dangles.</p>
+<pre><code class="language-tycho">fn make_squares(n: int) -&gt; [int]:   # returned: promoted into the caller's arena
+    r := []int
+    for i := 0; i &lt; n; i += 1:
+        push(r, i * i)
+    return r
+
+fn sum(a: [int]) -&gt; int:            # parameter: a read-only borrow
+    total := 0
+    for i := 0; i &lt; len(a); i += 1:
+        total = total + a[i]
+    return total
+</code></pre>
+<h2 id="fixed-size-arrays-nt">Fixed-size arrays (<code>[N]T</code>)</h2>
+<p><code>[N]T</code> is an array whose length <code>N</code> is fixed at compile time — an int literal (<code>[3]float</code>)</p>
+<p>or an int <code>const</code> (<code>const W = 16</code> then <code>[W]int</code>). Unlike the dynamic <code>[T]</code> (a heap buffer</p>
+<p>that grows with <code>push</code>), a <code>[N]T</code> is stored <strong>inline</strong> — no heap, no length header — and</p>
+<p>copied <strong>by value</strong> (a plain memcpy for scalar elements, deep for heap elements):</p>
+<pre><code class="language-tycho">v: [3]int = [10, 20, 30]     # inline, exactly 3 elements
+_w := v                        # a full value copy
+v[0] = 99                     # w[0] is still 10 — no sharing
+len(v)                        # 3, a compile-time constant (no runtime field)
+
+fn dot(a: [3]float, b: [3]float) -&gt; float:      # passed and returned by value
+    return a[0]*b[0] + a[1]*b[1] + a[2]*b[2]
+</code></pre>
+<ul>
+<li>The length is part of the <strong>type</strong>: <code>[3]int</code> and <code>[4]int</code> are different types, and a</li>
+</ul>
+<p>literal must have exactly <code>N</code> elements (<code>[3]int = [1, 2]</code> is a compile error). A bare</p>
+<p><code>[1, 2, 3]</code> is a dynamic <code>[int]</code> unless the destination type is fixed, in which case it</p>
+<p>coerces (count and element types checked).</p>
+<ul>
+<li>Indexing is bounds-checked against the static <code>N</code>; <code>==</code> compares element-wise; a <code>[N]T</code></li>
+</ul>
+<p>can be a struct field (stored inline), a by-value parameter, and a return value.</p>
+<ul>
+<li>Growth operations (<code>push</code>, <code>pop</code>, slices) do not apply — the size is fixed. Use a dynamic</li>
+</ul>
+<p><code>[T]</code> when the length varies.</p>
+<h3 id="generic-over-size-nt">Generic over size (<code>[$N]T</code>)</h3>
+<p>A function can be <strong>generic over the length</strong> of a fixed array. A parameter written <code>[$N]T</code></p>
+<p>introduces a size parameter <code>$N</code> that the call infers from the argument, and inside the body</p>
+<p><code>N</code> is an ordinary <code>int</code> constant equal to that length:</p>
+<pre><code class="language-tycho">fn sum(xs: [$N]int) -&gt; int:      # N is inferred from the argument
+    total := 0
+    for i := 0; i &lt; N; i += 1:   # N is a compile-time int in the body
+        total = total + xs[i]
+    return total
+
+a: [3]int = [10, 20, 30]
+b: [4]int = [1, 2, 3, 4]
+print(str(sum(a)))               # 60   (one instance, N = 3)
+print(str(sum(b)))               # 10   (a second instance, N = 4)
+</code></pre>
+<p>Each distinct length used compiles to its own specialized copy of the function (just like a <code>$T</code> type</p>
+<p>parameter), so <code>sum(a)</code> and <code>sum(b)</code> compile to two specialized functions. Size and element</p>
+<p>parameters compose: <code>[$N]$T</code> infers <strong>both</strong> the length and the element type. A <code>$N</code> repeated</p>
+<p>across parameters must bind to one length — <code>fn dot(a: [$N]int, b: [$N]int)</code> requires its two</p>
+<p>arguments to be the same size, checked at the call.</p>
+<ul>
+<li>The argument must be a <strong>fixed</strong> array — a <code>[3]int</code>, not a dynamic <code>[int]</code> (a dynamic array</li>
+</ul>
+<p>has no compile-time length to infer <code>N</code> from). A bare <code>[1, 2, 3]</code> literal is dynamic unless</p>
+<p>its destination type is fixed.</p>
+<ul>
+<li><code>$N</code> is inferred from an argument, so a return-only <code>[$N]T</code> (no parameter mentions <code>N</code>) is a</li>
+</ul>
+<p>compile error — there is nothing to infer it from.</p>
+<ul>
+<li>A <code>[$N]T</code> is a template type: it is meaningful only as a function parameter, never in a</li>
+</ul>
+<p>stored position (a struct field, an enum payload, a newtype).</p>
+<h2 id="inline-fixed-capacity-boundednt">Inline, fixed-capacity (<code>bounded[N]T</code>)</h2>
+<p><code>bounded[N]T</code> holds <strong>0 to N</strong> elements stored *inside* the container — never in a separate</p>
+<p>arena buffer — and is copied by value with whatever holds it. It differs from <code>[N]T</code> in</p>
+<p>carrying a runtime count, and from <code>[T]</code> in that the count can never exceed the compile-time</p>
+<p>capacity <code>N</code>. The capacity is part of the type: <code>bounded[4]int</code> and <code>bounded[8]int</code> are</p>
+<p>distinct, and both differ from <code>[4]int</code> and <code>[int]</code>.</p>
+<pre><code class="language-tycho">fn main():
+    b: bounded[4]int = [1, 2]      # an array literal initialises it
+    push(b, 3)
+    println(str(len(b)) + " " + str(b[2]))   # 3 3
+</code></pre>
+<ul>
+<li>The capacity is a positive integer <strong>literal</strong> or the name of a positive <code>int</code> <code>const</code> —</li>
+</ul>
+<p>the same two spellings <code>[C]T</code> accepts. <code>0</code>, a negative, a non-<code>const</code> name, and a <code>const</code></p>
+<p>that is not a positive integer are each rejected.</p>
+<ul>
+<li>The element type may not be <code>bool</code> or <code>void</code>, and may not be an affine handle (including</li>
+</ul>
+<p><code>Task(T)</code> and <code>Channel(T)</code>). Everything else is allowed, including a nested <code>bounded[M]E</code>.</p>
+<ul>
+<li>An initialiser with more elements than the capacity is a <strong>compile</strong> error; a <code>push</code> past</li>
+</ul>
+<p>it is a clean runtime abort (<code>push to a full bounded[2]</code>), not a reallocation.</p>
+<p><code>pop</code> and slicing are <strong>not</strong> supported on a <code>bounded</code> — the refusals name the</p>
+<p>workaround (`pop is not supported on a bounded[...] yet; read the last element via</p>
+<p>len()-1 and rebuild<code>). A </code>bounded` is therefore a stack you push and index, not a</p>
+<p>queue you can dequeue from the front.</p>
+<p>Use it when a count is small and bounded and you want the storage inline — no separate</p>
+<p>allocation, and the whole thing copies with its owner. <code>tools/tycho-grid/</code> uses one.</p>
+<h2 id="simd-vectors-vectornt">SIMD vectors (<code>vector[N]T</code>)</h2>
+<p><code>vector[N]T</code> is a <code>[N]T</code> whose arithmetic lowers to <strong>one machine vector operation</strong> instead</p>
+<p>of a loop over its lanes. Everything else is the same as <code>[N]T</code>: an inline value, copied with</p>
+<p>its owner, built from an array literal, indexed and index-assigned, <code>==</code> lane by lane, <code>len</code></p>
+<p>is <code>N</code>, and <code>str</code> prints it like an array. It can be a struct field.</p>
+<pre><code class="language-tycho">struct Particle:
+    pos: vector[4]f32
+    id: int
+
+fn main():
+    a: vector[4]f32 = [1.0, 2.0, 3.0, 4.0]
+    b: vector[4]f32 = [10.0, 20.0, 30.0, 40.0]
+    c := a * to_f32(2.0) + b          # one vector multiply, one vector add
+    println(str(c))
+    c.(0, 1) = c.(1, 0)               # swizzle: swap two lanes at once
+    println(str(c.x) + " " + str(c.y) + " " + str(c.w))
+    p := Particle(c, 7)
+    p.pos.z = to_f32(0.5)
+    println(str(p.pos))
+</code></pre>
+<pre><code class="language-output">[12.0, 24.0, 36.0, 48.0]
+24.0 12.0 48.0
+[24.0, 12.0, 0.5, 48.0]
+</code></pre>
+<ul>
+<li><code>N</code> is a literal or an <code>int</code> <code>const</code>, a power of two from 2 to 64. <code>T</code> is <code>int</code>, <code>float</code></li>
+</ul>
+<p>or <code>f32</code>. The count is part of the type, and <code>vector[4]f32</code> is a different type from</p>
+<p><code>[4]f32</code>: the two cannot be mixed in one expression.</p>
+<ul>
+<li>Arithmetic is element-wise with the same operators as <code>[N]T</code>, including a scalar on</li>
+</ul>
+<p>either side. Integer <code>/</code> and <code>%</code> keep the divide-by-zero check and so run lane by lane.</p>
+<ul>
+<li><strong>Swizzling:</strong> <code>v.(i, j)</code> names several lanes at once and assigns them simultaneously.</li>
+</ul>
+<p>A vector of up to four lanes also has <code>.x .y .z .w</code>, or <code>.r .g .b .a</code>.</p>
+<ul>
+<li>A vector wider than the machine's register still works, split across registers, and the</li>
+</ul>
+<p>compiler warns (<code>vector[4]float</code> is 32 bytes against a 16-byte baseline register).</p>
+<p><code>vector[4]f32</code> fits one.</p>
+<ul>
+<li><code>math.min</code>, <code>math.max</code> and <code>math.clamp</code> take a vector and work <strong>lane-wise</strong>, as one</li>
+</ul>
+<p>vector compare and blend per bound: <code>math.clamp(v, lo, hi)</code> with three <code>vector[4]f32</code></p>
+<p>clamps all four lanes at once. All arguments are the same vector type; a scalar bound</p>
+<p>is refused, so write <code>lo</code> as a vector.</p>
+<p>Worked example: <a href="../../tools/tycho-grade/main.ty">`tools/tycho-grade/`</a> grades a TGA with one</p>
+<p><code>vector[4]f32</code> multiply-add and one <code>math.clamp</code> per pixel, and swaps BGRA↔RGBA with</p>
+<p><code>px.(r, b) = px.(b, r)</code>.</p>
+<p>The exact rules are in <a href="../spec/03-types.html#5311-vectornt">spec §5.3.11</a>.</p>
+<h2 id="struct-of-arrays-soa-t">Struct-of-arrays (<code>soa [T]</code>)</h2>
+<p><code>soa [Point]</code> stores a struct's fields as <strong>parallel arrays</strong> rather than an array of</p>
+<p>structs — the same values, transposed, so a pass touching one field walks contiguous memory.</p>
+<p>It is indexed and appended like an array (<code>s[i].x</code>, <code>push(s, Point(1, 2))</code>); the transposition</p>
+<p>is a representation choice the language makes for you, not a different API.</p>
+<p><strong>The type and the empty literal are spelled differently</strong> — the type is <code>soa [Point]</code>, the</p>
+<p>empty value is <code>soa []Point</code>:</p>
+<pre><code class="language-tycho">struct Point:
+    x: int
+    y: int
+
+fn main():
+    s := soa []Point          # the empty literal: brackets first, then the type
+    push(s, Point(1, 2))
+    println(str(s[0].x) + " " + str(len(s)))   # 1 1
+</code></pre>
+<p>Handles, <code>Task(T)</code>, and <code>Channel(T)</code> cannot be fields of an <code>soa</code> element, as</p>
+<p>elsewhere. <code>tools/tycho-sim/</code> uses one for its entity pools, which is the shape it is</p>
+<p>for — many entities, a pass at a time over one field.</p>
+<h2 id="slices-xsab">Slices (<code>xs[a:b]</code>)</h2>
+<p><code>xs[a:b]</code> is a sub-range of an array — <code>xs[a:]</code> runs to the end, <code>xs[:b]</code> from the start,</p>
+<p><code>xs[:]</code> is the whole thing — with every bound checked (<code>0 ≤ a ≤ b ≤ len</code>). A slice is an</p>
+<p>ordinary array value, so its cost depends entirely on what you do with it:</p>
+<pre><code class="language-tycho">import "core:arrays"
+
+xs := [10, 20, 30, 40, 50]
+print(str(arrays.sum(xs[1:4])))   # passed to a read-only param: a ZERO-COPY view -&gt; 90
+_mid := xs[1:4]                    # stored: a deep copy, owning its own buffer
+</code></pre>
+<p>Passing a slice to a function that only reads its parameter <strong>costs nothing</strong> — it</p>
+<p>reads directly from <code>xs</code>'s storage, the same borrow an ordinary</p>
+<p>array argument already is. But the moment you <strong>store</strong> a slice, <strong>return</strong> it, or <strong>push</strong></p>
+<p>it somewhere, it deep-copies into an owning array, so value semantics still holds: mutating</p>
+<p><code>xs</code> afterward never touches the stored copy. A slice can never outlive the array it</p>
+<p>came from. Slices work on</p>
+<p>every array type and compose (<code>xs[1:5][1:3]</code>). One rule to remember: you cannot pass a slice</p>
+<p>of <code>xs</code> and a <code>inout</code> of <code>xs</code> to the same call, since the <code>inout</code> could reallocate the viewed buffer.</p>
+<p>A string slice <code>s[a:b]</code> works too — with the same <code>s[a:]</code> / <code>s[:b]</code> / <code>s[:]</code> forms — but unlike</p>
+<p>an array view it <strong>always copies</strong> into a fresh substring (there is no zero-copy string view);</p>
+<p><a href="builtins.html">`substr(s, a, b)`</a> is the equivalent function form.</p>
+<hr/>
+<p>*Design background:* why deep-copied aggregates stay sound with no borrow checker is in <a href="../internals/design-aggregates.html">the aggregates design note</a>.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>

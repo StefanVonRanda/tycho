@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Thinking in Tycho — Tycho docs</title>
+<style>:root{color-scheme:dark}body{margin:0 auto;max-width:72ch;padding:24px 20px 64px;background:#0b0b0c;color:#c9c8c3;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.65}h1,h2,h3{color:#f4f3ef;line-height:1.25}h1{font-size:26px;border-bottom:1px solid #5e5e61;padding-bottom:10px}h2{font-size:21px;margin-top:36px}h3{font-size:17px}a{color:#c6ff3f}pre{background:#08080a;border:1px solid #5c5c61;padding:14px 16px;overflow-x:auto;font-size:12.5px}code{font-size:.92em}table{border-collapse:collapse;margin:16px 0}th,td{border:1px solid #5e5e61;padding:7px 12px;text-align:left;font-size:13px}th{color:#f4f3ef}blockquote{border-left:2px solid #c6ff3f;margin:16px 0;padding:2px 0 2px 16px;color:#c9c8c3}hr{border:0;border-top:1px solid #5e5e61;margin:28px 0}nav.crumb{font-size:12px;color:#8e8d88;margin-bottom:20px}nav.crumb a{color:#8e8d88}footer{margin-top:40px;padding-top:12px;border-top:1px solid #5e5e61;font-size:12px;color:#8e8d88}@media (prefers-color-scheme:light){body{background:#f5f4f1;color:#33322f}h1,h2,h3,th{color:#0b0b0c}pre{background:#0b0b0c;color:#dcdbd6}a{color:#4a7c00}blockquote{border-color:#4a7c00}nav.crumb,nav.crumb a,footer{color:#6b6a66}}</style>
+</head>
+<body>
+<nav class="crumb"><a href="index.html">docs</a> / idioms.md</nav>
+<h1 id="thinking-in-tycho">Thinking in Tycho</h1>
+<p>Tycho has no references, no stored borrows, and no interface values. This page</p>
+<p>is what to reach for instead — one idiom per shape, each the recommended way</p>
+<p>rather than a workaround. Every idiom below is also the faster and safer</p>
+<p>spelling: the performance note with each one says by how much.</p>
+<h2 id="graphs-hold-nodes-in-a-pool-link-by-index">Graphs: hold nodes in a pool, link by index</h2>
+<p>When nodes point at each other, hold every node in one array and make an edge</p>
+<p>an integer index into it. Sharing is two indices naming one slot; cycles are</p>
+<p>index cycles, which value semantics permits.</p>
+<pre><code class="language-tycho">struct Node:
+    kids: [int: int]           # next byte -&gt; node INDEX, not a Node by value
+    word: bool
+
+fn insert(pool: inout [Node], s: string):
+    cur := 0
+    for i := 0; i &lt; len(s); i += 1:
+        c := s[i]
+        if not (c in pool[cur].kids):
+            push(pool, Node([]int: int, false))
+            pool[cur].kids[c] = len(pool) - 1
+        cur = pool[cur].kids[c]
+    pool[cur].word = true
+
+fn main():
+    pool := [Node([]int: int, false)]
+    insert(&amp;pool, "ab")
+    insert(&amp;pool, "ac")
+    println(str(len(pool)) + " nodes, root fanout " + str(len(pool[0].kids)))
+</code></pre>
+<pre><code class="language-output">4 nodes, root fanout 1
+</code></pre>
+<p>Why this way: one contiguous array, 8-byte indices instead of scattered</p>
+<p>pointers, traversal that walks cache lines. The same layout data-oriented C</p>
+<p>engines choose on purpose — value semantics make it the default. Measured: a</p>
+<p>300k-node graph as index adjacency is ~1.3× C's memory (vs ~1.55× by value),</p>
+<p>and the shape expresses sharing — DAGs, cycles — that by-value storage cannot</p>
+<p>represent at all. When nodes must be *deleted*, reach for <code>core:pool</code>, the</p>
+<p>packaged generational pool: per-slot generations reject stale indices instead</p>
+<p>of silently aliasing a reused slot. The full figures are in</p>
+<p><a href="internals/value-semantics-limits.html">internals/value-semantics-limits.md</a>.</p>
+<h2 id="observers-send-messages-dont-hold-pointers">Observers: send messages, don't hold pointers</h2>
+<p>When one value must react to another, don't store a pointer back at the</p>
+<p>subject — send the event over a channel to a task that owns the observer</p>
+<p>state. The edge is a message, not an alias, so nothing can dangle and nothing</p>
+<p>races.</p>
+<pre><code class="language-tycho">fn watcher(events: Channel(string)) -&gt; int:
+    n := 0
+    for true:
+        match recv(events):
+            Some(e):
+                println("saw " + e)
+                n = n + 1
+            None:                   # closed and drained
+                break
+    return n
+
+fn main():
+    events := channel(string, 16)
+    t := spawn watcher(events)
+    send(events, "open")
+    send(events, "close")
+    close(events)
+    println(str(wait(t)))   # 2
+</code></pre>
+<pre><code class="language-output">saw open
+saw close
+2
+</code></pre>
+<p>Why this way: each task owns its arena and every crossing value is a copy, so</p>
+<p>separate tasks cannot race on Tycho values — no locks, no Sendable machinery.</p>
+<p>See <a href="reference/concurrency.html">concurrency</a>.</p>
+<h2 id="heterogeneity-close-the-set-with-an-enum">Heterogeneity: close the set with an enum</h2>
+<p>When several shapes flow through one place and the set is known, make it a</p>
+<p>closed <code>enum</code> and take it apart with exhaustive <code>match</code>. No vtable, no</p>
+<p>indirection — and the compiler checks that every variant is handled.</p>
+<pre><code class="language-tycho">enum Shape:
+    Circle(float)
+    Rect(float, float)
+
+fn area(s: Shape) -&gt; float:
+    return match s:
+        Circle(r): 3.14159 * r * r
+        Rect(w, h): w * h
+
+fn main():
+    println(str(area(Circle(2.0))))
+</code></pre>
+<p>Why this way: a generic body already covers the static half (one function over</p>
+<p>many types, monomorphized per instantiation, no indirection). The enum covers</p>
+<p>the mixed half wherever the variants are known. Only the *open* set —</p>
+<p>plugins, unknown implementors — stays outside the language, because an open</p>
+<p>set needs a stored reference by definition. See</p>
+<p><a href="reference/enums-options.html">enums</a> and <a href="reference/generics.html">generics</a>.</p>
+<h2 id="long-lived-state-mutate-dont-rebuild">Long-lived state: mutate, don't rebuild</h2>
+<p>When a value outlives every scope that would reclaim it — an editor buffer, a</p>
+<p>session cache, server state — change it in place rather than rebuilding it per</p>
+<p>operation. Rebuilding pays a full copy per edit; a mutation pays for the edit.</p>
+<pre><code class="language-tycho">fn bump(hits: inout [string: int], k: string):
+    hits[k] += 1
+
+fn main():
+    hits := []string: int
+    bump(&amp;hits, "open")
+    bump(&amp;hits, "open")
+    println(str(hits["open"]))   # 2
+</code></pre>
+<p>Why this way: <code>inout</code> is an exclusive, call-scoped borrow — equivalent to</p>
+<p><code>x = f(x)</code>, checked by the compiler — so the callee genuinely shares the</p>
+<p>caller's aggregate across frames. Measured: a memoized <code>fib(40)</code> collapses</p>
+<p>from 0.60s to under a millisecond, which is the proof the table is shared,</p>
+<p>not copied per call. For hot text, hold the buffer as <code>[int]</code> and convert at</p>
+<p>the boundary; a keystroke then writes bytes instead of copying a line. The</p>
+<p>worked editor case is in <a href="thesis.html">thesis §4c</a>. See</p>
+<p><a href="reference/maps.html">maps</a> (<code>m[k] += 1</code>, <code>push(m[k], v)</code> update in place).</p>
+<h2 id="transients-scope-the-work-free-the-proof">Transients: scope the work, free the proof</h2>
+<p>When a long-lived scope builds throwaway values — parsing a document, loading</p>
+<p>an input — do that work in an inner function so its arena frees on return.</p>
+<p>The caller keeps the result; the transient never outlives the call.</p>
+<p>Why this way: arenas reclaim at scope exit, so a scope that holds its</p>
+<p>transients holds its high-water mark. Splitting the load from the loop turns</p>
+<p>bulk-free into per-item free with no code beyond a function boundary. See</p>
+<p><a href="from-c-to-arenas.html">from `malloc` to arenas</a> and the</p>
+<p><a href="internals/value-semantics-limits.html">limits note</a>.</p>
+<h2 id="views-name-a-projection-with-subscript">Views: name a projection with <code>subscript</code></h2>
+<p>When pool indexing gets noisy, name the projection. A <code>subscript</code> is a</p>
+<p>zero-copy view into a value you already hold — usable for reads, writes, and</p>
+<p><code>inout</code> — that cannot be stored or carried past its statement, which is what</p>
+<p>keeps it sound.</p>
+<pre><code class="language-tycho">struct Node:
+    weight: int
+struct Graph:
+    nodes: [Node]
+
+subscript edge(g: Graph, i: int) -&gt; inout Node:
+    yield &amp;g.nodes[i]
+
+fn main():
+    g := Graph([Node(1), Node(2)])
+    g.edge(1).weight = 10
+    println(str(g.edge(1).weight))   # 10
+</code></pre>
+<p>Why this way: it reads like a pointer and stores like an index — the</p>
+<p>ergonomics of references over the representation that fits the model. See</p>
+<p><a href="reference/subscripts.html">subscripts</a>.</p>
+<footer>Tycho docs — generated from the repo, pre-1.0 and subject to change.</footer>
+</body>
+</html>
