@@ -95,9 +95,12 @@ fn is_sep(cells: [string]) -> bool:
 # Inline spans over HTML-escaped text (escaping introduces no span
 # characters, so scanning the escaped form is safe): `code`, **bold**,
 # [text](url) with the docs-tree link rewrite. An unmatched opener is
-# emitted literally.
+# emitted literally. Span bodies recurse, so **[`code`](url)** renders all
+# three layers.
 fn render_inline(s: string) -> string:
-    e := esc_html(s)
+    return render_spans(esc_html(s))
+
+fn render_spans(e: string) -> string:
     out := ""
     i := 0
     for i < len(e):
@@ -120,7 +123,7 @@ fn render_inline(s: string) -> string:
                     break
                 k = k + 1
             if found >= 0:
-                out = out + "<strong>" + e[i+2:found] + "</strong>"
+                out = out + "<strong>" + render_spans(e[i+2:found]) + "</strong>"
                 i = found + 2
             else:
                 out = out + e[i:i+1]
@@ -134,7 +137,7 @@ fn render_inline(s: string) -> string:
                 for m < len(e) and e[m] != 41:  # ')'
                     m = m + 1
                 if m < len(e):
-                    out = out + "<a href=\"" + rewrite_link(e[k+2:m]) + "\">" + e[i+1:k] + "</a>"
+                    out = out + "<a href=\"" + rewrite_link(e[k+2:m]) + "\">" + render_spans(e[i+1:k]) + "</a>"
                     i = m + 1
                 else:
                     out = out + e[i:i+1]
