@@ -23,6 +23,7 @@
 <link rel="stylesheet" href="fonts/fonts.css">
 </head>
 <body>
+<a class="skip" href="#main">Skip to content</a>
 <!-- Direction: the page as a technical document, not a landing page. Title block,
      table of contents with dotted leaders, numbered FIGURES and LISTINGS with
      captions, spec-sheet tables, a running section header in the top bar, and a
@@ -74,6 +75,11 @@
   }
   a{color:inherit; text-decoration:none; border:0}
   a:focus-visible,button:focus-visible{outline:1px solid var(--ink); outline-offset:2px}
+  ::selection{background:var(--acc); color:var(--acc-on)}
+  .skip{position:absolute; left:12px; top:-56px; z-index:100; background:var(--ink);
+    color:var(--paper); padding:10px 16px; font-size:10px; letter-spacing:1.6px;
+    text-transform:uppercase; transition:top .15s ease}
+  .skip:focus{top:8px}
   code{font:inherit}
 
   :root{ --pad:clamp(16px,2.2vw,44px); --bar:56px; --measure:64ch; }
@@ -87,9 +93,14 @@
   .bar .brand .logo{width:15px; height:15px}
   .runsec{display:flex; align-items:center; font-size:9.5px; letter-spacing:1.6px;
     text-transform:uppercase; color:var(--faint)}
-  .bar nav{display:flex; align-items:stretch; margin-left:auto; min-width:0}
-  .bar nav a{display:flex; align-items:center; padding:0 clamp(12px,1.5vw,26px);
+  .bar nav{display:flex; align-items:stretch; margin-left:auto; min-width:0;
+    overflow-x:auto; scrollbar-width:none}
+  .bar nav::-webkit-scrollbar{display:none}
+  .bar nav a{display:flex; align-items:center; flex:0 0 auto; padding:0 clamp(12px,1.5vw,26px);
     font-size:9.5px; letter-spacing:1.8px; text-transform:uppercase; color:var(--dim)}
+  .bar .brand{flex:0 0 auto}
+  .runsec{white-space:nowrap}
+  .themebtn{flex:0 0 auto}
   .bar nav a:hover{color:var(--ink)}
   .bar nav a[aria-current="true"]{color:var(--ink)}
   /* the last item is a filled block that runs to the very corner */
@@ -265,6 +276,13 @@
   .fig .fhead .dot{width:6px; height:6px; background:var(--acc)}
   .fig .fhead b{color:var(--dim); font-weight:600}
   .fig canvas{display:block; width:100%}
+  .fig svg{display:block; width:100%; height:auto}
+  .fig svg text{font-family:inherit; font-size:10px; letter-spacing:2px; fill:var(--faint); text-transform:uppercase}
+  .fig .ln{stroke:var(--dim); stroke-width:1}
+  .fig .nd{fill:none; stroke:currentColor; stroke-width:1.4}
+  .fig .slot{fill:none; stroke:currentColor; stroke-width:1.4}
+  .fig .edge{stroke:var(--acc); stroke-width:1.4}
+  .fig .enum{fill:var(--acc); font-size:12px; letter-spacing:0}
   .fig .fcap{padding:10px var(--pad); border-top:1px solid var(--line);
     font-size:10px; line-height:1.6; color:var(--faint)}
   .fig .fcap b{color:var(--dim); font-weight:600}
@@ -329,13 +347,16 @@
     <a href="#lang">The language</a>
     <a href="#rigor">How it's checked</a>
     <a href="#start">Try it</a>
+    <a href="#learn">Learn</a>
+    <a href="#faq">FAQ</a>
+    <a href="#community">Community</a>
     <a href="https://github.com/StefanVonRanda/tycho">Get it ↗</a>
   </nav>
   <button class="themebtn" id="tbtn" aria-label="Toggle theme">Theme</button>
  </div>
 </div>
 
-<div class="wrap">
+<main class="wrap" id="main">
   <header class="hero" id="top">
     <div class="hrail">
       <span>Tycho / implicit arenas · value semantics</span>
@@ -469,6 +490,50 @@
       <div class="row"><span class="k">No references</span><span class="v">Shared-mutable graphs and observers can't be written the pointer way — <b>pools + indices</b> are the idiom, and the cache-friendly one. Every price is named in the <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/internals/value-semantics-limits.md">loss column ↗</a>.</span></div>
       <div class="row"><span class="k">No interface values</span><span class="v">A heterogeneous list of implementors can't exist here — <b>closed enums + match</b> cover the known set, generics the static half. The replacements are in <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/idioms.md">Thinking in Tycho ↗</a>.</span></div>
       <div class="row"><span class="k">Pre-1.0</span><span class="v">The surface can still break with a changelog entry and no deprecation window. What that promise covers is in <a href="https://github.com/StefanVonRanda/tycho/blob/main/SUPPORT.md">SUPPORT ↗</a>.</span></div>
+    </div>
+    <div class="fig rv">
+      <div class="fhead"><span class="dot"></span><b>FIG. 02</b><span>— the pool idiom</span></div>
+      <svg viewBox="0 0 640 228" role="img" aria-labelledby="fig02t fig02d">
+        <title id="fig02t">Pointer graph versus index pool</title>
+        <desc id="fig02d">Left: nodes scattered with crossing pointer edges. Right: one contiguous array of nodes with edges as integer indices, two of them naming one slot.</desc>
+        <text x="16" y="28">Pointers</text>
+        <line class="ln" x1="60" y1="96" x2="152" y2="62"/>
+        <line class="ln" x1="152" y1="62" x2="242" y2="102"/>
+        <line class="ln" x1="60" y1="96" x2="202" y2="172"/>
+        <line class="ln" x1="102" y1="162" x2="242" y2="102"/>
+        <line class="ln" x1="202" y1="172" x2="272" y2="152"/>
+        <line class="ln" x1="152" y1="62" x2="102" y2="162"/>
+        <line class="ln" x1="242" y1="102" x2="272" y2="152"/>
+        <circle class="nd" cx="60" cy="96" r="10"/>
+        <circle class="nd" cx="152" cy="62" r="10"/>
+        <circle class="nd" cx="242" cy="102" r="10"/>
+        <circle class="nd" cx="102" cy="162" r="10"/>
+        <circle class="nd" cx="202" cy="172" r="10"/>
+        <circle class="nd" cx="272" cy="152" r="10"/>
+        <text x="336" y="28">Pool</text>
+        <rect class="slot" x="344" y="78" width="42" height="42"/>
+        <rect class="slot" x="390" y="78" width="42" height="42"/>
+        <rect class="slot" x="436" y="78" width="42" height="42"/>
+        <rect class="slot" x="482" y="78" width="42" height="42"/>
+        <rect class="slot" x="528" y="78" width="42" height="42"/>
+        <rect class="slot" x="574" y="78" width="42" height="42"/>
+        <text x="360" y="142">0</text>
+        <text x="406" y="142">1</text>
+        <text x="452" y="142">2</text>
+        <text x="498" y="142">3</text>
+        <text x="544" y="142">4</text>
+        <text x="590" y="142">5</text>
+        <text class="enum" x="359" y="105">2</text>
+        <text class="enum" x="497" y="105">2</text>
+        <line class="edge" x1="365" y1="120" x2="365" y2="132"/>
+        <line class="edge" x1="365" y1="132" x2="457" y2="132"/>
+        <line class="edge" x1="457" y1="132" x2="457" y2="120"/>
+        <line class="edge" x1="503" y1="120" x2="503" y2="132"/>
+        <line class="edge" x1="503" y1="132" x2="457" y2="132"/>
+        <text x="336" y="170">Edges as indices —</text>
+        <text x="336" y="186">two naming one slot is sharing</text>
+      </svg>
+      <div class="fcap"><b>The pool idiom.</b> Left: nodes linked by pointer, scattered. Right: one array; an edge is an integer index. Slots 0 and 3 both name slot 2 — that shared naming is what by-value storage alone cannot express.</div>
     </div>
   
   
@@ -678,7 +743,7 @@ the generated C to. Building from source below ends at the same prompt.</p>
   </footer>
 
 
-</div>
+</main>
 
 <script>
 (function(){
