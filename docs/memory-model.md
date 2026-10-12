@@ -124,7 +124,7 @@ Together these close the arena's two known weak spots (loop-carried reassignment
 and sliding-window eviction). The model's remaining loss
 is elsewhere — pointer-shaped, structurally-shared data like tries runs ~1.55× C
 in RAM after the compact indexed-dict map layout, down from ~3×; that residue is covered in [the thesis](thesis.md) and the
-[value-semantics limits note](internals/value-semantics-limits.md).)
+[value-semantics limits note](internals/value-semantics-limits.md).
 
 ## Verification
 
@@ -146,7 +146,7 @@ ways an over-aggressive move or recycle could go wrong:
 ## Across threads
 
 The model extends to concurrency without new rules (see
-[concurrency.md](reference/concurrency.md)): a spawned task is an ordinary call whose
+[concurrency](reference/concurrency.md)): a spawned task is an ordinary call whose
 `_parent` is a private root arena (arguments deep-copy in before the thread
 starts; the result copies out at `wait`, then the whole tree frees), the block
 pool is thread-local so allocation never contends, and channel payloads live in
