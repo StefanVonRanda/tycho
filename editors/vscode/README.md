@@ -56,4 +56,4 @@ server reads by running the transpiler on the file in its real package directory
 ## Status
 
 Diagnostics are line-level (the transpiler reports `file:line: error: msg`). Hover
-types and go-to-definition aren't here yet — I'll add them as the server grows.
+types and go-to-definition aren't here yet.

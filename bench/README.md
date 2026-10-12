@@ -2,7 +2,7 @@
 
 The thesis: a **value-semantic + implicit-arena** memory model gives **C-class
 memory and predictable, pause-free reclamation, with no manual frees and no GC**.
-The only way I trust that claim is numbers next to C, Rust, Go (GC), and Koka
+The evidence is numbers next to C, Rust, Go (GC), and Koka
 (Perceus RC) on memory-heavy work, with **byte-identical output** per workload —
 not a passing test suite. This file is the map; each row links to a `RESULTS.md`
 with detail.
