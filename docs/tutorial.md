@@ -29,7 +29,8 @@ fn main():
 
 `fn` declares a function; `-> string` is its return type; `main` is the entry point.
 `name := input()` declares a variable and infers its type. Indentation delimits blocks,
-Python-style.
+Python-style. `print`, `println`, `input`, `str`, `len`, and `push` are builtins —
+no import needed.
 
 ## 2. Values, and copies
 

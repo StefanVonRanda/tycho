@@ -1,7 +1,8 @@
 # From `malloc` to implicit arenas
 
 If you write C, you already know Tycho's memory model — you just have to remove one thing
-from it. This is the idea in five steps, starting from code you've written a hundred times.
+from it. If you don't, skip the grey C boxes: each one ends with a plain-English
+sentence that carries the point. This is the idea in five steps, starting from code you've written a hundred times.
 For the rigorous version with benchmarks, see [thesis.md](thesis.md); this is the on-ramp.
 
 ## Step 1 — the C you know
