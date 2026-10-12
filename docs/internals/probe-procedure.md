@@ -18,7 +18,7 @@ stops being an honour rule. Verify with
 
 **`compiler/` belongs in the list.** Until 2026-09-07 it was missing, so every round before that ran with `compiler/parse/parse.ty` and the typechecker readable — a syntax oracle for whatever feature was under test. Checking only for `tychoc.c` is what let it through.
 
-**The strip guarantees one class of false finding, so discount it on sight.** `docs/internals`, `docs/rfc` and `tests` are gone, and the pages that survive link into all three, so every probe can truthfully report those links as dead. The 2026-09-21 `handle` round filed six that are not ([record](probe-handle-2026-09-21.md)); `make check-links` is green on the real tree. A link finding counts only if the target is missing from a full checkout.
+**The strip also guarantees one class of false finding, so discount it on sight.** `docs/internals`, `docs/rfc` and `tests` are gone, and the pages that survive link into all three, so every probe can truthfully report those links as dead. The 2026-09-21 `handle` round filed six that are not ([record](probe-handle-2026-09-21.md)); `make check-links` is green on the real tree. A link finding counts only if the target is missing from a full checkout.
 
 **Build the compiler from `main`, not the release tarball.** The 2026-08-19 run used v0.7.0 and part of its report described diagnostics already improved since; that half was archaeology.
 
