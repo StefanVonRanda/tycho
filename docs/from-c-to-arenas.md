@@ -87,7 +87,7 @@ arena instead, so it's still alive after `greet` returns and is freed when the c
 scope ends. The compiler placed every allocation and every free itself, from the shape of
 the code. No garbage collector runs; no annotations were written.
 
-And it's not magic underneath — Tycho transpiles to C, so you can read exactly the arena
+Tycho transpiles to C, so you can read exactly the arena
 calls it emits. Here is that `greet`, run through `./tychoc greet.ty --emit-c`:
 
 ```c
@@ -97,8 +97,7 @@ char *h_greet(Arena *_parent, char *h_name) {
 ```
 
 `_parent` is the **caller's** arena. The string is built there directly, so there is
-nothing to free on the way out and no scope of its own to create — the claim above, in
-the generated code.
+nothing to free on the way out and no scope of its own to create.
 
 Now change one thing, so the string no longer escapes:
 
@@ -123,8 +122,7 @@ without an annotation, a lifetime, or a runtime check. That is the whole mechani
 the diff between the two C functions is the diff between `return msg` and
 `return len(msg)`.
 
-Two things worth noticing, because they are what the C programmer is really being asked
-to trade:
+Two things worth noticing:
 
 - **`greet` creates no arena at all.** A function whose result escapes does not pay for a
   scope it would immediately hand upward. The cheap case is the common one.
