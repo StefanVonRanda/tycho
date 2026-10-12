@@ -39,8 +39,8 @@ Read as an rvalue, `m[k]` returns the value **by copy** and never inserts: a sca
 returns the value type's zero for a missing key, a composite value returns a deep copy. When
 you need a non-zero default for a missing key, `m.get(k, default)` returns `default` on a
 miss — the same read, spelled as a method. `m.get(k)` (no default) is exactly `m[k]`. Every
-map operation is now operator, keyword, or method syntax (`m[k]`, `m.get`, `in`, `delete`,
-`len`, `keys`) — no snake_case map functions:
+map operation is operator, keyword, or method syntax (`m[k]`, `m.get`, `in`, `delete`,
+`len`, `keys`):
 
 ```tycho
 counts := ["ada": 1]
