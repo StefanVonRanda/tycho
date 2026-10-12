@@ -23,8 +23,8 @@ A parameter is passed in one of three modes ([spec §15.2](../spec/11-functions.
   copy. A fresh literal or a call's result is adopted with no copy.
 
 A sink argument must be the variable's **only** mention in the function, and no named variable can be
-adopted inside a loop. So a consuming builder is written as nested calls —
-`render(join(of(collect()), add(empty(), tag)))` — rather than as `d = add(d, x)` in a loop
+adopted inside a loop. So a consuming chain is written as nested calls —
+each call's result handed straight to the next — rather than as `d = add(d, x)` in a loop
 ([spec §15.2](../spec/11-functions.md#152-parameter-passing-modes)).
 
 `sink` and `inout` are mutually exclusive, and neither may combine with a variadic parameter.

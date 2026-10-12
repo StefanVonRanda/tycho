@@ -5,8 +5,7 @@
 
 Tycho is statically typed, and every value has a type known at compile time. This page
 covers the scalar types, the `bytes` buffer, distinct `type` newtypes, and how
-bidirectional inference lets you leave most annotations off without ever introducing a
-type variable. The compound types — arrays, structs, maps, tuples, enums — each have
+inference lets you leave most annotations off. The compound types — arrays, structs, maps, tuples, enums — each have
 their own page.
 
 ## Scalars
@@ -47,9 +46,8 @@ A `char` is one byte, written with a quoted literal — `'x'`, with the escapes
 `'A'`). That set is **not** the one a [string literal](#string-escapes) takes. It
 interoperates with `int` deliberately and narrowly:
 
-- `char ± int` is a `char` (a byte offset — `'a' + 1` is `'b'`). The result keeps the
-  `char` type but its value is the ordinary integer result — it is **not** reduced to
-  `0..255` (e.g. `'a' + 300` is a `char` holding `397`).
+- `char ± int` is a `char` (a byte offset — `'a' + 1` is `'b'`). The result wraps
+  to `0..255`, like `u8`: `'A' + 255` wraps to `'@'` (64).
 - `string + char` appends the byte **in place**, without allocating, so building a string
   one character at a time is a byte-write, not an allocation per character:
 
@@ -185,9 +183,8 @@ ys := []                     # a bare decl stays pending...
 push(ys, 3)                  # ...until its first grounding use types it ([int])
 ```
 
-There are **no type variables and no unification**: every expression is typed at its own
-line, either synthesized from its parts or checked against a known destination. Errors
-stay local because each line is typed on its own. The cost is
+Each line is typed on its own — from its parts, or against the destination it
+feeds — so errors stay local. The cost is
 that a value with *no* way to determine its type is rejected rather than guessed — a bare
 `x := None` or `x := []` with no grounding use is a compile error; annotate it. Function
 signatures are always explicit: they are the module's interface and the inference's seeds.

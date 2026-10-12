@@ -21,7 +21,7 @@ _zs := xs                # value semantics: zs is an independent deep copy
 ```
 
 An out-of-bounds index aborts with a message rather than reading stray memory. The
-check is always on, in both compilers. Assignment is a **deep** copy: copying a `[string]`, `[Point]`, or `[[int]]` duplicates the element
+check is always on. Assignment is a **deep** copy: copying a `[string]`, `[Point]`, or `[[int]]` duplicates the element
 bytes, nested structs, and inner buffers too, so mutating the copy never touches the
 original.
 

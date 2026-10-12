@@ -22,8 +22,9 @@ fn main():
 1. `import "core:<pkg>"` in your source. The name `<pkg>` is bound to the package.
    The transpiler finds `corelib/` next to its own binary by default, so no setup is
    needed in this repo. Set `TYCHO_CORELIB` to a corelib directory to override.
-2. Call its functions either free-standing (`math.gcd(12, 18)`) or method-style via UFCS
-   (`x.abs()`).
+2. Call its functions either free-standing (`math.gcd(12, 18)`) or method-style
+   (`x.abs()` — any function can be called with its first argument as the
+   receiver, see [Methods](functions.md#methods-ufcs)).
 
 ## Resolution
 
@@ -39,7 +40,7 @@ constraints (`comparable(T)`, `numeric(T)`, `has_str(T)`) picking which element
 types each function accepts. Array and iterator utilities are single generic
 packages over any element type `[$T]` (`core:arrays`, `core:iter`) rather than
 one package per element type. The functions are also callable method-style
-through UFCS, so `index_of(xs, v)` and `xs.index_of(v)` are the same call.
+through method-style call, so `index_of(xs, v)` and `xs.index_of(v)` are the same call.
 
 Higher-order helpers (map / filter / reduce that take a function) live in `core:iter` and
 its siblings, and take a first-class `fn`/closure argument. Lambdas in Tycho are
