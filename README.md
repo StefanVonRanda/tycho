@@ -144,7 +144,7 @@ want a different tool, is
   The payoff is automatic memory management from lexical scope, not a runtime.
 - **Value semantics.** `b := a` copies; there is no shared mutable storage, so
   data races are inexpressible inside Tycho (copy-in/copy-out concurrency, no
-  annotations).
+  annotations) — concurrent FFI calls can still race ([SECURITY.md](SECURITY.md)).
 - **One dependency-free C file.** The transpiler is `src/tychoc.c`; the only
   toolchain is `cc` and `make`.
 - **Concurrency, generics, closures, FFI.** `spawn`/`wait` tasks, bounded
@@ -293,8 +293,9 @@ argument, with the measurements and the places it costs, is
 
 The tools under [`tools/`](tools/) are not demos — they are full programs
 written against the language, each with a ground-truth differential that a bug
-cannot pass. The campaign ran all of them on the shipped compiler, and the
-language held: no compiler or runtime defect was filed by any of them.
+cannot pass. The campaign ran all of them — all six written by the project's
+author — on the shipped compiler, and the language held: no compiler or runtime
+defect was filed by any of them.
 
 | program | what it stresses | its ground-truth gate |
 | --- | --- | --- |
@@ -325,8 +326,11 @@ on this tree; nothing is aspirational.
 On the allocation-heavy tree workloads Tycho uses the least memory of five
 languages measured head-to-head — 40% of C's on binary-trees, half on
 tree-rewrite — with no GC and no reference counting, only lexical arenas and
-value semantics. A 220-line recursive JSON parser holds a flat 10 MB across
-5,000,000 documents in a loop. The tables, the measurements, and the
+value semantics. It trails on flat array pipelines (6 MB vs C's 3 MB) — the
+gap is per-element bounds checks, not the model. A 220-line recursive JSON parser holds a flat 10 MB across
+5,000,000 documents in a loop, and at scale the model is tight: big workloads
+hold their live set within 0.1–1.3% of what they reserve from the OS at 99.8%
+block reuse. The tables, the measurements, and the
 costs are in **[docs/performance.md](docs/performance.md)**.
 
 ## FAQ

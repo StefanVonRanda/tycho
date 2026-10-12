@@ -15,7 +15,8 @@ The claim is sharper:
 > **Value semantics is the missing ingredient that lets hierarchical arena
 > allocation be fully *implicit* — inferred from lexical scope and signatures
 > alone, with no whole-program analysis and no visible memory constructs —
-> while staying competitive on performance.**
+> at 40% of C's memory on tree workloads, with no GC and no reference
+> counting (§4, [performance.md](performance.md)).**
 
 It is data-oriented: built for a domain (see §6), not general-purpose.
 
@@ -258,10 +259,10 @@ The verdict:
 
 - For **tree-shaped, scope-shaped, build-and-return, accumulate** programs —
   compilers and compiler passes, request handlers, batch transforms, CLI
-  tools, frame-loop logic — the model delivers **zero memory cognition with
-  performance competitive with manual approaches**. The two optimizations are
-  what move it from "cute" to "competitive," and they were free because the
-  model's safety asymmetry hands them over.
+  tools, frame-loop logic — the model delivers **zero memory cognition at 40%
+  of C's memory on binary-trees**. The two optimizations move it from "cute"
+  to there — a 1.75× return path and an 828 MB → 4 MB append (§4a/§4b) — and
+  they were free because the model's safety asymmetry hands them over.
 
 - For **long-lived mutable structures edited over a session** — an editor
   buffer, a session cache, a server's accumulated state — it works, and it is
@@ -302,7 +303,7 @@ Three further things back the thesis up, written up separately.
 (Tycho vs C, Go, Rust, and Koka's Perceus reference-counting) and
 the compiler and codegen numbers are in [docs/perf.md](perf.md).
 
-**Concurrency falls out for free.** The same call convention — deep-copy in, copy
+**Concurrency reuses the call convention.** The same call convention — deep-copy in, copy
 out, a private arena per call — is already a sound thread boundary, so
 `spawn`/`wait`, `parallel for`, channels, and `select` are just that convention run
 on threads: race-free by construction, with no Sendable/lifetime/lock machinery

@@ -87,10 +87,9 @@ set, only the slack (≤4% either way here), and wall time is flat. The 64 KiB
 default is not retuned.
 
 ## Speed
-Tycho runs in C's class: it is faster than hand-written C on the
-allocation-heavy tree workloads (binary-trees, tree-rewrite) and on the JSON
-parser, and it trails C and Rust on the flat array-pipeline (per-element bounds
-checks, not the memory model). The in-place append (an
+On allocation-heavy tree workloads and the JSON parser Tycho beats hand-written
+C on time and memory; it trails C and Rust on flat array pipelines
+(per-element bounds checks, not the memory model). The in-place append (an
 `acc = acc + x` loop growing one buffer) is guarded by `make bench`: ~1.5 MB
 where the un-optimized path is ~825 MB at the same N, so a 32 MB bound sits
 firmly between working and broken.
