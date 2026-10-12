@@ -460,6 +460,11 @@
         <p class="codecap rv"><b>Listing 02.</b> <span class="inl">return</span> moves the value into the caller's arena; the copy <span class="inl">q := p</span> stays independent.</p>
       </div>
     </div>
+    <div class="spec2 rv">
+      <div class="row"><span class="k">No references</span><span class="v">Shared-mutable graphs and observers can't be written the pointer way — <b>pools + indices</b> are the idiom, and the cache-friendly one. Every price is named in the <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/internals/value-semantics-limits.md">loss column ↗</a>.</span></div>
+      <div class="row"><span class="k">No interface values</span><span class="v">A heterogeneous list of implementors can't exist here — <b>closed enums + match</b> cover the known set, generics the static half. The replacements are in <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/idioms.md">Thinking in Tycho ↗</a>.</span></div>
+      <div class="row"><span class="k">Pre-1.0</span><span class="v">The surface can still break with a changelog entry and no deprecation window. What that promise covers is in <a href="https://github.com/StefanVonRanda/tycho/blob/main/SUPPORT.md">SUPPORT ↗</a>.</span></div>
+    </div>
   
   
   </section>
