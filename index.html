@@ -18,7 +18,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%20100%20100%27%3E%3Cstyle%3E.ink%7Bfill:none;stroke:%231c1c2e;stroke-width:4%7D.dot%7Bfill:%231c1c2e%7D@media%20(prefers-color-scheme:dark)%7B.ink%7Bstroke:%23ececf4%7D.dot%7Bfill:%23ececf4%7D%7D%3C/style%3E%3Ccircle%20class%3D%27ink%27%20cx%3D%2750%27%20cy%3D%2750%27%20r%3D%2720%27/%3E%3Ccircle%20class%3D%27ink%27%20cx%3D%2750%27%20cy%3D%2750%27%20r%3D%2738%27/%3E%3Ccircle%20class%3D%27ink%27%20cx%3D%2770%27%20cy%3D%2738%27%20r%3D%2711%27/%3E%3Ccircle%20class%3D%27dot%27%20cx%3D%2750%27%20cy%3D%2750%27%20r%3D%274.5%27/%3E%3Ccircle%20class%3D%27dot%27%20cx%3D%2770%27%20cy%3D%2738%27%20r%3D%274%27/%3E%3C/svg%3E">
 <script>
   /* set theme before first paint to avoid flash */
-  (function(){try{var t=localStorage.getItem('tycho-theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.dataset.theme=t;}catch(e){}})();
+  (function(){try{var t=localStorage.getItem('tycho-theme')||'light';document.documentElement.dataset.theme=t;}catch(e){document.documentElement.dataset.theme='light';}})();
 </script>
 <link rel="stylesheet" href="fonts/fonts.css">
 </head>
