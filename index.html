@@ -211,6 +211,8 @@
   .card h3{margin:0 0 8px; font-size:11px; color:var(--ink); font-weight:600;
     text-transform:uppercase; letter-spacing:1.4px}
   .card p{margin:0; font-size:12px; line-height:1.65; max-width:none; color:var(--dim)}
+  .card p a{color:var(--ink); border-bottom:1px solid var(--line)}
+  .card p a:hover{border-bottom-color:var(--ink)}
   ul.feat{list-style:none; margin:0; padding:0}
   ul.feat li{padding:11px 0; border-top:1px solid var(--line); font-size:12.5px; color:var(--dim)}
   ul.feat li:first-child{border-top:0}
@@ -380,6 +382,9 @@
     <a href="#lang"><span class="n">03</span>The language<span class="dots"></span><span class="arr">→</span></a>
     <a href="#rigor"><span class="n">04</span>How it's checked<span class="dots"></span><span class="arr">→</span></a>
     <a href="#start"><span class="n">05</span>Try it<span class="dots"></span><span class="arr">→</span></a>
+    <a href="#learn"><span class="n">06</span>Learn<span class="dots"></span><span class="arr">→</span></a>
+    <a href="#faq"><span class="n">07</span>FAQ<span class="dots"></span><span class="arr">→</span></a>
+    <a href="#community"><span class="n">08</span>Community<span class="dots"></span><span class="arr">→</span></a>
   </nav>
 
   <section id="idea" data-n="01" data-t="The idea">
@@ -566,6 +571,68 @@ the generated C to. Building from source below ends at the same prompt.</p>
   
   </section>
 
+  <section id="learn" data-n="06" data-t="Learn">
+    <p class="marker rv"><span class="n">§06</span> Learn</p>
+    <h2 class="rv">An afternoon to a running program.</h2>
+    <nav class="contents rv" aria-label="Learn">
+      <div class="chead">Path</div>
+      <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/tutorial.md"><span class="n">01</span>Tutorial — first programs in about an hour<span class="dots"></span><span class="arr">→</span></a>
+      <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/from-c-to-arenas.md"><span class="n">02</span>Arenas — the memory model in five steps<span class="dots"></span><span class="arr">→</span></a>
+      <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/idioms.md"><span class="n">03</span>Idioms — what to reach for instead<span class="dots"></span><span class="arr">→</span></a>
+      <a href="https://github.com/StefanVonRanda/tycho/tree/main/docs/reference"><span class="n">04</span>Reference — every construct, by topic<span class="dots"></span><span class="arr">→</span></a>
+      <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/quiet-results.md"><span class="n">05</span>Quiet results — read before the first real program<span class="dots"></span><span class="arr">→</span></a>
+    </nav>
+  </section>
+
+  <section id="faq" data-n="07" data-t="FAQ">
+    <p class="marker rv"><span class="n">§07</span> FAQ</p>
+    <h2 class="rv">Asked every time.</h2>
+    <div class="cards">
+      <div class="card rv" style="--d:0ms">
+        <span class="idx">Q1 /</span>
+        <h3>No GC, no borrow checker — how is it safe?</h3>
+        <p>There is no reference type, so a dangling pointer can't be written. Memory frees per scope, <span class="inl">Option</span> removes null, <span class="inl">Result</span> removes exceptions, indexing is bounds-checked.</p>
+      </div>
+      <div class="card rv" style="--d:70ms">
+        <span class="idx">Q2 /</span>
+        <h3>What does value semantics cost?</h3>
+        <p>Pointer-shaped data stored by value: trie ~1.55× C, LRU ~2.8×, the pool idiom ~1.3×. Arenas free at scope exit, not incrementally. The <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/internals/value-semantics-limits.md">loss column ↗</a> names every price.</p>
+      </div>
+      <div class="card rv" style="--d:140ms">
+        <span class="idx">Q3 /</span>
+        <h3>Copying everything must be slow?</h3>
+        <p>"Copied" is the model, not the code: returns move, <span class="inl">acc += x</span> grows in place, dead values move. A copy happens only where a GC would work too. The <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/performance.md">numbers ↗</a> are measured.</p>
+      </div>
+      <div class="card rv" style="--d:210ms">
+        <span class="idx">Q4 /</span>
+        <h3>Where's the package manager?</h3>
+        <p>There isn't one, on purpose: vendor directories, import by path. No transitive graph you've never read. The <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/reference/packages.md">packages page ↗</a> shows the shape.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="community" data-n="08" data-t="Community">
+    <p class="marker rv"><span class="n">§08</span> Community</p>
+    <h2 class="rv">Built in the open.</h2>
+    <div class="cards">
+      <div class="card rv" style="--d:0ms">
+        <span class="idx">A /</span>
+        <h3>Report a bug</h3>
+        <p>Miscompile, crash, wrong output? A small <span class="inl">.ty</span> repro plus expected-vs-actual is the whole report. <a href="https://github.com/StefanVonRanda/tycho/issues/new?template=bug_report.md">File it ↗</a>.</p>
+      </div>
+      <div class="card rv" style="--d:70ms">
+        <span class="idx">B /</span>
+        <h3>Ideas and feedback</h3>
+        <p>Rough edges, "I bounced off X", why-does-it-work-this-way — all useful. A few things are out of scope; the <a href="https://github.com/StefanVonRanda/tycho/blob/main/docs/architecture.md#decided-non-goals">non-goals ↗</a> name them. <a href="https://github.com/StefanVonRanda/tycho/issues/new?template=idea.md">Speak up ↗</a>.</p>
+      </div>
+      <div class="card rv" style="--d:140ms">
+        <span class="idx">C /</span>
+        <h3>Contribute</h3>
+        <p>Pre-1.0, repros and feedback beat big features. Docs-only changes need one 3-second gate. <a href="https://github.com/StefanVonRanda/tycho/blob/main/CONTRIBUTING.md">How to help ↗</a>.</p>
+      </div>
+    </div>
+  </section>
+
   <footer>
     <div class="fgrid">
       <div>
@@ -644,7 +711,7 @@ the generated C to. Building from source below ends at the same prompt.</p>
   /* ── scroll-spy: nav + running section header ── */
   var secLinks=document.querySelectorAll('.bar nav a[href^="#"]');
   var runsec=document.getElementById('runsec');
-  var SECLABEL={idea:'§01 — The idea', fast:'§02 — Why it stays fast', lang:'§03 — The language', rigor:'§04 — How it\'s checked', start:'§05 — Try it'};
+  var SECLABEL={idea:'§01 — The idea', fast:'§02 — Why it stays fast', lang:'§03 — The language', rigor:'§04 — How it\'s checked', start:'§05 — Try it', learn:'§06 — Learn', faq:'§07 — FAQ', community:'§08 — Community'};
   if('IntersectionObserver' in window && secLinks.length){
     var sio=new IntersectionObserver(function(es){
       es.forEach(function(e){
