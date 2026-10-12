@@ -16,3 +16,12 @@ scope ends.
 
 If you can write a function and a loop, you already know enough to start.
 Read on, and welcome.
+
+## A first program
+
+```tycho
+fn main():
+    println("hello")
+```
+
+Build it with `tychoc`, and find the **tutorial** in the docs.

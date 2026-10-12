@@ -15,3 +15,13 @@ hand, and no collector running in the background.
 - keeping data past the scope is explicit: copy it somewhere that outlives it
 
 Memory management you never have to think about, until you want to.
+
+## The shapes at a glance
+
+| shape | freed when |
+| --- | --- |
+| a function call | it returns |
+| a loop iteration | the next one starts |
+| an `if` block | it ends |
+
+> Scopes nest, and so do arenas: the inner frees first.

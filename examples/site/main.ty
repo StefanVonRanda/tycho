@@ -33,39 +33,221 @@ fn esc_html(s: string) -> string:            # &, <, > -> entities (& first)
     r = strings.replace(r, ">", "&gt;")
     return r
 
-# Block-level Markdown: `# `/`## ` headings, `- ` lists, blank-separated paragraphs.
+# Split a table row on `|`, trimming cells; a leading or trailing pipe leaves
+# an empty edge cell that is dropped.
+fn split_cells(s: string) -> [string]:
+    cells := []string
+    cur := ""
+    for i := 0; i < len(s); i += 1:
+        if s[i] == 124:                        # '|'
+            push(cells, strings.trim(cur))
+            cur = ""
+        else:
+            cur = cur + s[i:i+1]
+    push(cells, strings.trim(cur))
+    lo := 0
+    hi := len(cells)
+    if hi > 0 and cells[0] == "":
+        lo = 1
+    if hi > lo and cells[hi-1] == "":
+        hi = hi - 1
+    out := []string
+    for i := lo; i < hi; i += 1:
+        push(out, cells[i])
+    return out
+
+# A separator row is only `-` and `:` per cell: `| --- | :--- |`.
+fn is_sep(cells: [string]) -> bool:
+    if len(cells) == 0:
+        return false
+    for i := 0; i < len(cells); i += 1:
+        c := cells[i]
+        if len(c) == 0:
+            return false
+        for j := 0; j < len(c); j += 1:
+            if c[j] != 45 and c[j] != 58:      # '-' and ':'
+                return false
+    return true
+
+# Inline spans over HTML-escaped text (escaping introduces no span
+# characters, so scanning the escaped form is safe): `code`, **bold**,
+# [text](url). An unmatched opener is emitted literally.
+fn render_inline(s: string) -> string:
+    e := esc_html(s)
+    out := ""
+    i := 0
+    for i < len(e):
+        if e[i] == 96:                          # '`'
+            j := i + 1
+            for j < len(e) and e[j] != 96:
+                j = j + 1
+            if j < len(e):
+                out = out + "<code>" + e[i+1:j] + "</code>"
+                i = j + 1
+            else:
+                out = out + e[i:i+1]
+                i = i + 1
+        elif e[i] == 42 and i + 1 < len(e) and e[i+1] == 42:   # '**'
+            k := i + 2
+            found := 0 - 1
+            for k + 1 < len(e):
+                if e[k] == 42 and e[k+1] == 42:
+                    found = k
+                    break
+                k = k + 1
+            if found >= 0:
+                out = out + "<strong>" + e[i+2:found] + "</strong>"
+                i = found + 2
+            else:
+                out = out + e[i:i+1]
+                i = i + 1
+        elif e[i] == 91:                        # '['
+            k := i + 1
+            for k < len(e) and e[k] != 93:      # ']'
+                k = k + 1
+            if k < len(e) and k + 1 < len(e) and e[k+1] == 40:   # '('
+                m := k + 2
+                for m < len(e) and e[m] != 41:  # ')'
+                    m = m + 1
+                if m < len(e):
+                    out = out + "<a href=\"" + e[k+2:m] + "\">" + e[i+1:k] + "</a>"
+                    i = m + 1
+                else:
+                    out = out + e[i:i+1]
+                    i = i + 1
+            else:
+                out = out + e[i:i+1]
+                i = i + 1
+        else:
+            out = out + e[i:i+1]
+            i = i + 1
+    return out
+
+# NOTE: these helpers take plain parameters and RETURN their HTML; the
+# caller appends it and resets state itself. An earlier shape passed the
+# output through `inout` (`close_list(&out, &in_list)`), which drops the
+# callee's append on the floor when the caller also grows the same string
+# in a loop — the bytes vanish while scalar write-backs survive. Minimal
+# repro kept aside (list + blank + heading in a loop loses `</ul>`); until
+# the compiler is fixed, no helper here takes `inout` on the output.
+fn close_list_html(in_list: bool) -> string:
+    if in_list:
+        return "</ul>\n"
+    return ""
+
+fn flush_rows_html(rows: [string]) -> string:
+    if len(rows) == 0:
+        return ""
+    head := split_cells(rows[0])
+    out := "<table>\n"
+    start := 0
+    if len(rows) > 1:
+        sep := split_cells(rows[1])
+        if len(sep) == len(head) and is_sep(sep):
+            start = 2
+            out = out + "<tr>"
+            for c := 0; c < len(head); c += 1:
+                out = out + "<th>" + render_inline(head[c]) + "</th>"
+            out = out + "</tr>\n"
+    for r := start; r < len(rows); r += 1:
+        cells := split_cells(rows[r])
+        out = out + "<tr>"
+        for c := 0; c < len(cells); c += 1:
+            out = out + "<td>" + render_inline(cells[c]) + "</td>"
+        out = out + "</tr>\n"
+    return out + "</table>\n"
+
+fn flush_quote_html(quote: [string]) -> string:
+    if len(quote) == 0:
+        return ""
+    out := "<blockquote>\n"
+    for i := 0; i < len(quote); i += 1:
+        out = out + "<p>" + render_inline(quote[i]) + "</p>\n"
+    return out + "</blockquote>\n"
+
+# Block-level Markdown: `# `/`## `/`### ` headings, `- ` lists, `> ` quotes,
+# `| ` tables (with a `---` separator row for a header), ``` fenced code,
+# blank-separated paragraphs. Inline: `code`, **bold**, [text](url).
 fn render_md(body: string) -> string:
     out := ""
     in_list := false
+    in_fence := false
+    rows := []string
+    quote := []string
     lines := strings.lines(body)
     for i := 0; i < len(lines); i += 1:
         t := strings.trim(lines[i])
-        if len(t) == 0:
-            if in_list:
-                out = out + "</ul>\n"
-                in_list = false
-        elif strings.starts_with(t, "## "):
-            if in_list:
-                out = out + "</ul>\n"
-                in_list = false
-            out = out + "<h2>" + esc_html(t[3:len(t)]) + "</h2>\n"
-        elif strings.starts_with(t, "# "):
-            if in_list:
-                out = out + "</ul>\n"
-                in_list = false
-            out = out + "<h1>" + esc_html(t[2:len(t)]) + "</h1>\n"
-        elif strings.starts_with(t, "- "):
-            if in_list == false:
-                out = out + "<ul>\n"
-                in_list = true
-            out = out + "<li>" + esc_html(t[2:len(t)]) + "</li>\n"
+        if in_fence:
+            if strings.starts_with(t, "```"):
+                out = out + "</code></pre>\n"
+                in_fence = false
+            else:
+                out = out + esc_html(lines[i]) + "\n"
+        elif strings.starts_with(t, "```"):
+            out = out + close_list_html(in_list)
+            in_list = false
+            out = out + flush_rows_html(rows)
+            rows = []string
+            out = out + flush_quote_html(quote)
+            quote = []string
+            lang := strings.trim(t[3:len(t)])
+            out = out + "<pre><code"
+            if len(lang) > 0:
+                out = out + " class=\"language-" + esc_html(lang) + "\""
+            out = out + ">"
+            in_fence = true
+        elif strings.starts_with(t, "|"):
+            out = out + close_list_html(in_list)
+            in_list = false
+            out = out + flush_quote_html(quote)
+            quote = []string
+            push(rows, t)
         else:
-            if in_list:
-                out = out + "</ul>\n"
+            out = out + flush_rows_html(rows)
+            rows = []string
+            if len(t) == 0:
+                out = out + close_list_html(in_list)
                 in_list = false
-            out = out + "<p>" + esc_html(t) + "</p>\n"
-    if in_list:
-        out = out + "</ul>\n"
+            elif strings.starts_with(t, "### "):
+                out = out + close_list_html(in_list)
+                in_list = false
+                out = out + flush_quote_html(quote)
+                quote = []string
+                out = out + "<h3>" + render_inline(t[4:len(t)]) + "</h3>\n"
+            elif strings.starts_with(t, "## "):
+                out = out + close_list_html(in_list)
+                in_list = false
+                out = out + flush_quote_html(quote)
+                quote = []string
+                out = out + "<h2>" + render_inline(t[3:len(t)]) + "</h2>\n"
+            elif strings.starts_with(t, "# "):
+                out = out + close_list_html(in_list)
+                in_list = false
+                out = out + flush_quote_html(quote)
+                quote = []string
+                out = out + "<h1>" + render_inline(t[2:len(t)]) + "</h1>\n"
+            elif strings.starts_with(t, "> "):
+                out = out + close_list_html(in_list)
+                in_list = false
+                push(quote, strings.trim(t[2:len(t)]))
+            elif strings.starts_with(t, "- "):
+                out = out + flush_quote_html(quote)
+                quote = []string
+                if in_list == false:
+                    out = out + "<ul>\n"
+                    in_list = true
+                out = out + "<li>" + render_inline(t[2:len(t)]) + "</li>\n"
+            else:
+                out = out + close_list_html(in_list)
+                in_list = false
+                out = out + flush_quote_html(quote)
+                quote = []string
+                out = out + "<p>" + render_inline(t) + "</p>\n"
+    out = out + close_list_html(in_list)
+    out = out + flush_rows_html(rows)
+    out = out + flush_quote_html(quote)
+    if in_fence:
+        out = out + "</code></pre>\n"
     return out
 
 fn page_html(site_title: string, page_title: string, author: string, content: string) -> string:

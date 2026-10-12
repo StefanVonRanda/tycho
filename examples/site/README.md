@@ -26,8 +26,11 @@ examples/site/
   content/*.md         `key: value` frontmatter, then a Markdown-subset body
 ```
 
-The Markdown subset is block-level: `# `/`## ` headings, `- ` list items
-(grouped into `<ul>`), and blank-line-separated paragraphs, all HTML-escaped.
+The Markdown subset is block-level: `# `/`## `/`### ` headings, `- ` list items
+(grouped into `<ul>`), `> ` quotes, `| ` tables (a `---` row makes a header),
+triple-backtick fenced code (with an optional language for a CSS class), and
+blank-line-separated paragraphs, all HTML-escaped. Inline: `` `code` ``,
+**bold**, and `[text](url)`.
 
 ## Running
 
