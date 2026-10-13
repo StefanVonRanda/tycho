@@ -120,10 +120,10 @@
       <div class="hero-intro">
         <span class="kicker">Experimental · v0.8.6</span>
         <h1>Tycho is a systems<br>programming language.</h1>
-        <p class="lede">Write native programs with automatic memory management—without a garbage collector. Tycho is designed for parsers, interpreters, and other tools that create lots of temporary data.</p>
+        <p class="lede">Tycho compiles to native code and handles memory without a garbage collector. It’s built for parsers, interpreters, and other programs that work with lots of temporary data.</p>
         <div class="cta">
           <a class="btn" href="#try">Try Tycho</a>
-          <a class="btn ghost" href="docs/tutorial.html">Read tutorial</a>
+          <a class="btn ghost" href="docs/tutorial.html">Tutorial</a>
         </div>
       </div>
       <div class="hero-demo">
@@ -140,7 +140,7 @@
     xs := <span class="fn">evens</span>(10)
     <span class="fn">println</span>(<span class="fn">str</span>(<span class="fn">len</span>(xs)))   <span class="c"># 5</span></code></pre>
         </div>
-        <p class="codecap">Collect the even numbers below 10 and print their count. The array can grow and be returned without manual allocation or cleanup.</p>
+        <p class="codecap">This program collects the even numbers below 10 and prints how many it found. You don’t have to allocate or free the array yourself.</p>
       </div>
     </div>
     <div class="herometa">
@@ -151,60 +151,61 @@
   </header>
 
   <section id="idea">
-    <span class="kicker">The approach</span>
-    <h2>Less memory bookkeeping.</h2>
-    <p>Tycho uses the structure of your program to decide how long data lives. You work with strings, arrays, and structs; the compiler handles their storage. There are no manual frees or borrow-checker annotations.</p>
+    <span class="kicker">Memory management</span>
+    <h2>The compiler handles the cleanup.</h2>
+    <p>You can create an array inside a function and return it without deciding who will free it. Tycho works out where the data belongs from the code. You don’t write lifetime annotations or calls to <code>free</code>.</p>
     <div class="fact">
-      <div class="row"><span class="k">Automatic cleanup</span><span class="v">Memory is grouped into arenas: blocks of memory owned by a scope. When that scope finishes, its arena is released. Returned values remain available to the caller.</span></div>
-      <div class="row"><span class="k">Independent values</span><span class="v">Assigning an array or struct creates an independent value. Changing the copy does not change the original. This is <b>value semantics</b>, and it replaces shared ownership with a different way to organize data.</span></div>
-      <div class="row"><span class="k">Native executables</span><span class="v">The compiler translates Tycho into C, then uses GCC or Clang to build an executable. You can also call existing C libraries through an explicit foreign-function interface.</span></div>
+      <div class="row"><span class="k">Automatic cleanup</span><span class="v">Tycho groups allocations into arenas—blocks of memory tied to a scope, such as a function or code block. When the owning scope ends, its memory is freed. Returned data is stored in the caller’s arena.</span></div>
+      <div class="row"><span class="k">Independent values</span><span class="v">An assignment gives you your own copy of an array or struct. Change that copy, and the original stays as it was. This is called <b>value semantics</b>.</span></div>
+      <div class="row"><span class="k">Native executables</span><span class="v">Tycho produces C code and uses GCC or Clang to build the final program. It can call C libraries too.</span></div>
     </div>
-    <p>For a worked explanation, read <a href="docs/from-c-to-arenas.html">from manual allocation to arenas</a>. The <a href="#costs">tradeoffs below</a> explain where this model is a poor fit.</p>
+    <p>The <a href="docs/from-c-to-arenas.html">memory guide</a> explains how this works, starting from familiar C code. There are also <a href="#costs">limits to the model</a>, described below.</p>
   </section>
 
   <section id="lang">
-    <span class="kicker">Writing Tycho</span>
-    <h2>Familiar building blocks.</h2>
-    <p>Indentation-based syntax keeps the small examples readable. Beyond memory management, Tycho includes the tools for writing larger programs:</p>
+    <span class="kicker">The language</span>
+    <h2>The rest of the language.</h2>
+    <p>Tycho uses indentation rather than braces to group code. Alongside functions, strings, arrays, maps, and structs, it includes:</p>
     <ul class="plain">
-      <li><b>Model your data.</b> Strings, arrays, maps, structs, and enums, with pattern matching for handling different cases. <code>Option</code> represents a missing value; <code>Result</code> represents an operation that can fail.</li>
-      <li><b>Reuse your code.</b> Generics and closures, plus corelib packages for text, files, networking, and other common tasks. Packages are imported by path; there is no package manager.</li>
-      <li><b>Coordinate work.</b> Tasks and channels, with parallel loops for work that can be split across multiple workers.</li>
+      <li><b>Enums and pattern matching.</b> Define a fixed set of cases and handle each one explicitly. <code>Option</code> is for values that may be missing; <code>Result</code> is for operations that may fail.</li>
+      <li><b>Generics and closures.</b> Generics let one function work with different types. Closures let a function capture values from the surrounding code.</li>
+      <li><b>Concurrency.</b> Run tasks in parallel and pass messages between them through channels. Parallel loops can split independent work across workers.</li>
     </ul>
-    <p>The <a href="docs/tutorial.html">tutorial</a> introduces these through small programs. The <a href="docs/reference/index.html">language and corelib reference</a> covers the details.</p>
+    <p>Corelib packages cover files, text, networking, and other common tasks. You import packages by path; there’s no package manager.</p>
+    <p>The <a href="docs/tutorial.html">tutorial</a> starts with small programs. For individual features and corelib packages, see the <a href="docs/reference/index.html">reference</a>.</p>
   </section>
 
   <section id="proof">
     <span class="kicker">Explore the source</span>
-    <h2>Built with Tycho.</h2>
-    <p>See how the language looks beyond a short example. These programs are written by the project’s author and available in the repository.</p>
+    <h2>Programs written in Tycho.</h2>
+    <p>These are larger programs you can read and run. They were written by Tycho’s author.</p>
     <div class="fact">
-      <div class="row"><span class="k"><a href="https://github.com/StefanVonRanda/tycho/tree/main/tools/tycho-scheme">Scheme interpreter</a></span><span class="v">An interpreter and bytecode compiler with closures. Explore how it represents and evaluates a programming language.</span></div>
-      <div class="row"><span class="k"><a href="https://github.com/StefanVonRanda/tycho/tree/main/tools/tycho-kvsrv">HTTP key-value server</a></span><span class="v">A concurrent server that stores and retrieves values. Explore request handling and coordination between workers.</span></div>
-      <div class="row"><span class="k"><a href="https://github.com/StefanVonRanda/tycho/tree/main/tools/tycho-chess">Chess engine</a></span><span class="v">Move generation and game-tree search. Explore a compute-heavy program with compact board representations.</span></div>
+      <div class="row"><span class="k"><a href="https://github.com/StefanVonRanda/tycho/tree/main/tools/tycho-scheme">Scheme interpreter</a></span><span class="v">An interpreter and bytecode compiler for Scheme, including closures.</span></div>
+      <div class="row"><span class="k"><a href="https://github.com/StefanVonRanda/tycho/tree/main/tools/tycho-kvsrv">HTTP key-value server</a></span><span class="v">A key-value store served over HTTP, with several workers handling requests.</span></div>
+      <div class="row"><span class="k"><a href="https://github.com/StefanVonRanda/tycho/tree/main/tools/tycho-chess">Chess engine</a></span><span class="v">Generates legal moves and searches the game tree to choose a move.</span></div>
     </div>
-    <p>There is also a <a href="https://github.com/StefanVonRanda/tycho/tree/main/compiler">compiler written in Tycho itself</a>. For measurements rather than examples, see the <a href="docs/performance.html">performance benchmarks</a> and their methodology.</p>
+    <p>There’s also a <a href="https://github.com/StefanVonRanda/tycho/tree/main/compiler">compiler written in Tycho</a>. You can find timings, memory use, and how they were measured in the <a href="docs/performance.html">benchmarks</a>.</p>
   </section>
 
   <section id="costs">
     <span class="kicker">Before you choose it</span>
-    <h2>Know the tradeoffs.</h2>
-    <p>Tycho’s memory model is a deliberate trade: less ownership bookkeeping in exchange for fewer ways to share data. It is worth exploring for data-processing tools and native-programming experiments, but it is not a drop-in replacement for C, Rust, or Go.</p>
+    <h2>What you give up.</h2>
+    <p>Shared pointers and runtime interfaces aren’t part of Tycho. If your program relies on them, you’ll need to change its design.</p>
     <div class="fact">
-      <div class="row"><span class="k">Different data structures</span><span class="v">There is no reference type for sharing mutable objects. Graphs and linked structures use arrays of nodes connected by integer indices instead of pointers. <a href="docs/idioms.html">Thinking in Tycho</a> shows the alternatives.</span></div>
-      <div class="row"><span class="k">Memory tradeoffs</span><span class="v">Arenas reclaim memory at scope exit, not as soon as each value stops being useful. Long-lived scopes can retain temporary data, and some data structures use more memory than their C counterparts. Read the <a href="docs/internals/value-semantics-limits.html">measured limitations</a>.</span></div>
-      <div class="row"><span class="k">No interface values</span><span class="v">You cannot mix unrelated types behind one runtime interface. Use generics when the types are known in advance, or enums when the possible variants are fixed.</span></div>
-      <div class="row"><span class="k">An early-stage project</span><span class="v">Expect language and corelib API changes before 1.0. The project is still seeking real programs from outside developers and an external security audit. Read the <a href="https://github.com/StefanVonRanda/tycho/blob/main/SUPPORT.md">version policy</a> and <a href="https://github.com/StefanVonRanda/tycho/blob/main/ROADMAP.md">roadmap</a>.</span></div>
+      <div class="row"><span class="k">Graphs and linked structures</span><span class="v">Instead of pointers between nodes, use arrays of nodes linked by integer indices. <a href="docs/idioms.html">Thinking in Tycho</a> shows how.</span></div>
+      <div class="row"><span class="k">Memory tradeoffs</span><span class="v">Temporary data can stay allocated until its owning scope ends. A long-running function may keep memory it no longer needs. Some structures also need more memory than C versions; the <a href="docs/internals/value-semantics-limits.html">measurements</a> show how much.</span></div>
+      <div class="row"><span class="k">No interface values</span><span class="v">You can’t store values of different types behind one interface. Use generics for code that works with several types, or enums for a fixed set of cases.</span></div>
+      <div class="row"><span class="k">Still experimental</span><span class="v">The language and corelib APIs can change before 1.0, without a deprecation period. The project still needs a substantial program from an outside developer. See the <a href="https://github.com/StefanVonRanda/tycho/blob/main/SUPPORT.md">version policy</a> and <a href="https://github.com/StefanVonRanda/tycho/blob/main/ROADMAP.md">roadmap</a>.</span></div>
     </div>
-    <p>Do not use Tycho for security-critical work. Calls into C are an unsafe boundary; the <a href="https://github.com/StefanVonRanda/tycho/blob/main/SECURITY.md">security policy</a> explains the limits.</p>
+    <p>Tycho has not had a full independent security audit. Don’t use it for security-critical work. C interop can also introduce memory errors; see the <a href="https://github.com/StefanVonRanda/tycho/blob/main/SECURITY.md">security policy</a>.</p>
   </section>
 
   <section id="try">
     <span class="kicker">Get started</span>
-    <h2>Try a small program.</h2>
-    <p>To build from source, you need Git, <code>make</code>, and a C11 compiler: GCC or Clang 15 or newer. Check the <a href="docs/platforms.html">platform setup</a> for your system.</p>
+    <h2>Build and run a program.</h2>
+    <p>Building from source needs Git, <code>make</code>, and a C11 compiler (GCC or Clang 15+). The <a href="docs/platforms.html">platform guide</a> has setup instructions for your system.</p>
     <div class="panel">
-      <div class="phead"><span class="fn">Build and run the greeting example</span><span class="badge">Terminal</span></div>
+      <div class="phead"><span class="fn">Run the hello example</span><span class="badge">Terminal</span></div>
       <pre><code><span class="g">$</span> git clone https://github.com/StefanVonRanda/tycho
 <span class="g">$</span> cd tycho
 <span class="g">$</span> make
@@ -213,21 +214,21 @@
 <span class="out">what is your name: Ada</span>
 <span class="out">hello Ada</span></code></pre>
     </div>
-    <p class="codecap">The example asks for a name. Type <code>Ada</code> to get the greeting shown here.</p>
-    <p class="install-alternative">Prefer a prebuilt compiler? See the <a href="https://github.com/StefanVonRanda/tycho/releases/tag/v0.8.6">v0.8.6 release downloads</a> for available builds and checksums. You still need a C compiler to build Tycho programs.</p>
-    <div class="cta"><a class="btn" href="docs/tutorial.html">Write your first program</a></div>
+    <p class="codecap">Type <code>Ada</code> when the program asks for your name.</p>
+    <p class="install-alternative">Prebuilt compilers and checksums are on the <a href="https://github.com/StefanVonRanda/tycho/releases/tag/v0.8.6">v0.8.6 release page</a>. You’ll still need a C compiler to build your programs.</p>
+    <div class="cta"><a class="btn" href="docs/tutorial.html">Start the tutorial</a></div>
   </section>
 
   <section id="learn">
-    <span class="kicker">Keep exploring</span>
-    <h2>Choose your next step.</h2>
+    <span class="kicker">Documentation</span>
+    <h2>Start with the tutorial.</h2>
     <nav class="toc" aria-label="Learning resources">
-      <a href="docs/tutorial.html"><span class="n">01</span>Tutorial — learn by writing small programs<span class="dots"></span><span class="arr">→</span></a>
-      <a href="docs/from-c-to-arenas.html"><span class="n">02</span>Memory model — understand scopes and arenas<span class="dots"></span><span class="arr">→</span></a>
-      <a href="docs/idioms.html"><span class="n">03</span>Thinking in Tycho — adapt familiar data structures<span class="dots"></span><span class="arr">→</span></a>
-      <a href="docs/reference/index.html"><span class="n">04</span>Reference — look up the language and corelib<span class="dots"></span><span class="arr">→</span></a>
+      <a href="docs/tutorial.html"><span class="n">01</span>Tutorial — write your first programs<span class="dots"></span><span class="arr">→</span></a>
+      <a href="docs/from-c-to-arenas.html"><span class="n">02</span>Memory model — how scopes and arenas work<span class="dots"></span><span class="arr">→</span></a>
+      <a href="docs/idioms.html"><span class="n">03</span>Thinking in Tycho — alternatives to pointers and interfaces<span class="dots"></span><span class="arr">→</span></a>
+      <a href="docs/reference/index.html"><span class="n">04</span>Reference — language features and corelib packages<span class="dots"></span><span class="arr">→</span></a>
     </nav>
-    <p class="feedback">Tried it and got stuck? <a href="https://github.com/StefanVonRanda/tycho/issues/new?template=bug_report.md">Report a bug</a> or <a href="https://github.com/StefanVonRanda/tycho/issues/new?template=idea.md">share your feedback</a>. Confusing documentation and small examples of what you wanted to do are useful contributions, too.</p>
+    <p class="feedback">Bug reports and feedback are welcome. <a href="https://github.com/StefanVonRanda/tycho/issues/new">Open an issue</a> if something breaks or you can’t figure out how to do something.</p>
   </section>
 </main>
 <footer class="site-footer page">
