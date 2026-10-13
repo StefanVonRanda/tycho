@@ -18,8 +18,11 @@ sh tools/tycho-docs/run.sh # renderer, links, shell, and paragraph regressions
 shared website shell. Public copy calls Tycho's library **corelib** and its
 modules **corelib packages**, not stdlib packages. The generator copies CSS and JavaScript to its output and
 renders the templates into each page. Both the landing page and docs use that
-same stylesheet, header navigation, footer, and **76rem outer width**. The docs
-reading column stays narrower within that shell, between two sidebars.
+same stylesheet, header navigation, and footer. The homepage keeps its **76rem
+outer width**. Documentation instead has an independently centered **44rem
+reading column**: sidebars sit outside it when the viewport is wider than 80rem.
+At narrower widths both sidebars fold into toggles above the reading column;
+they never squeeze the text to make room.
 
 When publishing to `gh-pages`:
 
@@ -66,8 +69,8 @@ with text nodes, and index URLs are validated before being made into links.
 its landing page). Set `SITE_URL` to its local URL and optionally `SHOTS` to an
 output directory. `CHROMIUM` overrides the browser executable. For example,
 with the installed Alpine Chrome/Puppeteer image, mount this script at
-`/usr/src/app/browser-check.cjs` and run it with Node. It checks shared chrome
-and width, both themes at 320–1440px, every document's mobile overflow and active
+`/usr/src/app/browser-check.cjs` and run it with Node. It checks shared chrome,
+the centered reading width and outside/folded sidebars at 320–1920px in both themes, every document's mobile overflow and active
 navigation, disclosures, search ranking/excerpts/keyboard/retry, safe result
 rendering, and navigation without JavaScript.
 

@@ -20,7 +20,7 @@
 
   const menu = document.querySelector('.docs-nav');
   if (menu) {
-    const small = matchMedia('(max-width: 760px)');
+    const small = matchMedia('(max-width: 80rem)');
     function resizeMenu() { menu.open = !small.matches; }
     resizeMenu();
     small.addEventListener('change', resizeMenu);
@@ -28,7 +28,7 @@
 
   const contents = document.querySelector('.contents-nav');
   if (contents) {
-    const narrow = matchMedia('(max-width: 1100px)');
+    const narrow = matchMedia('(max-width: 80rem)');
     function resizeContents() { contents.open = !narrow.matches; }
     resizeContents();
     narrow.addEventListener('change', resizeContents);

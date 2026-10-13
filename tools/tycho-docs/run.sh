@@ -83,6 +83,8 @@ print("reachability: every page linked from the index tree; search index resolve
 css = open(os.path.join(root, 'site.css')).read()
 js = open(os.path.join(root, 'site.js')).read()
 assert '.page{max-width:76rem;' in css
+assert 'grid-template-columns:minmax(0,1fr) minmax(0,44rem) minmax(0,1fr)' in css
+assert 'max-width:calc(44rem + 40px)' in css
 assert 'pre code{color:inherit;font-size:inherit;' in css
 assert 'table{display:block;max-width:100%;overflow-x:auto;' in css
 assert 'Switch to ' in js and 'Retry search' in js
@@ -111,7 +113,7 @@ for p in pages:
 print("links: repository-only targets routed to source; all local HTML links resolve")
 assert 'aria-label="On this page"' in tutorial
 assert all('Switch to ' not in e['x'] and '--paper:' not in e['x'] for e in idx)
-print("presentation: shared 76rem shell, sidebars, per-page search, body-only search index")
+print("presentation: shared chrome, independent 44rem reading column, folding sidebars and per-page search")
 PY
 fi
 

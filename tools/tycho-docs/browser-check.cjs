@@ -24,7 +24,7 @@ const output = process.env.SHOTS;
     if (output) fs.mkdirSync(output,{recursive:true});
     async function shot(name) { if (output) await page.screenshot({path:output+'/'+name+'.png'}); }
     async function go(route) { await page.goto(base+route,{waitUntil:'networkidle0'}); await page.evaluate(() => document.fonts.ready); }
-    for (const width of [320,390,768,1024,1440]) for (const theme of ['light','dark']) {
+    for (const width of [320,390,768,1024,1280,1281,1440,1920]) for (const theme of ['light','dark']) {
       await page.setViewport({width,height:1000});
       await go('/'); await page.evaluate(t => localStorage.setItem('tycho-theme',t),theme); await go('/');
       const shell = await page.evaluate(() => ({
@@ -48,15 +48,21 @@ const output = process.env.SHOTS;
           theme:document.documentElement.dataset.theme,
           menu:document.querySelector('.docs-nav').open,
           toc:document.querySelector('.contents-nav')?.open,
+          readingWidth:document.querySelector('.doc-content').getBoundingClientRect().width,
+          readingCenter:(document.querySelector('.doc-content').getBoundingClientRect().left + document.querySelector('.doc-content').getBoundingClientRect().right)/2,
+          outside:document.querySelector('.docs-sidebar').getBoundingClientRect().right < document.querySelector('.doc-content').getBoundingClientRect().left && document.querySelector('.contents').getBoundingClientRect().left > document.querySelector('.doc-content').getBoundingClientRect().right,
           code:[...document.querySelectorAll('pre code')].map(c => getComputedStyle(c).color)
         }));
         assert(!info.overflow,`${route} overflow at ${width}`);
-        for (const key of ['header','footer','width','left','max','links']) assert.deepEqual(info[key],shell[key],`${route} shared ${key} at ${width}`);
+        for (const key of ['header','footer','links']) assert.deepEqual(info[key],shell[key],`${route} shared ${key} at ${width}`);
         assert.equal(info.theme,theme);
-        assert.equal(info.menu,width>760);
-        if (info.toc !== undefined) assert.equal(info.toc,width>1100);
+        assert.equal(info.readingWidth,Math.min(704,width-40),`${route} reading width at ${width}`);
+        assert(Math.abs(info.readingCenter-width/2)<1,`${route} centered at ${width}`);
+        assert.equal(info.menu,width>1280);
+        if (info.toc !== undefined) assert.equal(info.toc,width>1280);
+        if (width>1280) assert(info.outside,`${route} sidebars outside reading column`);
         assert(info.code.every(c => c!=='rgb(0, 0, 0)'));
-        if ([390,1440].includes(width)) await shot((route==='/docs/'?'docs':route.includes('corelib')?'corelib':'tutorial')+'-'+width+'-'+theme);
+        if ([390,1024,1440,1920].includes(width)) await shot((route==='/docs/'?'docs':route.includes('corelib')?'corelib':'tutorial')+'-'+width+'-'+theme);
       }
     }
     await page.setViewport({width:320,height:900}); await go('/docs/');
@@ -102,6 +108,6 @@ const output = process.env.SHOTS;
       await shot(route==='/'?'home-footer':'docs-footer');
     }
     assert.deepEqual(errors,[]);
-    console.log('PASS: shared shell/width at 320–1440px in both themes; all docs mobile overflow/active nav; sidebar and contents disclosures; ranked multi-term search, excerpts, keyboard, early typing, retry, URL validation/XSS; theme and no-JS navigation.');
+    console.log('PASS: centered 44rem reading column and outside/folded sidebars at 320–1920px in both themes; shared header/footer; all docs mobile overflow/active nav; sidebar and contents disclosures; ranked multi-term search, excerpts, keyboard, early typing, retry, URL validation/XSS; theme and no-JS navigation.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exit(1); });
