@@ -84,8 +84,7 @@
     display:flex; flex-wrap:wrap; gap:8px 32px}
   .herometa b{color:var(--dim)}
   .herometa a{color:var(--ink); text-decoration:underline; text-underline-offset:3px}
-  .fact .k a{color:inherit; text-decoration:underline; text-underline-offset:3px}
-  ul.plain li a,ul.points li a{color:var(--ink)}
+  ul.plain li a,ul.points li a{color:var(--ink); text-decoration:underline; text-underline-offset:3px}
 
   section{padding:96px 0}
   section + section{border-top:1px solid var(--line)}
@@ -97,6 +96,7 @@
 
   .fact{border-top:1px solid var(--line); margin-top:32px}
   .fact .row{padding:20px 0; border-bottom:1px solid var(--line)}
+  #idea .fact .row:last-child{border-bottom:0}
   .fact .k{display:block; font-size:11px; letter-spacing:.16em; text-transform:uppercase;
     color:var(--dim); margin-bottom:8px}
   .fact .k a{color:var(--ink); text-decoration:underline; text-underline-offset:3px}
