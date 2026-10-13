@@ -38,8 +38,10 @@ strong{color:var(--ink)}
 .fbrand{font-size:15px;font-weight:700;letter-spacing:.14em;color:var(--ink);margin-bottom:20px}
 .flinks{display:flex;flex-wrap:wrap;justify-content:center;gap:8px 24px;margin-block:24px}
 .flinks a{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);padding:4px 0}
-/* Fill after stroking to hide overlapping glyph contours, leaving a 1px outer outline. */
-.fgiant{font-family:"Fraunces",Georgia,serif;font-weight:600;font-size:clamp(72px,17vw,220px);line-height:.95;letter-spacing:.01em;color:var(--paper);-webkit-text-stroke:2px var(--line);paint-order:stroke fill;text-align:center;margin:8px 0 4px;user-select:none}
+/* Outline the filled glyphs, not their overlapping internal contours. */
+.fgiant{font-family:"Fraunces",Georgia,serif;font-weight:600;font-size:clamp(72px,17vw,220px);line-height:.95;letter-spacing:.01em;color:var(--paper);
+  text-shadow:-1px -1px 0 var(--ink),1px -1px 0 var(--ink),-1px 1px 0 var(--ink),1px 1px 0 var(--ink),-1px 0 0 var(--ink),1px 0 0 var(--ink),0 -1px 0 var(--ink),0 1px 0 var(--ink);
+  text-align:center;margin:8px 0 4px;user-select:none}
 .legal{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);display:flex;gap:8px 20px;justify-content:center}
 .page.docs-layout{max-width:none;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,44rem) minmax(0,1fr);gap:32px;padding-top:40px;padding-bottom:64px;align-items:start}
 .docs-layout>*{min-width:0}
