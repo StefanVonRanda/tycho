@@ -83,7 +83,10 @@ print("reachability: every page linked from the index tree; search index resolve
 css = open(os.path.join(root, 'site.css')).read()
 js = open(os.path.join(root, 'site.js')).read()
 assert '.page{max-width:76rem;' in css
-assert 'color:var(--paper);-webkit-text-stroke:2px var(--line);paint-order:stroke fill' in css
+footer_style = re.search(r'\.fgiant\{([^}]+)\}', css).group(1)
+assert 'color:var(--paper)' in footer_style
+assert '-webkit-text-stroke' not in footer_style
+assert footer_style.count('var(--ink)') == 8 and 'text-shadow:' in footer_style
 assert 'grid-template-columns:minmax(0,1fr) minmax(0,44rem) minmax(0,1fr)' in css
 assert 'max-width:calc(44rem + 40px)' in css
 assert 'pre code{color:inherit;font-size:inherit;' in css
