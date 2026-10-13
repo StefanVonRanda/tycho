@@ -22,99 +22,61 @@
 <script>
   (function(){try{var d=document.documentElement;var e=localStorage.getItem('tycho-theme');d.dataset.theme=e||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}catch(e){}})();
 </script>
-</head>
-<body>
-<a class="skip" href="#main">Skip to content</a>
 <style>
-  .kicker,.phead,.btn,.toc a,.codecap,.fact .k{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-
+  .kicker,.phead,.btn,.toc a,.fact .k{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
   header.hero{padding:80px 0 24px; border-bottom:1px solid var(--line)}
   .hero-grid{display:grid; grid-template-columns:1.05fr 1fr; gap:48px; align-items:center}
   .hero-grid > *{min-width:0}
   .hero-demo .panel{margin-top:0}
   .hero-demo pre{font-size:12px; padding:20px}
   .hero-demo .phead{flex-wrap:wrap}
-  .hero-demo .codecap{font-family:inherit; font-size:15px}
-  .kicker{display:block; font-size:12px; letter-spacing:.16em; text-transform:uppercase;
-    color:var(--dim); margin-bottom:20px}
-  h1{margin:0 0 24px; color:var(--ink); font-family:"Fraunces",Georgia,"Times New Roman",serif; font-weight:600; font-optical-sizing:auto;
-    font-size:clamp(40px,4.4vw,60px); line-height:1.02; letter-spacing:0; max-width:20ch}
+  .hero-demo .codecap{font-size:15px}
+  .kicker{display:block; font-size:12px; letter-spacing:.16em; text-transform:uppercase; color:var(--dim); margin-bottom:20px}
+  h1{margin:0 0 24px; color:var(--ink); font-family:"Fraunces",Georgia,"Times New Roman",serif; font-weight:600; font-optical-sizing:auto; font-size:clamp(40px,4.4vw,60px); line-height:1.02; letter-spacing:0; max-width:20ch}
   .lede{margin:0 0 32px; font-size:19px; line-height:1.65; color:var(--dim); max-width:38rem}
-  .lede b{color:var(--ink)}
-  .lede a{color:var(--ink); text-decoration:underline; text-underline-offset:3px}
-  .lede code{color:var(--ink-soft)}
   .cta{display:flex; flex-wrap:wrap; gap:12px}
-  .btn{display:inline-block; padding:16px 32px; border-radius:8px; cursor:pointer;
-    background:var(--ink); color:var(--paper); font-size:12px; letter-spacing:.12em;
-    text-transform:uppercase; font-weight:700}
+  .btn{display:inline-block; padding:16px 32px; border-radius:8px; cursor:pointer; background:var(--ink); color:var(--paper); font-size:12px; letter-spacing:.12em; text-transform:uppercase; font-weight:700}
   .btn.ghost{background:transparent; color:var(--ink); border:1px solid var(--line)}
   .btn.ghost:hover{border-color:var(--ink)}
-  .herometa{margin-top:40px; padding-top:20px; border-top:1px solid var(--line);
-    font-size:12px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint);
-    display:flex; flex-wrap:wrap; gap:8px 32px}
-  .herometa b{color:var(--dim)}
+  .herometa{margin-top:40px; padding-top:20px; border-top:1px solid var(--line); font-size:12px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint); display:flex; flex-wrap:wrap; gap:8px 32px}
   .herometa a{color:var(--ink); text-decoration:underline; text-underline-offset:3px}
-  ul.plain li a,ul.points li a{color:var(--ink); text-decoration:underline; text-underline-offset:3px}
-
   section{padding:64px 0}
   section + section{border-top:1px solid var(--line)}
-  h2{margin:0 0 16px; color:var(--ink); font-family:"Fraunces",Georgia,"Times New Roman",serif; font-weight:600; font-optical-sizing:auto;
-    font-size:clamp(30px,4.2vw,44px); line-height:1.08; letter-spacing:0; max-width:24ch}
+  h2{margin:0 0 16px; color:var(--ink); font-family:"Fraunces",Georgia,"Times New Roman",serif; font-weight:600; font-optical-sizing:auto; font-size:clamp(30px,4.2vw,44px); line-height:1.08; letter-spacing:0; max-width:24ch}
   p{margin:0 0 16px; max-width:44rem}
   p a{color:var(--ink); text-decoration:underline; text-underline-offset:3px}
   strong{color:var(--ink)}
-
   .fact{border-top:1px solid var(--line); margin-top:32px}
   .fact .row{padding:20px 0; border-bottom:1px solid var(--line); display:grid; grid-template-columns:15rem 1fr; gap:24px}
   .fact .row:last-child{border-bottom:0}
-  .fact .k{display:block; font-size:11px; letter-spacing:.16em; text-transform:uppercase;
-    color:var(--dim); margin-bottom:8px}
+  .fact + p{margin-top:20px}
+  .fact .k{display:block; font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--dim); margin-bottom:8px}
   .fact .k a{color:var(--ink); text-decoration:underline; text-underline-offset:3px}
   .fact .v{display:block; font-size:16px; color:var(--dim); max-width:42rem}
   .fact .v b{color:var(--ink)}
   .fact .v a{color:var(--ink); text-decoration:underline; text-underline-offset:3px}
-
   .panel{border:1px solid var(--code-line); background:var(--code-bg); margin:32px 0 0; max-width:54rem; border-radius:8px; overflow:hidden}
   .phead{display:flex; align-items:center; gap:12px; padding:12px 20px; border-bottom:1px solid var(--code-line)}
-  .phead .traf{width:8px; height:8px; background:var(--acc-code); flex:0 0 auto}
   .phead .fn{font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--code-dim)}
   .phead .badge{margin-left:auto; font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--acc-code)}
   pre{margin:0; padding:20px 24px; overflow-x:auto; font-size:13px; line-height:1.8; color:var(--code-fg)}
-  .k{color:#fff; font-weight:600} .fn{color:#cfd4dc} .s{color:var(--acc-code)}
+  .k{color:#fff; font-weight:600} .fn{color:#cfd4dc}
   .c{color:var(--code-dim)} .g{color:#9aa1ab} .out{color:#8b929c}
   .codecap{margin:0; padding-top:12px; font-size:13px; color:var(--faint); max-width:44rem}
-  .codecap a{color:var(--ink); text-decoration:underline; text-underline-offset:3px}
-  .codecap b{color:var(--dim)}
-
-  .toc{margin-top:32px; max-width:38rem}
-  .toc a{display:flex; align-items:center; gap:16px; padding:12px 4px; border-bottom:1px solid var(--line);
-    color:var(--dim); font-size:13px; text-transform:uppercase; letter-spacing:.06em}
+  .install-alternative{margin-top:24px; margin-bottom:24px}
+  .toc{margin-top:32px; max-width:44rem}
+  .toc a{display:flex; align-items:center; gap:16px; padding:12px 4px; border-bottom:1px solid var(--line); color:var(--dim); font-size:13px; text-transform:uppercase; letter-spacing:.06em}
   .toc a:first-of-type{border-top:1px solid var(--line)}
   .toc a:hover{color:var(--ink)}
   .toc a .n{color:var(--faint); font-size:11px; width:3ch; flex:0 0 auto}
   .toc a .dots{flex:1; border-bottom:1px dotted var(--line); transform:translateY(-3px)}
   .toc a .arr{color:var(--faint); flex:0 0 auto}
-
-  details{border:1px solid var(--line); margin-bottom:12px; max-width:38rem}
-  details[open]{border-color:var(--faint)}
-  summary{cursor:pointer; list-style:none; padding:20px; font-family:"Fraunces",Georgia,"Times New Roman",serif; font-weight:600; font-size:20px; color:var(--ink)}
-  summary::-webkit-details-marker{display:none}
-  summary::before{content:"+ "; color:var(--dim)}
-  details[open] summary::before{content:"– "}
-  details .a{padding:0 20px 20px; color:var(--dim); font-size:16px}
-  details .a a{color:var(--ink); text-decoration:underline; text-underline-offset:3px}
-
-  ul.plain{list-style:none; margin:32px 0 0; padding:0; max-width:38rem}
+  ul.plain{list-style:none; margin:32px 0 0; padding:0; max-width:44rem}
   ul.plain li:first-child{border-top:0}
   ul.plain + p{margin-top:20px}
   ul.plain li{padding:12px 0; border-top:1px solid var(--line); color:var(--dim)}
   ul.plain li b{color:var(--ink)}
-  ul.points{list-style:none; margin:32px 0 0; padding:0; max-width:38rem}
-  ul.points li{padding:12px 0; border-top:1px solid var(--line); color:var(--dim)}
-  ul.points li:first-child{border-top:0}
-  ul.points li b{color:var(--ink)}
-  .inl{border:1px solid var(--line); padding:0 6px; font-size:.88em; color:var(--ink); overflow-wrap:anywhere}
-
+  .feedback{margin-top:32px}
   @media(max-width:1000px){
     .hero-grid{grid-template-columns:1fr; gap:32px}
     header.hero{padding-top:48px}
@@ -133,11 +95,11 @@
     .toc a{font-family:inherit; text-transform:none; letter-spacing:0; gap:10px}
     .toc a .dots{display:none}
     .toc a .arr{margin-left:auto}
-    summary{font-size:19px; padding:16px}
-    details .a{padding:0 16px 16px}
   }
 </style>
-
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
 <div class="masthead">
  <div class="in">
   <a class="wordmark" href="./">TYCHO</a>
@@ -155,218 +117,118 @@
 <main class="page" id="main">
   <header class="hero" id="top">
     <div class="hero-grid">
-    <div class="hero-intro">
-    <span class="kicker">Experimental · v0.8.6</span>
-    <h1>Tycho is a systems<br>programming language.</h1>
-    <p class="lede">
-      Build parsers, interpreters, and batch tools with automatic memory management.
-      Tycho compiles to native code through C, using <a href="docs/thesis.html">scope-based arenas</a>
-      instead of a garbage collector. No manual <code>free</code>, no borrow checker.
-    </p>
-    <div class="cta">
-      <a class="btn" href="#try">Get started</a>
-      <a class="btn ghost" href="docs/">Read the docs</a>
-    </div>
-    </div>
-    <div class="hero-demo">
-      <div class="panel">
-        <div class="phead"><span class="fn">Memory follows the value</span><span class="badge">Tycho</span></div>
-        <pre><code><span class="k">fn</span> <span class="fn">evens</span>(limit: <span class="k">int</span>) -> [<span class="k">int</span>]:
+      <div class="hero-intro">
+        <span class="kicker">Experimental · v0.8.6</span>
+        <h1>Tycho is a systems<br>programming language.</h1>
+        <p class="lede">Write native programs with automatic memory management—without a garbage collector. Tycho is designed for parsers, interpreters, and other tools that create lots of temporary data.</p>
+        <div class="cta">
+          <a class="btn" href="#try">Try Tycho</a>
+          <a class="btn ghost" href="docs/tutorial.html">Read tutorial</a>
+        </div>
+      </div>
+      <div class="hero-demo">
+        <div class="panel">
+          <div class="phead"><span class="fn">A small Tycho program</span><span class="badge">Tycho</span></div>
+          <pre><code><span class="k">fn</span> <span class="fn">evens</span>(limit: <span class="k">int</span>) -> [<span class="k">int</span>]:
     xs := []<span class="k">int</span>
     <span class="k">for</span> i := 0; i &lt; limit; i += 1:
         <span class="k">if</span> i % 2 == 0:
             <span class="fn">push</span>(xs, i)
-    <span class="k">return</span> xs   <span class="c"># caller's arena</span>
+    <span class="k">return</span> xs
 
 <span class="k">fn</span> <span class="fn">main</span>():
     xs := <span class="fn">evens</span>(10)
     <span class="fn">println</span>(<span class="fn">str</span>(<span class="fn">len</span>(xs)))   <span class="c"># 5</span></code></pre>
+        </div>
+        <p class="codecap">Collect the even numbers below 10 and print their count. The array can grow and be returned without manual allocation or cleanup.</p>
       </div>
-      <p class="codecap">The returned array is built in the caller’s arena and freed when that scope exits. No lifetime annotations.</p>
-    </div>
     </div>
     <div class="herometa">
-      <span><a href="https://tycho-lang.com/docs/architecture.html">Transpiles to C</a>, builds with <b>cc + make</b></span>
-      <span><b>45</b> <a href="https://tycho-lang.com/docs/reference/corelib.html">corelib packages</a></span>
-      <span>Pre-1.0 · <a href="#costs">Understand the tradeoffs</a></span>
+      <span>Native code via C</span>
+      <span>Open source · MIT</span>
+      <span><a href="#costs">Pre-1.0 · expect breaking changes</a></span>
     </div>
   </header>
 
   <section id="idea">
-    <span class="kicker">01 — The idea</span>
-    <h2>How it works.</h2>
+    <span class="kicker">The approach</span>
+    <h2>Less memory bookkeeping.</h2>
+    <p>Tycho uses the structure of your program to decide how long data lives. You work with strings, arrays, and structs; the compiler handles their storage. There are no manual frees or borrow-checker annotations.</p>
     <div class="fact">
-      <div class="row"><span class="k">Arenas per scope</span><span class="v">Scope-local allocations use an arena. Allocation bumps a pointer; exiting the scope releases that arena. Returned values are built in the caller’s arena instead.</span></div>
-      <div class="row"><span class="k">No references</span><span class="v"><span class="inl">b := a</span> copies. Without aliasing, lifetimes are <a href="https://tycho-lang.com/docs/thesis.html">visible in the syntax</a>.</span></div>
-      <div class="row"><span class="k">Placed, not managed</span><span class="v">A value leaves a scope only <b>down</b> into a callee or <b>up</b> to a caller. The compiler <a href="https://tycho-lang.com/docs/memory-model.html">places every allocation and every free</a>.</span></div>
+      <div class="row"><span class="k">Automatic cleanup</span><span class="v">Memory is grouped into arenas: blocks of memory owned by a scope. When that scope finishes, its arena is released. Returned values remain available to the caller.</span></div>
+      <div class="row"><span class="k">Independent values</span><span class="v">Assigning an array or struct creates an independent value. Changing the copy does not change the original. This is <b>value semantics</b>, and it replaces shared ownership with a different way to organize data.</span></div>
+      <div class="row"><span class="k">Native executables</span><span class="v">The compiler translates Tycho into C, then uses GCC or Clang to build an executable. You can also call existing C libraries through an explicit foreign-function interface.</span></div>
     </div>
-  </section>
-
-  <section id="fast">
-    <span class="kicker">02 — Speed</span>
-    <h2>Why it is fast.</h2>
-    <ul class="points">
-      <li>Returned values are built in the caller's arena — no copy on the way out (<a href="https://tycho-lang.com/docs/thesis.html">1.75× faster than copying</a>).</li>
-      <li><span class="inl">acc = acc + x</span> grows one buffer: O(n²) becomes O(n). <a href="https://tycho-lang.com/docs/thesis.html">828 MB becomes 4 MB</a> on the same input.</li>
-      <li>Value semantics describe independent values, not mandatory copies. The compiler can eliminate copies when a value is provably unaliased. See the <a href="https://tycho-lang.com/docs/performance.html">measurements ↗</a>.</li>
-    </ul>
-    <div class="panel">
-      <div class="phead"><span class="traf"></span><span class="fn">LISTING 01 — examples/count.ty</span><span class="badge">one buffer · O(n)</span></div>
-      <pre><code><span class="k">fn</span> <span class="fn">main</span>():
-    total := <span class="s">""</span>
-    <span class="k">for</span> i := 1; i &lt; 6; i += 1:
-        total = total + <span class="fn">str</span>(i)
-        <span class="k">if</span> i &lt; 5:
-            total = total + <span class="s">", "</span>
-    <span class="fn">println</span>(<span class="s">"counted: "</span> + total)   <span class="c"># counted: 1, 2, 3, 4, 5</span></code></pre>
-    </div>
-    <p class="codecap"><b>Listing 01.</b> Loop appends grow one buffer instead of rebuilding the string at each step.</p>
-    <div class="panel">
-          <div class="phead"><span class="traf"></span><span class="fn">LISTING 02 — examples/promote.ty</span><span class="badge">return moves · zero copies</span></div>
-          <pre><code><span class="k">struct</span> <span class="fn">Person</span>:
-    name: <span class="k">string</span>
-    age: <span class="k">int</span>
-
-<span class="k">fn</span> <span class="fn">promote</span>(p: <span class="fn">Person</span>) -> <span class="fn">Person</span>:
-    q := p                <span class="c"># a full, independent copy</span>
-    q.age = p.age + 1
-    <span class="k">return</span> q             <span class="c"># built in caller's arena, not copied</span>
-
-<span class="k">fn</span> <span class="fn">main</span>():
-    ada := <span class="fn">Person</span>(<span class="s">"Ada"</span>, 36)
-    older := <span class="fn">promote</span>(ada)
-    <span class="fn">println</span>(<span class="fn">str</span>(ada.age) + <span class="s">" "</span> + <span class="fn">str</span>(older.age))   <span class="c"># 36 37</span></code></pre>
-        </div>
-    <p class="codecap"><b>Listing 02.</b> Copied in, moved out; the original is untouched.</p>
-  </section>
-
-  <section id="costs">
-    <span class="kicker">03 — Costs</span>
-    <h2>A different model. Real tradeoffs.</h2>
-    <p>There is no reference type: shared-mutable pointer graphs cannot be expressed directly. Use flat node pools linked by integer indices, or choose a different tool.</p>
-    <div class="fact">
-      <div class="row"><span class="k">Pointer-shaped data</span><span class="v">Costs more than C: trie 1.55×, LRU 2.8× memory. The index-pool idiom brings graphs to 1.3×. Full accounting in the <a href="https://tycho-lang.com/docs/internals/value-semantics-limits.html">loss column ↗</a>.</span></div>
-      <div class="row"><span class="k">No interface values</span><span class="v">A mixed list of implementors can't exist; closed enums with match cover known sets, generics cover the static case. See <a href="https://tycho-lang.com/docs/idioms.html">Thinking in Tycho ↗</a>.</span></div>
-      <div class="row"><span class="k">Pre-1.0</span><span class="v">Breaking changes ship with a changelog entry and no deprecation window until 1.0 (<a href="https://github.com/StefanVonRanda/tycho/blob/main/SUPPORT.md">policy ↗</a>).</span></div>
-      <div class="row"><span class="k">Scope exit</span><span class="v">A long-lived scope <a href="https://tycho-lang.com/docs/internals/value-semantics-limits.html">holds its transients</a> until it returns.</span></div>
-    </div>
-  </section>
-
-  <section id="proof">
-    <span class="kicker">04 — Proof</span>
-    <h2>Substantial programs, checked against ground truth.</h2>
-    <div class="fact">
-      <div class="row"><span class="k"><a href="https://github.com/StefanVonRanda/tycho/tree/main/tools/tycho-scheme">tycho-scheme</a></span><span class="v">Interpreter and bytecode compiler with closures. The same six programs run identically on both — <span class="inl">make scheme-check</span>.</span></div>
-      <div class="row"><span class="k"><a href="https://github.com/StefanVonRanda/tycho/tree/main/tools/tycho-vm">tycho-vm</a></span><span class="v">Assembler, disassembler, virtual machine. Disassembly round-trips assembly exactly.</span></div>
-      <div class="row"><span class="k"><a href="https://github.com/StefanVonRanda/tycho/tree/main/tools/tycho-kv">tycho-kv</a></span><span class="v">Persistent B+ tree store. Every command script matches a naive map backend exactly.</span></div>
-      <div class="row"><span class="k"><a href="https://github.com/StefanVonRanda/tycho/tree/main/tools/tycho-chess">tycho-chess</a></span><span class="v">Bitboards with search. Move generation matches published perft totals.</span></div>
-      <div class="row"><span class="k"><a href="https://github.com/StefanVonRanda/tycho/tree/main/tools/tycho-kvsrv">tycho-kvsrv</a></span><span class="v">Concurrent HTTP key-value server. Parallel clients, every write intact.</span></div>
-      <div class="row"><span class="k"><a href="https://github.com/StefanVonRanda/tycho/tree/main/tools/tycho-sat">tycho-sat</a></span><span class="v">DPLL/CDCL SAT solver. Pigeonhole cases come back unsat; planted models verify clause by clause.</span></div>
-      <div class="row"><span class="k">Self-hosted</span><span class="v">A compiler written in Tycho itself, <a href="https://tycho-lang.com/docs/architecture.html">bootstrapped in two stages</a>. Successive generations emit identical C.</span></div>
-    </div>
+    <p>For a worked explanation, read <a href="docs/from-c-to-arenas.html">from manual allocation to arenas</a>. The <a href="#costs">tradeoffs below</a> explain where this model is a poor fit.</p>
   </section>
 
   <section id="lang">
-    <span class="kicker">05 — The language</span>
-    <h2>What is included.</h2>
+    <span class="kicker">Writing Tycho</span>
+    <h2>Familiar building blocks.</h2>
+    <p>Indentation-based syntax keeps the small examples readable. Beyond memory management, Tycho includes the tools for writing larger programs:</p>
     <ul class="plain">
-      <li><b>Value semantics, generics, sum types</b> — <span class="inl">Option</span> / <span class="inl">Result</span>, <a href="https://tycho-lang.com/docs/reference/enums-options.html"><span class="inl">match</span></a>, <a href="https://tycho-lang.com/docs/reference/generics.html"><span class="inl">$T</span> monomorphized</a>.</li>
-      <li><b>Methods, closures</b> — <a href="https://tycho-lang.com/docs/reference/functions.html">UFCS</a>, no classes; value capture.</li>
-      <li><b>Systems pieces</b> — <a href="https://tycho-lang.com/docs/reference/concurrency.html"><span class="inl">spawn</span>, channels, <span class="inl">parallel for</span></a>; <a href="https://tycho-lang.com/docs/reference/ffi.html"><span class="inl">extern fn</span> FFI</a>; <a href="https://tycho-lang.com/docs/reference/packages.html">packages</a> and a corelib.</li>
+      <li><b>Model your data.</b> Strings, arrays, maps, structs, and enums, with pattern matching for handling different cases. <code>Option</code> represents a missing value; <code>Result</code> represents an operation that can fail.</li>
+      <li><b>Reuse your code.</b> Generics and closures, plus corelib packages for text, files, networking, and other common tasks. Packages are imported by path; there is no package manager.</li>
+      <li><b>Coordinate work.</b> Tasks and channels, with parallel loops for work that can be split across multiple workers.</li>
     </ul>
-    <p>Python-flavored syntax, Go/Odin-like semantics; the value core comes from <a href="https://www.hylo-lang.org/">Hylo ↗</a>.</p>
+    <p>The <a href="docs/tutorial.html">tutorial</a> introduces these through small programs. The <a href="docs/reference/index.html">language and corelib reference</a> covers the details.</p>
   </section>
 
-  <section id="rigor">
-    <span class="kicker">06 — Verification</span>
-    <h2>How it is tested.</h2>
+  <section id="proof">
+    <span class="kicker">Explore the source</span>
+    <h2>Built with Tycho.</h2>
+    <p>See how the language looks beyond a short example. These programs are written by the project’s author and available in the repository.</p>
     <div class="fact">
-      <div class="row"><span class="k">Corpus</span><span class="v"><b>Over 1,100 fixtures</b>, including a <a href="https://github.com/StefanVonRanda/tycho/tree/main/tests">reject corpus</a> for invalid programs. Runnable fixtures are built native and sanitized, with byte-identical output matched to <a href="docs/controls.html">committed goldens</a>.</span></div>
-      <div class="row"><span class="k">Fuzzed</span><span class="v">Random programs run native <span class="inl">-O2</span> against ASan/UBSan; any disagreement is a defect. Malformed input must fail closed.</span></div>
-      <div class="row"><span class="k">Authored evidence</span><span class="v">These programs were written by the project’s author. A real program by an outside developer and an external security review are still required for 1.0 — see the <a href="https://github.com/StefanVonRanda/tycho/blob/main/ROADMAP.md#what-10-requires">roadmap ↗</a>.</span></div>
-      <div class="row"><span class="k">No cloud CI</span><span class="v"><a href="https://github.com/StefanVonRanda/tycho/blob/main/CONTRIBUTING.md"><span class="inl">make ci</span></a> runs everything on your machine. Coverage and platform caveats are documented in the <a href="docs/platforms.html">platform notes ↗</a>.</span></div>
+      <div class="row"><span class="k"><a href="https://github.com/StefanVonRanda/tycho/tree/main/tools/tycho-scheme">Scheme interpreter</a></span><span class="v">An interpreter and bytecode compiler with closures. Explore how it represents and evaluates a programming language.</span></div>
+      <div class="row"><span class="k"><a href="https://github.com/StefanVonRanda/tycho/tree/main/tools/tycho-kvsrv">HTTP key-value server</a></span><span class="v">A concurrent server that stores and retrieves values. Explore request handling and coordination between workers.</span></div>
+      <div class="row"><span class="k"><a href="https://github.com/StefanVonRanda/tycho/tree/main/tools/tycho-chess">Chess engine</a></span><span class="v">Move generation and game-tree search. Explore a compute-heavy program with compact board representations.</span></div>
     </div>
+    <p>There is also a <a href="https://github.com/StefanVonRanda/tycho/tree/main/compiler">compiler written in Tycho itself</a>. For measurements rather than examples, see the <a href="docs/performance.html">performance benchmarks</a> and their methodology.</p>
+  </section>
+
+  <section id="costs">
+    <span class="kicker">Before you choose it</span>
+    <h2>Know the tradeoffs.</h2>
+    <p>Tycho’s memory model is a deliberate trade: less ownership bookkeeping in exchange for fewer ways to share data. It is worth exploring for data-processing tools and native-programming experiments, but it is not a drop-in replacement for C, Rust, or Go.</p>
+    <div class="fact">
+      <div class="row"><span class="k">Different data structures</span><span class="v">There is no reference type for sharing mutable objects. Graphs and linked structures use arrays of nodes connected by integer indices instead of pointers. <a href="docs/idioms.html">Thinking in Tycho</a> shows the alternatives.</span></div>
+      <div class="row"><span class="k">Memory tradeoffs</span><span class="v">Arenas reclaim memory at scope exit, not as soon as each value stops being useful. Long-lived scopes can retain temporary data, and some data structures use more memory than their C counterparts. Read the <a href="docs/internals/value-semantics-limits.html">measured limitations</a>.</span></div>
+      <div class="row"><span class="k">No interface values</span><span class="v">You cannot mix unrelated types behind one runtime interface. Use generics when the types are known in advance, or enums when the possible variants are fixed.</span></div>
+      <div class="row"><span class="k">An early-stage project</span><span class="v">Expect language and corelib API changes before 1.0. The project is still seeking real programs from outside developers and an external security audit. Read the <a href="https://github.com/StefanVonRanda/tycho/blob/main/SUPPORT.md">version policy</a> and <a href="https://github.com/StefanVonRanda/tycho/blob/main/ROADMAP.md">roadmap</a>.</span></div>
+    </div>
+    <p>Do not use Tycho for security-critical work. Calls into C are an unsafe boundary; the <a href="https://github.com/StefanVonRanda/tycho/blob/main/SECURITY.md">security policy</a> explains the limits.</p>
   </section>
 
   <section id="try">
-    <span class="kicker">07 — Try it</span>
-    <h2>Build your first program.</h2>
-    <p>You need a C11 compiler: GCC or Clang 15 or newer. Building Tycho from source also needs Git and <code>make</code>. For platform-specific setup, see <a href="docs/platforms.html">platforms and toolchains</a>.</p>
+    <span class="kicker">Get started</span>
+    <h2>Try a small program.</h2>
+    <p>To build from source, you need Git, <code>make</code>, and a C11 compiler: GCC or Clang 15 or newer. Check the <a href="docs/platforms.html">platform setup</a> for your system.</p>
     <div class="panel">
-<div class="phead"><span class="traf"></span><span class="fn">Prebuilt — Linux x86-64</span><span class="badge">prebuilt — nothing to build</span></div>
-<pre><code><span class="c"># Linux x86-64; see the release page for available platform builds</span>
-<span class="g">$</span> curl -fsSLO https://github.com/StefanVonRanda/tycho/releases/download/v0.8.6/tycho-v0.8.6-linux-x86_64.tar.gz
-<span class="g">$</span> curl -fsSLO https://github.com/StefanVonRanda/tycho/releases/download/v0.8.6/tycho-v0.8.6-linux-x86_64.tar.gz.sha256
-<span class="g">$</span> sha256sum -c tycho-v0.8.6-linux-x86_64.tar.gz.sha256
-<span class="out">tycho-v0.8.6-linux-x86_64.tar.gz: OK</span>
-<span class="g">$</span> tar xzf tycho-v0.8.6-linux-x86_64.tar.gz &amp;&amp; cd tycho-v0.8.6-linux-x86_64
-<span class="g">$</span> ./tychoc examples/hello.ty &amp;&amp; ./examples/hello
-<span class="out">built examples/hello</span>
-<span class="out">what is your name: Ada</span>
-<span class="out">hello Ada</span></code></pre>
-</div>
-    <p class="codecap"><b>Prebuilt.</b> The tarball carries <code>tychoc</code>, the core library and the examples. You still need <code>cc</code>. Check <a href="https://github.com/StefanVonRanda/tycho/releases/tag/v0.8.6">the release page</a> for available platform builds.</p>
-    <div class="panel">
-      <div class="phead"><span class="traf"></span><span class="fn">Build from source</span><span class="badge">cc + make</span></div>
-      <pre><code><span class="c"># a `cc` and `make`, nothing else</span>
-<span class="g">$</span> git clone https://github.com/StefanVonRanda/tycho
+      <div class="phead"><span class="fn">Build and run the greeting example</span><span class="badge">Terminal</span></div>
+      <pre><code><span class="g">$</span> git clone https://github.com/StefanVonRanda/tycho
 <span class="g">$</span> cd tycho
-<span class="g">$</span> make                                  <span class="c"># builds ./tychoc</span>
+<span class="g">$</span> make
 <span class="g">$</span> ./tychoc examples/hello.ty &amp;&amp; ./examples/hello
 <span class="out">built examples/hello</span>
 <span class="out">what is your name: Ada</span>
 <span class="out">hello Ada</span></code></pre>
     </div>
-    <p class="codecap"><b>From source.</b> Ask for a name, greet it. Then start with the <a href="https://tycho-lang.com/docs/tutorial.html">tutorial ↗</a>.</p>
+    <p class="codecap">The example asks for a name. Type <code>Ada</code> to get the greeting shown here.</p>
+    <p class="install-alternative">Prefer a prebuilt compiler? See the <a href="https://github.com/StefanVonRanda/tycho/releases/tag/v0.8.6">v0.8.6 release downloads</a> for available builds and checksums. You still need a C compiler to build Tycho programs.</p>
+    <div class="cta"><a class="btn" href="docs/tutorial.html">Write your first program</a></div>
   </section>
 
   <section id="learn">
-    <span class="kicker">08 — Learn</span>
-    <h2>Where to start.</h2>
-    <nav class="toc" aria-label="Learn">
-      <a href="https://tycho-lang.com/docs/tutorial.html"><span class="n">01</span>Tutorial — first programs in about an hour<span class="dots"></span><span class="arr">→</span></a>
-      <a href="https://tycho-lang.com/docs/from-c-to-arenas.html"><span class="n">02</span>Arenas — the memory model in five steps<span class="dots"></span><span class="arr">→</span></a>
-      <a href="https://tycho-lang.com/docs/idioms.html"><span class="n">03</span>Idioms — pools, channels, enums instead of pointers<span class="dots"></span><span class="arr">→</span></a>
-      <a href="https://tycho-lang.com/docs/reference/index.html"><span class="n">04</span>Reference — every construct, by topic<span class="dots"></span><span class="arr">→</span></a>
-      <a href="https://tycho-lang.com/docs/quiet-results.html"><span class="n">05</span>Quiet results — read before the first real program<span class="dots"></span><span class="arr">→</span></a>
+    <span class="kicker">Keep exploring</span>
+    <h2>Choose your next step.</h2>
+    <nav class="toc" aria-label="Learning resources">
+      <a href="docs/tutorial.html"><span class="n">01</span>Tutorial — learn by writing small programs<span class="dots"></span><span class="arr">→</span></a>
+      <a href="docs/from-c-to-arenas.html"><span class="n">02</span>Memory model — understand scopes and arenas<span class="dots"></span><span class="arr">→</span></a>
+      <a href="docs/idioms.html"><span class="n">03</span>Thinking in Tycho — adapt familiar data structures<span class="dots"></span><span class="arr">→</span></a>
+      <a href="docs/reference/index.html"><span class="n">04</span>Reference — look up the language and corelib<span class="dots"></span><span class="arr">→</span></a>
     </nav>
+    <p class="feedback">Tried it and got stuck? <a href="https://github.com/StefanVonRanda/tycho/issues/new?template=bug_report.md">Report a bug</a> or <a href="https://github.com/StefanVonRanda/tycho/issues/new?template=idea.md">share your feedback</a>. Confusing documentation and small examples of what you wanted to do are useful contributions, too.</p>
   </section>
-
-  <section id="faq">
-    <span class="kicker">09 — Questions</span>
-    <h2>Short answers.</h2>
-    <details open>
-      <summary>No GC, no borrow checker — how is it safe?</summary>
-      <div class="a">There is no reference type, so a <a href="https://tycho-lang.com/docs/thesis.html">dangling pointer</a> can't be written. <span class="inl">Option</span> replaces null, <span class="inl">Result</span> replaces exceptions; indexing is bounds-checked. The <a href="docs/reference/ffi.html">C FFI is an unsafe boundary</a>, and the project has not had an external security review.</div>
-    </details>
-    <details>
-      <summary>What does value semantics cost?</summary>
-      <div class="a">Pointer-shaped data can use more memory than in C. Flat index pools are often a better fit. See the <a href="#costs">tradeoffs</a> and their measurements.</div>
-    </details>
-    <details>
-      <summary>Copying everything must be slow?</summary>
-      <div class="a">Assignment means an independent value, but the compiler can remove unnecessary copies. Returns build in the caller’s arena; eligible loop appends grow in place. See <a href="#fast">the examples</a>.</div>
-    </details>
-    <details>
-      <summary>Where's the package manager?</summary>
-      <div class="a">There isn't one, on purpose: vendor directories, import by path. No transitive graph you've never read. The <a href="https://tycho-lang.com/docs/reference/packages.html">packages page ↗</a> shows the shape.</div>
-    </details>
-  </section>
-
-  <section id="community">
-    <span class="kicker">10 — Community</span>
-    <h2>Get involved.</h2>
-    <div class="fact">
-      <div class="row"><span class="k">Report a bug</span><span class="v">Miscompile, crash, wrong output? A small <span class="inl">.ty</span> repro plus expected-vs-actual is the whole report. <a href="https://github.com/StefanVonRanda/tycho/issues/new?template=bug_report.md">File it ↗</a>.</span></div>
-      <div class="row"><span class="k">Ideas</span><span class="v">Rough edges, "I bounced off X", why-does-it-work-this-way — all useful. A few things are out of scope; the <a href="https://tycho-lang.com/docs/architecture.html#decided-non-goals">non-goals ↗</a> name them. <a href="https://github.com/StefanVonRanda/tycho/issues/new?template=idea.md">Speak up ↗</a>.</span></div>
-      <div class="row"><span class="k">Contribute</span><span class="v">Pre-1.0, repros and feedback beat big features. Documentation fixes and small, reproducible examples are welcome. <a href="https://github.com/StefanVonRanda/tycho/blob/main/CONTRIBUTING.md">How to help ↗</a>.</span></div>
-    </div>
-    <div class="flinks">
-      <a href="https://github.com/StefanVonRanda/tycho/blob/main/RELEASE_NOTES.md">Release notes ↗</a>
-      <a href="https://www.hylo-lang.org/">Value semantics ← Hylo ↗</a>
-    </div>
-  </section>
-
 </main>
 <footer class="site-footer page">
   <div class="fbrand">TYCHO</div>
