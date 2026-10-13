@@ -27,6 +27,7 @@ const output = process.env.SHOTS;
     for (const width of [320,390,768,1024,1280,1281,1440,1920]) for (const theme of ['light','dark']) {
       await page.setViewport({width,height:1000});
       await go('/'); await page.evaluate(t => localStorage.setItem('tycho-theme',t),theme); await go('/');
+      assert(await page.$eval('h1',h=>h.textContent.includes('programming language')),'homepage explains what Tycho is');
       const shell = await page.evaluate(() => ({
         header:document.querySelector('.masthead').innerText,
         footer:document.querySelector('.site-footer').innerText,

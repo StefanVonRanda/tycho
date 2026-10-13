@@ -16,7 +16,9 @@ sh tools/tycho-docs/run.sh # renderer, links, shell, and paragraph regressions
 
 `site.css`, `site.js`, `header.html`, and `footer.html` in this directory own the
 shared website shell. Public copy calls Tycho's library **corelib** and its
-modules **corelib packages**, not stdlib packages. The generator copies CSS and JavaScript to its output and
+modules **corelib packages**, not stdlib packages. The landing page must identify
+Tycho as a programming language before introducing the memory model. The generator
+copies CSS and JavaScript to its output and
 renders the templates into each page. Both the landing page and docs use that
 same stylesheet, header navigation, and footer. The homepage keeps its **76rem
 outer width**. Documentation instead has an independently centered **44rem
