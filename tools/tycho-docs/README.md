@@ -83,7 +83,16 @@ own documents; link to them rather than reproducing them. Do not imply mature
 production adoption, blanket memory safety, or universal performance wins.
 Use plain, grammatical sentences and concrete descriptions. Avoid brochure
 abstractions, repeated motivational slogans, forced slang, and fake familiarity.
-Review the wording throughout the page, not just its opening.
+Review the wording throughout the page, not just its opening. The speaker is
+Tycho’s author, addressing prospective users—not an outside reviewer. Use “I”
+where personal work, decisions, or invitations matter; state language capabilities
+directly. Do not refer to the creator as “Tycho’s author,” invent a team with
+“we,” or present author-written examples as independent adoption.
+
+Reference landing pages for positioning and project voice:
+[Zig](https://ziglang.org/), [Odin](https://odin-lang.org/),
+[Go](https://go.dev/), and [Rust](https://rust-lang.org/).
+Their ecosystem, adoption, and maturity claims do not apply to Tycho.
 
 ## Browser verification
 
