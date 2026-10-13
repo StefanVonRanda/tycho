@@ -173,7 +173,7 @@
 
   <section id="lang">
     <span class="kicker">The language</span>
-    <h2>The rest of the language.</h2>
+    <h2>Language features.</h2>
     <p>Tycho uses indentation rather than braces to group code. Alongside functions, strings, arrays, maps, and structs, it includes:</p>
     <ul class="plain">
       <li><b>Enums and pattern matching.</b> Define a fixed set of cases and handle each one explicitly. <code>Option</code> is for values that may be missing; <code>Result</code> is for operations that may fail.</li>
@@ -187,7 +187,7 @@
   <section id="proof">
     <span class="kicker">Explore the source</span>
     <h2>Programs written in Tycho.</h2>
-    <p>These are larger programs you can read and run. They were written by Tycho’s author.</p>
+    <p>I’ve used Tycho to build a Scheme interpreter, an HTTP server, and a chess engine. Their source is included so you can read the code and run them yourself.</p>
     <div class="fact">
       <div class="row"><span class="k"><a href="https://github.com/StefanVonRanda/tycho/tree/main/tools/tycho-scheme">Scheme interpreter</a></span><span class="v">An interpreter and bytecode compiler for Scheme, including closures.</span></div>
       <div class="row"><span class="k"><a href="https://github.com/StefanVonRanda/tycho/tree/main/tools/tycho-kvsrv">HTTP key-value server</a></span><span class="v">A key-value store served over HTTP, with several workers handling requests.</span></div>
@@ -204,9 +204,9 @@
       <div class="row"><span class="k">Graphs and linked structures</span><span class="v">Instead of pointers between nodes, use arrays of nodes linked by integer indices. <a href="docs/idioms.html">Thinking in Tycho</a> shows how.</span></div>
       <div class="row"><span class="k">Memory tradeoffs</span><span class="v">Temporary data can stay allocated until its owning scope ends. A long-running function may keep memory it no longer needs. Some structures also need more memory than C versions; the <a href="docs/internals/value-semantics-limits.html">measurements</a> show how much.</span></div>
       <div class="row"><span class="k">No interface values</span><span class="v">You can’t store values of different types behind one interface. Use generics for code that works with several types, or enums for a fixed set of cases.</span></div>
-      <div class="row"><span class="k">Still experimental</span><span class="v">The language and corelib APIs can change before 1.0, without a deprecation period. The project still needs a substantial program from an outside developer. See the <a href="https://github.com/StefanVonRanda/tycho/blob/main/SUPPORT.md">version policy</a> and <a href="https://github.com/StefanVonRanda/tycho/blob/main/ROADMAP.md">roadmap</a>.</span></div>
+      <div class="row"><span class="k">Still experimental</span><span class="v">Before 1.0, I may change the language and corelib APIs without a deprecation period. I’m looking for developers to try Tycho in their own projects and tell me what needs work. See the <a href="https://github.com/StefanVonRanda/tycho/blob/main/SUPPORT.md">version policy</a> and <a href="https://github.com/StefanVonRanda/tycho/blob/main/ROADMAP.md">roadmap</a>.</span></div>
     </div>
-    <p>Tycho has not had a full independent security audit. Don’t use it for security-critical work. C interop can also introduce memory errors; see the <a href="https://github.com/StefanVonRanda/tycho/blob/main/SECURITY.md">security policy</a>.</p>
+    <p>I still need a full independent security audit before 1.0. Don’t use Tycho for security-critical work. C interop can also introduce memory errors; see the <a href="https://github.com/StefanVonRanda/tycho/blob/main/SECURITY.md">security policy</a>.</p>
   </section>
 
   <section id="try">
@@ -237,7 +237,7 @@
       <a href="docs/idioms.html"><span class="n">03</span>Thinking in Tycho — alternatives to pointers and interfaces<span class="dots"></span><span class="arr">→</span></a>
       <a href="docs/reference/index.html"><span class="n">04</span>Reference — language features and corelib packages<span class="dots"></span><span class="arr">→</span></a>
     </nav>
-    <p class="feedback">Bug reports and feedback are welcome. <a href="https://github.com/StefanVonRanda/tycho/issues/new">Open an issue</a> if something breaks or you can’t figure out how to do something.</p>
+    <p class="feedback">If you try Tycho, I’d like to hear how it goes. <a href="https://github.com/StefanVonRanda/tycho/issues/new">Open an issue</a> if you find a bug or something the documentation doesn’t explain.</p>
   </section>
 </main>
 <footer class="site-footer page">
