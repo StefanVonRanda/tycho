@@ -3,16 +3,16 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Tycho — a systems language without a garbage collector</title>
-<meta name="description" content="Tycho is an experimental systems language. Memory is managed with implicit arenas under value semantics: no garbage collector, no manual free, no borrow checker. It transpiles to C.">
+<title>Tycho — a systems programming language</title>
+<meta name="description" content="Tycho is an experimental systems programming language for parsers, interpreters, and batch tools. It compiles to native code through C and manages memory automatically, without a garbage collector.">
 <meta name="theme-color" content="#ffffff">
 <link rel="canonical" href="https://tycho-lang.com/">
 <link rel="stylesheet" href="docs/site.css">
 <script src="docs/site.js" defer></script>
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://tycho-lang.com">
-<meta property="og:title" content="Tycho — a systems language without a garbage collector">
-<meta property="og:description" content="Implicit arenas under value semantics. No garbage collector, no manual free. It transpiles to C.">
+<meta property="og:title" content="Tycho — a systems programming language">
+<meta property="og:description" content="A programming language for parsers, interpreters, and batch tools. Native code through C. Automatic memory management, without a garbage collector.">
 <meta property="og:image" content="https://tycho-lang.com/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -156,12 +156,12 @@
   <header class="hero" id="top">
     <div class="hero-grid">
     <div class="hero-intro">
-    <span class="kicker">Experimental systems language · v0.8.6</span>
-    <h1>Memory from scope.<br>Not a collector.</h1>
+    <span class="kicker">Experimental · v0.8.6</span>
+    <h1>Tycho is a systems<br>programming language.</h1>
     <p class="lede">
-      Tycho manages memory with <b><a href="docs/thesis.html">implicit arenas</a></b>
-      and value semantics. No garbage collector, no manual <code>free</code>, no borrow checker.
-      Built for allocation-heavy parsers, interpreters, and batch tools.
+      Build parsers, interpreters, and batch tools with automatic memory management.
+      Tycho compiles to native code through C, using <a href="docs/thesis.html">scope-based arenas</a>
+      instead of a garbage collector. No manual <code>free</code>, no borrow checker.
     </p>
     <div class="cta">
       <a class="btn" href="#try">Get started</a>
