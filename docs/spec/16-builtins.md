@@ -1,7 +1,7 @@
 # 29. Builtins
 
 A **builtin** is a function that is part of the Tycho *language* rather than of
-its standard library: it is in scope in every module with no `import`, and its
+the corelib: it is in scope in every module with no `import`, and its
 name resolves without qualification. This chapter is the complete, normative
 catalog of the builtins — grouped by category, each with its argument and result
 types and a one-line semantics, and each marked **Sig** or **magic** (§29.2).
@@ -31,7 +31,7 @@ The line between the **language** and the **corelib** is drawn precisely:
   import.
 - Every other predefined function is a **corelib** procedure, reached only
   through `import "core:…"` and specified in [Part XVIII](README.md) (the
-  standard library). Corelib is *layered on* the language; it is
+  corelib). Corelib is *layered on* the language; it is
   not part of it.
 
 This distinction is normative: it fixes which names a conforming implementation
@@ -278,7 +278,7 @@ builtins — exactly the four below, all `Sig`, all over `float`:
 | `fabs(x)` | `float -> float` | Sig |
 
 Other numeric functions — `min`, `max`, `clamp`, and the trigonometric functions
-— are **not** builtins; they are provided by the standard library (§31)
+— are **not** builtins; they are provided by the corelib (§31)
 and require an import.
 
 

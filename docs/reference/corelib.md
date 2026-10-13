@@ -1,11 +1,11 @@
-# corelib — Tycho's standard library
+# corelib — Tycho's core library
 
 > **Memory:** Every corelib function puts its results in the caller's memory and
 > returns independent values, never aliasing the inputs. The one exception is a
 > C-owned opaque handle (`ptr`) from the C-backed packages below, which is not
 > caller-managed: release it with that package's own free function.
 
-corelib is Tycho's standard library: a set of packages under `corelib/`, imported with the
+corelib is Tycho's core library: a set of packages under `corelib/`, imported with the
 `core:` collection root. The modules below are usable today.
 
 ```tycho

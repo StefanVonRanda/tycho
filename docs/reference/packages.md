@@ -22,7 +22,7 @@ fn main():
 ```
 
 `./tychoc pkg/main.ty` follows the imports and emits one binary. `import "core:strings"`
-resolves the standard library found next to the transpiler binary, or at `TYCHO_CORELIB` if set
+resolves the corelib found next to the transpiler binary, or at `TYCHO_CORELIB` if set
 (see [the corelib catalog](../reference/corelib.md)). Privacy is by leading underscore: a top-level
 name beginning with `_` is package-private and cannot be reached through a `pkg.` qualifier
 from another package; every other name is visible to importers.
@@ -106,7 +106,7 @@ fn main():
 
 ### The `core:` collection
 
-The standard library is reached through a **collection** — a named root for
+The corelib is reached through a **collection** — a named root for
 imports that resolve outside the local directory tree. `import "core:strings"`
 pulls in the corelib package `strings`, which sits next to the transpiler binary by
 default (or at `TYCHO_CORELIB` if set) rather than relative to the importer. The

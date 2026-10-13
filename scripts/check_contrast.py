@@ -33,6 +33,7 @@ are written as literal hex in the CSS and are listed in PAIRS explicitly; if a
 fifth is added in literal form, the token legs cannot see it.
 """
 import re
+from pathlib import Path
 import subprocess
 import sys
 
@@ -198,7 +199,10 @@ def read_site(argv=()):
         if a == "--rev" and i + 1 < len(argv):
             return _show(argv[i + 1]) or _die("no index.html at rev %s" % argv[i + 1])
         if not a.startswith("-"):
-            return open(a, encoding="utf-8").read()
+            page = Path(a).read_text(encoding="utf-8")
+            if 'href="docs/site.css"' in page:
+                page = (Path(a).parent / 'docs/site.css').read_text(encoding="utf-8") + '\n' + page
+            return page
     for ref in ("origin/gh-pages", "gh-pages"):
         src = _show(ref)
         if src is not None:
@@ -208,10 +212,18 @@ def read_site(argv=()):
 
 def _show(ref):
     try:
-        return subprocess.run(["git", "show", "%s:index.html" % ref],
+        page = subprocess.run(["git", "show", "%s:index.html" % ref],
                               capture_output=True, check=True).stdout.decode("utf-8")
     except (subprocess.CalledProcessError, FileNotFoundError):
         return None
+    if 'href="docs/site.css"' in page:
+        try:
+            css = subprocess.run(["git", "show", "%s:docs/site.css" % ref],
+                                 capture_output=True, check=True).stdout.decode("utf-8")
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            _die("missing docs/site.css at rev %s" % ref)
+        page = css + '\n' + page
+    return page
 
 
 def _die(msg):

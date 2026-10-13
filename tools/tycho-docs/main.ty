@@ -155,10 +155,21 @@ fn render_spans(e: string) -> string:
 # loop-grown accumulator through `inout` to a callee that appends loses the
 # callee's bytes while scalar write-backs survive — so no helper here takes
 # `inout` on the output.
-fn close_list_html(in_list: bool) -> string:
-    if in_list:
-        return "</ul>\n"
+fn close_list_html(tag: string, item: string) -> string:
+    if len(tag) > 0:
+        return "<li>" + render_inline(item) + "</li>\n</" + tag + ">\n"
     return ""
+
+# Return the length of a bullet or numeric-list marker, or zero.
+fn list_prefix(t: string) -> int:
+    if strings.starts_with(t, "- ") or strings.starts_with(t, "* ") or strings.starts_with(t, "+ "):
+        return 2
+    i := 0
+    for i < len(t) and t[i] >= 48 and t[i] <= 57:
+        i += 1
+    if i > 0 and (t[i:i+2] == ". " or t[i:i+2] == ") "):
+        return i + 2
+    return 0
 
 fn flush_rows_html(rows: [string]) -> string:
     if len(rows) == 0:
@@ -186,16 +197,28 @@ fn flush_quote_html(quote: [string]) -> string:
     if len(quote) == 0:
         return ""
     out := "<blockquote>\n"
+    paragraph := ""
     for i := 0; i < len(quote); i += 1:
-        out = out + "<p>" + render_inline(quote[i]) + "</p>\n"
+        if len(quote[i]) == 0:
+            if len(paragraph) > 0:
+                out = out + "<p>" + render_inline(paragraph) + "</p>\n"
+                paragraph = ""
+        else:
+            if len(paragraph) > 0:
+                paragraph = paragraph + " "
+            paragraph = paragraph + quote[i]
+    if len(paragraph) > 0:
+        out = out + "<p>" + render_inline(paragraph) + "</p>\n"
     return out + "</blockquote>\n"
 
 fn render_md(body: string) -> string:
     out := ""
-    in_list := false
+    list_tag := ""
+    list_item := ""
     in_fence := false
     rows := []string
     quote := []string
+    paragraph := ""
     lines := strings.lines(body)
     for i := 0; i < len(lines); i += 1:
         t := strings.trim(lines[i])
@@ -205,91 +228,78 @@ fn render_md(body: string) -> string:
                 in_fence = false
             else:
                 out = out + esc_html(lines[i]) + "\n"
-        elif strings.starts_with(t, "```"):
-            out = out + close_list_html(in_list)
-            in_list = false
+            continue
+        marker := list_prefix(t)
+        fence := strings.starts_with(t, "```")
+        heading := strings.starts_with(t, "# ") or strings.starts_with(t, "## ") or strings.starts_with(t, "### ")
+        quoted := t == ">" or strings.starts_with(t, "> ")
+        table := strings.starts_with(t, "|")
+        comment := strings.starts_with(t, "<!--")
+        continuation := len(list_tag) > 0 and marker == 0 and len(t) > 0 and not fence and not heading and not quoted and not table and not comment and (strings.starts_with(lines[i], "  ") or strings.starts_with(lines[i], "\t"))
+        if continuation:
+            list_item = list_item + " " + t
+            continue
+        boundary := len(t) == 0 or t == "---" or heading or marker > 0 or quoted or table or fence or comment
+        if boundary and len(paragraph) > 0:
+            out = out + "<p>" + render_inline(paragraph) + "</p>\n"
+            paragraph = ""
+        if not table:
             out = out + flush_rows_html(rows)
             rows = []string
+        if not quoted:
             out = out + flush_quote_html(quote)
             quote = []string
+        if marker > 0:
+            tag := "ul"
+            if t[0] >= 48 and t[0] <= 57:
+                tag = "ol"
+            if list_tag != tag:
+                out = out + close_list_html(list_tag, list_item)
+                start := ""
+                if tag == "ol" and t[0:marker-2] != "1":
+                    start = " start=\"" + t[0:marker-2] + "\""
+                out = out + "<" + tag + start + ">\n"
+                list_tag = tag
+            else:
+                out = out + "<li>" + render_inline(list_item) + "</li>\n"
+            list_item = t[marker:len(t)]
+            continue
+        out = out + close_list_html(list_tag, list_item)
+        list_tag = ""
+        list_item = ""
+        if fence:
             lang := strings.trim(t[3:len(t)])
             out = out + "<pre><code"
             if len(lang) > 0:
                 out = out + " class=\"language-" + esc_html(lang) + "\""
             out = out + ">"
             in_fence = true
-        elif strings.starts_with(t, "<!--"):
-            out = out + close_list_html(in_list)
-            in_list = false
-            out = out + flush_rows_html(rows)
-            rows = []string
-            out = out + flush_quote_html(quote)
-            quote = []string
-        elif strings.starts_with(t, "|"):
-            out = out + close_list_html(in_list)
-            in_list = false
-            out = out + flush_quote_html(quote)
-            quote = []string
+        elif comment or len(t) == 0:
+            pass
+        elif table:
             push(rows, t)
+        elif quoted:
+            push(quote, strings.trim(t[2:len(t)]))
+        elif t == "---":
+            out = out + "<hr/>\n"
+        elif heading:
+            level := 1
+            for level < len(t) and t[level] == 35:
+                level += 1
+            h := t[level+1:len(t)]
+            tag := "h" + str(level)
+            out = out + "<" + tag + " id=\"" + slug(h) + "\">" + render_inline(h) + "</" + tag + ">\n"
         else:
-            out = out + flush_rows_html(rows)
-            rows = []string
-            if len(t) == 0:
-                out = out + close_list_html(in_list)
-                in_list = false
-            elif t == "---":
-                out = out + close_list_html(in_list)
-                in_list = false
-                out = out + flush_quote_html(quote)
-                quote = []string
-                out = out + "<hr/>\n"
-            elif strings.starts_with(t, "### "):
-                out = out + close_list_html(in_list)
-                in_list = false
-                out = out + flush_quote_html(quote)
-                quote = []string
-                h := t[4:len(t)]
-                out = out + "<h3 id=\"" + slug(h) + "\">" + render_inline(h) + "</h3>\n"
-            elif strings.starts_with(t, "## "):
-                out = out + close_list_html(in_list)
-                in_list = false
-                out = out + flush_quote_html(quote)
-                quote = []string
-                h := t[3:len(t)]
-                out = out + "<h2 id=\"" + slug(h) + "\">" + render_inline(h) + "</h2>\n"
-            elif strings.starts_with(t, "# "):
-                out = out + close_list_html(in_list)
-                in_list = false
-                out = out + flush_quote_html(quote)
-                quote = []string
-                h := t[2:len(t)]
-                out = out + "<h1 id=\"" + slug(h) + "\">" + render_inline(h) + "</h1>\n"
-            elif strings.starts_with(t, "> "):
-                out = out + close_list_html(in_list)
-                in_list = false
-                push(quote, strings.trim(t[2:len(t)]))
-            elif strings.starts_with(t, "- "):
-                out = out + flush_quote_html(quote)
-                quote = []string
-                if in_list == false:
-                    out = out + "<ul>\n"
-                    in_list = true
-                out = out + "<li>" + render_inline(t[2:len(t)]) + "</li>\n"
-            else:
-                out = out + close_list_html(in_list)
-                in_list = false
-                out = out + flush_quote_html(quote)
-                quote = []string
-                out = out + "<p>" + render_inline(t) + "</p>\n"
-    out = out + close_list_html(in_list)
-    out = out + flush_rows_html(rows)
-    out = out + flush_quote_html(quote)
+            if len(paragraph) > 0:
+                paragraph = paragraph + " "
+            paragraph = paragraph + t
+    if len(paragraph) > 0:
+        out = out + "<p>" + render_inline(paragraph) + "</p>\n"
+    out = out + close_list_html(list_tag, list_item) + flush_rows_html(rows) + flush_quote_html(quote)
     if in_fence:
         out = out + "</code></pre>\n"
     return out
 
-fn page_css() -> string:
-    return ":root{--paper:#000000;--ink:#ffffff;--ink-soft:#e6e6e6;--dim:#b3b3b3;--faint:#a6a6a6;--line:#808080;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#ffffff;--acc-code:#ffffff;--acc-on:#000000}:root[data-theme=\"light\"]{--paper:#ffffff;--ink:#000000;--ink-soft:#222222;--dim:#4d4d4d;--faint:#595959;--line:#767676;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#000000;--acc-code:#ffffff;--acc-on:#ffffff}*{box-sizing:border-box}body{margin:0 auto;max-width:44rem;padding:24px 20px 64px;background:var(--paper);color:var(--ink-soft);font-family:\"Space Grotesk\",system-ui,-apple-system,\"Segoe UI\",Roboto,sans-serif;font-size:17px;line-height:1.7}a{color:inherit;text-decoration:none}::selection{background:var(--acc);color:var(--acc-on)}.skip{position:absolute;left:12px;top:-56px;z-index:100;background:var(--ink);color:var(--paper);padding:12px 20px;font-size:14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.skip:focus{top:8px}a:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:3px}h1,h2,h3{font-family:\"Fraunces\",Georgia,\"Times New Roman\",serif;font-weight:600;color:var(--ink);line-height:1.15;letter-spacing:0}h1{font-size:34px;margin:0 0 24px}h2{font-size:26px;margin:40px 0 16px}h3{font-size:20px;margin:32px 0 12px}p{margin:0 0 16px}p a,li a,td a,blockquote a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}strong{color:var(--ink)}pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}pre{background:var(--code-bg);color:var(--code-fg);border:1px solid var(--code-line);border-radius:8px;padding:20px 24px;overflow-x:auto;font-size:13px;line-height:1.8}code{font-size:.9em;color:var(--ink)}table{border-collapse:collapse;margin:24px 0}th,td{border:1px solid var(--line);padding:8px 12px;text-align:left}th{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}td{font-size:14.5px}blockquote{border-left:2px solid var(--ink);margin:24px 0;padding:4px 0 4px 16px;color:var(--dim)}hr{border:0;border-top:1px solid var(--line);margin:32px 0}nav.crumb{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--faint);margin-bottom:24px}nav.crumb a{color:var(--dim)}nav.crumb a:hover{color:var(--ink)}.masthead{position:sticky;top:0;z-index:50;background:var(--paper);border-bottom:1px solid var(--line)}.masthead .in{padding:12px 0;display:flex;align-items:center;gap:16px}.wordmark{display:flex;align-items:center;gap:8px;color:var(--ink);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;font-weight:700;letter-spacing:.12em}.wordmark svg{width:18px;height:18px}.masthead nav{display:flex;gap:4px;margin-left:auto}.masthead nav a{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);padding:8px 12px}.masthead nav a:hover{color:var(--ink)}.search{margin:0 0 8px;max-width:34em}#q{font:inherit;width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink)}#q::placeholder{color:var(--faint)}#r{margin:12px 0 0}#r .n{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:0 0 4px}#r a.r{display:flex;align-items:baseline;gap:12px;padding:10px 4px;border-bottom:1px solid var(--line);color:var(--dim)}#r a.r:first-of-type{border-top:1px solid var(--line)}#r a.r:hover{color:var(--ink)}#r a.r .t{color:var(--ink)}#r a.r .arr{margin-left:auto;color:var(--faint)}#r .none{color:var(--faint);font-size:14px;padding:12px 4px}ul.pages{list-style:none;margin:32px 0 0;padding:0}ul.pages li{padding:12px 4px;border-top:1px solid var(--line);color:var(--dim)}ul.pages li:first-child{border-top:0}ul.pages li a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}footer{margin-top:64px;padding:40px 0;text-align:center;border-top:1px solid var(--line);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--dim)}.fbrand{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--ink);font-weight:700;font-size:14px;letter-spacing:.12em;margin-bottom:12px}.fbrand svg{width:18px;height:18px}.tagline{color:var(--faint);font-size:14px}"
 fn up_prefix(rel: string) -> string:
     up := ""
     for i := 0; i < len(rel); i += 1:
@@ -297,9 +307,74 @@ fn up_prefix(rel: string) -> string:
             up = up + "../"
     return up
 
-fn page_html(title: string, home: string, crumb: string, content: string) -> string:
-    h := "<!doctype html>\n<html lang=\"en\">\n<head><meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>" + esc_html(title) + " — Tycho docs</title>\n<script>(function(){try{var d=document.documentElement;var e=localStorage.getItem('tycho-theme');d.dataset.theme=e||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}catch(e){}})();</script>\n<style>" + page_css() + "</style>\n</head>\n<body>\n<a class=\"skip\" href=\"#main\">Skip to content</a>\n<div class=\"masthead\"><div class=\"in\"><a class=\"wordmark\" href=\"" + home + "\"><svg viewBox=\"0 0 200 200\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"14\" aria-hidden=\"true\"><circle cx=\"100\" cy=\"100\" r=\"40\"/><circle cx=\"100\" cy=\"100\" r=\"8\" fill=\"currentColor\" stroke=\"none\"/></svg><span>TYCHO</span></a><nav aria-label=\"Docs\"><a href=\"" + home + "\">Docs</a><a href=\"https://github.com/StefanVonRanda/tycho\">GitHub</a></nav></div></div>\n<main id=\"main\">\n<nav class=\"crumb\"><a href=\"" + home + "\">docs</a> / " + crumb + "</nav>\n"
-    return h + content + "</main>\n<footer><div class=\"fbrand\"><svg viewBox=\"0 0 200 200\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"14\" aria-hidden=\"true\"><circle cx=\"100\" cy=\"100\" r=\"40\"/><circle cx=\"100\" cy=\"100\" r=\"8\" fill=\"currentColor\" stroke=\"none\"/></svg><span>TYCHO</span></div><p class=\"tagline\">Generated from the repo — pre-1.0, subject to change.</p></footer>\n</body>\n</html>\n"
+# Source links outside docs/ belong on GitHub, not at nonexistent .html paths.
+# The home link encodes the page's depth; one further parent exits the docs tree.
+fn published_links(content: string, home: string, source_root: bool) -> string:
+    outside := strings.replace(home, "index.html", "../")
+    root := strings.replace(home, "index.html", "")
+    out := ""
+    i := 0
+    for i < len(content):
+        if content[i:i+6] == "href=\"":
+            j := i + 6
+            for j < len(content) and content[j:j+1] != "\"":
+                j += 1
+            u := content[i+6:j]
+            target := ""
+            if strings.starts_with(u, outside):
+                target = u[len(outside):len(u)]
+            elif source_root and not strings.starts_with(u, "https:") and not strings.starts_with(u, "http:") and not strings.starts_with(u, "mailto:") and not strings.starts_with(u, "#"):
+                if strings.starts_with(u, "docs/"):
+                    u = u[5:len(u)]
+                else:
+                    target = u
+            if len(target) > 0:
+                if strings.starts_with(target, "CHANGELOG.html"):
+                    u = root + strings.replace(target, "CHANGELOG.html", "changelog.html")
+                elif strings.starts_with(target, "RELEASE_NOTES.html"):
+                    u = root + strings.replace(target, "RELEASE_NOTES.html", "release-notes.html")
+                else:
+                    u = "https://github.com/StefanVonRanda/tycho/blob/main/" + strings.replace(target, ".html", ".md")
+            out = out + "href=\"" + u
+            i = j
+        else:
+            out = out + content[i:i+1]
+            i += 1
+    return out
+
+fn contents_html(content: string) -> string:
+    out := ""
+    i := 0
+    for i < len(content):
+        h2 := content[i:i+8] == "<h2 id=\""
+        h3 := content[i:i+8] == "<h3 id=\""
+        if h2 or h3:
+            end_id := find_from(content, "\"", i + 8)
+            end_tag := find_from(content, ">", end_id)
+            end_text := find_from(content, "</h", end_tag)
+            if end_id >= 0 and end_tag >= 0 and end_text >= 0:
+                cls := ""
+                if h3:
+                    cls = " class=\"sub\""
+                out = out + "<a" + cls + " href=\"#" + content[i+8:end_id] + "\">" + strip_tags(content[end_tag+1:end_text]) + "</a>\n"
+                i = end_text
+            else:
+                i += 1
+        else:
+            i += 1
+    if len(out) == 0:
+        return ""
+    return "<aside class=\"contents\"><details class=\"contents-nav\" open><summary class=\"eyebrow\">On this page</summary><nav aria-label=\"On this page\">" + out + "</nav></details></aside>"
+
+fn page_html(title: string, home: string, crumb: string, content: string, navigation: string, header: string, footer: string) -> string:
+    linked := published_links(content, home, crumb == "CHANGELOG.md" or crumb == "RELEASE_NOTES.md")
+    root := strings.replace(home, "index.html", "")
+    landing := root + "../"
+    h := "<!doctype html>\n<html lang=\"en\">\n<head><meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>" + esc_html(title) + " — Tycho docs</title>\n<script>(function(){try{var d=document.documentElement;var e=localStorage.getItem('tycho-theme');d.dataset.theme=e||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}catch(e){}})();</script>\n<link rel=\"icon\" href=\"" + landing + "favicon.svg\" type=\"image/svg+xml\">\n<link rel=\"stylesheet\" href=\"" + root + "site.css\">\n<script src=\"" + root + "site.js\" defer></script>\n</head>\n<body>\n<a class=\"skip\" href=\"#main\">Skip to content</a>\n"
+    h = h + strings.replace(strings.replace(header, "{{root}}", landing), "{{docs}}", root) + "<div class=\"page docs-layout\">\n<aside class=\"docs-sidebar\">" + navigation + "</aside>\n" + contents_html(linked) + "\n<main class=\"doc-content\" id=\"main\" tabindex=\"-1\">\n"
+    h = h + "<nav class=\"crumb\" aria-label=\"Breadcrumb\"><a href=\"" + home + "\">Docs</a> / " + crumb + "</nav>\n"
+    h = h + "<div class=\"search-panel\"><label for=\"q\">Search documentation</label><input id=\"q\" type=\"search\" placeholder=\"Search syntax, concepts, or corelib…\" data-root=\"" + root + "\" aria-controls=\"search-results\" autocomplete=\"off\"><button type=\"button\" class=\"search-clear\" id=\"search-clear\" aria-label=\"Clear search\" hidden>×</button><div id=\"r\" class=\"search-results\" hidden><div id=\"search-status\" class=\"status\" role=\"status\"></div><ul id=\"search-results\" aria-label=\"Search results\"></ul></div></div>\n"
+    return h + linked + "</main>\n</div>\n" + strings.replace(strings.replace(footer, "{{root}}", landing), "{{docs}}", root) + "</body>\n</html>\n"
 
 # The page title is the first `# ` heading; empty when the file has none.
 fn title_of(text: string) -> string:
@@ -356,22 +431,6 @@ fn find_from(s: string, sub: string, from: int) -> int:
         i = i + 1
     return 0 - 1
 
-# Drop a <style>...</style> block so CSS never lands in the search index.
-fn strip_style(s: string) -> string:
-    out := ""
-    i := 0
-    for i < len(s):
-        if i + 7 <= len(s) and s[i:i+7] == "<style>":
-            j := find_from(s, "</style>", i + 7)
-            if j >= 0:
-                i = j + 8
-            else:
-                i = len(s)
-        else:
-            out = out + s[i:i+1]
-            i = i + 1
-    return out
-
 # Drop <...> tags for the search index. Quotes survive; the caller
 # JSON-escapes afterwards.
 fn strip_tags(s: string) -> string:
@@ -409,9 +468,6 @@ fn json_esc(s: string) -> string:
             out = out + s[i:i+1]
     return out
 
-fn search_script() -> string:
-    return "<script>(function(){var box=document.getElementById('q'),res=document.getElementById('r'),idx=null;var root=(document.querySelector('nav.crumb a')||{getAttribute:function(){return 'index.html';}}).getAttribute('href').replace(/index.html$/,'');fetch(root+'search.json').then(function(r){return r.json();}).then(function(j){idx=j;});box.addEventListener('input',function(){var q=box.value.toLowerCase().trim(),out='',n=0,i,e;if(idx&&q.length>1){for(i=0;i<idx.length&&n<20;i++){e=idx[i];if(e.t.toLowerCase().indexOf(q)>=0||e.x.toLowerCase().indexOf(q)>=0){out+='<a class=\"r\" href=\"'+root+e.u+'\"><span class=\"t\">'+e.t+'</span><span class=\"arr\">&rarr;</span></a>';n++;}}out=(n>0?'<div class=\"n\">'+n+' match'+(n===1?'':'es')+'</div>':'<div class=\"none\">No matches.</div>')+out;}res.innerHTML=out;});})();</script>"
-
 fn group_of(d: string) -> string:
     if len(d) == 0:
         return "Guide"
@@ -421,31 +477,93 @@ fn group_of(d: string) -> string:
         return "Specification"
     return "Maintainer records"
 
+fn navigation_html(outs: [string], titles: [string], groups: [string], current: string, prefix: string) -> string:
+    home_selected := ""
+    if current == "index.html":
+        home_selected = " aria-current=\"page\""
+    out := "<details class=\"docs-nav\" open><summary>Browse documentation</summary><nav aria-label=\"Documentation\"><a class=\"docs-home\" href=\"" + prefix + "index.html\"" + home_selected + ">Documentation home</a>"
+    order := ["Guide", "Reference", "Specification", "Maintainer records", "Project"]
+    active_group := ""
+    for i := 0; i < len(outs); i += 1:
+        if outs[i] == current:
+            active_group = groups[i]
+    for g := 0; g < len(order); g += 1:
+        shown := false
+        for i := 0; i < len(outs); i += 1:
+            if groups[i] == order[g]:
+                if not shown:
+                    open := ""
+                    if groups[i] == active_group or (current == "index.html" and (groups[i] == "Guide" or groups[i] == "Reference")):
+                        open = " open"
+                    out = out + "<details" + open + "><summary>" + order[g] + "</summary>"
+                    shown = true
+                selected := ""
+                if outs[i] == current:
+                    selected = " aria-current=\"page\""
+                out = out + "<a href=\"" + prefix + outs[i] + "\"" + selected + ">" + esc_html(titles[i]) + "</a>"
+        if shown:
+            out = out + "</details>"
+    return out + "</nav></details>"
+
 fn build(docs_dir: string, out_dir: string):
+    root := parent_of(docs_dir)
+    assets := path.join(root, "tools/tycho-docs")
+    header := io.read(path.join(assets, "header.html"))
+    footer := io.read(path.join(assets, "footer.html"))
+    css := io.read(path.join(assets, "site.css"))
+    js := io.read(path.join(assets, "site.js"))
+    if len(header) == 0 or len(footer) == 0 or len(css) == 0 or len(js) == 0:
+        println("tycho-docs: missing site assets under " + assets)
+        return
     match io.make_dir_all(out_dir):
         Ok(_):
             pass
         Err(e):
             println("tycho-docs: cannot mkdir " + out_dir)
             return
-    got := collect(docs_dir, docs_dir, []string)
-    files := sort.asc(got)
-    rels := []string
+    io.write(path.join(out_dir, "site.css"), css)
+    io.write(path.join(out_dir, "site.js"), js)
+    sorted := sort.asc(collect(docs_dir, docs_dir, []string))
+    preferred := ["tutorial.md", "README.md", "from-c-to-arenas.md", "idioms.md", "memory-model.md", "quiet-results.md", "performance.md", "platforms.md", "debugging.md", "architecture.md", "thesis.md", "perf.md", "controls.md"]
+    files := []string
+    for name in preferred:
+        for rel in sorted:
+            if name == rel:
+                push(files, rel)
+    for rel in sorted:
+        found := false
+        for name in preferred:
+            if name == rel:
+                found = true
+        if not found:
+            push(files, rel)
     outs := []string
     titles := []string
     groups := []string
-    search := "["
-    first_entry := true
-    n := 0
-    idx := ""
+    sources := []string
+    rels := []string
     for i := 0; i < len(files); i += 1:
         rel := files[i]
         text := io.read(path.join(docs_dir, rel))
         title := title_of(text)
         if len(title) == 0:
             title = rel
-        html_rel := rel[0:len(rel)-3] + ".html"
-        home := up_prefix(rel) + "index.html"
+        push(rels, rel)
+        push(sources, text)
+        push(outs, rel[0:len(rel)-3] + ".html")
+        push(titles, title)
+        push(groups, group_of(dir_of(rel)))
+    for name in ["CHANGELOG", "RELEASE_NOTES"]:
+        text := io.read(path.join(root, name + ".md"))
+        push(rels, name + ".md")
+        push(sources, text)
+        push(outs, strings.replace(strings.to_lower(name), "_", "-") + ".html")
+        push(titles, title_of(text))
+        push(groups, "Project")
+    search := "["
+    n := 0
+    for i := 0; i < len(outs); i += 1:
+        rel := rels[i]
         d := dir_of(rel)
         if len(d) > 0:
             match io.make_dir_all(path.join(out_dir, d)):
@@ -453,64 +571,34 @@ fn build(docs_dir: string, out_dir: string):
                     pass
                 Err(e):
                     println("tycho-docs: cannot mkdir " + d)
-        crumb := esc_html(rel)
-        html := page_html(title, home, crumb, render_md(text))
-        if io.write(path.join(out_dir, html_rel), html):
-            n = n + 1
-        push(rels, rel)
-        push(outs, html_rel)
-        push(titles, title)
-        push(groups, group_of(d))
-        x := strip_tags(strip_style(html))
-        if len(x) > 20000:
-            x = x[0:20000]
-        if first_entry:
-            first_entry = false
-        else:
+        prefix := up_prefix(rel)
+        body := render_md(sources[i])
+        nav := navigation_html(outs, titles, groups, outs[i], prefix)
+        html := page_html(titles[i], prefix + "index.html", esc_html(rel), body, nav, header, footer)
+        if io.write(path.join(out_dir, outs[i]), html):
+            n += 1
+        if d != "" and path.base(outs[i]) == "README.html":
+            io.write(path.join(out_dir, d + "/index.html"), html)
+        if i > 0:
             search = search + ","
-        search = search + "{\"u\":\"" + html_rel + "\",\"t\":\"" + json_esc(esc_html(title)) + "\",\"x\":\"" + json_esc(x) + "\"}"
-        if rel == "README.md":
-            io.write(path.join(out_dir, "index.html"), page_html(title, "index.html", crumb, render_md(text)))
-        else:
-            if path.base(html_rel) == "README.html":
-                io.write(path.join(out_dir, dir_of(html_rel) + "/index.html"), html)
-    root := parent_of(docs_dir)
-    xnames := ["CHANGELOG.md", "RELEASE_NOTES.md"]
-    xouts := ["changelog.html", "release-notes.html"]
-    xtitles := ["Changelog", "Release notes"]
-    for i := 0; i < 2; i += 1:
-        text := io.read(path.join(root, xnames[i]))
-        title := xtitles[i]
-        body := render_md(text)
-        html := page_html(title, "index.html", esc_html(xnames[i]), body)
-        if io.write(path.join(out_dir, xouts[i]), html):
-            n = n + 1
-        push(rels, xnames[i])
-        push(outs, xouts[i])
-        push(titles, title)
-        push(groups, "Project")
-        x := strip_tags(strip_style(html))
-        if len(x) > 20000:
-            x = x[0:20000]
-        search = search + ",{\"u\":\"" + xouts[i] + "\",\"t\":\"" + json_esc(esc_html(title)) + "\",\"x\":\"" + json_esc(x) + "\"}"
+        search = search + "{\"u\":\"" + outs[i] + "\",\"t\":\"" + json_esc(titles[i]) + "\",\"x\":\"" + json_esc(strip_tags(body)) + "\"}"
     io.write(path.join(out_dir, "search.json"), search + "]")
-    idx = "<h1>Tycho documentation</h1>\n<p>" + str(len(rels)) + " pages, generated from the docs tree. Maintainer records are written for maintainers; start with the Guide.</p>\n"
-    idx = idx + "<div class=\"search\"><input id=\"q\" type=\"text\" placeholder=\"Search the docs\" aria-label=\"Search the docs\" autocomplete=\"off\"/><div id=\"r\" aria-live=\"polite\"></div></div>\n"
+    idx := "<h1>Tycho documentation</h1>\n<p>Guides to get you started. A reference for the language and corelib. A specification for the precise contract.</p>\n<div class=\"start\"><p><strong>New to Tycho?</strong> Start with the <a href=\"tutorial.html\">tutorial</a>, then explore <a href=\"from-c-to-arenas.html\">the memory model</a> and <a href=\"idioms.html\">Thinking in Tycho</a>.</p><p>Looking up syntax? Open the <a href=\"reference/index.html\">language reference</a>. For the precise contract, use the <a href=\"spec/index.html\">specification</a>.</p></div>\n"
     order := ["Guide", "Reference", "Specification", "Maintainer records", "Project"]
     for g := 0; g < len(order); g += 1:
         shown := false
-        for i := 0; i < len(rels); i += 1:
+        for i := 0; i < len(outs); i += 1:
             if groups[i] == order[g]:
-                if shown == false:
-                    idx = idx + "<h2>" + order[g] + "</h2>\n<ul class=\"pages\">\n"
+                if not shown:
+                    idx = idx + "<h2 id=\"" + slug(order[g]) + "\">" + order[g] + "</h2>\n<ul class=\"pages\">\n"
                     shown = true
                 idx = idx + "<li><a href=\"" + outs[i] + "\">" + esc_html(titles[i]) + "</a></li>\n"
         if shown:
             idx = idx + "</ul>\n"
-    idx = idx + search_script()
-    io.write(path.join(out_dir, "index.html"), page_html("Tycho documentation", "index.html", "index", idx))
+    nav := navigation_html(outs, titles, groups, "index.html", "")
+    io.write(path.join(out_dir, "index.html"), page_html("Tycho documentation", "index.html", "Home", idx, nav, header, footer))
     println("docs-site: " + str(n) + " pages from " + docs_dir)
-    println("index: index.html (" + str(len(rels)) + " links)")
+    println("index: index.html (" + str(len(outs)) + " links)")
 
 fn main():
     a := args()

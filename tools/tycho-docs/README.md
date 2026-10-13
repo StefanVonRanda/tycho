@@ -1,46 +1,81 @@
 # tycho-docs — the docs tree as a browsable site
 
-Rule: every `.md` under `docs/` becomes one HTML page at the same relative
-path, plus a top-level index, a search index, two project pages
-(`CHANGELOG.md` → `changelog.html`, `RELEASE_NOTES.md` → `release-notes.html`),
-and a per-directory alias.
+A static-site generator for this repository's documentation. Every `.md` under
+`docs/` becomes an HTML page at the same relative path, plus a documentation
+home, per-directory aliases, and the changelog and release notes.
 
-A static-site generator for this repo's own documentation. It walks `docs/`,
-renders each Markdown file with the shared subset (headings with id anchors,
-lists, quotes, tables, fenced code, rules, paragraphs, inline code/bold/links),
-rewrites relative `X.md` targets to `X.html` so the tree browses as-is, and
-writes an index grouped by directory. A directory's `README.html` is also
-published as that directory's `index.html`, so `[spec/](spec/)`-style links
-resolve on a static host the way they do on GitHub.
+Run from the repository root:
 
 ```sh
 make docs-site            # docs/ -> build/docs-site/
 ./tycho-docs docs build/docs-site
+sh tools/tycho-docs/run.sh # renderer, links, shell, and paragraph regressions
 ```
 
-## Input rules
+## One website shell
 
-- One page per `.md`; the title is the first `# ` heading.
-- `<!-- ... -->` marker lines are dropped (they are tooling, not prose).
-- A `---` line is a rule. Tables need leading pipes and a `---` separator
-  row for a header, the GitHub shape.
-- Links: relative `X.md` (or `X.md#frag`) becomes `X.html`; absolute URLs
-  and same-page `#frag` links pass through untouched.
+`site.css`, `site.js`, `header.html`, and `footer.html` in this directory own the
+shared website shell. Public copy calls Tycho's library **corelib** and its
+modules **corelib packages**, not stdlib packages. The generator copies CSS and JavaScript to its output and
+renders the templates into each page. Both the landing page and docs use that
+same stylesheet, header navigation, footer, and **76rem outer width**. The docs
+reading column stays narrower within that shell, between two sidebars.
 
-## Output
+When publishing to `gh-pages`:
 
-Standalone pages, no assets: one embedded stylesheet (the landing page's
-design tokens, dark code panels in both themes), a shared masthead and footer, a
-breadcrumb home link relative to each page's depth, and a footer naming the
-build as pre-1.0. The index groups pages — Guide, Reference, Specification,
-then Maintainer records (internals, RFCs: written for maintainers, kept
-rendered so reference links resolve), then Project — with a client-side
-search box over a generated `search.json` (titles + capped body text).
+- Put generated output under `docs/`; the landing page loads the emitted
+  stylesheet and JavaScript from that directory too.
+- Keep vendored `fonts/` and `favicon.svg` at the website root. Fonts fall back
+  to system fonts if these optional hosted assets are absent.
+- Keep the landing page's header/footer markup synchronized with these templates:
+  `{{root}}` is `./` there, and `{{docs}}` is `./docs/`. Generated docs use
+  depth-correct relative paths instead.
+
+The global sidebar groups guides, reference, specification, maintainer records,
+and project pages. It opens the current group and marks the current document.
+On mobile it becomes a keyboard-accessible disclosure. An on-page contents
+sidebar links to level-two and level-three headings; it also becomes a disclosure
+on narrower screens. Guides begin with the tutorial and introductory material,
+not an alphabetical list.
+
+Every docs page has search. The index is fetched only when search is focused,
+so ordinary reading does not download it. It searches the complete document body, rather than
+page chrome or a truncated prefix, requires all query terms, and ranks exact
+titles and title matches ahead of body matches. Results include document paths,
+matching excerpts, and highlights. `/` or Ctrl/Cmd+K focuses search; arrow keys
+move through results and Escape clears it. Loading, no-results, and fetch-failure
+states are explicit, with a retry button after failure. Results are constructed
+with text nodes, and index URLs are validated before being made into links.
+
+## Markdown and links
+
+- The title is the first `# ` heading.
+- Headings, bullet/numbered lists, quotes, tables, fences, rules, paragraphs,
+  and inline code/bold/links use the repository's Markdown subset.
+- Soft-wrapped prose and quotations join into paragraphs; indented list
+  continuations stay inside their item. Blank lines separate paragraphs.
+- HTML comment marker lines are dropped.
+- Relative `.md` links become `.html`; directory `README.html` pages also get
+  `index.html` aliases. Links outside the docs tree point to repository source,
+  except changelog/release-note links which use their local published pages.
+- Absolute URLs and same-page anchors pass through unchanged.
+
+## Browser verification
+
+`browser-check.cjs` runs with Puppeteer against the generated website (including
+its landing page). Set `SITE_URL` to its local URL and optionally `SHOTS` to an
+output directory. `CHROMIUM` overrides the browser executable. For example,
+with the installed Alpine Chrome/Puppeteer image, mount this script at
+`/usr/src/app/browser-check.cjs` and run it with Node. It checks shared chrome
+and width, both themes at 320–1440px, every document's mobile overflow and active
+navigation, disclosures, search ranking/excerpts/keyboard/retry, safe result
+rendering, and navigation without JavaScript.
 
 ## Limits
 
-- No cross-page anchor checking: a `#frag` that names no heading renders
-  anyway. `make check-links` owns that verdict on the sources.
-- The index lists files; it does not follow `docs/README.md`'s curated
-  order. Curating the landing order is presentation, and this tool is a
-  renderer.
+This is a small renderer, not a complete CommonMark implementation (for example,
+list nesting and arbitrary block content within a list are not supported). Cross-page
+anchor verification is still owned by `make check-links` on the source files.
+The home lists files by group; the tutorial and curated Markdown index provide
+the recommended learning order. Maintainer records remain reachable for source
+citations, but are not the starting point for readers.

@@ -5,7 +5,7 @@
 ### 1.1 Scope
 
 This document specifies the syntax and semantics of the Tycho programming
-language and its standard library (the *corelib*). It defines:
+language and its core library (the *corelib*). It defines:
 
 - the lexical and phrase grammar of a Tycho source program ([§3](01-lexical.md),
   [§4](02-grammar.md));
@@ -15,7 +15,7 @@ language and its standard library (the *corelib*). It defines:
 - the meaning of every declaration, statement, and expression;
 - the concurrency model and its ordering guarantees;
 - the foreign-function interface (FFI) to C;
-- the built-in functions and the standard library.
+- the built-in functions and the corelib.
 
 It does **not** specify: the compiler's command-line interface, its diagnostic
 message text, the layout of generated C, or the performance of any construct

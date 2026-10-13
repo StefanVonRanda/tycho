@@ -1,6 +1,6 @@
 # 31. The library contract · 32. Core-tier packages · 33. Extended-tier packages
 
-This part specifies the **corelib** — Tycho's standard library, a set of
+This part specifies the **corelib** — Tycho's core library, a set of
 packages under `corelib/` imported through the `core:` collection root
 ([§28](15-program.md)). It is **normative but tiered**: §31 states
 the contract every corelib package satisfies and defines the two conformance
