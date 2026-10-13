@@ -76,6 +76,9 @@ Define unfamiliar terms before relying on them. Keep benchmark methodology,
 optimization internals, test inventories, and contributor procedures in their
 own documents; link to them rather than reproducing them. Do not imply mature
 production adoption, blanket memory safety, or universal performance wins.
+Use plain, grammatical sentences and concrete descriptions. Avoid brochure
+abstractions, repeated motivational slogans, forced slang, and fake familiarity.
+Review the wording throughout the page, not just its opening.
 
 ## Browser verification
 
